@@ -93,6 +93,10 @@ THIRD_PARTY_APPS = [
 
 LOCAL_APPS = [
     "wafer_space.users",
+    "wafer_space.referrals",
+    "wafer_space.projects",
+    "wafer_space.shuttles",
+    "wafer_space.coupons",
     # Your stuff: custom apps go here
 ]
 # https://docs.djangoproject.com/en/dev/ref/settings/#installed-apps
