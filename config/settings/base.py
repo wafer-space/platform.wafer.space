@@ -84,6 +84,11 @@ THIRD_PARTY_APPS = [
     "allauth.account",
     "allauth.mfa",
     "allauth.socialaccount",
+    # Social providers
+    "allauth.socialaccount.providers.github",
+    "allauth.socialaccount.providers.gitlab",
+    "allauth.socialaccount.providers.linkedin_oauth2",
+    "allauth.socialaccount.providers.google",
 ]
 
 LOCAL_APPS = [
@@ -284,6 +289,50 @@ ACCOUNT_FORMS = {"signup": "wafer_space.users.forms.UserSignupForm"}
 SOCIALACCOUNT_ADAPTER = "wafer_space.users.adapters.SocialAccountAdapter"
 # https://docs.allauth.org/en/latest/socialaccount/configuration.html
 SOCIALACCOUNT_FORMS = {"signup": "wafer_space.users.forms.UserSocialSignupForm"}
+
+# Social Account Providers Configuration
+# ------------------------------------------------------------------------------
+SOCIALACCOUNT_PROVIDERS = {
+    "github": {
+        "SCOPE": [
+            "user:email",
+        ],
+        "VERIFIED_EMAIL": True,
+    },
+    "gitlab": {
+        "SCOPE": [
+            "read_user",
+        ],
+        "VERIFIED_EMAIL": True,
+    },
+    "google": {
+        "SCOPE": [
+            "profile",
+            "email",
+        ],
+        "AUTH_PARAMS": {
+            "access_type": "online",
+        },
+        "VERIFIED_EMAIL": True,
+    },
+    "linkedin_oauth2": {
+        "SCOPE": [
+            "r_liteprofile",
+            "r_emailaddress",
+        ],
+        "PROFILE_FIELDS": [
+            "id",
+            "first-name",
+            "last-name",
+            "email-address",
+        ],
+        "VERIFIED_EMAIL": True,
+    },
+}
+
+# Auto-link social accounts to existing email accounts
+SOCIALACCOUNT_AUTO_SIGNUP = True
+SOCIALACCOUNT_EMAIL_VERIFICATION = "none"  # Use email from social provider if verified
 
 
 # Your stuff...
