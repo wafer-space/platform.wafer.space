@@ -271,3 +271,13 @@ dump.rdb
 wafer_space/media/
 
 .pytest_cache/
+
+# Local development temp files
+tmp/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Local database
+db.sqlite3

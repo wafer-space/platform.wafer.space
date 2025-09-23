@@ -89,6 +89,8 @@ THIRD_PARTY_APPS = [
     "allauth.socialaccount.providers.gitlab",
     "allauth.socialaccount.providers.linkedin_oauth2",
     "allauth.socialaccount.providers.google",
+    # Background job processing
+    "django_celery_results",
 ]
 
 LOCAL_APPS = [
@@ -337,6 +339,39 @@ SOCIALACCOUNT_PROVIDERS = {
 # Auto-link social accounts to existing email accounts
 SOCIALACCOUNT_AUTO_SIGNUP = True
 SOCIALACCOUNT_EMAIL_VERIFICATION = "none"  # Use email from social provider if verified
+
+# Celery Configuration
+# ------------------------------------------------------------------------------
+# Use filesystem as broker for development simplicity
+CELERY_BROKER_URL = "filesystem://"
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    "data_folder_in": str(BASE_DIR / "tmp" / "celery" / "out"),
+    "data_folder_out": str(BASE_DIR / "tmp" / "celery" / "out"),
+    "data_folder_processed": str(BASE_DIR / "tmp" / "celery" / "processed"),
+}
+CELERY_RESULT_BACKEND = "django-db"
+CELERY_CACHE_BACKEND = "django-cache"
+
+# Celery task configuration
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_ENABLE_UTC = True
+
+# Task routing and execution
+CELERY_TASK_ALWAYS_EAGER = False  # Set to True for synchronous testing
+CELERY_TASK_EAGER_PROPAGATES = True
+CELERY_TASK_ROUTES = {
+    "wafer_space.projects.tasks.*": {"queue": "manufacturability"},
+    "wafer_space.referrals.tasks.*": {"queue": "referrals"},
+}
+
+# Task result configuration
+CELERY_RESULT_EXPIRES = 3600  # Results expire after 1 hour
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes hard time limit
+CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes soft time limit
 
 
 # Your stuff...
