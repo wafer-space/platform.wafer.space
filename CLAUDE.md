@@ -53,6 +53,25 @@ uv run python manage.py migrate
 uv run python manage.py createsuperuser
 ```
 
+### Background Jobs (Celery)
+```bash
+# Start Celery worker for processing background tasks
+uv run celery -A config worker --loglevel=info
+
+# Start Celery worker with specific queues
+uv run celery -A config worker -Q manufacturability,referrals --loglevel=info
+
+# Monitor Celery tasks (requires flower - optional)
+# uv add flower
+# uv run celery -A config flower
+
+# Purge all pending tasks (development only)
+uv run celery -A config purge
+
+# Inspect active tasks
+uv run celery -A config inspect active
+```
+
 ### Documentation
 ```bash
 # Build Sphinx documentation
