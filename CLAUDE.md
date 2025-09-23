@@ -62,6 +62,34 @@ cd docs && make html
 cd docs && make livehtml
 ```
 
+### Git Workflow
+```bash
+# Check current status and staged changes
+git status
+git diff --staged
+
+# Add specific files to staging
+git add <file_path>
+
+# Commit changes with descriptive message
+git commit -m "Brief description of change
+
+More detailed explanation if needed.
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>"
+
+# Push changes to remote
+git push origin <branch_name>
+```
+
+**Commit Guidelines:**
+- Make small, focused commits with single improvements or bug fixes
+- Use descriptive commit messages in present tense
+- Include context about why the change was made
+- Run linting and tests before committing when possible
+
 ## Project Architecture
 
 This is a Django 5.2+ application for wafer.space low cost silicon manufacturing, built with cookiecutter-django template.
