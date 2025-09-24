@@ -285,3 +285,6 @@ db.sqlite3
 # Design documents (keep private)
 *.pdf
 wafer.space - Django Website for User Management.pdf
+
+# Claude Code configuration (user-specific)
+.claude/
