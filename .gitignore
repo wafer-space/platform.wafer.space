@@ -281,3 +281,7 @@ celerybeat.pid
 
 # Local database
 db.sqlite3
+
+# Design documents (keep private)
+*.pdf
+wafer.space - Django Website for User Management.pdf
