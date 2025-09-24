@@ -83,6 +83,13 @@ createsuperuser: ## Create Django superuser
 	@echo "$(BLUE)Creating superuser...$(NC)"
 	@$(MANAGE) createsuperuser
 
+.PHONY: collectstatic
+collectstatic: ## Collect static files
+	@echo "$(BLUE)Collecting static files...$(NC)"
+	@mkdir -p staticfiles
+	@$(MANAGE) collectstatic --noinput
+	@echo "$(GREEN)✓ Static files collected$(NC)"
+
 # ==================== Testing ====================
 
 .PHONY: test
