@@ -7,43 +7,169 @@ Platform for wafer.space low cost silicon manufacturing.
 
 License: Apache Software License 2.0
 
+## Getting Started
+
+This project includes a comprehensive Makefile for development workflow automation. To see all available commands:
+
+```bash
+make help
+```
+
+## Quick Start
+
+### Initial Setup
+
+```bash
+# Install uv package manager (if not already installed)
+make install
+
+# Create virtual environment and install dependencies
+make venv
+
+# Run database migrations
+make migrate
+
+# Create a superuser account
+make createsuperuser
+
+# Start the development server
+make runserver
+```
+
+## Development Workflow
+
+### Database Management
+
+```bash
+# Create new migrations
+make makemigrations
+
+# Apply migrations
+make migrate
+
+# Reset database (WARNING: Deletes all data!)
+make db-reset
+
+# Create superuser
+make createsuperuser
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+make test
+
+# Run tests with verbose output
+make test-verbose
+
+# Run tests in parallel (faster)
+make test-fast
+
+# Run tests for specific app
+make test-app APP=projects
+
+# Run tests with coverage report
+make test-coverage
+
+# Generate HTML coverage report
+make test-coverage-html
+
+# Run only previously failed tests
+make test-failed
+```
+
+### Code Quality
+
+```bash
+# Run linting with ruff
+make lint
+
+# Run linting with auto-fix
+make lint-fix
+
+# Format code with ruff
+make format
+
+# Run type checking with mypy
+make type-check
+
+# Run all checks (lint, type-check, tests)
+make check-all
+```
+
+### Development Server
+
+```bash
+# Run Django development server
+make runserver
+
+# Open Django shell
+make shell
+
+# Open Django shell_plus (with auto-imports)
+make shell-plus
+```
+
+### Celery Background Tasks
+
+```bash
+# Start Celery worker
+make celery
+
+# Purge all Celery tasks
+make celery-purge
+```
+
+### Static Files
+
+```bash
+# Collect static files for production
+make collectstatic
+```
+
+### Utilities
+
+```bash
+# Clean Python cache files
+make clean
+
+# Clean everything including virtual environment
+make clean-all
+
+# Show all URL patterns
+make show-urls
+
+# Check deployment readiness
+make check-deploy
+```
+
+### CI/CD
+
+```bash
+# Run CI test suite
+make ci-test
+
+# Run pre-commit checks (lint-fix + tests)
+make pre-commit
+```
+
+## Project Structure
+
+- **wafer_space/** - Main application directory
+  - **users/** - User authentication and management
+  - **projects/** - Project submission and manufacturability checking
+  - **referrals/** - Referral program management
+  - **shuttles/** - Shuttle run management
+  - **coupons/** - Coupon system
+- **config/** - Django configuration
+  - **settings/** - Environment-specific settings
+- **staticfiles/** - Collected static files
+- **templates/** - Django templates
+
 ## Settings
 
 Moved to [settings](https://cookiecutter-django.readthedocs.io/en/latest/1-getting-started/settings.html).
-
-## Basic Commands
-
-### Setting Up Your Users
-
-- To create a **normal user account**, just go to Sign Up and fill out the form. Once you submit it, you'll see a "Verify Your E-mail Address" page. Go to your console to see a simulated email verification message. Copy the link into your browser. Now the user's email should be verified and ready to go.
-
-- To create a **superuser account**, use this command:
-
-      uv run python manage.py createsuperuser
-
-For convenience, you can keep your normal user logged in on Chrome and your superuser logged in on Firefox (or similar), so that you can see how the site behaves for both kinds of users.
-
-### Type checks
-
-Running type checks with mypy:
-
-    uv run mypy wafer_space
-
-### Test coverage
-
-To run the tests, check your test coverage, and generate an HTML coverage report:
-
-    uv run coverage run -m pytest
-    uv run coverage html
-    uv run open htmlcov/index.html
-
-#### Running tests with pytest
-
-    uv run pytest
-
-### Live reloading and Sass CSS compilation
-
-Moved to [Live reloading and SASS compilation](https://cookiecutter-django.readthedocs.io/en/latest/2-local-development/developing-locally.html#using-webpack-or-gulp).
 
 ## Deployment
 
