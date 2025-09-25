@@ -85,30 +85,69 @@ class ProjectFile(models.Model):
         GERBER = 'gerber', 'Gerber Files'
         OTHER = 'other', 'Other'
 
+    class DownloadStatus(models.TextChoices):
+        PENDING = 'pending', 'Download Pending'
+        DOWNLOADING = 'downloading', 'Downloading'
+        COMPLETED = 'completed', 'Download Completed'
+        FAILED = 'failed', 'Download Failed'
+        LOCAL_UPLOAD = 'local', 'Local Upload'
+
     project = models.ForeignKey(
         Project,
         on_delete=models.CASCADE,
         related_name='files'
     )
+
+    # File storage (optional - only after download completes)
     file = models.FileField(
         upload_to=project_file_upload_path,
+        blank=True,
+        null=True,
         validators=[
             FileExtensionValidator(
                 allowed_extensions=['zip', 'rar', '7z', 'tar', 'gz', 'gds', 'gdsii', 'cif', 'pdf', 'png', 'jpg', 'svg']
             )
         ]
     )
+
     file_type = models.CharField(
         max_length=20,
         choices=FileType.choices,
         default=FileType.DESIGN
     )
+
+    # URL-based file handling
+    source_url = models.URLField(
+        blank=True,
+        help_text="URL to download the file from"
+    )
     url_source = models.URLField(
         blank=True,
         help_text="Original URL if file was fetched from remote source"
     )
+    download_status = models.CharField(
+        max_length=20,
+        choices=DownloadStatus.choices,
+        default=DownloadStatus.PENDING
+    )
+    download_started_at = models.DateTimeField(null=True, blank=True)
+    download_completed_at = models.DateTimeField(null=True, blank=True)
+    download_error = models.TextField(blank=True)
+    download_task_id = models.CharField(max_length=100, blank=True)
 
-    # File verification
+    # File verification (provided by user)
+    expected_hash_md5 = models.CharField(
+        max_length=32,
+        blank=True,
+        help_text="MD5 hash provided by user for verification"
+    )
+    expected_hash_sha1 = models.CharField(
+        max_length=40,
+        blank=True,
+        help_text="SHA1 hash provided by user for verification"
+    )
+
+    # File verification (calculated) - keep original field names from migration
     hash_md5 = models.CharField(max_length=32, blank=True)
     hash_sha1 = models.CharField(max_length=40, blank=True)
     hash_verified = models.BooleanField(default=False)
@@ -116,6 +155,7 @@ class ProjectFile(models.Model):
     # Metadata
     file_size = models.BigIntegerField(null=True, blank=True)
     original_filename = models.CharField(max_length=255)
+    content_type = models.CharField(max_length=100, blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -124,11 +164,16 @@ class ProjectFile(models.Model):
         ordering = ['uploaded_at']
 
     def __str__(self):
+        if self.source_url:
+            return f"{self.project.name} - {self.original_filename} (from URL)"
         return f"{self.project.name} - {self.original_filename}"
 
     def calculate_hashes(self):
-        """Calculate MD5 and SHA1 hashes for the file."""
-        if self.file:
+        """Calculate MD5 and SHA1 hashes for the downloaded file."""
+        if not self.file:
+            return False
+
+        try:
             self.file.seek(0)
             content = self.file.read()
 
@@ -138,21 +183,64 @@ class ProjectFile(models.Model):
 
             self.file.seek(0)  # Reset file pointer
             self.save()
+            return True
+        except Exception:
+            return False
 
-    def verify_hash(self, provided_md5=None, provided_sha1=None):
-        """Verify file hash against provided values."""
+    def verify_hash(self):
+        """Verify downloaded file hash against user-provided expected values."""
         if not self.hash_md5 or not self.hash_sha1:
-            self.calculate_hashes()
+            if not self.calculate_hashes():
+                return False, "Could not calculate file hashes"
 
         verified = True
-        if provided_md5 and self.hash_md5.lower() != provided_md5.lower():
-            verified = False
-        if provided_sha1 and self.hash_sha1.lower() != provided_sha1.lower():
-            verified = False
+        errors = []
+
+        if self.expected_hash_md5:
+            if self.hash_md5.lower() != self.expected_hash_md5.lower():
+                verified = False
+                errors.append(f"MD5 mismatch: expected {self.expected_hash_md5}, got {self.hash_md5}")
+
+        if self.expected_hash_sha1:
+            if self.hash_sha1.lower() != self.expected_hash_sha1.lower():
+                verified = False
+                errors.append(f"SHA1 mismatch: expected {self.expected_hash_sha1}, got {self.hash_sha1}")
 
         self.hash_verified = verified
         self.save()
-        return verified
+
+        if verified:
+            return True, "Hash verification successful"
+        else:
+            return False, "; ".join(errors)
+
+    def start_download(self):
+        """Mark file download as started and return task for monitoring."""
+        from .tasks import download_project_file
+
+        self.download_status = self.DownloadStatus.DOWNLOADING
+        self.download_started_at = timezone.now()
+        self.save()
+
+        # Queue the download task
+        task = download_project_file.delay(self.id)
+        self.download_task_id = task.id
+        self.save()
+
+        return task
+
+    def mark_download_complete(self):
+        """Mark download as completed successfully."""
+        self.download_status = self.DownloadStatus.COMPLETED
+        self.download_completed_at = timezone.now()
+        self.save()
+
+    def mark_download_failed(self, error_message):
+        """Mark download as failed with error message."""
+        self.download_status = self.DownloadStatus.FAILED
+        self.download_error = error_message
+        self.download_completed_at = timezone.now()
+        self.save()
 
 
 class ManufacturabilityCheck(models.Model):
