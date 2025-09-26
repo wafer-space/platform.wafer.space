@@ -1,6 +1,7 @@
 """
 Page Object Model for the login page.
 """
+
 from selenium.webdriver.common.by import By
 
 from .base_page import BasePage
@@ -21,7 +22,10 @@ class LoginPage(BasePage):
     GITHUB_LOGIN = (By.XPATH, "//a[contains(@href, '/accounts/github/login/')]")
     GITLAB_LOGIN = (By.XPATH, "//a[contains(@href, '/accounts/gitlab/login/')]")
     GOOGLE_LOGIN = (By.XPATH, "//a[contains(@href, '/accounts/google/login/')]")
-    LINKEDIN_LOGIN = (By.XPATH, "//a[contains(@href, '/accounts/linkedin_oauth2/login/')]")
+    LINKEDIN_LOGIN = (
+        By.XPATH,
+        "//a[contains(@href, '/accounts/linkedin_oauth2/login/')]",
+    )
 
     # Error messages
     ERROR_MESSAGE = (By.CLASS_NAME, "alert-danger")
@@ -62,7 +66,7 @@ class LoginPage(BasePage):
         self.click(self.SUBMIT_BUTTON)
         return self
 
-    def login(self, username, password, remember_me=False):
+    def login(self, username, password, *, remember_me=False):
         """Perform complete login flow."""
         self.enter_username(username)
         self.enter_password(password)

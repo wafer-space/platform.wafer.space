@@ -1,9 +1,10 @@
-from django.db import models
-from django.conf import settings
-from django.core.validators import MinValueValidator
-from django.utils import timezone
 import secrets
 import string
+
+from django.conf import settings
+from django.core.validators import MinValueValidator
+from django.db import models
+from django.utils import timezone
 
 
 class ReferralCode(models.Model):
@@ -12,12 +13,12 @@ class ReferralCode(models.Model):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name='referral_code'
+        related_name="referral_code",
     )
     code = models.CharField(
         max_length=20,
         unique=True,
-        help_text="Unique referral code for this user"
+        help_text="Unique referral code for this user",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     is_active = models.BooleanField(default=True)
@@ -26,7 +27,7 @@ class ReferralCode(models.Model):
     class Meta:
         verbose_name = "Referral Code"
         verbose_name_plural = "Referral Codes"
-        ordering = ['-created_at']
+        ordering = ["-created_at"]
 
     def __str__(self):
         return f"{self.user.username} - {self.code}"
@@ -35,8 +36,10 @@ class ReferralCode(models.Model):
     def generate_code(cls, length=8):
         """Generate a unique referral code."""
         while True:
-            code = ''.join(secrets.choice(string.ascii_uppercase + string.digits)
-                          for _ in range(length))
+            code = "".join(
+                secrets.choice(string.ascii_uppercase + string.digits)
+                for _ in range(length)
+            )
             if not cls.objects.filter(code=code).exists():
                 return code
 
@@ -45,40 +48,40 @@ class ReferralEarning(models.Model):
     """Track earnings from referral program usage."""
 
     class Status(models.TextChoices):
-        PENDING = 'pending', 'Pending'
-        CONFIRMED = 'confirmed', 'Confirmed'
-        PAID = 'paid', 'Paid'
-        CANCELLED = 'cancelled', 'Cancelled'
+        PENDING = "pending", "Pending"
+        CONFIRMED = "confirmed", "Confirmed"
+        PAID = "paid", "Paid"
+        CANCELLED = "cancelled", "Cancelled"
 
     referrer = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name='referral_earnings'
+        related_name="referral_earnings",
     )
     referred_user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name='referred_from'
+        related_name="referred_from",
     )
     referral_code = models.ForeignKey(
         ReferralCode,
         on_delete=models.CASCADE,
-        related_name='earnings'
+        related_name="earnings",
     )
     amount = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        validators=[MinValueValidator(0)]
+        validators=[MinValueValidator(0)],
     )
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
-        default=Status.PENDING
+        default=Status.PENDING,
     )
     order_reference = models.CharField(
         max_length=100,
         blank=True,
-        help_text="Reference to the order that generated this earning"
+        help_text="Reference to the order that generated this earning",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     confirmed_at = models.DateTimeField(null=True, blank=True)
@@ -87,10 +90,10 @@ class ReferralEarning(models.Model):
     class Meta:
         verbose_name = "Referral Earning"
         verbose_name_plural = "Referral Earnings"
-        ordering = ['-created_at']
+        ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=['referrer', 'status']),
-            models.Index(fields=['status', 'created_at']),
+            models.Index(fields=["referrer", "status"]),
+            models.Index(fields=["status", "created_at"]),
         ]
 
     def __str__(self):
@@ -107,38 +110,38 @@ class PayoutRequest(models.Model):
     """User requests for referral earning payouts."""
 
     class PayoutMethod(models.TextChoices):
-        USD_PAYMENT = 'usd', 'USD Payment'
-        SHUTTLE_COUPON = 'coupon', 'Shuttle Coupon'
+        USD_PAYMENT = "usd", "USD Payment"
+        SHUTTLE_COUPON = "coupon", "Shuttle Coupon"
 
     class Status(models.TextChoices):
-        PENDING = 'pending', 'Pending'
-        PROCESSING = 'processing', 'Processing'
-        COMPLETED = 'completed', 'Completed'
-        FAILED = 'failed', 'Failed'
-        CANCELLED = 'cancelled', 'Cancelled'
+        PENDING = "pending", "Pending"
+        PROCESSING = "processing", "Processing"
+        COMPLETED = "completed", "Completed"
+        FAILED = "failed", "Failed"
+        CANCELLED = "cancelled", "Cancelled"
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name='payout_requests'
+        related_name="payout_requests",
     )
     amount = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        validators=[MinValueValidator(0)]
+        validators=[MinValueValidator(0)],
     )
     payout_method = models.CharField(
         max_length=20,
-        choices=PayoutMethod.choices
+        choices=PayoutMethod.choices,
     )
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
-        default=Status.PENDING
+        default=Status.PENDING,
     )
     payment_details = models.JSONField(
         default=dict,
-        help_text="Payment method specific details (email, address, etc.)"
+        help_text="Payment method specific details (email, address, etc.)",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     processed_at = models.DateTimeField(null=True, blank=True)
@@ -148,10 +151,10 @@ class PayoutRequest(models.Model):
     class Meta:
         verbose_name = "Payout Request"
         verbose_name_plural = "Payout Requests"
-        ordering = ['-created_at']
+        ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=['user', 'status']),
-            models.Index(fields=['status', 'created_at']),
+            models.Index(fields=["user", "status"]),
+            models.Index(fields=["status", "created_at"]),
         ]
 
     def __str__(self):

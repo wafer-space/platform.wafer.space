@@ -1,6 +1,7 @@
 """
 Base Page Object Model for all pages.
 """
+
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions
@@ -35,7 +36,9 @@ class BasePage:
 
     def find_elements(self, locator):
         """Find multiple elements on the page."""
-        return self.wait.until(expected_conditions.presence_of_all_elements_located(locator))
+        return self.wait.until(
+            expected_conditions.presence_of_all_elements_located(locator),
+        )
 
     def click(self, locator):
         """Click an element."""
@@ -70,11 +73,15 @@ class BasePage:
 
     def wait_for_element_visible(self, locator):
         """Wait for an element to be visible."""
-        return self.wait.until(expected_conditions.visibility_of_element_located(locator))
+        return self.wait.until(
+            expected_conditions.visibility_of_element_located(locator),
+        )
 
     def wait_for_element_invisible(self, locator):
         """Wait for an element to become invisible."""
-        return self.wait.until(expected_conditions.invisibility_of_element_located(locator))
+        return self.wait.until(
+            expected_conditions.invisibility_of_element_located(locator),
+        )
 
     def scroll_to_element(self, locator):
         """Scroll to an element."""
@@ -85,7 +92,8 @@ class BasePage:
     def submit_form(self):
         """Submit the current form."""
         submit_button = self.driver.find_element(
-            By.XPATH, "//button[@type='submit']",
+            By.XPATH,
+            "//button[@type='submit']",
         )
         submit_button.click()
         return self

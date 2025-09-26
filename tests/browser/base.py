@@ -1,6 +1,7 @@
 """
 Base classes for browser tests.
 """
+
 import time
 
 from selenium.common.exceptions import NoSuchElementException
@@ -93,7 +94,8 @@ class BaseBrowserTest:
         else:
             # Find and click the first submit button
             submit_button = driver.find_element(
-                By.XPATH, "//button[@type='submit']",
+                By.XPATH,
+                "//button[@type='submit']",
             )
             submit_button.click()
 
@@ -179,8 +181,11 @@ class AuthenticatedBrowserTest(BaseBrowserTest):
             self.click_element(driver, sign_out_locator)
 
     def create_test_user(
-        self, django_user_model, username="testuser",
-        email="test@example.com", password=None,
+        self,
+        django_user_model,
+        username="testuser",
+        email="test@example.com",
+        password=None,
     ):
         """Create a test user in the database."""
         if password is None:

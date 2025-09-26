@@ -1,19 +1,22 @@
 """
 Background tasks for project processing.
 """
+
 import hashlib
-import mimetypes
 import os
 import tempfile
 import time
 from urllib.parse import urlparse
-from urllib.request import urlopen, Request
+from urllib.request import Request
+from urllib.request import urlopen
 
 from celery import shared_task
 from django.core.files.base import ContentFile
 from django.utils import timezone
 
-from .models import ManufacturabilityCheck, Project, ProjectFile
+from .models import ManufacturabilityCheck
+from .models import Project
+from .models import ProjectFile
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
@@ -61,7 +64,9 @@ def check_project_manufacturability(self, check_id):
             # Check file verification
             unverified_files = project.files.filter(hash_verified=False)
             if unverified_files.exists():
-                warnings.append(f"{unverified_files.count()} files have unverified hashes")
+                warnings.append(
+                    f"{unverified_files.count()} files have unverified hashes",
+                )
                 logs += f"WARNING: {unverified_files.count()} files with unverified hashes\n"
 
         # Simulate additional checks
@@ -84,7 +89,7 @@ def check_project_manufacturability(self, check_id):
             is_manufacturable=is_manufacturable,
             errors=errors,
             warnings=warnings,
-            logs=logs
+            logs=logs,
         )
 
         return {
@@ -92,13 +97,13 @@ def check_project_manufacturability(self, check_id):
             "is_manufacturable": is_manufacturable,
             "errors": errors,
             "warnings": warnings,
-            "project_id": str(project.id)
+            "project_id": str(project.id),
         }
 
     except ManufacturabilityCheck.DoesNotExist:
         return {
             "status": "error",
-            "message": f"ManufacturabilityCheck with id {check_id} not found"
+            "message": f"ManufacturabilityCheck with id {check_id} not found",
         }
 
     except Exception as exc:
@@ -108,26 +113,25 @@ def check_project_manufacturability(self, check_id):
             try:
                 check = ManufacturabilityCheck.objects.get(id=check_id)
                 check.retry_count += 1
-                check.processing_logs += f"\nRetry {check.retry_count}: {str(exc)}\n"
+                check.processing_logs += f"\nRetry {check.retry_count}: {exc!s}\n"
                 check.save()
             except ManufacturabilityCheck.DoesNotExist:
                 pass
 
             # Retry the task
             raise self.retry(exc=exc)
-        else:
-            # Max retries reached, mark as failed
-            try:
-                check = ManufacturabilityCheck.objects.get(id=check_id)
-                check.fail(f"Max retries reached: {str(exc)}")
-            except ManufacturabilityCheck.DoesNotExist:
-                pass
+        # Max retries reached, mark as failed
+        try:
+            check = ManufacturabilityCheck.objects.get(id=check_id)
+            check.fail(f"Max retries reached: {exc!s}")
+        except ManufacturabilityCheck.DoesNotExist:
+            pass
 
-            return {
-                "status": "failed",
-                "message": str(exc),
-                "retries": self.request.retries
-            }
+        return {
+            "status": "failed",
+            "message": str(exc),
+            "retries": self.request.retries,
+        }
 
 
 @shared_task
@@ -135,8 +139,9 @@ def cleanup_old_task_results():
     """
     Periodic task to clean up old Celery task results.
     """
-    from django_celery_results.models import TaskResult
     from datetime import timedelta
+
+    from django_celery_results.models import TaskResult
 
     # Delete task results older than 24 hours
     cutoff_date = timezone.now() - timedelta(hours=24)
@@ -145,7 +150,7 @@ def cleanup_old_task_results():
     return {
         "status": "completed",
         "deleted_count": deleted_count,
-        "cutoff_date": cutoff_date.isoformat()
+        "cutoff_date": cutoff_date.isoformat(),
     }
 
 
@@ -167,11 +172,11 @@ def download_project_file(self, file_id):
         if not project_file.source_url:
             return {
                 "status": "error",
-                "message": "No source URL provided for file download"
+                "message": "No source URL provided for file download",
             }
 
         # Create temp directory if it doesn't exist
-        temp_dir = os.path.join(tempfile.gettempdir(), 'wafer_space_downloads')
+        temp_dir = os.path.join(tempfile.gettempdir(), "wafer_space_downloads")
         os.makedirs(temp_dir, exist_ok=True)
 
         # Parse URL to get filename
@@ -184,12 +189,12 @@ def download_project_file(self, file_id):
 
         # Create request with proper headers
         request = Request(project_file.source_url)
-        request.add_header('User-Agent', 'wafer.space/1.0')
+        request.add_header("User-Agent", "wafer.space/1.0")
 
         # Download the file
         with urlopen(request) as response:
             # Get content type and size if available
-            content_type = response.headers.get('Content-Type', '')
+            content_type = response.headers.get("Content-Type", "")
             if content_type:
                 project_file.content_type = content_type
 
@@ -201,14 +206,16 @@ def download_project_file(self, file_id):
         temp_filename = f"{project_file.id}_{project_file.original_filename}"
         temp_path = os.path.join(temp_dir, temp_filename)
 
-        with open(temp_path, 'wb') as temp_file:
+        with open(temp_path, "wb") as temp_file:
             temp_file.write(file_content)
 
         # Create Django file from the downloaded content
-        with open(temp_path, 'rb') as temp_file:
+        with open(temp_path, "rb") as temp_file:
             django_file = ContentFile(temp_file.read())
             django_file.name = project_file.original_filename
-            project_file.file.save(project_file.original_filename, django_file, save=False)
+            project_file.file.save(
+                project_file.original_filename, django_file, save=False,
+            )
 
         # Calculate file hashes
         project_file.hash_md5 = hashlib.md5(file_content).hexdigest()
@@ -222,14 +229,17 @@ def download_project_file(self, file_id):
             if project_file.hash_md5.lower() != project_file.expected_hash_md5.lower():
                 hash_verified = False
                 verification_errors.append(
-                    f"MD5 mismatch: expected {project_file.expected_hash_md5}, got {project_file.hash_md5}"
+                    f"MD5 mismatch: expected {project_file.expected_hash_md5}, got {project_file.hash_md5}",
                 )
 
         if project_file.expected_hash_sha1:
-            if project_file.hash_sha1.lower() != project_file.expected_hash_sha1.lower():
+            if (
+                project_file.hash_sha1.lower()
+                != project_file.expected_hash_sha1.lower()
+            ):
                 hash_verified = False
                 verification_errors.append(
-                    f"SHA1 mismatch: expected {project_file.expected_hash_sha1}, got {project_file.hash_sha1}"
+                    f"SHA1 mismatch: expected {project_file.expected_hash_sha1}, got {project_file.hash_sha1}",
                 )
 
         project_file.hash_verified = hash_verified
@@ -249,13 +259,13 @@ def download_project_file(self, file_id):
             "hash_verified": hash_verified,
             "verification_errors": verification_errors,
             "md5": project_file.hash_md5,
-            "sha1": project_file.hash_sha1
+            "sha1": project_file.hash_sha1,
         }
 
     except ProjectFile.DoesNotExist:
         return {
             "status": "error",
-            "message": f"ProjectFile with id {file_id} not found"
+            "message": f"ProjectFile with id {file_id} not found",
         }
 
     except Exception as exc:
@@ -264,26 +274,27 @@ def download_project_file(self, file_id):
             # Update file with retry info
             try:
                 project_file = ProjectFile.objects.get(id=file_id)
-                project_file.download_error = f"Retry {self.request.retries + 1}: {str(exc)}"
+                project_file.download_error = (
+                    f"Retry {self.request.retries + 1}: {exc!s}"
+                )
                 project_file.save()
             except ProjectFile.DoesNotExist:
                 pass
 
             # Retry the task
             raise self.retry(exc=exc)
-        else:
-            # Max retries reached, mark as failed
-            try:
-                project_file = ProjectFile.objects.get(id=file_id)
-                project_file.mark_download_failed(f"Max retries reached: {str(exc)}")
-            except ProjectFile.DoesNotExist:
-                pass
+        # Max retries reached, mark as failed
+        try:
+            project_file = ProjectFile.objects.get(id=file_id)
+            project_file.mark_download_failed(f"Max retries reached: {exc!s}")
+        except ProjectFile.DoesNotExist:
+            pass
 
-            return {
-                "status": "failed",
-                "message": str(exc),
-                "retries": self.request.retries
-            }
+        return {
+            "status": "failed",
+            "message": str(exc),
+            "retries": self.request.retries,
+        }
 
 
 @shared_task
@@ -308,11 +319,11 @@ def update_project_status(project_id, new_status):
             "status": "completed",
             "project_id": str(project_id),
             "old_status": old_status,
-            "new_status": new_status
+            "new_status": new_status,
         }
 
     except Project.DoesNotExist:
         return {
             "status": "error",
-            "message": f"Project with id {project_id} not found"
+            "message": f"Project with id {project_id} not found",
         }

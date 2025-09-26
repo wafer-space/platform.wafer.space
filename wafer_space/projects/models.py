@@ -1,37 +1,38 @@
-from django.db import models
-from django.conf import settings
-from django.core.validators import FileExtensionValidator
-from django.utils import timezone
 import hashlib
 import uuid
+
+from django.conf import settings
+from django.core.validators import FileExtensionValidator
+from django.db import models
+from django.utils import timezone
 
 
 class Project(models.Model):
     """User-submitted design projects for manufacturing."""
 
     class Status(models.TextChoices):
-        DRAFT = 'draft', 'Draft'
-        SUBMITTED = 'submitted', 'Submitted'
-        CHECKING = 'checking', 'Checking Manufacturability'
-        MANUFACTURABLE = 'manufacturable', 'Manufacturable'
-        NOT_MANUFACTURABLE = 'not_manufacturable', 'Not Manufacturable'
-        ASSIGNED_TO_SHUTTLE = 'assigned', 'Assigned to Shuttle'
-        IN_PRODUCTION = 'production', 'In Production'
-        COMPLETED = 'completed', 'Completed'
-        CANCELLED = 'cancelled', 'Cancelled'
+        DRAFT = "draft", "Draft"
+        SUBMITTED = "submitted", "Submitted"
+        CHECKING = "checking", "Checking Manufacturability"
+        MANUFACTURABLE = "manufacturable", "Manufacturable"
+        NOT_MANUFACTURABLE = "not_manufacturable", "Not Manufacturable"
+        ASSIGNED_TO_SHUTTLE = "assigned", "Assigned to Shuttle"
+        IN_PRODUCTION = "production", "In Production"
+        COMPLETED = "completed", "Completed"
+        CANCELLED = "cancelled", "Cancelled"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name='projects'
+        related_name="projects",
     )
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     status = models.CharField(
         max_length=30,
         choices=Status.choices,
-        default=Status.DRAFT
+        default=Status.DRAFT,
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -47,16 +48,16 @@ class Project(models.Model):
         max_digits=10,
         decimal_places=2,
         null=True,
-        blank=True
+        blank=True,
     )
 
     class Meta:
         verbose_name = "Project"
         verbose_name_plural = "Projects"
-        ordering = ['-created_at']
+        ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=['user', 'status']),
-            models.Index(fields=['status', 'created_at']),
+            models.Index(fields=["user", "status"]),
+            models.Index(fields=["status", "created_at"]),
         ]
 
     def __str__(self):
@@ -78,24 +79,24 @@ class ProjectFile(models.Model):
     """Files associated with a project (design files, documentation, etc.)."""
 
     class FileType(models.TextChoices):
-        DESIGN = 'design', 'Design File'
-        DOCUMENTATION = 'docs', 'Documentation'
-        SCHEMATIC = 'schematic', 'Schematic'
-        LAYOUT = 'layout', 'Layout'
-        GERBER = 'gerber', 'Gerber Files'
-        OTHER = 'other', 'Other'
+        DESIGN = "design", "Design File"
+        DOCUMENTATION = "docs", "Documentation"
+        SCHEMATIC = "schematic", "Schematic"
+        LAYOUT = "layout", "Layout"
+        GERBER = "gerber", "Gerber Files"
+        OTHER = "other", "Other"
 
     class DownloadStatus(models.TextChoices):
-        PENDING = 'pending', 'Download Pending'
-        DOWNLOADING = 'downloading', 'Downloading'
-        COMPLETED = 'completed', 'Download Completed'
-        FAILED = 'failed', 'Download Failed'
-        LOCAL_UPLOAD = 'local', 'Local Upload'
+        PENDING = "pending", "Download Pending"
+        DOWNLOADING = "downloading", "Downloading"
+        COMPLETED = "completed", "Download Completed"
+        FAILED = "failed", "Download Failed"
+        LOCAL_UPLOAD = "local", "Local Upload"
 
     project = models.ForeignKey(
         Project,
         on_delete=models.CASCADE,
-        related_name='files'
+        related_name="files",
     )
 
     # File storage (optional - only after download completes)
@@ -105,30 +106,43 @@ class ProjectFile(models.Model):
         null=True,
         validators=[
             FileExtensionValidator(
-                allowed_extensions=['zip', 'rar', '7z', 'tar', 'gz', 'gds', 'gdsii', 'cif', 'pdf', 'png', 'jpg', 'svg']
-            )
-        ]
+                allowed_extensions=[
+                    "zip",
+                    "rar",
+                    "7z",
+                    "tar",
+                    "gz",
+                    "gds",
+                    "gdsii",
+                    "cif",
+                    "pdf",
+                    "png",
+                    "jpg",
+                    "svg",
+                ],
+            ),
+        ],
     )
 
     file_type = models.CharField(
         max_length=20,
         choices=FileType.choices,
-        default=FileType.DESIGN
+        default=FileType.DESIGN,
     )
 
     # URL-based file handling
     source_url = models.URLField(
         blank=True,
-        help_text="URL to download the file from"
+        help_text="URL to download the file from",
     )
     url_source = models.URLField(
         blank=True,
-        help_text="Original URL if file was fetched from remote source"
+        help_text="Original URL if file was fetched from remote source",
     )
     download_status = models.CharField(
         max_length=20,
         choices=DownloadStatus.choices,
-        default=DownloadStatus.PENDING
+        default=DownloadStatus.PENDING,
     )
     download_started_at = models.DateTimeField(null=True, blank=True)
     download_completed_at = models.DateTimeField(null=True, blank=True)
@@ -139,12 +153,12 @@ class ProjectFile(models.Model):
     expected_hash_md5 = models.CharField(
         max_length=32,
         blank=True,
-        help_text="MD5 hash provided by user for verification"
+        help_text="MD5 hash provided by user for verification",
     )
     expected_hash_sha1 = models.CharField(
         max_length=40,
         blank=True,
-        help_text="SHA1 hash provided by user for verification"
+        help_text="SHA1 hash provided by user for verification",
     )
 
     # File verification (calculated) - keep original field names from migration
@@ -161,7 +175,7 @@ class ProjectFile(models.Model):
     class Meta:
         verbose_name = "Project File"
         verbose_name_plural = "Project Files"
-        ordering = ['uploaded_at']
+        ordering = ["uploaded_at"]
 
     def __str__(self):
         if self.source_url:
@@ -199,20 +213,23 @@ class ProjectFile(models.Model):
         if self.expected_hash_md5:
             if self.hash_md5.lower() != self.expected_hash_md5.lower():
                 verified = False
-                errors.append(f"MD5 mismatch: expected {self.expected_hash_md5}, got {self.hash_md5}")
+                errors.append(
+                    f"MD5 mismatch: expected {self.expected_hash_md5}, got {self.hash_md5}",
+                )
 
         if self.expected_hash_sha1:
             if self.hash_sha1.lower() != self.expected_hash_sha1.lower():
                 verified = False
-                errors.append(f"SHA1 mismatch: expected {self.expected_hash_sha1}, got {self.hash_sha1}")
+                errors.append(
+                    f"SHA1 mismatch: expected {self.expected_hash_sha1}, got {self.hash_sha1}",
+                )
 
         self.hash_verified = verified
         self.save()
 
         if verified:
             return True, "Hash verification successful"
-        else:
-            return False, "; ".join(errors)
+        return False, "; ".join(errors)
 
     def start_download(self):
         """Mark file download as started and return task for monitoring."""
@@ -247,21 +264,21 @@ class ManufacturabilityCheck(models.Model):
     """Track manufacturability checking process for projects."""
 
     class Status(models.TextChoices):
-        QUEUED = 'queued', 'Queued'
-        PROCESSING = 'processing', 'Processing'
-        COMPLETED = 'completed', 'Completed'
-        FAILED = 'failed', 'Failed'
-        CANCELLED = 'cancelled', 'Cancelled'
+        QUEUED = "queued", "Queued"
+        PROCESSING = "processing", "Processing"
+        COMPLETED = "completed", "Completed"
+        FAILED = "failed", "Failed"
+        CANCELLED = "cancelled", "Cancelled"
 
     project = models.OneToOneField(
         Project,
         on_delete=models.CASCADE,
-        related_name='manufacturability_check'
+        related_name="manufacturability_check",
     )
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
-        default=Status.QUEUED
+        default=Status.QUEUED,
     )
 
     # Processing details
@@ -282,7 +299,7 @@ class ManufacturabilityCheck(models.Model):
     class Meta:
         verbose_name = "Manufacturability Check"
         verbose_name_plural = "Manufacturability Checks"
-        ordering = ['-started_at']
+        ordering = ["-started_at"]
 
     def __str__(self):
         return f"Check for {self.project.name} - {self.get_status_display()}"

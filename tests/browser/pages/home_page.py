@@ -1,6 +1,7 @@
 """
 Page Object Model for the homepage.
 """
+
 from selenium.webdriver.common.by import By
 
 from .base_page import BasePage
@@ -39,7 +40,9 @@ class HomePage(BasePage):
     def click_sign_in(self):
         """Click the Sign In link."""
         self.click(self.SIGN_IN_LINK)
-        from .login_page import LoginPage
+        # Import here to avoid circular imports
+        from .login_page import LoginPage  # noqa: PLC0415
+
         return LoginPage(self.driver, self.live_server_url)
 
     def click_sign_up(self):
@@ -78,5 +81,7 @@ class HomePage(BasePage):
     def verify_page_loaded(self):
         """Verify that the homepage has loaded correctly."""
         assert self.is_navbar_visible(), "Navbar is not visible"
-        assert "wafer.space" in self.get_title().lower(), "Page title doesn't contain 'wafer.space'"
+        assert "wafer.space" in self.get_title().lower(), (
+            "Page title doesn't contain 'wafer.space'"
+        )
         return True

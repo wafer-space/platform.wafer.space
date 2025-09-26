@@ -1,7 +1,9 @@
-from django.db import models
 from django.conf import settings
-from django.core.validators import MinValueValidator, MaxValueValidator
+from django.core.validators import MaxValueValidator
+from django.core.validators import MinValueValidator
+from django.db import models
 from django.utils import timezone
+
 from wafer_space.projects.models import Project
 
 
@@ -9,25 +11,25 @@ class Shuttle(models.Model):
     """Manufacturing runs that combine multiple projects."""
 
     class Status(models.TextChoices):
-        PLANNING = 'planning', 'Planning'
-        OPEN = 'open', 'Open for Submissions'
-        FULL = 'full', 'Full'
-        LOCKED = 'locked', 'Locked'
-        IN_PRODUCTION = 'production', 'In Production'
-        COMPLETED = 'completed', 'Completed'
-        CANCELLED = 'cancelled', 'Cancelled'
+        PLANNING = "planning", "Planning"
+        OPEN = "open", "Open for Submissions"
+        FULL = "full", "Full"
+        LOCKED = "locked", "Locked"
+        IN_PRODUCTION = "production", "In Production"
+        COMPLETED = "completed", "Completed"
+        CANCELLED = "cancelled", "Cancelled"
 
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
-        default=Status.PLANNING
+        default=Status.PLANNING,
     )
 
     # Capacity and scheduling
     max_slots = models.PositiveIntegerField(
-        validators=[MinValueValidator(1), MaxValueValidator(1000)]
+        validators=[MinValueValidator(1), MaxValueValidator(1000)],
     )
     reserved_slots = models.PositiveIntegerField(default=0)
     available_slots = models.PositiveIntegerField(default=0)
@@ -37,39 +39,39 @@ class Shuttle(models.Model):
     submission_deadline = models.DateTimeField(
         null=True,
         blank=True,
-        help_text="Deadline for project submissions"
+        help_text="Deadline for project submissions",
     )
     production_start_date = models.DateTimeField(
         null=True,
         blank=True,
-        help_text="Expected production start date"
+        help_text="Expected production start date",
     )
     estimated_completion_date = models.DateTimeField(
         null=True,
         blank=True,
-        help_text="Estimated completion date"
+        help_text="Estimated completion date",
     )
     actual_completion_date = models.DateTimeField(
         null=True,
         blank=True,
-        help_text="Actual completion date"
+        help_text="Actual completion date",
     )
 
     # Manufacturing details
     technology_node = models.CharField(
         max_length=50,
         blank=True,
-        help_text="Manufacturing technology node (e.g., 180nm, 65nm)"
+        help_text="Manufacturing technology node (e.g., 180nm, 65nm)",
     )
     foundry = models.CharField(
         max_length=100,
         blank=True,
-        help_text="Manufacturing foundry"
+        help_text="Manufacturing foundry",
     )
     wafer_size = models.CharField(
         max_length=20,
         blank=True,
-        help_text="Wafer size (e.g., 8 inch, 12 inch)"
+        help_text="Wafer size (e.g., 8 inch, 12 inch)",
     )
 
     # Cost information
@@ -77,22 +79,22 @@ class Shuttle(models.Model):
         max_digits=12,
         decimal_places=2,
         null=True,
-        blank=True
+        blank=True,
     )
     cost_per_slot = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         null=True,
-        blank=True
+        blank=True,
     )
 
     class Meta:
         verbose_name = "Shuttle"
         verbose_name_plural = "Shuttles"
-        ordering = ['-created_at']
+        ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=['status', 'submission_deadline']),
-            models.Index(fields=['status', 'created_at']),
+            models.Index(fields=["status", "submission_deadline"]),
+            models.Index(fields=["status", "created_at"]),
         ]
 
     def __str__(self):
@@ -100,7 +102,9 @@ class Shuttle(models.Model):
 
     def update_slot_counts(self):
         """Update reserved and available slot counts."""
-        self.reserved_slots = self.slots.filter(status=ShuttleSlot.Status.RESERVED).count()
+        self.reserved_slots = self.slots.filter(
+            status=ShuttleSlot.Status.RESERVED,
+        ).count()
         self.available_slots = self.max_slots - self.reserved_slots
 
         # Update status based on capacity
@@ -114,35 +118,42 @@ class Shuttle(models.Model):
     def can_accept_projects(self):
         """Check if shuttle can accept new projects."""
         return (
-            self.status in [self.Status.OPEN] and
-            self.available_slots > 0 and
-            (not self.submission_deadline or timezone.now() < self.submission_deadline)
+            self.status in [self.Status.OPEN]
+            and self.available_slots > 0
+            and (
+                not self.submission_deadline
+                or timezone.now() < self.submission_deadline
+            )
         )
 
     def generate_manifest(self):
         """Generate manifest data for production."""
-        slots = self.slots.filter(status=ShuttleSlot.Status.RESERVED).select_related('project')
+        slots = self.slots.filter(status=ShuttleSlot.Status.RESERVED).select_related(
+            "project",
+        )
 
         manifest_data = {
-            'shuttle_name': self.name,
-            'generated_at': timezone.now().isoformat(),
-            'technology_node': self.technology_node,
-            'foundry': self.foundry,
-            'wafer_size': self.wafer_size,
-            'total_slots': self.max_slots,
-            'reserved_slots': self.reserved_slots,
-            'projects': []
+            "shuttle_name": self.name,
+            "generated_at": timezone.now().isoformat(),
+            "technology_node": self.technology_node,
+            "foundry": self.foundry,
+            "wafer_size": self.wafer_size,
+            "total_slots": self.max_slots,
+            "reserved_slots": self.reserved_slots,
+            "projects": [],
         }
 
         for slot in slots:
             project_data = {
-                'slot_number': slot.slot_number,
-                'project_id': str(slot.project.id),
-                'project_name': slot.project.name,
-                'user': slot.project.user.username,
-                'reserved_at': slot.reserved_at.isoformat() if slot.reserved_at else None,
+                "slot_number": slot.slot_number,
+                "project_id": str(slot.project.id),
+                "project_name": slot.project.name,
+                "user": slot.project.user.username,
+                "reserved_at": slot.reserved_at.isoformat()
+                if slot.reserved_at
+                else None,
             }
-            manifest_data['projects'].append(project_data)
+            manifest_data["projects"].append(project_data)
 
         return manifest_data
 
@@ -151,30 +162,30 @@ class ShuttleSlot(models.Model):
     """Individual slots within a shuttle for projects."""
 
     class Status(models.TextChoices):
-        AVAILABLE = 'available', 'Available'
-        RESERVED = 'reserved', 'Reserved'
-        OCCUPIED = 'occupied', 'Occupied'
-        CANCELLED = 'cancelled', 'Cancelled'
+        AVAILABLE = "available", "Available"
+        RESERVED = "reserved", "Reserved"
+        OCCUPIED = "occupied", "Occupied"
+        CANCELLED = "cancelled", "Cancelled"
 
     shuttle = models.ForeignKey(
         Shuttle,
         on_delete=models.CASCADE,
-        related_name='slots'
+        related_name="slots",
     )
     slot_number = models.PositiveIntegerField(
-        validators=[MinValueValidator(1)]
+        validators=[MinValueValidator(1)],
     )
     project = models.ForeignKey(
         Project,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='shuttle_slots'
+        related_name="shuttle_slots",
     )
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
-        default=Status.AVAILABLE
+        default=Status.AVAILABLE,
     )
 
     # Reservation details
@@ -184,7 +195,7 @@ class ShuttleSlot(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='reserved_slots'
+        related_name="reserved_slots",
     )
 
     # Slot positioning (for layout purposes)
@@ -196,11 +207,11 @@ class ShuttleSlot(models.Model):
     class Meta:
         verbose_name = "Shuttle Slot"
         verbose_name_plural = "Shuttle Slots"
-        ordering = ['shuttle', 'slot_number']
-        unique_together = ['shuttle', 'slot_number']
+        ordering = ["shuttle", "slot_number"]
+        unique_together = ["shuttle", "slot_number"]
         indexes = [
-            models.Index(fields=['shuttle', 'status']),
-            models.Index(fields=['project', 'status']),
+            models.Index(fields=["shuttle", "status"]),
+            models.Index(fields=["project", "status"]),
         ]
 
     def __str__(self):
@@ -254,14 +265,14 @@ class ShuttleManifest(models.Model):
     shuttle = models.ForeignKey(
         Shuttle,
         on_delete=models.CASCADE,
-        related_name='manifests'
+        related_name="manifests",
     )
     generated_at = models.DateTimeField(auto_now_add=True)
     generated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
-        blank=True
+        blank=True,
     )
     manifest_data = models.JSONField()
     file_path = models.CharField(max_length=500, blank=True)
@@ -270,8 +281,8 @@ class ShuttleManifest(models.Model):
     class Meta:
         verbose_name = "Shuttle Manifest"
         verbose_name_plural = "Shuttle Manifests"
-        ordering = ['-generated_at']
-        unique_together = ['shuttle', 'version']
+        ordering = ["-generated_at"]
+        unique_together = ["shuttle", "version"]
 
     def __str__(self):
         return f"{self.shuttle.name} Manifest v{self.version}"

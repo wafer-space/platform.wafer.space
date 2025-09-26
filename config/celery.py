@@ -1,7 +1,10 @@
 """
 Celery configuration for wafer.space platform.
 """
+
+import logging
 import os
+
 from celery import Celery
 
 # Set the default Django settings module for the 'celery' program.
@@ -20,6 +23,5 @@ app.autodiscover_tasks()
 @app.task(bind=True, ignore_result=True)
 def debug_task(self):
     """Debug task for testing Celery configuration."""
-    import logging
     logger = logging.getLogger(__name__)
     logger.info("Request: %r", self.request)

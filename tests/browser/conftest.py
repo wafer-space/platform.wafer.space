@@ -2,12 +2,19 @@
 Browser test configuration and fixtures.
 """
 
+import logging
+import os
+from pathlib import Path
+
 import pytest
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.chrome.service import Service as ChromeService
+from selenium.webdriver.common.by import By
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
 from selenium.webdriver.firefox.service import Service as FirefoxService
+from selenium.webdriver.support import expected_conditions
+from selenium.webdriver.support.wait import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.firefox import GeckoDriverManager
 
@@ -38,9 +45,13 @@ def pytest_addoption(parser):
 @pytest.fixture(scope="session")
 def browser_config(request):
     """Get browser configuration from command-line options."""
+    # Force headless mode in CI environments
+    is_ci = os.environ.get("CI", "false").lower() == "true"
+    headless = request.config.getoption("--headless") or is_ci
+
     return {
         "browser": request.config.getoption("--browser"),
-        "headless": request.config.getoption("--headless"),
+        "headless": headless,
         "window_size": request.config.getoption("--window-size"),
     }
 
@@ -60,6 +71,19 @@ def chrome_options(browser_config):
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
+
+    # CI/CD environment fixes
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--disable-software-rasterizer")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-background-timer-throttling")
+    options.add_argument("--disable-backgrounding-occluded-windows")
+    options.add_argument("--disable-renderer-backgrounding")
+    options.add_argument("--disable-features=TranslateUI")
+    options.add_argument("--disable-ipc-flooding-protection")
+    options.add_argument("--remote-debugging-port=0")  # Use random port
 
     # Other useful options
     options.add_argument("--disable-blink-features=AutomationControlled")
@@ -105,7 +129,8 @@ def driver(browser_config, chrome_options, firefox_options):
         service = FirefoxService(GeckoDriverManager().install())
         driver = webdriver.Firefox(service=service, options=firefox_options)
     else:
-        raise ValueError(f"Unsupported browser: {browser}")
+        msg = f"Unsupported browser: {browser}"
+        raise ValueError(msg)
 
     # Set implicit wait
     driver.implicitly_wait(10)
@@ -130,26 +155,22 @@ def live_server_url(live_server):
 def authenticated_driver(driver, live_server_url, django_user_model):
     """Create a driver with an authenticated user session."""
     # Create a test user
-    user = django_user_model.objects.create_user(
+    django_user_model.objects.create_user(
         username="testuser",
         email="test@example.com",
-        password="testpass123",
+        password="testpass123",  # noqa: S106
     )
 
     # Navigate to login page
     driver.get(f"{live_server_url}/accounts/login/")
 
     # Find and fill login form
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.support import expected_conditions as EC
-    from selenium.webdriver.support.wait import WebDriverWait
-
     # Wait for login form to be present
     wait = WebDriverWait(driver, 10)
 
     # Fill in credentials
     username_field = wait.until(
-        EC.presence_of_element_located((By.NAME, "login")),
+        expected_conditions.presence_of_element_located((By.NAME, "login")),
     )
     username_field.send_keys("testuser")
 
@@ -162,7 +183,7 @@ def authenticated_driver(driver, live_server_url, django_user_model):
 
     # Wait for redirect after successful login
     wait.until(
-        EC.url_changes(f"{live_server_url}/accounts/login/"),
+        expected_conditions.url_changes(f"{live_server_url}/accounts/login/"),
     )
 
     return driver
@@ -177,7 +198,6 @@ def _screenshot_on_failure(request, driver):
     if hasattr(request.node, "rep_call") and request.node.rep_call.failed:
         # Create screenshots directory if it doesn't exist
         screenshots_dir = "tests/browser/screenshots"
-        from pathlib import Path
         screenshots_path = Path(screenshots_dir)
         screenshots_path.mkdir(parents=True, exist_ok=True)
 
@@ -187,7 +207,6 @@ def _screenshot_on_failure(request, driver):
 
         # Take screenshot
         driver.save_screenshot(screenshot_path)
-        import logging
         logger = logging.getLogger(__name__)
         logger.info("Screenshot saved: %s", screenshot_path)
 
@@ -209,8 +228,8 @@ def wait(driver):
 @pytest.fixture
 def take_screenshot(driver):
     """Helper function to take screenshots during tests."""
+
     def _take_screenshot(name):
-        from pathlib import Path
         screenshots_path = Path("tests/browser/screenshots")
         screenshots_path.mkdir(parents=True, exist_ok=True)
         screenshot_path = screenshots_path / f"{name}.png"

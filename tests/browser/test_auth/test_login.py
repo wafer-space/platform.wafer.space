@@ -1,6 +1,9 @@
 """
 Browser tests for login functionality.
 """
+
+import logging
+
 import pytest
 from selenium.webdriver.common.by import By
 
@@ -33,7 +36,7 @@ class TestLogin(AuthenticatedBrowserTest):
     def test_successful_login(self, driver):
         """Test successful user login."""
         # Create test user
-        user = self.create_test_user(self.User)
+        self.create_test_user(self.User)
 
         # Navigate to login page
         login_page = LoginPage(driver, self.live_server_url)
@@ -62,7 +65,9 @@ class TestLogin(AuthenticatedBrowserTest):
 
         # Check for error message
         error_message = login_page.get_error_message()
-        assert error_message is not None, "No error message displayed for invalid credentials"
+        assert error_message is not None, (
+            "No error message displayed for invalid credentials"
+        )
 
     def test_empty_form_submission(self, driver):
         """Test submitting empty login form."""
@@ -78,9 +83,10 @@ class TestLogin(AuthenticatedBrowserTest):
         # Form validation should prevent submission
         # Check if required attribute is enforced
         username_input = driver.find_element(*login_page.USERNAME_INPUT)
-        assert username_input.get_attribute("required") is not None or \
-               login_page.get_field_errors(), \
-               "No validation for empty fields"
+        assert (
+            username_input.get_attribute("required") is not None
+            or login_page.get_field_errors()
+        ), "No validation for empty fields"
 
     def test_remember_me_checkbox(self, driver):
         """Test remember me checkbox functionality."""
@@ -108,15 +114,16 @@ class TestLogin(AuthenticatedBrowserTest):
         linkedin_button = driver.find_elements(*login_page.LINKEDIN_LOGIN)
 
         # Count how many social logins are configured
-        social_logins = sum([
-            len(github_button) > 0,
-            len(gitlab_button) > 0,
-            len(google_button) > 0,
-            len(linkedin_button) > 0,
-        ])
+        social_logins = sum(
+            [
+                len(github_button) > 0,
+                len(gitlab_button) > 0,
+                len(google_button) > 0,
+                len(linkedin_button) > 0,
+            ],
+        )
 
         # Log the result (social logins may or may not be configured)
-        import logging
         logger = logging.getLogger(__name__)
         logger.info("Social login buttons found: %d", social_logins)
         logger.info("GitHub: %s", "✓" if github_button else "✗")
@@ -154,6 +161,7 @@ class TestLogin(AuthenticatedBrowserTest):
         self.logout(driver)
 
         # Should be redirected to homepage or login page
-        assert "/accounts/login/" in driver.current_url or \
-               driver.current_url == f"{self.live_server_url}/", \
-               "Logout did not redirect properly"
+        assert (
+            "/accounts/login/" in driver.current_url
+            or driver.current_url == f"{self.live_server_url}/"
+        ), "Logout did not redirect properly"

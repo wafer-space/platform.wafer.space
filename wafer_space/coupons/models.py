@@ -1,40 +1,42 @@
-from django.db import models
-from django.conf import settings
-from django.core.validators import MinValueValidator, MaxValueValidator
-from django.utils import timezone
 import secrets
 import string
+
+from django.conf import settings
+from django.core.validators import MaxValueValidator
+from django.core.validators import MinValueValidator
+from django.db import models
+from django.utils import timezone
 
 
 class Coupon(models.Model):
     """Discount coupons for shuttle purchases."""
 
     class CouponType(models.TextChoices):
-        FIXED_AMOUNT = 'fixed', 'Fixed Amount'
-        PERCENTAGE = 'percentage', 'Percentage'
-        FREE_SLOT = 'free_slot', 'Free Slot'
+        FIXED_AMOUNT = "fixed", "Fixed Amount"
+        PERCENTAGE = "percentage", "Percentage"
+        FREE_SLOT = "free_slot", "Free Slot"
 
     class Status(models.TextChoices):
-        ACTIVE = 'active', 'Active'
-        EXPIRED = 'expired', 'Expired'
-        EXHAUSTED = 'exhausted', 'Exhausted'
-        DISABLED = 'disabled', 'Disabled'
+        ACTIVE = "active", "Active"
+        EXPIRED = "expired", "Expired"
+        EXHAUSTED = "exhausted", "Exhausted"
+        DISABLED = "disabled", "Disabled"
 
     code = models.CharField(
         max_length=50,
         unique=True,
-        help_text="Unique coupon code"
+        help_text="Unique coupon code",
     )
     name = models.CharField(
         max_length=100,
-        help_text="Descriptive name for the coupon"
+        help_text="Descriptive name for the coupon",
     )
     description = models.TextField(blank=True)
 
     coupon_type = models.CharField(
         max_length=20,
         choices=CouponType.choices,
-        default=CouponType.FIXED_AMOUNT
+        default=CouponType.FIXED_AMOUNT,
     )
 
     # Discount values
@@ -44,7 +46,7 @@ class Coupon(models.Model):
         null=True,
         blank=True,
         validators=[MinValueValidator(0)],
-        help_text="Fixed discount amount (for fixed_amount type)"
+        help_text="Fixed discount amount (for fixed_amount type)",
     )
     discount_percentage = models.DecimalField(
         max_digits=5,
@@ -52,20 +54,20 @@ class Coupon(models.Model):
         null=True,
         blank=True,
         validators=[MinValueValidator(0), MaxValueValidator(100)],
-        help_text="Percentage discount (for percentage type)"
+        help_text="Percentage discount (for percentage type)",
     )
 
     # Usage limits
     usage_limit = models.PositiveIntegerField(
         null=True,
         blank=True,
-        help_text="Maximum number of times this coupon can be used (null = unlimited)"
+        help_text="Maximum number of times this coupon can be used (null = unlimited)",
     )
     usage_count = models.PositiveIntegerField(default=0)
     per_user_limit = models.PositiveIntegerField(
         null=True,
         blank=True,
-        help_text="Maximum uses per user (null = unlimited per user)"
+        help_text="Maximum uses per user (null = unlimited per user)",
     )
 
     # Validity dates
@@ -73,7 +75,7 @@ class Coupon(models.Model):
     valid_until = models.DateTimeField(
         null=True,
         blank=True,
-        help_text="Expiration date (null = never expires)"
+        help_text="Expiration date (null = never expires)",
     )
 
     # Minimum purchase requirements
@@ -83,7 +85,7 @@ class Coupon(models.Model):
         null=True,
         blank=True,
         validators=[MinValueValidator(0)],
-        help_text="Minimum purchase amount required to use this coupon"
+        help_text="Minimum purchase amount required to use this coupon",
     )
 
     # Creation info
@@ -93,31 +95,31 @@ class Coupon(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='created_coupons'
+        related_name="created_coupons",
     )
 
     # Referral program integration
     from_referral_earnings = models.BooleanField(
         default=False,
-        help_text="True if this coupon was generated from referral earnings"
+        help_text="True if this coupon was generated from referral earnings",
     )
     source_user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='source_coupons',
-        help_text="User who generated this coupon (for referral-based coupons)"
+        related_name="source_coupons",
+        help_text="User who generated this coupon (for referral-based coupons)",
     )
 
     class Meta:
         verbose_name = "Coupon"
         verbose_name_plural = "Coupons"
-        ordering = ['-created_at']
+        ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=['code']),
-            models.Index(fields=['valid_from', 'valid_until']),
-            models.Index(fields=['from_referral_earnings', 'source_user']),
+            models.Index(fields=["code"]),
+            models.Index(fields=["valid_from", "valid_until"]),
+            models.Index(fields=["from_referral_earnings", "source_user"]),
         ]
 
     def __str__(self):
@@ -149,9 +151,11 @@ class Coupon(models.Model):
             return False, f"Coupon is {self.status}"
 
         # Check minimum purchase amount
-        if (self.minimum_purchase_amount and
-            purchase_amount and
-            purchase_amount < self.minimum_purchase_amount):
+        if (
+            self.minimum_purchase_amount
+            and purchase_amount
+            and purchase_amount < self.minimum_purchase_amount
+        ):
             return False, f"Minimum purchase amount is ${self.minimum_purchase_amount}"
 
         # Check per-user limit
@@ -166,9 +170,9 @@ class Coupon(models.Model):
         """Calculate discount amount for a given purchase."""
         if self.coupon_type == self.CouponType.FIXED_AMOUNT:
             return min(self.discount_amount or 0, purchase_amount)
-        elif self.coupon_type == self.CouponType.PERCENTAGE:
+        if self.coupon_type == self.CouponType.PERCENTAGE:
             return purchase_amount * (self.discount_percentage or 0) / 100
-        elif self.coupon_type == self.CouponType.FREE_SLOT:
+        if self.coupon_type == self.CouponType.FREE_SLOT:
             # This would need to be handled in the business logic
             # as it depends on slot pricing
             return 0
@@ -178,8 +182,10 @@ class Coupon(models.Model):
     def generate_code(cls, prefix="", length=8):
         """Generate a unique coupon code."""
         while True:
-            code = prefix + ''.join(secrets.choice(string.ascii_uppercase + string.digits)
-                                  for _ in range(length))
+            code = prefix + "".join(
+                secrets.choice(string.ascii_uppercase + string.digits)
+                for _ in range(length)
+            )
             if not cls.objects.filter(code=code).exists():
                 return code
 
@@ -196,7 +202,7 @@ class Coupon(models.Model):
             user=user,
             purchase_amount=purchase_amount or 0,
             discount_amount=discount_amount,
-            order_reference=order_reference
+            order_reference=order_reference,
         )
 
         # Update usage count
@@ -212,12 +218,12 @@ class CouponUsage(models.Model):
     coupon = models.ForeignKey(
         Coupon,
         on_delete=models.CASCADE,
-        related_name='usages'
+        related_name="usages",
     )
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name='coupon_usages'
+        related_name="coupon_usages",
     )
 
     # Usage details
@@ -225,26 +231,26 @@ class CouponUsage(models.Model):
     purchase_amount = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        validators=[MinValueValidator(0)]
+        validators=[MinValueValidator(0)],
     )
     discount_amount = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        validators=[MinValueValidator(0)]
+        validators=[MinValueValidator(0)],
     )
     order_reference = models.CharField(
         max_length=100,
         blank=True,
-        help_text="Reference to the order where this coupon was used"
+        help_text="Reference to the order where this coupon was used",
     )
 
     class Meta:
         verbose_name = "Coupon Usage"
         verbose_name_plural = "Coupon Usages"
-        ordering = ['-used_at']
+        ordering = ["-used_at"]
         indexes = [
-            models.Index(fields=['coupon', 'user']),
-            models.Index(fields=['user', 'used_at']),
+            models.Index(fields=["coupon", "user"]),
+            models.Index(fields=["user", "used_at"]),
         ]
 
     def __str__(self):
@@ -265,21 +271,21 @@ class CouponBatch(models.Model):
     coupon_type = models.CharField(
         max_length=20,
         choices=Coupon.CouponType.choices,
-        default=Coupon.CouponType.FIXED_AMOUNT
+        default=Coupon.CouponType.FIXED_AMOUNT,
     )
     discount_amount = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         null=True,
         blank=True,
-        validators=[MinValueValidator(0)]
+        validators=[MinValueValidator(0)],
     )
     discount_percentage = models.DecimalField(
         max_digits=5,
         decimal_places=2,
         null=True,
         blank=True,
-        validators=[MinValueValidator(0), MaxValueValidator(100)]
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
     )
 
     usage_limit = models.PositiveIntegerField(null=True, blank=True)
@@ -291,7 +297,7 @@ class CouponBatch(models.Model):
         decimal_places=2,
         null=True,
         blank=True,
-        validators=[MinValueValidator(0)]
+        validators=[MinValueValidator(0)],
     )
 
     # Batch info
@@ -300,7 +306,7 @@ class CouponBatch(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
-        blank=True
+        blank=True,
     )
     generated = models.BooleanField(default=False)
     generated_at = models.DateTimeField(null=True, blank=True)
@@ -308,7 +314,7 @@ class CouponBatch(models.Model):
     class Meta:
         verbose_name = "Coupon Batch"
         verbose_name_plural = "Coupon Batches"
-        ordering = ['-created_at']
+        ordering = ["-created_at"]
 
     def __str__(self):
         return f"{self.name} ({self.coupon_count} coupons)"
@@ -322,7 +328,7 @@ class CouponBatch(models.Model):
         for i in range(self.coupon_count):
             coupon = Coupon.objects.create(
                 code=Coupon.generate_code(self.code_prefix),
-                name=f"{self.name} #{i+1}",
+                name=f"{self.name} #{i + 1}",
                 description=self.description,
                 coupon_type=self.coupon_type,
                 discount_amount=self.discount_amount,
@@ -332,7 +338,7 @@ class CouponBatch(models.Model):
                 valid_from=self.valid_from,
                 valid_until=self.valid_until,
                 minimum_purchase_amount=self.minimum_purchase_amount,
-                created_by=self.created_by
+                created_by=self.created_by,
             )
             coupons_created.append(coupon)
 

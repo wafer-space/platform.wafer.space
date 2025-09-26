@@ -1,6 +1,9 @@
 """
 Browser tests for the homepage.
 """
+
+import logging
+
 import pytest
 from selenium.webdriver.common.by import By
 
@@ -126,14 +129,15 @@ class TestHomePage(BaseBrowserTest):
         load_time = performance["loadEventEnd"] - performance["navigationStart"]
 
         # Assert reasonable load time (adjust threshold as needed)
-        PAGE_LOAD_THRESHOLD = 5000
-        assert load_time < PAGE_LOAD_THRESHOLD, f"Page load time too slow: {load_time}ms"
+        page_load_threshold = 5000
+        assert load_time < page_load_threshold, (
+            f"Page load time too slow: {load_time}ms"
+        )
 
         # Log performance metrics for debugging
         dom_ready = (
             performance["domContentLoadedEventEnd"] - performance["navigationStart"]
         )
-        import logging
         logger = logging.getLogger(__name__)
         logger.info("Performance Metrics:")
         logger.info("  Total Load Time: %dms", load_time)
