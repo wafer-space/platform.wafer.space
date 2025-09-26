@@ -234,21 +234,6 @@ class ProjectFile(models.Model):
             return True, "Hash verification successful"
         return False, "; ".join(errors)
 
-    def start_download(self):
-        """Mark file download as started and return task for monitoring."""
-        # Import here to avoid circular import: models -> tasks -> models
-        from .tasks import download_project_file
-
-        self.download_status = self.DownloadStatus.DOWNLOADING
-        self.download_started_at = timezone.now()
-        self.save()
-
-        # Queue the download task
-        task = download_project_file.delay(self.id)
-        self.download_task_id = task.id
-        self.save()
-
-        return task
 
     def mark_download_complete(self):
         """Mark download as completed successfully."""
