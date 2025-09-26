@@ -6,6 +6,7 @@ import hashlib
 import os
 import tempfile
 import time
+from datetime import timedelta
 from urllib.parse import urlparse
 from urllib.request import Request
 from urllib.request import urlopen
@@ -13,6 +14,7 @@ from urllib.request import urlopen
 from celery import shared_task
 from django.core.files.base import ContentFile
 from django.utils import timezone
+from django_celery_results.models import TaskResult
 
 from .models import ManufacturabilityCheck
 from .models import Project
@@ -67,7 +69,8 @@ def check_project_manufacturability(self, check_id):
                 warnings.append(
                     f"{unverified_files.count()} files have unverified hashes",
                 )
-                logs += f"WARNING: {unverified_files.count()} files with unverified hashes\n"
+                count = unverified_files.count()
+                logs += f"WARNING: {count} files with unverified hashes\n"
 
         # Simulate additional checks
         logs += "Running design rule checks...\n"
@@ -119,7 +122,7 @@ def check_project_manufacturability(self, check_id):
                 pass
 
             # Retry the task
-            raise self.retry(exc=exc)
+            raise self.retry(exc=exc) from exc
         # Max retries reached, mark as failed
         try:
             check = ManufacturabilityCheck.objects.get(id=check_id)
@@ -139,10 +142,6 @@ def cleanup_old_task_results():
     """
     Periodic task to clean up old Celery task results.
     """
-    from datetime import timedelta
-
-    from django_celery_results.models import TaskResult
-
     # Delete task results older than 24 hours
     cutoff_date = timezone.now() - timedelta(hours=24)
     deleted_count = TaskResult.objects.filter(date_created__lt=cutoff_date).delete()[0]
@@ -229,7 +228,8 @@ def download_project_file(self, file_id):
             if project_file.hash_md5.lower() != project_file.expected_hash_md5.lower():
                 hash_verified = False
                 verification_errors.append(
-                    f"MD5 mismatch: expected {project_file.expected_hash_md5}, got {project_file.hash_md5}",
+                    f"MD5 mismatch: expected {project_file.expected_hash_md5}, "
+                    f"got {project_file.hash_md5}",
                 )
 
         if project_file.expected_hash_sha1:
@@ -239,7 +239,8 @@ def download_project_file(self, file_id):
             ):
                 hash_verified = False
                 verification_errors.append(
-                    f"SHA1 mismatch: expected {project_file.expected_hash_sha1}, got {project_file.hash_sha1}",
+                    f"SHA1 mismatch: expected {project_file.expected_hash_sha1}, "
+                    f"got {project_file.hash_sha1}",
                 )
 
         project_file.hash_verified = hash_verified
