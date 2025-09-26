@@ -1,4 +1,4 @@
-"""Browser tests for GitHub OAuth authentication flow."""
+"""Browser tests for GitHub and Google OAuth authentication flows."""
 
 import pytest
 from selenium.webdriver.common.by import By
@@ -179,3 +179,136 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
         signup_link = signup_links[0]
         href = signup_link.get_attribute("href")
         assert "/accounts/signup/" in href, "Sign up link has incorrect href"
+
+
+@pytest.mark.django_db
+class TestGoogleAuthenticationFlow(BaseBrowserTest):
+    """Test Google authentication flow using browser automation."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, live_server):
+        """Set up test fixtures."""
+        self.live_server_url = live_server.url
+
+    def test_login_page_displays_google_button(self, driver):
+        """Test that login page shows Google authentication button."""
+        # Navigate to login page
+        driver.get(f"{self.live_server_url}/accounts/login/")
+
+        # Wait for page to load
+        wait = WebDriverWait(driver, 10)
+        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+
+        # Check for Google button
+        google_buttons = driver.find_elements(
+            By.XPATH, "//a[contains(text(), 'Sign in with Google')]"
+        )
+        assert len(google_buttons) > 0, "Google sign-in button not found"
+
+        # Verify button has correct class
+        google_button = google_buttons[0]
+        assert "btn" in google_button.get_attribute("class")
+
+        # Verify Google icon is present
+        google_icons = driver.find_elements(By.CLASS_NAME, "bi-google")
+        assert len(google_icons) > 0, "Google icon not found"
+
+    def test_signup_page_displays_google_button(self, driver):
+        """Test that signup page shows Google authentication button."""
+        # Navigate to signup page
+        driver.get(f"{self.live_server_url}/accounts/signup/")
+
+        # Wait for page to load
+        wait = WebDriverWait(driver, 10)
+        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+
+        # Check for Google button
+        google_buttons = driver.find_elements(
+            By.XPATH, "//a[contains(text(), 'Sign up with Google')]"
+        )
+        assert len(google_buttons) > 0, "Google sign-up button not found"
+
+    def test_google_button_href_points_to_google_oauth(self, driver):
+        """Test that Google button has correct href."""
+        # Navigate to login page
+        driver.get(f"{self.live_server_url}/accounts/login/")
+
+        # Wait for page to load
+        wait = WebDriverWait(driver, 10)
+        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+
+        # Find Google button and get href
+        google_button = driver.find_element(
+            By.XPATH, "//a[contains(text(), 'Sign in with Google')]"
+        )
+        href = google_button.get_attribute("href")
+
+        # Verify href points to Google OAuth endpoint
+        assert "/accounts/google/login/" in href or "google" in href
+
+        # Note: We don't actually click the button to avoid real OAuth redirect
+
+    def test_google_vs_github_buttons_both_present(self, driver):
+        """Test that both Google and GitHub buttons are present."""
+        # Navigate to login page
+        driver.get(f"{self.live_server_url}/accounts/login/")
+
+        # Wait for page to load
+        wait = WebDriverWait(driver, 10)
+        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+
+        # Check for both provider buttons
+        github_buttons = driver.find_elements(
+            By.XPATH, "//a[contains(text(), 'Sign in with GitHub')]"
+        )
+        google_buttons = driver.find_elements(
+            By.XPATH, "//a[contains(text(), 'Sign in with Google')]"
+        )
+
+        assert len(github_buttons) > 0, "GitHub button not found"
+        assert len(google_buttons) > 0, "Google button not found"
+
+    def test_google_button_styling_consistency(self, driver):
+        """Test that Google button has consistent styling with other providers."""
+        # Navigate to login page
+        driver.get(f"{self.live_server_url}/accounts/login/")
+
+        # Wait for page to load
+        wait = WebDriverWait(driver, 10)
+        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+
+        # Get all social provider buttons
+        social_buttons = driver.find_elements(
+            By.XPATH, "//a[contains(@class, 'btn') and contains(text(), 'Sign in with')]"
+        )
+
+        assert len(social_buttons) >= 2, "Should have at least GitHub and Google buttons"
+
+        # Check that all buttons have consistent classes
+        button_classes = [btn.get_attribute("class") for btn in social_buttons]
+
+        # All should be bootstrap buttons
+        for classes in button_classes:
+            assert "btn" in classes, "All social buttons should have 'btn' class"
+            assert "btn-outline-secondary" in classes, "All should have same button style"
+
+    def test_google_button_mobile_responsive(self, driver):
+        """Test that Google button is responsive on mobile viewport."""
+        # Set mobile viewport
+        driver.set_window_size(375, 667)  # iPhone SE size
+
+        # Navigate to login page
+        driver.get(f"{self.live_server_url}/accounts/login/")
+
+        # Wait for page to load
+        wait = WebDriverWait(driver, 10)
+        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+
+        # Check that Google button is still visible and clickable
+        google_button = driver.find_element(
+            By.XPATH, "//a[contains(text(), 'Sign in with Google')]"
+        )
+        assert google_button.is_displayed(), "Google button not visible on mobile"
+
+        # Verify button takes appropriate width on mobile
+        assert google_button.size["width"] > 200, "Button should be wide enough on mobile"
