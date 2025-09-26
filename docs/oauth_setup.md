@@ -87,36 +87,114 @@ In production, set environment variables directly in your hosting environment (e
 
 ## Testing OAuth Integration
 
+### Prerequisites
+
+1. **Environment Setup**
+   ```bash
+   # Copy environment file if not already done
+   cp .env.example .env
+
+   # Edit .env and add your OAuth credentials
+   # At minimum, add GitHub credentials for testing
+   ```
+
+2. **Database Setup**
+   ```bash
+   # Run migrations
+   uv run python manage.py migrate
+
+   # Create a superuser (optional)
+   uv run python manage.py createsuperuser
+   ```
+
 ### Local Testing
 
-1. Start the development server:
+1. **Start the development server:**
    ```bash
    uv run python manage.py runserver
    ```
 
-2. Navigate to http://localhost:8000/accounts/login/
+2. **Test UI Elements:**
+   - Navigate to http://localhost:8000/accounts/login/
+   - Verify all social provider buttons are displayed (GitHub, Google, GitLab, LinkedIn)
+   - Verify traditional email/password form is present below social buttons
+   - Check responsive design by resizing browser window
 
-3. You should see social login buttons for configured providers
-
-4. Click on a provider button to test the OAuth flow
+3. **Test OAuth Flow (with configured provider):**
+   - Click on a configured provider button (e.g., GitHub)
+   - You should be redirected to the provider's OAuth page
+   - Authorize the application
+   - You should be redirected back and logged in
 
 ### Automated Testing
 
-Run the authentication tests:
-```bash
-# Run all authentication tests
-uv run pytest wafer_space/users/tests/test_social_auth_*.py
+1. **Run Unit Tests:**
+   ```bash
+   # Run all authentication tests
+   uv run pytest wafer_space/users/tests/test_social_auth_*.py -v
 
-# Run provider-specific tests
-uv run pytest wafer_space/users/tests/test_social_auth_github.py
-```
+   # Run provider-specific tests
+   uv run pytest wafer_space/users/tests/test_social_auth_github.py -v
+   ```
+
+2. **Expected Test Results:**
+   - Configuration tests should PASS (provider installed, scopes configured)
+   - OAuth flow tests may FAIL without real credentials (expected)
+   - Template tests should PASS (buttons visible)
 
 ### Browser Testing
 
-Run headless browser tests:
-```bash
-make test-browser-headless
-```
+1. **Run Headless Browser Tests:**
+   ```bash
+   # Run all browser tests including OAuth UI tests
+   make test-browser-headless
+
+   # Run only GitHub auth browser tests
+   uv run pytest tests/browser/test_github_auth_flow.py -v
+   ```
+
+2. **Expected Browser Test Results:**
+   - All UI element tests should PASS
+   - Button visibility tests should PASS
+   - Responsive design tests should PASS
+
+### Manual Verification Checklist
+
+Before closing issue #4, verify the following:
+
+#### UI Verification
+- [ ] Login page at `/accounts/login/` displays all 4 social provider buttons
+- [ ] Signup page at `/accounts/signup/` displays all 4 social provider buttons
+- [ ] Social buttons have appropriate icons (GitHub, Google, GitLab, LinkedIn)
+- [ ] "OR" divider appears between social buttons and email form
+- [ ] Traditional email/password form is still functional
+- [ ] Responsive design works on mobile viewport (buttons stack vertically)
+
+#### OAuth Flow Verification (requires configured provider)
+- [ ] GitHub OAuth redirects to GitHub.com for authorization
+- [ ] Successful GitHub auth creates new user account
+- [ ] Existing users can link GitHub to their account
+- [ ] Email from GitHub is used for account (if same email exists, accounts link)
+
+#### Configuration Verification
+- [ ] Environment variables are read correctly from `.env`
+- [ ] Missing OAuth credentials don't break the application
+- [ ] All 4 providers appear in Django admin at `/admin/socialaccount/socialapp/`
+
+#### Testing Verification
+- [ ] Unit tests for configuration pass: `uv run pytest wafer_space/users/tests/test_social_auth_github.py::TestGitHubProviderConfiguration -v`
+- [ ] Browser UI tests pass: `uv run pytest tests/browser/test_github_auth_flow.py -v`
+
+### Production Deployment Notes
+
+Before deploying to production:
+
+1. **Create OAuth Apps** for production domain (not localhost)
+2. **Update callback URLs** to use production domain
+3. **Set environment variables** in production environment
+4. **Test OAuth flow** with production URLs
+5. **Enable HTTPS** (required by most OAuth providers)
+6. **Review security settings** in Django settings
 
 ## Troubleshooting
 
