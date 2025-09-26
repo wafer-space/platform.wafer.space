@@ -23,6 +23,9 @@ class TestGitHubAuthenticationFlow(TestCase):
         self.login_url = reverse("account_login")
         self.github_login_url = reverse("github_login")
 
+        # Clean up any existing apps for this provider to avoid conflicts
+        SocialApp.objects.filter(provider="github").delete()
+
         # Create a test GitHub OAuth app (would normally use environment vars)
         self.site = Site.objects.get_current()
         self.github_app = SocialApp.objects.create(
@@ -32,6 +35,11 @@ class TestGitHubAuthenticationFlow(TestCase):
             secret="test_github_client_secret",
         )
         self.github_app.sites.add(self.site)
+
+    def tearDown(self):
+        """Clean up test environment."""
+        # Clean up the test app
+        SocialApp.objects.filter(provider="github").delete()
 
     def test_login_page_shows_github_button(self):
         """Test that login page displays GitHub authentication option."""

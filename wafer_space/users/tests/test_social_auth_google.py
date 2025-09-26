@@ -23,6 +23,9 @@ class TestGoogleAuthenticationFlow(TestCase):
         self.login_url = reverse("account_login")
         self.google_login_url = reverse("google_login")
 
+        # Clean up any existing apps for this provider to avoid conflicts
+        SocialApp.objects.filter(provider="google").delete()
+
         # Create a test Google OAuth app (would normally use environment vars)
         self.site = Site.objects.get_current()
         self.google_app = SocialApp.objects.create(
@@ -32,6 +35,11 @@ class TestGoogleAuthenticationFlow(TestCase):
             secret="test_google_client_secret",
         )
         self.google_app.sites.add(self.site)
+
+    def tearDown(self):
+        """Clean up test environment."""
+        # Clean up the test app
+        SocialApp.objects.filter(provider="google").delete()
 
     def test_login_page_shows_google_button(self):
         """Test that login page displays Google authentication option."""
