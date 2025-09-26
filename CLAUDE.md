@@ -135,7 +135,7 @@ This is a Django 5.2+ application for wafer.space low cost silicon manufacturing
   - `templates/`: Django templates using crispy-bootstrap5
   - `static/`: Static assets managed by WhiteNoise
 
-- **Database**: PostgreSQL in production, with Redis for caching. Uses django-model-utils for model utilities.
+- **Database**: PostgreSQL in production. Uses django-model-utils for model utilities.
 
 - **Testing**: pytest-django with factory-boy for test fixtures. Tests located in `*/tests/` directories within each app.
 
