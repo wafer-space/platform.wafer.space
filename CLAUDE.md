@@ -220,7 +220,66 @@ make check-all       # Run all checks (lint, type-check, tests)
    from myproject.models import MyModel
    ```
 
-4. **Boolean Arguments (FBT002/FBT003)**:
+4. **🚨 CRITICAL: Prevent Circular Imports**:
+   **Circular imports must be avoided at all costs.** They indicate poor architecture and cause runtime errors.
+
+   ```python
+   # ❌ NEVER create circular imports
+   # models.py
+   from .tasks import process_model
+
+   # tasks.py
+   from .models import MyModel  # This creates a circular dependency!
+   ```
+
+   **✅ Solutions (in order of preference):**
+
+   **Option 1: Restructure the architecture (BEST)**
+   ```python
+   # Move business logic to appropriate layer
+   # models.py - only data representation
+   class MyModel(models.Model):
+       name = models.CharField(max_length=100)
+       # No business logic or task calls here
+
+   # services.py - business logic layer
+   def process_model_data(model_instance):
+       from .tasks import background_process
+       return background_process.delay(model_instance.id)
+
+   # views.py - orchestration layer
+   from .services import process_model_data
+   result = process_model_data(my_model)
+   ```
+
+   **Option 2: Use dependency injection**
+   ```python
+   # models.py
+   class MyModel(models.Model):
+       def start_processing(self, processor_func):
+           return processor_func(self.id)
+
+   # views.py
+   from .tasks import background_process
+   from .models import MyModel
+   model.start_processing(background_process.delay)
+   ```
+
+   **Option 3: Remove unused methods**
+   ```python
+   # If a method causing circular imports is unused, DELETE it
+   # Don't keep dead code that creates architectural problems
+   ```
+
+   **❌ NEVER use local imports to "fix" circular imports**
+   ```python
+   # This is NOT a solution, it's hiding the problem:
+   def some_method(self):
+       from .tasks import some_task  # Wrong approach
+       return some_task.delay(self.id)
+   ```
+
+5. **Boolean Arguments (FBT002/FBT003)**:
    ```python
    # ❌ Avoid positional boolean arguments
    def process_data(data, validate=True):
@@ -231,7 +290,7 @@ make check-all       # Run all checks (lint, type-check, tests)
        pass
    ```
 
-5. **F-strings in Exceptions (EM102)**:
+6. **F-strings in Exceptions (EM102)**:
    ```python
    # ❌ Avoid f-strings directly in exceptions
    raise ValueError(f"Invalid value: {value}")
@@ -241,7 +300,7 @@ make check-all       # Run all checks (lint, type-check, tests)
    raise ValueError(msg)
    ```
 
-6. **Hardcoded Passwords in Tests**:
+7. **Hardcoded Passwords in Tests**:
    ```python
    # ✅ Use constants for test passwords instead of hardcoding
    TEST_PASSWORD = "testpass123"
@@ -513,6 +572,77 @@ make migrate
 This comprehensive guide ensures consistent code quality and prevents CI failures. Always refer to this section when encountering build issues or implementing new features.
 
 ## Code Quality Standards
+
+### CRITICAL: Architectural Principles to Prevent Circular Imports
+
+**Circular imports are architectural failures that must be prevented through proper design.**
+
+#### Layer Separation (Django Best Practices)
+```python
+# ✅ Proper layered architecture
+
+# models.py - Data layer only
+class Project(models.Model):
+    name = models.CharField(max_length=100)
+    # Only data representation, no business logic
+
+# services.py - Business logic layer
+def start_project_processing(project):
+    """Business logic for processing projects."""
+    from .tasks import process_project  # OK: services can import tasks
+    project.status = 'processing'
+    project.save()
+    return process_project.delay(project.id)
+
+# views.py - Presentation layer
+from .services import start_project_processing
+from .models import Project
+
+def project_view(request, project_id):
+    project = Project.objects.get(id=project_id)
+    task = start_project_processing(project)  # Proper orchestration
+    return JsonResponse({'task_id': task.id})
+
+# tasks.py - Background processing layer
+from .models import Project  # OK: tasks can import models
+
+@shared_task
+def process_project(project_id):
+    project = Project.objects.get(id=project_id)
+    # Process the project
+    project.status = 'completed'
+    project.save()
+```
+
+#### Import Direction Rules
+1. **Models** should NEVER import from tasks, views, or services
+2. **Services** can import from models and tasks (business orchestration)
+3. **Views** can import from models and services (presentation orchestration)
+4. **Tasks** can import from models (data access)
+
+#### Red Flags That Indicate Poor Architecture
+```python
+# 🚨 These patterns indicate architectural problems:
+
+# models.py importing tasks/views/services
+from .tasks import some_task  # ❌ Models calling tasks directly
+
+# Unused methods that create dependencies
+def start_download(self):  # ❌ If unused, DELETE it
+    from .tasks import download_task
+    return download_task.delay(self.id)
+
+# Business logic in models
+class Project(models.Model):
+    def complex_business_operation(self):  # ❌ Move to services
+        # Complex logic doesn't belong in models
+```
+
+#### When You Encounter Circular Import Errors
+1. **FIRST**: Question if the dependency is actually needed
+2. **SECOND**: Consider if unused code can be deleted
+3. **THIRD**: Restructure using proper layer separation
+4. **NEVER**: Use local imports as a "quick fix"
 
 ### ABSOLUTE PROHIBITION: Never Add `# noqa` Comments Without User Permission
 
