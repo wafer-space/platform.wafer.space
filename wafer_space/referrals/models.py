@@ -97,7 +97,10 @@ class ReferralEarning(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.referrer.username} earned ${self.amount} from {self.referred_user.username}"
+        return (
+            f"{self.referrer.username} earned ${self.amount} "
+            f"from {self.referred_user.username}"
+        )
 
     def confirm(self):
         """Mark earning as confirmed."""
@@ -158,4 +161,7 @@ class PayoutRequest(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.user.username} - ${self.amount} via {self.get_payout_method_display()}"
+        return (
+            f"{self.user.username} - ${self.amount} "
+            f"via {self.get_payout_method_display()}"
+        )
