@@ -214,10 +214,10 @@ def _download_file_content(project_file) -> bytes:
         msg = f"Unsupported URL scheme: {parsed_url.scheme}"
         raise ValueError(msg)
 
-    request = Request(project_file.source_url)
+    request = Request(project_file.source_url)  # noqa: S310
     request.add_header("User-Agent", "wafer.space/1.0")
 
-    with urlopen(request) as response:
+    with urlopen(request) as response:  # noqa: S310
         # Get content type and size if available
         content_type = response.headers.get("Content-Type", "")
         if content_type:

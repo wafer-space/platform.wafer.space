@@ -236,7 +236,7 @@ class ProjectFile(models.Model):
 
     def start_download(self):
         """Mark file download as started and return task for monitoring."""
-        from .tasks import download_project_file
+        from .tasks import download_project_file  # noqa: PLC0415
 
         self.download_status = self.DownloadStatus.DOWNLOADING
         self.download_started_at = timezone.now()
