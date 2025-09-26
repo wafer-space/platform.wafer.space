@@ -6,8 +6,6 @@ from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.utils import timezone
 
-from .services import start_file_download
-
 
 class Project(models.Model):
     """User-submitted design projects for manufacturing."""
@@ -238,7 +236,19 @@ class ProjectFile(models.Model):
 
     def start_download(self):
         """Mark file download as started and return task for monitoring."""
-        return start_file_download(self)
+        # Import here to avoid circular import: models -> tasks -> models
+        from .tasks import download_project_file
+
+        self.download_status = self.DownloadStatus.DOWNLOADING
+        self.download_started_at = timezone.now()
+        self.save()
+
+        # Queue the download task
+        task = download_project_file.delay(self.id)
+        self.download_task_id = task.id
+        self.save()
+
+        return task
 
     def mark_download_complete(self):
         """Mark download as completed successfully."""

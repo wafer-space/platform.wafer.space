@@ -49,7 +49,9 @@ def _calculate_file_hashes(content: bytes) -> tuple[str, str]:
 
 
 def _verify_file_hashes(
-    project_file, md5_hash: str, sha1_hash: str,
+    project_file,
+    md5_hash: str,
+    sha1_hash: str,
 ) -> tuple[bool, list[str]]:
     """Verify file hashes against expected values."""
     verified = True
@@ -276,7 +278,9 @@ def _save_file_to_django(project_file, file_content: bytes, temp_dir: Path) -> N
         django_file = ContentFile(temp_file.read())
         django_file.name = project_file.original_filename
         project_file.file.save(
-            project_file.original_filename, django_file, save=False,
+            project_file.original_filename,
+            django_file,
+            save=False,
         )
 
     # Clean up temp file
@@ -329,7 +333,9 @@ def download_project_file(self, file_id):
         project_file.hash_sha1 = sha1_hash
 
         hash_verified, verification_errors = _verify_file_hashes(
-            project_file, md5_hash, sha1_hash,
+            project_file,
+            md5_hash,
+            sha1_hash,
         )
         project_file.hash_verified = hash_verified
         project_file.mark_download_complete()

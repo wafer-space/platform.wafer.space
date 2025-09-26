@@ -500,11 +500,47 @@ This comprehensive guide ensures consistent code quality and prevents CI failure
 
 ## Code Quality Standards
 
-### Linting Error Handling
-- **NEVER add `# noqa` comments without explicit user permission**
-- Always fix the underlying issue instead of suppressing warnings
-- Only use noqa when the user specifically requests it or approves it
-- Prefer proper code fixes over suppression directives
+### ABSOLUTE PROHIBITION: Never Add `# noqa` Comments Without User Permission
+
+**🚨 CRITICAL RULE: You must ALWAYS, ALWAYS, ALWAYS ask the user for explicit permission before adding ANY `# noqa` comment. 🚨**
+
+**This rule has NO exceptions. It applies to:**
+- ALL linting warnings (ruff, flake8, pylint, etc.)
+- ALL type checking warnings (mypy, pyright, etc.)
+- ALL security warnings (bandit, safety, etc.)
+- ALL import warnings (isort, import-linter, etc.)
+- ALL formatting warnings (black, autopep8, etc.)
+- ANY other code quality warnings from ANY tool
+- Even if the warning seems "trivial" or "obviously needed"
+- Even if you are 100% confident the suppression is correct
+- Even if the warning is a false positive
+- Even if you've used the same suppression before
+- Even in emergency situations or time pressure
+
+**The process you MUST follow:**
+1. **STOP** when you encounter a linting error
+2. **First try to fix the underlying issue properly** without suppression
+3. **Only if the warning is unavoidable** - ask the user for permission
+4. **Explain in detail** why you want to suppress the warning
+5. **Wait for explicit user approval** before proceeding
+6. **Only add the comment if approved** with proper explanation
+
+**Examples of what is FORBIDDEN:**
+```python
+# ALL of these are WRONG - never do any of these without permission:
+import os  # noqa: F401
+from .tasks import foo  # noqa: PLC0415
+request = Request(url)  # noqa: S310
+password = "test"  # noqa: S105
+```
+
+**What TO do instead:**
+1. **Ask permission first**: "May I add `# noqa: F401` to suppress the unused import warning for `import os`? This import is needed for X specific reason and cannot be avoided because Y."
+2. **Wait for user approval** - do not proceed without explicit "yes"
+3. **Only then add the comment** if the user approves
+4. **Include detailed explanation** in the comment when approved
+
+**Remember: It doesn't matter how small, trivial, or "obviously correct" the suppression seems - you MUST ask first.**
 
 ### Code Quality Prevention Guidelines
 
