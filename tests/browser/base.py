@@ -2,10 +2,11 @@
 Base classes for browser tests.
 """
 import time
+
+from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions
 from selenium.webdriver.support.wait import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 
 class BaseBrowserTest:
@@ -20,7 +21,8 @@ class BaseBrowserTest:
         # Report any collected errors
         if self.errors:
             error_msg = "\n".join(self.errors)
-            raise AssertionError(f"Test errors:\n{error_msg}")
+            msg = f"Test errors:\n{error_msg}"
+            raise AssertionError(msg)
 
     def navigate_to(self, driver, path):
         """Navigate to a specific path on the live server."""
@@ -31,37 +33,40 @@ class BaseBrowserTest:
     def wait_for_element(self, driver, locator, timeout=10):
         """Wait for an element to be present and return it."""
         wait = WebDriverWait(driver, timeout)
-        return wait.until(EC.presence_of_element_located(locator))
+        return wait.until(expected_conditions.presence_of_element_located(locator))
 
     def wait_for_element_clickable(self, driver, locator, timeout=10):
         """Wait for an element to be clickable and return it."""
         wait = WebDriverWait(driver, timeout)
-        return wait.until(EC.element_to_be_clickable(locator))
+        return wait.until(expected_conditions.element_to_be_clickable(locator))
 
     def wait_for_text_in_element(self, driver, locator, text, timeout=10):
         """Wait for specific text to appear in an element."""
         wait = WebDriverWait(driver, timeout)
-        return wait.until(EC.text_to_be_present_in_element(locator, text))
+        return wait.until(
+            expected_conditions.text_to_be_present_in_element(locator, text),
+        )
 
     def wait_for_url_contains(self, driver, url_part, timeout=10):
         """Wait for URL to contain specific text."""
         wait = WebDriverWait(driver, timeout)
-        return wait.until(EC.url_contains(url_part))
+        return wait.until(expected_conditions.url_contains(url_part))
 
     def wait_for_page_load(self, driver, timeout=10):
         """Wait for page to be fully loaded."""
         wait = WebDriverWait(driver, timeout)
         return wait.until(
-            lambda d: d.execute_script("return document.readyState") == "complete"
+            lambda d: d.execute_script("return document.readyState") == "complete",
         )
 
     def element_exists(self, driver, locator):
         """Check if an element exists on the page."""
         try:
             driver.find_element(*locator)
-            return True
         except NoSuchElementException:
             return False
+        else:
+            return True
 
     def get_element_text(self, driver, locator):
         """Get text content of an element."""
@@ -73,7 +78,7 @@ class BaseBrowserTest:
         element = self.wait_for_element_clickable(driver, locator)
         element.click()
 
-    def fill_input(self, driver, locator, value, clear=True):
+    def fill_input(self, driver, locator, value, *, clear=True):
         """Fill an input field with a value."""
         element = self.wait_for_element(driver, locator)
         if clear:
@@ -88,7 +93,7 @@ class BaseBrowserTest:
         else:
             # Find and click the first submit button
             submit_button = driver.find_element(
-                By.XPATH, "//button[@type='submit']"
+                By.XPATH, "//button[@type='submit']",
             )
             submit_button.click()
 
@@ -168,16 +173,22 @@ class AuthenticatedBrowserTest(BaseBrowserTest):
         self.navigate_to(driver, "/accounts/logout/")
 
         # Confirm logout if there's a confirmation page
-        if self.element_exists(driver, (By.XPATH, "//button[contains(text(), 'Sign Out')]")):
-            self.click_element(driver, (By.XPATH, "//button[contains(text(), 'Sign Out')]"))
+        sign_out_xpath = "//button[contains(text(), 'Sign Out')]"
+        sign_out_locator = (By.XPATH, sign_out_xpath)
+        if self.element_exists(driver, sign_out_locator):
+            self.click_element(driver, sign_out_locator)
 
-    def create_test_user(self, django_user_model, username="testuser",
-                        email="test@example.com", password="testpass123"):
+    def create_test_user(
+        self, django_user_model, username="testuser",
+        email="test@example.com", password=None,
+    ):
         """Create a test user in the database."""
+        if password is None:
+            password = "testpass123"  # noqa: S105
         return django_user_model.objects.create_user(
             username=username,
             email=email,
-            password=password
+            password=password,
         )
 
     def verify_authenticated_state(self, driver):

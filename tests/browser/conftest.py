@@ -1,13 +1,13 @@
 """
 Browser test configuration and fixtures.
 """
-import os
+
 import pytest
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.chrome.options import Options as ChromeOptions
-from selenium.webdriver.firefox.service import Service as FirefoxService
+from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
+from selenium.webdriver.firefox.service import Service as FirefoxService
 from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.firefox import GeckoDriverManager
 
@@ -64,7 +64,7 @@ def chrome_options(browser_config):
     # Other useful options
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option("useAutomationExtension", False)
+    options.add_experimental_option("useAutomationExtension", False)  # noqa: FBT003
 
     # Suppress console logs
     options.add_experimental_option("excludeSwitches", ["enable-logging"])
@@ -87,8 +87,8 @@ def firefox_options(browser_config):
         options.add_argument("--headless")
 
     # Other useful options
-    options.set_preference("dom.webdriver.enabled", False)
-    options.set_preference("useAutomationExtension", False)
+    options.set_preference("dom.webdriver.enabled", False)  # noqa: FBT003
+    options.set_preference("useAutomationExtension", False)  # noqa: FBT003
 
     return options
 
@@ -133,7 +133,7 @@ def authenticated_driver(driver, live_server_url, django_user_model):
     user = django_user_model.objects.create_user(
         username="testuser",
         email="test@example.com",
-        password="testpass123"
+        password="testpass123",
     )
 
     # Navigate to login page
@@ -141,15 +141,15 @@ def authenticated_driver(driver, live_server_url, django_user_model):
 
     # Find and fill login form
     from selenium.webdriver.common.by import By
-    from selenium.webdriver.support.wait import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.support.wait import WebDriverWait
 
     # Wait for login form to be present
     wait = WebDriverWait(driver, 10)
 
     # Fill in credentials
     username_field = wait.until(
-        EC.presence_of_element_located((By.NAME, "login"))
+        EC.presence_of_element_located((By.NAME, "login")),
     )
     username_field.send_keys("testuser")
 
@@ -162,7 +162,7 @@ def authenticated_driver(driver, live_server_url, django_user_model):
 
     # Wait for redirect after successful login
     wait.until(
-        EC.url_changes(f"{live_server_url}/accounts/login/")
+        EC.url_changes(f"{live_server_url}/accounts/login/"),
     )
 
     return driver
@@ -177,15 +177,19 @@ def _screenshot_on_failure(request, driver):
     if hasattr(request.node, "rep_call") and request.node.rep_call.failed:
         # Create screenshots directory if it doesn't exist
         screenshots_dir = "tests/browser/screenshots"
-        os.makedirs(screenshots_dir, exist_ok=True)
+        from pathlib import Path
+        screenshots_path = Path(screenshots_dir)
+        screenshots_path.mkdir(parents=True, exist_ok=True)
 
         # Generate screenshot filename
         test_name = request.node.name.replace("[", "_").replace("]", "_")
-        screenshot_path = os.path.join(screenshots_dir, f"failure_{test_name}.png")
+        screenshot_path = screenshots_path / f"failure_{test_name}.png"
 
         # Take screenshot
         driver.save_screenshot(screenshot_path)
-        print(f"\nScreenshot saved: {screenshot_path}")
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info("Screenshot saved: %s", screenshot_path)
 
 
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
@@ -199,7 +203,6 @@ def pytest_runtest_makereport(item, call):
 @pytest.fixture
 def wait(driver):
     """Create a WebDriverWait instance."""
-    from selenium.webdriver.support.wait import WebDriverWait
     return WebDriverWait(driver, 10)
 
 
@@ -207,10 +210,11 @@ def wait(driver):
 def take_screenshot(driver):
     """Helper function to take screenshots during tests."""
     def _take_screenshot(name):
-        screenshots_dir = "tests/browser/screenshots"
-        os.makedirs(screenshots_dir, exist_ok=True)
-        screenshot_path = os.path.join(screenshots_dir, f"{name}.png")
-        driver.save_screenshot(screenshot_path)
-        return screenshot_path
+        from pathlib import Path
+        screenshots_path = Path("tests/browser/screenshots")
+        screenshots_path.mkdir(parents=True, exist_ok=True)
+        screenshot_path = screenshots_path / f"{name}.png"
+        driver.save_screenshot(str(screenshot_path))
+        return str(screenshot_path)
 
     return _take_screenshot

@@ -1,10 +1,10 @@
 """
 Base Page Object Model for all pages.
 """
+from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions
 from selenium.webdriver.support.wait import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 
 class BasePage:
@@ -31,15 +31,15 @@ class BasePage:
 
     def find_element(self, locator):
         """Find an element on the page."""
-        return self.wait.until(EC.presence_of_element_located(locator))
+        return self.wait.until(expected_conditions.presence_of_element_located(locator))
 
     def find_elements(self, locator):
         """Find multiple elements on the page."""
-        return self.wait.until(EC.presence_of_all_elements_located(locator))
+        return self.wait.until(expected_conditions.presence_of_all_elements_located(locator))
 
     def click(self, locator):
         """Click an element."""
-        element = self.wait.until(EC.element_to_be_clickable(locator))
+        element = self.wait.until(expected_conditions.element_to_be_clickable(locator))
         element.click()
         return self
 
@@ -65,16 +65,16 @@ class BasePage:
 
     def wait_for_url_to_contain(self, text):
         """Wait for URL to contain specific text."""
-        self.wait.until(EC.url_contains(text))
+        self.wait.until(expected_conditions.url_contains(text))
         return self
 
     def wait_for_element_visible(self, locator):
         """Wait for an element to be visible."""
-        return self.wait.until(EC.visibility_of_element_located(locator))
+        return self.wait.until(expected_conditions.visibility_of_element_located(locator))
 
     def wait_for_element_invisible(self, locator):
         """Wait for an element to become invisible."""
-        return self.wait.until(EC.invisibility_of_element_located(locator))
+        return self.wait.until(expected_conditions.invisibility_of_element_located(locator))
 
     def scroll_to_element(self, locator):
         """Scroll to an element."""
@@ -85,24 +85,24 @@ class BasePage:
     def submit_form(self):
         """Submit the current form."""
         submit_button = self.driver.find_element(
-            By.XPATH, "//button[@type='submit']"
+            By.XPATH, "//button[@type='submit']",
         )
         submit_button.click()
         return self
 
     def get_alert_text(self):
         """Get text from an alert box."""
-        alert = self.wait.until(EC.alert_is_present())
+        alert = self.wait.until(expected_conditions.alert_is_present())
         return alert.text
 
     def accept_alert(self):
         """Accept an alert box."""
-        alert = self.wait.until(EC.alert_is_present())
+        alert = self.wait.until(expected_conditions.alert_is_present())
         alert.accept()
         return self
 
     def dismiss_alert(self):
         """Dismiss an alert box."""
-        alert = self.wait.until(EC.alert_is_present())
+        alert = self.wait.until(expected_conditions.alert_is_present())
         alert.dismiss()
         return self

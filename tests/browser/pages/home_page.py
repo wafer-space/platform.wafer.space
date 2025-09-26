@@ -2,6 +2,7 @@
 Page Object Model for the homepage.
 """
 from selenium.webdriver.common.by import By
+
 from .base_page import BasePage
 
 

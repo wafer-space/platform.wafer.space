@@ -3,8 +3,8 @@ Browser tests for login functionality.
 """
 import pytest
 from selenium.webdriver.common.by import By
+
 from tests.browser.base import AuthenticatedBrowserTest
-from tests.browser.pages.home_page import HomePage
 from tests.browser.pages.login_page import LoginPage
 
 
@@ -112,15 +112,17 @@ class TestLogin(AuthenticatedBrowserTest):
             len(github_button) > 0,
             len(gitlab_button) > 0,
             len(google_button) > 0,
-            len(linkedin_button) > 0
+            len(linkedin_button) > 0,
         ])
 
         # Log the result (social logins may or may not be configured)
-        print(f"\nSocial login buttons found: {social_logins}")
-        print(f"GitHub: {'✓' if github_button else '✗'}")
-        print(f"GitLab: {'✓' if gitlab_button else '✗'}")
-        print(f"Google: {'✓' if google_button else '✗'}")
-        print(f"LinkedIn: {'✓' if linkedin_button else '✗'}")
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info("Social login buttons found: %d", social_logins)
+        logger.info("GitHub: %s", "✓" if github_button else "✗")
+        logger.info("GitLab: %s", "✓" if gitlab_button else "✗")
+        logger.info("Google: %s", "✓" if google_button else "✗")
+        logger.info("LinkedIn: %s", "✓" if linkedin_button else "✗")
 
         # This test passes regardless - it's just documenting what's configured
         assert True, "Social login buttons test completed"
@@ -140,7 +142,7 @@ class TestLogin(AuthenticatedBrowserTest):
     def test_logout_functionality(self, driver):
         """Test logout functionality."""
         # Create and login user
-        user = self.create_test_user(self.User)
+        self.create_test_user(self.User)
         login_page = LoginPage(driver, self.live_server_url)
         login_page.go_to_login_page()
         login_page.login("testuser", "testpass123")

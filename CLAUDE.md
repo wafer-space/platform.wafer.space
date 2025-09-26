@@ -143,3 +143,76 @@ This is a Django 5.2+ application for wafer.space low cost silicon manufacturing
 - `config/settings/local.py`: Development-specific settings with debug toolbar
 - `config/urls.py`: Main URL configuration
 - Never delete a test or reduce test functionality without an explicit request from the user.
+
+## CI/CD Best Practices
+
+When making changes to the codebase, always consider the impact on Continuous Integration:
+
+### Pre-commit Hooks and Linting
+
+1. **Run linting locally before committing**:
+   ```bash
+   make lint-fix        # Fix auto-fixable linting issues
+   make type-check      # Run mypy type checking
+   make check-all       # Run all checks (lint, type-check, tests)
+   ```
+
+2. **Common linting issues to avoid**:
+   - **Print statements**: Use logging instead of `print()` in production code
+   - **Long lines**: Keep lines under 88 characters (ruff default)
+   - **Import organization**: Keep imports at the top of files
+   - **Boolean arguments**: Use keyword-only arguments for boolean parameters
+   - **F-strings in exceptions**: Assign f-strings to variables before raising exceptions
+   - **Hardcoded passwords in tests**: Use `# noqa: S105` or `# noqa: S106` for test passwords
+
+3. **Browser test considerations**:
+   - Browser tests may need `# noqa: PLC0415` for imports inside fixtures
+   - Screenshot utilities may need `# noqa: PTH118` for path operations
+   - Test performance metrics may need `# noqa: PLR2004` for magic numbers
+
+### Testing Strategy
+
+1. **Always run tests before committing**:
+   ```bash
+   make test            # Run unit tests
+   make test-browser-headless  # Run browser tests for CI
+   ```
+
+2. **Browser test reliability**:
+   - Use Page Object Model pattern for maintainability
+   - Add proper wait conditions for dynamic content
+   - Use headless mode in CI/CD pipelines
+   - Consider viewport-specific behavior in responsive tests
+
+3. **Test organization**:
+   - Keep test fixtures in conftest.py
+   - Use descriptive test names
+   - Group related tests in classes
+   - Use pytest markers for test categorization
+
+### GitHub Actions Troubleshooting
+
+1. **Linting failures**: Check ruff output and fix issues locally first
+2. **Test failures**: Run tests locally with same Python version as CI
+3. **Import errors**: Ensure all dependencies are in pyproject.toml
+4. **Browser test failures**: Use headless mode and proper wait conditions
+
+### Code Quality Standards
+
+1. **Type hints**: Use type hints for function parameters and return values
+2. **Documentation**: Add docstrings for all public functions and classes
+3. **Error handling**: Use proper exception handling with descriptive messages
+4. **Logging**: Use structured logging instead of print statements
+5. **Security**: Avoid hardcoded secrets, use environment variables
+
+### Database Migrations
+
+1. **Always create migrations for model changes**:
+   ```bash
+   make makemigrations  # Create new migrations
+   make migrate         # Apply migrations
+   ```
+
+2. **Test migrations in both directions** (forward and backward when possible)
+3. **Review migration files** before committing
+4. **Use descriptive migration names** when needed

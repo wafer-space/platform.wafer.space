@@ -3,6 +3,7 @@ Browser tests for the homepage.
 """
 import pytest
 from selenium.webdriver.common.by import By
+
 from tests.browser.base import BaseBrowserTest
 from tests.browser.pages.home_page import HomePage
 
@@ -69,7 +70,8 @@ class TestHomePage(BaseBrowserTest):
         # Check if navbar toggler is visible (indicates mobile view)
         navbar_toggler = driver.find_elements(By.CLASS_NAME, "navbar-toggler")
         if navbar_toggler:
-            assert navbar_toggler[0].is_displayed(), "Navbar toggler not visible in mobile view"
+            msg = "Navbar toggler not visible in mobile view"
+            assert navbar_toggler[0].is_displayed(), msg
 
     def test_homepage_responsive_tablet(self, driver):
         """Test homepage responsiveness on tablet viewport."""
@@ -96,7 +98,8 @@ class TestHomePage(BaseBrowserTest):
         # Check that navbar is in desktop mode (no toggler visible)
         navbar_toggler = driver.find_elements(By.CLASS_NAME, "navbar-toggler")
         if navbar_toggler:
-            assert not navbar_toggler[0].is_displayed(), "Navbar toggler should not be visible in desktop view"
+            msg = "Navbar toggler should not be visible in desktop view"
+            assert not navbar_toggler[0].is_displayed(), msg
 
     def test_no_javascript_errors(self, driver):
         """Test that homepage loads without JavaScript errors."""
@@ -116,17 +119,22 @@ class TestHomePage(BaseBrowserTest):
 
         # Get performance timing
         performance = driver.execute_script(
-            "return window.performance.timing"
+            "return window.performance.timing",
         )
 
         # Calculate page load time
-        load_time = performance['loadEventEnd'] - performance['navigationStart']
+        load_time = performance["loadEventEnd"] - performance["navigationStart"]
 
         # Assert reasonable load time (adjust threshold as needed)
-        assert load_time < 5000, f"Page load time too slow: {load_time}ms"
+        PAGE_LOAD_THRESHOLD = 5000
+        assert load_time < PAGE_LOAD_THRESHOLD, f"Page load time too slow: {load_time}ms"
 
         # Log performance metrics for debugging
-        dom_ready = performance['domContentLoadedEventEnd'] - performance['navigationStart']
-        print(f"\nPerformance Metrics:")
-        print(f"  Total Load Time: {load_time}ms")
-        print(f"  DOM Ready: {dom_ready}ms")
+        dom_ready = (
+            performance["domContentLoadedEventEnd"] - performance["navigationStart"]
+        )
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info("Performance Metrics:")
+        logger.info("  Total Load Time: %dms", load_time)
+        logger.info("  DOM Ready: %dms", dom_ready)
