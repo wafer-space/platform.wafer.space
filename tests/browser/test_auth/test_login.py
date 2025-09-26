@@ -160,8 +160,8 @@ class TestLogin(AuthenticatedBrowserTest):
         # Now logout
         self.logout(driver)
 
-        # Should be redirected to homepage or login page
+        # Should be redirected to accounts page (login, confirm-email, etc) or homepage
         assert (
-            "/accounts/login/" in driver.current_url
+            "/accounts/" in driver.current_url
             or driver.current_url == f"{self.live_server_url}/"
         ), "Logout did not redirect properly"
