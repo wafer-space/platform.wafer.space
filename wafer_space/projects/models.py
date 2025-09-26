@@ -234,7 +234,6 @@ class ProjectFile(models.Model):
             return True, "Hash verification successful"
         return False, "; ".join(errors)
 
-
     def mark_download_complete(self):
         """Mark download as completed successfully."""
         self.download_status = self.DownloadStatus.COMPLETED

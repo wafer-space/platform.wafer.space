@@ -64,7 +64,8 @@ class URLValidationSecurityTests(TestCase):
     def test_custom_scheme_blocked(self):
         """Test that custom schemes are blocked."""
         with pytest.raises(
-            ValueError, match="Unsupported URL scheme: custom",
+            ValueError,
+            match="Unsupported URL scheme: custom",
         ) as excinfo:
             _safe_urlopen("custom://malicious/payload")
 
@@ -73,7 +74,8 @@ class URLValidationSecurityTests(TestCase):
     def test_javascript_scheme_blocked(self):
         """Test that javascript: URLs are blocked."""
         with pytest.raises(
-            ValueError, match="Unsupported URL scheme: javascript",
+            ValueError,
+            match="Unsupported URL scheme: javascript",
         ) as excinfo:
             _safe_urlopen("javascript:alert('xss')")
 
@@ -130,7 +132,8 @@ class URLValidationSecurityTests(TestCase):
             mock_urlopen.return_value.__enter__.return_value = mock_response
 
             content, headers = _safe_urlopen(
-                "https://example.com/file.zip", headers=custom_headers,
+                "https://example.com/file.zip",
+                headers=custom_headers,
             )
             assert content == b"test content"
             assert headers["Content-Type"] == "text/plain"
@@ -153,7 +156,8 @@ class URLValidationBehaviorTests(TestCase):
         for url, expected_scheme in test_cases:
             with self.subTest(url=url):
                 with pytest.raises(
-                    ValueError, match=r"(?i)unsupported url scheme",
+                    ValueError,
+                    match=r"(?i)unsupported url scheme",
                 ) as excinfo:
                     _safe_urlopen(url)
 
@@ -173,21 +177,28 @@ class URLValidationBehaviorTests(TestCase):
 
         # Test valid cases
         for url in valid_cases:
-            with self.subTest(url=url), patch(
-                "wafer_space.projects.tasks.urlopen",
-            ) as mock_urlopen:
-                    mock_response = Mock()
-                    mock_response.read.return_value = b"test"
-                    mock_response.headers = {}
-                    mock_urlopen.return_value.__enter__.return_value = mock_response
+            with (
+                self.subTest(url=url),
+                patch(
+                    "wafer_space.projects.tasks.urlopen",
+                ) as mock_urlopen,
+            ):
+                mock_response = Mock()
+                mock_response.read.return_value = b"test"
+                mock_response.headers = {}
+                mock_urlopen.return_value.__enter__.return_value = mock_response
 
-                    # Should not raise exception
-                    content, _headers = _safe_urlopen(url)
-                    assert content == b"test"
+                # Should not raise exception
+                content, _headers = _safe_urlopen(url)
+                assert content == b"test"
 
         # Test invalid cases
         for url in invalid_cases:
-            with self.subTest(url=url), pytest.raises(
-                ValueError, match=r".*(file|ftp).*",
+            with (
+                self.subTest(url=url),
+                pytest.raises(
+                    ValueError,
+                    match=r".*(file|ftp).*",
+                ),
             ):
                 _safe_urlopen(url)
