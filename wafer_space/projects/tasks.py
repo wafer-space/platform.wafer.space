@@ -207,14 +207,26 @@ def cleanup_old_task_results():
 
 
 def _download_file_content(project_file) -> bytes:
-    """Download file content from URL."""
-    # Validate URL scheme for security
+    """Download file content from URL.
+
+    Security Note:
+    This function implements strict URL scheme validation to prevent security
+    vulnerabilities. Only http:// and https:// schemes are allowed. This prevents:
+    - file:// scheme attacks that could read local files
+    - ftp://, ldap://, and other protocol injections
+    - javascript:, data:, and other XSS-related schemes
+    - Custom schemes that could be exploited
+
+    The validation occurs before any network operations to ensure no dangerous
+    URLs can reach the urllib.request.Request() or urlopen() calls.
+    """
+    # SECURITY: Validate URL scheme for security - only allow http/https
     parsed_url = urlparse(project_file.source_url)
-    if parsed_url.scheme not in ("http", "https"):
-        msg = f"Unsupported URL scheme: {parsed_url.scheme}"
+    if parsed_url.scheme.lower() not in ("http", "https"):
+        msg = f"Unsupported URL scheme: {parsed_url.scheme.lower()}"
         raise ValueError(msg)
 
-    request = Request(project_file.source_url)  # noqa: S310
+    request = Request(project_file.source_url)  # noqa: S310 - URL scheme validated above to only allow http/https
     request.add_header("User-Agent", "wafer.space/1.0")
 
     with urlopen(request) as response:  # noqa: S310
