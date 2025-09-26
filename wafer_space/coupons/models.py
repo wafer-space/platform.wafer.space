@@ -254,7 +254,10 @@ class CouponUsage(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.coupon.code} used by {self.user.username} - ${self.discount_amount} discount"
+        return (
+            f"{self.coupon.code} used by {self.user.username} - "
+            f"${self.discount_amount} discount"
+        )
 
 
 class CouponBatch(models.Model):
@@ -322,7 +325,8 @@ class CouponBatch(models.Model):
     def generate_coupons(self):
         """Generate all coupons in this batch."""
         if self.generated:
-            raise ValueError("Coupons for this batch have already been generated")
+            msg = "Coupons for this batch have already been generated"
+            raise ValueError(msg)
 
         coupons_created = []
         for i in range(self.coupon_count):
