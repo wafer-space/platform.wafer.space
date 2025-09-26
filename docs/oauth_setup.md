@@ -198,14 +198,19 @@ In production, set environment variables directly in your hosting environment (e
    # Run all authentication tests
    uv run pytest wafer_space/users/tests/test_social_auth_*.py -v
 
-   # Run provider-specific tests
+   # Run GitHub provider tests
    uv run pytest wafer_space/users/tests/test_social_auth_github.py -v
+
+   # Run Google provider tests
+   uv run pytest wafer_space/users/tests/test_social_auth_google.py -v
    ```
 
 2. **Expected Test Results:**
-   - Configuration tests should PASS (provider installed, scopes configured)
-   - OAuth flow tests may FAIL without real credentials (expected)
-   - Template tests should PASS (buttons visible)
+   - **Configuration tests should PASS** (provider installed, scopes configured)
+   - **OAuth flow tests may FAIL** without real credentials (expected behavior)
+   - **Template tests may FAIL** without configured apps (expected in test environment)
+
+   **Note**: Social provider buttons only appear when OAuth apps are properly configured with credentials or database objects.
 
 ### Browser Testing
 
@@ -236,10 +241,20 @@ Before closing issue #4, verify the following:
 - [ ] Responsive design works on mobile viewport (buttons stack vertically)
 
 #### OAuth Flow Verification (requires configured provider)
+
+**GitHub:**
 - [ ] GitHub OAuth redirects to GitHub.com for authorization
 - [ ] Successful GitHub auth creates new user account
 - [ ] Existing users can link GitHub to their account
 - [ ] Email from GitHub is used for account (if same email exists, accounts link)
+
+**Google:**
+- [ ] Google OAuth redirects to accounts.google.com for authorization
+- [ ] Google consent screen shows correct app name and permissions
+- [ ] Successful Google auth creates new user account
+- [ ] Existing users can link Google to their account
+- [ ] Email from Google is used for account (if same email exists, accounts link)
+- [ ] Google profile information is correctly imported
 
 #### Configuration Verification
 - [ ] Environment variables are read correctly from `.env`
@@ -247,8 +262,17 @@ Before closing issue #4, verify the following:
 - [ ] All 4 providers appear in Django admin at `/admin/socialaccount/socialapp/`
 
 #### Testing Verification
+
+**GitHub Tests:**
 - [ ] Unit tests for configuration pass: `uv run pytest wafer_space/users/tests/test_social_auth_github.py::TestGitHubProviderConfiguration -v`
-- [ ] Browser UI tests pass: `uv run pytest tests/browser/test_github_auth_flow.py -v`
+- [ ] GitHub browser UI tests pass: `uv run pytest tests/browser/test_github_auth_flow.py::TestGitHubAuthenticationFlow -v`
+
+**Google Tests:**
+- [ ] Unit tests for configuration pass: `uv run pytest wafer_space/users/tests/test_social_auth_google.py::TestGoogleProviderConfiguration -v`
+- [ ] Google browser UI tests pass: `uv run pytest tests/browser/test_github_auth_flow.py::TestGoogleAuthenticationFlow -v`
+
+**Overall Tests:**
+- [ ] Both provider configurations tested: `uv run pytest wafer_space/users/tests/test_social_auth_*.py::*Configuration -v`
 
 ### Production Deployment Notes
 
