@@ -243,17 +243,18 @@ make check-all       # Run all checks (lint, type-check, tests)
 
 6. **Hardcoded Passwords in Tests**:
    ```python
-   # ✅ Use noqa comments for test passwords
-   password = "testpass123"  # noqa: S105
-   user.set_password(password="test123")  # noqa: S106
+   # ✅ Use constants for test passwords instead of hardcoding
+   TEST_PASSWORD = "testpass123"
+   user.set_password(password=TEST_PASSWORD)
    ```
 
 #### Browser Test Specific Issues
 
 1. **Dynamic Imports in Fixtures**:
    ```python
-   # ✅ Sometimes necessary in fixtures
-   from selenium.webdriver.common.by import By  # noqa: PLC0415
+   # ✅ Move imports to top-level when possible
+   from selenium.webdriver.common.by import By
+   # Only use local imports when absolutely necessary to avoid circular dependencies
    ```
 
 2. **Path Operations**:
@@ -262,16 +263,16 @@ make check-all       # Run all checks (lint, type-check, tests)
    from pathlib import Path
    screenshot_path = Path("screenshots") / f"{name}.png"
 
-   # ✅ Or use noqa for os.path when needed
+   # ✅ Convert any os.path usage to pathlib
    import os
-   path = os.path.join(dir, filename)  # noqa: PTH118
+   path = Path(dir) / filename
    ```
 
 3. **Magic Numbers in Performance Tests**:
    ```python
-   # ✅ Use constants or noqa comments
-   PERFORMANCE_THRESHOLD = 5000  # noqa: PLR2004
-   assert load_time < PERFORMANCE_THRESHOLD
+   # ✅ Use descriptive constants
+   PERFORMANCE_THRESHOLD_MS = 5000  # Maximum acceptable load time in milliseconds
+   assert load_time < PERFORMANCE_THRESHOLD_MS
    ```
 
 ### Testing Strategy
@@ -371,7 +372,7 @@ make test-browser-parallel           # Parallel headless execution
 1. **Linting Failures**:
    - Run `make lint-fix` locally first
    - Check the specific ruff rule and fix accordingly
-   - Add `# noqa: RULE` comments only when necessary
+   - Fix the underlying issue rather than suppressing warnings
 
 2. **Test Import Errors**:
    - Ensure all imports are at top-level when possible
