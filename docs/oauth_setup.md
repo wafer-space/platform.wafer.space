@@ -55,7 +55,72 @@ The GitHub provider is configured to request the following scope:
 
 ## Google OAuth Setup
 
-*Coming soon - will be added when implementing Google provider*
+### Creating a Google OAuth Application
+
+1. **Navigate to Google Cloud Console**
+   - Go to https://console.cloud.google.com/
+   - Sign in with your Google account
+
+2. **Create or Select a Project**
+   - Click on the project dropdown at the top
+   - Either select an existing project or click "New Project"
+   - For new project: Enter project name (e.g., "wafer-space-dev")
+   - Click "Create"
+
+3. **Enable Required APIs**
+   - In the left sidebar, go to "APIs & Services" > "Library"
+   - Search for "Google+ API" and enable it
+   - Alternatively, search for "Identity and Access Management (IAM) API" and enable it
+
+4. **Configure OAuth Consent Screen**
+   - Go to "APIs & Services" > "OAuth consent screen"
+   - Choose "External" user type (unless you have Google Workspace)
+   - Fill in required fields:
+     - **App name**: `wafer.space Development` (or appropriate name)
+     - **User support email**: Your email address
+     - **Developer contact information**: Your email address
+   - Add scopes: `../auth/userinfo.email` and `../auth/userinfo.profile`
+   - Click "Save and Continue" through the steps
+
+5. **Create OAuth 2.0 Credentials**
+   - Go to "APIs & Services" > "Credentials"
+   - Click "Create Credentials" > "OAuth client ID"
+   - Choose "Web application" as application type
+   - Configure the application:
+     - **Name**: `wafer.space OAuth Client`
+     - **Authorized JavaScript origins**: `http://localhost:8000`
+     - **Authorized redirect URIs**: `http://localhost:8000/accounts/google/login/callback/`
+
+   For production:
+   - **Authorized JavaScript origins**: `https://your-domain.com`
+   - **Authorized redirect URIs**: `https://your-domain.com/accounts/google/login/callback/`
+
+6. **Obtain Credentials**
+   - Click "Create"
+   - Copy the **Client ID** and **Client Secret** from the popup
+   - Save both values securely
+
+### Environment Variables
+
+Add these to your `.env` file:
+
+```bash
+GOOGLE_CLIENT_ID=your_google_client_id_here.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your_google_client_secret_here
+```
+
+### Scopes
+
+The Google provider is configured to request the following scopes:
+- `profile` - Basic profile information
+- `email` - Email address
+
+### Important Notes
+
+- Google OAuth requires HTTPS in production
+- The consent screen must be configured before OAuth will work
+- Google has strict policies about redirect URI matching
+- Client IDs ending in `.apps.googleusercontent.com` are normal
 
 ## GitLab OAuth Setup
 
