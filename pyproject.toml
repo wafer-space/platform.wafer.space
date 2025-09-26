@@ -143,10 +143,14 @@ dev = [
     "psycopg[binary]==3.2.10",
     "pytest==8.4.2",
     "pytest-django==4.11.1",
+    "pytest-selenium==4.1.0",
     "pytest-sugar==1.1.1",
+    "pytest-xdist==3.6.1",
     "ruff==0.13.1",
+    "selenium==4.27.1",
     "sphinx==8.2.3",
     "sphinx-autobuild==2025.8.25",
+    "webdriver-manager==4.0.2",
     "werkzeug[watchdog]==3.1.3",
 ]
 

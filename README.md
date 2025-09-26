@@ -79,6 +79,34 @@ make test-coverage-html
 make test-failed
 ```
 
+### Browser Testing (Selenium)
+
+Browser tests use Selenium WebDriver to test the application's UI functionality across different browsers and viewports. Tests include homepage navigation, authentication flows, responsive design, and performance metrics.
+
+```bash
+# Run browser tests with Chrome (visible mode)
+make test-browser
+
+# Run browser tests in headless mode (for CI)
+make test-browser-headless
+
+# Run browser tests with Firefox
+make test-browser-firefox
+
+# Run browser tests in parallel (faster)
+make test-browser-parallel
+
+# Run browser tests with debugging (visible, verbose)
+make test-browser-debug
+
+# Run browser tests with different viewports
+make test-browser-mobile    # 375x667 (iPhone)
+make test-browser-tablet    # 768x1024 (iPad)
+
+# Clean browser test screenshots
+make test-browser-screenshots
+```
+
 ### Code Quality
 
 ```bash

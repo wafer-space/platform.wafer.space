@@ -146,6 +146,62 @@ test-marker: ## Run tests with specific marker (use MARKER=slow)
 	@echo "$(BLUE)Running tests marked with $(MARKER)...$(NC)"
 	@$(UV) run pytest -m $(MARKER)
 
+# ==================== Browser Testing ====================
+
+.PHONY: test-browser
+test-browser: ## Run all browser tests with Chrome in visible mode
+	@echo "$(BLUE)Running browser tests with Chrome (visible mode)...$(NC)"
+	@mkdir -p tests/browser/screenshots
+	@$(UV) run pytest tests/browser/ --browser=chrome -v
+
+.PHONY: test-browser-headless
+test-browser-headless: ## Run browser tests in headless mode
+	@echo "$(BLUE)Running browser tests in headless mode...$(NC)"
+	@mkdir -p tests/browser/screenshots
+	@$(UV) run pytest tests/browser/ --browser=chrome --headless -v
+
+.PHONY: test-browser-firefox
+test-browser-firefox: ## Run browser tests with Firefox
+	@echo "$(BLUE)Running browser tests with Firefox...$(NC)"
+	@mkdir -p tests/browser/screenshots
+	@$(UV) run pytest tests/browser/ --browser=firefox -v
+
+.PHONY: test-browser-firefox-headless
+test-browser-firefox-headless: ## Run browser tests with Firefox in headless mode
+	@echo "$(BLUE)Running browser tests with Firefox (headless)...$(NC)"
+	@mkdir -p tests/browser/screenshots
+	@$(UV) run pytest tests/browser/ --browser=firefox --headless -v
+
+.PHONY: test-browser-parallel
+test-browser-parallel: ## Run browser tests in parallel
+	@echo "$(BLUE)Running browser tests in parallel...$(NC)"
+	@mkdir -p tests/browser/screenshots
+	@$(UV) run pytest tests/browser/ --browser=chrome --headless -n auto -v
+
+.PHONY: test-browser-debug
+test-browser-debug: ## Run browser tests with debugging (visible, slower)
+	@echo "$(BLUE)Running browser tests in debug mode...$(NC)"
+	@mkdir -p tests/browser/screenshots
+	@$(UV) run pytest tests/browser/ --browser=chrome -v -s --tb=short
+
+.PHONY: test-browser-mobile
+test-browser-mobile: ## Run browser tests with mobile viewport
+	@echo "$(BLUE)Running browser tests with mobile viewport...$(NC)"
+	@mkdir -p tests/browser/screenshots
+	@$(UV) run pytest tests/browser/ --browser=chrome --headless --window-size=375,667 -v
+
+.PHONY: test-browser-tablet
+test-browser-tablet: ## Run browser tests with tablet viewport
+	@echo "$(BLUE)Running browser tests with tablet viewport...$(NC)"
+	@mkdir -p tests/browser/screenshots
+	@$(UV) run pytest tests/browser/ --browser=chrome --headless --window-size=768,1024 -v
+
+.PHONY: test-browser-screenshots
+test-browser-screenshots: ## Clean browser test screenshots
+	@echo "$(BLUE)Cleaning browser test screenshots...$(NC)"
+	@rm -rf tests/browser/screenshots/*
+	@echo "$(GREEN)✓ Screenshots cleaned$(NC)"
+
 # ==================== Code Quality ====================
 
 .PHONY: lint
