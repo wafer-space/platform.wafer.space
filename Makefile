@@ -181,7 +181,7 @@ check-all: lint type-check test ## Run all checks (lint, type-check, tests)
 .PHONY: runserver
 runserver: ## Run Django development server
 	@echo "$(BLUE)Starting development server...$(NC)"
-	@$(MANAGE) runserver
+	@$(MANAGE) runserver 8081
 
 .PHONY: shell
 shell: ## Open Django shell
