@@ -221,10 +221,12 @@ class ShuttleSlot(models.Model):
     def reserve(self, project, user):
         """Reserve this slot for a project."""
         if self.status != self.Status.AVAILABLE:
-            raise ValueError("Slot is not available for reservation")
+            msg = "Slot is not available for reservation"
+            raise ValueError(msg)
 
         if not self.shuttle.can_accept_projects():
-            raise ValueError("Shuttle is not accepting new projects")
+            msg = "Shuttle is not accepting new projects"
+            raise ValueError(msg)
 
         self.project = project
         self.reserved_by = user
@@ -242,7 +244,8 @@ class ShuttleSlot(models.Model):
     def cancel_reservation(self):
         """Cancel the reservation for this slot."""
         if self.status != self.Status.RESERVED:
-            raise ValueError("Slot is not currently reserved")
+            msg = "Slot is not currently reserved"
+            raise ValueError(msg)
 
         # Update project status back to manufacturable
         if self.project:
