@@ -2,11 +2,12 @@
 Background tasks for project processing.
 """
 
+import contextlib
 import hashlib
-import os
 import tempfile
 import time
 from datetime import timedelta
+from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import Request
 from urllib.request import urlopen
@@ -19,6 +20,51 @@ from django_celery_results.models import TaskResult
 from .models import ManufacturabilityCheck
 from .models import Project
 from .models import ProjectFile
+
+
+# Helper functions for file download
+def _setup_temp_directory() -> Path:
+    """Create and return temporary directory for downloads."""
+    temp_dir = Path(tempfile.gettempdir()) / "wafer_space_downloads"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    return temp_dir
+
+
+def _extract_filename_from_url(url: str) -> str:
+    """Extract filename from URL or return default."""
+    parsed_url = urlparse(url)
+    return Path(parsed_url.path).name or "downloaded_file"
+
+
+def _calculate_file_hashes(content: bytes) -> tuple[str, str]:
+    """Calculate MD5 and SHA1 hashes for file content."""
+    md5_hash = hashlib.md5(content).hexdigest()
+    sha1_hash = hashlib.sha1(content).hexdigest()
+    return md5_hash, sha1_hash
+
+
+def _verify_file_hashes(project_file, md5_hash: str, sha1_hash: str) -> tuple[bool, list[str]]:
+    """Verify file hashes against expected values."""
+    verified = True
+    errors = []
+
+    if project_file.expected_hash_md5:
+        if md5_hash.lower() != project_file.expected_hash_md5.lower():
+            verified = False
+            errors.append(
+                f"MD5 mismatch: expected {project_file.expected_hash_md5}, "
+                f"got {md5_hash}",
+            )
+
+    if project_file.expected_hash_sha1:
+        if sha1_hash.lower() != project_file.expected_hash_sha1.lower():
+            verified = False
+            errors.append(
+                f"SHA1 mismatch: expected {project_file.expected_hash_sha1}, "
+                f"got {sha1_hash}",
+            )
+
+    return verified, errors
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
@@ -153,6 +199,42 @@ def cleanup_old_task_results():
     }
 
 
+def _download_file_content(project_file) -> bytes:
+    """Download file content from URL."""
+    request = Request(project_file.source_url)
+    request.add_header("User-Agent", "wafer.space/1.0")
+
+    with urlopen(request) as response:  # noqa: S310
+        # Get content type and size if available
+        content_type = response.headers.get("Content-Type", "")
+        if content_type:
+            project_file.content_type = content_type
+
+        return response.read()
+
+
+def _save_file_to_django(project_file, file_content: bytes, temp_dir: Path) -> None:
+    """Save downloaded content to Django file field."""
+    # Create temporary file to store content
+    temp_filename = f"{project_file.id}_{project_file.original_filename}"
+    temp_path = temp_dir / temp_filename
+
+    # Write content to temp file
+    temp_path.write_bytes(file_content)
+
+    # Create Django file from the downloaded content
+    with temp_path.open("rb") as temp_file:
+        django_file = ContentFile(temp_file.read())
+        django_file.name = project_file.original_filename
+        project_file.file.save(
+            project_file.original_filename, django_file, save=False,
+        )
+
+    # Clean up temp file
+    with contextlib.suppress(OSError):
+        temp_path.unlink()
+
+
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def download_project_file(self, file_id):
     """
@@ -174,83 +256,34 @@ def download_project_file(self, file_id):
                 "message": "No source URL provided for file download",
             }
 
-        # Create temp directory if it doesn't exist
-        temp_dir = os.path.join(tempfile.gettempdir(), "wafer_space_downloads")
-        os.makedirs(temp_dir, exist_ok=True)
-
-        # Parse URL to get filename
-        parsed_url = urlparse(project_file.source_url)
+        # Set up filename if not already provided
         if not project_file.original_filename:
-            # Extract filename from URL if not already set
-            filename = os.path.basename(parsed_url.path) or "downloaded_file"
+            filename = _extract_filename_from_url(project_file.source_url)
             project_file.original_filename = filename
             project_file.save()
 
-        # Create request with proper headers
-        request = Request(project_file.source_url)
-        request.add_header("User-Agent", "wafer.space/1.0")
+        # Set up temporary directory
+        temp_dir = _setup_temp_directory()
 
-        # Download the file
-        with urlopen(request) as response:
-            # Get content type and size if available
-            content_type = response.headers.get("Content-Type", "")
-            if content_type:
-                project_file.content_type = content_type
+        # Download file content
+        file_content = _download_file_content(project_file)
 
-            # Read file content
-            file_content = response.read()
-            project_file.file_size = len(file_content)
+        # Save to Django file field
+        _save_file_to_django(project_file, file_content, temp_dir)
 
-        # Create temporary file to store content
-        temp_filename = f"{project_file.id}_{project_file.original_filename}"
-        temp_path = os.path.join(temp_dir, temp_filename)
+        # Set file size
+        project_file.file_size = len(file_content)
 
-        with open(temp_path, "wb") as temp_file:
-            temp_file.write(file_content)
+        # Calculate and verify file hashes
+        md5_hash, sha1_hash = _calculate_file_hashes(file_content)
+        project_file.hash_md5 = md5_hash
+        project_file.hash_sha1 = sha1_hash
 
-        # Create Django file from the downloaded content
-        with open(temp_path, "rb") as temp_file:
-            django_file = ContentFile(temp_file.read())
-            django_file.name = project_file.original_filename
-            project_file.file.save(
-                project_file.original_filename, django_file, save=False,
-            )
-
-        # Calculate file hashes
-        project_file.hash_md5 = hashlib.md5(file_content).hexdigest()
-        project_file.hash_sha1 = hashlib.sha1(file_content).hexdigest()
-
-        # Verify hashes if expected values were provided
-        hash_verified = True
-        verification_errors = []
-
-        if project_file.expected_hash_md5:
-            if project_file.hash_md5.lower() != project_file.expected_hash_md5.lower():
-                hash_verified = False
-                verification_errors.append(
-                    f"MD5 mismatch: expected {project_file.expected_hash_md5}, "
-                    f"got {project_file.hash_md5}",
-                )
-
-        if project_file.expected_hash_sha1:
-            if (
-                project_file.hash_sha1.lower()
-                != project_file.expected_hash_sha1.lower()
-            ):
-                hash_verified = False
-                verification_errors.append(
-                    f"SHA1 mismatch: expected {project_file.expected_hash_sha1}, "
-                    f"got {project_file.hash_sha1}",
-                )
-
+        hash_verified, verification_errors = _verify_file_hashes(
+            project_file, md5_hash, sha1_hash,
+        )
         project_file.hash_verified = hash_verified
         project_file.mark_download_complete()
-
-        # Clean up temp file
-        try:
-            os.remove(temp_path)
-        except OSError:
-            pass
 
         return {
             "status": "completed",
@@ -269,7 +302,7 @@ def download_project_file(self, file_id):
             "message": f"ProjectFile with id {file_id} not found",
         }
 
-    except Exception as exc:
+    except (OSError, IOError, ValueError) as exc:
         # Handle task retry logic
         if self.request.retries < self.max_retries:
             # Update file with retry info
@@ -283,7 +316,7 @@ def download_project_file(self, file_id):
                 pass
 
             # Retry the task
-            raise self.retry(exc=exc)
+            raise self.retry(exc=exc) from exc
         # Max retries reached, mark as failed
         try:
             project_file = ProjectFile.objects.get(id=file_id)
