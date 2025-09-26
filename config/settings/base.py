@@ -299,18 +299,30 @@ SOCIALACCOUNT_FORMS = {"signup": "wafer_space.users.forms.UserSocialSignupForm"}
 # ------------------------------------------------------------------------------
 SOCIALACCOUNT_PROVIDERS = {
     "github": {
+        "APP": {
+            "client_id": env("GITHUB_CLIENT_ID", default=""),
+            "secret": env("GITHUB_CLIENT_SECRET", default=""),
+        },
         "SCOPE": [
             "user:email",
         ],
         "VERIFIED_EMAIL": True,
     },
     "gitlab": {
+        "APP": {
+            "client_id": env("GITLAB_CLIENT_ID", default=""),
+            "secret": env("GITLAB_CLIENT_SECRET", default=""),
+        },
         "SCOPE": [
             "read_user",
         ],
         "VERIFIED_EMAIL": True,
     },
     "google": {
+        "APP": {
+            "client_id": env("GOOGLE_CLIENT_ID", default=""),
+            "secret": env("GOOGLE_CLIENT_SECRET", default=""),
+        },
         "SCOPE": [
             "profile",
             "email",
@@ -321,6 +333,10 @@ SOCIALACCOUNT_PROVIDERS = {
         "VERIFIED_EMAIL": True,
     },
     "linkedin_oauth2": {
+        "APP": {
+            "client_id": env("LINKEDIN_CLIENT_ID", default=""),
+            "secret": env("LINKEDIN_CLIENT_SECRET", default=""),
+        },
         "SCOPE": [
             "r_liteprofile",
             "r_emailaddress",
