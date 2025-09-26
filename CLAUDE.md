@@ -497,4 +497,72 @@ make migrate
    ```
 
 This comprehensive guide ensures consistent code quality and prevents CI failures. Always refer to this section when encountering build issues or implementing new features.
-- Only run the headless versions of the browser tests when testing.
+
+## Code Quality Standards
+
+### Linting Error Handling
+- **NEVER add `# noqa` comments without explicit user permission**
+- Always fix the underlying issue instead of suppressing warnings
+- Only use noqa when the user specifically requests it or approves it
+- Prefer proper code fixes over suppression directives
+
+### Code Quality Prevention Guidelines
+
+#### Write Clean Code from the Start
+- **Functions must be simple and focused** - Keep complexity (C901) under 10
+- **Limit branches and statements** - No more than 12 branches (PLR0912) or 50 statements (PLR0915)
+- **Use modern Python patterns** - Always use `pathlib.Path` instead of `os.path`
+- **Handle exceptions specifically** - Never use broad `except Exception:` (BLE001)
+- **Use secure practices** - Be mindful of URL handling (S310) and hash functions (S324)
+- **Follow proper exception chaining** - Use `raise ... from exc` (B904)
+
+#### Function Design Principles
+- **Single Responsibility**: Each function should do one thing well
+- **Avoid deep nesting**: Use early returns and guard clauses
+- **Extract complex logic**: Break large functions into smaller helper functions
+- **Use context managers**: Prefer `contextlib.suppress()` over try/except/pass
+
+#### Modern Python Standards
+```python
+# ✅ Good: Use pathlib
+from pathlib import Path
+temp_dir = Path(tempfile.gettempdir()) / "wafer_space_downloads"
+temp_dir.mkdir(parents=True, exist_ok=True)
+
+# ❌ Bad: Use os.path
+import os
+temp_dir = os.path.join(tempfile.gettempdir(), "wafer_space_downloads")
+os.makedirs(temp_dir, exist_ok=True)
+
+# ✅ Good: Specific exceptions
+try:
+    operation()
+except (IOError, OSError) as exc:
+    raise ProcessingError("Operation failed") from exc
+
+# ❌ Bad: Broad exceptions
+try:
+    operation()
+except Exception:
+    return False
+
+# ✅ Good: Context managers for cleanup
+with contextlib.suppress(OSError):
+    path.unlink()
+
+# ❌ Bad: Manual exception handling
+try:
+    os.remove(path)
+except OSError:
+    pass
+```
+
+#### Complexity Management
+- **Break down complex functions** into smaller, testable units
+- **Use early returns** to reduce nesting levels
+- **Extract configuration** and constants to module level
+- **Limit function parameters** - prefer configuration objects for complex functions
+- **Use type hints** for better code clarity and tooling support
+
+### Testing Requirements
+- Only run the headless versions of the browser tests when testing
