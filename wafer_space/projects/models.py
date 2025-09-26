@@ -191,13 +191,13 @@ class ProjectFile(models.Model):
             self.file.seek(0)
             content = self.file.read()
 
-            self.hash_md5 = hashlib.md5(content).hexdigest()
-            self.hash_sha1 = hashlib.sha1(content).hexdigest()
+            self.hash_md5 = hashlib.md5(content, usedforsecurity=False).hexdigest()
+            self.hash_sha1 = hashlib.sha1(content, usedforsecurity=False).hexdigest()
             self.file_size = len(content)
 
             self.file.seek(0)  # Reset file pointer
             self.save()
-        except (IOError, OSError):
+        except OSError:
             return False
         else:
             return True

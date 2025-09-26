@@ -37,13 +37,20 @@ def _extract_filename_from_url(url: str) -> str:
 
 
 def _calculate_file_hashes(content: bytes) -> tuple[str, str]:
-    """Calculate MD5 and SHA1 hashes for file content."""
-    md5_hash = hashlib.md5(content).hexdigest()
-    sha1_hash = hashlib.sha1(content).hexdigest()
+    """Calculate MD5 and SHA1 hashes for file content.
+
+    Note: MD5 and SHA1 are used here for file integrity verification only,
+    not for cryptographic security purposes. These match industry standard
+    hash algorithms commonly used for file verification in manufacturing.
+    """
+    md5_hash = hashlib.md5(content, usedforsecurity=False).hexdigest()
+    sha1_hash = hashlib.sha1(content, usedforsecurity=False).hexdigest()
     return md5_hash, sha1_hash
 
 
-def _verify_file_hashes(project_file, md5_hash: str, sha1_hash: str) -> tuple[bool, list[str]]:
+def _verify_file_hashes(
+    project_file, md5_hash: str, sha1_hash: str,
+) -> tuple[bool, list[str]]:
     """Verify file hashes against expected values."""
     verified = True
     errors = []
@@ -201,10 +208,16 @@ def cleanup_old_task_results():
 
 def _download_file_content(project_file) -> bytes:
     """Download file content from URL."""
+    # Validate URL scheme for security
+    parsed_url = urlparse(project_file.source_url)
+    if parsed_url.scheme not in ("http", "https"):
+        msg = f"Unsupported URL scheme: {parsed_url.scheme}"
+        raise ValueError(msg)
+
     request = Request(project_file.source_url)
     request.add_header("User-Agent", "wafer.space/1.0")
 
-    with urlopen(request) as response:  # noqa: S310
+    with urlopen(request) as response:
         # Get content type and size if available
         content_type = response.headers.get("Content-Type", "")
         if content_type:
@@ -302,7 +315,7 @@ def download_project_file(self, file_id):
             "message": f"ProjectFile with id {file_id} not found",
         }
 
-    except (OSError, IOError, ValueError) as exc:
+    except (OSError, ValueError) as exc:
         # Handle task retry logic
         if self.request.retries < self.max_retries:
             # Update file with retry info
