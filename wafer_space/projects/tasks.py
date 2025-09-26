@@ -206,8 +206,8 @@ def cleanup_old_task_results():
     }
 
 
-def _download_file_content(project_file) -> bytes:
-    """Download file content from URL.
+def _safe_urlopen(url: str, headers: dict | None = None) -> tuple[bytes, dict]:
+    """Safely open URL with security validation.
 
     Security Note:
     This function implements strict URL scheme validation to prevent security
@@ -219,23 +219,47 @@ def _download_file_content(project_file) -> bytes:
 
     The validation occurs before any network operations to ensure no dangerous
     URLs can reach the urllib.request.Request() or urlopen() calls.
+
+    Args:
+        url: URL to fetch (must be http or https)
+        headers: Optional headers to add to request
+
+    Returns:
+        Tuple of (response content as bytes, response headers dict)
+
+    Raises:
+        ValueError: If URL scheme is not http or https
     """
     # SECURITY: Validate URL scheme for security - only allow http/https
-    parsed_url = urlparse(project_file.source_url)
+    parsed_url = urlparse(url)
     if parsed_url.scheme.lower() not in ("http", "https"):
         msg = f"Unsupported URL scheme: {parsed_url.scheme.lower()}"
         raise ValueError(msg)
 
-    request = Request(project_file.source_url)  # noqa: S310 - URL scheme validated above to only allow http/https
+    request = Request(url)  # noqa: S310 - URL scheme validated above to only allow http/https
+
+    # Add default user agent
     request.add_header("User-Agent", "wafer.space/1.0")
 
-    with urlopen(request) as response:  # noqa: S310
-        # Get content type and size if available
-        content_type = response.headers.get("Content-Type", "")
-        if content_type:
-            project_file.content_type = content_type
+    # Add any additional headers
+    if headers:
+        for key, value in headers.items():
+            request.add_header(key, value)
 
-        return response.read()
+    with urlopen(request) as response:  # noqa: S310 - URL scheme validated above to only allow http/https
+        return response.read(), dict(response.headers)
+
+
+def _download_file_content(project_file) -> bytes:
+    """Download file content from URL using secure URL validation."""
+    content, headers = _safe_urlopen(project_file.source_url)
+
+    # Set content type if available
+    content_type = headers.get("Content-Type", "")
+    if content_type:
+        project_file.content_type = content_type
+
+    return content
 
 
 def _save_file_to_django(project_file, file_content: bytes, temp_dir: Path) -> None:
