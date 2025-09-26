@@ -197,9 +197,10 @@ class ProjectFile(models.Model):
 
             self.file.seek(0)  # Reset file pointer
             self.save()
-            return True
-        except Exception:
+        except (IOError, OSError):
             return False
+        else:
+            return True
 
     def verify_hash(self):
         """Verify downloaded file hash against user-provided expected values."""
@@ -214,14 +215,16 @@ class ProjectFile(models.Model):
             if self.hash_md5.lower() != self.expected_hash_md5.lower():
                 verified = False
                 errors.append(
-                    f"MD5 mismatch: expected {self.expected_hash_md5}, got {self.hash_md5}",
+                    f"MD5 mismatch: expected {self.expected_hash_md5}, "
+                    f"got {self.hash_md5}",
                 )
 
         if self.expected_hash_sha1:
             if self.hash_sha1.lower() != self.expected_hash_sha1.lower():
                 verified = False
                 errors.append(
-                    f"SHA1 mismatch: expected {self.expected_hash_sha1}, got {self.hash_sha1}",
+                    f"SHA1 mismatch: expected {self.expected_hash_sha1}, "
+                    f"got {self.hash_sha1}",
                 )
 
         self.hash_verified = verified
