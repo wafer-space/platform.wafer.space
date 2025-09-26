@@ -289,3 +289,6 @@ wafer.space - Django Website for User Management.pdf
 
 # Claude Code configuration (user-specific)
 .claude/
+
+# Browser test screenshots (auto-generated)
+tests/browser/screenshots/
