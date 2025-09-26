@@ -142,3 +142,4 @@ This is a Django 5.2+ application for wafer.space low cost silicon manufacturing
 - `config/settings/base.py`: Core Django settings shared across environments
 - `config/settings/local.py`: Development-specific settings with debug toolbar
 - `config/urls.py`: Main URL configuration
+- Never delete a test or reduce test functionality without an explicit request from the user.
