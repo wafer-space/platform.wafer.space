@@ -315,6 +315,7 @@ SOCIALACCOUNT_PROVIDERS = {
         },
         "SCOPE": [
             "read_user",
+            "email",
         ],
         "VERIFIED_EMAIL": True,
     },

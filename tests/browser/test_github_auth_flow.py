@@ -25,7 +25,7 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
         wait.until(
-            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
         )
 
         # Check for GitHub button
@@ -51,7 +51,7 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
         wait.until(
-            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
         )
 
         # Check for GitHub button
@@ -69,7 +69,7 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
         wait.until(
-            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
         )
 
         # Find and get GitHub button href
@@ -93,7 +93,7 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
         wait.until(
-            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
         )
 
         # Check for all provider buttons
@@ -113,7 +113,7 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
         wait.until(
-            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
         )
 
         # Check for social providers section
@@ -132,7 +132,7 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
         wait.until(
-            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
         )
 
         # Check for login form
@@ -165,7 +165,7 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
         wait.until(
-            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
         )
 
         # Check that GitHub button is still visible and clickable
@@ -192,7 +192,7 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
         wait.until(
-            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
         )
 
         # Check for signup link
@@ -225,7 +225,7 @@ class TestGoogleAuthenticationFlow(BaseBrowserTest):
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
         wait.until(
-            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
         )
 
         # Check for Google button
@@ -251,7 +251,7 @@ class TestGoogleAuthenticationFlow(BaseBrowserTest):
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
         wait.until(
-            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
         )
 
         # Check for Google button
@@ -269,7 +269,7 @@ class TestGoogleAuthenticationFlow(BaseBrowserTest):
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
         wait.until(
-            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
         )
 
         # Find Google button and get href
@@ -292,7 +292,7 @@ class TestGoogleAuthenticationFlow(BaseBrowserTest):
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
         wait.until(
-            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
         )
 
         # Check for both provider buttons
@@ -316,7 +316,7 @@ class TestGoogleAuthenticationFlow(BaseBrowserTest):
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
         wait.until(
-            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
         )
 
         # Get all social provider buttons
@@ -352,7 +352,7 @@ class TestGoogleAuthenticationFlow(BaseBrowserTest):
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
         wait.until(
-            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
         )
 
         # Check that Google button is still visible and clickable

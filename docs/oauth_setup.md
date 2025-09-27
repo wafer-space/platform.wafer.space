@@ -124,7 +124,55 @@ The Google provider is configured to request the following scopes:
 
 ## GitLab OAuth Setup
 
-*Coming soon - will be added when implementing GitLab provider*
+### Creating a GitLab OAuth Application
+
+1. **Navigate to GitLab Applications**
+   - Go to https://gitlab.com/-/profile/applications (for GitLab.com)
+   - Or go to your self-hosted GitLab instance: `https://your-gitlab-instance.com/-/profile/applications`
+   - Sign in with your GitLab account
+
+2. **Create New Application**
+   - Click "Add new application"
+   - Fill in the application details:
+     - **Name**: `wafer.space Development` (or appropriate name)
+     - **Redirect URI**: `http://localhost:8000/accounts/gitlab/login/callback/`
+     - **Scopes**: Select the following checkboxes:
+       - `read_user` - Read access to user profile information
+       - `email` - Read access to user email addresses
+
+   For production:
+   - **Redirect URI**: `https://your-domain.com/accounts/gitlab/login/callback/`
+
+3. **Submit the Application**
+   - Click "Save application"
+   - You'll be redirected to a page showing your application details
+
+4. **Obtain Credentials**
+   - **Application ID**: Displayed on the application page (public)
+   - **Secret**: Displayed on the application page (keep this secret!)
+   - Save both values securely
+
+### Environment Variables
+
+Add these to your `.env` file:
+
+```bash
+GITLAB_CLIENT_ID=your_gitlab_application_id_here
+GITLAB_CLIENT_SECRET=your_gitlab_application_secret_here
+```
+
+### Scopes
+
+The GitLab provider is configured to request the following scopes:
+- `read_user` - Read access to user profile information
+- `email` - Read access to user email addresses
+
+### Important Notes
+
+- GitLab OAuth works with both GitLab.com and self-hosted GitLab instances
+- For self-hosted GitLab, you may need to configure the provider URL in Django settings
+- GitLab requires exact redirect URI matching
+- The "email" scope is essential for account linking functionality
 
 ## LinkedIn OAuth Setup
 

@@ -3,12 +3,20 @@
 import pytest
 from allauth.socialaccount.models import SocialAccount
 from allauth.socialaccount.models import SocialApp
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.sites.models import Site
 from django.test import Client
 from django.test import TestCase
 from django.test import override_settings
 from django.urls import reverse
+
+# Test constants
+TEST_PASSWORD = "testpass123"  # noqa: S105
+HTTP_OK = 200
+HTTP_REDIRECT = 302
+HTTP_BAD_REQUEST = 400
+HTTP_FORBIDDEN = 403
 
 User = get_user_model()
 
@@ -32,7 +40,8 @@ class TestGitHubAuthenticationFlow(TestCase):
             provider="github",
             name="GitHub Test App",
             client_id="test_github_client_id",
-            secret="test_github_client_secret",
+            # Test OAuth secret for GitHub provider testing only
+            secret="test_github_client_secret",  # noqa: S106
         )
         self.github_app.sites.add(self.site)
 
@@ -44,7 +53,7 @@ class TestGitHubAuthenticationFlow(TestCase):
     def test_login_page_shows_github_button(self):
         """Test that login page displays GitHub authentication option."""
         response = self.client.get(self.login_url)
-        assert response.status_code == 200
+        assert response.status_code == HTTP_OK
         # Check for GitHub provider in context or content
         assert b"GitHub" in response.content or b"github" in response.content
 
@@ -52,13 +61,13 @@ class TestGitHubAuthenticationFlow(TestCase):
         """Test that GitHub login URL is accessible."""
         response = self.client.get(self.github_login_url)
         # Should redirect to GitHub OAuth
-        assert response.status_code == 302
+        assert response.status_code == HTTP_REDIRECT
         assert "github.com/login/oauth" in response.url
 
     def test_github_oauth_redirect_contains_correct_params(self):
         """Test that GitHub OAuth redirect has correct parameters."""
         response = self.client.get(self.github_login_url)
-        assert response.status_code == 302
+        assert response.status_code == HTTP_REDIRECT
         redirect_url = response.url
 
         # Check for required OAuth parameters
@@ -81,7 +90,6 @@ class TestGitHubAuthenticationFlow(TestCase):
 
         # Simulate a successful OAuth callback (would be mocked in real test)
         test_email = "github_user@example.com"
-        test_username = "github_test_user"
 
         # Check user doesn't exist yet
         assert not User.objects.filter(email=test_email).exists()
@@ -95,11 +103,11 @@ class TestGitHubAuthenticationFlow(TestCase):
         user = User.objects.create_user(
             username="existing_user",
             email="existing@example.com",
-            password="testpass123",
+            password=TEST_PASSWORD,
         )
 
         # Login as the user
-        self.client.login(username="existing_user", password="testpass123")
+        self.client.login(username="existing_user", password=TEST_PASSWORD)
 
         # Check no social account exists yet
         assert not SocialAccount.objects.filter(user=user, provider="github").exists()
@@ -114,15 +122,13 @@ class TestGitHubAuthenticationFlow(TestCase):
         """Test that GitHub auth with existing email links to existing user."""
         # Create a user with an email
         existing_email = "existing@example.com"
-        user = User.objects.create_user(
+        User.objects.create_user(
             username="existing_user",
             email=existing_email,
-            password="testpass123",
+            password=TEST_PASSWORD,
         )
 
         # Verify settings allow auto-linking
-        from django.conf import settings
-
         assert settings.SOCIALACCOUNT_AUTO_SIGNUP is True
 
         # In a real test, we would mock GitHub OAuth returning
@@ -143,7 +149,7 @@ class TestGitHubAuthenticationSecurity(TestCase):
         response = self.client.get(github_login_url)
 
         # Check that state parameter is included (CSRF protection)
-        assert response.status_code == 302
+        assert response.status_code == HTTP_REDIRECT
         assert "state=" in response.url
 
     def test_github_callback_validates_state(self):
@@ -158,8 +164,6 @@ class TestGitHubAuthenticationSecurity(TestCase):
 
     def test_github_requires_verified_email(self):
         """Test that GitHub provider requires verified email."""
-        from django.conf import settings
-
         github_config = settings.SOCIALACCOUNT_PROVIDERS.get("github", {})
 
         # Verify email verification is required
@@ -182,7 +186,7 @@ class TestGitHubAuthenticationErrors(TestCase):
         response = self.client.get(callback_url, {"error": "access_denied"})
 
         # Should redirect to login with error message
-        assert response.status_code == 302
+        assert response.status_code == HTTP_REDIRECT
         # Would check for error message in session/messages
 
     def test_github_auth_with_invalid_token(self):
@@ -213,14 +217,10 @@ class TestGitHubProviderConfiguration(TestCase):
 
     def test_github_provider_is_installed(self):
         """Test that GitHub provider is in INSTALLED_APPS."""
-        from django.conf import settings
-
         assert "allauth.socialaccount.providers.github" in settings.INSTALLED_APPS
 
     def test_github_provider_scope_configuration(self):
         """Test that GitHub provider requests correct scopes."""
-        from django.conf import settings
-
         github_config = settings.SOCIALACCOUNT_PROVIDERS.get("github", {})
 
         # Check required scope is configured
