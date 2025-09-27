@@ -1,11 +1,63 @@
 """Browser tests for GitHub and Google OAuth authentication flows."""
 
 import pytest
+from allauth.socialaccount.models import SocialApp
+from django.contrib.sites.models import Site
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions
 from selenium.webdriver.support.ui import WebDriverWait
 
 from tests.browser.base import BaseBrowserTest
+
+
+@pytest.fixture
+def social_apps():
+    """Create SocialApp objects for all OAuth providers so buttons appear in UI."""
+    # Clean up any existing apps to avoid conflicts
+    SocialApp.objects.all().delete()
+
+    # Get the current site
+    site = Site.objects.get_current()
+
+    # Create test SocialApp objects for all providers
+    github_app = SocialApp.objects.create(
+        provider="github",
+        name="GitHub Test App",
+        client_id="test_github_client_id",
+        secret="github_test_secret",  # noqa: S106
+    )
+    github_app.sites.add(site)
+
+    google_app = SocialApp.objects.create(
+        provider="google",
+        name="Google Test App",
+        client_id="test_google_client_id.apps.googleusercontent.com",
+        secret="google_test_secret",  # noqa: S106
+    )
+    google_app.sites.add(site)
+
+    gitlab_app = SocialApp.objects.create(
+        provider="gitlab",
+        name="GitLab Test App",
+        client_id="test_gitlab_application_id",
+        secret="gitlab_test_secret",  # noqa: S106
+    )
+    gitlab_app.sites.add(site)
+
+    linkedin_app = SocialApp.objects.create(
+        provider="linkedin_oauth2",
+        name="LinkedIn Test App",
+        client_id="test_linkedin_client_id",
+        secret="linkedin_test_secret",  # noqa: S106
+    )
+    linkedin_app.sites.add(site)
+
+    return {
+        "github": github_app,
+        "google": google_app,
+        "gitlab": gitlab_app,
+        "linkedin": linkedin_app,
+    }
 
 
 @pytest.mark.django_db
@@ -14,8 +66,47 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
 
     @pytest.fixture(autouse=True)
     def setup(self, live_server):
-        """Set up test fixtures."""
+        """Set up test fixtures and create SocialApp objects for OAuth buttons to appear."""
         self.live_server_url = live_server.url
+
+        # Clean up any existing apps to avoid conflicts
+        SocialApp.objects.all().delete()
+
+        # Get the current site
+        site = Site.objects.get_current()
+
+        # Create test SocialApp objects for all providers so buttons appear in UI
+        self.github_app = SocialApp.objects.create(
+            provider="github",
+            name="GitHub Test App",
+            client_id="test_github_client_id",
+            secret="github_test_secret",  # noqa: S106
+        )
+        self.github_app.sites.add(site)
+
+        self.google_app = SocialApp.objects.create(
+            provider="google",
+            name="Google Test App",
+            client_id="test_google_client_id.apps.googleusercontent.com",
+            secret="google_test_secret",  # noqa: S106
+        )
+        self.google_app.sites.add(site)
+
+        self.gitlab_app = SocialApp.objects.create(
+            provider="gitlab",
+            name="GitLab Test App",
+            client_id="test_gitlab_application_id",
+            secret="gitlab_test_secret",  # noqa: S106
+        )
+        self.gitlab_app.sites.add(site)
+
+        self.linkedin_app = SocialApp.objects.create(
+            provider="linkedin_oauth2",
+            name="LinkedIn Test App",
+            client_id="test_linkedin_client_id",
+            secret="linkedin_test_secret",  # noqa: S106
+        )
+        self.linkedin_app.sites.add(site)
 
     def test_login_page_displays_github_button(self, driver):
         """Test that login page shows GitHub authentication button."""
@@ -214,8 +305,47 @@ class TestGoogleAuthenticationFlow(BaseBrowserTest):
 
     @pytest.fixture(autouse=True)
     def setup(self, live_server):
-        """Set up test fixtures."""
+        """Set up test fixtures and create SocialApp objects for OAuth buttons to appear."""
         self.live_server_url = live_server.url
+
+        # Clean up any existing apps to avoid conflicts
+        SocialApp.objects.all().delete()
+
+        # Get the current site
+        site = Site.objects.get_current()
+
+        # Create test SocialApp objects for all providers so buttons appear in UI
+        self.github_app = SocialApp.objects.create(
+            provider="github",
+            name="GitHub Test App",
+            client_id="test_github_client_id",
+            secret="github_test_secret",  # noqa: S106
+        )
+        self.github_app.sites.add(site)
+
+        self.google_app = SocialApp.objects.create(
+            provider="google",
+            name="Google Test App",
+            client_id="test_google_client_id.apps.googleusercontent.com",
+            secret="google_test_secret",  # noqa: S106
+        )
+        self.google_app.sites.add(site)
+
+        self.gitlab_app = SocialApp.objects.create(
+            provider="gitlab",
+            name="GitLab Test App",
+            client_id="test_gitlab_application_id",
+            secret="gitlab_test_secret",  # noqa: S106
+        )
+        self.gitlab_app.sites.add(site)
+
+        self.linkedin_app = SocialApp.objects.create(
+            provider="linkedin_oauth2",
+            name="LinkedIn Test App",
+            client_id="test_linkedin_client_id",
+            secret="linkedin_test_secret",  # noqa: S106
+        )
+        self.linkedin_app.sites.add(site)
 
     def test_login_page_displays_google_button(self, driver):
         """Test that login page shows Google authentication button."""
@@ -375,8 +505,47 @@ class TestGitLabAuthenticationFlow(BaseBrowserTest):
 
     @pytest.fixture(autouse=True)
     def setup(self, live_server):
-        """Set up test fixtures."""
+        """Set up test fixtures and create SocialApp objects for OAuth buttons to appear."""
         self.live_server_url = live_server.url
+
+        # Clean up any existing apps to avoid conflicts
+        SocialApp.objects.all().delete()
+
+        # Get the current site
+        site = Site.objects.get_current()
+
+        # Create test SocialApp objects for all providers so buttons appear in UI
+        self.github_app = SocialApp.objects.create(
+            provider="github",
+            name="GitHub Test App",
+            client_id="test_github_client_id",
+            secret="github_test_secret",  # noqa: S106
+        )
+        self.github_app.sites.add(site)
+
+        self.google_app = SocialApp.objects.create(
+            provider="google",
+            name="Google Test App",
+            client_id="test_google_client_id.apps.googleusercontent.com",
+            secret="google_test_secret",  # noqa: S106
+        )
+        self.google_app.sites.add(site)
+
+        self.gitlab_app = SocialApp.objects.create(
+            provider="gitlab",
+            name="GitLab Test App",
+            client_id="test_gitlab_application_id",
+            secret="gitlab_test_secret",  # noqa: S106
+        )
+        self.gitlab_app.sites.add(site)
+
+        self.linkedin_app = SocialApp.objects.create(
+            provider="linkedin_oauth2",
+            name="LinkedIn Test App",
+            client_id="test_linkedin_client_id",
+            secret="linkedin_test_secret",  # noqa: S106
+        )
+        self.linkedin_app.sites.add(site)
 
     def test_login_page_displays_gitlab_button(self, driver):
         """Test that login page shows GitLab authentication button."""
