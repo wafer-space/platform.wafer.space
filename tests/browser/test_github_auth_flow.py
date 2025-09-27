@@ -2,7 +2,7 @@
 
 import pytest
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support import expected_conditions
 from selenium.webdriver.support.ui import WebDriverWait
 
 from tests.browser.base import BaseBrowserTest
@@ -24,11 +24,14 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
 
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
-        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+        )
 
         # Check for GitHub button
         github_buttons = driver.find_elements(
-            By.XPATH, "//a[contains(text(), 'Sign in with GitHub')]"
+            By.XPATH,
+            "//a[contains(text(), 'Sign in with GitHub')]",
         )
         assert len(github_buttons) > 0, "GitHub sign-in button not found"
 
@@ -47,11 +50,14 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
 
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
-        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+        )
 
         # Check for GitHub button
         github_buttons = driver.find_elements(
-            By.XPATH, "//a[contains(text(), 'Sign up with GitHub')]"
+            By.XPATH,
+            "//a[contains(text(), 'Sign up with GitHub')]",
         )
         assert len(github_buttons) > 0, "GitHub sign-up button not found"
 
@@ -62,11 +68,14 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
 
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
-        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+        )
 
         # Find and get GitHub button href
         github_button = driver.find_element(
-            By.XPATH, "//a[contains(text(), 'Sign in with GitHub')]"
+            By.XPATH,
+            "//a[contains(text(), 'Sign in with GitHub')]",
         )
         href = github_button.get_attribute("href")
 
@@ -83,13 +92,16 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
 
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
-        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+        )
 
         # Check for all provider buttons
         providers = ["GitHub", "Google", "GitLab", "LinkedIn"]
         for provider in providers:
             buttons = driver.find_elements(
-                By.XPATH, f"//a[contains(text(), 'Sign in with {provider}')]"
+                By.XPATH,
+                f"//a[contains(text(), 'Sign in with {provider}')]",
             )
             assert len(buttons) > 0, f"{provider} sign-in button not found"
 
@@ -100,7 +112,9 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
 
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
-        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+        )
 
         # Check for social providers section
         social_sections = driver.find_elements(By.CLASS_NAME, "socialaccount_providers")
@@ -117,7 +131,9 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
 
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
-        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+        )
 
         # Check for login form
         login_form = driver.find_element(By.CSS_SELECTOR, "form.login")
@@ -133,7 +149,8 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
 
         # Check for submit button
         submit_buttons = driver.find_elements(
-            By.XPATH, "//button[@type='submit' and contains(text(), 'Sign In')]"
+            By.XPATH,
+            "//button[@type='submit' and contains(text(), 'Sign In')]",
         )
         assert len(submit_buttons) > 0, "Submit button not found"
 
@@ -147,18 +164,25 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
 
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
-        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+        )
 
         # Check that GitHub button is still visible and clickable
         github_button = driver.find_element(
-            By.XPATH, "//a[contains(text(), 'Sign in with GitHub')]"
+            By.XPATH,
+            "//a[contains(text(), 'Sign in with GitHub')]",
         )
         assert github_button.is_displayed(), "GitHub button not visible on mobile"
 
         # Verify button takes full width (Bootstrap's d-grid)
         parent_div = github_button.find_element(By.XPATH, "./..")
-        assert "d-grid" in parent_div.get_attribute("class") or \
-               github_button.size["width"] > 300, "Button not full width on mobile"
+        # Check if button uses Bootstrap grid or is wide enough
+        min_mobile_button_width = 300
+        assert (
+            "d-grid" in parent_div.get_attribute("class")
+            or github_button.size["width"] > min_mobile_button_width
+        ), "Button not full width on mobile"
 
     def test_login_page_has_signup_link(self, driver):
         """Test that login page has link to signup page."""
@@ -167,11 +191,14 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
 
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
-        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+        )
 
         # Check for signup link
         signup_links = driver.find_elements(
-            By.XPATH, "//a[contains(text(), 'Sign up')]"
+            By.XPATH,
+            "//a[contains(text(), 'Sign up')]",
         )
         assert len(signup_links) > 0, "Sign up link not found on login page"
 
@@ -197,11 +224,14 @@ class TestGoogleAuthenticationFlow(BaseBrowserTest):
 
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
-        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+        )
 
         # Check for Google button
         google_buttons = driver.find_elements(
-            By.XPATH, "//a[contains(text(), 'Sign in with Google')]"
+            By.XPATH,
+            "//a[contains(text(), 'Sign in with Google')]",
         )
         assert len(google_buttons) > 0, "Google sign-in button not found"
 
@@ -220,11 +250,14 @@ class TestGoogleAuthenticationFlow(BaseBrowserTest):
 
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
-        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+        )
 
         # Check for Google button
         google_buttons = driver.find_elements(
-            By.XPATH, "//a[contains(text(), 'Sign up with Google')]"
+            By.XPATH,
+            "//a[contains(text(), 'Sign up with Google')]",
         )
         assert len(google_buttons) > 0, "Google sign-up button not found"
 
@@ -235,11 +268,14 @@ class TestGoogleAuthenticationFlow(BaseBrowserTest):
 
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
-        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+        )
 
         # Find Google button and get href
         google_button = driver.find_element(
-            By.XPATH, "//a[contains(text(), 'Sign in with Google')]"
+            By.XPATH,
+            "//a[contains(text(), 'Sign in with Google')]",
         )
         href = google_button.get_attribute("href")
 
@@ -255,14 +291,18 @@ class TestGoogleAuthenticationFlow(BaseBrowserTest):
 
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
-        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+        )
 
         # Check for both provider buttons
         github_buttons = driver.find_elements(
-            By.XPATH, "//a[contains(text(), 'Sign in with GitHub')]"
+            By.XPATH,
+            "//a[contains(text(), 'Sign in with GitHub')]",
         )
         google_buttons = driver.find_elements(
-            By.XPATH, "//a[contains(text(), 'Sign in with Google')]"
+            By.XPATH,
+            "//a[contains(text(), 'Sign in with Google')]",
         )
 
         assert len(github_buttons) > 0, "GitHub button not found"
@@ -275,14 +315,21 @@ class TestGoogleAuthenticationFlow(BaseBrowserTest):
 
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
-        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+        )
 
         # Get all social provider buttons
         social_buttons = driver.find_elements(
-            By.XPATH, "//a[contains(@class, 'btn') and contains(text(), 'Sign in with')]"
+            By.XPATH,
+            "//a[contains(@class, 'btn') and contains(text(), 'Sign in with')]",
         )
 
-        assert len(social_buttons) >= 2, "Should have at least GitHub and Google buttons"
+        # Should have at least GitHub and Google buttons
+        expected_min_buttons = 2
+        assert len(social_buttons) >= expected_min_buttons, (
+            "Should have at least GitHub and Google buttons"
+        )
 
         # Check that all buttons have consistent classes
         button_classes = [btn.get_attribute("class") for btn in social_buttons]
@@ -290,7 +337,9 @@ class TestGoogleAuthenticationFlow(BaseBrowserTest):
         # All should be bootstrap buttons
         for classes in button_classes:
             assert "btn" in classes, "All social buttons should have 'btn' class"
-            assert "btn-outline-secondary" in classes, "All should have same button style"
+            assert "btn-outline-secondary" in classes, (
+                "All should have same button style"
+            )
 
     def test_google_button_mobile_responsive(self, driver):
         """Test that Google button is responsive on mobile viewport."""
@@ -302,13 +351,19 @@ class TestGoogleAuthenticationFlow(BaseBrowserTest):
 
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
-        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body"))
+        )
 
         # Check that Google button is still visible and clickable
         google_button = driver.find_element(
-            By.XPATH, "//a[contains(text(), 'Sign in with Google')]"
+            By.XPATH,
+            "//a[contains(text(), 'Sign in with Google')]",
         )
         assert google_button.is_displayed(), "Google button not visible on mobile"
 
         # Verify button takes appropriate width on mobile
-        assert google_button.size["width"] > 200, "Button should be wide enough on mobile"
+        min_mobile_width = 200
+        assert google_button.size["width"] > min_mobile_width, (
+            "Button should be wide enough on mobile"
+        )

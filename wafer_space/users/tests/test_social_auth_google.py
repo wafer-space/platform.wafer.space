@@ -62,19 +62,23 @@ class TestGoogleAuthenticationFlow(TestCase):
         redirect_url = response.url
 
         # Check for required OAuth parameters
-        assert "client_id=test_google_client_id.apps.googleusercontent.com" in redirect_url
+        assert (
+            "client_id=test_google_client_id.apps.googleusercontent.com" in redirect_url
+        )
         assert "scope=" in redirect_url
         assert "profile" in redirect_url or "email" in redirect_url
         assert "redirect_uri=" in redirect_url
         assert "access_type=online" in redirect_url
 
-    @override_settings(SOCIALACCOUNT_PROVIDERS={
-        "google": {
-            "SCOPE": ["profile", "email"],
-            "AUTH_PARAMS": {"access_type": "online"},
-            "VERIFIED_EMAIL": True,
-        }
-    })
+    @override_settings(
+        SOCIALACCOUNT_PROVIDERS={
+            "google": {
+                "SCOPE": ["profile", "email"],
+                "AUTH_PARAMS": {"access_type": "online"},
+                "VERIFIED_EMAIL": True,
+            },
+        },
+    )
     def test_google_account_creation_on_successful_auth(self):
         """Test that a new user is created on successful Google authentication."""
         # This test would normally mock the OAuth callback
@@ -123,6 +127,7 @@ class TestGoogleAuthenticationFlow(TestCase):
 
         # Verify settings allow auto-linking
         from django.conf import settings
+
         assert settings.SOCIALACCOUNT_AUTO_SIGNUP is True
 
         # In a real test, we would mock Google OAuth returning
@@ -159,6 +164,7 @@ class TestGoogleAuthenticationSecurity(TestCase):
     def test_google_requires_verified_email(self):
         """Test that Google provider requires verified email."""
         from django.conf import settings
+
         google_config = settings.SOCIALACCOUNT_PROVIDERS.get("google", {})
 
         # Verify email verification is required
@@ -167,6 +173,7 @@ class TestGoogleAuthenticationSecurity(TestCase):
     def test_google_uses_online_access_type(self):
         """Test that Google provider uses online access type."""
         from django.conf import settings
+
         google_config = settings.SOCIALACCOUNT_PROVIDERS.get("google", {})
 
         # Verify online access type is configured
@@ -198,10 +205,13 @@ class TestGoogleAuthenticationErrors(TestCase):
         callback_url = reverse("google_callback")
 
         # Simulate invalid token response
-        response = self.client.get(callback_url, {
-            "code": "invalid_code",
-            "state": "valid_state"
-        })
+        response = self.client.get(
+            callback_url,
+            {
+                "code": "invalid_code",
+                "state": "valid_state",
+            },
+        )
 
         # Should handle gracefully
         assert response.status_code in [302, 400]
@@ -210,12 +220,12 @@ class TestGoogleAuthenticationErrors(TestCase):
         """Test handling when Google doesn't provide email."""
         # This would test the case where user doesn't grant email permission
         # Would need to mock the Google API response without email
-        pass
 
     def test_google_auth_with_invalid_client_id(self):
         """Test handling with malformed Google client ID."""
         # Google client IDs should end with .apps.googleusercontent.com
         from django.conf import settings
+
         google_config = settings.SOCIALACCOUNT_PROVIDERS.get("google", {})
         app_config = google_config.get("APP", {})
 
@@ -232,11 +242,13 @@ class TestGoogleProviderConfiguration(TestCase):
     def test_google_provider_is_installed(self):
         """Test that Google provider is in INSTALLED_APPS."""
         from django.conf import settings
+
         assert "allauth.socialaccount.providers.google" in settings.INSTALLED_APPS
 
     def test_google_provider_scope_configuration(self):
         """Test that Google provider requests correct scopes."""
         from django.conf import settings
+
         google_config = settings.SOCIALACCOUNT_PROVIDERS.get("google", {})
 
         # Check required scopes are configured
@@ -247,6 +259,7 @@ class TestGoogleProviderConfiguration(TestCase):
     def test_google_provider_auth_params_configuration(self):
         """Test that Google provider has correct auth params."""
         from django.conf import settings
+
         google_config = settings.SOCIALACCOUNT_PROVIDERS.get("google", {})
 
         # Check auth params are configured
@@ -262,6 +275,7 @@ class TestGoogleProviderConfiguration(TestCase):
     def test_google_provider_verified_email_setting(self):
         """Test that Google provider trusts verified emails."""
         from django.conf import settings
+
         google_config = settings.SOCIALACCOUNT_PROVIDERS.get("google", {})
 
         # Google emails should be trusted as verified

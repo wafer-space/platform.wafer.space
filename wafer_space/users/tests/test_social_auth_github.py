@@ -66,12 +66,14 @@ class TestGitHubAuthenticationFlow(TestCase):
         assert "scope=user:email" in redirect_url
         assert "redirect_uri=" in redirect_url
 
-    @override_settings(SOCIALACCOUNT_PROVIDERS={
-        "github": {
-            "SCOPE": ["user:email"],
-            "VERIFIED_EMAIL": True,
-        }
-    })
+    @override_settings(
+        SOCIALACCOUNT_PROVIDERS={
+            "github": {
+                "SCOPE": ["user:email"],
+                "VERIFIED_EMAIL": True,
+            },
+        },
+    )
     def test_github_account_creation_on_successful_auth(self):
         """Test that a new user is created on successful GitHub authentication."""
         # This test would normally mock the OAuth callback
@@ -120,6 +122,7 @@ class TestGitHubAuthenticationFlow(TestCase):
 
         # Verify settings allow auto-linking
         from django.conf import settings
+
         assert settings.SOCIALACCOUNT_AUTO_SIGNUP is True
 
         # In a real test, we would mock GitHub OAuth returning
@@ -156,6 +159,7 @@ class TestGitHubAuthenticationSecurity(TestCase):
     def test_github_requires_verified_email(self):
         """Test that GitHub provider requires verified email."""
         from django.conf import settings
+
         github_config = settings.SOCIALACCOUNT_PROVIDERS.get("github", {})
 
         # Verify email verification is required
@@ -186,10 +190,13 @@ class TestGitHubAuthenticationErrors(TestCase):
         callback_url = reverse("github_callback")
 
         # Simulate invalid token response
-        response = self.client.get(callback_url, {
-            "code": "invalid_code",
-            "state": "valid_state"
-        })
+        response = self.client.get(
+            callback_url,
+            {
+                "code": "invalid_code",
+                "state": "valid_state",
+            },
+        )
 
         # Should handle gracefully
         assert response.status_code in [302, 400]
@@ -198,7 +205,6 @@ class TestGitHubAuthenticationErrors(TestCase):
         """Test handling when GitHub doesn't provide email."""
         # This would test the case where user doesn't grant email permission
         # Would need to mock the GitHub API response without email
-        pass
 
 
 @pytest.mark.django_db
@@ -208,11 +214,13 @@ class TestGitHubProviderConfiguration(TestCase):
     def test_github_provider_is_installed(self):
         """Test that GitHub provider is in INSTALLED_APPS."""
         from django.conf import settings
+
         assert "allauth.socialaccount.providers.github" in settings.INSTALLED_APPS
 
     def test_github_provider_scope_configuration(self):
         """Test that GitHub provider requests correct scopes."""
         from django.conf import settings
+
         github_config = settings.SOCIALACCOUNT_PROVIDERS.get("github", {})
 
         # Check required scope is configured
