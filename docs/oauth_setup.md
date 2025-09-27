@@ -304,6 +304,15 @@ Before closing issue #4, verify the following:
 - [ ] Email from Google is used for account (if same email exists, accounts link)
 - [ ] Google profile information is correctly imported
 
+**GitLab:**
+- [ ] GitLab OAuth redirects to gitlab.com/oauth/authorize for authorization
+- [ ] GitLab consent screen shows correct app name and permissions (read_user, email)
+- [ ] Successful GitLab auth creates new user account
+- [ ] Existing users can link GitLab to their account
+- [ ] Email from GitLab is used for account (if same email exists, accounts link)
+- [ ] GitLab profile information is correctly imported
+- [ ] Self-hosted GitLab instances work with custom SERVER_URL configuration
+
 #### Configuration Verification
 - [ ] Environment variables are read correctly from `.env`
 - [ ] Missing OAuth credentials don't break the application
@@ -319,8 +328,12 @@ Before closing issue #4, verify the following:
 - [ ] Unit tests for configuration pass: `uv run pytest wafer_space/users/tests/test_social_auth_google.py::TestGoogleProviderConfiguration -v`
 - [ ] Google browser UI tests pass: `uv run pytest tests/browser/test_github_auth_flow.py::TestGoogleAuthenticationFlow -v`
 
+**GitLab Tests:**
+- [ ] Unit tests for configuration pass: `uv run pytest wafer_space/users/tests/test_social_auth_gitlab.py::TestGitLabProviderConfiguration -v`
+- [ ] GitLab browser UI tests pass: `uv run pytest tests/browser/test_github_auth_flow.py::TestGitLabAuthenticationFlow -v`
+
 **Overall Tests:**
-- [ ] Both provider configurations tested: `uv run pytest wafer_space/users/tests/test_social_auth_*.py::*Configuration -v`
+- [ ] All provider configurations tested: `uv run pytest wafer_space/users/tests/test_social_auth_*.py::*Configuration -v`
 
 ### Production Deployment Notes
 
