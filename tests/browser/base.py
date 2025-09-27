@@ -16,9 +16,17 @@ def check_claude_environment():
     Prevent visible browser tests when running under Claude Code.
 
     This function EXPLODES with detailed explanation if CLAUDECODE environment
-    variable is detected and visible browser tests are attempted.
+    variable is detected and visible browser tests are attempted without headless mode.
     """
     if os.getenv("CLAUDECODE"):
+        import sys
+
+        # Check if --headless flag is present in command line arguments
+        cmd_args = " ".join(sys.argv)
+        if "--headless" in cmd_args:
+            # Headless mode detected - allow execution
+            return
+
         error_msg = """
 🚨🚨🚨 CRITICAL ERROR: VISIBLE BROWSER TEST BLOCKED 🚨🚨🚨
 
@@ -45,8 +53,11 @@ python -m pytest tests/browser/      # Opens visible browsers!
 
 This protection prevents disturbing the user with popup browser windows.
 CLAUDECODE environment requires headless-only testing.
+
+DETECTED COMMAND: {cmd_args}
+MISSING: --headless flag
 """
-        raise EnvironmentError(error_msg)
+        raise EnvironmentError(error_msg.format(cmd_args=cmd_args))
 
 
 def force_headless_environment():
