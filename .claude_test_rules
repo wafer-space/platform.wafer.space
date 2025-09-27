@@ -1,0 +1,24 @@
+#!/bin/bash
+# CLAUDE TEST EXECUTION RULES - CRITICAL REMINDERS
+
+# BROWSER TEST RULES - ABSOLUTE REQUIREMENTS:
+# ============================================
+# 1. NEVER run: pytest tests/browser/*
+# 2. NEVER run: uv run pytest tests/browser/*
+# 3. NEVER run: python -m pytest tests/browser/*
+# 4. ONLY run: make test-browser-headless
+# 5. ONLY run: make test-browser-firefox-headless
+# 6. ONLY run: make test-browser-parallel
+
+# ENFORCEMENT PATTERN:
+# Before ANY test command, check:
+if [[ "$COMMAND" == *"tests/browser"* ]]; then
+    echo "STOP! Use 'make test-browser-headless' instead!"
+    exit 1
+fi
+
+# VALID COMMANDS ONLY:
+# - make test-browser-headless
+# - make test-browser-firefox-headless
+# - make test-browser-parallel
+# - uv run pytest (for unit tests ONLY - no browser paths)

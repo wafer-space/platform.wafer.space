@@ -10,30 +10,39 @@ uv run python manage.py runserver
 ```
 
 ### Running Tests
+
+#### 🚨 CRITICAL BROWSER TEST RULE 🚨
+**NEVER run browser tests with pytest directly - ALWAYS use make commands!**
+
 ```bash
-# Run all tests (unit tests only)
+# ❌❌❌ FORBIDDEN - WILL OPEN VISIBLE BROWSER ❌❌❌
+uv run pytest tests/browser/          # NEVER DO THIS!
+pytest tests/browser/test_file.py     # NEVER DO THIS!
+python -m pytest tests/browser/       # NEVER DO THIS!
+
+# ✅✅✅ ONLY USE THESE FOR BROWSER TESTS ✅✅✅
+make test-browser-headless           # ALWAYS USE THIS
+make test-browser-firefox-headless   # Alternative headless
+make test-browser-parallel           # Parallel headless
+```
+
+**ENFORCEMENT**: Before running ANY test command, check if path contains "browser". If it does, STOP and use `make test-browser-headless` instead.
+
+#### Unit Tests (Non-Browser)
+```bash
+# Run all unit tests
 uv run pytest
 
-# Run a specific test file
+# Run specific test file (ONLY if NOT in tests/browser/)
 uv run pytest path/to/test_file.py
 
 # Run tests with coverage
 uv run coverage run -m pytest
 uv run coverage html
 
-# Run browser tests (ALWAYS use headless mode to avoid disturbing the user)
-make test-browser-headless           # Chrome headless (recommended)
-make test-browser-firefox-headless   # Firefox headless
-make test-browser-parallel           # Parallel headless execution (fastest)
-
 # Run ALL tests (unit + browser, headless)
 make test-all-headless
-
-# ⚠️  NEVER use visible browser tests during regular testing
-# make test-browser  # Only for debugging specific issues
 ```
-
-**Important**: Always run browser tests in headless mode (`make test-browser-headless`) to avoid popping up browser windows that would disturb someone using the computer. The headless tests provide the same validation as visible tests.
 
 ### Linting and Type Checking
 ```bash
