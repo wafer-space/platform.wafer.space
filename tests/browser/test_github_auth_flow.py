@@ -367,3 +367,170 @@ class TestGoogleAuthenticationFlow(BaseBrowserTest):
         assert google_button.size["width"] > min_mobile_width, (
             "Button should be wide enough on mobile"
         )
+
+
+@pytest.mark.django_db
+class TestGitLabAuthenticationFlow(BaseBrowserTest):
+    """Test GitLab authentication flow using browser automation."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, live_server):
+        """Set up test fixtures."""
+        self.live_server_url = live_server.url
+
+    def test_login_page_displays_gitlab_button(self, driver):
+        """Test that login page shows GitLab authentication button."""
+        # Navigate to login page
+        driver.get(f"{self.live_server_url}/accounts/login/")
+
+        # Wait for page to load
+        wait = WebDriverWait(driver, 10)
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
+        )
+
+        # Check for GitLab button
+        gitlab_buttons = driver.find_elements(
+            By.XPATH,
+            "//a[contains(text(), 'Sign in with GitLab')]",
+        )
+        assert len(gitlab_buttons) > 0, "GitLab sign-in button not found"
+
+        # Verify button has correct class
+        gitlab_button = gitlab_buttons[0]
+        assert "btn" in gitlab_button.get_attribute("class")
+
+        # Verify GitLab icon is present (using generic SVG since no specific bi-gitlab)
+        xpath_selector = "//svg[contains(@viewBox, '0 0 16 16')]"
+        gitlab_icons = driver.find_elements(By.XPATH, xpath_selector)
+        assert len(gitlab_icons) > 0, "GitLab icon not found"
+
+    def test_signup_page_displays_gitlab_button(self, driver):
+        """Test that signup page shows GitLab authentication button."""
+        # Navigate to signup page
+        driver.get(f"{self.live_server_url}/accounts/signup/")
+
+        # Wait for page to load
+        wait = WebDriverWait(driver, 10)
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
+        )
+
+        # Check for GitLab button
+        gitlab_buttons = driver.find_elements(
+            By.XPATH,
+            "//a[contains(text(), 'Sign up with GitLab')]",
+        )
+        assert len(gitlab_buttons) > 0, "GitLab sign-up button not found"
+
+    def test_gitlab_button_href_points_to_gitlab_oauth(self, driver):
+        """Test that GitLab button has correct href."""
+        # Navigate to login page
+        driver.get(f"{self.live_server_url}/accounts/login/")
+
+        # Wait for page to load
+        wait = WebDriverWait(driver, 10)
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
+        )
+
+        # Find GitLab button and get href
+        gitlab_button = driver.find_element(
+            By.XPATH,
+            "//a[contains(text(), 'Sign in with GitLab')]",
+        )
+        href = gitlab_button.get_attribute("href")
+
+        # Verify href points to GitLab OAuth endpoint
+        assert "/accounts/gitlab/login/" in href or "gitlab" in href
+
+        # Note: We don't actually click the button to avoid real OAuth redirect
+
+    def test_gitlab_vs_other_providers_all_present(self, driver):
+        """Test that GitLab, GitHub, and Google buttons are all present."""
+        # Navigate to login page
+        driver.get(f"{self.live_server_url}/accounts/login/")
+
+        # Wait for page to load
+        wait = WebDriverWait(driver, 10)
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
+        )
+
+        # Check for all provider buttons
+        github_buttons = driver.find_elements(
+            By.XPATH,
+            "//a[contains(text(), 'Sign in with GitHub')]",
+        )
+        google_buttons = driver.find_elements(
+            By.XPATH,
+            "//a[contains(text(), 'Sign in with Google')]",
+        )
+        gitlab_buttons = driver.find_elements(
+            By.XPATH,
+            "//a[contains(text(), 'Sign in with GitLab')]",
+        )
+
+        assert len(github_buttons) > 0, "GitHub button not found"
+        assert len(google_buttons) > 0, "Google button not found"
+        assert len(gitlab_buttons) > 0, "GitLab button not found"
+
+    def test_gitlab_button_styling_consistency(self, driver):
+        """Test that GitLab button has consistent styling with other providers."""
+        # Navigate to login page
+        driver.get(f"{self.live_server_url}/accounts/login/")
+
+        # Wait for page to load
+        wait = WebDriverWait(driver, 10)
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
+        )
+
+        # Get all social provider buttons
+        social_buttons = driver.find_elements(
+            By.XPATH,
+            "//a[contains(@class, 'btn') and contains(text(), 'Sign in with')]",
+        )
+
+        # Should have at least GitHub, Google, and GitLab buttons
+        expected_min_buttons = 3
+        assert len(social_buttons) >= expected_min_buttons, (
+            "Should have at least GitHub, Google, and GitLab buttons"
+        )
+
+        # Check that all buttons have consistent classes
+        button_classes = [btn.get_attribute("class") for btn in social_buttons]
+
+        # All should be bootstrap buttons
+        for classes in button_classes:
+            assert "btn" in classes, "All social buttons should have 'btn' class"
+            assert "btn-outline-secondary" in classes, (
+                "All should have same button style"
+            )
+
+    def test_gitlab_button_mobile_responsive(self, driver):
+        """Test that GitLab button is responsive on mobile viewport."""
+        # Set mobile viewport
+        driver.set_window_size(375, 667)  # iPhone SE size
+
+        # Navigate to login page
+        driver.get(f"{self.live_server_url}/accounts/login/")
+
+        # Wait for page to load
+        wait = WebDriverWait(driver, 10)
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
+        )
+
+        # Check that GitLab button is still visible and clickable
+        gitlab_button = driver.find_element(
+            By.XPATH,
+            "//a[contains(text(), 'Sign in with GitLab')]",
+        )
+        assert gitlab_button.is_displayed(), "GitLab button not visible on mobile"
+
+        # Verify button takes appropriate width on mobile
+        min_mobile_width = 200
+        assert gitlab_button.size["width"] > min_mobile_width, (
+            "Button should be wide enough on mobile"
+        )
