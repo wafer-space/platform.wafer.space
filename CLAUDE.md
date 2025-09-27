@@ -11,22 +11,35 @@ uv run python manage.py runserver
 
 ### Running Tests
 
-#### 🚨 CRITICAL BROWSER TEST RULE 🚨
-**NEVER run browser tests with pytest directly - ALWAYS use make commands!**
+#### 🚨🚨🚨 ABSOLUTE CRITICAL RULE - ZERO TOLERANCE 🚨🚨🚨
+**THIS IS A BINDING REQUIREMENT - NO EXCEPTIONS EVER**
+
+**RULE**: Browser tests MUST NEVER open visible browser windows when using Claude Code.
 
 ```bash
-# ❌❌❌ FORBIDDEN - WILL OPEN VISIBLE BROWSER ❌❌❌
-uv run pytest tests/browser/          # NEVER DO THIS!
-pytest tests/browser/test_file.py     # NEVER DO THIS!
-python -m pytest tests/browser/       # NEVER DO THIS!
+# ❌❌❌ ABSOLUTELY FORBIDDEN - WILL EXPLODE WITH ERROR ❌❌❌
+uv run pytest tests/browser/          # FORBIDDEN! WILL BLOCK EXECUTION!
+pytest tests/browser/test_file.py     # FORBIDDEN! WILL BLOCK EXECUTION!
+python -m pytest tests/browser/       # FORBIDDEN! WILL BLOCK EXECUTION!
 
-# ✅✅✅ ONLY USE THESE FOR BROWSER TESTS ✅✅✅
-make test-browser-headless           # ALWAYS USE THIS
-make test-browser-firefox-headless   # Alternative headless
-make test-browser-parallel           # Parallel headless
+# ✅✅✅ ONLY THESE COMMANDS ARE PERMITTED ✅✅✅
+make test-browser-headless           # MANDATORY FOR ALL BROWSER TESTS
+make test-browser-firefox-headless   # Alternative headless only
+make test-browser-parallel           # Parallel headless only
 ```
 
-**ENFORCEMENT**: Before running ANY test command, check if path contains "browser". If it does, STOP and use `make test-browser-headless` instead.
+**AUTOMATIC ENFORCEMENT ACTIVE:**
+- Code will EXPLODE with detailed error if CLAUDECODE environment is detected
+- Environment variables automatically block GUI display connections
+- pytest configuration forces headless mode for all browser tests
+- Multiple protection layers prevent accidental visible browser execution
+
+**MANDATORY CHECK BEFORE EVERY TEST COMMAND:**
+1. Does the command contain "tests/browser/"?
+2. If YES → STOP! Use `make test-browser-headless` instead
+3. If NO → Proceed with command
+
+**THIS PROTECTION IS NON-NEGOTIABLE AND CANNOT BE BYPASSED**
 
 #### Unit Tests (Non-Browser)
 ```bash

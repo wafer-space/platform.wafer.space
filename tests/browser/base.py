@@ -2,6 +2,7 @@
 Base classes for browser tests.
 """
 
+import os
 import time
 
 from selenium.common.exceptions import NoSuchElementException
@@ -10,11 +11,69 @@ from selenium.webdriver.support import expected_conditions
 from selenium.webdriver.support.wait import WebDriverWait
 
 
+def check_claude_environment():
+    """
+    Prevent visible browser tests when running under Claude Code.
+
+    This function EXPLODES with detailed explanation if CLAUDECODE environment
+    variable is detected and visible browser tests are attempted.
+    """
+    if os.getenv("CLAUDECODE"):
+        error_msg = """
+🚨🚨🚨 CRITICAL ERROR: VISIBLE BROWSER TEST BLOCKED 🚨🚨🚨
+
+Claude Code environment detected! Browser tests MUST run in headless mode only.
+
+❌ WHAT YOU DID WRONG:
+You attempted to run browser tests that would open visible browser windows.
+This is PROHIBITED in Claude Code environment.
+
+✅ CORRECT COMMANDS TO USE:
+make test-browser-headless           # Chrome headless (ALWAYS USE THIS)
+make test-browser-firefox-headless   # Firefox headless alternative
+make test-browser-parallel           # Parallel headless execution
+
+❌ NEVER USE THESE COMMANDS:
+pytest tests/browser/                # Opens visible browsers!
+uv run pytest tests/browser/         # Opens visible browsers!
+python -m pytest tests/browser/      # Opens visible browsers!
+
+🔧 HOW TO FIX:
+1. Stop the current test execution
+2. Use 'make test-browser-headless' command instead
+3. NEVER run pytest directly on tests/browser/ files
+
+This protection prevents disturbing the user with popup browser windows.
+CLAUDECODE environment requires headless-only testing.
+"""
+        raise EnvironmentError(error_msg)
+
+
+def force_headless_environment():
+    """
+    Force headless environment by setting display-blocking variables.
+
+    This prevents GUI applications from connecting to the display server
+    when running under Claude Code.
+    """
+    if os.getenv("CLAUDECODE"):
+        # Block X11 display connections
+        os.environ["DISPLAY"] = ""
+        # Force Qt applications to use offscreen platform
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+        # Force headless mode for browsers
+        os.environ["MOZ_HEADLESS"] = "1"
+        os.environ["CHROME_HEADLESS"] = "1"
+
+
 class BaseBrowserTest:
     """Base class for browser tests with common utilities."""
 
     def setup_method(self):
         """Setup test method."""
+        # CRITICAL: Check Claude environment and prevent visible browser tests
+        check_claude_environment()
+        force_headless_environment()
         self.errors = []
 
     def teardown_method(self):

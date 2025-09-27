@@ -6,6 +6,12 @@ python_files = [
     "tests.py",
     "test_*.py",
 ]
+# Force headless environment for browser tests when Claude Code is detected
+env = [
+    "QT_QPA_PLATFORM=offscreen",
+    "MOZ_HEADLESS=1",
+    "CHROME_HEADLESS=1"
+]
 
 # ==== Coverage ====
 [tool.coverage.run]
