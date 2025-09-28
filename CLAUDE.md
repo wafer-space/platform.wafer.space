@@ -2,12 +2,40 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Development Commands
+## 🎯 PREFERRED DEVELOPMENT APPROACH
 
-### Running the Development Server
+**ALWAYS prefer Makefile commands over direct command execution.** The project provides a comprehensive Makefile with standardized, tested commands that handle proper environment setup and configuration.
+
+### ✅ Use Makefile Commands (PREFERRED)
 ```bash
-uv run python manage.py runserver
+# Development server
+make runserver                   # Preferred - runs on correct port (8081)
+
+# Testing
+make test                        # Preferred - runs all unit tests
+make test-browser-headless       # Preferred - browser tests (headless only)
+make lint-fix                   # Preferred - fixes code style issues
+
+# Database operations
+make migrate                     # Preferred - runs database migrations
+make createsuperuser            # Preferred - creates Django admin user
 ```
+
+### ❌ Direct Commands (Rare Cases Only)
+```bash
+# Only use these for very specific operations not covered by Makefile
+uv run python manage.py runserver  # Less preferred - may use wrong port
+uv run pytest                      # Less preferred - less configuration
+```
+
+**Why prefer Makefile commands:**
+- ✅ **Consistent configuration** - proper ports, settings, and flags
+- ✅ **Maintained by project team** - reflects current best practices
+- ✅ **Cross-platform compatibility** - works on all developer machines
+- ✅ **Integrated tooling** - handles environment setup automatically
+- ✅ **Color output and formatting** - better developer experience
+
+## Development Commands
 
 ### Running Tests
 
@@ -43,77 +71,64 @@ make test-browser-parallel           # Parallel headless only
 
 #### Unit Tests (Non-Browser)
 ```bash
-# Run all unit tests
-uv run pytest
+# ✅ PREFERRED: Use Makefile commands
+make test                        # Run all unit tests
+make test-verbose               # Run tests with verbose output
+make test-fast                  # Run tests in parallel
+make test-coverage              # Run tests with coverage report
+make test-coverage-html         # Generate HTML coverage report
+make test-app APP=users         # Run tests for specific app
 
-# Run specific test file (ONLY if NOT in tests/browser/)
-uv run pytest path/to/test_file.py
-
-# Run tests with coverage
-uv run coverage run -m pytest
-uv run coverage html
-
-# Run ALL tests (unit + browser, headless)
-make test-all-headless
+# ❌ DIRECT COMMANDS: For very specific operations
+uv run pytest path/to/specific_test.py  # For very specific test files
 ```
 
-### Linting and Type Checking
+### Code Quality and Linting
 ```bash
-# Run ruff linter with auto-fix
-uv run ruff check --fix .
+# ✅ PREFERRED: Use Makefile commands
+make lint-fix                   # Run ruff linter with auto-fix + formatting
+make lint                       # Run ruff linter (check only)
+make type-check                 # Run mypy type checker
+make format                     # Format code with ruff
+make check-all                  # Run all checks (lint, type-check, tests)
 
-# Run ruff formatter
-uv run ruff format .
-
-# Run mypy type checker
-uv run mypy wafer_space
-
-# Run djlint for Django templates
-uv run djlint --reformat .
-uv run djlint --check .
-
-# Run all pre-commit hooks
-uv run pre-commit run --all-files
+# ❌ DIRECT COMMANDS: For operations not yet in Makefile
+uv run pre-commit run --all-files  # Run all pre-commit hooks (no Makefile equivalent yet)
 ```
 
 ### Database Operations
 ```bash
-# Create new migrations
-uv run python manage.py makemigrations
+# ✅ PREFERRED: Use Makefile commands
+make migrate                    # Apply database migrations
+make makemigrations             # Create new database migrations
+make createsuperuser           # Create Django superuser
+make collectstatic             # Collect static files
 
-# Apply migrations
-uv run python manage.py migrate
-
-# Create superuser
-uv run python manage.py createsuperuser
+# ❌ DIRECT COMMANDS: All common database operations have Makefile equivalents
+# Use Makefile commands above - they handle proper configuration
 ```
 
 ### Background Jobs (Celery)
 ```bash
-# Start Celery worker for processing background tasks
-uv run celery -A config worker --loglevel=info
+# ✅ PREFERRED: Use Makefile commands where available
+make celery                     # Start Celery worker
 
-# Start Celery worker with specific queues
+# ❌ DIRECT COMMANDS: For specific Celery operations
 uv run celery -A config worker -Q manufacturability,referrals --loglevel=info
+uv run celery -A config purge   # Purge all pending tasks (development only)
+uv run celery -A config inspect active  # Inspect active tasks
 
-# Monitor Celery tasks (requires flower - optional)
-# uv add flower
-# uv run celery -A config flower
-
-# Purge all pending tasks (development only)
-uv run celery -A config purge
-
-# Inspect active tasks
-uv run celery -A config inspect active
+# Note: Some specialized Celery commands don't have Makefile equivalents yet
 ```
 
 ### Documentation
 ```bash
-# Build Sphinx documentation
-cd docs && make html
+# ✅ PREFERRED: Use Makefile commands
+make docs                       # Build Sphinx documentation
+make docs-live                  # Start live documentation server
 
-# Live reload documentation server
-cd docs && make livehtml
+# ❌ DIRECT COMMANDS: Documentation has Makefile equivalents
+# Use Makefile commands above - they handle proper paths and configuration
 ```
 
 ### Git Workflow
@@ -142,7 +157,62 @@ git push origin <branch_name>
 - Make small, focused commits with single improvements or bug fixes
 - Use descriptive commit messages in present tense
 - Include context about why the change was made
-- Run linting and tests before committing when possible
+- **ALWAYS run `make check-all` before committing** (combines linting, type-checking, and tests)
+- Use `make lint-fix` to automatically fix code style issues
+
+### Utility Commands
+```bash
+# ✅ PREFERRED: Use Makefile commands for common utilities
+make clean                      # Clean up Python cache files
+make clean-all                  # Clean everything including virtual environment
+make show-urls                  # Show all Django URL patterns
+make check-deploy              # Check deployment readiness
+make help                      # Show all available Makefile commands
+
+# Development environment setup
+make venv                      # Create virtual environment and install dependencies
+make dev-install              # Install development dependencies
+```
+
+## 📋 Quick Command Reference
+
+**Most Common Commands (Use These 90% of the Time):**
+```bash
+make runserver                 # Start development server
+make test                      # Run all unit tests
+make test-browser-headless     # Run browser tests (headless only)
+make lint-fix                  # Fix code style issues
+make migrate                   # Apply database migrations
+make check-all                 # Run all quality checks before commit
+```
+
+## 🔍 Finding the Right Command
+
+**ALWAYS start by checking the Makefile:**
+```bash
+make help                      # Shows all available commands with descriptions
+```
+
+**Decision Tree for Command Selection:**
+1. **First, always check:** `make help` to see available targets
+2. **Is there a Makefile target?** → Use `make [target]` (99% of cases)
+3. **Need very specific test targeting?** → Use `uv run pytest path/to/file.py`
+4. **Need debugging with special flags?** → Use direct command with explanation
+5. **Browser tests?** → **ALWAYS** use `make test-browser-headless`
+
+**Note:** The Makefile should always be present - if it's missing, something is seriously wrong with the repository setup.
+
+**Examples of When to Use Direct Commands:**
+```bash
+# ✅ ACCEPTABLE: Very specific test targeting
+uv run pytest wafer_space/users/tests/test_models.py::TestUser::test_email_validation -v
+
+# ✅ ACCEPTABLE: Specialized Django management commands not in Makefile
+uv run python manage.py shell -c "from django.contrib.auth import get_user_model; print(get_user_model().objects.count())"
+
+# ✅ ACCEPTABLE: Debugging with specific pytest flags
+uv run pytest --pdb --tb=long path/to/failing_test.py
+```
 
 ## Project Architecture
 
