@@ -50,5 +50,49 @@ DATABASES = {
 CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = True
 
+# SOCIAL AUTHENTICATION
+# ------------------------------------------------------------------------------
+# Override SOCIALACCOUNT_PROVIDERS to avoid conflicts with test SocialApp objects
+# Tests create their own SocialApp objects in the database, so we don't want
+# settings-based apps that would cause MultipleObjectsReturned errors
+SOCIALACCOUNT_PROVIDERS = {
+    "github": {
+        "SCOPE": [
+            "user:email",
+        ],
+        "VERIFIED_EMAIL": True,
+    },
+    "gitlab": {
+        "SCOPE": [
+            "read_user",
+            "email",
+        ],
+        "VERIFIED_EMAIL": True,
+    },
+    "google": {
+        "SCOPE": [
+            "profile",
+            "email",
+        ],
+        "AUTH_PARAMS": {
+            "access_type": "online",
+        },
+        "VERIFIED_EMAIL": True,
+    },
+    "linkedin_oauth2": {
+        "SCOPE": [
+            "r_liteprofile",
+            "r_emailaddress",
+        ],
+        "PROFILE_FIELDS": [
+            "id",
+            "first-name",
+            "last-name",
+            "email-address",
+        ],
+        "VERIFIED_EMAIL": True,
+    },
+}
+
 # Your stuff...
 # ------------------------------------------------------------------------------
