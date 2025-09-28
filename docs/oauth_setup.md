@@ -36,17 +36,23 @@ This guide walks through setting up OAuth applications for social authentication
 
    **Production Setup**: Create separate OAuth apps for development and production environments with different callback URLs.
 
-3. **Register the Application**
+3. **Configure Additional Settings**
+   - **Enable Device Flow**: **Leave UNCHECKED** (not needed for web authentication)
+     - Device Flow is only needed for authenticating devices without browsers (like CLI tools, IoT devices)
+     - The wafer.space platform uses standard web OAuth flow through browsers
+     - Enabling it unnecessarily expands the attack surface
+
+4. **Register the Application**
    - Click "Register application"
    - You'll be redirected to your app's settings page
    - The app will be owned by the wafer-space organization
 
-4. **Obtain Credentials**
+5. **Obtain Credentials**
    - **Client ID**: Displayed on the app page (public, safe to commit in settings)
    - **Client Secret**: Click "Generate a new client secret" (keep this secret and never commit to version control!)
    - Save both values securely
 
-5. **Organization App Management**
+6. **Organization App Management**
    - The OAuth app will appear in the wafer-space organization's OAuth Apps list
    - Organization owners can manage, modify, or revoke the app
    - The app will have access to public information of organization members (if they authorize it)
