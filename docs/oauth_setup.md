@@ -13,31 +13,43 @@ This guide walks through setting up OAuth applications for social authentication
 
 ## GitHub OAuth Setup
 
-### Creating a GitHub OAuth App
+### Creating a GitHub OAuth App for wafer-space Organization
 
-1. **Navigate to GitHub Settings**
-   - Go to https://github.com/settings/developers
-   - Click on "OAuth Apps" in the left sidebar
+1. **Navigate to wafer-space Organization Settings**
+   - Go to https://github.com/wafer-space
+   - Click on "Settings" tab in the organization navigation
+   - In the left sidebar, scroll down to "Developer settings"
+   - Click on "OAuth Apps"
    - Click "New OAuth App"
 
-2. **Configure the OAuth Application**
-   - **Application name**: `wafer.space Development` (or appropriate name)
-   - **Homepage URL**: `http://localhost:8000`
-   - **Application description**: (optional) "wafer.space development environment"
-   - **Authorization callback URL**: `http://localhost:8000/accounts/github/login/callback/`
+   **Note**: You must be an organization owner or have appropriate permissions to create OAuth apps for the organization.
 
-   For production:
-   - **Homepage URL**: `https://your-domain.com`
-   - **Authorization callback URL**: `https://your-domain.com/accounts/github/login/callback/`
+2. **Configure the OAuth Application**
+   - **Application name**: `wafer.space Platform Development` (for development) or `wafer.space Platform` (for production)
+   - **Homepage URL**:
+     - Development: `http://localhost:8000`
+     - Production: `https://platform.wafer.space` (or your production domain)
+   - **Application description**: "OAuth authentication for wafer.space low-cost silicon manufacturing platform"
+   - **Authorization callback URL**:
+     - Development: `http://localhost:8000/accounts/github/login/callback/`
+     - Production: `https://platform.wafer.space/accounts/github/login/callback/`
+
+   **Production Setup**: Create separate OAuth apps for development and production environments with different callback URLs.
 
 3. **Register the Application**
    - Click "Register application"
    - You'll be redirected to your app's settings page
+   - The app will be owned by the wafer-space organization
 
 4. **Obtain Credentials**
-   - **Client ID**: Displayed on the app page (public)
-   - **Client Secret**: Click "Generate a new client secret" (keep this secret!)
+   - **Client ID**: Displayed on the app page (public, safe to commit in settings)
+   - **Client Secret**: Click "Generate a new client secret" (keep this secret and never commit to version control!)
    - Save both values securely
+
+5. **Organization App Management**
+   - The OAuth app will appear in the wafer-space organization's OAuth Apps list
+   - Organization owners can manage, modify, or revoke the app
+   - The app will have access to public information of organization members (if they authorize it)
 
 ### Environment Variables
 
@@ -48,10 +60,27 @@ GITHUB_CLIENT_ID=your_github_client_id_here
 GITHUB_CLIENT_SECRET=your_github_client_secret_here
 ```
 
+**Organization Best Practices:**
+- Use a shared password manager or secret management system for the organization to store OAuth credentials
+- Document which organization member created each OAuth app for maintenance purposes
+- Consider using GitHub's organization secret management for production deployments
+- Regularly audit OAuth app access and remove unused applications
+
+### Organization OAuth Benefits
+
+When users authenticate with GitHub OAuth from the wafer-space organization app:
+- Organization members will see a trusted application badge during OAuth consent
+- The organization can maintain centralized control over the OAuth application
+- Organization owners can revoke access for all users if needed
+- Users will see "wafer-space" as the application owner, building trust
+- Access logs and analytics are available to organization owners
+
 ### Scopes
 
 The GitHub provider is configured to request the following scope:
 - `user:email` - Read access to user email addresses
+
+**Note**: The application only requests minimal scopes required for authentication. Organization membership information is not accessed unless explicitly configured.
 
 ## Google OAuth Setup
 
