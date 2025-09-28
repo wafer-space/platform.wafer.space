@@ -11,6 +11,32 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 from tests.browser.base import BaseBrowserTest
 
+# XPath selectors for OAuth buttons
+GITHUB_BUTTON_XPATH = (
+    "//a[contains(text(), 'Sign in with GitHub') "
+    "or contains(@href, '/accounts/github/login/')]"
+)
+GITHUB_SIGNUP_XPATH = (
+    "//a[contains(text(), 'Sign up with GitHub') "
+    "or contains(@href, '/accounts/github/login/')]"
+)
+GOOGLE_BUTTON_XPATH = (
+    "//a[contains(text(), 'Sign in with Google') "
+    "or contains(@href, '/accounts/google/login/')]"
+)
+GOOGLE_SIGNUP_XPATH = (
+    "//a[contains(text(), 'Sign up with Google') "
+    "or contains(@href, '/accounts/google/login/')]"
+)
+GITLAB_BUTTON_XPATH = (
+    "//a[contains(text(), 'Sign in with GitLab') "
+    "or contains(@href, '/accounts/gitlab/login/')]"
+)
+GITLAB_SIGNUP_XPATH = (
+    "//a[contains(text(), 'Sign up with GitLab') "
+    "or contains(@href, '/accounts/gitlab/login/')]"
+)
+
 
 @pytest.fixture
 def social_apps(db):
@@ -91,7 +117,7 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
         # Check for GitHub button
         github_buttons = driver.find_elements(
             By.XPATH,
-            "//a[contains(text(), 'Sign in with GitHub') or contains(@href, '/accounts/github/login/')]",
+            GITHUB_BUTTON_XPATH,
         )
         assert len(github_buttons) > 0, "GitHub sign-in button not found"
 
@@ -117,7 +143,7 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
         # Check for GitHub button
         github_buttons = driver.find_elements(
             By.XPATH,
-            "//a[contains(text(), 'Sign up with GitHub') or contains(@href, '/accounts/github/login/')]",
+            GITHUB_SIGNUP_XPATH,
         )
         assert len(github_buttons) > 0, "GitHub sign-up button not found"
 
@@ -135,7 +161,7 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
         # Find and get GitHub button href
         github_button = driver.find_element(
             By.XPATH,
-            "//a[contains(text(), 'Sign in with GitHub') or contains(@href, '/accounts/github/login/')]",
+            GITHUB_BUTTON_XPATH,
         )
         href = github_button.get_attribute("href")
 
@@ -164,10 +190,11 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
             "LinkedIn": "/accounts/linkedin_oauth2/login/",
         }
         for provider, href_pattern in provider_patterns.items():
-            buttons = driver.find_elements(
-                By.XPATH,
-                f"//a[contains(text(), 'Sign in with {provider}') or contains(@href, '{href_pattern}')]",
+            xpath_selector = (
+                f"//a[contains(text(), 'Sign in with {provider}') "
+                f"or contains(@href, '{href_pattern}')]"
             )
+            buttons = driver.find_elements(By.XPATH, xpath_selector)
             assert len(buttons) > 0, f"{provider} sign-in button not found"
 
     def test_social_login_section_styling(self, driver):
@@ -236,7 +263,7 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
         # Check that GitHub button is still visible and clickable
         github_button = driver.find_element(
             By.XPATH,
-            "//a[contains(text(), 'Sign in with GitHub') or contains(@href, '/accounts/github/login/')]",
+            GITHUB_BUTTON_XPATH,
         )
         assert github_button.is_displayed(), "GitHub button not visible on mobile"
 
@@ -297,7 +324,7 @@ class TestGoogleAuthenticationFlow(BaseBrowserTest):
         # Check for Google button
         google_buttons = driver.find_elements(
             By.XPATH,
-            "//a[contains(text(), 'Sign in with Google') or contains(@href, '/accounts/google/login/')]",
+            GOOGLE_BUTTON_XPATH,
         )
         assert len(google_buttons) > 0, "Google sign-in button not found"
 
@@ -323,7 +350,7 @@ class TestGoogleAuthenticationFlow(BaseBrowserTest):
         # Check for Google button
         google_buttons = driver.find_elements(
             By.XPATH,
-            "//a[contains(text(), 'Sign up with Google') or contains(@href, '/accounts/google/login/')]",
+            GOOGLE_SIGNUP_XPATH,
         )
         assert len(google_buttons) > 0, "Google sign-up button not found"
 
@@ -341,7 +368,7 @@ class TestGoogleAuthenticationFlow(BaseBrowserTest):
         # Find Google button and get href
         google_button = driver.find_element(
             By.XPATH,
-            "//a[contains(text(), 'Sign in with Google') or contains(@href, '/accounts/google/login/')]",
+            GOOGLE_BUTTON_XPATH,
         )
         href = google_button.get_attribute("href")
 
@@ -364,11 +391,11 @@ class TestGoogleAuthenticationFlow(BaseBrowserTest):
         # Check for both provider buttons
         github_buttons = driver.find_elements(
             By.XPATH,
-            "//a[contains(text(), 'Sign in with GitHub') or contains(@href, '/accounts/github/login/')]",
+            GITHUB_BUTTON_XPATH,
         )
         google_buttons = driver.find_elements(
             By.XPATH,
-            "//a[contains(text(), 'Sign in with Google') or contains(@href, '/accounts/google/login/')]",
+            GOOGLE_BUTTON_XPATH,
         )
 
         assert len(github_buttons) > 0, "GitHub button not found"
@@ -388,7 +415,7 @@ class TestGoogleAuthenticationFlow(BaseBrowserTest):
         # Test that Google button specifically exists and is functional
         google_buttons = driver.find_elements(
             By.XPATH,
-            "//a[contains(text(), 'Sign in with Google') or contains(@href, '/accounts/google/login/')]",
+            GOOGLE_BUTTON_XPATH,
         )
         assert len(google_buttons) > 0, "Google button should be present"
 
@@ -416,7 +443,7 @@ class TestGoogleAuthenticationFlow(BaseBrowserTest):
         # Check that Google button is still visible and clickable
         google_button = driver.find_element(
             By.XPATH,
-            "//a[contains(text(), 'Sign in with Google') or contains(@href, '/accounts/google/login/')]",
+            GOOGLE_BUTTON_XPATH,
         )
         assert google_button.is_displayed(), "Google button not visible on mobile"
 
@@ -451,7 +478,7 @@ class TestGitLabAuthenticationFlow(BaseBrowserTest):
         # Check for GitLab button
         gitlab_buttons = driver.find_elements(
             By.XPATH,
-            "//a[contains(text(), 'Sign in with GitLab') or contains(@href, '/accounts/gitlab/login/')]",
+            GITLAB_BUTTON_XPATH,
         )
         assert len(gitlab_buttons) > 0, "GitLab sign-in button not found"
 
@@ -474,7 +501,7 @@ class TestGitLabAuthenticationFlow(BaseBrowserTest):
         # Check for GitLab button
         gitlab_buttons = driver.find_elements(
             By.XPATH,
-            "//a[contains(text(), 'Sign up with GitLab') or contains(@href, '/accounts/gitlab/login/')]",
+            GITLAB_SIGNUP_XPATH,
         )
         assert len(gitlab_buttons) > 0, "GitLab sign-up button not found"
 
@@ -492,7 +519,7 @@ class TestGitLabAuthenticationFlow(BaseBrowserTest):
         # Find GitLab button and get href
         gitlab_button = driver.find_element(
             By.XPATH,
-            "//a[contains(text(), 'Sign in with GitLab') or contains(@href, '/accounts/gitlab/login/')]",
+            GITLAB_BUTTON_XPATH,
         )
         href = gitlab_button.get_attribute("href")
 
@@ -515,15 +542,15 @@ class TestGitLabAuthenticationFlow(BaseBrowserTest):
         # Check for all provider buttons
         github_buttons = driver.find_elements(
             By.XPATH,
-            "//a[contains(text(), 'Sign in with GitHub') or contains(@href, '/accounts/github/login/')]",
+            GITHUB_BUTTON_XPATH,
         )
         google_buttons = driver.find_elements(
             By.XPATH,
-            "//a[contains(text(), 'Sign in with Google') or contains(@href, '/accounts/google/login/')]",
+            GOOGLE_BUTTON_XPATH,
         )
         gitlab_buttons = driver.find_elements(
             By.XPATH,
-            "//a[contains(text(), 'Sign in with GitLab') or contains(@href, '/accounts/gitlab/login/')]",
+            GITLAB_BUTTON_XPATH,
         )
 
         assert len(github_buttons) > 0, "GitHub button not found"
@@ -544,7 +571,7 @@ class TestGitLabAuthenticationFlow(BaseBrowserTest):
         # Test that GitLab button specifically exists and is functional
         gitlab_buttons = driver.find_elements(
             By.XPATH,
-            "//a[contains(text(), 'Sign in with GitLab') or contains(@href, '/accounts/gitlab/login/')]",
+            GITLAB_BUTTON_XPATH,
         )
         assert len(gitlab_buttons) > 0, "GitLab button should be present"
 
@@ -572,7 +599,7 @@ class TestGitLabAuthenticationFlow(BaseBrowserTest):
         # Check that GitLab button is still visible and clickable
         gitlab_button = driver.find_element(
             By.XPATH,
-            "//a[contains(text(), 'Sign in with GitLab') or contains(@href, '/accounts/gitlab/login/')]",
+            GITLAB_BUTTON_XPATH,
         )
         assert gitlab_button.is_displayed(), "GitLab button not visible on mobile"
 
