@@ -65,7 +65,7 @@ class TestGitHubAuthenticationFlow(TestCase):
             assert "github.com/login/oauth" in response.url
 
     def test_github_oauth_redirect_contains_correct_params(self):
-        """Test that GitHub OAuth redirect has correct parameters when redirect occurs."""
+        """Test GitHub OAuth redirect parameters when redirect occurs."""
         response = self.client.get(self.github_login_url)
         # Only test redirect parameters if we actually get a redirect
         if response.status_code == HTTP_REDIRECT:
@@ -181,7 +181,7 @@ class TestGitHubAuthenticationSecurity(TestCase):
         # Try callback without state parameter (should fail)
         response = self.client.get(callback_url)
 
-        # Should not process without valid state - expect error, redirect, or handled response
+        # Should not process without valid state - expect error, redirect, or handled
         # OAuth callback without proper parameters may return various responses
         assert response.status_code in [HTTP_OK, HTTP_REDIRECT, 400, 403, 500]
 

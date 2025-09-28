@@ -3,6 +3,7 @@ Base classes for browser tests.
 """
 
 import os
+import sys
 import time
 
 from selenium.common.exceptions import NoSuchElementException
@@ -19,8 +20,6 @@ def check_claude_environment():
     variable is detected and visible browser tests are attempted without headless mode.
     """
     if os.getenv("CLAUDECODE"):
-        import sys
-
         # Check if --headless flag is present in command line arguments
         cmd_args = " ".join(sys.argv)
         if "--headless" in cmd_args:
@@ -57,7 +56,7 @@ CLAUDECODE environment requires headless-only testing.
 DETECTED COMMAND: {cmd_args}
 MISSING: --headless flag
 """
-        raise EnvironmentError(error_msg.format(cmd_args=cmd_args))
+        raise OSError(error_msg.format(cmd_args=cmd_args))
 
 
 def force_headless_environment():

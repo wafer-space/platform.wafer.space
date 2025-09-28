@@ -66,7 +66,7 @@ class TestGitLabAuthenticationFlow(TestCase):
             assert "gitlab.com/oauth/authorize" in response.url
 
     def test_gitlab_oauth_redirect_contains_correct_params(self):
-        """Test that GitLab OAuth redirect has correct parameters when redirect occurs."""
+        """Test GitLab OAuth redirect parameters when redirect occurs."""
         response = self.client.get(self.gitlab_login_url)
         # Only test redirect parameters if we actually get a redirect
         if response.status_code == HTTP_REDIRECT:
@@ -183,9 +183,15 @@ class TestGitLabAuthenticationSecurity(TestCase):
         # Try callback without state parameter (should fail)
         response = self.client.get(callback_url)
 
-        # Should not process without valid state - expect error, redirect, or handled response
+        # Should not process without valid state - expect error, redirect, or handled
         # OAuth callback without proper parameters may return various responses
-        assert response.status_code in [HTTP_OK, HTTP_REDIRECT, HTTP_BAD_REQUEST, HTTP_FORBIDDEN, 500]
+        assert response.status_code in [
+            HTTP_OK,
+            HTTP_REDIRECT,
+            HTTP_BAD_REQUEST,
+            HTTP_FORBIDDEN,
+            500,
+        ]
 
     def test_gitlab_requires_verified_email(self):
         """Test that GitLab provider requires verified email."""

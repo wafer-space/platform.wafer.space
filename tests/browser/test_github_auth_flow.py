@@ -1,5 +1,7 @@
 """Browser tests for GitHub and Google OAuth authentication flows."""
 
+import time
+
 import pytest
 from allauth.socialaccount.models import SocialApp
 from django.contrib.sites.models import Site
@@ -10,7 +12,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from tests.browser.base import BaseBrowserTest
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture
 def social_apps(db):
     """Create SocialApp objects for all OAuth providers so buttons appear in UI."""
     # Clean up any existing apps first
@@ -20,14 +22,13 @@ def social_apps(db):
     site = Site.objects.get_current()
 
     # Create unique test SocialApp objects with unique identifiers
-    import time
     unique_suffix = str(int(time.time() * 1000000) % 1000000)  # microsecond suffix
 
     github_app = SocialApp.objects.create(
         provider="github",
         name=f"GitHub Test App {unique_suffix}",
         client_id=f"test_github_client_id_{unique_suffix}",
-        secret=f"github_test_secret_{unique_suffix}",  # noqa: S106
+        secret=f"github_test_secret_{unique_suffix}",
     )
     github_app.sites.add(site)
 
@@ -35,7 +36,7 @@ def social_apps(db):
         provider="google",
         name=f"Google Test App {unique_suffix}",
         client_id=f"test_google_client_id_{unique_suffix}.apps.googleusercontent.com",
-        secret=f"google_test_secret_{unique_suffix}",  # noqa: S106
+        secret=f"google_test_secret_{unique_suffix}",
     )
     google_app.sites.add(site)
 
@@ -43,7 +44,7 @@ def social_apps(db):
         provider="gitlab",
         name=f"GitLab Test App {unique_suffix}",
         client_id=f"test_gitlab_application_id_{unique_suffix}",
-        secret=f"gitlab_test_secret_{unique_suffix}",  # noqa: S106
+        secret=f"gitlab_test_secret_{unique_suffix}",
     )
     gitlab_app.sites.add(site)
 
@@ -51,7 +52,7 @@ def social_apps(db):
         provider="linkedin_oauth2",
         name=f"LinkedIn Test App {unique_suffix}",
         client_id=f"test_linkedin_client_id_{unique_suffix}",
-        secret=f"linkedin_test_secret_{unique_suffix}",  # noqa: S106
+        secret=f"linkedin_test_secret_{unique_suffix}",
     )
     linkedin_app.sites.add(site)
 
@@ -160,7 +161,7 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
             "GitHub": "/accounts/github/login/",
             "Google": "/accounts/google/login/",
             "GitLab": "/accounts/gitlab/login/",
-            "LinkedIn": "/accounts/linkedin_oauth2/login/"
+            "LinkedIn": "/accounts/linkedin_oauth2/login/",
         }
         for provider, href_pattern in provider_patterns.items():
             buttons = driver.find_elements(
