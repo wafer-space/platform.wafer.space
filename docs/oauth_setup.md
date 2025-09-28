@@ -27,11 +27,11 @@ This guide walks through setting up OAuth applications for social authentication
 2. **Configure the OAuth Application**
    - **Application name**: `wafer.space Platform Development` (for development) or `wafer.space Platform` (for production)
    - **Homepage URL**:
-     - Development: `http://localhost:8000`
+     - Development: `http://localhost:8081` (note: port 8081)
      - Production: `https://platform.wafer.space` (or your production domain)
    - **Application description**: "OAuth authentication for wafer.space low-cost silicon manufacturing platform"
    - **Authorization callback URL**:
-     - Development: `http://localhost:8000/accounts/github/login/callback/`
+     - Development: `http://localhost:8081/accounts/github/login/callback/` (note: port 8081)
      - Production: `https://platform.wafer.space/accounts/github/login/callback/`
 
    **Production Setup**: Create separate OAuth apps for development and production environments with different callback URLs.

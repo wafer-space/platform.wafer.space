@@ -19,7 +19,7 @@ uv sync
 uv run python manage.py migrate
 
 # 5. Start development
-uv run python manage.py runserver
+make runserver
 ```
 
 ## OAuth Secrets Management
@@ -77,8 +77,8 @@ uv run pytest wafer_space/users/tests/test_social_auth_*.py
 GITHUB_CLIENT_SECRET=your_secret_here
 
 # Test the full authentication flow
-uv run python manage.py runserver
-# Visit http://localhost:8000/accounts/login/
+make runserver
+# Visit http://localhost:8081/accounts/login/
 # Click "Sign in with GitHub" to test OAuth
 ```
 
@@ -92,7 +92,7 @@ uv run python manage.py runserver
 ### 🧪 Test-Driven Development (No OAuth Needed)
 ```bash
 # All tests work without real OAuth credentials
-uv run pytest                    # Unit tests
+make test                        # Unit tests
 make test-browser-headless       # Browser UI tests
 
 # Tests cover:
@@ -179,16 +179,16 @@ uv run pytest wafer_space/users/tests/test_social_auth_github.py -v
 ### 🔧 Common Commands
 ```bash
 # Development server
-uv run python manage.py runserver
+make runserver
 
 # Run tests
-uv run pytest                    # Unit tests
+make test                        # Unit tests
 make test-browser-headless       # Browser tests
 make lint-fix                   # Fix code style
 
 # Database operations
-uv run python manage.py migrate
-uv run python manage.py createsuperuser
+make migrate
+make createsuperuser
 ```
 
 ## Security Contacts
