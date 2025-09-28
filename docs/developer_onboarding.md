@@ -27,16 +27,16 @@ uv run python manage.py runserver
 ### 🔐 Security Model
 
 **Client IDs**: Public, safe to commit (already configured in Django settings)
-**Client Secrets**: Private, stored in team password manager
+**Client Secrets**: Private, shared by organization owners when needed
 
-### 🏢 For Team Members with Password Manager Access
+### 🏢 For Team Members
 
-1. **Ask for access** to the team's password manager (1Password, Bitwarden, etc.)
-2. **Find the entry**: "wafer.space GitHub OAuth - Development Secret"
-3. **Copy the secret** and paste it in your `.env` file:
+1. **Ask @mithro or organization owners** for the development OAuth secret
+2. **Add the secret** to your `.env` file:
    ```bash
    GITHUB_CLIENT_SECRET=your_secret_here
    ```
+3. **Keep it confidential** - never commit this file to git
 
 ### 👤 For External Contributors / Personal Development
 
@@ -159,7 +159,7 @@ uv run pytest wafer_space/users/tests/test_social_auth_github.py -v
 
 | Scenario | OAuth Setup | Features Available | Testing Capability |
 |----------|-------------|-------------------|-------------------|
-| **Team Member** | Shared secret from password manager | Full OAuth flow | Complete |
+| **Team Member** | Shared secret from organization owners | Full OAuth flow | Complete |
 | **External Contributor** | Personal GitHub OAuth app | Full OAuth flow | Complete |
 | **Backend Focus** | Skip OAuth setup | Core features only | Unit tests only |
 | **CI/CD Pipeline** | No real secrets (mocked) | N/A | Full test suite |

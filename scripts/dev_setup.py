@@ -47,17 +47,17 @@ def main():
 🔐 GitHub OAuth Setup:
 
 The GitHub Client ID is already configured in Django settings.
-You need to obtain the Client Secret from the team's password manager.
+You need the GitHub OAuth Client Secret for full development functionality.
 
-📋 Steps:
-1. Ask a team member for access to the shared password manager
-2. Look for "wafer.space GitHub OAuth - Development Secret"
-3. Copy the secret value
-4. Paste it below when prompted
+📋 Options for getting the secret:
 
-💡 Alternative: If you don't have access to secrets yet, you can:
+1. 🏢 **Team members**: Ask @mithro or other organization owners for the development secret
+2. 👤 **External contributors**: Create your own GitHub OAuth app (see docs/developer_onboarding.md)
+3. ⚡ **Backend development**: Skip OAuth setup - core features and tests still work
+
+💡 If you don't have the secret yet, you can:
    - Skip OAuth setup (some features won't work locally)
-   - Set up your own GitHub OAuth app for testing
+   - Set up your own personal GitHub OAuth app for testing
    - Work on features that don't require authentication
 """)
 

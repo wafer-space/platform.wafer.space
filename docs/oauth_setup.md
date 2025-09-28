@@ -75,7 +75,7 @@ GITHUB_CLIENT_SECRET=your_github_client_secret_here
 ```
 
 **Organization Best Practices:**
-- **Use a shared password manager** (1Password, Bitwarden, etc.) for OAuth secrets
+- **Share secrets securely**: Organization owners share development secrets with team members via secure channels
 - **Document app ownership**: Record which team member created each OAuth app
 - **Implement secret rotation**: Rotate secrets every 90 days or when team members leave
 - **Separate environments**: Use different OAuth apps for development, staging, and production
@@ -90,12 +90,12 @@ GITHUB_CLIENT_SECRET=your_github_client_secret_here
 - ✅ Documentation and setup scripts
 
 **What Must Stay Secret:**
-- 🚫 Client secrets (stored in password manager only)
+- 🚫 Client secrets (shared securely by organization owners)
 - 🚫 Production credentials
 - 🚫 Personal OAuth app credentials
 
 **Developer Access Options:**
-1. **Team members**: Get shared development secret from password manager
+1. **Team members**: Get shared development secret from organization owners
 2. **External contributors**: Create personal OAuth apps for testing
 3. **Backend developers**: Work without OAuth (limited features, full testing)
 
