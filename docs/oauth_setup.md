@@ -63,12 +63,15 @@ Add these to your `.env` file:
 
 ```bash
 # GitHub OAuth credentials for wafer-space organization
-# Development Client ID is already configured in settings/base.py: Ov23liLB7RRJUzku13dU
-# You only need to set the secret for development:
+# Client IDs are configured in Django settings:
+# - Development: Ov23liLB7RRJUzku13dU (in settings/base.py)
+# - Production: Ov23linEhI33aev2uGSU (in settings/production.py)
+#
+# You only need to set the secrets:
 GITHUB_CLIENT_SECRET=your_github_client_secret_here
 
 # Optionally override the Client ID if using a different app:
-# GITHUB_CLIENT_ID=your_github_client_id_here
+# GITHUB_CLIENT_ID=your_custom_client_id_here
 ```
 
 **Organization Best Practices:**
