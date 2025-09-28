@@ -300,7 +300,7 @@ SOCIALACCOUNT_FORMS = {"signup": "wafer_space.users.forms.UserSocialSignupForm"}
 SOCIALACCOUNT_PROVIDERS = {
     "github": {
         "APP": {
-            "client_id": env("GITHUB_CLIENT_ID", default=""),
+            "client_id": env("GITHUB_CLIENT_ID", default="Ov23liLB7RRJUzku13dU"),
             "secret": env("GITHUB_CLIENT_SECRET", default=""),
         },
         "SCOPE": [

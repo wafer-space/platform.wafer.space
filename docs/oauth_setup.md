@@ -62,8 +62,13 @@ This guide walks through setting up OAuth applications for social authentication
 Add these to your `.env` file:
 
 ```bash
-GITHUB_CLIENT_ID=your_github_client_id_here
+# GitHub OAuth credentials for wafer-space organization
+# Development Client ID is already configured in settings/base.py: Ov23liLB7RRJUzku13dU
+# You only need to set the secret for development:
 GITHUB_CLIENT_SECRET=your_github_client_secret_here
+
+# Optionally override the Client ID if using a different app:
+# GITHUB_CLIENT_ID=your_github_client_id_here
 ```
 
 **Organization Best Practices:**
