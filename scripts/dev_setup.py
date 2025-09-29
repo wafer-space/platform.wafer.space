@@ -6,7 +6,6 @@ This script helps new developers set up their local development environment
 by guiding them through OAuth configuration.
 """
 
-import os
 import sys
 from pathlib import Path
 
@@ -27,7 +26,7 @@ def main():
     if env_file.exists():
         print("✅ .env file already exists")
         overwrite = input("Do you want to update OAuth configuration? (y/N): ")
-        if overwrite.lower() != 'y':
+        if overwrite.lower() != "y":
             print("Setup cancelled.")
             return
     else:
@@ -36,7 +35,7 @@ def main():
         if env_example.exists():
             with open(env_example) as f:
                 content = f.read()
-            with open(env_file, 'w') as f:
+            with open(env_file, "w") as f:
                 f.write(content)
             print("✅ Created .env file from .env.example")
 
@@ -64,7 +63,7 @@ You need the GitHub OAuth Client Secret for full development functionality.
     # Prompt for GitHub secret
     setup_oauth = input("\nDo you want to configure GitHub OAuth now? (y/N): ")
 
-    if setup_oauth.lower() == 'y':
+    if setup_oauth.lower() == "y":
         secret = input("\nPaste the GitHub OAuth Client Secret: ").strip()
 
         if secret:
@@ -76,7 +75,7 @@ You need the GitHub OAuth Client Secret for full development functionality.
     else:
         print("⚠️  Skipped OAuth setup - some features may not work locally")
 
-    print(f"""
+    print("""
 🎉 Setup Complete!
 
 Next steps:
