@@ -16,7 +16,7 @@ This guide walks through setting up OAuth applications for social authentication
 
 ### Google OAuth Apps (wafer-space project)
 - **Development Client ID**: `62545893239-jiesk1vfk22j87cth4ukq4alluc3nqhc.apps.googleusercontent.com`
-- **Production Client ID**: Not yet configured
+- **Production Client ID**: Configure following production setup instructions below
 - **Management URL**: https://console.cloud.google.com/apis/credentials
 
 ### Configuration Notes
@@ -51,7 +51,7 @@ This guide walks through setting up OAuth applications for social authentication
    - **Application name**: `wafer.space Platform Development` (for development) or `wafer.space Platform` (for production)
    - **Homepage URL**:
      - Development: `http://localhost:8081` (note: port 8081)
-     - Production: `https://platform.wafer.space` (or your production domain)
+     - Production: `https://platform.wafer.space`
    - **Application description**: "OAuth authentication for wafer.space low-cost silicon manufacturing platform"
    - **Authorization callback URL**:
      - Development: `http://localhost:8081/accounts/github/login/callback/` (note: port 8081)
@@ -163,7 +163,7 @@ The GitHub provider is configured to request the following scope:
    - Go to "APIs & Services" > "OAuth consent screen"
    - Choose "External" user type (unless you have Google Workspace)
    - Fill in required fields:
-     - **App name**: `wafer.space Development` (or appropriate name)
+     - **App name**: `wafer.space Development` (for development) or `wafer.space Platform` (for production)
      - **User support email**: Your email address
      - **Developer contact information**: Your email address
    - Add scopes: `../auth/userinfo.email` and `../auth/userinfo.profile`
@@ -174,13 +174,14 @@ The GitHub provider is configured to request the following scope:
    - Click "Create Credentials" > "OAuth client ID"
    - Choose "Web application" as application type
    - Configure the application:
-     - **Name**: `wafer.space OAuth Client`
-     - **Authorized JavaScript origins**: `http://localhost:8000`
-     - **Authorized redirect URIs**: `http://localhost:8000/accounts/google/login/callback/`
+     - **Name**: `wafer.space OAuth Client Development`
+     - **Authorized JavaScript origins**: `http://localhost:8081`
+     - **Authorized redirect URIs**: `http://localhost:8081/accounts/google/login/callback/`
 
    For production:
-   - **Authorized JavaScript origins**: `https://your-domain.com`
-   - **Authorized redirect URIs**: `https://your-domain.com/accounts/google/login/callback/`
+   - **Name**: `wafer.space OAuth Client Production`
+   - **Authorized JavaScript origins**: `https://platform.wafer.space`
+   - **Authorized redirect URIs**: `https://platform.wafer.space/accounts/google/login/callback/`
 
 6. **Obtain Credentials**
    - Click "Create"
