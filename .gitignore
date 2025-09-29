@@ -293,3 +293,8 @@ wafer.space - Django Website for User Management.pdf
 
 # Browser test screenshots (auto-generated)
 tests/browser/screenshots/
+
+# Google OAuth client secret files
+client_secret_*.json
+*client_secret*.json
+
