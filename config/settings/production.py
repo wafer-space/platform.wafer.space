@@ -173,5 +173,11 @@ SOCIALACCOUNT_PROVIDERS["gitlab"]["APP"]["client_id"] = env(
     default="f0fde384db4cd0fe11041488a6b87e9d3d20223385b78d1ba1ed4045fbea6c16",  # Production Client ID for wafer-space group
 )
 
+# Google production Client ID
+SOCIALACCOUNT_PROVIDERS["google"]["APP"]["client_id"] = env(
+    "GOOGLE_CLIENT_ID",
+    default="62545893239-pgg1lcg28u9suivjh4nso9t8mev5qua2.apps.googleusercontent.com",  # Production Client ID for wafer-space project
+)
+
 # Your stuff...
 # ------------------------------------------------------------------------------

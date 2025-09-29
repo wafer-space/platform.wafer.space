@@ -16,7 +16,7 @@ This guide walks through setting up OAuth applications for social authentication
 
 ### Google OAuth Apps (wafer-space project)
 - **Development Client ID**: `62545893239-jiesk1vfk22j87cth4ukq4alluc3nqhc.apps.googleusercontent.com`
-- **Production Client ID**: Configure following production setup instructions below
+- **Production Client ID**: `62545893239-pgg1lcg28u9suivjh4nso9t8mev5qua2.apps.googleusercontent.com`
 - **Management URL**: https://console.cloud.google.com/apis/credentials
 
 ### Configuration Notes
