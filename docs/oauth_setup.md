@@ -14,6 +14,11 @@ This guide walks through setting up OAuth applications for social authentication
 - **Production Client ID**: `f0fde384db4cd0fe11041488a6b87e9d3d20223385b78d1ba1ed4045fbea6c16`
 - **Management URL**: https://gitlab.com/groups/wafer-space/-/settings/applications
 
+### Google OAuth Apps (wafer-space project)
+- **Development Client ID**: `62545893239-jiesk1vfk22j87cth4ukq4alluc3nqhc.apps.googleusercontent.com`
+- **Production Client ID**: Not yet configured
+- **Management URL**: https://console.cloud.google.com/apis/credentials
+
 ### Configuration Notes
 - ✅ **Client IDs** are configured in Django settings (safe to commit)
 - 🔐 **Client Secrets** are stored in environment variables (never committed)

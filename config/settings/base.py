@@ -324,7 +324,10 @@ SOCIALACCOUNT_PROVIDERS = {
     },
     "google": {
         "APP": {
-            "client_id": env("GOOGLE_CLIENT_ID", default=""),
+            "client_id": env(
+                "GOOGLE_CLIENT_ID",
+                default="62545893239-jiesk1vfk22j87cth4ukq4alluc3nqhc.apps.googleusercontent.com",
+            ),
             "secret": env("GOOGLE_CLIENT_SECRET", default=""),
         },
         "SCOPE": [
