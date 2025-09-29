@@ -169,6 +169,18 @@ The GitHub provider is configured to request the following scope:
    - Add scopes: `../auth/userinfo.email` and `../auth/userinfo.profile`
    - Click "Save and Continue" through the steps
 
+   **Important**: Your OAuth consent screen will start in "Testing" mode, which restricts access to test users only.
+
+   **For Development**:
+   - Add test users in the "Test users" section if needed
+   - Testing mode is fine for development and allows up to 100 test users
+
+   **For Production**:
+   - Go back to "OAuth consent screen" after creating credentials
+   - Click "PUBLISH APP" to make the app available to all users
+   - **Warning**: Publishing requires Google's review for sensitive scopes, but basic profile/email scopes are usually auto-approved
+   - Once published, any user can authenticate with your app
+
 5. **Create OAuth 2.0 Credentials**
    - Go to "APIs & Services" > "Credentials"
    - Click "Create Credentials" > "OAuth client ID"
@@ -562,6 +574,16 @@ gh secret set GOOGLE_CLIENT_SECRET_PROD --body="actual_secret_here"
   - Check `SOCIALACCOUNT_AUTO_SIGNUP = True` in settings
   - Verify `SOCIALACCOUNT_EMAIL_VERIFICATION = "none"` for trusted providers
   - Ensure the provider is configured with `"VERIFIED_EMAIL": True`
+
+#### Google OAuth "Access Restricted to Test Users" Warning
+- **Problem**: Google OAuth shows "OAuth access is restricted to the test users listed on your OAuth consent screen"
+- **Solution**:
+  - **For Development**: Add your email to the "Test users" list in OAuth consent screen settings
+  - **For Production**:
+    1. Go to Google Cloud Console > APIs & Services > OAuth consent screen
+    2. Click "PUBLISH APP" to make the app available to all users
+    3. Submit for verification if using sensitive scopes (basic profile/email usually auto-approved)
+  - **Alternative for Development**: Keep in testing mode and add specific test users as needed
 
 #### 500 Error During OAuth Callback
 - **Problem**: Server error when returning from OAuth provider
