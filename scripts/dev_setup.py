@@ -5,6 +5,7 @@ Development Environment Setup Script for wafer.space
 This script helps new developers set up their local development environment
 by guiding them through OAuth configuration.
 """
+# ruff: noqa: T201, PTH123
 
 import sys
 from pathlib import Path
@@ -50,8 +51,8 @@ You need the GitHub OAuth Client Secret for full development functionality.
 
 📋 Options for getting the secret:
 
-1. 🏢 **Team members**: Ask @mithro or other organization owners for the development secret
-2. 👤 **External contributors**: Create your own GitHub OAuth app (see docs/developer_onboarding.md)
+1. 🏢 **Team members**: Ask @mithro or other organization owners for the secret
+2. 👤 **External contributors**: Create your own GitHub OAuth app (see docs/)
 3. ⚡ **Backend development**: Skip OAuth setup - core features and tests still work
 
 💡 If you don't have the secret yet, you can:
@@ -101,10 +102,7 @@ def update_env_var(key, value):
     """Update or add an environment variable in .env file."""
     env_file = Path(".env")
 
-    if env_file.exists():
-        lines = env_file.read_text().splitlines()
-    else:
-        lines = []
+    lines = env_file.read_text().splitlines() if env_file.exists() else []
 
     # Find and update existing key or add new one
     updated = False
