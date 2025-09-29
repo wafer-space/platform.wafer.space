@@ -2,6 +2,24 @@
 
 This guide walks through setting up OAuth applications for social authentication in the wafer.space platform.
 
+## Quick Reference - wafer-space OAuth Applications
+
+### GitHub OAuth Apps (wafer-space organization)
+- **Development Client ID**: `Ov23liLB7RRJUzku13dU`
+- **Production Client ID**: `Ov23linEhI33aev2uGSU`
+- **Management URL**: https://github.com/wafer-space (organization settings)
+
+### GitLab OAuth Apps (wafer-space group ID: 116401955)
+- **Development Client ID**: `2a29dee626b3c8b544f6f2c3a8042f912130bd040f4d3c60ef0e5864a4962aaa`
+- **Production Client ID**: `f0fde384db4cd0fe11041488a6b87e9d3d20223385b78d1ba1ed4045fbea6c16`
+- **Management URL**: https://gitlab.com/groups/wafer-space/-/settings/applications
+
+### Configuration Notes
+- ✅ **Client IDs** are configured in Django settings (safe to commit)
+- 🔐 **Client Secrets** are stored in environment variables (never committed)
+- 🌍 Both development and production environments are fully configured
+- 📱 All apps are configured as "Confidential" for server-side web applications
+
 ## Table of Contents
 - [GitHub OAuth Setup](#github-oauth-setup)
 - [Google OAuth Setup](#google-oauth-setup)
@@ -188,24 +206,61 @@ The Google provider is configured to request the following scopes:
 
 ## GitLab OAuth Setup
 
-### Creating a GitLab OAuth Application
+### Creating a GitLab OAuth Application for wafer-space Group
 
-1. **Navigate to GitLab Applications**
-   - Go to https://gitlab.com/-/profile/applications (for GitLab.com)
-   - Or go to your self-hosted GitLab instance: `https://your-gitlab-instance.com/-/profile/applications`
+**wafer-space Group ID**: 116401955
+
+#### Option 1: Group-owned Application (Recommended for Team)
+
+1. **Navigate to wafer-space Group Applications**
+   - Go to https://gitlab.com/groups/wafer-space/-/settings/applications
+   - Or navigate to the wafer-space group on GitLab.com:
+     - Visit https://gitlab.com/wafer-space
+     - In the group sidebar, go to **Settings** → **Applications**
+   - Sign in with your GitLab account (you must be a group member with appropriate permissions)
+
+2. **Create New Group Application**
+   - Click **"New application"**
+   - Fill in the application details:
+     - **Name**: `wafer.space Platform Development` (for development) or `wafer.space Platform` (for production)
+     - **Redirect URI**:
+       - Development: `http://localhost:8081/accounts/gitlab/login/callback/` (note: port 8081)
+       - Production: `https://platform.wafer.space/accounts/gitlab/login/callback/`
+     - **Confidential**: ✅ **YES, check this box**
+       - **Required for server-side web applications** like Django
+       - Confidential applications can securely store client secrets
+       - Non-confidential apps are for mobile/single-page apps that can't store secrets
+     - **Scopes**: Select the following checkboxes:
+       - ✅ `read_user` - Read access to user profile information
+       - ✅ `email` - Read access to user email addresses
+
+   **Production Setup**: Create separate applications for development and production environments with different redirect URIs.
+
+3. **Save the Application**
+   - Click **"Save application"**
+   - You'll be redirected to a page showing your application details
+   - The application will be owned by the wafer-space group
+
+4. **Obtain Credentials**
+   - **Application ID**: Displayed on the application page (this is your Client ID - public, safe to share)
+   - **Secret**: Displayed on the application page (this is your Client Secret - keep this secret!)
+   - Save both values securely
+
+#### Option 2: Personal Application (For External Contributors)
+
+1. **Navigate to Personal Applications**
+   - Go to https://gitlab.com/-/profile/applications
    - Sign in with your GitLab account
 
 2. **Create New Application**
    - Click "Add new application"
    - Fill in the application details:
-     - **Name**: `wafer.space Development` (or appropriate name)
-     - **Redirect URI**: `http://localhost:8000/accounts/gitlab/login/callback/`
+     - **Name**: `wafer.space Development (YourName)`
+     - **Redirect URI**: `http://localhost:8081/accounts/gitlab/login/callback/`
+     - **Confidential**: ✅ **YES, check this box** (required for web applications)
      - **Scopes**: Select the following checkboxes:
        - `read_user` - Read access to user profile information
        - `email` - Read access to user email addresses
-
-   For production:
-   - **Redirect URI**: `https://your-domain.com/accounts/gitlab/login/callback/`
 
 3. **Submit the Application**
    - Click "Save application"
@@ -216,13 +271,30 @@ The Google provider is configured to request the following scopes:
    - **Secret**: Displayed on the application page (keep this secret!)
    - Save both values securely
 
+### Group Application Benefits
+
+When using a Group-owned GitLab OAuth application:
+- **Centralized management**: Group owners can manage the application for all team members
+- **Consistent branding**: Users see "wafer-space" as the application owner during OAuth consent
+- **Team access**: All group members can use the same OAuth configuration
+- **Easier secret sharing**: Group owners can securely share the Client Secret with team members
+- **Access control**: Group owners can revoke access for all users if needed
+
 ### Environment Variables
 
 Add these to your `.env` file:
 
 ```bash
-GITLAB_CLIENT_ID=your_gitlab_application_id_here
+# GitLab OAuth credentials for wafer-space group (ID: 116401955)
+# Client IDs are configured in Django settings:
+# - Development: 2a29dee626b3c8b544f6f2c3a8042f912130bd040f4d3c60ef0e5864a4962aaa (settings/base.py)
+# - Production: f0fde384db4cd0fe11041488a6b87e9d3d20223385b78d1ba1ed4045fbea6c16 (settings/production.py)
+#
+# You only need to set the secret:
 GITLAB_CLIENT_SECRET=your_gitlab_application_secret_here
+
+# Optionally override the Client ID if using a different app:
+# GITLAB_CLIENT_ID=your_custom_application_id_here
 ```
 
 ### Scopes
@@ -233,6 +305,8 @@ The GitLab provider is configured to request the following scopes:
 
 ### Important Notes
 
+- **Confidential Applications**: Always check "Confidential" for server-side web applications like Django. This allows the app to securely store the client secret on the server.
+- **Non-Confidential Applications**: Only use for mobile apps or single-page applications that cannot securely store secrets.
 - GitLab OAuth works with both GitLab.com and self-hosted GitLab instances
 - For self-hosted GitLab, you may need to configure the provider URL in Django settings
 - GitLab requires exact redirect URI matching

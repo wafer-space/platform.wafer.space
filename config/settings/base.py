@@ -310,7 +310,7 @@ SOCIALACCOUNT_PROVIDERS = {
     },
     "gitlab": {
         "APP": {
-            "client_id": env("GITLAB_CLIENT_ID", default=""),
+            "client_id": env("GITLAB_CLIENT_ID", default="2a29dee626b3c8b544f6f2c3a8042f912130bd040f4d3c60ef0e5864a4962aaa"),
             "secret": env("GITLAB_CLIENT_SECRET", default=""),
         },
         "SCOPE": [

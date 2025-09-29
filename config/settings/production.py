@@ -156,11 +156,19 @@ LOGGING = {
 
 # OAuth Configuration - Production
 # ------------------------------------------------------------------------------
-# Override GitHub OAuth Client ID for production environment
+# Override OAuth Client IDs for production environment
 SOCIALACCOUNT_PROVIDERS = SOCIALACCOUNT_PROVIDERS.copy()  # Copy from base settings
+
+# GitHub production Client ID
 SOCIALACCOUNT_PROVIDERS["github"]["APP"]["client_id"] = env(
     "GITHUB_CLIENT_ID",
     default="Ov23linEhI33aev2uGSU"  # Production Client ID for wafer-space organization
+)
+
+# GitLab production Client ID
+SOCIALACCOUNT_PROVIDERS["gitlab"]["APP"]["client_id"] = env(
+    "GITLAB_CLIENT_ID",
+    default="f0fde384db4cd0fe11041488a6b87e9d3d20223385b78d1ba1ed4045fbea6c16"  # Production Client ID for wafer-space group
 )
 
 # Your stuff...

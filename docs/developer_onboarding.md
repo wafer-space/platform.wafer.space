@@ -42,17 +42,45 @@ make runserver
 
 You have several options:
 
-#### Option 1: Create Your Own OAuth App (Recommended)
+#### Option 1: Create Your Own OAuth Apps (Recommended)
+
+**GitHub OAuth:**
 ```bash
 # 1. Go to GitHub Settings > Developer settings > OAuth Apps
 # 2. Click "New OAuth App"
 # 3. Configure:
 #    - Application name: "wafer.space Development (YourName)"
-#    - Homepage URL: http://localhost:8000
-#    - Callback URL: http://localhost:8000/accounts/github/login/callback/
+#    - Homepage URL: http://localhost:8081
+#    - Callback URL: http://localhost:8081/accounts/github/login/callback/
 # 4. Copy Client ID and Secret to your .env:
 GITHUB_CLIENT_ID=your_personal_client_id
 GITHUB_CLIENT_SECRET=your_personal_client_secret
+```
+
+**GitLab OAuth:**
+```bash
+# 1. Go to GitLab Settings > Applications: https://gitlab.com/-/profile/applications
+# 2. Click "Add new application"
+# 3. Configure:
+#    - Name: "wafer.space Development (YourName)"
+#    - Redirect URI: http://localhost:8081/accounts/gitlab/login/callback/
+#    - Scopes: read_user, email
+# 4. Copy Application ID and Secret to your .env:
+GITLAB_CLIENT_ID=your_personal_application_id
+GITLAB_CLIENT_SECRET=your_personal_application_secret
+```
+
+**Google OAuth:**
+```bash
+# 1. Go to Google Cloud Console: https://console.cloud.google.com/
+# 2. Create project > Enable APIs > Create OAuth credentials
+# 3. Configure:
+#    - App name: "wafer.space Development (YourName)"
+#    - Authorized origins: http://localhost:8081
+#    - Redirect URI: http://localhost:8081/accounts/google/login/callback/
+# 4. Copy Client ID and Secret to your .env:
+GOOGLE_CLIENT_ID=your_personal_client_id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your_personal_client_secret
 ```
 
 #### Option 2: Work Without OAuth (Limited Features)
@@ -66,7 +94,12 @@ GITHUB_CLIENT_SECRET=your_personal_client_secret
 ```bash
 # Use the existing test suite which mocks OAuth flows
 # Perfect for testing authentication logic without real credentials
-uv run pytest wafer_space/users/tests/test_social_auth_*.py
+make test  # All OAuth tests work without real credentials
+
+# Test specific providers
+uv run pytest wafer_space/users/tests/test_social_auth_github.py
+uv run pytest wafer_space/users/tests/test_social_auth_gitlab.py
+uv run pytest wafer_space/users/tests/test_social_auth_google.py
 ```
 
 ## Development Workflow Options
@@ -79,7 +112,7 @@ GITHUB_CLIENT_SECRET=your_secret_here
 # Test the full authentication flow
 make runserver
 # Visit http://localhost:8081/accounts/login/
-# Click "Sign in with GitHub" to test OAuth
+# Click "Sign in with GitHub", "Sign in with GitLab", or "Sign in with Google" to test OAuth
 ```
 
 ### ⚡ Backend Development (OAuth Optional)
@@ -159,8 +192,8 @@ uv run pytest wafer_space/users/tests/test_social_auth_github.py -v
 
 | Scenario | OAuth Setup | Features Available | Testing Capability |
 |----------|-------------|-------------------|-------------------|
-| **Team Member** | Shared secret from organization owners | Full OAuth flow | Complete |
-| **External Contributor** | Personal GitHub OAuth app | Full OAuth flow | Complete |
+| **Team Member** | Shared secrets from organization owners | Full OAuth flow (GitHub, GitLab, Google) | Complete |
+| **External Contributor** | Personal OAuth apps (GitHub, GitLab, Google) | Full OAuth flow | Complete |
 | **Backend Focus** | Skip OAuth setup | Core features only | Unit tests only |
 | **CI/CD Pipeline** | No real secrets (mocked) | N/A | Full test suite |
 
