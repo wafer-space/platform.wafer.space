@@ -34,18 +34,24 @@ nginx -t
 echo "Reloading nginx..."
 systemctl reload nginx
 
-# Obtain certificate
-echo "Obtaining SSL certificate from Let's Encrypt..."
-certbot certonly --webroot \
-    -w /var/www/certbot \
-    -d "$DOMAIN" \
-    -d "www.$DOMAIN" \
-    --email "$EMAIL" \
-    --agree-tos \
-    --no-eff-email \
-    --non-interactive
+# Check if certificate already exists
+if [ -d "/etc/letsencrypt/live/$DOMAIN" ]; then
+    echo "✓ SSL certificate already exists for $DOMAIN"
+    echo "To renew: sudo certbot renew"
+else
+    # Obtain certificate
+    echo "Obtaining SSL certificate from Let's Encrypt..."
+    certbot certonly --webroot \
+        -w /var/www/certbot \
+        -d "$DOMAIN" \
+        -d "www.$DOMAIN" \
+        --email "$EMAIL" \
+        --agree-tos \
+        --no-eff-email \
+        --non-interactive
 
-echo "✓ Certificate obtained"
+    echo "✓ Certificate obtained"
+fi
 
 # Verify certificate
 echo "Verifying certificate..."
