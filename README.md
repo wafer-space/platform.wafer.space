@@ -201,4 +201,15 @@ Moved to [settings](https://cookiecutter-django.readthedocs.io/en/latest/1-getti
 
 ## Deployment
 
-The following details how to deploy this application.
+For comprehensive production deployment instructions on Debian Linux, see the [Production Deployment Guide](docs/production_deployment.md).
+
+This guide covers:
+- System requirements and initial setup
+- PostgreSQL and dependency installation
+- Application installation with uv
+- Environment configuration
+- Systemd service setup (Gunicorn and Celery)
+- Nginx reverse proxy configuration
+- SSL/HTTPS with Let's Encrypt
+- Security hardening and monitoring
+- Troubleshooting and maintenance procedures
