@@ -1,0 +1,39 @@
+[Unit]
+Description=platform.wafer.space Celery Worker
+After=network.target postgresql.service django-gunicorn.service
+Requires=postgresql.service
+
+[Service]
+Type=forking
+User=www-data
+Group=www-data
+WorkingDirectory=/home/django/platform.wafer.space
+Environment="PATH=/home/django/platform.wafer.space/.venv/bin:/home/django/.cargo/bin"
+Environment="DJANGO_SETTINGS_MODULE=config.settings.production"
+EnvironmentFile=/home/django/platform.wafer.space/.env
+
+ExecStart=/home/django/.cargo/bin/uv run celery \
+    -A config \
+    worker \
+    --loglevel=info \
+    --logfile=/var/log/platform.wafer.space/celery.log \
+    --pidfile=/var/run/platform.wafer.space/celery.pid \
+    --detach \
+    --queues=manufacturability,referrals
+
+ExecStop=/bin/kill -s TERM $MAINPID
+ExecReload=/bin/kill -s HUP $MAINPID
+
+# Security hardening
+NoNewPrivileges=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/platform.wafer.space /var/run/platform.wafer.space /home/django/platform.wafer.space/wafer_space/media
+
+# Restart policy
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target

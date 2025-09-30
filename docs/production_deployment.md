@@ -2,6 +2,8 @@
 
 This guide provides step-by-step instructions for deploying the platform.wafer.space application on a stock Debian 12 (Bookworm) stable Linux server.
 
+**Quick Start:** Automated deployment scripts are available in the [`deployment/`](../deployment/) directory. See the [deployment README](../deployment/README.md) for automated installation.
+
 ## Table of Contents
 
 - [System Requirements](#system-requirements)

@@ -1,0 +1,34 @@
+[Unit]
+Description=platform.wafer.space Celery Beat Scheduler
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/home/django/platform.wafer.space
+Environment="PATH=/home/django/platform.wafer.space/.venv/bin:/home/django/.cargo/bin"
+Environment="DJANGO_SETTINGS_MODULE=config.settings.production"
+EnvironmentFile=/home/django/platform.wafer.space/.env
+
+ExecStart=/home/django/.cargo/bin/uv run celery \
+    -A config \
+    beat \
+    --loglevel=info \
+    --logfile=/var/log/platform.wafer.space/celery-beat.log \
+    --pidfile=/var/run/platform.wafer.space/celery-beat.pid
+
+# Security hardening
+NoNewPrivileges=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/platform.wafer.space /var/run/platform.wafer.space /home/django/platform.wafer.space/wafer_space/media
+
+# Restart policy
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target
