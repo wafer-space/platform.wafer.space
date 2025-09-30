@@ -222,26 +222,39 @@ psql -h localhost -U platform_wafer_space -d platform_wafer_space -W
 
 ## Application User Setup
 
-### 1. Create Application User
+### 1. Create Application Users
+
+For security through privilege separation, we use two users:
+- **`django`**: Owns the code and performs deployments (has write access)
+- **`www-data`**: Runs the application services (has read-only access to code)
+
+This prevents a compromised application from modifying its own code.
 
 ```bash
-# Create system user for running the application
+# Create django user for code deployment and ownership
 sudo useradd --system --create-home --shell /bin/bash django
 
-# Set password (optional, for SSH access)
+# Set password (optional, for SSH access for deployments)
 # sudo passwd django
+
+# www-data user should already exist (created by nginx/apache)
+# Verify it exists:
+id www-data
+
+# If www-data doesn't exist, create it:
+# sudo useradd --system --no-create-home --shell /usr/sbin/nologin www-data
 ```
 
 ### 2. Create Application Directories
 
 ```bash
-# Create log and runtime directories
+# Create log and runtime directories owned by www-data (service user)
 sudo mkdir -p /var/log/platform.wafer.space
 sudo mkdir -p /var/run/platform.wafer.space
 
-# Set ownership
-sudo chown -R django:django /var/log/platform.wafer.space
-sudo chown -R django:django /var/run/platform.wafer.space
+# Set ownership - www-data runs the services
+sudo chown -R www-data:www-data /var/log/platform.wafer.space
+sudo chown -R www-data:www-data /var/run/platform.wafer.space
 
 # Note: /home/django already exists from user creation
 ```
@@ -422,6 +435,36 @@ ls -la /home/django/platform.wafer.space/staticfiles/
 # Should contain admin/, css/, js/, etc.
 ```
 
+### 3. Set File Permissions for Privilege Separation
+
+Set secure permissions so django owns code, www-data can read:
+
+```bash
+# As root or with sudo
+# Set ownership: django owns files, www-data group can read
+sudo chown -R django:www-data /home/django/platform.wafer.space
+
+# Set directory permissions: owner rwx, group rx, other none
+sudo find /home/django/platform.wafer.space -type d -exec chmod 750 {} \;
+
+# Set file permissions: owner rw, group r, other none
+sudo find /home/django/platform.wafer.space -type f -exec chmod 640 {} \;
+
+# Make manage.py and scripts executable
+sudo chmod 750 /home/django/platform.wafer.space/manage.py
+
+# Secure .env file - only django and www-data can read
+sudo chmod 640 /home/django/platform.wafer.space/.env
+
+# www-data needs write access to media directory
+sudo chown -R www-data:www-data /home/django/platform.wafer.space/wafer_space/media
+sudo chmod 755 /home/django/platform.wafer.space/wafer_space/media
+
+# Verify permissions
+ls -la /home/django/platform.wafer.space/
+ls -la /home/django/platform.wafer.space/.env
+```
+
 ## Systemd Services
 
 ### 1. Create Gunicorn Service
@@ -442,8 +485,8 @@ Requires=postgresql.service
 
 [Service]
 Type=notify
-User=django
-Group=django
+User=www-data
+Group=www-data
 WorkingDirectory=/home/django/platform.wafer.space
 Environment="PATH=/home/django/platform.wafer.space/.venv/bin:/home/django/.cargo/bin"
 Environment="DJANGO_SETTINGS_MODULE=config.settings.production"
@@ -469,7 +512,7 @@ NoNewPrivileges=true
 PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/home/django/platform.wafer.space /var/log/platform.wafer.space /var/run/platform.wafer.space
+ReadWritePaths=/var/log/platform.wafer.space /var/run/platform.wafer.space /home/django/platform.wafer.space/wafer_space/media
 
 # Restart policy
 Restart=on-failure
@@ -497,8 +540,8 @@ Requires=postgresql.service
 
 [Service]
 Type=forking
-User=django
-Group=django
+User=www-data
+Group=www-data
 WorkingDirectory=/home/django/platform.wafer.space
 Environment="PATH=/home/django/platform.wafer.space/.venv/bin:/home/django/.cargo/bin"
 Environment="DJANGO_SETTINGS_MODULE=config.settings.production"
@@ -521,7 +564,7 @@ NoNewPrivileges=true
 PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/home/django/platform.wafer.space /var/log/platform.wafer.space /var/run/platform.wafer.space
+ReadWritePaths=/var/log/platform.wafer.space /var/run/platform.wafer.space /home/django/platform.wafer.space/wafer_space/media
 
 # Restart policy
 Restart=on-failure
@@ -549,8 +592,8 @@ Requires=postgresql.service
 
 [Service]
 Type=simple
-User=django
-Group=django
+User=www-data
+Group=www-data
 WorkingDirectory=/home/django/platform.wafer.space
 Environment="PATH=/home/django/platform.wafer.space/.venv/bin:/home/django/.cargo/bin"
 Environment="DJANGO_SETTINGS_MODULE=config.settings.production"
@@ -568,7 +611,7 @@ NoNewPrivileges=true
 PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/home/django/platform.wafer.space /var/log/platform.wafer.space /var/run/platform.wafer.space
+ReadWritePaths=/var/log/platform.wafer.space /var/run/platform.wafer.space /home/django/platform.wafer.space/wafer_space/media
 
 # Restart policy
 Restart=on-failure
@@ -815,6 +858,30 @@ sudo chmod +x /etc/letsencrypt/renewal-hooks/post/reload-nginx.sh
 
 ## Security Hardening
 
+### Overview of Security Measures
+
+This deployment implements multiple layers of security:
+
+1. **Privilege Separation**: Application runs as `www-data` with read-only access to code
+   - Code is owned by `django` user (deployment only)
+   - Services run as `www-data` user (cannot modify code)
+   - If compromised, attacker cannot modify application files or install backdoors
+
+2. **Systemd Hardening**: Services run with restricted permissions
+   - `NoNewPrivileges`: Cannot gain additional privileges
+   - `PrivateDevices`: No access to physical devices
+   - `ProtectSystem`: Read-only access to system directories
+   - `ProtectHome`: Limited access to home directories
+
+3. **File Permissions**: Minimal access rights (750/640)
+   - Only django and www-data can read application code
+   - Only www-data can write to logs, media, and runtime directories
+
+4. **Network Security**: Firewall and SSL/TLS
+   - UFW firewall blocks all except necessary ports
+   - Fail2Ban prevents brute force attacks
+   - HTTPS enforced with HSTS headers
+
 ### 1. Configure Firewall (UFW)
 
 ```bash
@@ -929,7 +996,7 @@ Add:
     compress
     delaycompress
     notifempty
-    create 0640 django django
+    create 0640 www-data www-data
     sharedscripts
     postrotate
         systemctl reload django-gunicorn.service > /dev/null
@@ -1047,6 +1114,17 @@ uv run python manage.py migrate --settings=config.settings.production | tee -a $
 # Collect static files
 uv run python manage.py collectstatic --settings=config.settings.production --noinput | tee -a $LOG_FILE
 
+# Fix permissions after update (django owns code, www-data can read)
+sudo chown -R django:www-data $APP_DIR
+sudo find $APP_DIR -type d -exec chmod 750 {} \;
+sudo find $APP_DIR -type f -exec chmod 640 {} \;
+sudo chmod 750 $APP_DIR/manage.py
+sudo chmod 640 $APP_DIR/.env
+
+# www-data needs write access to media directory
+sudo chown -R www-data:www-data $APP_DIR/wafer_space/media
+sudo chmod 755 $APP_DIR/wafer_space/media
+
 # Restart services
 sudo systemctl restart django-gunicorn.service
 sudo systemctl restart django-celery.service
@@ -1085,7 +1163,7 @@ sudo tail -f /var/log/platform.wafer.space/gunicorn-error.log
 
 # Common issues:
 # - Database connection: Check DATABASE_URL in .env
-# - Permission issues: Check file ownership (should be django:django)
+# - Permission issues: Check file ownership (should be django:www-data with 750/640)
 # - Missing dependencies: Run uv sync as django user
 ```
 
@@ -1248,6 +1326,8 @@ Before going live, verify:
 - [ ] SECRET_KEY is changed from default
 - [ ] Database migrations are applied
 - [ ] Static files are collected
+- [ ] File permissions are set correctly (django:www-data with 750/640)
+- [ ] Services run as www-data user (privilege separation)
 - [ ] Superuser account is created
 - [ ] All services are running (gunicorn, celery, nginx, postgresql)
 - [ ] SSL certificate is installed and auto-renewal is configured
