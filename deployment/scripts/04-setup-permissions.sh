@@ -56,9 +56,12 @@ fi
 
 echo ""
 echo "=== Permissions set successfully ==="
-echo "Verification:"
-ls -la "$APP_DIR" | head -10
-echo ""
 if [ -f "$APP_DIR/.env" ]; then
-    ls -la "$APP_DIR/.env"
+    echo "✓ .env permissions: $(stat -c '%a %U:%G' "$APP_DIR/.env")"
+fi
+if [ -f "$APP_DIR/manage.py" ]; then
+    echo "✓ manage.py permissions: $(stat -c '%a %U:%G' "$APP_DIR/manage.py")"
+fi
+if [ -d "$APP_DIR/wafer_space/media" ]; then
+    echo "✓ media directory permissions: $(stat -c '%a %U:%G' "$APP_DIR/wafer_space/media")"
 fi

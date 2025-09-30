@@ -24,7 +24,7 @@ if [ "$DB_EXISTS" = "1" ] && [ "$USER_EXISTS" = "1" ]; then
 fi
 
 # Prompt for database password
-read -sp "Enter password for database user '$DB_USER': " DB_PASSWORD
+read -rsp "Enter password for database user '$DB_USER': " DB_PASSWORD
 echo
 
 if [ -z "$DB_PASSWORD" ]; then
