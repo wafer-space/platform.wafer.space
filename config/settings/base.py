@@ -273,10 +273,6 @@ LOGGING = {
     "root": {"level": "INFO", "handlers": ["console"]},
 }
 
-REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/0")
-REDIS_SSL = REDIS_URL.startswith("rediss://")
-
-
 # django-allauth
 # ------------------------------------------------------------------------------
 ACCOUNT_ALLOW_REGISTRATION = env.bool("DJANGO_ACCOUNT_ALLOW_REGISTRATION", True)
@@ -364,13 +360,15 @@ SOCIALACCOUNT_EMAIL_VERIFICATION = "none"  # Use email from social provider if v
 
 # Celery Configuration
 # ------------------------------------------------------------------------------
-# Use filesystem as broker for development simplicity
-CELERY_BROKER_URL = "filesystem://"
-CELERY_BROKER_TRANSPORT_OPTIONS = {
-    "data_folder_in": str(BASE_DIR / "tmp" / "celery" / "out"),
-    "data_folder_out": str(BASE_DIR / "tmp" / "celery" / "out"),
-    "data_folder_processed": str(BASE_DIR / "tmp" / "celery" / "processed"),
-}
+# Use PostgreSQL as broker via SQLAlchemy
+# Convert DATABASE_URL from postgres:// to db+postgresql://
+_database_url = env("DATABASE_URL", default="postgres:///wafer_space")
+if _database_url.startswith("postgres://"):
+    _database_url = _database_url.replace("postgres://", "postgresql://", 1)
+CELERY_BROKER_URL = env(
+    "CELERY_BROKER_URL",
+    default=f"db+{_database_url}",
+)
 CELERY_RESULT_BACKEND = "django-db"
 CELERY_CACHE_BACKEND = "django-cache"
 
