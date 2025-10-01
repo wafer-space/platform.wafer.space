@@ -180,11 +180,11 @@ sudo systemctl status nginx
 
 **Automated (Recommended):**
 ```bash
-# Run the automated setup script
+# Run the automated setup script (non-interactive)
 sudo ./deployment/scripts/03-setup-database.sh
 
 # This will:
-# - Generate a secure random password (or let you enter one)
+# - Auto-generate a secure random 32-character password
 # - Create the database and user
 # - Write DATABASE_URL directly to .env file (not displayed in terminal)
 # - Set proper file ownership and permissions

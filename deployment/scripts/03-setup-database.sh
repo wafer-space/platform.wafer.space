@@ -26,28 +26,10 @@ if [ "$DB_EXISTS" = "1" ] && [ "$USER_EXISTS" = "1" ]; then
     exit 0
 fi
 
-# Generate or prompt for database password
-echo ""
-echo "Database password options:"
-echo "  1. Generate secure random password (recommended)"
-echo "  2. Enter password manually"
-read -rp "Choose option (1/2) [1]: " PASSWORD_OPTION
-PASSWORD_OPTION=${PASSWORD_OPTION:-1}
-
-if [ "$PASSWORD_OPTION" = "1" ]; then
-    # Generate a secure random password
-    DB_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-32)
-    echo "✓ Generated secure random password"
-else
-    # Prompt for database password
-    read -rsp "Enter password for database user '$DB_USER': " DB_PASSWORD
-    echo
-
-    if [ -z "$DB_PASSWORD" ]; then
-        echo "Error: Password cannot be empty"
-        exit 1
-    fi
-fi
+# Generate secure random password
+echo "Generating secure random password..."
+DB_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-32)
+echo "✓ Generated secure random password"
 
 # Create database and user
 echo "Creating database and user..."
