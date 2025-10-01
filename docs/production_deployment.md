@@ -45,10 +45,9 @@ cd /tmp
 git clone https://github.com/wafer-space/platform.wafer.space.git
 cd platform.wafer.space/deployment
 
-# 3. Run setup scripts
+# 3. Run initial setup scripts
 sudo ./scripts/01-setup-users.sh
 sudo ./scripts/02-install-dependencies.sh
-sudo ./scripts/03-setup-database.sh
 
 # 4. Setup application as django user
 sudo -u django -i
@@ -64,18 +63,26 @@ make venv
 # Configure environment settings
 echo 'export DJANGO_SETTINGS_MODULE=config.settings.production' >> ~/.bashrc
 source ~/.bashrc
+exit
 
-# 5. Edit .env file (auto-created by database setup script with DATABASE_URL)
-# See Environment Configuration section below for what to edit
-nano .env
+# 5. Setup database (creates .env with DATABASE_URL and DJANGO_SECRET_KEY)
+cd /tmp/platform.wafer.space/deployment
+sudo ./scripts/03-setup-database.sh
 
-# 6. Run Django setup
+# 6. Edit .env file (optional - add MAILGUN_API_KEY and OAuth credentials)
+# DATABASE_URL and DJANGO_SECRET_KEY are already configured
+sudo -u django nano /home/django/platform.wafer.space/.env
+
+# 7. Run Django setup (as django user)
+sudo -u django -i
+cd /home/django/platform.wafer.space
+export DJANGO_SETTINGS_MODULE=config.settings.production
 make migrate
 make createsuperuser
 make collectstatic
 exit
 
-# 7. Set permissions and install services (back as root)
+# 8. Set permissions and install services (back as root)
 cd /home/django/platform.wafer.space/deployment
 sudo ./scripts/04-setup-permissions.sh /home/django/platform.wafer.space
 
@@ -88,11 +95,11 @@ sudo ./install.sh
 cd ../scripts
 sudo ./05-setup-ssl.sh platform.wafer.space bot@wafer.space
 
-# 8. Start services
+# 9. Start services
 sudo systemctl start django-gunicorn.service
 sudo systemctl start django-celery.service
 
-# 9. Verify deployment
+# 10. Verify deployment
 sudo systemctl status django-gunicorn.service
 sudo systemctl status django-celery.service
 curl https://platform.wafer.space
@@ -129,17 +136,19 @@ Installs all system packages required for the application:
 
 Sets up PostgreSQL database and creates `.env` file automatically:
 
-1. Generates secure 32-character random password
-2. Creates `platform_wafer_space` database
-3. Creates `platform_wafer_space` user with generated password
-4. Configures PostgreSQL user settings (encoding, timezone, etc.)
-5. Creates `.env` from `.env.production.template` (if .env doesn't exist)
-6. Adds/updates `DATABASE_URL` in `.env` file
-7. Sets proper file permissions (640, owner django:django)
+1. Verifies application directory exists (fails if not found)
+2. Generates secure 32-character random password for database
+3. Creates `platform_wafer_space` database
+4. Creates `platform_wafer_space` user with generated password
+5. Configures PostgreSQL user settings (encoding, timezone, etc.)
+6. Creates `.env` from `.env.production.template` (if .env doesn't exist)
+7. Adds/updates `DATABASE_URL` in `.env` file with generated password
+8. Generates 50-character Django secret key
+9. Sets proper file permissions (640, owner django:django)
 
 **Non-interactive**: Runs completely automatically with no prompts.
 
-**What you need to do after**: Edit `.env` to add secrets (DJANGO_SECRET_KEY, MAILGUN_API_KEY, OAuth credentials).
+**What you need to do after**: Edit `.env` to add remaining secrets (MAILGUN_API_KEY, OAuth credentials).
 
 ### 04-setup-permissions.sh
 
@@ -168,7 +177,7 @@ Automates SSL certificate setup:
 
 The `.env` file is automatically created by the database setup script (`03-setup-database.sh`) from the `.env.production.template`. It includes all necessary configuration variables with helpful comments.
 
-**The DATABASE_URL is automatically configured** - you just need to add the other secrets.
+**DATABASE_URL and DJANGO_SECRET_KEY are automatically generated** - you just need to add the remaining secrets.
 
 Edit the file as the django user:
 
@@ -182,14 +191,9 @@ The template includes all required variables with comments. You need to edit the
 
 **Required changes:**
 
-1. **DJANGO_SECRET_KEY** - Generate a new secret key:
-   ```bash
-   uv run python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
-   ```
+1. **MAILGUN_API_KEY** - Get from [Mailgun dashboard](https://www.mailgun.com/)
 
-2. **MAILGUN_API_KEY** - Get from [Mailgun dashboard](https://www.mailgun.com/)
-
-3. **OAuth Credentials** - Create OAuth applications:
+2. **OAuth Credentials** - Create OAuth applications:
    - **GitHub**: [Developer settings](https://github.com/settings/developers)
      - Homepage: `https://platform.wafer.space`
      - Callback: `https://platform.wafer.space/accounts/github/login/callback/`
@@ -200,6 +204,7 @@ The template includes all required variables with comments. You need to edit the
 
 **Already configured automatically:**
 - `DATABASE_URL` - Set by database setup script with generated password
+- `DJANGO_SECRET_KEY` - Auto-generated 50-character secure random key
 - `DJANGO_SETTINGS_MODULE` - Set to `config.settings.production`
 - `DJANGO_ALLOWED_HOSTS` - Set to `platform.wafer.space`
 - Security settings - All HTTPS/HSTS settings configured

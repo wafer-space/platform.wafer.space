@@ -23,52 +23,54 @@ sudo ./scripts/01-setup-users.sh
 # 2. Install system dependencies
 sudo ./scripts/02-install-dependencies.sh
 
-# 3. Setup PostgreSQL database
-sudo ./scripts/03-setup-database.sh
-
-# 4. Clone repository as django user
+# 3. Clone repository as django user
 sudo -u django -i
 cd /home/django
 git clone https://github.com/wafer-space/platform.wafer.space.git platform.wafer.space
 cd platform.wafer.space
 
-# 5. Install uv and setup Python environment
+# 4. Install uv and setup Python environment
 curl -LsSf https://astral.sh/uv/install.sh | sh
 source $HOME/.cargo/env
 make venv
 
-# 6. Edit .env file (auto-created by database setup script)
-# Configure secrets: DJANGO_SECRET_KEY, MAILGUN_API_KEY, OAuth credentials
-nano .env
-
-# 7. Configure production settings
+# 5. Configure production settings
 echo 'export DJANGO_SETTINGS_MODULE=config.settings.production' >> ~/.bashrc
 source ~/.bashrc
+exit
 
-# 8. Run migrations
+# 6. Setup PostgreSQL database (creates .env with DATABASE_URL and DJANGO_SECRET_KEY)
+sudo ./scripts/03-setup-database.sh
+
+# 7. Edit .env file (optional - add MAILGUN_API_KEY and OAuth credentials)
+# DATABASE_URL and DJANGO_SECRET_KEY are already auto-generated
+sudo -u django nano /home/django/platform.wafer.space/.env
+
+# 8. Run migrations (as django user)
+sudo -u django -i
+cd /home/django/platform.wafer.space
+export DJANGO_SETTINGS_MODULE=config.settings.production
 make migrate
 make createsuperuser
-
-# 9. Collect static files
 make collectstatic
-
-# 10. Set permissions (exit django user, back to root/sudo)
 exit
+
+# 9. Set permissions (back as root/sudo)
 sudo ./scripts/04-setup-permissions.sh /home/django/platform.wafer.space
 
-# 11. Install systemd services
+# 10. Install systemd services
 cd systemd
 sudo ./install.sh
 
-# 12. Install nginx configuration
+# 11. Install nginx configuration
 cd ../nginx
 sudo ./install.sh
 
-# 13. Setup SSL certificate
+# 12. Setup SSL certificate
 cd ../scripts
 sudo ./05-setup-ssl.sh platform.wafer.space bot@wafer.space
 
-# 14. Start services
+# 13. Start services
 sudo systemctl start django-gunicorn.service
 sudo systemctl start django-celery.service
 ```
@@ -88,10 +90,13 @@ sudo systemctl start django-celery.service
 - Security tools (UFW)
 
 **`03-setup-database.sh`**
+- Verifies application directory exists
 - Creates PostgreSQL database and user
-- Configures database settings
+- Auto-generates secure database password
+- Creates .env from template
+- Auto-generates Django secret key
+- Configures DATABASE_URL and DJANGO_SECRET_KEY
 - Tests connection
-- Prompts for database password
 
 **`04-setup-permissions.sh [APP_DIR]`**
 - Sets file ownership: `django:www-data`

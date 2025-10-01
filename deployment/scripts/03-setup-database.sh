@@ -11,6 +11,20 @@ ENV_FILE="$APP_DIR/.env"
 
 echo "=== Setting up PostgreSQL database ==="
 
+# Verify application directory exists
+if [ ! -d "$APP_DIR" ]; then
+    echo "Error: Application directory not found: $APP_DIR"
+    echo ""
+    echo "Please clone the repository first:"
+    echo "  sudo -u django -i"
+    echo "  cd /home/django"
+    echo "  git clone https://github.com/wafer-space/platform.wafer.space.git platform.wafer.space"
+    echo "  exit"
+    echo ""
+    echo "Then run this script again."
+    exit 1
+fi
+
 # Check if database already exists
 DB_EXISTS=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'")
 USER_EXISTS=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'")
@@ -115,6 +129,20 @@ else
     echo "✓ Added DATABASE_URL to .env"
 fi
 
+# Generate Django secret key if needed
+echo "Checking Django secret key..."
+if grep -q "^DJANGO_SECRET_KEY=CHANGE_THIS_TO_A_LONG_RANDOM_STRING" "$ENV_FILE"; then
+    echo "Generating Django secret key..."
+    # Generate 50-character secret key using same character set as Django
+    DJANGO_SECRET_KEY=$(python3 -c "import secrets; chars='abcdefghijklmnopqrstuvwxyz0123456789!@#\$%^&*(-_=+)'; print(''.join(secrets.choice(chars) for _ in range(50)))")
+    sed -i "s|^DJANGO_SECRET_KEY=CHANGE_THIS_TO_A_LONG_RANDOM_STRING.*|DJANGO_SECRET_KEY=$DJANGO_SECRET_KEY|" "$ENV_FILE"
+    echo "✓ Generated Django secret key"
+elif grep -q "^DJANGO_SECRET_KEY=" "$ENV_FILE"; then
+    echo "✓ Django secret key already configured"
+else
+    echo "⚠️  DJANGO_SECRET_KEY not found in .env template"
+fi
+
 # Set proper ownership and permissions
 chown django:django "$ENV_FILE"
 chmod 640 "$ENV_FILE"
@@ -123,9 +151,8 @@ echo ""
 echo "✓ Environment file configured: $ENV_FILE"
 echo ""
 echo "⚠️  IMPORTANT: Edit $ENV_FILE and configure:"
-echo "    - DJANGO_SECRET_KEY (generate with: uv run python -c ...)"
 echo "    - MAILGUN_API_KEY"
 echo "    - OAuth credentials (GITHUB, GITLAB, GOOGLE)"
 echo ""
-echo "⚠️  For security, the database password is NOT displayed in this terminal."
-echo "    It has been securely saved to $ENV_FILE (mode 640, owner django:django)"
+echo "⚠️  For security, the database password and Django secret key are NOT displayed."
+echo "    They have been securely saved to $ENV_FILE (mode 640, owner django:django)"
