@@ -14,6 +14,10 @@ fi
 echo "=== Setting up file permissions for privilege separation ==="
 echo "Application directory: $APP_DIR"
 
+# Ensure /home/django is traversable by www-data (other users need execute permission)
+echo "Making /home/django traversable..."
+chmod 755 /home/django
+
 # Set ownership: django owns files, www-data group can read
 echo "Setting ownership to django:www-data..."
 chown -R django:www-data "$APP_DIR"
