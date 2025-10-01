@@ -85,24 +85,47 @@ echo ""
 # Write DATABASE_URL to .env file
 DATABASE_URL="postgres://$DB_USER:$DB_PASSWORD@localhost:5432/$DB_NAME"
 
-# Create .env file if it doesn't exist
+# Create .env file from template if it doesn't exist
 if [ ! -f "$ENV_FILE" ]; then
-    echo "Creating .env file..."
-    touch "$ENV_FILE"
+    echo "Creating .env file from template..."
+
+    # Copy template file
+    TEMPLATE_FILE="$APP_DIR/.env.production.template"
+    if [ -f "$TEMPLATE_FILE" ]; then
+        cp "$TEMPLATE_FILE" "$ENV_FILE"
+        echo "✓ Copied .env.production.template to .env"
+    else
+        echo "⚠️  Template file not found, creating minimal .env"
+        touch "$ENV_FILE"
+    fi
 fi
 
-# Add DATABASE_URL to .env file
-{
-    echo ""
-    echo "# Database configuration (added by setup script)"
-    echo "DATABASE_URL=$DATABASE_URL"
-} >> "$ENV_FILE"
+# Add or update DATABASE_URL in .env file
+if grep -q "^DATABASE_URL=" "$ENV_FILE"; then
+    # Update existing DATABASE_URL
+    sed -i "s|^DATABASE_URL=.*|DATABASE_URL=$DATABASE_URL|" "$ENV_FILE"
+    echo "✓ Updated DATABASE_URL in .env"
+else
+    # Add DATABASE_URL
+    {
+        echo ""
+        echo "# Database configuration (added by setup script)"
+        echo "DATABASE_URL=$DATABASE_URL"
+    } >> "$ENV_FILE"
+    echo "✓ Added DATABASE_URL to .env"
+fi
 
 # Set proper ownership and permissions
 chown django:django "$ENV_FILE"
 chmod 640 "$ENV_FILE"
 
-echo "✓ Database credentials written to: $ENV_FILE"
 echo ""
-echo "⚠️  For security, the password is NOT displayed in this terminal."
-echo "    It has been securely saved to $ENV_FILE (mode 640, owner django:www-data)"
+echo "✓ Environment file configured: $ENV_FILE"
+echo ""
+echo "⚠️  IMPORTANT: Edit $ENV_FILE and configure:"
+echo "    - DJANGO_SECRET_KEY (generate with: uv run python -c ...)"
+echo "    - MAILGUN_API_KEY"
+echo "    - OAuth credentials (GITHUB, GITLAB, GOOGLE)"
+echo ""
+echo "⚠️  For security, the database password is NOT displayed in this terminal."
+echo "    It has been securely saved to $ENV_FILE (mode 640, owner django:django)"

@@ -37,7 +37,8 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 source $HOME/.cargo/env
 make venv
 
-# 6. Create .env file (see docs/production_deployment.md for details)
+# 6. Edit .env file (auto-created by database setup script)
+# Configure secrets: DJANGO_SECRET_KEY, MAILGUN_API_KEY, OAuth credentials
 nano .env
 
 # 7. Configure production settings
