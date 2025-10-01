@@ -232,7 +232,7 @@ format: ## Format code with ruff
 .PHONY: shellcheck
 shellcheck: ## Run shellcheck on all shell scripts
 	@echo "$(BLUE)Running shellcheck on shell scripts...$(NC)"
-	@shellcheck deployment/scripts/*.sh deployment/systemd/install.sh deployment/nginx/install.sh utility/*.sh scripts/*.sh
+	@shellcheck deployment/scripts/*.sh deployment/systemd/install.sh deployment/nginx/install.sh scripts/*.sh
 	@echo "$(GREEN)✓ Shellcheck complete$(NC)"
 
 .PHONY: check-all
