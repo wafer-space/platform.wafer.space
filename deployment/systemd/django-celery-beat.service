@@ -24,6 +24,7 @@ NoNewPrivileges=true
 PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=true
+ReadOnlyPaths=/home/django/platform.wafer.space /home/django/.local/bin
 ReadWritePaths=/var/log/platform.wafer.space /var/run/platform.wafer.space /home/django/platform.wafer.space/wafer_space/media
 
 # Restart policy
