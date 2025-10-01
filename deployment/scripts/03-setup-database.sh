@@ -93,7 +93,17 @@ EOF
 # Grant privileges (must connect to the database)
 echo "Granting privileges..."
 sudo -u postgres psql -d "$DB_NAME" <<EOF
+-- Grant database-level privileges
 GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;
+
+-- Grant schema privileges (required for PostgreSQL 15+)
+GRANT ALL ON SCHEMA public TO $DB_USER;
+GRANT CREATE ON SCHEMA public TO $DB_USER;
+
+-- Grant default privileges for future objects
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $DB_USER;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $DB_USER;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO $DB_USER;
 EOF
 
 echo "✓ Database created successfully"
