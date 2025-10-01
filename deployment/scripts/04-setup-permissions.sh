@@ -18,49 +18,28 @@ echo "Application directory: $APP_DIR"
 echo "Setting ownership to django:www-data..."
 chown -R django:www-data "$APP_DIR"
 
-# Set directory permissions: owner rwx, group rx, other none
-echo "Setting directory permissions (750)..."
-find "$APP_DIR" -type d -exec chmod 750 {} \;
-
-# Ensure shell scripts are executable
-echo "Making shell scripts executable (750)..."
-find "$APP_DIR" -type f -name "*.sh" -exec chmod 750 {} \;
-
-# Make manage.py executable
-if [ -f "$APP_DIR/manage.py" ]; then
-    echo "Making manage.py executable..."
-    chmod 750 "$APP_DIR/manage.py"
-fi
-
 # Secure .env file (no execute, owner rw, group r)
 if [ -f "$APP_DIR/.env" ]; then
     echo "Securing .env file (640)..."
     chmod 640 "$APP_DIR/.env"
 fi
 
-# www-data needs write access to media directory
-if [ -d "$APP_DIR/wafer_space/media" ]; then
-    echo "Setting media directory ownership to www-data..."
-    chown -R www-data:www-data "$APP_DIR/wafer_space/media"
-    chmod 755 "$APP_DIR/wafer_space/media"
-fi
-
-# Create media directory if it doesn't exist
+# Create media directory if it doesn't exist and set writable by www-data
 if [ ! -d "$APP_DIR/wafer_space/media" ]; then
     echo "Creating media directory..."
     mkdir -p "$APP_DIR/wafer_space/media"
-    chown -R www-data:www-data "$APP_DIR/wafer_space/media"
-    chmod 755 "$APP_DIR/wafer_space/media"
 fi
+
+echo "Setting media directory writable by www-data..."
+chown -R www-data:www-data "$APP_DIR/wafer_space/media"
+chmod 755 "$APP_DIR/wafer_space/media"
 
 echo ""
 echo "=== Permissions set successfully ==="
+echo "✓ Ownership: django:www-data"
 if [ -f "$APP_DIR/.env" ]; then
-    echo "✓ .env permissions: $(stat -c '%a %U:%G' "$APP_DIR/.env")"
-fi
-if [ -f "$APP_DIR/manage.py" ]; then
-    echo "✓ manage.py permissions: $(stat -c '%a %U:%G' "$APP_DIR/manage.py")"
+    echo "✓ .env secured: $(stat -c '%a %U:%G' "$APP_DIR/.env")"
 fi
 if [ -d "$APP_DIR/wafer_space/media" ]; then
-    echo "✓ media directory permissions: $(stat -c '%a %U:%G' "$APP_DIR/wafer_space/media")"
+    echo "✓ media directory: $(stat -c '%a %U:%G' "$APP_DIR/wafer_space/media")"
 fi
