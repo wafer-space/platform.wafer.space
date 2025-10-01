@@ -18,13 +18,10 @@ echo "Application directory: $APP_DIR"
 echo "Making /home/django traversable..."
 chmod 755 /home/django
 
-# Set ownership: django owns files, www-data group can read
-echo "Setting ownership to django:www-data..."
-chown -R django:www-data "$APP_DIR"
-
-# Secure .env file (no execute, owner rw, group r)
+# Secure .env file (owner rw, www-data group r, other none)
 if [ -f "$APP_DIR/.env" ]; then
-    echo "Securing .env file (640)..."
+    echo "Securing .env file..."
+    chown django:www-data "$APP_DIR/.env"
     chmod 640 "$APP_DIR/.env"
 fi
 
@@ -40,10 +37,10 @@ chmod 755 "$APP_DIR/wafer_space/media"
 
 echo ""
 echo "=== Permissions set successfully ==="
-echo "✓ Ownership: django:www-data"
+echo "✓ /home/django traversable: $(stat -c '%a' /home/django)"
 if [ -f "$APP_DIR/.env" ]; then
     echo "✓ .env secured: $(stat -c '%a %U:%G' "$APP_DIR/.env")"
 fi
 if [ -d "$APP_DIR/wafer_space/media" ]; then
-    echo "✓ media directory: $(stat -c '%a %U:%G' "$APP_DIR/wafer_space/media")"
+    echo "✓ media writable: $(stat -c '%a %U:%G' "$APP_DIR/wafer_space/media")"
 fi
