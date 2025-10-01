@@ -8,11 +8,10 @@ Type=notify
 User=www-data
 Group=www-data
 WorkingDirectory=/home/django/platform.wafer.space
-Environment="PATH=/home/django/platform.wafer.space/.venv/bin:/home/django/.local/bin"
 Environment="DJANGO_SETTINGS_MODULE=config.settings.production"
 EnvironmentFile=/home/django/platform.wafer.space/.env
 
-ExecStart=/home/django/.local/bin/uv run gunicorn \
+ExecStart=/home/django/platform.wafer.space/.venv/bin/gunicorn \
     --workers 4 \
     --worker-class sync \
     --bind unix:/var/run/platform.wafer.space/gunicorn.sock \
@@ -32,7 +31,7 @@ NoNewPrivileges=true
 PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=true
-ReadOnlyPaths=/home/django/platform.wafer.space /home/django/.local/bin
+ReadOnlyPaths=/home/django/platform.wafer.space
 ReadWritePaths=/var/log/platform.wafer.space /var/run/platform.wafer.space /home/django/platform.wafer.space/wafer_space/media
 
 # Restart policy
