@@ -35,35 +35,39 @@ cd platform.wafer.space
 # 5. Install uv and setup Python environment
 curl -LsSf https://astral.sh/uv/install.sh | sh
 source $HOME/.cargo/env
-uv sync
+make venv
 
 # 6. Create .env file (see docs/production_deployment.md for details)
 nano .env
 
-# 7. Run migrations
-uv run python manage.py migrate --settings=config.settings.production
-uv run python manage.py createsuperuser --settings=config.settings.production
+# 7. Configure production settings
+echo 'export DJANGO_SETTINGS_MODULE=config.settings.production' >> ~/.bashrc
+source ~/.bashrc
 
-# 8. Collect static files
-uv run python manage.py collectstatic --settings=config.settings.production --noinput
+# 8. Run migrations
+make migrate
+make createsuperuser
 
-# 9. Set permissions (exit django user, back to root/sudo)
+# 9. Collect static files
+make collectstatic
+
+# 10. Set permissions (exit django user, back to root/sudo)
 exit
 sudo ./scripts/04-setup-permissions.sh /home/django/platform.wafer.space
 
-# 10. Install systemd services
+# 11. Install systemd services
 cd systemd
 sudo ./install.sh
 
-# 11. Install nginx configuration
+# 12. Install nginx configuration
 cd ../nginx
 sudo ./install.sh
 
-# 12. Setup SSL certificate
+# 13. Setup SSL certificate
 cd ../scripts
 sudo ./05-setup-ssl.sh platform.wafer.space bot@wafer.space
 
-# 13. Start services
+# 14. Start services
 sudo systemctl start django-gunicorn.service
 sudo systemctl start django-celery.service
 ```

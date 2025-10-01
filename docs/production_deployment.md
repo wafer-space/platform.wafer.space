@@ -297,10 +297,14 @@ cd /home/django/platform.wafer.space
 
 # Create virtual environment and install dependencies
 # uv will automatically download Python 3.13
-uv sync
+make venv
 
 # Verify installation
 uv run python --version  # Should show Python 3.13.7
+
+# Configure to use production settings by default
+echo 'export DJANGO_SETTINGS_MODULE=config.settings.production' >> ~/.bashrc
+source ~/.bashrc
 ```
 
 ## Environment Configuration
@@ -400,7 +404,8 @@ uv run python -c "from django.core.management.utils import get_random_secret_key
 
 ```bash
 # As django user, in /home/django/platform.wafer.space
-uv run python manage.py migrate --settings=config.settings.production
+# (DJANGO_SETTINGS_MODULE should be set in ~/.bashrc from previous step)
+make migrate
 
 # You should see output like:
 # Operations to perform:
@@ -414,7 +419,7 @@ uv run python manage.py migrate --settings=config.settings.production
 
 ```bash
 # Create Django admin superuser
-uv run python manage.py createsuperuser --settings=config.settings.production
+make createsuperuser
 
 # Follow the prompts to set username, email, and password
 ```
@@ -425,7 +430,7 @@ uv run python manage.py createsuperuser --settings=config.settings.production
 
 ```bash
 # As django user, in /home/django/platform.wafer.space
-uv run python manage.py collectstatic --settings=config.settings.production --noinput
+make collectstatic
 
 # Static files will be collected to /home/django/platform.wafer.space/staticfiles/
 ```
@@ -1108,13 +1113,13 @@ cd $APP_DIR
 git pull origin main | tee -a $LOG_FILE
 
 # Update dependencies
-uv sync | tee -a $LOG_FILE
+make venv | tee -a $LOG_FILE
 
 # Run migrations
-uv run python manage.py migrate --settings=config.settings.production | tee -a $LOG_FILE
+make migrate | tee -a $LOG_FILE
 
 # Collect static files
-uv run python manage.py collectstatic --settings=config.settings.production --noinput | tee -a $LOG_FILE
+make collectstatic | tee -a $LOG_FILE
 
 # Fix permissions after update (django owns code, www-data can read)
 sudo chown -R django:www-data $APP_DIR
@@ -1166,7 +1171,7 @@ sudo tail -f /var/log/platform.wafer.space/gunicorn-error.log
 # Common issues:
 # - Database connection: Check DATABASE_URL in .env
 # - Permission issues: Check file ownership (should be django:www-data with 750/640)
-# - Missing dependencies: Run uv sync as django user
+# - Missing dependencies: Run make venv as django user
 ```
 
 ### 2. 502 Bad Gateway
@@ -1192,7 +1197,8 @@ sudo systemctl reload nginx
 # Recollect static files
 sudo -u django -i
 cd /home/django/platform.wafer.space
-uv run python manage.py collectstatic --settings=config.settings.production --clear --noinput
+export DJANGO_SETTINGS_MODULE=config.settings.production
+uv run python manage.py collectstatic --clear --noinput
 
 # Check static files directory
 ls -la /home/django/platform.wafer.space/staticfiles/
@@ -1213,6 +1219,7 @@ sudo tail -f /var/log/platform.wafer.space/celery.log
 # Inspect active tasks
 sudo -u django -i
 cd /home/django/platform.wafer.space
+export DJANGO_SETTINGS_MODULE=config.settings.production
 uv run celery -A config inspect active
 
 # Restart Celery
@@ -1225,7 +1232,11 @@ sudo systemctl restart django-celery.service
 # Test database connection
 sudo -u django -i
 cd /home/django/platform.wafer.space
-uv run python manage.py dbshell --settings=config.settings.production
+export DJANGO_SETTINGS_MODULE=config.settings.production
+make shell
+
+# Or access database shell directly:
+uv run python manage.py dbshell
 
 # Check PostgreSQL is running
 sudo systemctl status postgresql
