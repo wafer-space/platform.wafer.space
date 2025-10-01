@@ -26,6 +26,10 @@ find "$APP_DIR" -type d -exec chmod 750 {} \;
 echo "Setting file permissions (640)..."
 find "$APP_DIR" -type f -exec chmod 640 {} \;
 
+# Make shell scripts executable
+echo "Making shell scripts executable (750)..."
+find "$APP_DIR" -type f -name "*.sh" -exec chmod 750 {} \;
+
 # Make manage.py executable
 if [ -f "$APP_DIR/manage.py" ]; then
     echo "Making manage.py executable..."
