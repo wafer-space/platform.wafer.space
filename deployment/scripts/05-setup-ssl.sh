@@ -49,7 +49,6 @@ else
     certbot certonly --webroot \
         -w /var/www/certbot \
         -d "$DOMAIN" \
-        -d "www.$DOMAIN" \
         --email "$EMAIL" \
         --agree-tos \
         --no-eff-email \
