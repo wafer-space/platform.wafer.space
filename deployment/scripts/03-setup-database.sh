@@ -148,7 +148,31 @@ fi
 
 # Generate Django secret key if needed
 echo "Checking Django secret key..."
-if grep -q "^DJANGO_SECRET_KEY=CHANGE_THIS_TO_A_LONG_RANDOM_STRING" "$ENV_FILE"; then
+if python3 <<EOF
+import secrets
+import sys
+
+# Check current DJANGO_SECRET_KEY value
+needs_replacement = False
+key_line_found = False
+
+with open('$ENV_FILE', 'r') as f:
+    for line in f:
+        if line.startswith('DJANGO_SECRET_KEY='):
+            key_line_found = True
+            value = line.split('=', 1)[1].strip()
+            # Replace if placeholder, empty, or suspiciously short
+            if not value or value.startswith('CHANGE_THIS') or len(value) < 20:
+                needs_replacement = True
+            break
+
+if not key_line_found:
+    needs_replacement = True
+
+# Exit with status code to communicate back to shell
+sys.exit(0 if needs_replacement else 1)
+EOF
+then
     echo "Generating Django secret key..."
     # Generate and replace secret key using Python to avoid sed escaping issues
     python3 <<EOF
@@ -162,19 +186,23 @@ secret_key = ''.join(secrets.choice(chars) for _ in range(50))
 with open('$ENV_FILE', 'r') as f:
     lines = f.readlines()
 
-# Replace the line
+# Replace or add the line
+key_found = False
 with open('$ENV_FILE', 'w') as f:
     for line in lines:
-        if line.startswith('DJANGO_SECRET_KEY=CHANGE_THIS_TO_A_LONG_RANDOM_STRING'):
+        if line.startswith('DJANGO_SECRET_KEY='):
             f.write(f'DJANGO_SECRET_KEY={secret_key}\n')
+            key_found = True
         else:
             f.write(line)
+
+    # If no DJANGO_SECRET_KEY line found, add it after Django Core Settings section
+    if not key_found:
+        f.write(f'DJANGO_SECRET_KEY={secret_key}\n')
 EOF
     echo "✓ Generated Django secret key"
-elif grep -q "^DJANGO_SECRET_KEY=" "$ENV_FILE"; then
-    echo "✓ Django secret key already configured"
 else
-    echo "⚠️  DJANGO_SECRET_KEY not found in .env template"
+    echo "✓ Django secret key already configured"
 fi
 
 # Set proper ownership and permissions
