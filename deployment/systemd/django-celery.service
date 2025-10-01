@@ -27,7 +27,6 @@ ExecReload=/bin/kill -s HUP $MAINPID
 NoNewPrivileges=true
 PrivateDevices=true
 ProtectSystem=strict
-ProtectHome=true
 ReadOnlyPaths=/home/django/platform.wafer.space
 ReadWritePaths=/var/log/platform.wafer.space /var/run/platform.wafer.space /home/django/platform.wafer.space/wafer_space/media
 
