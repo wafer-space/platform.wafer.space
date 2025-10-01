@@ -31,19 +31,18 @@ echo "Generating secure random password..."
 DB_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-32)
 echo "✓ Generated secure random password"
 
-# Create database and user
-echo "Creating database and user..."
-sudo -u postgres psql <<EOF
--- Create database if not exists
-DO \$\$
-BEGIN
-    IF NOT EXISTS (SELECT FROM pg_database WHERE datname = '$DB_NAME') THEN
-        CREATE DATABASE $DB_NAME;
-    END IF;
-END
-\$\$;
+# Create database if it doesn't exist (must be outside transaction)
+if [ "$DB_EXISTS" != "1" ]; then
+    echo "Creating database..."
+    sudo -u postgres psql <<EOF
+CREATE DATABASE $DB_NAME;
+EOF
+fi
 
--- Create user if not exists
+# Create user and configure
+echo "Creating/updating user..."
+sudo -u postgres psql <<EOF
+-- Create user if not exists, or update password
 DO \$\$
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$DB_USER') THEN
@@ -58,8 +57,11 @@ END
 ALTER ROLE $DB_USER SET client_encoding TO 'utf8';
 ALTER ROLE $DB_USER SET default_transaction_isolation TO 'read committed';
 ALTER ROLE $DB_USER SET timezone TO 'UTC';
+EOF
 
--- Grant privileges
+# Grant privileges (must connect to the database)
+echo "Granting privileges..."
+sudo -u postgres psql -d "$DB_NAME" <<EOF
 GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;
 EOF
 
