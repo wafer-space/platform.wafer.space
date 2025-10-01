@@ -84,7 +84,7 @@ exit
 
 # 8. Set permissions and install services (back as root)
 cd /home/django/platform.wafer.space/deployment
-sudo ./scripts/04-setup-permissions.sh /home/django/platform.wafer.space
+sudo ./scripts/04-setup-permissions.sh
 
 cd systemd
 sudo ./install.sh
@@ -93,7 +93,7 @@ cd ../nginx
 sudo ./install.sh
 
 cd ../scripts
-sudo ./05-setup-ssl.sh platform.wafer.space bot@wafer.space
+sudo ./05-setup-ssl.sh
 
 # 9. Start services
 sudo systemctl start django-gunicorn.service

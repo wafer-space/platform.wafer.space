@@ -4,8 +4,8 @@
 
 set -e
 
-DOMAIN="${1:-platform.wafer.space}"
-EMAIL="${2:-bot@wafer.space}"
+DOMAIN="platform.wafer.space"
+EMAIL="bot@wafer.space"
 
 echo "=== Setting up SSL certificate ==="
 echo "Domain: $DOMAIN"

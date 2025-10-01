@@ -1,14 +1,13 @@
 #!/bin/bash
 # Setup file permissions for privilege separation
-# Run as: sudo ./04-setup-permissions.sh [APP_DIR]
+# Run as: sudo ./04-setup-permissions.sh
 
 set -e
 
-APP_DIR="${1:-/home/django/platform.wafer.space}"
+APP_DIR="/home/django/platform.wafer.space"
 
 if [ ! -d "$APP_DIR" ]; then
     echo "Error: Application directory not found: $APP_DIR"
-    echo "Usage: $0 [APP_DIR]"
     exit 1
 fi
 
