@@ -98,26 +98,27 @@ echo "Database: $DB_NAME"
 echo "User: $DB_USER"
 echo ""
 
-# Save DATABASE_URL to a temporary file for the django user
+# Write DATABASE_URL to .env file
 DATABASE_URL="postgres://$DB_USER:$DB_PASSWORD@localhost:5432/$DB_NAME"
-DB_CONFIG_FILE="/tmp/database_config_$(date +%s).txt"
 
-cat > "$DB_CONFIG_FILE" <<EOF
-# Add this line to your .env file at: $ENV_FILE
-DATABASE_URL=$DATABASE_URL
-EOF
+# Create .env file if it doesn't exist
+if [ ! -f "$ENV_FILE" ]; then
+    echo "Creating .env file..."
+    touch "$ENV_FILE"
+fi
 
-chmod 600 "$DB_CONFIG_FILE"
-chown django:django "$DB_CONFIG_FILE" 2>/dev/null || true
+# Add DATABASE_URL to .env file
+{
+    echo ""
+    echo "# Database configuration (added by setup script)"
+    echo "DATABASE_URL=$DATABASE_URL"
+} >> "$ENV_FILE"
 
-echo "✓ Database credentials saved to: $DB_CONFIG_FILE"
-echo ""
-echo "Next steps:"
-echo "1. As django user, add the DATABASE_URL to your .env file:"
-echo "   sudo -u django cat $DB_CONFIG_FILE >> $ENV_FILE"
-echo ""
-echo "2. Securely delete the temporary credentials file:"
-echo "   sudo rm $DB_CONFIG_FILE"
+# Set proper ownership and permissions
+chown django:django "$ENV_FILE"
+chmod 640 "$ENV_FILE"
+
+echo "✓ Database credentials written to: $ENV_FILE"
 echo ""
 echo "⚠️  For security, the password is NOT displayed in this terminal."
-echo "    It has been saved to the temporary file shown above."
+echo "    It has been securely saved to $ENV_FILE (mode 640, owner django:www-data)"

@@ -186,8 +186,8 @@ sudo ./deployment/scripts/03-setup-database.sh
 # This will:
 # - Generate a secure random password (or let you enter one)
 # - Create the database and user
-# - Save credentials to a temporary file (not displayed in terminal)
-# - Provide instructions for adding to .env file
+# - Write DATABASE_URL directly to .env file (not displayed in terminal)
+# - Set proper file ownership and permissions
 ```
 
 **Manual Setup:**
@@ -349,10 +349,7 @@ DJANGO_ADMIN_URL=admin-secure-path-change-this/
 
 # Database
 # ------------------------------------------------------------------------------
-# If using automated script (03-setup-database.sh):
-# The DATABASE_URL will be in the temporary file shown by the script.
-# Add it with: sudo -u django cat /tmp/database_config_*.txt >> .env
-#
+# If using automated script (03-setup-database.sh), this is already set.
 # If setting manually, use this format:
 DATABASE_URL=postgres://platform_wafer_space:your_secure_password_here@localhost:5432/platform_wafer_space
 
