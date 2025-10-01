@@ -886,7 +886,6 @@ This deployment implements multiple layers of security:
 
 4. **Network Security**: Firewall and SSL/TLS
    - UFW firewall blocks all except necessary ports
-   - Fail2Ban prevents brute force attacks
    - HTTPS enforced with HSTS headers
 
 ### 1. Configure Firewall (UFW)
@@ -913,49 +912,7 @@ sudo ufw enable
 sudo ufw status verbose
 ```
 
-### 2. Fail2Ban for Brute Force Protection
-
-```bash
-# Install fail2ban
-sudo apt install -y fail2ban
-
-# Create local configuration
-sudo cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
-
-# Edit configuration
-sudo nano /etc/fail2ban/jail.local
-```
-
-Add Django-specific jail:
-```ini
-[django-auth]
-enabled = true
-port = http,https
-filter = django-auth
-logpath = /var/log/platform.wafer.space/gunicorn-error.log
-maxretry = 5
-bantime = 3600
-```
-
-Create filter:
-```bash
-sudo nano /etc/fail2ban/filter.d/django-auth.conf
-```
-
-Add:
-```ini
-[Definition]
-failregex = ^.* "POST /accounts/login/ HTTP.*" (401|403) .*$
-ignoreregex =
-```
-
-Restart fail2ban:
-```bash
-sudo systemctl restart fail2ban
-sudo systemctl enable fail2ban
-```
-
-### 3. PostgreSQL Security
+### 2. PostgreSQL Security
 
 ```bash
 # Edit PostgreSQL configuration
@@ -974,7 +931,7 @@ Restart PostgreSQL:
 sudo systemctl restart postgresql
 ```
 
-### 4. Regular Security Updates
+### 3. Regular Security Updates
 
 ```bash
 # Enable automatic security updates

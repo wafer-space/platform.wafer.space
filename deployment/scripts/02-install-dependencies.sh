@@ -53,10 +53,6 @@ apt install -y nginx
 echo "Installing UFW..."
 apt install -y ufw
 
-# Install Fail2Ban
-echo "Installing Fail2Ban..."
-apt install -y fail2ban
-
 echo ""
 echo "=== Dependencies installed successfully ==="
 echo "Next steps:"

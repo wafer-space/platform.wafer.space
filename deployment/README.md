@@ -84,7 +84,7 @@ sudo systemctl start django-celery.service
 **`02-install-dependencies.sh`**
 - Installs system packages
 - PostgreSQL, Nginx, Python build dependencies
-- Security tools (UFW, Fail2Ban)
+- Security tools (UFW)
 
 **`03-setup-database.sh`**
 - Creates PostgreSQL database and user
