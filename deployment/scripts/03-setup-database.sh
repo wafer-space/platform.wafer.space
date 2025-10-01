@@ -31,11 +31,28 @@ USER_EXISTS=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='
 
 if [ "$DB_EXISTS" = "1" ] && [ "$USER_EXISTS" = "1" ]; then
     echo "✓ Database '$DB_NAME' and user '$DB_USER' already exist"
+
+    # Check if .env file exists - if not, we can't proceed without the password
+    if [ ! -f "$ENV_FILE" ]; then
+        echo ""
+        echo "Error: Database exists but .env file not found at $ENV_FILE"
+        echo ""
+        echo "The database password was generated during initial setup and cannot be recovered."
+        echo "To fix this, you have two options:"
+        echo ""
+        echo "1. Reset the database password:"
+        echo "   sudo -u postgres psql -c \"ALTER USER $DB_USER WITH PASSWORD 'new_password';\""
+        echo "   Then manually create .env from .env.production.template and set DATABASE_URL"
+        echo ""
+        echo "2. Drop and recreate the database (WARNING: destroys all data):"
+        echo "   sudo -u postgres psql -c \"DROP DATABASE $DB_NAME;\""
+        echo "   sudo -u postgres psql -c \"DROP USER $DB_USER;\""
+        echo "   Then run this script again"
+        exit 1
+    fi
+
     echo ""
-    echo "If you need to reset the password, run:"
-    echo "  sudo -u postgres psql -c \"ALTER USER $DB_USER WITH PASSWORD 'new_password';\""
-    echo "  Then update DATABASE_URL in $ENV_FILE"
-    echo ""
+    echo "✓ .env file exists: $ENV_FILE"
     echo "=== Database setup complete (already configured) ==="
     exit 0
 fi
