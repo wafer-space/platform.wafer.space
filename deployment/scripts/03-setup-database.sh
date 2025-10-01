@@ -150,9 +150,26 @@ fi
 echo "Checking Django secret key..."
 if grep -q "^DJANGO_SECRET_KEY=CHANGE_THIS_TO_A_LONG_RANDOM_STRING" "$ENV_FILE"; then
     echo "Generating Django secret key..."
-    # Generate 50-character secret key using same character set as Django
-    DJANGO_SECRET_KEY=$(python3 -c "import secrets; chars='abcdefghijklmnopqrstuvwxyz0123456789!@#\$%^&*(-_=+)'; print(''.join(secrets.choice(chars) for _ in range(50)))")
-    sed -i "s|^DJANGO_SECRET_KEY=CHANGE_THIS_TO_A_LONG_RANDOM_STRING.*|DJANGO_SECRET_KEY=$DJANGO_SECRET_KEY|" "$ENV_FILE"
+    # Generate and replace secret key using Python to avoid sed escaping issues
+    python3 <<EOF
+import secrets
+
+# Generate 50-character secret key using same character set as Django
+chars = 'abcdefghijklmnopqrstuvwxyz0123456789!@#\$%^&*(-_=+)'
+secret_key = ''.join(secrets.choice(chars) for _ in range(50))
+
+# Read file
+with open('$ENV_FILE', 'r') as f:
+    lines = f.readlines()
+
+# Replace the line
+with open('$ENV_FILE', 'w') as f:
+    for line in lines:
+        if line.startswith('DJANGO_SECRET_KEY=CHANGE_THIS_TO_A_LONG_RANDOM_STRING'):
+            f.write(f'DJANGO_SECRET_KEY={secret_key}\n')
+        else:
+            f.write(line)
+EOF
     echo "✓ Generated Django secret key"
 elif grep -q "^DJANGO_SECRET_KEY=" "$ENV_FILE"; then
     echo "✓ Django secret key already configured"
