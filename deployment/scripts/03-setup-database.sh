@@ -146,36 +146,9 @@ else
     echo "✓ Added DATABASE_URL to .env"
 fi
 
-# Generate Django secret key if needed
-echo "Checking Django secret key..."
-if python3 <<EOF
-import secrets
-import sys
-
-# Check current DJANGO_SECRET_KEY value
-needs_replacement = False
-key_line_found = False
-
-with open('$ENV_FILE', 'r') as f:
-    for line in f:
-        if line.startswith('DJANGO_SECRET_KEY='):
-            key_line_found = True
-            value = line.split('=', 1)[1].strip()
-            # Replace if placeholder, empty, or suspiciously short
-            if not value or value.startswith('CHANGE_THIS') or len(value) < 20:
-                needs_replacement = True
-            break
-
-if not key_line_found:
-    needs_replacement = True
-
-# Exit with status code to communicate back to shell
-sys.exit(0 if needs_replacement else 1)
-EOF
-then
-    echo "Generating Django secret key..."
-    # Generate and replace secret key using Python to avoid sed escaping issues
-    python3 <<EOF
+# Generate Django secret key
+echo "Generating Django secret key..."
+python3 <<EOF
 import secrets
 
 # Generate 50-character secret key using same character set as Django
@@ -196,14 +169,11 @@ with open('$ENV_FILE', 'w') as f:
         else:
             f.write(line)
 
-    # If no DJANGO_SECRET_KEY line found, add it after Django Core Settings section
+    # If no DJANGO_SECRET_KEY line found, add it at the end
     if not key_found:
         f.write(f'DJANGO_SECRET_KEY={secret_key}\n')
 EOF
-    echo "✓ Generated Django secret key"
-else
-    echo "✓ Django secret key already configured"
-fi
+echo "✓ Generated Django secret key"
 
 # Set proper ownership and permissions
 chown django:django "$ENV_FILE"
