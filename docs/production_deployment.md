@@ -69,8 +69,8 @@ exit
 cd /tmp/platform.wafer.space/deployment
 sudo ./scripts/03-setup-database.sh
 
-# 6. Edit .env file (optional - add MAILGUN_API_KEY and OAuth credentials)
-# DATABASE_URL and DJANGO_SECRET_KEY are already configured
+# 6. Edit .env file (optional - add MAILGUN_API_KEY and OAuth client secrets)
+# DATABASE_URL, DJANGO_SECRET_KEY, and OAuth CLIENT_IDs are already configured
 sudo -u django nano /home/django/platform.wafer.space/.env
 
 # 7. Run Django setup (as django user)
@@ -148,7 +148,7 @@ Sets up PostgreSQL database and creates `.env` file automatically:
 
 **Non-interactive**: Runs completely automatically with no prompts.
 
-**What you need to do after**: Edit `.env` to add remaining secrets (MAILGUN_API_KEY, OAuth credentials).
+**What you need to do after**: Edit `.env` to add remaining secrets (MAILGUN_API_KEY, OAuth client secrets).
 
 ### 04-setup-permissions.sh
 
@@ -193,18 +193,17 @@ The template includes all required variables with comments. You need to edit the
 
 1. **MAILGUN_API_KEY** - Get from [Mailgun dashboard](https://www.mailgun.com/)
 
-2. **OAuth Credentials** - Create OAuth applications:
-   - **GitHub**: [Developer settings](https://github.com/settings/developers)
-     - Homepage: `https://platform.wafer.space`
-     - Callback: `https://platform.wafer.space/accounts/github/login/callback/`
-   - **GitLab**: [Applications](https://gitlab.com/-/profile/applications)
-     - Redirect URI: `https://platform.wafer.space/accounts/gitlab/login/callback/`
-   - **Google**: [Credentials](https://console.cloud.google.com/apis/credentials)
-     - Redirect URI: `https://platform.wafer.space/accounts/google/login/callback/`
+2. **OAuth Client Secrets** - Add the client secrets for each OAuth provider (CLIENT_IDs are pre-configured):
+   - `GITHUB_CLIENT_SECRET` - Get from wafer-space organization OAuth app
+   - `GITLAB_CLIENT_SECRET` - Get from wafer-space group OAuth app
+   - `GOOGLE_CLIENT_SECRET` - Get from wafer-space project OAuth app
 
 **Already configured automatically:**
 - `DATABASE_URL` - Set by database setup script with generated password
 - `DJANGO_SECRET_KEY` - Auto-generated 50-character secure random key
+- `GITHUB_CLIENT_ID` - Pre-configured for wafer-space organization
+- `GITLAB_CLIENT_ID` - Pre-configured for wafer-space group
+- `GOOGLE_CLIENT_ID` - Pre-configured for wafer-space project
 - `DJANGO_SETTINGS_MODULE` - Set to `config.settings.production`
 - `DJANGO_ALLOWED_HOSTS` - Set to `platform.wafer.space`
 - Security settings - All HTTPS/HSTS settings configured
