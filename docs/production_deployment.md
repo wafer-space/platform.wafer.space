@@ -174,15 +174,33 @@ sudo systemctl status nginx
 
 ## PostgreSQL Setup
 
+**Note:** Using the automated script `deployment/scripts/03-setup-database.sh` is recommended as it handles secure password generation and storage automatically.
+
 ### 1. Create Database and User
 
+**Automated (Recommended):**
 ```bash
+# Run the automated setup script
+sudo ./deployment/scripts/03-setup-database.sh
+
+# This will:
+# - Generate a secure random password (or let you enter one)
+# - Create the database and user
+# - Save credentials to a temporary file (not displayed in terminal)
+# - Provide instructions for adding to .env file
+```
+
+**Manual Setup:**
+```bash
+# Generate a secure password first
+DB_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-32)
+
 # Switch to postgres user
 sudo -u postgres psql
 
 # In PostgreSQL prompt:
 CREATE DATABASE platform_wafer_space;
-CREATE USER platform_wafer_space WITH PASSWORD 'your_secure_password_here';
+CREATE USER platform_wafer_space WITH PASSWORD 'paste_generated_password_here';
 ALTER ROLE platform_wafer_space SET client_encoding TO 'utf8';
 ALTER ROLE platform_wafer_space SET default_transaction_isolation TO 'read committed';
 ALTER ROLE platform_wafer_space SET timezone TO 'UTC';
@@ -190,6 +208,8 @@ GRANT ALL PRIVILEGES ON DATABASE platform_wafer_space TO platform_wafer_space;
 
 # Exit PostgreSQL
 \q
+
+# Save the password securely - never display in terminal or logs
 ```
 
 ### 2. Configure PostgreSQL for Local Connections
@@ -329,6 +349,11 @@ DJANGO_ADMIN_URL=admin-secure-path-change-this/
 
 # Database
 # ------------------------------------------------------------------------------
+# If using automated script (03-setup-database.sh):
+# The DATABASE_URL will be in the temporary file shown by the script.
+# Add it with: sudo -u django cat /tmp/database_config_*.txt >> .env
+#
+# If setting manually, use this format:
 DATABASE_URL=postgres://platform_wafer_space:your_secure_password_here@localhost:5432/platform_wafer_space
 
 # Email Configuration (Mailgun)
