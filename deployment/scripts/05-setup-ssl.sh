@@ -57,7 +57,12 @@ fi
 echo "Verifying certificate..."
 certbot certificates
 
-# Test nginx configuration again
+# Enable HTTPS server block in nginx config
+echo "Enabling HTTPS server block..."
+NGINX_CONFIG="/etc/nginx/sites-available/platform.wafer.space"
+sed -i '/^# HTTPS Server - UNCOMMENTED BY SSL SETUP SCRIPT$/,/^#}$/s/^#//' "$NGINX_CONFIG"
+
+# Test nginx configuration with SSL enabled
 echo "Testing nginx configuration with SSL..."
 nginx -t
 
