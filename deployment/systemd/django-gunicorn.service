@@ -8,11 +8,11 @@ Type=notify
 User=www-data
 Group=www-data
 WorkingDirectory=/home/django/platform.wafer.space
-Environment="PATH=/home/django/platform.wafer.space/.venv/bin:/home/django/.cargo/bin"
+Environment="PATH=/home/django/platform.wafer.space/.venv/bin:/home/django/.local/bin"
 Environment="DJANGO_SETTINGS_MODULE=config.settings.production"
 EnvironmentFile=/home/django/platform.wafer.space/.env
 
-ExecStart=/home/django/.cargo/bin/uv run gunicorn \
+ExecStart=/home/django/.local/bin/uv run gunicorn \
     --workers 4 \
     --worker-class sync \
     --bind unix:/var/run/platform.wafer.space/gunicorn.sock \
