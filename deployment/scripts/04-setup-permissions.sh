@@ -22,11 +22,7 @@ chown -R django:www-data "$APP_DIR"
 echo "Setting directory permissions (750)..."
 find "$APP_DIR" -type d -exec chmod 750 {} \;
 
-# Set file permissions: owner rw, group r, other none
-echo "Setting file permissions (640)..."
-find "$APP_DIR" -type f -exec chmod 640 {} \;
-
-# Make shell scripts executable
+# Ensure shell scripts are executable
 echo "Making shell scripts executable (750)..."
 find "$APP_DIR" -type f -name "*.sh" -exec chmod 750 {} \;
 
@@ -36,7 +32,7 @@ if [ -f "$APP_DIR/manage.py" ]; then
     chmod 750 "$APP_DIR/manage.py"
 fi
 
-# Secure .env file
+# Secure .env file (no execute, owner rw, group r)
 if [ -f "$APP_DIR/.env" ]; then
     echo "Securing .env file (640)..."
     chmod 640 "$APP_DIR/.env"
