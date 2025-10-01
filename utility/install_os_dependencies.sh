@@ -4,7 +4,7 @@ WORK_DIR="$(dirname "$0")"
 DISTRO_NAME=$(lsb_release -sc)
 OS_REQUIREMENTS_FILENAME="requirements-$DISTRO_NAME.apt"
 
-cd $WORK_DIR
+cd "$WORK_DIR" || exit
 
 # Check if a requirements file exist for the current distribution.
 if [ ! -r "$OS_REQUIREMENTS_FILENAME" ]; then
