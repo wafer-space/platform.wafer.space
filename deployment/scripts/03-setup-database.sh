@@ -134,14 +134,14 @@ fi
 # Add or update DATABASE_URL in .env file
 if grep -q "^DATABASE_URL=" "$ENV_FILE"; then
     # Update existing DATABASE_URL
-    sed -i "s|^DATABASE_URL=.*|DATABASE_URL=$DATABASE_URL|" "$ENV_FILE"
+    sed -i "s|^DATABASE_URL=.*|DATABASE_URL=\"$DATABASE_URL\"|" "$ENV_FILE"
     echo "✓ Updated DATABASE_URL in .env"
 else
     # Add DATABASE_URL
     {
         echo ""
         echo "# Database configuration (added by setup script)"
-        echo "DATABASE_URL=$DATABASE_URL"
+        echo "DATABASE_URL=\"$DATABASE_URL\""
     } >> "$ENV_FILE"
     echo "✓ Added DATABASE_URL to .env"
 fi
@@ -164,14 +164,14 @@ key_found = False
 with open('$ENV_FILE', 'w') as f:
     for line in lines:
         if line.startswith('DJANGO_SECRET_KEY='):
-            f.write(f'DJANGO_SECRET_KEY={secret_key}\n')
+            f.write(f'DJANGO_SECRET_KEY="{secret_key}"\n')
             key_found = True
         else:
             f.write(line)
 
     # If no DJANGO_SECRET_KEY line found, add it at the end
     if not key_found:
-        f.write(f'DJANGO_SECRET_KEY={secret_key}\n')
+        f.write(f'DJANGO_SECRET_KEY="{secret_key}"\n')
 EOF
 echo "✓ Generated Django secret key"
 
