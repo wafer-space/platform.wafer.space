@@ -30,9 +30,14 @@ fi
 echo "Testing nginx configuration..."
 nginx -t
 
-# Reload nginx to apply HTTP-only config
-echo "Reloading nginx..."
-systemctl reload nginx
+# Start or reload nginx to apply HTTP-only config
+if systemctl is-active --quiet nginx; then
+    echo "Reloading nginx..."
+    systemctl reload nginx
+else
+    echo "Starting nginx..."
+    systemctl start nginx
+fi
 
 # Check if certificate already exists
 if [ -d "/etc/letsencrypt/live/$DOMAIN" ]; then
@@ -66,9 +71,14 @@ sed -i '/^# HTTPS Server - UNCOMMENTED BY SSL SETUP SCRIPT$/,/^#}$/s/^#//' "$NGI
 echo "Testing nginx configuration with SSL..."
 nginx -t
 
-# Reload nginx with SSL enabled
-echo "Reloading nginx with SSL..."
-systemctl reload nginx
+# Reload or restart nginx with SSL enabled
+if systemctl is-active --quiet nginx; then
+    echo "Reloading nginx with SSL..."
+    systemctl reload nginx
+else
+    echo "Starting nginx with SSL..."
+    systemctl start nginx
+fi
 
 echo ""
 echo "=== SSL certificate installed successfully ==="
