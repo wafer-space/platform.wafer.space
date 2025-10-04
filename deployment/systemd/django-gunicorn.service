@@ -14,7 +14,7 @@ EnvironmentFile=/home/django/platform.wafer.space/.env
 ExecStart=/home/django/platform.wafer.space/.venv/bin/gunicorn \
     --workers 4 \
     --worker-class sync \
-    --bind unix:/var/run/platform.wafer.space/gunicorn.sock \
+    --bind unix:/run/platform.wafer.space/gunicorn.sock \
     --access-logfile /var/log/platform.wafer.space/gunicorn-access.log \
     --error-logfile /var/log/platform.wafer.space/gunicorn-error.log \
     --log-level info \
@@ -31,7 +31,7 @@ NoNewPrivileges=true
 PrivateDevices=true
 ProtectSystem=strict
 ReadOnlyPaths=/home/django/platform.wafer.space
-ReadWritePaths=/var/log/platform.wafer.space /var/run/platform.wafer.space /home/django/platform.wafer.space/wafer_space/media
+ReadWritePaths=/var/log/platform.wafer.space /run/platform.wafer.space /home/django/platform.wafer.space/wafer_space/media
 
 # Restart policy
 Restart=on-failure

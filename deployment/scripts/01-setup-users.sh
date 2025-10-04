@@ -27,11 +27,11 @@ fi
 # Create application directories
 echo "Creating application directories..."
 mkdir -p /var/log/platform.wafer.space
-mkdir -p /var/run/platform.wafer.space
+mkdir -p /run/platform.wafer.space
 
 # Set ownership - www-data runs the services
 chown -R www-data:www-data /var/log/platform.wafer.space
-chown -R www-data:www-data /var/run/platform.wafer.space
+chown -R www-data:www-data /run/platform.wafer.space
 
 echo "✓ Application directories created and owned by www-data"
 

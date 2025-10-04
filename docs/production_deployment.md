@@ -127,7 +127,7 @@ Creates system users with privilege separation for security:
 
 Creates directories:
 - `/var/log/platform.wafer.space` (logs, owned by www-data)
-- `/var/run/platform.wafer.space` (Unix sockets, owned by www-data)
+- `/run/platform.wafer.space` (Unix sockets, owned by www-data)
 
 ### 02-install-dependencies.sh
 
@@ -269,7 +269,7 @@ The deployment includes three systemd services:
 
 Runs Gunicorn WSGI server:
 - User: `www-data`
-- Socket: `/var/run/platform.wafer.space/gunicorn.sock`
+- Socket: `/run/platform.wafer.space/gunicorn.sock`
 - Workers: 4 (adjust based on CPU cores: 2-4 × CPU cores)
 - Timeout: 120 seconds
 - Security: `NoNewPrivileges`, `PrivateDevices`, `ProtectSystem=strict`
@@ -509,7 +509,7 @@ sudo systemctl restart django-gunicorn.service
 sudo systemctl reload nginx
 
 # Check socket exists
-ls -la /var/run/platform.wafer.space/gunicorn.sock
+ls -la /run/platform.wafer.space/gunicorn.sock
 ```
 
 ### Static Files Not Loading

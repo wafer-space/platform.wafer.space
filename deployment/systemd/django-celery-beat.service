@@ -16,14 +16,14 @@ ExecStart=/home/django/platform.wafer.space/.venv/bin/celery \
     beat \
     --loglevel=info \
     --logfile=/var/log/platform.wafer.space/celery-beat.log \
-    --pidfile=/var/run/platform.wafer.space/celery-beat.pid
+    --pidfile=/run/platform.wafer.space/celery-beat.pid
 
 # Security hardening
 NoNewPrivileges=true
 PrivateDevices=true
 ProtectSystem=strict
 ReadOnlyPaths=/home/django/platform.wafer.space
-ReadWritePaths=/var/log/platform.wafer.space /var/run/platform.wafer.space /home/django/platform.wafer.space/wafer_space/media
+ReadWritePaths=/var/log/platform.wafer.space /run/platform.wafer.space /home/django/platform.wafer.space/wafer_space/media
 
 # Restart policy
 Restart=on-failure
