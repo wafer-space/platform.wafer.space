@@ -34,9 +34,9 @@ if [ ! -f "$SECRETS_DIR/mailgun" ]; then
 fi
 MAILGUN_KEY=$(cat "$SECRETS_DIR/mailgun" | tr -d '\n')
 if grep -q "^MAILGUN_API_KEY=" "$ENV_FILE"; then
-    sed -i "s|^MAILGUN_API_KEY=.*|MAILGUN_API_KEY=\"$MAILGUN_KEY\"|" "$ENV_FILE"
+    sed -i "s|^MAILGUN_API_KEY=.*|MAILGUN_API_KEY=$MAILGUN_KEY|" "$ENV_FILE"
 else
-    echo "MAILGUN_API_KEY=\"$MAILGUN_KEY\"" >> "$ENV_FILE"
+    echo "MAILGUN_API_KEY=$MAILGUN_KEY" >> "$ENV_FILE"
 fi
 echo "✓ Updated Mailgun API key"
 
@@ -47,9 +47,9 @@ if [ ! -f "$SECRETS_DIR/github-oauth" ]; then
 fi
 GITHUB_SECRET=$(cat "$SECRETS_DIR/github-oauth" | tr -d '\n')
 if grep -q "^GITHUB_CLIENT_SECRET=" "$ENV_FILE"; then
-    sed -i "s|^GITHUB_CLIENT_SECRET=.*|GITHUB_CLIENT_SECRET=\"$GITHUB_SECRET\"|" "$ENV_FILE"
+    sed -i "s|^GITHUB_CLIENT_SECRET=.*|GITHUB_CLIENT_SECRET=$GITHUB_SECRET|" "$ENV_FILE"
 else
-    echo "GITHUB_CLIENT_SECRET=\"$GITHUB_SECRET\"" >> "$ENV_FILE"
+    echo "GITHUB_CLIENT_SECRET=$GITHUB_SECRET" >> "$ENV_FILE"
 fi
 echo "✓ Updated GitHub OAuth secret"
 
@@ -60,9 +60,9 @@ if [ ! -f "$SECRETS_DIR/gitlab-oauth" ]; then
 fi
 GITLAB_SECRET=$(cat "$SECRETS_DIR/gitlab-oauth" | tr -d '\n')
 if grep -q "^GITLAB_CLIENT_SECRET=" "$ENV_FILE"; then
-    sed -i "s|^GITLAB_CLIENT_SECRET=.*|GITLAB_CLIENT_SECRET=\"$GITLAB_SECRET\"|" "$ENV_FILE"
+    sed -i "s|^GITLAB_CLIENT_SECRET=.*|GITLAB_CLIENT_SECRET=$GITLAB_SECRET|" "$ENV_FILE"
 else
-    echo "GITLAB_CLIENT_SECRET=\"$GITLAB_SECRET\"" >> "$ENV_FILE"
+    echo "GITLAB_CLIENT_SECRET=$GITLAB_SECRET" >> "$ENV_FILE"
 fi
 echo "✓ Updated GitLab OAuth secret"
 
@@ -73,9 +73,9 @@ if [ ! -f "$SECRETS_DIR/google-auth.json" ]; then
 fi
 GOOGLE_SECRET=$(python3 -c "import json; print(json.load(open('$SECRETS_DIR/google-auth.json'))['web']['client_secret'])")
 if grep -q "^GOOGLE_CLIENT_SECRET=" "$ENV_FILE"; then
-    sed -i "s|^GOOGLE_CLIENT_SECRET=.*|GOOGLE_CLIENT_SECRET=\"$GOOGLE_SECRET\"|" "$ENV_FILE"
+    sed -i "s|^GOOGLE_CLIENT_SECRET=.*|GOOGLE_CLIENT_SECRET=$GOOGLE_SECRET|" "$ENV_FILE"
 else
-    echo "GOOGLE_CLIENT_SECRET=\"$GOOGLE_SECRET\"" >> "$ENV_FILE"
+    echo "GOOGLE_CLIENT_SECRET=$GOOGLE_SECRET" >> "$ENV_FILE"
 fi
 echo "✓ Updated Google OAuth secret"
 

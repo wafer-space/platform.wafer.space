@@ -150,15 +150,15 @@ fi
 
 # Add or update DATABASE_URL in .env file
 if grep -q "^DATABASE_URL=" "$ENV_FILE"; then
-    # Update existing DATABASE_URL
-    sed -i "s|^DATABASE_URL=.*|DATABASE_URL=\"$DATABASE_URL\"|" "$ENV_FILE"
+    # Update existing DATABASE_URL (no quotes for systemd EnvironmentFile)
+    sed -i "s|^DATABASE_URL=.*|DATABASE_URL=$DATABASE_URL|" "$ENV_FILE"
     echo "✓ Updated DATABASE_URL in .env"
 else
-    # Add DATABASE_URL
+    # Add DATABASE_URL (no quotes for systemd EnvironmentFile)
     {
         echo ""
         echo "# Database configuration (added by setup script)"
-        echo "DATABASE_URL=\"$DATABASE_URL\""
+        echo "DATABASE_URL=$DATABASE_URL"
     } >> "$ENV_FILE"
     echo "✓ Added DATABASE_URL to .env"
 fi
@@ -169,26 +169,27 @@ python3 <<EOF
 import secrets
 
 # Generate 50-character secret key using same character set as Django
-chars = 'abcdefghijklmnopqrstuvwxyz0123456789!@#\$%^&*(-_=+)'
+# Avoid characters that need escaping in systemd EnvironmentFile
+chars = 'abcdefghijklmnopqrstuvwxyz0123456789-_'
 secret_key = ''.join(secrets.choice(chars) for _ in range(50))
 
 # Read file
 with open('$ENV_FILE', 'r') as f:
     lines = f.readlines()
 
-# Replace or add the line
+# Replace or add the line (no quotes for systemd EnvironmentFile)
 key_found = False
 with open('$ENV_FILE', 'w') as f:
     for line in lines:
         if line.startswith('DJANGO_SECRET_KEY='):
-            f.write(f'DJANGO_SECRET_KEY="{secret_key}"\n')
+            f.write(f'DJANGO_SECRET_KEY={secret_key}\n')
             key_found = True
         else:
             f.write(line)
 
     # If no DJANGO_SECRET_KEY line found, add it at the end
     if not key_found:
-        f.write(f'DJANGO_SECRET_KEY="{secret_key}"\n')
+        f.write(f'DJANGO_SECRET_KEY={secret_key}\n')
 EOF
 echo "✓ Generated Django secret key"
 
