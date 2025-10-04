@@ -4,29 +4,32 @@
 # Verify: sudo visudo -c
 
 # Allow django user to restart all platform services
-django ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart django-gunicorn.service
-django ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart django-celery.service
-django ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart django-celery-beat.service
+django ALL=(root) NOPASSWD: /usr/bin/systemctl restart django-gunicorn.service
+django ALL=(root) NOPASSWD: /usr/bin/systemctl restart django-celery.service
+django ALL=(root) NOPASSWD: /usr/bin/systemctl restart django-celery-beat.service
 
 # Allow django user to start all platform services
-django ALL=(ALL) NOPASSWD: /usr/bin/systemctl start django-gunicorn.service
-django ALL=(ALL) NOPASSWD: /usr/bin/systemctl start django-celery.service
-django ALL=(ALL) NOPASSWD: /usr/bin/systemctl start django-celery-beat.service
+django ALL=(root) NOPASSWD: /usr/bin/systemctl start django-gunicorn.service
+django ALL=(root) NOPASSWD: /usr/bin/systemctl start django-celery.service
+django ALL=(root) NOPASSWD: /usr/bin/systemctl start django-celery-beat.service
 
 # Allow django user to stop all platform services
-django ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop django-gunicorn.service
-django ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop django-celery.service
-django ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop django-celery-beat.service
+django ALL=(root) NOPASSWD: /usr/bin/systemctl stop django-gunicorn.service
+django ALL=(root) NOPASSWD: /usr/bin/systemctl stop django-celery.service
+django ALL=(root) NOPASSWD: /usr/bin/systemctl stop django-celery-beat.service
 
 # Allow django user to check service status
-django ALL=(ALL) NOPASSWD: /usr/bin/systemctl status django-gunicorn.service
-django ALL=(ALL) NOPASSWD: /usr/bin/systemctl status django-celery.service
-django ALL=(ALL) NOPASSWD: /usr/bin/systemctl status django-celery-beat.service
+django ALL=(root) NOPASSWD: /usr/bin/systemctl status django-gunicorn.service
+django ALL=(root) NOPASSWD: /usr/bin/systemctl status django-celery.service
+django ALL=(root) NOPASSWD: /usr/bin/systemctl status django-celery-beat.service
 
 # Allow django user to check if services are active
-django ALL=(ALL) NOPASSWD: /usr/bin/systemctl is-active django-gunicorn.service
-django ALL=(ALL) NOPASSWD: /usr/bin/systemctl is-active django-celery.service
-django ALL=(ALL) NOPASSWD: /usr/bin/systemctl is-active django-celery-beat.service
+django ALL=(root) NOPASSWD: /usr/bin/systemctl is-active django-gunicorn.service
+django ALL=(root) NOPASSWD: /usr/bin/systemctl is-active django-celery.service
+django ALL=(root) NOPASSWD: /usr/bin/systemctl is-active django-celery-beat.service
 
 # Allow django user to run the restart script
-django ALL=(ALL) NOPASSWD: /home/django/platform.wafer.space/deployment/scripts/restart.sh
+django ALL=(root) NOPASSWD: /home/django/platform.wafer.space/deployment/scripts/restart.sh
+
+# Allow django user to create log directory
+django ALL=(root) NOPASSWD: /usr/bin/mkdir -p /var/log/platform.wafer.space
