@@ -43,9 +43,10 @@ deployment/
 
 1. **`01-setup-users.sh`** - Create django user and application directories
 2. **`02-install-dependencies.sh`** - Install system packages (PostgreSQL, Nginx, etc.)
-3. **`03-setup-database.sh`** - Setup PostgreSQL database and auto-generate .env file
-4. **`04-setup-permissions.sh`** - Set proper file permissions (privilege separation)
-5. **`05-setup-ssl.sh`** - Obtain Let's Encrypt SSL certificate
+3. **`02a-setup-secrets.sh`** - Clone secrets repository from GitHub
+4. **`03-setup-database.sh`** - Setup PostgreSQL database and auto-generate .env file
+5. **`04-setup-permissions.sh`** - Set proper file permissions (privilege separation)
+6. **`05-setup-ssl.sh`** - Obtain Let's Encrypt SSL certificate
 
 ### Maintenance Scripts
 

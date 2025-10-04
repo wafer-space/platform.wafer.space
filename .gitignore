@@ -294,3 +294,6 @@ tests/browser/screenshots/
 # Google OAuth client secret files
 client_secret_*.json
 *client_secret*.json
+
+# Secrets repository (cloned separately)
+secrets/

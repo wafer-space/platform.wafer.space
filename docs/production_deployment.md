@@ -49,7 +49,13 @@ cd platform.wafer.space/deployment
 sudo ./scripts/01-setup-users.sh
 sudo ./scripts/02-install-dependencies.sh
 
-# 4. Setup application as django user
+# 4. Setup SSH key for django user (to access secrets repository)
+sudo -u django ssh-keygen -t ed25519 -C "django@platform.wafer.space"
+sudo cat /home/django/.ssh/id_ed25519.pub
+# Add this public key as a deploy key to:
+# https://github.com/mithro/platform.wafer.space-secrets/settings/keys
+
+# 5. Setup application as django user
 sudo -u django -i
 cd /home/django
 git clone https://github.com/wafer-space/platform.wafer.space.git platform.wafer.space
@@ -65,15 +71,18 @@ echo 'export DJANGO_SETTINGS_MODULE=config.settings.production' >> ~/.bashrc
 source ~/.bashrc
 exit
 
-# 5. Setup database (creates .env with DATABASE_URL and DJANGO_SECRET_KEY)
+# 6. Clone secrets repository
 cd /tmp/platform.wafer.space/deployment
+sudo ./scripts/02a-setup-secrets.sh
+
+# 7. Setup database (creates .env with DATABASE_URL, DJANGO_SECRET_KEY, and OAuth secrets)
 sudo ./scripts/03-setup-database.sh
 
-# 6. Edit .env file (optional - add MAILGUN_API_KEY and OAuth client secrets)
-# DATABASE_URL, DJANGO_SECRET_KEY, and OAuth CLIENT_IDs are already configured
-sudo -u django nano /home/django/platform.wafer.space/.env
+# 8. Verify .env file (optional - all secrets are automatically configured)
+# DATABASE_URL, DJANGO_SECRET_KEY, and all API secrets are already configured
+# sudo -u django nano /home/django/platform.wafer.space/.env
 
-# 7. Run Django setup (as django user)
+# 9. Run Django setup (as django user)
 sudo -u django -i
 cd /home/django/platform.wafer.space
 export DJANGO_SETTINGS_MODULE=config.settings.production
@@ -82,7 +91,7 @@ make createsuperuser
 make collectstatic
 exit
 
-# 8. Set permissions and install services (back as root)
+# 10. Set permissions and install services (back as root)
 cd /home/django/platform.wafer.space/deployment
 sudo ./scripts/04-setup-permissions.sh
 
@@ -95,11 +104,11 @@ sudo ./install.sh
 cd ../scripts
 sudo ./05-setup-ssl.sh
 
-# 9. Start services
+# 11. Start services
 sudo systemctl start django-gunicorn.service
 sudo systemctl start django-celery.service
 
-# 10. Verify deployment
+# 12. Verify deployment
 sudo systemctl status django-gunicorn.service
 sudo systemctl status django-celery.service
 curl https://platform.wafer.space
@@ -132,6 +141,17 @@ Installs all system packages required for the application:
 - UFW firewall
 - Image processing libraries (for Pillow)
 
+### 02a-setup-secrets.sh
+
+Clones the secrets repository:
+
+1. Clones `git+ssh://github.com/mithro/platform.wafer.space-secrets.git` to `/home/django/.secrets`
+2. Sets restrictive permissions (700 on directory)
+
+**Prerequisites**: The django user must have SSH keys configured and added as a deploy key to the secrets repository.
+
+**Security**: Secrets are stored in a separate private repository. The `.env` file reads secrets directly from files in this repository at runtime.
+
 ### 03-setup-database.sh
 
 Sets up PostgreSQL database and creates `.env` file automatically:
@@ -148,7 +168,7 @@ Sets up PostgreSQL database and creates `.env` file automatically:
 
 **Non-interactive**: Runs completely automatically with no prompts.
 
-**What you need to do after**: Edit `.env` to add remaining secrets (MAILGUN_API_KEY, OAuth client secrets).
+**Note**: The `.env.production.template` contains shell commands that read OAuth secrets directly from `/home/django/.secrets/` at runtime. No manual configuration needed if secrets repository is cloned.
 
 ### 04-setup-permissions.sh
 
@@ -177,7 +197,16 @@ Automates SSL certificate setup:
 
 The `.env` file is automatically created by the database setup script (`03-setup-database.sh`) from the `.env.production.template`. It includes all necessary configuration variables with helpful comments.
 
-**DATABASE_URL and DJANGO_SECRET_KEY are automatically generated** - you just need to add the remaining secrets.
+**Automatically configured:**
+- `DATABASE_URL` - Generated with secure random password
+- `DJANGO_SECRET_KEY` - Generated with 50-character random key
+- All secrets read from `/home/django/.secrets/` via shell commands in `.env`:
+  - `MAILGUN_API_KEY` - from `mailgun` file
+  - `GITHUB_CLIENT_SECRET` - from `github-oauth` file
+  - `GITLAB_CLIENT_SECRET` - from `gitlab-oauth` file
+  - `GOOGLE_CLIENT_SECRET` - from `google-auth.json` file
+
+**No manual secret configuration needed** - all secrets are loaded from the secrets repository.
 
 Edit the file as the django user:
 
@@ -187,7 +216,7 @@ sudo -u django nano /home/django/platform.wafer.space/.env
 
 ### Configuration Variables
 
-The template includes all required variables with comments. You need to edit these values:
+The template includes all required variables with comments. Most values are automatically configured:
 
 **Required changes:**
 
