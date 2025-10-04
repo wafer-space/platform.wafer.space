@@ -89,7 +89,6 @@ THIRD_PARTY_APPS = [
     "allauth.socialaccount.providers.linkedin_oauth2",
     "allauth.socialaccount.providers.google",
     # Background job processing
-    "django_celery_beat",  # Django database backend for Celery broker
     "django_celery_results",
 ]
 
@@ -362,15 +361,14 @@ SOCIALACCOUNT_LOGIN_ON_GET = True  # Skip intermediate confirmation page before 
 
 # Celery Configuration
 # ------------------------------------------------------------------------------
-# Use Django ORM as broker and result backend
-# Note: Database brokers are not recommended for high-volume production use.
-# Consider Redis or RabbitMQ for better performance.
-CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="django://")
+# Use SQLAlchemy as broker (experimental - consider Redis/RabbitMQ for production)
+# Convert DATABASE_URL to sqla+postgresql:// format for Celery broker
+_database_url = env("DATABASE_URL", default="postgres:///wafer_space")
+if _database_url.startswith("postgres://"):
+    _database_url = _database_url.replace("postgres://", "postgresql://", 1)
+CELERY_BROKER_URL = env("CELERY_BROKER_URL", default=f"sqla+{_database_url}")
 CELERY_RESULT_BACKEND = "django-db"
 CELERY_CACHE_BACKEND = "django-cache"
-
-# Django broker requires kombu-django
-# See: https://docs.celeryq.dev/en/stable/getting-started/backends-and-brokers/django.html
 
 # Celery task configuration
 CELERY_ACCEPT_CONTENT = ["json"]

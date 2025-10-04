@@ -182,9 +182,9 @@ dependencies = [
     "django-model-utils==5.0.0",
     "gunicorn==23.0.0",
     "celery>=5.3.0",
-    "kombu>=5.3.0",
-    "django-celery-beat>=2.5.0",  # Django database backend for Celery
+    "kombu[sqlalchemy]>=5.3.0",  # SQLAlchemy transport for Celery broker
     "django-celery-results>=2.5.0",
+    "sqlalchemy>=2.0.0",  # Required for SQLAlchemy broker
     "pillow==11.3.0",
     "psycopg[c]==3.2.10",
     "psycopg2-binary>=2.9.0",  # Required by SQLAlchemy for Celery broker
