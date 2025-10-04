@@ -79,6 +79,19 @@ else
 fi
 echo "✓ Updated Google OAuth secret"
 
+# Generate CELERY_BROKER_URL from DATABASE_URL
+if grep -q "^DATABASE_URL=" "$ENV_FILE"; then
+    DATABASE_URL=$(grep "^DATABASE_URL=" "$ENV_FILE" | cut -d'=' -f2-)
+    # Convert postgres:// to postgresql:// and add sqla+ prefix
+    CELERY_URL=$(echo "$DATABASE_URL" | sed 's|^postgres://|sqla+postgresql://|')
+    if grep -q "^CELERY_BROKER_URL=" "$ENV_FILE"; then
+        sed -i "s|^CELERY_BROKER_URL=.*|CELERY_BROKER_URL=$CELERY_URL|" "$ENV_FILE"
+    else
+        echo "CELERY_BROKER_URL=$CELERY_URL" >> "$ENV_FILE"
+    fi
+    echo "✓ Updated Celery broker URL from DATABASE_URL"
+fi
+
 # Set proper ownership and permissions
 chown django:django "$ENV_FILE"
 chmod 640 "$ENV_FILE"
