@@ -23,21 +23,8 @@ fi
 
 # Copy nginx config
 echo "Copying nginx configuration..."
-
-# Check if HTTPS blocks are already uncommented (SSL already set up)
-if grep -q "^server {" /etc/nginx/sites-available/platform.wafer.space 2>/dev/null && \
-   grep -q "listen 443 ssl" /etc/nginx/sites-available/platform.wafer.space 2>/dev/null; then
-    echo "HTTPS blocks already uncommented - preserving SSL configuration..."
-    # Copy new config
-    cp "$SCRIPT_DIR/platform.wafer.space.conf" /etc/nginx/sites-available/platform.wafer.space
-    # Re-uncomment the HTTPS blocks to match existing setup
-    sed -i '/^# HTTPS.*UNCOMMENTED BY SSL SETUP SCRIPT$/d' /etc/nginx/sites-available/platform.wafer.space
-    sed -i '/^#server {$/,/^#}$/s/^#//' /etc/nginx/sites-available/platform.wafer.space
-    echo "✓ Configuration updated with HTTPS blocks uncommented"
-else
-    cp "$SCRIPT_DIR/platform.wafer.space.conf" /etc/nginx/sites-available/platform.wafer.space
-    echo "✓ Configuration copied"
-fi
+cp "$SCRIPT_DIR/platform.wafer.space.conf" /etc/nginx/sites-available/platform.wafer.space
+echo "✓ Configuration copied"
 
 # Enable site
 if [ -L /etc/nginx/sites-enabled/platform.wafer.space ]; then
