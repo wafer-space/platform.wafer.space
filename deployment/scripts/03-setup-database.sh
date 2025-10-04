@@ -8,7 +8,6 @@ DB_NAME="platform_wafer_space"
 DB_USER="platform_wafer_space"
 APP_DIR="/home/django/platform.wafer.space"
 ENV_FILE="$APP_DIR/.env"
-SECRETS_DIR="/home/django/.secrets"
 
 echo "=== Setting up PostgreSQL database ==="
 
