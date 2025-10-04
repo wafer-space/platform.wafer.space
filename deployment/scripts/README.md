@@ -94,6 +94,27 @@ Configures passwordless sudo for the django user to manage services.
 - Run `./restart.sh` without sudo
 - Manage services: `sudo systemctl restart django-gunicorn.service` (no password)
 
+### 7. Systemd Services Setup
+```bash
+sudo ../systemd/install.sh
+```
+Installs and restarts systemd services for the application.
+
+**What it does:**
+- Copies service files to `/etc/systemd/system/`
+- Enables services to start on boot
+- Reloads systemd daemon
+- Restarts all services
+- Logs installation markers to journal
+- Shows service status
+
+**Services managed:**
+- `django-gunicorn.service` - Web application server
+- `django-celery.service` - Background task worker
+- `django-celery-beat.service` - Scheduled task scheduler
+
+**Note:** Run this after database setup and permissions are configured. The script will automatically restart services after updating service files.
+
 ## Operational Scripts
 
 ### Restart Services

@@ -37,20 +37,37 @@ systemctl enable django-celery.service
 
 echo "✓ Services enabled"
 
+# Restart services
 echo ""
-echo "=== Systemd services installed ==="
-echo "Services have been installed and enabled but not started."
+echo "Restarting services..."
+
+SERVICES=(
+    "django-gunicorn.service"
+    "django-celery.service"
+    "django-celery-beat.service"
+)
+
+for service in "${SERVICES[@]}"; do
+    echo "  Restarting $service..."
+    systemctl restart "$service" && {
+        echo "  ✓ Restarted: $service"
+    } || {
+        echo "  ✗ Failed to restart: $service"
+        echo "  Checking status..."
+        systemctl status "$service" --no-pager || true
+    }
+done
+
+echo ""
+echo "=== Systemd services installed and restarted ==="
+echo "Services have been installed, enabled, and restarted."
 echo ""
 echo "Installation marker logged to journal at: $TIMESTAMP"
-echo ""
-echo "To start services:"
-echo "  sudo systemctl start django-gunicorn.service"
-echo "  sudo systemctl start django-celery.service"
-echo "  # sudo systemctl start django-celery-beat.service"
 echo ""
 echo "To check status:"
 echo "  sudo systemctl status django-gunicorn.service"
 echo "  sudo systemctl status django-celery.service"
+echo "  sudo systemctl status django-celery-beat.service"
 echo ""
 echo "To view logs since installation:"
 echo "  sudo journalctl -u django-gunicorn.service --since '$TIMESTAMP'"
