@@ -325,5 +325,13 @@ docs-live: ## Start live documentation server
 	@echo "$(BLUE)Starting live documentation server...$(NC)"
 	@cd docs && make livehtml
 
+# ==================== Deployment ====================
+
+.PHONY: restart
+restart: ## Restart all services
+	@echo "$(BLUE)Restarting all platform services...$(NC)"
+	@deployment/scripts/restart.sh
+	@echo "$(GREEN)✓ Services restarted$(NC)"
+
 # Default target
 .DEFAULT_GOAL := help
