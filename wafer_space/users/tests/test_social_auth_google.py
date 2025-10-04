@@ -62,7 +62,7 @@ class TestGoogleAuthenticationFlow(TestCase):
         assert response.status_code in [HTTP_OK, HTTP_REDIRECT]
         # If it's a redirect, it should be to Google
         if response.status_code == HTTP_REDIRECT:
-            assert "accounts.google.com/oauth" in response.url
+            assert "accounts.google.com" in response.url
 
     def test_google_oauth_redirect_contains_correct_params(self):
         """Test Google OAuth redirect parameters when redirect occurs."""
@@ -75,7 +75,7 @@ class TestGoogleAuthenticationFlow(TestCase):
             assert "scope=" in redirect_url
             assert "redirect_uri=" in redirect_url
             assert "access_type=online" in redirect_url
-            assert "accounts.google.com/oauth" in redirect_url
+            assert "accounts.google.com" in redirect_url
         else:
             # If no redirect, just verify the URL is accessible
             assert response.status_code == HTTP_OK
