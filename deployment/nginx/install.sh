@@ -14,6 +14,13 @@ mkdir -p /var/www/certbot
 chown -R www-data:www-data /var/www/certbot
 echo "✓ Certbot directory created"
 
+# Disable default nginx site to avoid conflicts
+if [ -L /etc/nginx/sites-enabled/default ]; then
+    echo "Disabling default nginx site..."
+    rm /etc/nginx/sites-enabled/default
+    echo "✓ Default site disabled"
+fi
+
 # Copy nginx config
 echo "Copying nginx configuration..."
 cp "$SCRIPT_DIR/platform.wafer.space.conf" /etc/nginx/sites-available/platform.wafer.space
