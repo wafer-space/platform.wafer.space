@@ -108,7 +108,19 @@ echo ""
 echo "Verifying certificate..."
 certbot certificates
 
-# Reload nginx to pick up new certificate
+# Enable HTTPS server blocks in nginx config (in case they were re-commented by nginx install)
+echo ""
+echo "Ensuring HTTPS server blocks are uncommented..."
+NGINX_CONFIG="/etc/nginx/sites-available/platform.wafer.space"
+sed -i '/^# HTTPS.*UNCOMMENTED BY SSL SETUP SCRIPT$/d' "$NGINX_CONFIG"
+sed -i '/^#server {$/,/^#}$/s/^#//' "$NGINX_CONFIG"
+echo "✓ HTTPS blocks uncommented"
+
+# Test nginx configuration
+echo "Testing nginx configuration..."
+nginx -t
+
+# Reload nginx to pick up new certificate and config
 echo ""
 echo "Reloading nginx with updated certificate..."
 systemctl reload nginx
