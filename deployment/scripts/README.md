@@ -88,34 +88,12 @@ Configures SSL certificates with Let's Encrypt for all domains.
 ```bash
 sudo ./05a-expand-ssl-cert.sh
 ```
-Expands existing SSL certificate to include specific Thousand Parsec domains.
+Expands existing SSL certificate to include Thousand Parsec domains.
 
 **Use when:**
 - You already have an SSL certificate for platform.wafer.space
-- You want to add specific Thousand Parsec domains to the existing certificate
+- You want to add Thousand Parsec domains to the existing certificate
 - You need to eliminate SSL certificate warnings for Thousand Parsec domains
-
-#### 5b. Setup Wildcard SSL Certificate (Recommended Alternative)
-```bash
-sudo ./05b-setup-wildcard-ssl.sh
-```
-Sets up a wildcard SSL certificate covering all Thousand Parsec subdomains.
-
-**What it does:**
-- Obtains certificate for `platform.wafer.space` and `*.thousandparsec.{com,net,org}`
-- Uses DNS validation (manual process - you'll need to add DNS TXT records)
-- Covers all current and future Thousand Parsec subdomains
-
-**Important notes:**
-- **Requires manual DNS TXT record configuration** during setup
-- You must have access to DNS settings for thousandparsec.{com,net,org}
-- Follow the prompts carefully to add DNS TXT records
-- Wildcard certificates cannot use auto-renewal via webroot (requires manual renewal or DNS API)
-
-**Use when:**
-- You want to cover all Thousand Parsec subdomains with one certificate
-- You have access to DNS configuration for thousandparsec domains
-- You prefer simpler nginx configuration without listing every subdomain
 
 ### 6. Sudoers Setup (Optional but Recommended)
 ```bash
