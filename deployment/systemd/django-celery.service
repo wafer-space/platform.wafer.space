@@ -24,6 +24,9 @@ ExecStart=/home/django/platform.wafer.space/.venv/bin/celery \
 ExecStop=/bin/kill -s TERM $MAINPID
 ExecReload=/bin/kill -s HUP $MAINPID
 
+# Startup timeout - give celery time to write PID file
+TimeoutStartSec=30s
+
 # Security hardening
 NoNewPrivileges=true
 PrivateDevices=true
