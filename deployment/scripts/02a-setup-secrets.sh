@@ -4,7 +4,7 @@
 
 set -e
 
-SECRETS_REPO="git+ssh://github.com/mithro/platform.wafer.space-secrets.git"
+SECRETS_REPO="git@github.com:mithro/platform.wafer.space-secrets.git"
 SECRETS_DIR="/home/django/.secrets"
 DJANGO_USER="django"
 

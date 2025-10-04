@@ -145,7 +145,7 @@ Installs all system packages required for the application:
 
 Clones the secrets repository:
 
-1. Clones `git+ssh://github.com/mithro/platform.wafer.space-secrets.git` to `/home/django/.secrets`
+1. Clones `git@github.com:mithro/platform.wafer.space-secrets.git` to `/home/django/.secrets`
 2. Sets restrictive permissions (700 on directory)
 
 **Prerequisites**: The django user must have SSH keys configured and added as a deploy key to the secrets repository.
