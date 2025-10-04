@@ -10,6 +10,7 @@ Group=www-data
 WorkingDirectory=/home/django/platform.wafer.space
 Environment="DJANGO_SETTINGS_MODULE=config.settings.production"
 EnvironmentFile=/home/django/platform.wafer.space/.env
+PIDFile=/var/run/platform.wafer.space/celery.pid
 
 ExecStart=/home/django/platform.wafer.space/.venv/bin/celery \
     -A config \
