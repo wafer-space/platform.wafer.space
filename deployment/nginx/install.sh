@@ -39,6 +39,11 @@ fi
 echo "Testing nginx configuration..."
 nginx -t
 
+# Reload nginx to apply new configuration
+echo "Reloading nginx..."
+systemctl reload nginx
+echo "✓ Nginx reloaded"
+
 echo ""
 echo "=== Nginx configuration installed ==="
 echo ""
