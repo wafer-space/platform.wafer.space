@@ -35,16 +35,8 @@ make migrate | tee -a "$LOG_FILE"
 # Collect static files
 make collectstatic | tee -a "$LOG_FILE"
 
-# Fix permissions after update (django owns code, www-data can read)
-sudo chown -R django:www-data "$APP_DIR"
-sudo find "$APP_DIR" -type d -exec chmod 750 {} \;
-sudo find "$APP_DIR" -type f -exec chmod 640 {} \;
-sudo chmod 750 "$APP_DIR/manage.py"
-sudo chmod 640 "$APP_DIR/.env"
-
-# www-data needs write access to media directory
-sudo chown -R www-data:www-data "$APP_DIR/wafer_space/media"
-sudo chmod 755 "$APP_DIR/wafer_space/media"
+# Fix permissions after update - run the permissions script
+sudo "$APP_DIR/deployment/scripts/04-setup-permissions.sh"
 
 # Restart services
 sudo systemctl restart django-gunicorn.service
