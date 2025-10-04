@@ -35,6 +35,45 @@ make db-reset
 - If tests are interrupted, they may leave objects behind
 - Always run tests to completion when possible
 
+### Third-Party Login Failure Error
+
+**Error:**
+```
+Third-Party Login Failure
+An error occurred while attempting to login via your third-party account.
+```
+
+**Cause:**
+This error occurs when you try to login with a different OAuth provider (e.g., GitLab) after previously signing up with another provider (e.g., GitHub) using the same email address.
+
+**Why This Happens:**
+- You signed up with GitHub using `user@example.com`
+- Later, you try to login with GitLab using the same `user@example.com`
+- The system doesn't automatically link the accounts, causing an error
+
+**Solution:**
+The platform is now configured to automatically link multiple OAuth providers with the same verified email address. This is enabled via:
+
+```python
+# config/settings/base.py
+SOCIALACCOUNT_EMAIL_AUTHENTICATION = True
+SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = True
+```
+
+**Expected Behavior:**
+- ✅ Use any OAuth provider (GitHub, GitLab, Google) with the same email
+- ✅ Accounts automatically link when emails match
+- ✅ No need to remember which provider you used originally
+- ✅ Seamlessly switch between providers
+
+**If You Still See This Error:**
+1. **Clear your session**: Logout completely and try again
+2. **Use password reset**: If you have a local account, reset your password and login traditionally
+3. **Check email verification**: Ensure the email from the OAuth provider is verified
+4. **Contact support**: If the issue persists, create a GitHub issue with details
+
+**Related Issue:** See [Issue #22](https://github.com/wafer-space/platform.wafer.space/issues/22) for technical details.
+
 ### OAuth Configuration Issues
 
 **OAuth button not appearing:**

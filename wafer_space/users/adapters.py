@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import typing
 
 from allauth.account.adapter import DefaultAccountAdapter
@@ -11,6 +12,8 @@ if typing.TYPE_CHECKING:
     from django.http import HttpRequest
 
     from wafer_space.users.models import User
+
+logger = logging.getLogger(__name__)
 
 
 class AccountAdapter(DefaultAccountAdapter):
@@ -46,3 +49,45 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
                 if last_name := data.get("last_name"):
                     user.name += f" {last_name}"
         return user
+
+    def pre_social_login(
+        self,
+        request: HttpRequest,
+        sociallogin: SocialLogin,
+    ) -> None:
+        """
+        Invoked just after a user successfully authenticates via a social provider.
+
+        This is called before the login is actually processed, allowing us to
+        handle account linking, logging, and custom business logic.
+
+        See: https://docs.allauth.org/en/latest/socialaccount/signals.html
+        """
+        # Log social login attempts for security monitoring
+        provider = sociallogin.account.provider
+        email = (
+            sociallogin.email_addresses[0].email
+            if sociallogin.email_addresses
+            else "no-email"
+        )
+
+        if sociallogin.is_existing:
+            logger.info(
+                "Social login: existing account",
+                extra={
+                    "provider": provider,
+                    "email": email,
+                    "user_id": sociallogin.user.pk if sociallogin.user else None,
+                },
+            )
+        else:
+            logger.info(
+                "Social login: new account or connection",
+                extra={
+                    "provider": provider,
+                    "email": email,
+                },
+            )
+
+        # Call parent implementation (handles email-based authentication if configured)
+        super().pre_social_login(request, sociallogin)

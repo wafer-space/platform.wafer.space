@@ -357,7 +357,15 @@ SOCIALACCOUNT_PROVIDERS = {
 # Auto-link social accounts to existing email accounts
 SOCIALACCOUNT_AUTO_SIGNUP = True
 SOCIALACCOUNT_EMAIL_VERIFICATION = "none"  # Use email from social provider if verified
-SOCIALACCOUNT_LOGIN_ON_GET = True  # Skip intermediate confirmation page before OAuth redirect
+SOCIALACCOUNT_LOGIN_ON_GET = (
+    True  # Skip intermediate confirmation page before OAuth redirect
+)
+
+# Enable email-based authentication and automatic account linking
+# This allows users to login with any OAuth provider that has a matching verified email
+# and automatically connects the social account to their existing account
+SOCIALACCOUNT_EMAIL_AUTHENTICATION = True
+SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = True
 
 # Celery Configuration
 # ------------------------------------------------------------------------------
