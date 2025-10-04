@@ -362,13 +362,13 @@ SOCIALACCOUNT_LOGIN_ON_GET = True  # Skip intermediate confirmation page before 
 # Celery Configuration
 # ------------------------------------------------------------------------------
 # Use PostgreSQL as broker via SQLAlchemy
-# Convert DATABASE_URL from postgres:// to db+postgresql://
+# Convert DATABASE_URL to sqlalchemy+postgresql:// for Celery 5.x
 _database_url = env("DATABASE_URL", default="postgres:///wafer_space")
 if _database_url.startswith("postgres://"):
     _database_url = _database_url.replace("postgres://", "postgresql://", 1)
 CELERY_BROKER_URL = env(
     "CELERY_BROKER_URL",
-    default=f"db+{_database_url}",
+    default=f"sqlalchemy+{_database_url}",
 )
 CELERY_RESULT_BACKEND = "django-db"
 CELERY_CACHE_BACKEND = "django-cache"
