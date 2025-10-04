@@ -80,7 +80,10 @@ Configures SSL certificates with Let's Encrypt for all domains.
 
 **Domains included:**
 - `platform.wafer.space` (main domain)
-- All Thousand Parsec domains: `thousandparsec.{com,net,org}`, `www.`, `old.`, `git.`
+- All Thousand Parsec domains (39 total):
+  - Base: `thousandparsec.{com,net,org}`
+  - Common: `www.`, `old.`, `git.`, `mail.`
+  - Historical infrastructure: `code.`, `darcs.`, `forums.`, `metaserver.`, `packages.`, `schemepy.`, `svn.`, `test.`
 
 **Note:** For new installations, this script will obtain a certificate covering all domains. For existing installations where the certificate already exists, use `05a-expand-ssl-cert.sh` instead.
 
