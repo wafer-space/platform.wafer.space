@@ -150,7 +150,7 @@ Clones the secrets repository:
 
 **Prerequisites**: The django user must have SSH keys configured and added as a deploy key to the secrets repository.
 
-**Security**: Secrets are stored in a separate private repository. The `.env` file reads secrets directly from files in this repository at runtime.
+**Security**: Secrets are stored in a separate private repository. The setup script reads secrets from this repository and populates the `.env` file with static values.
 
 ### 03-setup-database.sh
 
@@ -168,7 +168,7 @@ Sets up PostgreSQL database and creates `.env` file automatically:
 
 **Non-interactive**: Runs completely automatically with no prompts.
 
-**Note**: The `.env.production.template` contains shell commands that read OAuth secrets directly from `/home/django/.secrets/` at runtime. No manual configuration needed if secrets repository is cloned.
+**Note**: The setup script automatically reads all secrets from `/home/django/.secrets/` and populates them as static values in the `.env` file. No manual configuration needed if secrets repository is cloned.
 
 ### 04-setup-permissions.sh
 
@@ -200,13 +200,13 @@ The `.env` file is automatically created by the database setup script (`03-setup
 **Automatically configured:**
 - `DATABASE_URL` - Generated with secure random password
 - `DJANGO_SECRET_KEY` - Generated with 50-character random key
-- All secrets read from `/home/django/.secrets/` via shell commands in `.env`:
+- All secrets populated from `/home/django/.secrets/` by the setup script:
   - `MAILGUN_API_KEY` - from `mailgun` file
   - `GITHUB_CLIENT_SECRET` - from `github-oauth` file
   - `GITLAB_CLIENT_SECRET` - from `gitlab-oauth` file
   - `GOOGLE_CLIENT_SECRET` - from `google-auth.json` file
 
-**No manual secret configuration needed** - all secrets are loaded from the secrets repository.
+**No manual secret configuration needed** - all secrets are automatically populated from the secrets repository during setup.
 
 Edit the file as the django user:
 

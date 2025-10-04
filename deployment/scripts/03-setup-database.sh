@@ -8,6 +8,7 @@ DB_NAME="platform_wafer_space"
 DB_USER="platform_wafer_space"
 APP_DIR="/home/django/platform.wafer.space"
 ENV_FILE="$APP_DIR/.env"
+SECRETS_DIR="/home/django/.secrets"
 
 echo "=== Setting up PostgreSQL database ==="
 
@@ -185,17 +186,72 @@ with open('$ENV_FILE', 'w') as f:
 EOF
 echo "✓ Generated Django secret key"
 
+# Read secrets from secrets repository and populate .env file
+echo "Reading secrets from secrets repository..."
+
+if [ -d "$SECRETS_DIR" ]; then
+    # Read Mailgun API key
+    if [ -f "$SECRETS_DIR/mailgun" ]; then
+        MAILGUN_KEY=$(cat "$SECRETS_DIR/mailgun" | tr -d '\n')
+        if grep -q "^MAILGUN_API_KEY=" "$ENV_FILE"; then
+            sed -i "s|^MAILGUN_API_KEY=.*|MAILGUN_API_KEY=\"$MAILGUN_KEY\"|" "$ENV_FILE"
+        else
+            echo "MAILGUN_API_KEY=\"$MAILGUN_KEY\"" >> "$ENV_FILE"
+        fi
+        echo "✓ Added Mailgun API key"
+    else
+        echo "⚠️  Warning: mailgun file not found in secrets repository"
+    fi
+
+    # Read GitHub OAuth secret
+    if [ -f "$SECRETS_DIR/github-oauth" ]; then
+        GITHUB_SECRET=$(cat "$SECRETS_DIR/github-oauth" | tr -d '\n')
+        if grep -q "^GITHUB_CLIENT_SECRET=" "$ENV_FILE"; then
+            sed -i "s|^GITHUB_CLIENT_SECRET=.*|GITHUB_CLIENT_SECRET=\"$GITHUB_SECRET\"|" "$ENV_FILE"
+        else
+            echo "GITHUB_CLIENT_SECRET=\"$GITHUB_SECRET\"" >> "$ENV_FILE"
+        fi
+        echo "✓ Added GitHub OAuth secret"
+    else
+        echo "⚠️  Warning: github-oauth file not found in secrets repository"
+    fi
+
+    # Read GitLab OAuth secret
+    if [ -f "$SECRETS_DIR/gitlab-oauth" ]; then
+        GITLAB_SECRET=$(cat "$SECRETS_DIR/gitlab-oauth" | tr -d '\n')
+        if grep -q "^GITLAB_CLIENT_SECRET=" "$ENV_FILE"; then
+            sed -i "s|^GITLAB_CLIENT_SECRET=.*|GITLAB_CLIENT_SECRET=\"$GITLAB_SECRET\"|" "$ENV_FILE"
+        else
+            echo "GITLAB_CLIENT_SECRET=\"$GITLAB_SECRET\"" >> "$ENV_FILE"
+        fi
+        echo "✓ Added GitLab OAuth secret"
+    else
+        echo "⚠️  Warning: gitlab-oauth file not found in secrets repository"
+    fi
+
+    # Read Google OAuth secret from JSON file
+    if [ -f "$SECRETS_DIR/google-auth.json" ]; then
+        GOOGLE_SECRET=$(python3 -c "import json; print(json.load(open('$SECRETS_DIR/google-auth.json'))['web']['client_secret'])")
+        if grep -q "^GOOGLE_CLIENT_SECRET=" "$ENV_FILE"; then
+            sed -i "s|^GOOGLE_CLIENT_SECRET=.*|GOOGLE_CLIENT_SECRET=\"$GOOGLE_SECRET\"|" "$ENV_FILE"
+        else
+            echo "GOOGLE_CLIENT_SECRET=\"$GOOGLE_SECRET\"" >> "$ENV_FILE"
+        fi
+        echo "✓ Added Google OAuth secret"
+    else
+        echo "⚠️  Warning: google-auth.json file not found in secrets repository"
+    fi
+else
+    echo "⚠️  Warning: Secrets directory not found at $SECRETS_DIR"
+    echo "    Run 02a-setup-secrets.sh to clone the secrets repository"
+fi
+
 # Set proper ownership and permissions
 chown django:django "$ENV_FILE"
 chmod 640 "$ENV_FILE"
 
 echo ""
 echo "✓ Environment file configured: $ENV_FILE"
-echo ""
-echo "⚠️  IMPORTANT: The .env file reads all secrets from /home/django/.secrets/"
-echo "    Ensure 02a-setup-secrets.sh has been run to clone the secrets repository"
-echo ""
-echo "✓ All API secrets (MAILGUN, OAuth) will be loaded from secrets repository at runtime"
 echo ""
 echo "⚠️  For security, the database password and Django secret key are NOT displayed."
 echo "    They have been securely saved to $ENV_FILE (mode 640, owner django:django)"
