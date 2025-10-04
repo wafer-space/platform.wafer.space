@@ -41,7 +41,9 @@ while [[ $# -gt 0 ]]; do
             echo "Examples:"
             echo "  $0                    # Reset logs with backup and confirmation"
             echo "  $0 --no-backup        # Reset logs without backup"
-            echo "  $0 --force            # Reset logs without confirmation"
+            echo "  $0 --force            # Reset all logs without confirmation"
+            echo ""
+            echo "Note: This script also resets systemd journal logs for django services"
             exit 0
             ;;
         *)
@@ -167,11 +169,56 @@ if [ "$BACKUP" = true ] && [ -f "$BACKUP_ARCHIVE" ]; then
     echo "Backup saved to: $BACKUP_ARCHIVE"
 fi
 
-# Also suggest clearing systemd journal logs
+# Reset systemd journal logs for django services
 echo ""
-echo "Note: Systemd journal logs are separate. To clear them, run:"
-echo "  sudo journalctl --rotate"
-echo "  sudo journalctl --vacuum-time=1s"
+echo "Resetting systemd journal logs for django services..."
+
+# Define services to clear journal logs for
+SERVICES=(
+    "django-gunicorn.service"
+    "django-celery.service"
+    "django-celery-beat.service"
+)
+
+# Show current journal sizes
+echo "Current journal sizes:"
+for service in "${SERVICES[@]}"; do
+    SIZE=$(journalctl -u "$service" --disk-usage 2>/dev/null | grep -oP 'Archived and active journals take up \K[^ ]+' || echo "0B")
+    echo "  $service: $SIZE"
+done
+
 echo ""
-echo "Or to view journal size:"
-echo "  sudo journalctl --disk-usage"
+if [ "$FORCE" = true ]; then
+    RESET_JOURNAL=true
+else
+    read -p "Reset systemd journal logs? (y/N) " -n 1 -r
+    echo
+    RESET_JOURNAL=false
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        RESET_JOURNAL=true
+    fi
+fi
+
+if [ "$RESET_JOURNAL" = true ]; then
+    # Rotate journal logs
+    echo "Rotating journal logs..."
+    journalctl --rotate
+
+    # Vacuum journal logs for each service
+    echo "Clearing journal logs for django services..."
+    for service in "${SERVICES[@]}"; do
+        journalctl --vacuum-time=1s -u "$service" >/dev/null 2>&1 && {
+            echo "  ✓ Cleared: $service"
+        } || {
+            echo "  ✗ Failed: $service"
+        }
+    done
+
+    echo ""
+    echo "✓ Systemd journal logs reset"
+else
+    echo "Skipped systemd journal reset"
+fi
+
+echo ""
+echo "=== All Logs Reset Complete ==="

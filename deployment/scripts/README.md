@@ -136,6 +136,7 @@ sudo ./reset-logs.sh --help         # Show help
 - Creates backup archive (unless `--no-backup`)
 - Truncates log files to 0 bytes (preserves permissions)
 - Saves backups to `/var/backups/platform.wafer.space/logs/`
+- Resets systemd journal logs for all django services (with confirmation)
 
 **Use when:**
 - Log files are growing too large
@@ -145,15 +146,23 @@ sudo ./reset-logs.sh --help         # Show help
 
 **Log locations:**
 - Application logs: `/var/log/platform.wafer.space/*.log`
-- Systemd journal: Use `sudo journalctl` commands
+- Systemd journal: Automatically reset by script
 - Backup archives: `/var/backups/platform.wafer.space/logs/`
 
-**Systemd journal management:**
+**Services with journal logs:**
+- `django-gunicorn.service` - Web application server
+- `django-celery.service` - Background task worker
+- `django-celery-beat.service` - Scheduled task scheduler
+
+**Manual systemd journal commands:**
 ```bash
 # View journal disk usage
 sudo journalctl --disk-usage
 
-# Clear systemd journal logs
+# View logs for specific service
+sudo journalctl -u django-gunicorn.service -n 100
+
+# Clear all systemd journal logs manually
 sudo journalctl --rotate
 sudo journalctl --vacuum-time=1d  # Keep last day
 sudo journalctl --vacuum-size=100M  # Keep max 100MB
