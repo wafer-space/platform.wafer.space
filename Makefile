@@ -333,5 +333,11 @@ restart: ## Restart all services
 	@deployment/scripts/restart.sh
 	@echo "$(GREEN)✓ Services restarted$(NC)"
 
+.PHONY: reset-logs
+reset-logs: ## Reset/clear all log files (requires sudo)
+	@echo "$(BLUE)Resetting application logs...$(NC)"
+	@sudo deployment/scripts/reset-logs.sh
+	@echo "$(GREEN)✓ Logs reset$(NC)"
+
 # Default target
 .DEFAULT_GOAL := help

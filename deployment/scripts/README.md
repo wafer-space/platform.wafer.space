@@ -12,6 +12,11 @@ make restart
 # OR
 ./deployment/scripts/restart.sh
 
+# Reset/clear log files (requires sudo)
+sudo make reset-logs
+# OR
+sudo ./deployment/scripts/reset-logs.sh
+
 # Update application
 sudo ./deployment/scripts/update.sh
 
@@ -112,6 +117,47 @@ sudo ./restart.sh
 - After code updates (use `update.sh` instead for full updates)
 - When services are misbehaving
 - After environment variable changes
+
+### Reset Log Files
+```bash
+# Must be run as root
+sudo ./reset-logs.sh
+# OR
+sudo make reset-logs
+
+# With options
+sudo ./reset-logs.sh --no-backup    # Don't backup before reset
+sudo ./reset-logs.sh --force        # Don't ask for confirmation
+sudo ./reset-logs.sh --help         # Show help
+```
+**What it does:**
+- Lists all log files in `/var/log/platform.wafer.space/`
+- Shows file sizes and total disk usage
+- Creates backup archive (unless `--no-backup`)
+- Truncates log files to 0 bytes (preserves permissions)
+- Saves backups to `/var/backups/platform.wafer.space/logs/`
+
+**Use when:**
+- Log files are growing too large
+- Debugging and need clean logs
+- After resolving issues to start fresh
+- Regular maintenance
+
+**Log locations:**
+- Application logs: `/var/log/platform.wafer.space/*.log`
+- Systemd journal: Use `sudo journalctl` commands
+- Backup archives: `/var/backups/platform.wafer.space/logs/`
+
+**Systemd journal management:**
+```bash
+# View journal disk usage
+sudo journalctl --disk-usage
+
+# Clear systemd journal logs
+sudo journalctl --rotate
+sudo journalctl --vacuum-time=1d  # Keep last day
+sudo journalctl --vacuum-size=100M  # Keep max 100MB
+```
 
 ### Update Application
 ```bash
