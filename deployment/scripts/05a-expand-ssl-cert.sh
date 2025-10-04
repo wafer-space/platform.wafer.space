@@ -21,6 +21,9 @@ THOUSANDPARSEC_DOMAINS=(
     "git.thousandparsec.com"
     "git.thousandparsec.net"
     "git.thousandparsec.org"
+    "mail.thousandparsec.com"
+    "mail.thousandparsec.net"
+    "mail.thousandparsec.org"
 )
 
 echo "=== Expanding SSL certificate to include all domains ==="
