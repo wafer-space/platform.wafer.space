@@ -4,11 +4,28 @@
 
 set -e
 
-DOMAIN="platform.wafer.space"
+MAIN_DOMAIN="platform.wafer.space"
 EMAIL="bot@wafer.space"
 
+# All domains to include in certificate
+THOUSANDPARSEC_DOMAINS=(
+    "thousandparsec.com"
+    "www.thousandparsec.com"
+    "thousandparsec.net"
+    "www.thousandparsec.net"
+    "thousandparsec.org"
+    "www.thousandparsec.org"
+    "old.thousandparsec.com"
+    "old.thousandparsec.net"
+    "old.thousandparsec.org"
+    "git.thousandparsec.com"
+    "git.thousandparsec.net"
+    "git.thousandparsec.org"
+)
+
 echo "=== Setting up SSL certificate ==="
-echo "Domain: $DOMAIN"
+echo "Main domain: $MAIN_DOMAIN"
+echo "Additional domains: ${THOUSANDPARSEC_DOMAINS[*]}"
 echo "Email: $EMAIL"
 echo ""
 
@@ -40,21 +57,26 @@ else
 fi
 
 # Check if certificate already exists
-if [ -d "/etc/letsencrypt/live/$DOMAIN" ]; then
-    echo "✓ SSL certificate already exists for $DOMAIN"
-    echo "To renew: sudo certbot renew"
+if [ -d "/etc/letsencrypt/live/$MAIN_DOMAIN" ]; then
+    echo "✓ SSL certificate already exists for $MAIN_DOMAIN"
+    echo "To renew or add domains: sudo certbot renew or re-run this script with --force-renewal"
 else
-    # Obtain certificate
+    # Build certbot command with all domains
     echo "Obtaining SSL certificate from Let's Encrypt..."
-    certbot certonly --webroot \
-        -w /var/www/certbot \
-        -d "$DOMAIN" \
-        --email "$EMAIL" \
-        --agree-tos \
-        --no-eff-email \
-        --non-interactive
+    CERTBOT_CMD="certbot certonly --webroot -w /var/www/certbot"
+    CERTBOT_CMD="$CERTBOT_CMD -d $MAIN_DOMAIN"
 
-    echo "✓ Certificate obtained"
+    # Add all Thousand Parsec domains
+    for domain in "${THOUSANDPARSEC_DOMAINS[@]}"; do
+        CERTBOT_CMD="$CERTBOT_CMD -d $domain"
+    done
+
+    CERTBOT_CMD="$CERTBOT_CMD --email $EMAIL --agree-tos --no-eff-email --non-interactive"
+
+    echo "Running: $CERTBOT_CMD"
+    eval "$CERTBOT_CMD"
+
+    echo "✓ Certificate obtained for all domains"
 fi
 
 # Verify certificate
@@ -83,8 +105,14 @@ fi
 
 echo ""
 echo "=== SSL certificate installed successfully ==="
-echo "Certificate: /etc/letsencrypt/live/$DOMAIN/fullchain.pem"
-echo "Private key: /etc/letsencrypt/live/$DOMAIN/privkey.pem"
+echo "Certificate: /etc/letsencrypt/live/$MAIN_DOMAIN/fullchain.pem"
+echo "Private key: /etc/letsencrypt/live/$MAIN_DOMAIN/privkey.pem"
+echo ""
+echo "Domains covered by this certificate:"
+echo "  - $MAIN_DOMAIN"
+for domain in "${THOUSANDPARSEC_DOMAINS[@]}"; do
+    echo "  - $domain"
+done
 echo ""
 echo "✓ Auto-renewal is configured (certbot.timer)"
 echo ""

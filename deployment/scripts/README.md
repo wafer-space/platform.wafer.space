@@ -76,7 +76,24 @@ Sets correct file permissions for the application and logs.
 ```bash
 sudo ./05-setup-ssl.sh
 ```
-Configures SSL certificates with Let's Encrypt.
+Configures SSL certificates with Let's Encrypt for all domains.
+
+**Domains included:**
+- `platform.wafer.space` (main domain)
+- All Thousand Parsec domains: `thousandparsec.{com,net,org}`, `www.`, `old.`, `git.`
+
+**Note:** For new installations, this script will obtain a certificate covering all domains. For existing installations where the certificate already exists, use `05a-expand-ssl-cert.sh` instead.
+
+#### 5a. Expand SSL Certificate (Optional - Only if certificate already exists)
+```bash
+sudo ./05a-expand-ssl-cert.sh
+```
+Expands existing SSL certificate to include Thousand Parsec domains.
+
+**Use when:**
+- You already have an SSL certificate for platform.wafer.space
+- You want to add Thousand Parsec domains to the existing certificate
+- You need to eliminate SSL certificate warnings for Thousand Parsec domains
 
 ### 6. Sudoers Setup (Optional but Recommended)
 ```bash
