@@ -21,6 +21,7 @@ ExecStart=/home/django/platform.wafer.space/.venv/bin/celery \
 # Security hardening
 NoNewPrivileges=true
 PrivateDevices=true
+PrivateTmp=true
 ProtectSystem=strict
 ReadOnlyPaths=/home/django/platform.wafer.space
 ReadWritePaths=/var/log/platform.wafer.space /run/platform.wafer.space /home/django/platform.wafer.space/wafer_space/media
