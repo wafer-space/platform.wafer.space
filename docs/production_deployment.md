@@ -164,11 +164,31 @@ Sets up PostgreSQL database and creates `.env` file automatically:
 6. Creates `.env` from `.env.production.template` (if .env doesn't exist)
 7. Adds/updates `DATABASE_URL` in `.env` file with generated password
 8. Generates 50-character Django secret key
-9. Sets proper file permissions (640, owner django:django)
+9. Calls `03a-update-env-secrets.sh` to populate API secrets
+10. Sets proper file permissions (640, owner django:django)
 
 **Non-interactive**: Runs completely automatically with no prompts.
 
-**Note**: The setup script automatically reads all secrets from `/home/django/.secrets/` and populates them as static values in the `.env` file. No manual configuration needed if secrets repository is cloned.
+**Note**: This script creates the initial `.env` file and sets up the database. To update secrets without touching the database, use `03a-update-env-secrets.sh` instead.
+
+### 03a-update-env-secrets.sh
+
+Updates the `.env` file with the latest secrets from the secrets repository:
+
+1. Verifies `.env` file exists (fails if not found)
+2. Verifies secrets directory exists (fails if not found)
+3. Reads all secrets from `/home/django/.secrets/`
+4. Updates corresponding values in `.env` file
+5. Sets proper file permissions (640, owner django:django)
+
+**Use this script when**: Secrets in the repository have changed and you need to update the production `.env` file without recreating the database.
+
+**After running**: Restart services to load the new secrets:
+```bash
+sudo systemctl restart django-gunicorn.service
+sudo systemctl restart django-celery.service
+sudo systemctl restart django-celery-beat.service
+```
 
 ### 04-setup-permissions.sh
 
@@ -375,6 +395,26 @@ The update script:
 4. Collects static files (`make collectstatic`)
 5. Resets file permissions
 6. Restarts Gunicorn and Celery services
+
+### Updating Secrets
+
+When secrets change in the secrets repository (e.g., rotating API keys), update the production `.env` file:
+
+```bash
+# Pull latest secrets from repository
+cd /home/django/platform.wafer.space/deployment
+sudo ./scripts/02a-setup-secrets.sh
+
+# Update .env file with new secrets
+sudo ./scripts/03a-update-env-secrets.sh
+
+# Restart services to load new secrets
+sudo systemctl restart django-gunicorn.service
+sudo systemctl restart django-celery.service
+sudo systemctl restart django-celery-beat.service
+```
+
+This updates only the secrets in `.env` without touching the database or other configuration.
 
 ### Database Backups
 

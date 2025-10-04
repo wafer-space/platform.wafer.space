@@ -52,6 +52,7 @@ deployment/
 
 - **`backup.sh`** - Backup PostgreSQL database (cron: `0 2 * * *`)
 - **`update.sh`** - Update application code and restart services
+- **`03a-update-env-secrets.sh`** - Update .env file with latest secrets (run after secrets change)
 
 ### Installing Services
 

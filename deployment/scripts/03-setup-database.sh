@@ -192,71 +192,14 @@ with open('$ENV_FILE', 'w') as f:
 EOF
 echo "✓ Generated Django secret key"
 
-# Read secrets from secrets repository and populate .env file
-echo "Reading secrets from secrets repository..."
-
-# Verify secrets directory exists
-if [ ! -d "$SECRETS_DIR" ]; then
-    echo "Error: Secrets directory not found at $SECRETS_DIR"
-    echo "Run 02a-setup-secrets.sh to clone the secrets repository first"
-    exit 1
-fi
-
-# Read Mailgun API key
-if [ ! -f "$SECRETS_DIR/mailgun" ]; then
-    echo "Error: Required secret file not found: $SECRETS_DIR/mailgun"
-    exit 1
-fi
-MAILGUN_KEY=$(cat "$SECRETS_DIR/mailgun" | tr -d '\n')
-if grep -q "^MAILGUN_API_KEY=" "$ENV_FILE"; then
-    sed -i "s|^MAILGUN_API_KEY=.*|MAILGUN_API_KEY=\"$MAILGUN_KEY\"|" "$ENV_FILE"
+# Update .env file with secrets from secrets repository
+SCRIPT_DIR="$(dirname "$0")"
+if [ -f "$SCRIPT_DIR/03a-update-env-secrets.sh" ]; then
+    "$SCRIPT_DIR/03a-update-env-secrets.sh"
 else
-    echo "MAILGUN_API_KEY=\"$MAILGUN_KEY\"" >> "$ENV_FILE"
-fi
-echo "✓ Added Mailgun API key"
-
-# Read GitHub OAuth secret
-if [ ! -f "$SECRETS_DIR/github-oauth" ]; then
-    echo "Error: Required secret file not found: $SECRETS_DIR/github-oauth"
+    echo "Error: 03a-update-env-secrets.sh not found"
     exit 1
 fi
-GITHUB_SECRET=$(cat "$SECRETS_DIR/github-oauth" | tr -d '\n')
-if grep -q "^GITHUB_CLIENT_SECRET=" "$ENV_FILE"; then
-    sed -i "s|^GITHUB_CLIENT_SECRET=.*|GITHUB_CLIENT_SECRET=\"$GITHUB_SECRET\"|" "$ENV_FILE"
-else
-    echo "GITHUB_CLIENT_SECRET=\"$GITHUB_SECRET\"" >> "$ENV_FILE"
-fi
-echo "✓ Added GitHub OAuth secret"
-
-# Read GitLab OAuth secret
-if [ ! -f "$SECRETS_DIR/gitlab-oauth" ]; then
-    echo "Error: Required secret file not found: $SECRETS_DIR/gitlab-oauth"
-    exit 1
-fi
-GITLAB_SECRET=$(cat "$SECRETS_DIR/gitlab-oauth" | tr -d '\n')
-if grep -q "^GITLAB_CLIENT_SECRET=" "$ENV_FILE"; then
-    sed -i "s|^GITLAB_CLIENT_SECRET=.*|GITLAB_CLIENT_SECRET=\"$GITLAB_SECRET\"|" "$ENV_FILE"
-else
-    echo "GITLAB_CLIENT_SECRET=\"$GITLAB_SECRET\"" >> "$ENV_FILE"
-fi
-echo "✓ Added GitLab OAuth secret"
-
-# Read Google OAuth secret from JSON file
-if [ ! -f "$SECRETS_DIR/google-auth.json" ]; then
-    echo "Error: Required secret file not found: $SECRETS_DIR/google-auth.json"
-    exit 1
-fi
-GOOGLE_SECRET=$(python3 -c "import json; print(json.load(open('$SECRETS_DIR/google-auth.json'))['web']['client_secret'])")
-if grep -q "^GOOGLE_CLIENT_SECRET=" "$ENV_FILE"; then
-    sed -i "s|^GOOGLE_CLIENT_SECRET=.*|GOOGLE_CLIENT_SECRET=\"$GOOGLE_SECRET\"|" "$ENV_FILE"
-else
-    echo "GOOGLE_CLIENT_SECRET=\"$GOOGLE_SECRET\"" >> "$ENV_FILE"
-fi
-echo "✓ Added Google OAuth secret"
-
-# Set proper ownership and permissions
-chown django:django "$ENV_FILE"
-chmod 640 "$ENV_FILE"
 
 echo ""
 echo "✓ Environment file configured: $ENV_FILE"
