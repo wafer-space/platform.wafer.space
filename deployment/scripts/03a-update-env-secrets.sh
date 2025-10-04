@@ -93,7 +93,8 @@ if grep -q "^DATABASE_URL=" "$ENV_FILE"; then
 fi
 
 # Set proper ownership and permissions
-chown django:django "$ENV_FILE"
+# www-data needs to read .env for Celery
+chown django:www-data "$ENV_FILE"
 chmod 640 "$ENV_FILE"
 
 echo ""
