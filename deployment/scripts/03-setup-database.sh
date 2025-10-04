@@ -46,8 +46,14 @@ if [ "$DB_EXISTS" = "1" ] && [ "$USER_EXISTS" = "1" ]; then
         echo "   Then manually create .env from .env.production.template and set DATABASE_URL"
         echo ""
         echo "2. Drop and recreate the database (WARNING: destroys all data):"
+        echo "   # Stop services first to release database connections"
+        echo "   sudo systemctl stop django-gunicorn.service"
+        echo "   sudo systemctl stop django-celery.service"
+        echo "   sudo systemctl stop django-celery-beat.service"
+        echo "   # Drop database and user"
         echo "   sudo -u postgres psql -c \"DROP DATABASE $DB_NAME;\""
         echo "   sudo -u postgres psql -c \"DROP USER $DB_USER;\""
+        echo "   # Run this script again"
         echo "   Then run this script again"
         exit 1
     fi

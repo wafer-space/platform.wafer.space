@@ -504,6 +504,30 @@ make shell
 # In shell: from django.db import connection; connection.ensure_connection()
 ```
 
+### Database Operations (Drop/Reset)
+
+**IMPORTANT**: You must stop all services before performing database operations like dropping or recreating the database. Active connections will prevent these operations.
+
+```bash
+# Stop all services first
+sudo systemctl stop django-gunicorn.service
+sudo systemctl stop django-celery.service
+sudo systemctl stop django-celery-beat.service
+
+# Now you can perform database operations
+sudo -u postgres psql -c "DROP DATABASE platform_wafer_space;"
+sudo -u postgres psql -c "DROP USER platform_wafer_space;"
+
+# Recreate database
+cd /home/django/platform.wafer.space/deployment
+sudo ./scripts/03-setup-database.sh
+
+# Restart services
+sudo systemctl start django-gunicorn.service
+sudo systemctl start django-celery.service
+sudo systemctl start django-celery-beat.service
+```
+
 ### SSL Certificate Issues
 
 ```bash
