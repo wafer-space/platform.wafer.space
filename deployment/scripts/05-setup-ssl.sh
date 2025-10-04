@@ -119,15 +119,30 @@ sed -i '/^#server {$/,/^#}$/s/^#//' "$NGINX_CONFIG"
 
 # Test nginx configuration with SSL enabled
 echo "Testing nginx configuration with SSL..."
-nginx -t
+if ! nginx -t; then
+    echo "✗ Nginx configuration test failed"
+    exit 1
+fi
 
 # Reload or restart nginx with SSL enabled
 if systemctl is-active --quiet nginx; then
     echo "Reloading nginx with SSL..."
-    systemctl reload nginx
+    if systemctl reload nginx; then
+        echo "✓ Nginx reloaded successfully"
+    else
+        echo "✗ Nginx reload failed"
+        systemctl status nginx --no-pager -l
+        exit 1
+    fi
 else
     echo "Starting nginx with SSL..."
-    systemctl start nginx
+    if systemctl start nginx; then
+        echo "✓ Nginx started successfully"
+    else
+        echo "✗ Nginx start failed"
+        systemctl status nginx --no-pager -l
+        exit 1
+    fi
 fi
 
 echo ""

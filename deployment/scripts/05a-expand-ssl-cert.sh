@@ -118,12 +118,21 @@ echo "✓ HTTPS blocks uncommented"
 
 # Test nginx configuration
 echo "Testing nginx configuration..."
-nginx -t
+if ! nginx -t; then
+    echo "✗ Nginx configuration test failed"
+    exit 1
+fi
 
 # Reload nginx to pick up new certificate and config
 echo ""
 echo "Reloading nginx with updated certificate..."
-systemctl reload nginx
+if systemctl reload nginx; then
+    echo "✓ Nginx reloaded successfully"
+else
+    echo "✗ Nginx reload failed"
+    systemctl status nginx --no-pager -l
+    exit 1
+fi
 
 echo ""
 echo "=== SSL certificate expansion complete ==="

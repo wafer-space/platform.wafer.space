@@ -37,12 +37,20 @@ fi
 
 # Test configuration
 echo "Testing nginx configuration..."
-nginx -t
+if ! nginx -t; then
+    echo "✗ Nginx configuration test failed"
+    exit 1
+fi
 
 # Reload nginx to apply new configuration
 echo "Reloading nginx..."
-systemctl reload nginx
-echo "✓ Nginx reloaded"
+if systemctl reload nginx; then
+    echo "✓ Nginx reloaded successfully"
+else
+    echo "✗ Nginx reload failed"
+    systemctl status nginx --no-pager -l
+    exit 1
+fi
 
 echo ""
 echo "=== Nginx configuration installed ==="
