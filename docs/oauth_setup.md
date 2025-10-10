@@ -19,9 +19,11 @@ This guide walks through setting up OAuth applications for social authentication
 - **Production Client ID**: `62545893239-pgg1lcg28u9suivjh4nso9t8mev5qua2.apps.googleusercontent.com`
 - **Management URL**: https://console.cloud.google.com/apis/credentials
 
-### Discord OAuth Apps (wafer-space development app)
+### Discord OAuth Apps (wafer-space apps)
 - **Development Client ID**: `1426055950221054052`
 - **Development Client Secret**: ✅ Pre-configured (included in settings)
+- **Production Client ID**: `1426065281138167841`
+- **Production Client Secret**: ✅ Pre-configured (included in settings)
 - **Management URL**: https://discord.com/developers/applications
 
 ### Configuration Notes

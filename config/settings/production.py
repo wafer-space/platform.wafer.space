@@ -172,5 +172,13 @@ SOCIALACCOUNT_PROVIDERS["google"]["APP"]["client_id"] = env(
     default="62545893239-pgg1lcg28u9suivjh4nso9t8mev5qua2.apps.googleusercontent.com",  # Production Client ID for wafer-space project
 )
 
+# Discord production Client ID
+SOCIALACCOUNT_PROVIDERS["discord"]["APP"]["client_id"] = env(
+    "DISCORD_CLIENT_ID",
+    default="1426065281138167841",  # Production Client ID for wafer-space Discord app
+)
+# Discord secret must come from environment variable
+SOCIALACCOUNT_PROVIDERS["discord"]["APP"]["secret"] = env("DISCORD_CLIENT_SECRET")
+
 # Your stuff...
 # ------------------------------------------------------------------------------
