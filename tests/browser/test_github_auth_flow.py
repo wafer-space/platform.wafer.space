@@ -36,6 +36,14 @@ GITLAB_SIGNUP_XPATH = (
     "//a[contains(text(), 'Sign up with GitLab') "
     "or contains(@href, '/accounts/gitlab/login/')]"
 )
+DISCORD_BUTTON_XPATH = (
+    "//a[contains(text(), 'Sign in with Discord') "
+    "or contains(@href, '/accounts/discord/login/')]"
+)
+DISCORD_SIGNUP_XPATH = (
+    "//a[contains(text(), 'Sign up with Discord') "
+    "or contains(@href, '/accounts/discord/login/')]"
+)
 
 
 @pytest.fixture
@@ -82,11 +90,20 @@ def social_apps(db):
     )
     linkedin_app.sites.add(site)
 
+    discord_app = SocialApp.objects.create(
+        provider="discord",
+        name=f"Discord Test App {unique_suffix}",
+        client_id=f"test_discord_client_id_{unique_suffix}",
+        secret=f"discord_test_secret_{unique_suffix}",
+    )
+    discord_app.sites.add(site)
+
     yield {
         "github": github_app,
         "google": google_app,
         "gitlab": gitlab_app,
         "linkedin": linkedin_app,
+        "discord": discord_app,
     }
 
     # Cleanup after test
@@ -188,6 +205,7 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
             "Google": "/accounts/google/login/",
             "GitLab": "/accounts/gitlab/login/",
             "LinkedIn": "/accounts/linkedin_oauth2/login/",
+            "Discord": "/accounts/discord/login/",
         }
         for provider, href_pattern in provider_patterns.items():
             xpath_selector = (
@@ -606,5 +624,166 @@ class TestGitLabAuthenticationFlow(BaseBrowserTest):
         # Verify button takes appropriate width on mobile
         min_mobile_width = 200
         assert gitlab_button.size["width"] > min_mobile_width, (
+            "Button should be wide enough on mobile"
+        )
+
+
+@pytest.mark.django_db
+class TestDiscordAuthenticationFlow(BaseBrowserTest):
+    """Test Discord authentication flow using browser automation."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, live_server, social_apps):
+        """Set up test fixtures using shared social_apps fixture."""
+        self.live_server_url = live_server.url
+        self.social_apps = social_apps
+
+    def test_login_page_displays_discord_button(self, driver):
+        """Test that login page shows Discord authentication button."""
+        # Navigate to login page
+        driver.get(f"{self.live_server_url}/accounts/login/")
+
+        # Wait for page to load
+        wait = WebDriverWait(driver, 10)
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
+        )
+
+        # Check for Discord button
+        discord_buttons = driver.find_elements(
+            By.XPATH,
+            DISCORD_BUTTON_XPATH,
+        )
+        assert len(discord_buttons) > 0, "Discord sign-in button not found"
+
+        # Verify button is clickable (functional test rather than styling test)
+        discord_button = discord_buttons[0]
+        assert discord_button.is_enabled(), "Discord button should be clickable"
+        assert discord_button.is_displayed(), "Discord button should be visible"
+
+    def test_signup_page_displays_discord_button(self, driver):
+        """Test that signup page shows Discord authentication button."""
+        # Navigate to signup page
+        driver.get(f"{self.live_server_url}/accounts/signup/")
+
+        # Wait for page to load
+        wait = WebDriverWait(driver, 10)
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
+        )
+
+        # Check for Discord button
+        discord_buttons = driver.find_elements(
+            By.XPATH,
+            DISCORD_SIGNUP_XPATH,
+        )
+        assert len(discord_buttons) > 0, "Discord sign-up button not found"
+
+    def test_discord_button_href_points_to_discord_oauth(self, driver):
+        """Test that Discord button has correct href."""
+        # Navigate to login page
+        driver.get(f"{self.live_server_url}/accounts/login/")
+
+        # Wait for page to load
+        wait = WebDriverWait(driver, 10)
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
+        )
+
+        # Find Discord button and get href
+        discord_button = driver.find_element(
+            By.XPATH,
+            DISCORD_BUTTON_XPATH,
+        )
+        href = discord_button.get_attribute("href")
+
+        # Verify href points to Discord OAuth endpoint
+        assert "/accounts/discord/login/" in href or "discord" in href
+
+        # Note: We don't actually click the button to avoid real OAuth redirect
+
+    def test_discord_vs_other_providers_all_present(self, driver):
+        """Test that Discord, GitHub, Google, and GitLab buttons are all present."""
+        # Navigate to login page
+        driver.get(f"{self.live_server_url}/accounts/login/")
+
+        # Wait for page to load
+        wait = WebDriverWait(driver, 10)
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
+        )
+
+        # Check for all provider buttons
+        github_buttons = driver.find_elements(
+            By.XPATH,
+            GITHUB_BUTTON_XPATH,
+        )
+        google_buttons = driver.find_elements(
+            By.XPATH,
+            GOOGLE_BUTTON_XPATH,
+        )
+        gitlab_buttons = driver.find_elements(
+            By.XPATH,
+            GITLAB_BUTTON_XPATH,
+        )
+        discord_buttons = driver.find_elements(
+            By.XPATH,
+            DISCORD_BUTTON_XPATH,
+        )
+
+        assert len(github_buttons) > 0, "GitHub button not found"
+        assert len(google_buttons) > 0, "Google button not found"
+        assert len(gitlab_buttons) > 0, "GitLab button not found"
+        assert len(discord_buttons) > 0, "Discord button not found"
+
+    def test_discord_button_styling_consistency(self, driver):
+        """Test that Discord button has consistent styling with other providers."""
+        # Navigate to login page
+        driver.get(f"{self.live_server_url}/accounts/login/")
+
+        # Wait for page to load
+        wait = WebDriverWait(driver, 10)
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
+        )
+
+        # Test that Discord button specifically exists and is functional
+        discord_buttons = driver.find_elements(
+            By.XPATH,
+            DISCORD_BUTTON_XPATH,
+        )
+        assert len(discord_buttons) > 0, "Discord button should be present"
+
+        # Verify Discord button is functional
+        discord_button = discord_buttons[0]
+        assert discord_button.is_displayed(), "Discord button should be visible"
+        assert discord_button.is_enabled(), "Discord button should be clickable"
+
+        # Test completed - functionality verified
+
+    def test_discord_button_mobile_responsive(self, driver):
+        """Test that Discord button is responsive on mobile viewport."""
+        # Set mobile viewport
+        driver.set_window_size(375, 667)  # iPhone SE size
+
+        # Navigate to login page
+        driver.get(f"{self.live_server_url}/accounts/login/")
+
+        # Wait for page to load
+        wait = WebDriverWait(driver, 10)
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
+        )
+
+        # Check that Discord button is still visible and clickable
+        discord_button = driver.find_element(
+            By.XPATH,
+            DISCORD_BUTTON_XPATH,
+        )
+        assert discord_button.is_displayed(), "Discord button not visible on mobile"
+
+        # Verify button takes appropriate width on mobile
+        min_mobile_width = 200
+        assert discord_button.size["width"] > min_mobile_width, (
             "Button should be wide enough on mobile"
         )

@@ -88,6 +88,7 @@ THIRD_PARTY_APPS = [
     "allauth.socialaccount.providers.gitlab",
     "allauth.socialaccount.providers.linkedin_oauth2",
     "allauth.socialaccount.providers.google",
+    "allauth.socialaccount.providers.discord",
     # Background job processing
     "django_celery_results",
 ]
@@ -349,6 +350,17 @@ SOCIALACCOUNT_PROVIDERS = {
             "first-name",
             "last-name",
             "email-address",
+        ],
+        "VERIFIED_EMAIL": True,
+    },
+    "discord": {
+        "APP": {
+            "client_id": env("DISCORD_CLIENT_ID", default="1426055950221054052"),
+            "secret": env("DISCORD_CLIENT_SECRET", default=""),
+        },
+        "SCOPE": [
+            "identify",
+            "email",
         ],
         "VERIFIED_EMAIL": True,
     },

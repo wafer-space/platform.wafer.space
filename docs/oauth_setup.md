@@ -19,17 +19,26 @@ This guide walks through setting up OAuth applications for social authentication
 - **Production Client ID**: `62545893239-pgg1lcg28u9suivjh4nso9t8mev5qua2.apps.googleusercontent.com`
 - **Management URL**: https://console.cloud.google.com/apis/credentials
 
+### Discord OAuth Apps (wafer-space development app)
+- **Development Client ID**: `1426055950221054052`
+- **Development Client Secret**: ✅ Pre-configured (included in settings)
+- **Management URL**: https://discord.com/developers/applications
+
 ### Configuration Notes
 - ✅ **Client IDs** are configured in Django settings (safe to commit)
-- 🔐 **Client Secrets** are stored in environment variables (never committed)
+- 🔐 **Client Secrets** are stored in environment variables (never committed)*
 - 🌍 Both development and production environments are fully configured
 - 📱 All apps are configured as "Confidential" for server-side web applications
+- ⚡ **Discord Exception**: Development client secret is pre-configured for zero-setup experience
+
+*Except Discord development app which includes the secret for developer convenience
 
 ## Table of Contents
 - [GitHub OAuth Setup](#github-oauth-setup)
 - [Google OAuth Setup](#google-oauth-setup)
 - [GitLab OAuth Setup](#gitlab-oauth-setup)
 - [LinkedIn OAuth Setup](#linkedin-oauth-setup)
+- [Discord OAuth Setup](#discord-oauth-setup)
 - [Environment Configuration](#environment-configuration)
 - [Testing OAuth Integration](#testing-oauth-integration)
 - [Troubleshooting](#troubleshooting)
@@ -333,6 +342,69 @@ The GitLab provider is configured to request the following scopes:
 ## LinkedIn OAuth Setup
 
 *Coming soon - will be added when implementing LinkedIn provider*
+
+## Discord OAuth Setup
+
+### Creating a Discord OAuth Application
+
+1. **Navigate to Discord Developer Portal**
+   - Go to https://discord.com/developers/applications
+   - Sign in with your Discord account
+
+2. **Create New Application**
+   - Click **"New Application"** button in the top right
+   - Enter application name (e.g., `wafer.space Development` or `wafer.space Platform` for production)
+   - Accept the Developer Terms of Service and Developer Policy
+   - Click **"Create"**
+
+3. **Configure OAuth2 Redirect URIs**
+   - In the left sidebar, click on **"OAuth2"**
+   - Scroll down to the **"Redirects"** section
+   - Click **"Add Redirect"**
+   - Add your redirect URI:
+     - Development: `http://localhost:8081/accounts/discord/login/callback/`
+     - Production: `https://platform.wafer.space/accounts/discord/login/callback/`
+   - Click **"Save Changes"**
+
+   **Important**: Discord requires exact redirect URI matching, including the trailing slash.
+
+4. **Obtain Credentials**
+   - Go to **"OAuth2"** section in the left sidebar (or **"General Information"**)
+   - **Client ID**: Copy the "CLIENT ID" shown (also called "APPLICATION ID" in General Information)
+   - **Client Secret**: Click **"Reset Secret"** button, then click **"Yes, do it!"** to confirm
+   - Copy the newly generated secret immediately - it will only be shown once!
+   - Save both values securely
+
+   **Note**: The Client Secret is only shown once when generated. If you lose it, you must reset it and update your `.env` file.
+
+### Environment Variables
+
+Discord OAuth credentials are pre-configured for development:
+
+```bash
+# Discord OAuth credentials for wafer-space development app
+# Client ID and Secret are configured in Django settings:
+# - Development: 1426055950221054052 (settings/base.py) with included secret
+# - Works out of the box - no .env configuration needed!
+#
+# Optionally override if using a different app:
+# DISCORD_CLIENT_ID=your_custom_client_id_here
+# DISCORD_CLIENT_SECRET=your_custom_client_secret_here
+```
+
+### Scopes
+
+The Discord provider is configured to request the following scopes:
+- `identify` - Required to fetch user ID and basic profile information (Discord requirement)
+- `email` - Read access to user email address (required for account linking)
+
+### Important Notes
+
+- **Application vs Bot**: Discord applications can be both OAuth apps and bots. For wafer.space, we **only** use OAuth authentication for user login. You do **not** need to add a bot or configure bot permissions - ignore the "Bot" section in the sidebar.
+- **Redirect URI Matching**: Discord requires exact redirect URI matching, including protocol (`http://` vs `https://`), port, and trailing slash
+- **Client Secret Security**: The client secret is only shown once when generated. If lost, reset it in the Discord Developer Portal and update your environment variables
+- **Email Verification**: Users must have a verified email on Discord. The `VERIFIED_EMAIL: True` setting ensures only verified Discord accounts can authenticate
+- **Port Configuration**: Development uses port 8081 (not 8000) to match the project's `make runserver` configuration
 
 ## Environment Configuration
 

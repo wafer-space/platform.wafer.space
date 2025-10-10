@@ -94,6 +94,13 @@ SOCIALACCOUNT_PROVIDERS = {
         ],
         "VERIFIED_EMAIL": True,
     },
+    "discord": {
+        "SCOPE": [
+            "identify",
+            "email",
+        ],
+        "VERIFIED_EMAIL": True,
+    },
 }
 
 # Your stuff...
