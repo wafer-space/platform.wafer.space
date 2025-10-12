@@ -86,7 +86,7 @@ THIRD_PARTY_APPS = [
     # Social providers
     "allauth.socialaccount.providers.github",
     "allauth.socialaccount.providers.gitlab",
-    "allauth.socialaccount.providers.linkedin_oauth2",
+    "allauth.socialaccount.providers.openid_connect",  # LinkedIn uses OpenID Connect
     "allauth.socialaccount.providers.google",
     "allauth.socialaccount.providers.discord",
     # Background job processing
@@ -336,17 +336,20 @@ SOCIALACCOUNT_PROVIDERS = {
         },
         "VERIFIED_EMAIL": True,
     },
-    "linkedin_oauth2": {
-        "APP": {
-            "client_id": env("LINKEDIN_CLIENT_ID", default="86j973nx41hlk7"),
-            "secret": env("LINKEDIN_CLIENT_SECRET", default=""),
-        },
-        "SCOPE": [
-            "openid",
-            "profile",
-            "email",
+    "openid_connect": {
+        "APPS": [
+            {
+                "provider_id": "linkedin",
+                "name": "LinkedIn",
+                "client_id": env("LINKEDIN_CLIENT_ID", default="86j973nx41hlk7"),
+                "secret": env("LINKEDIN_CLIENT_SECRET", default=""),
+                "settings": {
+                    "server_url": "https://www.linkedin.com/oauth",
+                },
+            }
         ],
-        "VERIFIED_EMAIL": True,
+        # OpenID Connect scope is automatically handled by the provider
+        # LinkedIn requires: openid, profile, email
     },
     "discord": {
         "APP": {

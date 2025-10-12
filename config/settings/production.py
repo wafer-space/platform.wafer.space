@@ -180,15 +180,16 @@ SOCIALACCOUNT_PROVIDERS["discord"]["APP"]["client_id"] = env(
 # Discord secret must come from environment variable
 SOCIALACCOUNT_PROVIDERS["discord"]["APP"]["secret"] = env("DISCORD_CLIENT_SECRET")
 
-# LinkedIn production Client ID
-SOCIALACCOUNT_PROVIDERS["linkedin_oauth2"]["APP"]["client_id"] = env(
-    "LINKEDIN_CLIENT_ID",
-    default="86q1gs3uqhpqt1",  # Production Client ID for wafer-space LinkedIn app
-)
-# LinkedIn secret must come from environment variable
-SOCIALACCOUNT_PROVIDERS["linkedin_oauth2"]["APP"]["secret"] = env(
-    "LINKEDIN_CLIENT_SECRET",
-)
+# LinkedIn production Client ID (using OpenID Connect)
+# Find the LinkedIn app in the openid_connect APPS list and update it
+for app in SOCIALACCOUNT_PROVIDERS["openid_connect"]["APPS"]:
+    if app["provider_id"] == "linkedin":
+        app["client_id"] = env(
+            "LINKEDIN_CLIENT_ID",
+            default="86q1gs3uqhpqt1",  # Production Client ID for wafer-space LinkedIn app
+        )
+        # LinkedIn secret must come from environment variable
+        app["secret"] = env("LINKEDIN_CLIENT_SECRET")
 
 # Your stuff...
 # ------------------------------------------------------------------------------

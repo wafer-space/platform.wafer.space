@@ -81,13 +81,20 @@ SOCIALACCOUNT_PROVIDERS = {
         },
         "VERIFIED_EMAIL": True,
     },
-    "linkedin_oauth2": {
-        "SCOPE": [
-            "openid",
-            "profile",
-            "email",
+    "openid_connect": {
+        # LinkedIn now uses OpenID Connect
+        # For tests, we use configuration-based apps instead of database SocialApp objects
+        "APPS": [
+            {
+                "provider_id": "linkedin",
+                "name": "LinkedIn Unit Test",
+                "client_id": "unit_test_linkedin_client_id",
+                "secret": "unit_test_linkedin_secret",
+                "settings": {
+                    "server_url": "https://www.linkedin.com/oauth",
+                },
+            }
         ],
-        "VERIFIED_EMAIL": True,
     },
     "discord": {
         "SCOPE": [
