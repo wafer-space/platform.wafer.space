@@ -55,7 +55,7 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
     """Test GitHub authentication flow using browser automation."""
 
     @pytest.fixture(autouse=True)
-    def setup(self, live_server):
+    def setup(self, live_server, social_apps):  # noqa: ARG002
         """Set up test fixtures."""
         self.live_server_url = live_server.url
 
@@ -262,7 +262,7 @@ class TestGoogleAuthenticationFlow(BaseBrowserTest):
     """Test Google authentication flow using browser automation."""
 
     @pytest.fixture(autouse=True)
-    def setup(self, live_server):
+    def setup(self, live_server, social_apps):  # noqa: ARG002
         """Set up test fixtures."""
         self.live_server_url = live_server.url
 
@@ -415,7 +415,7 @@ class TestGitLabAuthenticationFlow(BaseBrowserTest):
     """Test GitLab authentication flow using browser automation."""
 
     @pytest.fixture(autouse=True)
-    def setup(self, live_server):
+    def setup(self, live_server, social_apps):  # noqa: ARG002
         """Set up test fixtures."""
         self.live_server_url = live_server.url
 
@@ -570,7 +570,7 @@ class TestDiscordAuthenticationFlow(BaseBrowserTest):
     """Test Discord authentication flow using browser automation."""
 
     @pytest.fixture(autouse=True)
-    def setup(self, live_server):
+    def setup(self, live_server, social_apps):  # noqa: ARG002
         """Set up test fixtures."""
         self.live_server_url = live_server.url
 
@@ -730,7 +730,7 @@ class TestLinkedInAuthenticationFlow(BaseBrowserTest):
     """Test LinkedIn OAuth authentication flow using browser automation."""
 
     @pytest.fixture(autouse=True)
-    def setup(self, live_server):
+    def setup(self, live_server, social_apps):  # noqa: ARG002
         """Set up test fixtures."""
         self.live_server_url = live_server.url
 
