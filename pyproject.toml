@@ -6,12 +6,7 @@ python_files = [
     "tests.py",
     "test_*.py",
 ]
-# Force headless environment for browser tests when Claude Code is detected
-env = [
-    "QT_QPA_PLATFORM=offscreen",
-    "MOZ_HEADLESS=1",
-    "CHROME_HEADLESS=1"
-]
+# Note: Headless browser environment variables are set in conftest.py and Makefile
 
 # ==== Coverage ====
 [tool.coverage.run]
@@ -126,6 +121,7 @@ ignore = [
     "S101", # Use of assert detected https://docs.astral.sh/ruff/rules/assert/
     "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
     "SIM102", # sometimes it's better to nest
+    "COM812", # Trailing comma missing - conflicts with formatter
     # of types for comparison.
     # Deactivated because it can make the code slow:
     # https://github.com/astral-sh/ruff/issues/7871

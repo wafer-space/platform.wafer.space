@@ -1,5 +1,8 @@
 """Tests for GitLab OAuth authentication integration."""
 
+from typing import Any
+from typing import cast
+
 import pytest
 from allauth.socialaccount.models import SocialAccount
 from allauth.socialaccount.models import SocialApp
@@ -63,14 +66,14 @@ class TestGitLabAuthenticationFlow(TestCase):
         assert response.status_code in [HTTP_OK, HTTP_REDIRECT]
         # If it's a redirect, it should be to GitLab
         if response.status_code == HTTP_REDIRECT:
-            assert "gitlab.com/oauth/authorize" in response.url
+            assert "gitlab.com/oauth/authorize" in response.url  # type: ignore[attr-defined]
 
     def test_gitlab_oauth_redirect_contains_correct_params(self):
         """Test GitLab OAuth redirect parameters when redirect occurs."""
         response = self.client.get(self.gitlab_login_url)
         # Only test redirect parameters if we actually get a redirect
         if response.status_code == HTTP_REDIRECT:
-            redirect_url = response.url
+            redirect_url = response.url  # type: ignore[attr-defined]
             # Check for required OAuth parameters
             assert "client_id=" in redirect_url
             assert "scope=" in redirect_url
@@ -171,7 +174,7 @@ class TestGitLabAuthenticationSecurity(TestCase):
 
         # Check that state parameter is included (CSRF protection) if redirecting
         if response.status_code == HTTP_REDIRECT:
-            assert "state=" in response.url
+            assert "state=" in response.url  # type: ignore[attr-defined]
         else:
             # If no redirect, just verify the URL is accessible
             assert response.status_code == HTTP_OK
@@ -195,14 +198,16 @@ class TestGitLabAuthenticationSecurity(TestCase):
 
     def test_gitlab_requires_verified_email(self):
         """Test that GitLab provider requires verified email."""
-        gitlab_config = settings.SOCIALACCOUNT_PROVIDERS.get("gitlab", {})
+        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        gitlab_config = providers.get("gitlab", {})
 
         # Verify email verification is required
         assert gitlab_config.get("VERIFIED_EMAIL") is True
 
     def test_gitlab_uses_correct_scopes(self):
         """Test that GitLab provider uses correct scopes."""
-        gitlab_config = settings.SOCIALACCOUNT_PROVIDERS.get("gitlab", {})
+        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        gitlab_config = providers.get("gitlab", {})
 
         # Verify required scopes are configured
         scopes = gitlab_config.get("SCOPE", [])
@@ -281,7 +286,8 @@ class TestGitLabProviderConfiguration(TestCase):
 
     def test_gitlab_provider_scope_configuration(self):
         """Test that GitLab provider requests correct scopes."""
-        gitlab_config = settings.SOCIALACCOUNT_PROVIDERS.get("gitlab", {})
+        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        gitlab_config = providers.get("gitlab", {})
 
         # Check required scopes are configured
         scopes = gitlab_config.get("SCOPE", [])
@@ -296,14 +302,16 @@ class TestGitLabProviderConfiguration(TestCase):
 
     def test_gitlab_provider_verified_email_setting(self):
         """Test that GitLab provider trusts verified emails."""
-        gitlab_config = settings.SOCIALACCOUNT_PROVIDERS.get("gitlab", {})
+        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        gitlab_config = providers.get("gitlab", {})
 
         # GitLab emails should be trusted as verified
         assert gitlab_config.get("VERIFIED_EMAIL") is True
 
     def test_gitlab_environment_variable_configuration(self):
         """Test that GitLab provider configuration is available."""
-        gitlab_config = settings.SOCIALACCOUNT_PROVIDERS.get("gitlab", {})
+        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        gitlab_config = providers.get("gitlab", {})
 
         # In test environment, APP section is removed to avoid conflicts
         # But basic provider configuration should be present
@@ -315,7 +323,8 @@ class TestGitLabProviderConfiguration(TestCase):
         """Test that GitLab provider can be configured for self-hosted instances."""
         # GitLab provider supports custom server URLs
         # This is important for organizations using self-hosted GitLab
-        gitlab_config = settings.SOCIALACCOUNT_PROVIDERS.get("gitlab", {})
+        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        gitlab_config = providers.get("gitlab", {})
 
         # Verify that custom server URL can be configured
         # (This would be set via SERVER_URL in production)

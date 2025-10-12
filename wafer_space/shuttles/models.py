@@ -126,13 +126,13 @@ class Shuttle(models.Model):
             )
         )
 
-    def generate_manifest(self):
+    def generate_manifest(self) -> dict[str, str | int | list[dict[str, str | None]]]:
         """Generate manifest data for production."""
         slots = self.slots.filter(status=ShuttleSlot.Status.RESERVED).select_related(
             "project",
         )
 
-        manifest_data = {
+        manifest_data: dict[str, str | int | list[dict[str, str | None]]] = {
             "shuttle_name": self.name,
             "generated_at": timezone.now().isoformat(),
             "technology_node": self.technology_node,
@@ -143,9 +143,14 @@ class Shuttle(models.Model):
             "projects": [],
         }
 
+        projects_list: list[dict[str, str | None]] = []
         for slot in slots:
-            project_data = {
-                "slot_number": slot.slot_number,
+            # Skip slots without projects (defensive programming)
+            if not slot.project:
+                continue
+
+            project_data: dict[str, str | None] = {
+                "slot_number": str(slot.slot_number),
                 "project_id": str(slot.project.id),
                 "project_name": slot.project.name,
                 "user": slot.project.user.username,
@@ -153,8 +158,9 @@ class Shuttle(models.Model):
                 if slot.reserved_at
                 else None,
             }
-            manifest_data["projects"].append(project_data)
+            projects_list.append(project_data)
 
+        manifest_data["projects"] = projects_list
         return manifest_data
 
 

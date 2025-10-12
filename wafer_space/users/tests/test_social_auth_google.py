@@ -1,5 +1,8 @@
 """Tests for Google OAuth authentication integration."""
 
+from typing import Any
+from typing import cast
+
 import pytest
 from allauth.socialaccount.models import SocialAccount
 from allauth.socialaccount.models import SocialApp
@@ -62,14 +65,14 @@ class TestGoogleAuthenticationFlow(TestCase):
         assert response.status_code in [HTTP_OK, HTTP_REDIRECT]
         # If it's a redirect, it should be to Google
         if response.status_code == HTTP_REDIRECT:
-            assert "accounts.google.com" in response.url
+            assert "accounts.google.com" in response.url  # type: ignore[attr-defined]
 
     def test_google_oauth_redirect_contains_correct_params(self):
         """Test Google OAuth redirect parameters when redirect occurs."""
         response = self.client.get(self.google_login_url)
         # Only test redirect parameters if we actually get a redirect
         if response.status_code == HTTP_REDIRECT:
-            redirect_url = response.url
+            redirect_url = response.url  # type: ignore[attr-defined]
             # Check for required OAuth parameters
             assert "client_id=" in redirect_url
             assert "scope=" in redirect_url
@@ -171,7 +174,7 @@ class TestGoogleAuthenticationSecurity(TestCase):
 
         # Check that state parameter is included (CSRF protection) if redirecting
         if response.status_code == HTTP_REDIRECT:
-            assert "state=" in response.url
+            assert "state=" in response.url  # type: ignore[attr-defined]
         else:
             # If no redirect, just verify the URL is accessible
             assert response.status_code == HTTP_OK
@@ -189,14 +192,16 @@ class TestGoogleAuthenticationSecurity(TestCase):
 
     def test_google_requires_verified_email(self):
         """Test that Google provider requires verified email."""
-        google_config = settings.SOCIALACCOUNT_PROVIDERS.get("google", {})
+        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        google_config = providers.get("google", {})
 
         # Verify email verification is required
         assert google_config.get("VERIFIED_EMAIL") is True
 
     def test_google_uses_online_access_type(self):
         """Test that Google provider uses online access type."""
-        google_config = settings.SOCIALACCOUNT_PROVIDERS.get("google", {})
+        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        google_config = providers.get("google", {})
 
         # Verify online access type is configured
         auth_params = google_config.get("AUTH_PARAMS", {})
@@ -261,7 +266,8 @@ class TestGoogleAuthenticationErrors(TestCase):
     def test_google_auth_with_invalid_client_id(self):
         """Test handling with malformed Google client ID."""
         # Google client IDs should end with .apps.googleusercontent.com
-        google_config = settings.SOCIALACCOUNT_PROVIDERS.get("google", {})
+        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        google_config = providers.get("google", {})
         app_config = google_config.get("APP", {})
 
         if app_config.get("client_id"):
@@ -280,7 +286,8 @@ class TestGoogleProviderConfiguration(TestCase):
 
     def test_google_provider_scope_configuration(self):
         """Test that Google provider requests correct scopes."""
-        google_config = settings.SOCIALACCOUNT_PROVIDERS.get("google", {})
+        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        google_config = providers.get("google", {})
 
         # Check required scopes are configured
         scopes = google_config.get("SCOPE", [])
@@ -289,7 +296,8 @@ class TestGoogleProviderConfiguration(TestCase):
 
     def test_google_provider_auth_params_configuration(self):
         """Test that Google provider has correct auth params."""
-        google_config = settings.SOCIALACCOUNT_PROVIDERS.get("google", {})
+        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        google_config = providers.get("google", {})
 
         # Check auth params are configured
         auth_params = google_config.get("AUTH_PARAMS", {})
@@ -303,7 +311,8 @@ class TestGoogleProviderConfiguration(TestCase):
 
     def test_google_provider_verified_email_setting(self):
         """Test that Google provider trusts verified emails."""
-        google_config = settings.SOCIALACCOUNT_PROVIDERS.get("google", {})
+        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        google_config = providers.get("google", {})
 
         # Google emails should be trusted as verified
         assert google_config.get("VERIFIED_EMAIL") is True

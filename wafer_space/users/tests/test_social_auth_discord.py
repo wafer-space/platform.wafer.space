@@ -1,5 +1,8 @@
 """Tests for Discord OAuth authentication integration."""
 
+from typing import Any
+from typing import cast
+
 import pytest
 from allauth.socialaccount.models import SocialAccount
 from allauth.socialaccount.models import SocialApp
@@ -63,14 +66,14 @@ class TestDiscordAuthenticationFlow(TestCase):
         assert response.status_code in [HTTP_OK, HTTP_REDIRECT]
         # If it's a redirect, it should be to Discord
         if response.status_code == HTTP_REDIRECT:
-            assert "discord.com/api/oauth2/authorize" in response.url
+            assert "discord.com/api/oauth2/authorize" in response.url  # type: ignore[attr-defined]
 
     def test_discord_oauth_redirect_contains_correct_params(self):
         """Test Discord OAuth redirect parameters when redirect occurs."""
         response = self.client.get(self.discord_login_url)
         # Only test redirect parameters if we actually get a redirect
         if response.status_code == HTTP_REDIRECT:
-            redirect_url = response.url
+            redirect_url = response.url  # type: ignore[attr-defined]
             # Check for required OAuth parameters
             assert "client_id=" in redirect_url
             assert "scope=" in redirect_url
@@ -171,7 +174,7 @@ class TestDiscordAuthenticationSecurity(TestCase):
 
         # Check that state parameter is included (CSRF protection) if redirecting
         if response.status_code == HTTP_REDIRECT:
-            assert "state=" in response.url
+            assert "state=" in response.url  # type: ignore[attr-defined]
         else:
             # If no redirect, just verify the URL is accessible
             assert response.status_code == HTTP_OK
@@ -195,14 +198,16 @@ class TestDiscordAuthenticationSecurity(TestCase):
 
     def test_discord_requires_verified_email(self):
         """Test that Discord provider requires verified email."""
-        discord_config = settings.SOCIALACCOUNT_PROVIDERS.get("discord", {})
+        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        discord_config = providers.get("discord", {})
 
         # Verify email verification is required
         assert discord_config.get("VERIFIED_EMAIL") is True
 
     def test_discord_uses_correct_scopes(self):
         """Test that Discord provider uses correct scopes."""
-        discord_config = settings.SOCIALACCOUNT_PROVIDERS.get("discord", {})
+        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        discord_config = providers.get("discord", {})
 
         # Verify required scopes are configured
         scopes = discord_config.get("SCOPE", [])
@@ -277,7 +282,8 @@ class TestDiscordProviderConfiguration(TestCase):
 
     def test_discord_provider_scope_configuration(self):
         """Test that Discord provider requests correct scopes."""
-        discord_config = settings.SOCIALACCOUNT_PROVIDERS.get("discord", {})
+        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        discord_config = providers.get("discord", {})
 
         # Check required scopes are configured
         scopes = discord_config.get("SCOPE", [])
@@ -292,14 +298,16 @@ class TestDiscordProviderConfiguration(TestCase):
 
     def test_discord_provider_verified_email_setting(self):
         """Test that Discord provider trusts verified emails."""
-        discord_config = settings.SOCIALACCOUNT_PROVIDERS.get("discord", {})
+        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        discord_config = providers.get("discord", {})
 
         # Discord emails should be trusted as verified
         assert discord_config.get("VERIFIED_EMAIL") is True
 
     def test_discord_environment_variable_configuration(self):
         """Test that Discord provider configuration is available."""
-        discord_config = settings.SOCIALACCOUNT_PROVIDERS.get("discord", {})
+        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        discord_config = providers.get("discord", {})
 
         # In test environment, APP section is removed to avoid conflicts
         # But basic provider configuration should be present
@@ -309,7 +317,8 @@ class TestDiscordProviderConfiguration(TestCase):
 
     def test_discord_provider_uses_identify_scope(self):
         """Test that Discord provider includes required 'identify' scope."""
-        discord_config = settings.SOCIALACCOUNT_PROVIDERS.get("discord", {})
+        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        discord_config = providers.get("discord", {})
 
         # Discord requires 'identify' scope to fetch user ID
         scopes = discord_config.get("SCOPE", [])

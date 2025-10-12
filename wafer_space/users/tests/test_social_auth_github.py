@@ -1,5 +1,8 @@
 """Tests for GitHub OAuth authentication integration."""
 
+from typing import Any
+from typing import cast
+
 import pytest
 from allauth.socialaccount.models import SocialAccount
 from allauth.socialaccount.models import SocialApp
@@ -62,14 +65,14 @@ class TestGitHubAuthenticationFlow(TestCase):
         assert response.status_code in [HTTP_OK, HTTP_REDIRECT]
         # If it's a redirect, it should be to GitHub
         if response.status_code == HTTP_REDIRECT:
-            assert "github.com/login/oauth" in response.url
+            assert "github.com/login/oauth" in response.url  # type: ignore[attr-defined]
 
     def test_github_oauth_redirect_contains_correct_params(self):
         """Test GitHub OAuth redirect parameters when redirect occurs."""
         response = self.client.get(self.github_login_url)
         # Only test redirect parameters if we actually get a redirect
         if response.status_code == HTTP_REDIRECT:
-            redirect_url = response.url
+            redirect_url = response.url  # type: ignore[attr-defined]
             # Check for required OAuth parameters
             assert "client_id=" in redirect_url
             assert "scope=" in redirect_url
@@ -169,7 +172,7 @@ class TestGitHubAuthenticationSecurity(TestCase):
 
         # Check that state parameter is included (CSRF protection) if redirecting
         if response.status_code == HTTP_REDIRECT:
-            assert "state=" in response.url
+            assert "state=" in response.url  # type: ignore[attr-defined]
         else:
             # If no redirect, just verify the URL is accessible
             assert response.status_code == HTTP_OK
@@ -187,7 +190,8 @@ class TestGitHubAuthenticationSecurity(TestCase):
 
     def test_github_requires_verified_email(self):
         """Test that GitHub provider requires verified email."""
-        github_config = settings.SOCIALACCOUNT_PROVIDERS.get("github", {})
+        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        github_config = providers.get("github", {})
 
         # Verify email verification is required
         assert github_config.get("VERIFIED_EMAIL") is True
@@ -259,7 +263,8 @@ class TestGitHubProviderConfiguration(TestCase):
 
     def test_github_provider_scope_configuration(self):
         """Test that GitHub provider requests correct scopes."""
-        github_config = settings.SOCIALACCOUNT_PROVIDERS.get("github", {})
+        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        github_config = providers.get("github", {})
 
         # Check required scope is configured
         assert "user:email" in github_config.get("SCOPE", [])

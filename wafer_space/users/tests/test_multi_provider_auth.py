@@ -1,5 +1,8 @@
 """Tests for multi-provider OAuth authentication and account linking."""
 
+from typing import Any
+from typing import cast
+
 import pytest
 from allauth.socialaccount.models import EmailAddress
 from allauth.socialaccount.models import SocialAccount
@@ -100,7 +103,7 @@ class TestMultiProviderAuthentication(TestCase):
 
         # Verify both accounts are linked to the same user
         expected_account_count = 2
-        assert user.socialaccount_set.count() == expected_account_count
+        assert user.socialaccount_set.count() == expected_account_count  # type: ignore[attr-defined]
         assert github_account.user == user
         assert gitlab_account.user == user
 
@@ -125,9 +128,9 @@ class TestMultiProviderAuthentication(TestCase):
         )
 
         # Check provider-specific queries
-        assert user.socialaccount_set.filter(provider="github").exists()
-        assert user.socialaccount_set.filter(provider="google").exists()
-        assert not user.socialaccount_set.filter(provider="gitlab").exists()
+        assert user.socialaccount_set.filter(provider="github").exists()  # type: ignore[attr-defined]
+        assert user.socialaccount_set.filter(provider="google").exists()  # type: ignore[attr-defined]
+        assert not user.socialaccount_set.filter(provider="gitlab").exists()  # type: ignore[attr-defined]
 
     def test_email_uniqueness_across_providers(self):
         """Test same email across different providers for one user."""
@@ -225,18 +228,21 @@ class TestSocialAccountProviderConfiguration(TestCase):
 
     def test_github_provider_configured(self):
         """Test GitHub provider has correct configuration for email linking."""
-        github_config = settings.SOCIALACCOUNT_PROVIDERS.get("github", {})
+        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        github_config = providers.get("github", {})
         assert github_config.get("VERIFIED_EMAIL") is True
         assert "user:email" in github_config.get("SCOPE", [])
 
     def test_gitlab_provider_configured(self):
         """Test GitLab provider has correct configuration for email linking."""
-        gitlab_config = settings.SOCIALACCOUNT_PROVIDERS.get("gitlab", {})
+        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        gitlab_config = providers.get("gitlab", {})
         assert gitlab_config.get("VERIFIED_EMAIL") is True
         assert "email" in gitlab_config.get("SCOPE", [])
 
     def test_google_provider_configured(self):
         """Test Google provider has correct configuration for email linking."""
-        google_config = settings.SOCIALACCOUNT_PROVIDERS.get("google", {})
+        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        google_config = providers.get("google", {})
         assert google_config.get("VERIFIED_EMAIL") is True
         assert "email" in google_config.get("SCOPE", [])
