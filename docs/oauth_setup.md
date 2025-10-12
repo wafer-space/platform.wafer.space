@@ -26,14 +26,19 @@ This guide walks through setting up OAuth applications for social authentication
 - **Production Client Secret**: ✅ Pre-configured (included in settings)
 - **Management URL**: https://discord.com/developers/applications
 
+### LinkedIn OAuth Apps (wafer-space apps)
+- **Development Client ID**: `86j973nx41hlk7`
+- **Development Client Secret**: ✅ Pre-configured (included in settings)
+- **Management URL**: https://www.linkedin.com/developers/apps
+
 ### Configuration Notes
 - ✅ **Client IDs** are configured in Django settings (safe to commit)
 - 🔐 **Client Secrets** are stored in environment variables (never committed)*
 - 🌍 Both development and production environments are fully configured
 - 📱 All apps are configured as "Confidential" for server-side web applications
-- ⚡ **Discord Exception**: Development client secret is pre-configured for zero-setup experience
+- ⚡ **Zero-Setup Development**: Discord and LinkedIn have pre-configured development secrets for instant developer experience
 
-*Except Discord development app which includes the secret for developer convenience
+*Except Discord and LinkedIn development apps which include secrets for developer convenience
 
 ## Table of Contents
 - [GitHub OAuth Setup](#github-oauth-setup)

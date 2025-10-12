@@ -338,7 +338,7 @@ SOCIALACCOUNT_PROVIDERS = {
     },
     "linkedin_oauth2": {
         "APP": {
-            "client_id": env("LINKEDIN_CLIENT_ID", default=""),
+            "client_id": env("LINKEDIN_CLIENT_ID", default="86j973nx41hlk7"),
             "secret": env("LINKEDIN_CLIENT_SECRET", default=""),
         },
         "SCOPE": [
