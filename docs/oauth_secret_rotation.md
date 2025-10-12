@@ -170,6 +170,10 @@ git log -1
 
 ```bash
 # On production server
+# This script automatically:
+# 1. Pulls latest secrets from git repository
+# 2. Updates .env file with all OAuth secrets
+# 3. Sets proper file permissions
 sudo /home/django/platform.wafer.space/deployment/scripts/03a-update-env-secrets.sh
 
 # Verify the .env file was updated

@@ -978,8 +978,10 @@ sudo ./deployment/scripts/02a-setup-secrets.sh
 # Run as sudo
 sudo ./deployment/scripts/03a-update-env-secrets.sh
 
-# Reads each secret file from /home/django/.secrets/
-# Updates /home/django/platform.wafer.space/.env
+# 1. Pulls latest secrets from git repository (git pull)
+# 2. Reads each secret file from /home/django/.secrets/
+# 3. Updates /home/django/platform.wafer.space/.env
+# 4. Sets proper file permissions
 # Requires services restart to take effect
 ```
 

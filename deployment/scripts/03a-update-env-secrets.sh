@@ -25,6 +25,15 @@ if [ ! -d "$SECRETS_DIR" ]; then
     exit 1
 fi
 
+# Pull latest secrets from repository
+echo "Pulling latest secrets from repository..."
+cd "$SECRETS_DIR"
+if ! sudo -u django git pull; then
+    echo "Error: Failed to pull latest secrets from repository"
+    exit 1
+fi
+cd - > /dev/null
+
 echo "Reading secrets from secrets repository..."
 
 # Read Mailgun API key
