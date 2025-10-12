@@ -94,7 +94,8 @@ class TestSendTOSUpdateEmail:
         assert len(mail.outbox) == 1
         email = mail.outbox[0]
 
-        # Check HTML content
+        # Check HTML content - email.alternatives exists on EmailMultiAlternatives
+        assert hasattr(email, "alternatives")
         html_content = email.alternatives[0][0]
         assert "testuser" in html_content
         assert "2.0.0" in html_content
