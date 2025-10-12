@@ -390,11 +390,11 @@ The GitLab provider is configured to request the following scopes:
    - Scroll down to the **"OAuth 2.0 settings"** section
    - Under **"Redirect URLs"**, click **"Add redirect URL"**
    - Add your redirect URI:
-     - Development: `http://localhost:8081/accounts/linkedin_oauth2/login/callback/`
-     - Production: `https://platform.wafer.space/accounts/linkedin_oauth2/login/callback/`
+     - Development: `http://localhost:8081/accounts/oidc/linkedin/login/callback/`
+     - Production: `https://platform.wafer.space/accounts/oidc/linkedin/login/callback/`
    - Click **"Update"** to save
 
-   **Important**: LinkedIn requires exact redirect URI matching, including protocol, port, path, and trailing slash.
+   **Important**: LinkedIn now uses OpenID Connect. The redirect URI pattern is `/accounts/oidc/linkedin/login/callback/` (not the old `linkedin_oauth2` pattern). LinkedIn requires exact redirect URI matching, including protocol, port, path, and trailing slash.
 
 5. **Request Required Scopes**
    - In the **"Products"** tab, request access to **"Sign In with LinkedIn using OpenID Connect"**
@@ -442,12 +442,12 @@ The LinkedIn provider is configured to request the following OpenID Connect scop
 
 ### Callback URL Reference
 
-- **Development**: `http://localhost:8081/accounts/linkedin_oauth2/login/callback/`
-- **Production**: `https://platform.wafer.space/accounts/linkedin_oauth2/login/callback/`
+- **Development**: `http://localhost:8081/accounts/oidc/linkedin/login/callback/`
+- **Production**: `https://platform.wafer.space/accounts/oidc/linkedin/login/callback/`
 
-**Pattern**: `/accounts/linkedin_oauth2/login/callback/`
+**Pattern**: `/accounts/oidc/linkedin/login/callback/`
 
-**Note**: The provider name is `linkedin_oauth2` (not just `linkedin`) - this distinguishes it from the older LinkedIn OAuth 1.0 provider.
+**Note**: LinkedIn now uses OpenID Connect with provider_id `linkedin`. The callback URL pattern is `/accounts/oidc/<provider_id>/login/callback/` where `<provider_id>` is `linkedin`. This is part of django-allauth's OpenID Connect provider support.
 
 ### Important Notes
 

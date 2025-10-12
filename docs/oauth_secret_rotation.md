@@ -238,7 +238,7 @@ curl -I https://platform.wafer.space/accounts/github/login/callback/
 curl -I https://platform.wafer.space/accounts/gitlab/login/callback/
 curl -I https://platform.wafer.space/accounts/google/login/callback/
 curl -I https://platform.wafer.space/accounts/discord/login/callback/
-curl -I https://platform.wafer.space/accounts/linkedin_oauth2/login/callback/
+curl -I https://platform.wafer.space/accounts/oidc/linkedin/login/callback/
 ```
 
 ### 7. Finalize Rotation
