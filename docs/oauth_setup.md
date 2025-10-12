@@ -578,12 +578,12 @@ In production, set environment variables directly in your hosting environment (e
 
 1. **Start the development server:**
    ```bash
-   uv run python manage.py runserver
+   make runserver
    ```
 
 2. **Test UI Elements:**
-   - Navigate to http://localhost:8000/accounts/login/
-   - Verify all social provider buttons are displayed (GitHub, Google, GitLab, LinkedIn)
+   - Navigate to http://localhost:8081/accounts/login/
+   - Verify all social provider buttons are displayed (GitHub, Google, GitLab, Discord, LinkedIn)
    - Verify traditional email/password form is present below social buttons
    - Check responsive design by resizing browser window
 
@@ -756,7 +756,8 @@ gh secret set GOOGLE_CLIENT_SECRET_PROD --body="actual_secret_here"
 - **Problem**: The callback URL in your OAuth app doesn't match the one being used
 - **Solution**:
   - Check that your OAuth app's callback URL exactly matches the one in your Django settings
-  - For local development, ensure you're using `localhost:8000` not `127.0.0.1:8000` (or vice versa)
+  - For local development, ensure you're using `localhost:8081` not `127.0.0.1:8081` (or vice versa)
+  - Verify you're using port 8081 (the project's configured port, not Django's default 8000)
   - Include the trailing slash: `/accounts/github/login/callback/`
 
 #### "Client ID or Secret not found" Error

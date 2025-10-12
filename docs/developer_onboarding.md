@@ -171,9 +171,10 @@ uv run python manage.py shell
 ### "Redirect URI Mismatch" Error
 ```bash
 # Ensure your OAuth app callback URL is exactly:
-http://localhost:8000/accounts/github/login/callback/
+http://localhost:8081/accounts/github/login/callback/
 
 # Note: Use localhost, not 127.0.0.1
+# Note: Use port 8081 (the project's configured port, not Django's default 8000)
 # Note: Include the trailing slash
 ```
 
