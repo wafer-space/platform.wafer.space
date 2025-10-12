@@ -225,6 +225,8 @@ The `.env` file is automatically created by the database setup script (`03-setup
   - `GITHUB_CLIENT_SECRET` - from `github-oauth` file
   - `GITLAB_CLIENT_SECRET` - from `gitlab-oauth` file
   - `GOOGLE_CLIENT_SECRET` - from `google-auth.json` file
+  - `DISCORD_CLIENT_SECRET` - from `discord-oauth` file
+  - `LINKEDIN_CLIENT_SECRET` - from `linkedin-oauth` file
 
 **No manual secret configuration needed** - all secrets are automatically populated from the secrets repository during setup.
 
@@ -236,26 +238,29 @@ sudo -u django nano /home/django/platform.wafer.space/.env
 
 ### Configuration Variables
 
-The template includes all required variables with comments. Most values are automatically configured:
-
-**Required changes:**
-
-1. **MAILGUN_API_KEY** - Get from [Mailgun dashboard](https://www.mailgun.com/)
-
-2. **OAuth Client Secrets** - Add the client secrets for each OAuth provider (CLIENT_IDs are pre-configured):
-   - `GITHUB_CLIENT_SECRET` - Get from wafer-space organization OAuth app
-   - `GITLAB_CLIENT_SECRET` - Get from wafer-space group OAuth app
-   - `GOOGLE_CLIENT_SECRET` - Get from wafer-space project OAuth app
+The template includes all required variables with comments. All values are automatically configured during setup.
 
 **Already configured automatically:**
 - `DATABASE_URL` - Set by database setup script with generated password
 - `DJANGO_SECRET_KEY` - Auto-generated 50-character secure random key
-- `GITHUB_CLIENT_ID` - Pre-configured for wafer-space organization
-- `GITLAB_CLIENT_ID` - Pre-configured for wafer-space group
-- `GOOGLE_CLIENT_ID` - Pre-configured for wafer-space project
+- `MAILGUN_API_KEY` - Populated from secrets repository (`mailgun` file)
+- OAuth Client Secrets - All populated from secrets repository:
+  - `GITHUB_CLIENT_SECRET` - from `github-oauth` file
+  - `GITLAB_CLIENT_SECRET` - from `gitlab-oauth` file
+  - `GOOGLE_CLIENT_SECRET` - from `google-auth.json` file
+  - `DISCORD_CLIENT_SECRET` - from `discord-oauth` file
+  - `LINKEDIN_CLIENT_SECRET` - from `linkedin-oauth` file
+- OAuth Client IDs - Pre-configured in settings:
+  - `GITHUB_CLIENT_ID` - Pre-configured for wafer-space organization
+  - `GITLAB_CLIENT_ID` - Pre-configured for wafer-space group
+  - `GOOGLE_CLIENT_ID` - Pre-configured for wafer-space project
+  - `DISCORD_CLIENT_ID` - Pre-configured for wafer-space organization
+  - `LINKEDIN_CLIENT_ID` - Pre-configured for wafer-space organization
 - `DJANGO_SETTINGS_MODULE` - Set to `config.settings.production`
 - `DJANGO_ALLOWED_HOSTS` - Set to `platform.wafer.space`
 - Security settings - All HTTPS/HSTS settings configured
+
+**Note:** To update secrets (e.g., rotating API keys), update the secrets in the secrets repository, then run `deployment/scripts/03a-update-env-secrets.sh` and restart services.
 
 ### Template File
 
