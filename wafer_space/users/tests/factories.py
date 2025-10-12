@@ -31,7 +31,7 @@ class UserFactory(DjangoModelFactory[User]):
         self.set_password(password)
 
     @post_generation
-    def email_address(self, create: bool, extracted: Sequence[Any], **kwargs):  # noqa: FBT001, ARG002
+    def email_address(self, create: bool, extracted: Sequence[Any], **kwargs):  # noqa: FBT001
         """Create a verified EmailAddress for the user.
 
         This is required for browser tests to avoid allauth redirecting to email
