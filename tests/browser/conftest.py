@@ -241,14 +241,15 @@ def take_screenshot(driver):
     return _take_screenshot
 
 
-@pytest.fixture(autouse=True)
-def _social_apps(db, django_db_setup, django_db_blocker):
+@pytest.fixture(scope="session", autouse=True)
+def _social_apps(django_db_setup, django_db_blocker):
     """Create SocialApp objects for all OAuth providers so buttons appear in UI.
 
-    This fixture is automatically used by all browser tests to ensure OAuth
-    provider buttons are available when rendering login/signup pages.
+    This session-scoped fixture is automatically used by all browser tests to ensure
+    OAuth provider buttons are available when rendering login/signup pages.
 
-    Uses django_db_blocker to ensure proper database setup for live_server tests.
+    Uses session scope to create SocialApp objects once for all tests, which works
+    properly with live_server's separate database thread.
     """
     with django_db_blocker.unblock():
         # Clean up any existing apps first
@@ -305,5 +306,5 @@ def _social_apps(db, django_db_setup, django_db_blocker):
     yield
 
     with django_db_blocker.unblock():
-        # Cleanup after test
+        # Cleanup after all tests
         SocialApp.objects.all().delete()
