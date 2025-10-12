@@ -394,7 +394,7 @@ The GitLab provider is configured to request the following scopes:
      - Production: `https://platform.wafer.space/accounts/oidc/linkedin/login/callback/`
    - Click **"Update"** to save
 
-   **Important**: LinkedIn now uses OpenID Connect. The redirect URI pattern is `/accounts/oidc/linkedin/login/callback/` (not the old `linkedin_oauth2` pattern). LinkedIn requires exact redirect URI matching, including protocol, port, path, and trailing slash.
+   **Important**: LinkedIn uses OpenID Connect. The redirect URI must exactly match `/accounts/oidc/linkedin/login/callback/` including protocol, port, path, and trailing slash.
 
 5. **Request Required Scopes**
    - In the **"Products"** tab, request access to **"Sign In with LinkedIn using OpenID Connect"**
