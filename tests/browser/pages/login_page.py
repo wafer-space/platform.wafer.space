@@ -24,7 +24,7 @@ class LoginPage(BasePage):
     GOOGLE_LOGIN = (By.XPATH, "//a[contains(@href, '/accounts/google/login/')]")
     LINKEDIN_LOGIN = (
         By.XPATH,
-        "//a[contains(@href, '/accounts/linkedin_oauth2/login/')]",
+        "//a[contains(@href, '/accounts/oidc/linkedin/login/')]",
     )
 
     # Error messages

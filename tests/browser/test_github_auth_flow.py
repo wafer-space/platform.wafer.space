@@ -46,11 +46,11 @@ DISCORD_SIGNUP_XPATH = (
 )
 LINKEDIN_BUTTON_XPATH = (
     "//a[contains(text(), 'Sign in with LinkedIn') "
-    "or contains(@href, '/accounts/linkedin_oauth2/login/')]"
+    "or contains(@href, '/accounts/oidc/linkedin/login/')]"
 )
 LINKEDIN_SIGNUP_XPATH = (
     "//a[contains(text(), 'Sign up with LinkedIn') "
-    "or contains(@href, '/accounts/linkedin_oauth2/login/')]"
+    "or contains(@href, '/accounts/oidc/linkedin/login/')]"
 )
 
 
@@ -91,10 +91,13 @@ def social_apps(db):
     gitlab_app.sites.add(site)
 
     linkedin_app = SocialApp.objects.create(
-        provider="linkedin_oauth2",
+        provider="linkedin",  # LinkedIn now uses OpenID Connect
         name=f"LinkedIn Test App {unique_suffix}",
         client_id=f"test_linkedin_client_id_{unique_suffix}",
         secret=f"linkedin_test_secret_{unique_suffix}",
+        settings={
+            "server_url": "https://www.linkedin.com/oauth",
+        },
     )
     linkedin_app.sites.add(site)
 
@@ -212,7 +215,7 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
             "GitHub": "/accounts/github/login/",
             "Google": "/accounts/google/login/",
             "GitLab": "/accounts/gitlab/login/",
-            "LinkedIn": "/accounts/linkedin_oauth2/login/",
+            "LinkedIn": "/accounts/oidc/linkedin/login/",
             "Discord": "/accounts/discord/login/",
         }
         for provider, href_pattern in provider_patterns.items():
@@ -866,8 +869,8 @@ class TestLinkedInAuthenticationFlow(BaseBrowserTest):
         )
         href = linkedin_button.get_attribute("href")
 
-        # Verify href points to LinkedIn OAuth endpoint
-        assert "/accounts/linkedin_oauth2/login/" in href or "linkedin" in href
+        # Verify href points to LinkedIn OpenID Connect endpoint
+        assert "/accounts/oidc/linkedin/login/" in href or "linkedin" in href
 
         # Note: We don't actually click the button to avoid real OAuth redirect
 
