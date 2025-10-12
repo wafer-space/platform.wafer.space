@@ -29,6 +29,8 @@ This guide walks through setting up OAuth applications for social authentication
 ### LinkedIn OAuth Apps (wafer-space apps)
 - **Development Client ID**: `86j973nx41hlk7`
 - **Development Client Secret**: ✅ Pre-configured (included in settings)
+- **Production Client ID**: `86q1gs3uqhpqt1`
+- **Production Client Secret**: ✅ Pre-configured (included in settings)
 - **Management URL**: https://www.linkedin.com/developers/apps
 
 ### Configuration Notes
