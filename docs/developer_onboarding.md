@@ -152,7 +152,10 @@ make test-browser-headless       # Browser UI tests
 ### 🔄 Secret Rotation
 - **Development**: Rotate when team members leave
 - **Production**: Rotate every 90 days or after security incidents
+- **Emergency**: Rotate immediately if secrets are leaked or compromised
 - **Testing**: Use mocks, no real secrets needed
+
+**For detailed rotation instructions**, see [OAuth Secret Rotation Guide](oauth_secret_rotation.md)
 
 ## Troubleshooting
 

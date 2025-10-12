@@ -804,6 +804,25 @@ To enable detailed OAuth debugging:
 
 3. Review server logs for detailed error messages
 
+## Security and Maintenance
+
+### Secret Rotation
+
+OAuth secrets should be rotated regularly to maintain security:
+
+- **Production secrets**: Every 90 days (recommended)
+- **Development secrets**: When team members leave or every 180 days
+- **Emergency rotation**: Immediately if secrets are leaked or compromised
+
+**For detailed rotation instructions**, see [OAuth Secret Rotation Guide](oauth_secret_rotation.md)
+
+The rotation guide covers:
+- Step-by-step rotation process for each OAuth provider
+- Backup and rollback procedures
+- Verification testing
+- Emergency rotation procedures
+- Security best practices
+
 ### Getting Help
 
 If you encounter issues not covered here:

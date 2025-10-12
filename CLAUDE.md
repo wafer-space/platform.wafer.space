@@ -993,6 +993,27 @@ sudo ./deployment/scripts/03a-update-env-secrets.sh
 
 **CRITICAL**: All OAuth secrets must be provided via environment variables. Never use non-empty default values in Django settings files, even for development environments.
 
+### Secret Rotation
+
+**When to rotate secrets:**
+- **Emergency**: Secret leaked, committed to git, or security incident (rotate immediately)
+- **Scheduled**: Production secrets every 90 days, development every 180 days
+- **Team changes**: When team members with secret access leave
+
+**How to rotate secrets:**
+See the comprehensive guide: [docs/oauth_secret_rotation.md](../docs/oauth_secret_rotation.md)
+
+The rotation process involves:
+1. Backup current secrets
+2. Generate new secrets on OAuth provider platforms
+3. Update secrets repository
+4. Run `03a-update-env-secrets.sh` to update production `.env`
+5. Restart services
+6. Verify all OAuth flows work
+7. Remove old secrets from providers
+
+**Emergency rotation**: If secrets are leaked, rotate immediately without waiting for maintenance window.
+
 ### Common Pitfalls and How to Avoid Them
 
 #### ❌ Pitfall 1: Forgetting to Update Deployment Script
