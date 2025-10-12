@@ -343,7 +343,97 @@ The GitLab provider is configured to request the following scopes:
 
 ## LinkedIn OAuth Setup
 
-*Coming soon - will be added when implementing LinkedIn provider*
+### Creating a LinkedIn OAuth Application
+
+1. **Navigate to LinkedIn Developers Portal**
+   - Go to https://www.linkedin.com/developers/apps
+   - Sign in with your LinkedIn account
+   - Click the **"Create app"** button
+
+2. **Create New Application**
+   - Fill in the required application details:
+     - **App name**: `wafer.space Development` (for development) or `wafer.space Platform` (for production)
+     - **LinkedIn Page**: You'll need to associate the app with a LinkedIn Company Page
+       - If you don't have one, you can create a Company Page for wafer.space or use a personal page
+       - For development/testing, you can use any page you have admin access to
+     - **App logo**: Upload a logo (PNG or JPG, recommended 300x300px minimum)
+     - **Legal agreement**: Check the box to agree to LinkedIn API Terms of Use
+   - Click **"Create app"**
+
+   **Note**: LinkedIn requires a Company Page association for all OAuth apps. For development purposes, you can use any page you have admin access to.
+
+3. **Verify Your Application**
+   - After creating the app, LinkedIn will show a verification page
+   - Click **"Verify"** and follow the process (may require email verification)
+   - You can proceed with configuration while verification is pending
+
+4. **Configure OAuth 2.0 Redirect URLs**
+   - In your app dashboard, click on the **"Auth"** tab
+   - Scroll down to the **"OAuth 2.0 settings"** section
+   - Under **"Redirect URLs"**, click **"Add redirect URL"**
+   - Add your redirect URI:
+     - Development: `http://localhost:8081/accounts/linkedin_oauth2/login/callback/`
+     - Production: `https://platform.wafer.space/accounts/linkedin_oauth2/login/callback/`
+   - Click **"Update"** to save
+
+   **Important**: LinkedIn requires exact redirect URI matching, including protocol, port, path, and trailing slash.
+
+5. **Request Required Scopes**
+   - In the **"Products"** tab, request access to **"Sign In with LinkedIn using OpenID Connect"**
+   - Click **"Request access"** (usually auto-approved for basic profile/email scopes)
+   - Once approved, the following scopes will be available:
+     - `openid` - OpenID Connect authentication
+     - `profile` - Basic profile information
+     - `email` - Email address
+
+   **Note**: LinkedIn's OAuth API has migrated to OpenID Connect. The legacy scopes (`r_liteprofile`, `r_emailaddress`) are being phased out but are still configured in django-allauth for backwards compatibility.
+
+6. **Obtain Credentials**
+   - Go to the **"Auth"** tab
+   - Find the **"Application credentials"** section
+   - **Client ID**: Displayed directly (safe to commit in settings)
+   - **Client Secret**: Click **"Show"** to reveal, then copy (keep this secret and never commit to version control!)
+   - Save both values securely
+
+### Environment Variables
+
+Add these to your `.env` file:
+
+```bash
+# LinkedIn OAuth
+# Create app at: https://www.linkedin.com/developers/apps
+LINKEDIN_CLIENT_ID=your_linkedin_client_id_here
+LINKEDIN_CLIENT_SECRET=your_linkedin_client_secret_here
+```
+
+### Scopes
+
+The LinkedIn provider is configured to request the following scopes:
+
+**Current Configuration (Legacy API v2)**:
+- `r_liteprofile` - Basic profile information (first name, last name, profile picture)
+- `r_emailaddress` - Primary email address for account linking
+
+**Note on Scopes**: LinkedIn is transitioning to OpenID Connect. While the current django-allauth configuration uses legacy v2 scopes, new applications should request the "Sign In with LinkedIn using OpenID Connect" product, which provides equivalent access through the OpenID Connect protocol.
+
+### Important Notes
+
+- **Company Page Requirement**: LinkedIn requires all OAuth apps to be associated with a Company Page. For development, you can use any page you have admin access to.
+- **Verification Process**: LinkedIn may require email verification or additional steps before your app can be used in production.
+- **Redirect URI Matching**: LinkedIn enforces strict redirect URI matching. Ensure the redirect URI in your app matches exactly, including the trailing slash.
+- **HTTPS Requirement**: Production environments must use HTTPS. HTTP is only allowed for localhost development.
+- **Rate Limiting**: LinkedIn has rate limits on API calls. For authentication, this is typically not an issue, but be aware for high-traffic applications.
+- **Scope Migration**: LinkedIn is migrating from v2 API to OpenID Connect. New apps should use "Sign In with LinkedIn using OpenID Connect" product for future compatibility.
+- **Testing**: During development, you can test with your own LinkedIn account. Once verified and approved, any LinkedIn user can authenticate.
+
+### Callback URL Reference
+
+- **Development**: `http://localhost:8081/accounts/linkedin_oauth2/login/callback/`
+- **Production**: `https://platform.wafer.space/accounts/linkedin_oauth2/login/callback/`
+
+**Pattern**: `/accounts/linkedin_oauth2/login/callback/`
+
+Note the provider name is `linkedin_oauth2` (not just `linkedin`) - this distinguishes it from the older LinkedIn OAuth 1.0 provider.
 
 ## Discord OAuth Setup
 

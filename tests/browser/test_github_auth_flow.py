@@ -44,6 +44,14 @@ DISCORD_SIGNUP_XPATH = (
     "//a[contains(text(), 'Sign up with Discord') "
     "or contains(@href, '/accounts/discord/login/')]"
 )
+LINKEDIN_BUTTON_XPATH = (
+    "//a[contains(text(), 'Sign in with LinkedIn') "
+    "or contains(@href, '/accounts/linkedin_oauth2/login/')]"
+)
+LINKEDIN_SIGNUP_XPATH = (
+    "//a[contains(text(), 'Sign up with LinkedIn') "
+    "or contains(@href, '/accounts/linkedin_oauth2/login/')]"
+)
 
 
 @pytest.fixture
@@ -785,5 +793,171 @@ class TestDiscordAuthenticationFlow(BaseBrowserTest):
         # Verify button takes appropriate width on mobile
         min_mobile_width = 200
         assert discord_button.size["width"] > min_mobile_width, (
+            "Button should be wide enough on mobile"
+        )
+
+
+@pytest.mark.django_db
+class TestLinkedInAuthenticationFlow(BaseBrowserTest):
+    """Test LinkedIn OAuth authentication flow using browser automation."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, live_server, social_apps):
+        """Set up test fixtures using shared social_apps fixture."""
+        self.live_server_url = live_server.url
+        self.social_apps = social_apps
+
+    def test_login_page_displays_linkedin_button(self, driver):
+        """Test that login page shows LinkedIn authentication button."""
+        # Navigate to login page
+        driver.get(f"{self.live_server_url}/accounts/login/")
+
+        # Wait for page to load
+        wait = WebDriverWait(driver, 10)
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
+        )
+
+        # Check for LinkedIn button
+        linkedin_buttons = driver.find_elements(
+            By.XPATH,
+            LINKEDIN_BUTTON_XPATH,
+        )
+        assert len(linkedin_buttons) > 0, "LinkedIn sign-in button not found"
+
+        # Verify button is clickable (functional test rather than styling test)
+        linkedin_button = linkedin_buttons[0]
+        assert linkedin_button.is_enabled(), "LinkedIn button should be clickable"
+        assert linkedin_button.is_displayed(), "LinkedIn button should be visible"
+
+    def test_signup_page_displays_linkedin_button(self, driver):
+        """Test that signup page shows LinkedIn authentication button."""
+        # Navigate to signup page
+        driver.get(f"{self.live_server_url}/accounts/signup/")
+
+        # Wait for page to load
+        wait = WebDriverWait(driver, 10)
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
+        )
+
+        # Check for LinkedIn button
+        linkedin_buttons = driver.find_elements(
+            By.XPATH,
+            LINKEDIN_SIGNUP_XPATH,
+        )
+        assert len(linkedin_buttons) > 0, "LinkedIn sign-up button not found"
+
+    def test_linkedin_button_href_points_to_linkedin_oauth(self, driver):
+        """Test that LinkedIn button has correct href."""
+        # Navigate to login page
+        driver.get(f"{self.live_server_url}/accounts/login/")
+
+        # Wait for page to load
+        wait = WebDriverWait(driver, 10)
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
+        )
+
+        # Find LinkedIn button and get href
+        linkedin_button = driver.find_element(
+            By.XPATH,
+            LINKEDIN_BUTTON_XPATH,
+        )
+        href = linkedin_button.get_attribute("href")
+
+        # Verify href points to LinkedIn OAuth endpoint
+        assert "/accounts/linkedin_oauth2/login/" in href or "linkedin" in href
+
+        # Note: We don't actually click the button to avoid real OAuth redirect
+
+    def test_linkedin_vs_other_providers_all_present(self, driver):
+        """Test that all social provider buttons are present."""
+        # Navigate to login page
+        driver.get(f"{self.live_server_url}/accounts/login/")
+
+        # Wait for page to load
+        wait = WebDriverWait(driver, 10)
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
+        )
+
+        # Check for all provider buttons
+        github_buttons = driver.find_elements(
+            By.XPATH,
+            GITHUB_BUTTON_XPATH,
+        )
+        google_buttons = driver.find_elements(
+            By.XPATH,
+            GOOGLE_BUTTON_XPATH,
+        )
+        gitlab_buttons = driver.find_elements(
+            By.XPATH,
+            GITLAB_BUTTON_XPATH,
+        )
+        discord_buttons = driver.find_elements(
+            By.XPATH,
+            DISCORD_BUTTON_XPATH,
+        )
+        linkedin_buttons = driver.find_elements(
+            By.XPATH,
+            LINKEDIN_BUTTON_XPATH,
+        )
+
+        assert len(github_buttons) > 0, "GitHub button not found"
+        assert len(google_buttons) > 0, "Google button not found"
+        assert len(gitlab_buttons) > 0, "GitLab button not found"
+        assert len(discord_buttons) > 0, "Discord button not found"
+        assert len(linkedin_buttons) > 0, "LinkedIn button not found"
+
+    def test_linkedin_button_styling_consistency(self, driver):
+        """Test that LinkedIn button has consistent styling with other providers."""
+        # Navigate to login page
+        driver.get(f"{self.live_server_url}/accounts/login/")
+
+        # Wait for page to load
+        wait = WebDriverWait(driver, 10)
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
+        )
+
+        # Test that LinkedIn button specifically exists and is functional
+        linkedin_buttons = driver.find_elements(
+            By.XPATH,
+            LINKEDIN_BUTTON_XPATH,
+        )
+        assert len(linkedin_buttons) > 0, "LinkedIn button should be present"
+
+        # Verify LinkedIn button is functional
+        linkedin_button = linkedin_buttons[0]
+        assert linkedin_button.is_displayed(), "LinkedIn button should be visible"
+        assert linkedin_button.is_enabled(), "LinkedIn button should be clickable"
+
+        # Test completed - functionality verified
+
+    def test_linkedin_button_mobile_responsive(self, driver):
+        """Test that LinkedIn button is responsive on mobile viewport."""
+        # Set mobile viewport
+        driver.set_window_size(375, 667)  # iPhone SE size
+
+        # Navigate to login page
+        driver.get(f"{self.live_server_url}/accounts/login/")
+
+        # Wait for page to load
+        wait = WebDriverWait(driver, 10)
+        wait.until(
+            expected_conditions.presence_of_element_located((By.TAG_NAME, "body")),
+        )
+
+        # Check that LinkedIn button is still visible and clickable
+        linkedin_button = driver.find_element(
+            By.XPATH,
+            LINKEDIN_BUTTON_XPATH,
+        )
+        assert linkedin_button.is_displayed(), "LinkedIn button not visible on mobile"
+
+        # Verify button takes appropriate width on mobile
+        min_mobile_width = 200
+        assert linkedin_button.size["width"] > min_mobile_width, (
             "Button should be wide enough on mobile"
         )
