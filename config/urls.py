@@ -18,6 +18,8 @@ urlpatterns = [
     # User management
     path("users/", include("wafer_space.users.urls", namespace="users")),
     path("accounts/", include("allauth.urls")),
+    # Legal
+    path("legal/", include("wafer_space.legal.urls", namespace="legal")),
     # Your stuff: custom urls includes go here
     # ...
     # Media files

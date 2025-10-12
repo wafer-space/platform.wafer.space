@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% load static i18n crispy_forms_tags %}
+
+{% block title %}
+  Accept Terms of Service - {{ block.super }}
+{% endblock title %}
+{% block content %}
+  <div class="row justify-content-center">
+    <div class="col-lg-10">
+      <div class="card">
+        <div class="card-header bg-primary text-white">
+          <h2 class="mb-0">Terms of Service Acceptance Required</h2>
+        </div>
+        <div class="card-body">
+          <div class="alert alert-info" role="alert">
+            <strong>Important:</strong> You must read and accept the Terms of Service to continue using wafer.space.
+          </div>
+          <h3>Terms of Service - Version {{ tos.version }}</h3>
+          <p class="text-muted">Effective {{ tos.created_at|date:"F j, Y" }}</p>
+          <hr>
+          <div class="tos-content"
+               style="max-height: 400px;
+                      overflow-y: auto;
+                      border: 1px solid #dee2e6;
+                      padding: 15px;
+                      background-color: #f8f9fa;
+                      border-radius: 5px;
+                      margin-bottom: 20px">{{ tos.content|linebreaks }}</div>
+          <form method="post">
+            {% csrf_token %}
+            <div class="form-check mb-3">
+              <input class="form-check-input"
+                     type="checkbox"
+                     name="agree"
+                     id="agree"
+                     required>
+              <label class="form-check-label" for="agree">
+                I have read and agree to the Terms of Service (Version {{ tos.version }})
+              </label>
+            </div>
+            <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+              <button type="submit" class="btn btn-primary btn-lg">
+                Accept Terms of Service
+              </button>
+            </div>
+          </form>
+          <div class="mt-3">
+            <small class="text-muted">
+              By accepting, you acknowledge that you have read, understood, and agree to be bound by these Terms of Service.
+              Your acceptance will be recorded with your IP address and timestamp for our records.
+            </small>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock content %}

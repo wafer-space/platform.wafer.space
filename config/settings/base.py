@@ -35,6 +35,8 @@ LANGUAGE_CODE = "en-us"
 # ]
 # https://docs.djangoproject.com/en/dev/ref/settings/#site-id
 SITE_ID = 1
+# Site URL for email templates and absolute URLs
+SITE_URL = env("SITE_URL", default="http://localhost:8081")
 # https://docs.djangoproject.com/en/dev/ref/settings/#use-i18n
 USE_I18N = True
 # https://docs.djangoproject.com/en/dev/ref/settings/#use-tz
@@ -95,6 +97,7 @@ THIRD_PARTY_APPS = [
 
 LOCAL_APPS = [
     "wafer_space.users",
+    "wafer_space.legal",
     "wafer_space.referrals",
     "wafer_space.projects",
     "wafer_space.shuttles",
@@ -157,6 +160,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "allauth.account.middleware.AccountMiddleware",
+    "wafer_space.legal.middleware.TOSAcceptanceMiddleware",
 ]
 
 # STATIC
@@ -401,6 +405,7 @@ CELERY_TASK_EAGER_PROPAGATES = True
 CELERY_TASK_ROUTES = {
     "wafer_space.projects.tasks.*": {"queue": "manufacturability"},
     "wafer_space.referrals.tasks.*": {"queue": "referrals"},
+    "wafer_space.legal.tasks.*": {"queue": "default"},
 }
 
 # Task result configuration

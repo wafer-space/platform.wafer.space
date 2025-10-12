@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% load static i18n %}
+
+{% block title %}
+  Terms of Service - {{ block.super }}
+{% endblock title %}
+{% block content %}
+  <div class="row">
+    <div class="col-12">
+      <h1>Terms of Service</h1>
+      <p class="text-muted">Version {{ tos.version }} - Effective {{ tos.created_at|date:"F j, Y" }}</p>
+      <hr>
+      <div class="tos-content">{{ tos.content|linebreaks }}</div>
+    </div>
+  </div>
+{% endblock content %}
