@@ -983,20 +983,43 @@ sudo ./deployment/scripts/03a-update-env-secrets.sh
 # Requires services restart to take effect
 ```
 
-**Current secrets handled** (as of current version):
-- ✅ Mailgun API key (`mailgun`)
-- ✅ GitHub OAuth Client Secret (`github-oauth`)
-- ✅ GitLab OAuth Client Secret (`gitlab-oauth`)
-- ✅ Google OAuth Client Secret (`google-auth.json`)
-- ❌ Discord OAuth Client Secret (`discord-oauth`) - **MISSING FROM SCRIPT**
-- ❌ LinkedIn OAuth Client Secret (`linkedin-oauth`) - **MISSING FROM SCRIPT**
+**Secrets handled by deployment script:**
+- Mailgun API key (`mailgun`)
+- GitHub OAuth Client Secret (`github-oauth`)
+- GitLab OAuth Client Secret (`gitlab-oauth`)
+- Google OAuth Client Secret (`google-auth.json`)
+- Discord OAuth Client Secret (`discord-oauth`)
+- LinkedIn OAuth Client Secret (`linkedin-oauth`)
+
+**CRITICAL**: All OAuth secrets must be provided via environment variables. Never use non-empty default values in Django settings files, even for development environments.
 
 ### Common Pitfalls and How to Avoid Them
 
 #### ❌ Pitfall 1: Forgetting to Update Deployment Script
-**Problem**: You add a new secret to the secrets repository and Django settings, but forget to update `03a-update-env-secrets.sh`. Result: Production deployment fails or uses empty/default secrets.
+**Problem**: You add a new OAuth provider or secret to Django settings but forget to update `deployment/scripts/03a-update-env-secrets.sh`. Result: Production deployment fails or uses empty/default secrets.
 
-**Solution**: ALWAYS update the deployment script when adding new secrets. Use the checklist above.
+**MANDATORY CHECKLIST when adding new OAuth providers or secrets:**
+1. ✅ Add secret file to secrets repository (`/home/django/.secrets/provider-name`)
+2. ✅ Update Django settings to use `env("PROVIDER_SECRET", default="")`
+3. ✅ **Add secret handling to `deployment/scripts/03a-update-env-secrets.sh`** following the existing pattern
+4. ✅ Update this documentation to list the new secret
+5. ✅ Test the deployment script in production
+
+**Pattern to follow in deployment script:**
+```bash
+# Read Provider OAuth secret
+if [ ! -f "$SECRETS_DIR/provider-oauth" ]; then
+    echo "Error: Required secret file not found: $SECRETS_DIR/provider-oauth"
+    exit 1
+fi
+PROVIDER_SECRET=$(cat "$SECRETS_DIR/provider-oauth" | tr -d '\n')
+if grep -q "^PROVIDER_CLIENT_SECRET=" "$ENV_FILE"; then
+    sed -i "s|^PROVIDER_CLIENT_SECRET=.*|PROVIDER_CLIENT_SECRET=$PROVIDER_SECRET|" "$ENV_FILE"
+else
+    echo "PROVIDER_CLIENT_SECRET=$PROVIDER_SECRET" >> "$ENV_FILE"
+fi
+echo "✓ Updated Provider OAuth secret"
+```
 
 #### ❌ Pitfall 2: Hardcoding Secrets in Settings
 **Problem**: Adding secrets directly to `config/settings/production.py` like this:

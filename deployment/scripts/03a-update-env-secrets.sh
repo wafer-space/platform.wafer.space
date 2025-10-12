@@ -79,6 +79,32 @@ else
 fi
 echo "✓ Updated Google OAuth secret"
 
+# Read Discord OAuth secret
+if [ ! -f "$SECRETS_DIR/discord-oauth" ]; then
+    echo "Error: Required secret file not found: $SECRETS_DIR/discord-oauth"
+    exit 1
+fi
+DISCORD_SECRET=$(cat "$SECRETS_DIR/discord-oauth" | tr -d '\n')
+if grep -q "^DISCORD_CLIENT_SECRET=" "$ENV_FILE"; then
+    sed -i "s|^DISCORD_CLIENT_SECRET=.*|DISCORD_CLIENT_SECRET=$DISCORD_SECRET|" "$ENV_FILE"
+else
+    echo "DISCORD_CLIENT_SECRET=$DISCORD_SECRET" >> "$ENV_FILE"
+fi
+echo "✓ Updated Discord OAuth secret"
+
+# Read LinkedIn OAuth secret
+if [ ! -f "$SECRETS_DIR/linkedin-oauth" ]; then
+    echo "Error: Required secret file not found: $SECRETS_DIR/linkedin-oauth"
+    exit 1
+fi
+LINKEDIN_SECRET=$(cat "$SECRETS_DIR/linkedin-oauth" | tr -d '\n')
+if grep -q "^LINKEDIN_CLIENT_SECRET=" "$ENV_FILE"; then
+    sed -i "s|^LINKEDIN_CLIENT_SECRET=.*|LINKEDIN_CLIENT_SECRET=$LINKEDIN_SECRET|" "$ENV_FILE"
+else
+    echo "LINKEDIN_CLIENT_SECRET=$LINKEDIN_SECRET" >> "$ENV_FILE"
+fi
+echo "✓ Updated LinkedIn OAuth secret"
+
 # Generate CELERY_BROKER_URL from DATABASE_URL
 if grep -q "^DATABASE_URL=" "$ENV_FILE"; then
     DATABASE_URL=$(grep "^DATABASE_URL=" "$ENV_FILE" | cut -d'=' -f2-)

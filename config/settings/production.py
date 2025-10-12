@@ -186,7 +186,9 @@ SOCIALACCOUNT_PROVIDERS["linkedin_oauth2"]["APP"]["client_id"] = env(
     default="86q1gs3uqhpqt1",  # Production Client ID for wafer-space LinkedIn app
 )
 # LinkedIn secret must come from environment variable
-SOCIALACCOUNT_PROVIDERS["linkedin_oauth2"]["APP"]["secret"] = env("LINKEDIN_CLIENT_SECRET")
+SOCIALACCOUNT_PROVIDERS["linkedin_oauth2"]["APP"]["secret"] = env(
+    "LINKEDIN_CLIENT_SECRET",
+)
 
 # Your stuff...
 # ------------------------------------------------------------------------------
