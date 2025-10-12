@@ -836,5 +836,266 @@ except OSError:
 - **Limit function parameters** - prefer configuration objects for complex functions
 - **Use type hints** for better code clarity and tooling support
 
+## 🚀 Production Deployment and Secrets Management
+
+### Overview
+
+This project uses a **two-repository approach** for security:
+- **Main Repository** (`platform.wafer.space`): All code, tests, and non-sensitive configuration
+- **Secrets Repository** (`platform.wafer.space-secrets`): Private repository containing production secrets
+
+### Critical File Locations
+
+```
+platform.wafer.space/
+├── secrets/                           # Local copy of secrets repository (gitignored)
+│   ├── github-oauth                   # GitHub OAuth Client Secret
+│   ├── gitlab-oauth                   # GitLab OAuth Client Secret
+│   ├── google-auth.json               # Google OAuth credentials (JSON format)
+│   ├── discord-oauth                  # Discord OAuth Client Secret
+│   ├── linkedin-oauth                 # LinkedIn OAuth Client Secret
+│   └── mailgun                        # Mailgun API key
+│
+├── deployment/
+│   ├── scripts/
+│   │   ├── 02a-setup-secrets.sh       # Clone/update secrets repository on server
+│   │   └── 03a-update-env-secrets.sh  # Update .env with secrets from repository
+│   ├── nginx/                         # Nginx configuration
+│   ├── systemd/                       # Systemd service files
+│   └── README.md                      # Deployment documentation
+│
+└── config/settings/
+    ├── base.py                        # Base settings (dev Client IDs with env var secrets)
+    └── production.py                  # Production settings (prod Client IDs override)
+```
+
+### 🚨 CRITICAL: When Adding New Secrets
+
+**MANDATORY CHECKLIST** - Complete ALL steps when adding new secrets or OAuth providers:
+
+#### 1. Add Secret to Secrets Repository
+```bash
+# In your local secrets/ directory (which is a git clone of the secrets repo)
+cd secrets/
+echo "your_secret_value" > new-secret-name
+git add new-secret-name
+git commit -m "Add new-secret-name for [purpose]"
+git push
+```
+
+#### 2. Update Django Settings
+```python
+# config/settings/base.py - Add environment variable reference
+NEW_SECRET = env("NEW_SECRET_NAME", default="")
+
+# For OAuth providers specifically:
+SOCIALACCOUNT_PROVIDERS = {
+    "provider_name": {
+        "APP": {
+            "client_id": env("PROVIDER_CLIENT_ID", default="dev_client_id"),
+            "secret": env("PROVIDER_CLIENT_SECRET", default=""),  # Empty default!
+        },
+        # ... other config
+    }
+}
+
+# config/settings/production.py - Override with production Client ID
+SOCIALACCOUNT_PROVIDERS["provider_name"]["APP"]["client_id"] = env(
+    "PROVIDER_CLIENT_ID",
+    default="prod_client_id",  # Production Client ID can be in code
+)
+# Secret MUST come from environment variable, never hardcode!
+```
+
+#### 3. Update Deployment Script (`deployment/scripts/03a-update-env-secrets.sh`)
+
+**THIS STEP IS CRITICAL AND OFTEN FORGOTTEN!**
+
+```bash
+# Add a new section to read and inject the secret
+# Read Provider OAuth secret
+if [ ! -f "$SECRETS_DIR/provider-oauth" ]; then
+    echo "Error: Required secret file not found: $SECRETS_DIR/provider-oauth"
+    exit 1
+fi
+PROVIDER_SECRET=$(cat "$SECRETS_DIR/provider-oauth" | tr -d '\n')
+if grep -q "^PROVIDER_CLIENT_SECRET=" "$ENV_FILE"; then
+    sed -i "s|^PROVIDER_CLIENT_SECRET=.*|PROVIDER_CLIENT_SECRET=$PROVIDER_SECRET|" "$ENV_FILE"
+else
+    echo "PROVIDER_CLIENT_SECRET=$PROVIDER_SECRET" >> "$ENV_FILE"
+fi
+echo "✓ Updated Provider OAuth secret"
+```
+
+#### 4. Update Documentation
+```bash
+# Update relevant documentation files:
+docs/oauth_setup.md              # OAuth provider setup instructions
+docs/developer_onboarding.md     # Development environment setup
+.env.example                     # Example environment variables (NO REAL SECRETS!)
+```
+
+#### 5. Test Locally
+```bash
+# Verify the secret is properly loaded
+uv run python manage.py shell
+>>> from django.conf import settings
+>>> settings.PROVIDER_CLIENT_SECRET  # Should show your dev secret from .env
+>>> settings.SOCIALACCOUNT_PROVIDERS['provider_name']['APP']['secret']
+```
+
+### Deployment Scripts Reference
+
+#### `deployment/scripts/02a-setup-secrets.sh`
+**Purpose**: Clone or update the secrets repository on the production server
+
+**When to run**:
+- Initial server setup
+- When secrets repository structure changes
+- When adding completely new secret files
+
+**What it does**:
+```bash
+# Run as sudo
+sudo ./deployment/scripts/02a-setup-secrets.sh
+
+# Clones git@github.com:mithro/platform.wafer.space-secrets.git
+# Into /home/django/.secrets
+# Sets proper permissions (700, owned by django user)
+```
+
+#### `deployment/scripts/03a-update-env-secrets.sh`
+**Purpose**: Read secrets from the secrets repository and update production `.env` file
+
+**When to run**:
+- After adding new secrets to secrets repository
+- When rotating existing secrets
+- During deployment when secrets have changed
+- **MUST be updated when adding new secret types**
+
+**What it does**:
+```bash
+# Run as sudo
+sudo ./deployment/scripts/03a-update-env-secrets.sh
+
+# Reads each secret file from /home/django/.secrets/
+# Updates /home/django/platform.wafer.space/.env
+# Requires services restart to take effect
+```
+
+**Current secrets handled** (as of current version):
+- ✅ Mailgun API key (`mailgun`)
+- ✅ GitHub OAuth Client Secret (`github-oauth`)
+- ✅ GitLab OAuth Client Secret (`gitlab-oauth`)
+- ✅ Google OAuth Client Secret (`google-auth.json`)
+- ❌ Discord OAuth Client Secret (`discord-oauth`) - **MISSING FROM SCRIPT**
+- ❌ LinkedIn OAuth Client Secret (`linkedin-oauth`) - **MISSING FROM SCRIPT**
+
+### Common Pitfalls and How to Avoid Them
+
+#### ❌ Pitfall 1: Forgetting to Update Deployment Script
+**Problem**: You add a new secret to the secrets repository and Django settings, but forget to update `03a-update-env-secrets.sh`. Result: Production deployment fails or uses empty/default secrets.
+
+**Solution**: ALWAYS update the deployment script when adding new secrets. Use the checklist above.
+
+#### ❌ Pitfall 2: Hardcoding Secrets in Settings
+**Problem**: Adding secrets directly to `config/settings/production.py` like this:
+```python
+# ❌ NEVER DO THIS
+SOCIALACCOUNT_PROVIDERS["provider"]["APP"]["secret"] = "actual_secret_value"
+```
+
+**Solution**: Always use environment variables:
+```python
+# ✅ CORRECT
+SOCIALACCOUNT_PROVIDERS["provider"]["APP"]["secret"] = env("PROVIDER_SECRET", default="")
+```
+
+#### ❌ Pitfall 3: Committing Secrets to Git
+**Problem**: Accidentally adding real secrets to any tracked file.
+
+**Solution**:
+- Use `.gitignore` for `secrets/` directory and `.env` files
+- Use pre-commit hooks for secret detection (see issue #28)
+- Never set non-empty defaults for secrets in settings files
+- If you commit secrets, immediately rotate them and rewrite git history
+
+#### ❌ Pitfall 4: Different Secret Names in Different Places
+**Problem**: Using different environment variable names in settings vs deployment scripts.
+
+**Solution**: Use consistent naming convention:
+- Settings file: `PROVIDER_CLIENT_SECRET`
+- Deployment script: Same variable name
+- Secrets file: `provider-oauth` (kebab-case)
+
+### Secret Management Best Practices
+
+1. **Client IDs vs Secrets**:
+   - **Client IDs**: Public, can be committed to git in settings files
+   - **Client Secrets**: Private, MUST be in environment variables only
+
+2. **Development vs Production**:
+   - Development secrets go in local `.env` file (gitignored)
+   - Production secrets go in secrets repository
+   - Use different OAuth apps for dev and prod
+
+3. **Secret Rotation**:
+   ```bash
+   # 1. Update secret in secrets repository
+   cd secrets/
+   echo "new_secret_value" > provider-oauth
+   git commit -am "Rotate provider OAuth secret"
+   git push
+
+   # 2. On production server
+   sudo ./deployment/scripts/02a-setup-secrets.sh  # Pull latest secrets
+   sudo ./deployment/scripts/03a-update-env-secrets.sh  # Update .env
+   sudo systemctl restart django-gunicorn django-celery  # Restart services
+   ```
+
+4. **Verifying Deployment**:
+   ```bash
+   # After deploying, verify secrets are loaded
+   sudo -u django bash
+   cd ~/platform.wafer.space
+   source venv/bin/activate
+   python manage.py shell
+   >>> from django.conf import settings
+   >>> settings.GITHUB_CLIENT_SECRET  # Should be non-empty
+   >>> len(settings.GITHUB_CLIENT_SECRET)  # Should show secret length
+   ```
+
+### Emergency: Secret Compromised
+
+If a secret is accidentally committed or exposed:
+
+1. **Immediately rotate** the secret at the provider (GitHub, Google, etc.)
+2. **Update secrets repository** with new secret
+3. **Run deployment script** on production: `sudo ./deployment/scripts/03a-update-env-secrets.sh`
+4. **Restart services**: `sudo systemctl restart django-gunicorn django-celery`
+5. **Rewrite git history** if committed (use with caution)
+6. **Verify** the old secret no longer works
+
+### Testing Deployment Scripts Locally
+
+You can test the deployment script logic locally (without sudo):
+
+```bash
+# Test secret reading logic
+cd secrets/
+cat github-oauth  # Should show the secret value
+cat google-auth.json | python3 -c "import json, sys; print(json.load(sys.stdin)['web']['client_secret'])"
+
+# Verify .env gets updated correctly
+# Create a test .env file and run the script logic manually
+```
+
+### Related Documentation
+
+- `deployment/README.md` - Full deployment guide
+- `docs/oauth_setup.md` - OAuth provider configuration
+- `docs/developer_onboarding.md` - Local development setup
+- Issue #28 - Pre-commit hooks to prevent secret commits
+
 ### Testing Requirements
 - Only run the headless versions of the browser tests when testing
