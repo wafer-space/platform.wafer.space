@@ -1,17 +1,21 @@
 #!/usr/bin/env python
-"""
-Diagnostic script to check LinkedIn provider configuration in production.
+# ruff: noqa: T201, E402, BLE001, S110
+"""Diagnostic script to check LinkedIn provider configuration in production.
 
-Run with: DJANGO_SETTINGS_MODULE=config.settings.production uv run python check_linkedin_provider.py
+Run with:
+    DJANGO_SETTINGS_MODULE=config.settings.production \
+    uv run python check_linkedin_provider.py
 """
+
 import os
+
 import django
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.production")
 django.setup()
 
-from allauth.socialaccount.models import SocialApp
 from allauth.socialaccount import providers
+from allauth.socialaccount.models import SocialApp
 from django.conf import settings
 
 print("=" * 80)
@@ -23,8 +27,7 @@ print("\n1. Settings Configuration:")
 print("-" * 80)
 oidc_config = settings.SOCIALACCOUNT_PROVIDERS.get("openid_connect", {})
 linkedin_apps = [
-    app for app in oidc_config.get("APPS", [])
-    if app.get("provider_id") == "linkedin"
+    app for app in oidc_config.get("APPS", []) if app.get("provider_id") == "linkedin"
 ]
 print(f"OpenID Connect APPS with provider_id='linkedin': {len(linkedin_apps)}")
 if linkedin_apps:
@@ -43,9 +46,7 @@ for app in social_apps:
     print(f"  - Provider: {app.provider}, Name: {app.name}, ID: {app.id}")
 
 # Check specifically for LinkedIn-related apps
-linkedin_social_apps = SocialApp.objects.filter(
-    provider__icontains="linkedin"
-)
+linkedin_social_apps = SocialApp.objects.filter(provider__icontains="linkedin")
 print(f"\nLinkedIn-related SocialApp objects: {linkedin_social_apps.count()}")
 for app in linkedin_social_apps:
     print(f"  - Provider: {app.provider}, Name: {app.name}, ID: {app.id}")
@@ -58,7 +59,7 @@ all_provider_classes = []
 try:
     # Try to get all registered providers
     for provider_id in dir(registry):
-        if not provider_id.startswith('_'):
+        if not provider_id.startswith("_"):
             try:
                 provider_class = registry.by_id(provider_id)
                 all_provider_classes.append(provider_class)
@@ -73,7 +74,10 @@ except Exception as e:
     print("Trying direct lookup...")
     try:
         linkedin_oidc = registry.by_id("linkedin")
-        print(f"  - Found via direct lookup: ID='{linkedin_oidc.id}', Name='{linkedin_oidc.name}'")
+        print(
+            f"  - Found via direct lookup: "
+            f"ID='{linkedin_oidc.id}', Name='{linkedin_oidc.name}'"
+        )
     except Exception as e2:
         print(f"  - Direct lookup failed: {e2}")
 
@@ -81,12 +85,34 @@ except Exception as e:
 print("\n4. Template Context (what templates see):")
 print("-" * 80)
 from allauth.socialaccount.templatetags.socialaccount import get_providers
-template_providers = get_providers()
-print(f"Total providers available in templates: {len(template_providers)}")
-for provider in template_providers:
-    is_linkedin = "linkedin" in provider.id.lower()
-    marker = " ← LINKEDIN" if is_linkedin else ""
-    print(f"  - ID: '{provider.id}', Name: '{provider.name}'{marker}")
+from django.test import RequestFactory
+
+# Create a mock request context for get_providers
+factory = RequestFactory()
+mock_request = factory.get("/")
+mock_context = {"request": mock_request}
+
+try:
+    template_providers = get_providers(mock_context)
+    print(f"Total providers available in templates: {len(template_providers)}")
+    for provider in template_providers:
+        is_linkedin = "linkedin" in provider.id.lower()
+        marker = " ← LINKEDIN" if is_linkedin else ""
+        print(f"  - ID: '{provider.id}', Name: '{provider.name}'{marker}")
+except Exception as e:
+    print(f"Error getting template providers: {e}")
+    print("Trying alternative method...")
+    from allauth.socialaccount.providers import registry as provider_registry
+
+    try:
+        template_providers = provider_registry.get_list()
+        print(f"Total providers from registry: {len(template_providers)}")
+        for provider in template_providers:
+            is_linkedin = "linkedin" in str(provider.id).lower()
+            marker = " ← LINKEDIN" if is_linkedin else ""
+            print(f"  - ID: '{provider.id}', Name: '{provider.name}'{marker}")
+    except Exception as e2:
+        print(f"Alternative method also failed: {e2}")
 
 print("\n" + "=" * 80)
 print("Diagnosis:")
