@@ -52,78 +52,76 @@ LINKEDIN_SIGNUP_XPATH = (
 )
 
 
-@pytest.fixture(autouse=True)
-def social_apps(db, django_db_blocker):
+@pytest.fixture(autouse=True, scope="function")
+def social_apps(transactional_db):
     """Create SocialApp objects for all OAuth providers so buttons appear in UI.
 
-    Uses autouse=True to ensure this fixture runs for all tests in this module,
-    preventing MultipleObjectsReturned errors from overlapping SocialApp objects.
+    Uses autouse=True with function scope to ensure proper test isolation.
+    Each test gets fresh SocialApp objects and cleanup happens after each test.
     """
-    with django_db_blocker.unblock():
-        # Clean up any existing apps first - be thorough
-        SocialApp.objects.all().delete()
+    # Clean up any existing apps first - be thorough
+    SocialApp.objects.all().delete()
 
-        # Get the current site
-        site = Site.objects.get_current()
+    # Get the current site
+    site = Site.objects.get_current()
 
-        # Create test SocialApp objects - no need for unique suffix since we delete all
-        github_app = SocialApp.objects.create(
-            provider="github",
-            name="GitHub Browser Test App",
-            client_id="browser_test_github_client_id",
-            secret="browser_test_github_secret",  # noqa: S106
-        )
-        github_app.sites.add(site)
+    # Create test SocialApp objects - no need for unique suffix since we delete all
+    github_app = SocialApp.objects.create(
+        provider="github",
+        name="GitHub Browser Test App",
+        client_id="browser_test_github_client_id",
+        secret="browser_test_github_secret",  # noqa: S106
+    )
+    github_app.sites.add(site)
 
-        google_app = SocialApp.objects.create(
-            provider="google",
-            name="Google Browser Test App",
-            client_id="browser_test_google_client_id.apps.googleusercontent.com",
-            secret="browser_test_google_secret",  # noqa: S106
-        )
-        google_app.sites.add(site)
+    google_app = SocialApp.objects.create(
+        provider="google",
+        name="Google Browser Test App",
+        client_id="browser_test_google_client_id.apps.googleusercontent.com",
+        secret="browser_test_google_secret",  # noqa: S106
+    )
+    google_app.sites.add(site)
 
-        gitlab_app = SocialApp.objects.create(
-            provider="gitlab",
-            name="GitLab Browser Test App",
-            client_id="browser_test_gitlab_application_id",
-            secret="browser_test_gitlab_secret",  # noqa: S106
-        )
-        gitlab_app.sites.add(site)
+    gitlab_app = SocialApp.objects.create(
+        provider="gitlab",
+        name="GitLab Browser Test App",
+        client_id="browser_test_gitlab_application_id",
+        secret="browser_test_gitlab_secret",  # noqa: S106
+    )
+    gitlab_app.sites.add(site)
 
-        linkedin_app = SocialApp.objects.create(
-            provider="openid_connect",  # LinkedIn uses OpenID Connect provider
-            name="LinkedIn",  # Must match template check: provider.name == "LinkedIn"
-            client_id="browser_test_linkedin_client_id",
-            secret="browser_test_linkedin_secret",  # noqa: S106
-            settings={
-                "server_url": "https://www.linkedin.com/oauth",
-                "provider_id": "linkedin",  # OpenID Connect sub-provider ID
-            },
-        )
-        linkedin_app.sites.add(site)
+    linkedin_app = SocialApp.objects.create(
+        provider="openid_connect",  # LinkedIn uses OpenID Connect provider
+        name="LinkedIn",  # Must match template check: provider.name == "LinkedIn"
+        client_id="browser_test_linkedin_client_id",
+        secret="browser_test_linkedin_secret",  # noqa: S106
+        settings={
+            "server_url": "https://www.linkedin.com/oauth",
+            "provider_id": "linkedin",  # OpenID Connect sub-provider ID
+        },
+    )
+    linkedin_app.sites.add(site)
 
-        discord_app = SocialApp.objects.create(
-            provider="discord",
-            name="Discord Browser Test App",
-            client_id="browser_test_discord_client_id",
-            secret="browser_test_discord_secret",  # noqa: S106
-        )
-        discord_app.sites.add(site)
+    discord_app = SocialApp.objects.create(
+        provider="discord",
+        name="Discord Browser Test App",
+        client_id="browser_test_discord_client_id",
+        secret="browser_test_discord_secret",  # noqa: S106
+    )
+    discord_app.sites.add(site)
 
-        apps_dict = {
-            "github": github_app,
-            "google": google_app,
-            "gitlab": gitlab_app,
-            "linkedin": linkedin_app,
-            "discord": discord_app,
-        }
+    apps_dict = {
+        "github": github_app,
+        "google": google_app,
+        "gitlab": gitlab_app,
+        "linkedin": linkedin_app,
+        "discord": discord_app,
+    }
 
     yield apps_dict
 
     # Cleanup after test - be thorough
-    with django_db_blocker.unblock():
-        SocialApp.objects.all().delete()
+    SocialApp.objects.all().delete()
 
 
 @pytest.mark.django_db
