@@ -91,12 +91,13 @@ def social_apps(db):
     gitlab_app.sites.add(site)
 
     linkedin_app = SocialApp.objects.create(
-        provider="linkedin",  # LinkedIn now uses OpenID Connect
-        name=f"LinkedIn Test App {unique_suffix}",
+        provider="openid_connect",  # LinkedIn uses OpenID Connect provider
+        name="LinkedIn",  # Must match template check: provider.name == "LinkedIn"
         client_id=f"test_linkedin_client_id_{unique_suffix}",
         secret=f"linkedin_test_secret_{unique_suffix}",
         settings={
             "server_url": "https://www.linkedin.com/oauth",
+            "provider_id": "linkedin",  # OpenID Connect sub-provider ID
         },
     )
     linkedin_app.sites.add(site)
