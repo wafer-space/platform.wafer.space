@@ -4,11 +4,13 @@ Browser test configuration and fixtures.
 
 import logging
 import os
+import tempfile
 from pathlib import Path
 
 import pytest
 from allauth.socialaccount.models import SocialApp
 from django.contrib.sites.models import Site
+from django.db import transaction
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.chrome.service import Service as ChromeService
@@ -19,6 +21,61 @@ from selenium.webdriver.support import expected_conditions
 from selenium.webdriver.support.wait import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.firefox import GeckoDriverManager
+
+
+def pytest_configure(config):
+    """Configure pytest for browser tests.
+
+    Critical fix: Browser tests with live_server need a file-based database
+    instead of :memory: SQLite. This is because:
+    1. live_server runs Django in a separate thread
+    2. Each thread gets its own connection to the database
+    3. :memory: SQLite creates a separate database per connection
+    4. Result: fixtures in test thread are invisible to live_server thread
+
+    Solution: Use a temporary file-based SQLite database that can be
+    properly shared across threads.
+    """
+    from django.conf import settings  # noqa: PLC0415
+
+    # Only override if we're using the in-memory database
+    if settings.DATABASES["default"]["NAME"] == ":memory:":
+        # Create a temporary file-based database
+        db_file = tempfile.NamedTemporaryFile(  # noqa: SIM115
+            delete=False, suffix=".sqlite3", prefix="test_browser_"
+        )
+        db_file.close()
+
+        # Override database settings
+        settings.DATABASES = {
+            "default": {
+                "ENGINE": "django.db.backends.sqlite3",
+                "NAME": db_file.name,
+                "ATOMIC_REQUESTS": False,
+                "TEST": {
+                    "NAME": db_file.name,
+                },
+            }
+        }
+
+        # Store the temp file path for cleanup using pytest's cache mechanism
+        config.cache.set("browser_test_db_file", db_file.name)
+
+    # Remove settings-based SOCIALACCOUNT_PROVIDERS APPS to avoid conflicts
+    # with database SocialApp objects created by fixtures
+    if hasattr(settings, "SOCIALACCOUNT_PROVIDERS"):
+        if "openid_connect" in settings.SOCIALACCOUNT_PROVIDERS:
+            # Keep other openid_connect settings but remove APPS
+            settings.SOCIALACCOUNT_PROVIDERS["openid_connect"].pop("APPS", None)
+
+
+def pytest_unconfigure(config):
+    """Clean up temporary database file after tests complete."""
+    db_file_name = config.cache.get("browser_test_db_file", None)
+    if db_file_name:
+        db_file = Path(db_file_name)
+        if db_file.exists():
+            db_file.unlink()
 
 
 def pytest_addoption(parser):
@@ -242,66 +299,70 @@ def take_screenshot(driver):
 
 
 @pytest.fixture
-def social_apps(transactional_db):
+def social_apps(db):
     """Create SocialApp objects for all OAuth providers so buttons appear in UI.
 
     This fixture creates Social App objects that are visible to both the test
-    and the live_server thread by using transactional_db.
+    and the live_server thread. With the file-based database configured in
+    pytest_configure, the data is properly shared across threads.
 
     Browser tests that need OAuth buttons should use this fixture.
     """
-    # Clean up any existing apps first
-    SocialApp.objects.all().delete()
+    # Use atomic block to ensure data is committed immediately
+    with transaction.atomic():
+        # Clean up any existing apps first
+        SocialApp.objects.all().delete()
 
-    # Get the current site
-    site = Site.objects.get_current()
+        # Get the current site
+        site = Site.objects.get_current()
 
-    # Create test SocialApp objects
-    github_app = SocialApp.objects.create(
-        provider="github",
-        name="GitHub Browser Test App",
-        client_id="browser_test_github_client_id",
-        secret="browser_test_github_secret",  # noqa: S106
-    )
-    github_app.sites.add(site)
+        # Create test SocialApp objects
+        github_app = SocialApp.objects.create(
+            provider="github",
+            name="GitHub Browser Test App",
+            client_id="browser_test_github_client_id",
+            secret="browser_test_github_secret",  # noqa: S106
+        )
+        github_app.sites.add(site)
 
-    google_app = SocialApp.objects.create(
-        provider="google",
-        name="Google Browser Test App",
-        client_id="browser_test_google_client_id.apps.googleusercontent.com",
-        secret="browser_test_google_secret",  # noqa: S106
-    )
-    google_app.sites.add(site)
+        google_app = SocialApp.objects.create(
+            provider="google",
+            name="Google Browser Test App",
+            client_id="browser_test_google_client_id.apps.googleusercontent.com",
+            secret="browser_test_google_secret",  # noqa: S106
+        )
+        google_app.sites.add(site)
 
-    gitlab_app = SocialApp.objects.create(
-        provider="gitlab",
-        name="GitLab Browser Test App",
-        client_id="browser_test_gitlab_application_id",
-        secret="browser_test_gitlab_secret",  # noqa: S106
-    )
-    gitlab_app.sites.add(site)
+        gitlab_app = SocialApp.objects.create(
+            provider="gitlab",
+            name="GitLab Browser Test App",
+            client_id="browser_test_gitlab_application_id",
+            secret="browser_test_gitlab_secret",  # noqa: S106
+        )
+        gitlab_app.sites.add(site)
 
-    linkedin_app = SocialApp.objects.create(
-        provider="openid_connect",
-        name="LinkedIn",
-        client_id="browser_test_linkedin_client_id",
-        secret="browser_test_linkedin_secret",  # noqa: S106
-        settings={
-            "server_url": "https://www.linkedin.com/oauth",
-            "provider_id": "linkedin",
-        },
-    )
-    linkedin_app.sites.add(site)
+        linkedin_app = SocialApp.objects.create(
+            provider="openid_connect",
+            provider_id="linkedin",  # CRITICAL: Must set provider_id field for OIDC
+            name="LinkedIn",
+            client_id="browser_test_linkedin_client_id",
+            secret="browser_test_linkedin_secret",  # noqa: S106
+            settings={
+                "server_url": "https://www.linkedin.com/oauth",
+            },
+        )
+        linkedin_app.sites.add(site)
 
-    discord_app = SocialApp.objects.create(
-        provider="discord",
-        name="Discord Browser Test App",
-        client_id="browser_test_discord_client_id",
-        secret="browser_test_discord_secret",  # noqa: S106
-    )
-    discord_app.sites.add(site)
+        discord_app = SocialApp.objects.create(
+            provider="discord",
+            name="Discord Browser Test App",
+            client_id="browser_test_discord_client_id",
+            secret="browser_test_discord_secret",  # noqa: S106
+        )
+        discord_app.sites.add(site)
 
     yield
 
     # Cleanup after test
-    SocialApp.objects.all().delete()
+    with transaction.atomic():
+        SocialApp.objects.all().delete()

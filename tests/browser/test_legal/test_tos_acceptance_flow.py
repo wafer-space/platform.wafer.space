@@ -18,15 +18,14 @@ TEST_PASSWORD = "testpass123"  # noqa: S105
 MIN_VERSION_DISPLAY_COUNT = 2  # Minimum times version should appear on page
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.browser
 class TestTOSAcceptanceFlow(BaseBrowserTest):
     """Test the complete TOS acceptance flow."""
 
     @pytest.fixture(autouse=True)
-    def setup(self, social_apps):  # noqa: ARG002
+    def setup(self, social_apps):
         """Set up test fixtures including OAuth providers."""
-        pass
 
     def test_public_tos_display(self, driver, live_server_url):
         """Test that TOS can be viewed publicly without login."""
