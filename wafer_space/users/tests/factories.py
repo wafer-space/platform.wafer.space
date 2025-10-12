@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 from typing import Any
 
+from allauth.account.models import EmailAddress
 from factory import Faker
 from factory import post_generation
 from factory.django import DjangoModelFactory
@@ -28,6 +29,21 @@ class UserFactory(DjangoModelFactory[User]):
             ).evaluate(None, None, extra={"locale": None})
         )
         self.set_password(password)
+
+    @post_generation
+    def email_address(self, create: bool, extracted: Sequence[Any], **kwargs):  # noqa: FBT001, ARG002
+        """Create a verified EmailAddress for the user.
+
+        This is required for browser tests to avoid allauth redirecting to email
+        confirmation page during login.
+        """
+        if create:
+            EmailAddress.objects.create(
+                user=self,
+                email=self.email,
+                verified=True,
+                primary=True,
+            )
 
     @classmethod
     def _after_postgeneration(cls, instance, create, results=None):
