@@ -1,8 +1,6 @@
 """Browser tests for GitHub and Google OAuth authentication flows."""
 
 import pytest
-from allauth.socialaccount.models import SocialApp
-from django.contrib.sites.models import Site
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions
 from selenium.webdriver.support.ui import WebDriverWait
@@ -50,78 +48,6 @@ LINKEDIN_SIGNUP_XPATH = (
     "//a[contains(text(), 'Sign up with LinkedIn') "
     "or contains(@href, '/accounts/oidc/linkedin/login/')]"
 )
-
-
-@pytest.fixture(autouse=True)
-def social_apps(transactional_db):
-    """Create SocialApp objects for all OAuth providers so buttons appear in UI.
-
-    Uses autouse=True with function scope to ensure proper test isolation.
-    Each test gets fresh SocialApp objects and cleanup happens after each test.
-    """
-    # Clean up any existing apps first - be thorough
-    SocialApp.objects.all().delete()
-
-    # Get the current site
-    site = Site.objects.get_current()
-
-    # Create test SocialApp objects - no need for unique suffix since we delete all
-    github_app = SocialApp.objects.create(
-        provider="github",
-        name="GitHub Browser Test App",
-        client_id="browser_test_github_client_id",
-        secret="browser_test_github_secret",  # noqa: S106
-    )
-    github_app.sites.add(site)
-
-    google_app = SocialApp.objects.create(
-        provider="google",
-        name="Google Browser Test App",
-        client_id="browser_test_google_client_id.apps.googleusercontent.com",
-        secret="browser_test_google_secret",  # noqa: S106
-    )
-    google_app.sites.add(site)
-
-    gitlab_app = SocialApp.objects.create(
-        provider="gitlab",
-        name="GitLab Browser Test App",
-        client_id="browser_test_gitlab_application_id",
-        secret="browser_test_gitlab_secret",  # noqa: S106
-    )
-    gitlab_app.sites.add(site)
-
-    linkedin_app = SocialApp.objects.create(
-        provider="openid_connect",  # LinkedIn uses OpenID Connect provider
-        name="LinkedIn",  # Must match template check: provider.name == "LinkedIn"
-        client_id="browser_test_linkedin_client_id",
-        secret="browser_test_linkedin_secret",  # noqa: S106
-        settings={
-            "server_url": "https://www.linkedin.com/oauth",
-            "provider_id": "linkedin",  # OpenID Connect sub-provider ID
-        },
-    )
-    linkedin_app.sites.add(site)
-
-    discord_app = SocialApp.objects.create(
-        provider="discord",
-        name="Discord Browser Test App",
-        client_id="browser_test_discord_client_id",
-        secret="browser_test_discord_secret",  # noqa: S106
-    )
-    discord_app.sites.add(site)
-
-    apps_dict = {
-        "github": github_app,
-        "google": google_app,
-        "gitlab": gitlab_app,
-        "linkedin": linkedin_app,
-        "discord": discord_app,
-    }
-
-    yield apps_dict
-
-    # Cleanup after test - be thorough
-    SocialApp.objects.all().delete()
 
 
 @pytest.mark.django_db
