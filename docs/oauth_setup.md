@@ -4,13 +4,12 @@ This guide walks through setting up OAuth applications for social authentication
 
 ## Quick Reference - wafer-space OAuth Applications
 
-| Provider | Development Client ID | Production Client ID | Secrets | Management URL |
-|----------|----------------------|---------------------|---------|----------------|
-| **GitHub** | `Ov23liLB7RRJUzku13dU` | `Ov23linEhI33aev2uGSU` | Environment variable required | [github.com/wafer-space](https://github.com/wafer-space) |
-| **Google** | `62545893239-jiesk1vfk22j87cth4ukq4alluc3nqhc.apps.googleusercontent.com` | `62545893239-pgg1lcg28u9suivjh4nso9t8mev5qua2.apps.googleusercontent.com` | Environment variable required | [console.cloud.google.com](https://console.cloud.google.com/apis/credentials) |
-| **GitLab** | `2a29dee626b3c8b544f6f2c3a8042f912130bd040f4d3c60ef0e5864a4962aaa` | `f0fde384db4cd0fe11041488a6b87e9d3d20223385b78d1ba1ed4045fbea6c16` | Environment variable required | [gitlab.com/groups/wafer-space](https://gitlab.com/groups/wafer-space/-/settings/applications) |
-| **Discord** | `1426055950221054052` | `1426065281138167841` | ✅ Pre-configured (zero setup) | [discord.com/developers](https://discord.com/developers/applications) |
-| **LinkedIn** | `86j973nx41hlk7` | `86q1gs3uqhpqt1` | ✅ Pre-configured (zero setup) | [linkedin.com/developers](https://www.linkedin.com/developers/apps) |
+| | **GitHub** | **Google** | **GitLab** | **Discord** | **LinkedIn** |
+|---|---|---|---|---|---|
+| **Development Client ID** | `Ov23liLB7RRJUzku13dU` | `62545893239-jiesk1vfk22j87cth4ukq4alluc3nqhc.apps.googleusercontent.com` | `2a29dee626b3c8b544f6f2c3a8042f912130bd040f4d3c60ef0e5864a4962aaa` | `1426055950221054052` | `86j973nx41hlk7` |
+| **Production Client ID** | `Ov23linEhI33aev2uGSU` | `62545893239-pgg1lcg28u9suivjh4nso9t8mev5qua2.apps.googleusercontent.com` | `f0fde384db4cd0fe11041488a6b87e9d3d20223385b78d1ba1ed4045fbea6c16` | `1426065281138167841` | `86q1gs3uqhpqt1` |
+| **Client Secrets** | Env var required | Env var required | Env var required | ✅ Pre-configured | ✅ Pre-configured |
+| **Management URL** | [github.com/wafer-space](https://github.com/wafer-space) | [console.cloud.google.com](https://console.cloud.google.com/apis/credentials) | [gitlab.com/groups/wafer-space](https://gitlab.com/groups/wafer-space/-/settings/applications) | [discord.com/developers](https://discord.com/developers/applications) | [linkedin.com/developers](https://www.linkedin.com/developers/apps) |
 
 ### Configuration Notes
 
