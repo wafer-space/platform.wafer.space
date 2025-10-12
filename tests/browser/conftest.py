@@ -2,6 +2,7 @@
 Browser test configuration and fixtures.
 """
 
+import contextlib
 import logging
 import os
 import tempfile
@@ -24,7 +25,7 @@ from webdriver_manager.firefox import GeckoDriverManager
 
 
 def pytest_configure(config):
-    """Configure pytest for browser tests.
+    """Configure file-based database for browser tests.
 
     Critical fix: Browser tests with live_server need a file-based database
     instead of :memory: SQLite. This is because:
@@ -38,8 +39,18 @@ def pytest_configure(config):
     """
     from django.conf import settings  # noqa: PLC0415
 
+    # Only apply to browser tests by checking if we're in the browser test directory
+    # This is determined at configure time, before test collection
+    test_paths = config.getoption("file_or_dir", default=None) or config.args
+    is_browser_test_run = any("browser" in str(path) for path in test_paths)
+
+    if not is_browser_test_run:
+        return
+
+    original_db_name = settings.DATABASES["default"]["NAME"]
+
     # Only override if we're using the in-memory database
-    if settings.DATABASES["default"]["NAME"] == ":memory:":
+    if original_db_name == ":memory:":
         # Create a temporary file-based database
         db_file = tempfile.NamedTemporaryFile(  # noqa: SIM115
             delete=False, suffix=".sqlite3", prefix="test_browser_"
@@ -58,24 +69,19 @@ def pytest_configure(config):
             }
         }
 
-        # Store the temp file path for cleanup using pytest's cache mechanism
-        config.cache.set("browser_test_db_file", db_file.name)
-
-    # Remove settings-based SOCIALACCOUNT_PROVIDERS APPS to avoid conflicts
-    # with database SocialApp objects created by fixtures
+    # Remove OIDC APPS to avoid conflicts with database SocialApp objects
     if hasattr(settings, "SOCIALACCOUNT_PROVIDERS"):
         if "openid_connect" in settings.SOCIALACCOUNT_PROVIDERS:
-            # Keep other openid_connect settings but remove APPS
             settings.SOCIALACCOUNT_PROVIDERS["openid_connect"].pop("APPS", None)
 
 
 def pytest_unconfigure(config):
-    """Clean up temporary database file after tests complete."""
-    db_file_name = config.cache.get("browser_test_db_file", None)
-    if db_file_name:
-        db_file = Path(db_file_name)
-        if db_file.exists():
-            db_file.unlink()
+    """Clean up any remaining temporary database files after tests complete."""
+    # Cleanup any temp files that might have been left behind
+    temp_dir = Path("/tmp")  # noqa: S108
+    for temp_file in temp_dir.glob("test_browser_*.sqlite3"):
+        with contextlib.suppress(OSError):
+            temp_file.unlink()
 
 
 def pytest_addoption(parser):
