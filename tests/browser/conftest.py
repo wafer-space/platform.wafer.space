@@ -242,64 +242,68 @@ def take_screenshot(driver):
 
 
 @pytest.fixture(autouse=True)
-def _social_apps(transactional_db):
+def _social_apps(db, django_db_setup, django_db_blocker):
     """Create SocialApp objects for all OAuth providers so buttons appear in UI.
 
     This fixture is automatically used by all browser tests to ensure OAuth
     provider buttons are available when rendering login/signup pages.
+
+    Uses django_db_blocker to ensure proper database setup for live_server tests.
     """
-    # Clean up any existing apps first
-    SocialApp.objects.all().delete()
+    with django_db_blocker.unblock():
+        # Clean up any existing apps first
+        SocialApp.objects.all().delete()
 
-    # Get the current site
-    site = Site.objects.get_current()
+        # Get the current site
+        site = Site.objects.get_current()
 
-    # Create test SocialApp objects
-    github_app = SocialApp.objects.create(
-        provider="github",
-        name="GitHub Browser Test App",
-        client_id="browser_test_github_client_id",
-        secret="browser_test_github_secret",  # noqa: S106
-    )
-    github_app.sites.add(site)
+        # Create test SocialApp objects
+        github_app = SocialApp.objects.create(
+            provider="github",
+            name="GitHub Browser Test App",
+            client_id="browser_test_github_client_id",
+            secret="browser_test_github_secret",  # noqa: S106
+        )
+        github_app.sites.add(site)
 
-    google_app = SocialApp.objects.create(
-        provider="google",
-        name="Google Browser Test App",
-        client_id="browser_test_google_client_id.apps.googleusercontent.com",
-        secret="browser_test_google_secret",  # noqa: S106
-    )
-    google_app.sites.add(site)
+        google_app = SocialApp.objects.create(
+            provider="google",
+            name="Google Browser Test App",
+            client_id="browser_test_google_client_id.apps.googleusercontent.com",
+            secret="browser_test_google_secret",  # noqa: S106
+        )
+        google_app.sites.add(site)
 
-    gitlab_app = SocialApp.objects.create(
-        provider="gitlab",
-        name="GitLab Browser Test App",
-        client_id="browser_test_gitlab_application_id",
-        secret="browser_test_gitlab_secret",  # noqa: S106
-    )
-    gitlab_app.sites.add(site)
+        gitlab_app = SocialApp.objects.create(
+            provider="gitlab",
+            name="GitLab Browser Test App",
+            client_id="browser_test_gitlab_application_id",
+            secret="browser_test_gitlab_secret",  # noqa: S106
+        )
+        gitlab_app.sites.add(site)
 
-    linkedin_app = SocialApp.objects.create(
-        provider="openid_connect",
-        name="LinkedIn",
-        client_id="browser_test_linkedin_client_id",
-        secret="browser_test_linkedin_secret",  # noqa: S106
-        settings={
-            "server_url": "https://www.linkedin.com/oauth",
-            "provider_id": "linkedin",
-        },
-    )
-    linkedin_app.sites.add(site)
+        linkedin_app = SocialApp.objects.create(
+            provider="openid_connect",
+            name="LinkedIn",
+            client_id="browser_test_linkedin_client_id",
+            secret="browser_test_linkedin_secret",  # noqa: S106
+            settings={
+                "server_url": "https://www.linkedin.com/oauth",
+                "provider_id": "linkedin",
+            },
+        )
+        linkedin_app.sites.add(site)
 
-    discord_app = SocialApp.objects.create(
-        provider="discord",
-        name="Discord Browser Test App",
-        client_id="browser_test_discord_client_id",
-        secret="browser_test_discord_secret",  # noqa: S106
-    )
-    discord_app.sites.add(site)
+        discord_app = SocialApp.objects.create(
+            provider="discord",
+            name="Discord Browser Test App",
+            client_id="browser_test_discord_client_id",
+            secret="browser_test_discord_secret",  # noqa: S106
+        )
+        discord_app.sites.add(site)
 
     yield
 
-    # Cleanup after test
-    SocialApp.objects.all().delete()
+    with django_db_blocker.unblock():
+        # Cleanup after test
+        SocialApp.objects.all().delete()
