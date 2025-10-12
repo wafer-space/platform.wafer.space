@@ -186,10 +186,13 @@ class TestSendBulkTOSNotifications:
         assert result["queued"] == 1
 
         # Still only one notification
-        assert TermsOfServiceNotification.objects.filter(
-            user=user,
-            tos_version=tos,
-        ).count() == 1
+        assert (
+            TermsOfServiceNotification.objects.filter(
+                user=user,
+                tos_version=tos,
+            ).count()
+            == 1
+        )
 
     @override_settings(CELERY_TASK_ALWAYS_EAGER=True)
     def test_bulk_excludes_users_who_accepted(self):

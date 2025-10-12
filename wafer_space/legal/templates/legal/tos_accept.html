@@ -18,7 +18,7 @@
           </div>
           <h3>Terms of Service - Version {{ tos.version }}</h3>
           <p class="text-muted">Effective {{ tos.created_at|date:"F j, Y" }}</p>
-          <hr>
+          <hr />
           <div class="tos-content"
                style="max-height: 400px;
                       overflow-y: auto;
@@ -34,15 +34,13 @@
                      type="checkbox"
                      name="agree"
                      id="agree"
-                     required>
+                     required />
               <label class="form-check-label" for="agree">
                 I have read and agree to the Terms of Service (Version {{ tos.version }})
               </label>
             </div>
             <div class="d-grid gap-2 d-md-flex justify-content-md-end">
-              <button type="submit" class="btn btn-primary btn-lg">
-                Accept Terms of Service
-              </button>
+              <button type="submit" class="btn btn-primary btn-lg">Accept Terms of Service</button>
             </div>
           </form>
           <div class="mt-3">

@@ -19,6 +19,7 @@ from .factories import TermsOfServiceFactory
 @pytest.fixture
 def middleware():
     """Create middleware instance."""
+
     def get_response(request):
         return HttpResponse("OK")
 

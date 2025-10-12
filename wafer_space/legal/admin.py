@@ -51,20 +51,20 @@ class TermsOfServiceAdmin(admin.ModelAdmin):
         qs = super().get_queryset(request)
         return qs.annotate(acceptance_count_annotated=Count("acceptances"))
 
+    @admin.display(description="Status")
     def is_active_badge(self, obj) -> str:
         """Display active status as a badge."""
         if obj.is_active:
             return format_html('<span style="color: green;">✓ Active</span>')
         return format_html('<span style="color: gray;">○ Inactive</span>')
 
-    is_active_badge.short_description = "Status"  # type: ignore[attr-defined]
-
+    @admin.display(
+        description="Acceptances",
+        ordering="acceptance_count_annotated",
+    )
     def acceptance_count(self, obj):
         """Display number of acceptances."""
         return obj.acceptance_count_annotated
-
-    acceptance_count.short_description = "Acceptances"  # type: ignore[attr-defined]
-    acceptance_count.admin_order_field = "acceptance_count_annotated"  # type: ignore[attr-defined]
 
     def save_model(self, request, obj, form, change):
         """Save model and set created_by."""
@@ -183,6 +183,7 @@ class TermsOfServiceNotificationAdmin(admin.ModelAdmin):
         ),
     )
 
+    @admin.display(description="Status")
     def status_badge(self, obj) -> str:
         """Display status as a colored badge."""
         colors = {
@@ -196,8 +197,6 @@ class TermsOfServiceNotificationAdmin(admin.ModelAdmin):
             color,
             obj.get_status_display(),
         )
-
-    status_badge.short_description = "Status"  # type: ignore[attr-defined]
 
     def has_add_permission(self, request) -> bool:
         """Disable manual creation of notifications."""

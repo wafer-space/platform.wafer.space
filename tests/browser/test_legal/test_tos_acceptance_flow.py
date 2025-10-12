@@ -76,9 +76,7 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
         # Should be redirected to TOS acceptance page
         assert "/legal/tos/accept/" in driver.current_url
 
-    def test_user_can_accept_tos(
-        self, driver, live_server_url, django_user_model
-    ):
+    def test_user_can_accept_tos(self, driver, live_server_url, django_user_model):
         """Test that user can accept TOS."""
         # Create active TOS
         tos = TermsOfServiceFactory(
