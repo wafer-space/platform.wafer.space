@@ -1,7 +1,5 @@
 """Browser tests for GitHub and Google OAuth authentication flows."""
 
-import time
-
 import pytest
 from allauth.socialaccount.models import SocialApp
 from django.contrib.sites.models import Site
@@ -54,72 +52,78 @@ LINKEDIN_SIGNUP_XPATH = (
 )
 
 
-@pytest.fixture
-def social_apps(db):
-    """Create SocialApp objects for all OAuth providers so buttons appear in UI."""
-    # Clean up any existing apps first
-    SocialApp.objects.all().delete()
+@pytest.fixture(autouse=True)
+def social_apps(db, django_db_blocker):
+    """Create SocialApp objects for all OAuth providers so buttons appear in UI.
 
-    # Get the current site
-    site = Site.objects.get_current()
+    Uses autouse=True to ensure this fixture runs for all tests in this module,
+    preventing MultipleObjectsReturned errors from overlapping SocialApp objects.
+    """
+    with django_db_blocker.unblock():
+        # Clean up any existing apps first - be thorough
+        SocialApp.objects.all().delete()
 
-    # Create unique test SocialApp objects with unique identifiers
-    unique_suffix = str(int(time.time() * 1000000) % 1000000)  # microsecond suffix
+        # Get the current site
+        site = Site.objects.get_current()
 
-    github_app = SocialApp.objects.create(
-        provider="github",
-        name=f"GitHub Test App {unique_suffix}",
-        client_id=f"test_github_client_id_{unique_suffix}",
-        secret=f"github_test_secret_{unique_suffix}",
-    )
-    github_app.sites.add(site)
+        # Create test SocialApp objects - no need for unique suffix since we delete all
+        github_app = SocialApp.objects.create(
+            provider="github",
+            name="GitHub Browser Test App",
+            client_id="browser_test_github_client_id",
+            secret="browser_test_github_secret",  # noqa: S106
+        )
+        github_app.sites.add(site)
 
-    google_app = SocialApp.objects.create(
-        provider="google",
-        name=f"Google Test App {unique_suffix}",
-        client_id=f"test_google_client_id_{unique_suffix}.apps.googleusercontent.com",
-        secret=f"google_test_secret_{unique_suffix}",
-    )
-    google_app.sites.add(site)
+        google_app = SocialApp.objects.create(
+            provider="google",
+            name="Google Browser Test App",
+            client_id="browser_test_google_client_id.apps.googleusercontent.com",
+            secret="browser_test_google_secret",  # noqa: S106
+        )
+        google_app.sites.add(site)
 
-    gitlab_app = SocialApp.objects.create(
-        provider="gitlab",
-        name=f"GitLab Test App {unique_suffix}",
-        client_id=f"test_gitlab_application_id_{unique_suffix}",
-        secret=f"gitlab_test_secret_{unique_suffix}",
-    )
-    gitlab_app.sites.add(site)
+        gitlab_app = SocialApp.objects.create(
+            provider="gitlab",
+            name="GitLab Browser Test App",
+            client_id="browser_test_gitlab_application_id",
+            secret="browser_test_gitlab_secret",  # noqa: S106
+        )
+        gitlab_app.sites.add(site)
 
-    linkedin_app = SocialApp.objects.create(
-        provider="openid_connect",  # LinkedIn uses OpenID Connect provider
-        name="LinkedIn",  # Must match template check: provider.name == "LinkedIn"
-        client_id=f"test_linkedin_client_id_{unique_suffix}",
-        secret=f"linkedin_test_secret_{unique_suffix}",
-        settings={
-            "server_url": "https://www.linkedin.com/oauth",
-            "provider_id": "linkedin",  # OpenID Connect sub-provider ID
-        },
-    )
-    linkedin_app.sites.add(site)
+        linkedin_app = SocialApp.objects.create(
+            provider="openid_connect",  # LinkedIn uses OpenID Connect provider
+            name="LinkedIn",  # Must match template check: provider.name == "LinkedIn"
+            client_id="browser_test_linkedin_client_id",
+            secret="browser_test_linkedin_secret",  # noqa: S106
+            settings={
+                "server_url": "https://www.linkedin.com/oauth",
+                "provider_id": "linkedin",  # OpenID Connect sub-provider ID
+            },
+        )
+        linkedin_app.sites.add(site)
 
-    discord_app = SocialApp.objects.create(
-        provider="discord",
-        name=f"Discord Test App {unique_suffix}",
-        client_id=f"test_discord_client_id_{unique_suffix}",
-        secret=f"discord_test_secret_{unique_suffix}",
-    )
-    discord_app.sites.add(site)
+        discord_app = SocialApp.objects.create(
+            provider="discord",
+            name="Discord Browser Test App",
+            client_id="browser_test_discord_client_id",
+            secret="browser_test_discord_secret",  # noqa: S106
+        )
+        discord_app.sites.add(site)
 
-    yield {
-        "github": github_app,
-        "google": google_app,
-        "gitlab": gitlab_app,
-        "linkedin": linkedin_app,
-        "discord": discord_app,
-    }
+        apps_dict = {
+            "github": github_app,
+            "google": google_app,
+            "gitlab": gitlab_app,
+            "linkedin": linkedin_app,
+            "discord": discord_app,
+        }
 
-    # Cleanup after test
-    SocialApp.objects.all().delete()
+    yield apps_dict
+
+    # Cleanup after test - be thorough
+    with django_db_blocker.unblock():
+        SocialApp.objects.all().delete()
 
 
 @pytest.mark.django_db
@@ -127,10 +131,9 @@ class TestGitHubAuthenticationFlow(BaseBrowserTest):
     """Test GitHub authentication flow using browser automation."""
 
     @pytest.fixture(autouse=True)
-    def setup(self, live_server, social_apps):
-        """Set up test fixtures using shared social_apps fixture."""
+    def setup(self, live_server):
+        """Set up test fixtures."""
         self.live_server_url = live_server.url
-        self.social_apps = social_apps
 
     def test_login_page_displays_github_button(self, driver):
         """Test that login page shows GitHub authentication button."""
@@ -335,10 +338,9 @@ class TestGoogleAuthenticationFlow(BaseBrowserTest):
     """Test Google authentication flow using browser automation."""
 
     @pytest.fixture(autouse=True)
-    def setup(self, live_server, social_apps):
-        """Set up test fixtures using shared social_apps fixture."""
+    def setup(self, live_server):
+        """Set up test fixtures."""
         self.live_server_url = live_server.url
-        self.social_apps = social_apps
 
     def test_login_page_displays_google_button(self, driver):
         """Test that login page shows Google authentication button."""
@@ -489,10 +491,9 @@ class TestGitLabAuthenticationFlow(BaseBrowserTest):
     """Test GitLab authentication flow using browser automation."""
 
     @pytest.fixture(autouse=True)
-    def setup(self, live_server, social_apps):
-        """Set up test fixtures using shared social_apps fixture."""
+    def setup(self, live_server):
+        """Set up test fixtures."""
         self.live_server_url = live_server.url
-        self.social_apps = social_apps
 
     def test_login_page_displays_gitlab_button(self, driver):
         """Test that login page shows GitLab authentication button."""
@@ -645,10 +646,9 @@ class TestDiscordAuthenticationFlow(BaseBrowserTest):
     """Test Discord authentication flow using browser automation."""
 
     @pytest.fixture(autouse=True)
-    def setup(self, live_server, social_apps):
-        """Set up test fixtures using shared social_apps fixture."""
+    def setup(self, live_server):
+        """Set up test fixtures."""
         self.live_server_url = live_server.url
-        self.social_apps = social_apps
 
     def test_login_page_displays_discord_button(self, driver):
         """Test that login page shows Discord authentication button."""
@@ -806,10 +806,9 @@ class TestLinkedInAuthenticationFlow(BaseBrowserTest):
     """Test LinkedIn OAuth authentication flow using browser automation."""
 
     @pytest.fixture(autouse=True)
-    def setup(self, live_server, social_apps):
-        """Set up test fixtures using shared social_apps fixture."""
+    def setup(self, live_server):
+        """Set up test fixtures."""
         self.live_server_url = live_server.url
-        self.social_apps = social_apps
 
     def test_login_page_displays_linkedin_button(self, driver):
         """Test that login page shows LinkedIn authentication button."""

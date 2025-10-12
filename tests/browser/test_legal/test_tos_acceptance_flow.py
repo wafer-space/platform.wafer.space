@@ -70,7 +70,7 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
 
         # Login
         login_page = LoginPage(driver, live_server_url)
-        login_page.navigate_to_login()
+        login_page.go_to_login_page()
         login_page.login(user.username, test_password)
 
         # Should be redirected to TOS acceptance page
@@ -94,7 +94,7 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
         user.save()
 
         login_page = LoginPage(driver, live_server_url)
-        login_page.navigate_to_login()
+        login_page.go_to_login_page()
         login_page.login(user.username, test_password)
 
         # Should be on TOS accept page
@@ -137,7 +137,7 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
 
         # Login
         login_page = LoginPage(driver, live_server_url)
-        login_page.navigate_to_login()
+        login_page.go_to_login_page()
         login_page.login(user.username, test_password)
 
         # Should NOT be redirected to TOS accept page
@@ -161,7 +161,7 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
         user.save()
 
         login_page = LoginPage(driver, live_server_url)
-        login_page.navigate_to_login()
+        login_page.go_to_login_page()
         login_page.login(user.username, test_password)
 
         # On TOS accept page
@@ -191,7 +191,7 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
         user.save()
 
         login_page = LoginPage(driver, live_server_url)
-        login_page.navigate_to_login()
+        login_page.go_to_login_page()
         login_page.login(user.username, test_password)
 
         # Should be on TOS page
@@ -217,7 +217,7 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
         user.save()
 
         login_page = LoginPage(driver, live_server_url)
-        login_page.navigate_to_login()
+        login_page.go_to_login_page()
         login_page.login(user.username, test_password)
 
         # User is redirected to TOS page
@@ -250,7 +250,7 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
         user.save()
 
         login_page = LoginPage(driver, live_server_url)
-        login_page.navigate_to_login()
+        login_page.go_to_login_page()
         login_page.login(user.username, test_password)
 
         # On TOS accept page
