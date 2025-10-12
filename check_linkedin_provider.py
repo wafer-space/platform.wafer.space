@@ -54,10 +54,28 @@ for app in linkedin_social_apps:
 print("\n3. Provider Registry:")
 print("-" * 80)
 registry = providers.registry
-linkedin_providers = [p for p in registry.get_list() if "linkedin" in p.id.lower()]
-print(f"Registered LinkedIn providers: {len(linkedin_providers)}")
-for provider in linkedin_providers:
-    print(f"  - ID: {provider.id}, Name: {provider.name}")
+all_provider_classes = []
+try:
+    # Try to get all registered providers
+    for provider_id in dir(registry):
+        if not provider_id.startswith('_'):
+            try:
+                provider_class = registry.by_id(provider_id)
+                all_provider_classes.append(provider_class)
+            except Exception:
+                pass
+    linkedin_providers = [p for p in all_provider_classes if "linkedin" in p.id.lower()]
+    print(f"Registered LinkedIn providers: {len(linkedin_providers)}")
+    for provider in linkedin_providers:
+        print(f"  - ID: {provider.id}, Name: {provider.name}")
+except Exception as e:
+    print(f"Could not enumerate registry: {e}")
+    print("Trying direct lookup...")
+    try:
+        linkedin_oidc = registry.by_id("linkedin")
+        print(f"  - Found via direct lookup: ID='{linkedin_oidc.id}', Name='{linkedin_oidc.name}'")
+    except Exception as e2:
+        print(f"  - Direct lookup failed: {e2}")
 
 # Check what providers are available in templates
 print("\n4. Template Context (what templates see):")
