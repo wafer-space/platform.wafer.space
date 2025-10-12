@@ -4,6 +4,7 @@ import pytest
 from django.core import mail
 from django.test import override_settings
 
+from wafer_space.legal.models import TermsOfServiceAcceptance
 from wafer_space.legal.models import TermsOfServiceNotification
 from wafer_space.legal.tasks import send_bulk_tos_notifications
 from wafer_space.legal.tasks import send_tos_update_email
@@ -11,6 +12,10 @@ from wafer_space.users.tests.factories import UserFactory
 
 from .factories import TermsOfServiceFactory
 from .factories import TermsOfServiceNotificationFactory
+
+# Test constants
+EXPECTED_BULK_USER_COUNT = 3
+EXPECTED_SPECIFIC_USER_COUNT = 2
 
 
 @pytest.mark.django_db
@@ -106,22 +111,25 @@ class TestSendBulkTOSNotifications:
     def test_send_bulk_notifications(self):
         """Test sending bulk notifications to all users."""
         # Create users who haven't accepted TOS
-        users = [UserFactory() for _ in range(3)]
+        users = [UserFactory() for _ in range(EXPECTED_BULK_USER_COUNT)]
         tos = TermsOfServiceFactory(is_active=True)
 
         # Send bulk notifications only to these specific users
         user_ids = [u.id for u in users]
         result = send_bulk_tos_notifications(tos.id, user_ids=user_ids)
 
-        assert result["created"] == 3
-        assert result["queued"] == 3
-        assert result["total_users"] == 3
+        assert result["created"] == EXPECTED_BULK_USER_COUNT
+        assert result["queued"] == EXPECTED_BULK_USER_COUNT
+        assert result["total_users"] == EXPECTED_BULK_USER_COUNT
 
         # Check notifications were created
-        assert TermsOfServiceNotification.objects.filter(tos_version=tos).count() == 3
+        assert (
+            TermsOfServiceNotification.objects.filter(tos_version=tos).count()
+            == EXPECTED_BULK_USER_COUNT
+        )
 
         # Check emails were queued (sent in eager mode)
-        assert len(mail.outbox) == 3
+        assert len(mail.outbox) == EXPECTED_BULK_USER_COUNT
 
     @override_settings(CELERY_TASK_ALWAYS_EAGER=True)
     def test_send_bulk_to_specific_users(self):
@@ -135,10 +143,13 @@ class TestSendBulkTOSNotifications:
         # Send only to user1 and user2
         result = send_bulk_tos_notifications(tos.id, user_ids=[user1.id, user2.id])
 
-        assert result["queued"] == 2
+        assert result["queued"] == EXPECTED_SPECIFIC_USER_COUNT
 
-        # Check only 2 notifications were created
-        assert TermsOfServiceNotification.objects.filter(tos_version=tos).count() == 2
+        # Check only specific number of notifications were created
+        assert (
+            TermsOfServiceNotification.objects.filter(tos_version=tos).count()
+            == EXPECTED_SPECIFIC_USER_COUNT
+        )
         assert TermsOfServiceNotification.objects.filter(
             user=user1,
             tos_version=tos,
@@ -182,8 +193,6 @@ class TestSendBulkTOSNotifications:
     @override_settings(CELERY_TASK_ALWAYS_EAGER=True)
     def test_bulk_excludes_users_who_accepted(self):
         """Test that bulk send excludes users who already accepted."""
-        from wafer_space.legal.models import TermsOfServiceAcceptance
-
         user1 = UserFactory()
         user2 = UserFactory()
         tos = TermsOfServiceFactory(is_active=True)
@@ -226,7 +235,7 @@ class TestSendBulkTOSNotifications:
         tos = TermsOfServiceFactory(is_active=True)
 
         # Create failed notification
-        notification = TermsOfServiceNotificationFactory(
+        TermsOfServiceNotificationFactory(
             user=user,
             tos_version=tos,
             status=TermsOfServiceNotification.Status.FAILED,

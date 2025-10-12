@@ -1,6 +1,7 @@
 """Tests for legal app models."""
 
 import pytest
+from django.contrib.auth.models import AnonymousUser
 from django.db import IntegrityError
 
 from wafer_space.legal.models import TermsOfService
@@ -60,7 +61,7 @@ class TestTermsOfService:
 
     def test_version_unique(self):
         """Test that version numbers must be unique."""
-        tos1 = TermsOfServiceFactory(version="1.0.0")
+        TermsOfServiceFactory(version="1.0.0")
         with pytest.raises(IntegrityError):
             TermsOfServiceFactory(version="1.0.0")
 
@@ -128,8 +129,6 @@ class TestTermsOfServiceAcceptance:
 
     def test_has_accepted_active_anonymous(self):
         """Test that anonymous users return False."""
-        from django.contrib.auth.models import AnonymousUser
-
         anonymous = AnonymousUser()
         assert not TermsOfServiceAcceptance.has_accepted_active(anonymous)
 

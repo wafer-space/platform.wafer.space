@@ -1,5 +1,7 @@
 """Tests for TOS acceptance middleware."""
 
+from http import HTTPStatus
+
 import pytest
 from django.contrib.auth.models import AnonymousUser
 from django.http import HttpResponse
@@ -41,7 +43,7 @@ class TestTOSAcceptanceMiddleware:
 
         response = middleware(request)
 
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
         assert response.content == b"OK"
 
     def test_superuser_bypasses_tos_check(self, middleware, rf):
@@ -56,7 +58,7 @@ class TestTOSAcceptanceMiddleware:
 
         response = middleware(request)
 
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
         assert response.content == b"OK"
 
     def test_exempt_urls_not_redirected(self, middleware, rf):
@@ -82,10 +84,14 @@ class TestTOSAcceptanceMiddleware:
 
             response = middleware(request)
 
-            assert response.status_code == 200, f"Failed for {url}"
+            assert response.status_code == HTTPStatus.OK, f"Failed for {url}"
 
     def test_user_without_acceptance_should_not_have_accepted(self):
-        """Test that user without TOS acceptance returns False from has_accepted_active."""
+        """Test that user without TOS acceptance returns False.
+
+        The has_accepted_active method should return False for users who have
+        not accepted the active TOS version.
+        """
         user = UserFactory()
         TermsOfServiceFactory(is_active=True)
 
@@ -104,7 +110,7 @@ class TestTOSAcceptanceMiddleware:
 
         response = middleware(request)
 
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
         assert response.content == b"OK"
 
     def test_no_active_tos_allowed_through(self, middleware, rf):
@@ -119,7 +125,7 @@ class TestTOSAcceptanceMiddleware:
 
         response = middleware(request)
 
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
         assert response.content == b"OK"
 
     def test_user_on_tos_accept_page_not_redirected(self, middleware, rf):
@@ -133,7 +139,7 @@ class TestTOSAcceptanceMiddleware:
 
         response = middleware(request)
 
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
 
     def test_old_acceptance_not_valid_for_new_version(self):
         """Test that acceptance of old TOS version doesn't count for new version."""

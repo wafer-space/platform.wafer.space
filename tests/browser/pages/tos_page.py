@@ -1,5 +1,6 @@
 """Page Object Model for TOS pages."""
 
+from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.common.by import By
 
 from .base_page import BasePage
@@ -62,13 +63,14 @@ class TOSAcceptPage(BasePage):
         """Get alert message text."""
         try:
             return self.get_text(self.ALERT_MESSAGE)
-        except Exception:
+        except NoSuchElementException:
             return None
 
     def is_checkbox_present(self):
         """Check if agree checkbox is present."""
         try:
             self.find_element(self.AGREE_CHECKBOX)
-            return True
-        except Exception:
+        except NoSuchElementException:
             return False
+        else:
+            return True

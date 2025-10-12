@@ -29,7 +29,7 @@ class TOSAcceptanceMiddleware:
             return self.get_response(request)
 
         # Check if user has accepted the active TOS
-        from .models import TermsOfServiceAcceptance
+        from .models import TermsOfServiceAcceptance  # noqa: PLC0415
 
         if not TermsOfServiceAcceptance.has_accepted_active(request.user):
             # Redirect to TOS acceptance page
@@ -66,8 +66,4 @@ class TOSAcceptanceMiddleware:
             media_path = urlparse(settings.MEDIA_URL).path or settings.MEDIA_URL
             exempt_patterns.append(media_path)
 
-        for pattern in exempt_patterns:
-            if pattern and path.startswith(pattern):
-                return True
-
-        return False
+        return any(pattern and path.startswith(pattern) for pattern in exempt_patterns)

@@ -24,7 +24,7 @@ def send_tos_update_email(self, notification_id: int) -> dict[str, str]:
         dict: Status information about the email send
 
     """
-    from .models import TermsOfServiceNotification
+    from .models import TermsOfServiceNotification  # noqa: PLC0415
 
     try:
         notification = TermsOfServiceNotification.objects.select_related(
@@ -56,8 +56,12 @@ def send_tos_update_email(self, notification_id: int) -> dict[str, str]:
         plain_message = strip_tags(html_message)
 
         # Send email
+        subject = (
+            f"Updated Terms of Service - wafer.space "
+            f"v{notification.tos_version.version}"
+        )
         send_mail(
-            subject=f"Updated Terms of Service - wafer.space v{notification.tos_version.version}",
+            subject=subject,
             message=plain_message,
             from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[notification.user.email],
@@ -73,23 +77,19 @@ def send_tos_update_email(self, notification_id: int) -> dict[str, str]:
             notification.user.email,
             notification.tos_version.version,
         )
-
-        return {
-            "status": "success",
-            "message": f"Email sent to {notification.user.email}",
-        }
-
     except TermsOfServiceNotification.DoesNotExist:
         error_msg = f"TermsOfServiceNotification {notification_id} does not exist"
-        logger.error(error_msg)
+        logger.exception(error_msg)
         return {
             "status": "error",
             "message": error_msg,
         }
-
     except Exception as exc:
         error_msg = f"Failed to send TOS update email: {exc!s}"
-        logger.exception("Error sending TOS update email for notification %s", notification_id)
+        logger.exception(
+            "Error sending TOS update email for notification %s",
+            notification_id,
+        )
 
         # Mark notification as failed
         try:
@@ -99,33 +99,42 @@ def send_tos_update_email(self, notification_id: int) -> dict[str, str]:
 
         # Retry the task
         if self.request.retries < self.max_retries:
-            raise self.retry(exc=exc)
+            raise self.retry(exc=exc) from exc
 
         return {
             "status": "failed",
             "message": error_msg,
         }
+    else:
+        return {
+            "status": "success",
+            "message": f"Email sent to {notification.user.email}",
+        }
 
 
 @shared_task
-def send_bulk_tos_notifications(tos_version_id: int, user_ids: list[int] | None = None) -> dict[str, int]:
+def send_bulk_tos_notifications(
+    tos_version_id: int,
+    user_ids: list[int] | None = None,
+) -> dict[str, int]:
     """Send TOS update notifications to multiple users.
 
     Args:
         tos_version_id: ID of the TermsOfService version
-        user_ids: Optional list of user IDs. If None, sends to all users who haven't accepted.
+        user_ids: Optional list of user IDs. If None, sends to all users
+            who haven't accepted.
 
     Returns:
         dict: Count of notifications created and queued
 
     """
-    from django.contrib.auth import get_user_model
+    from django.contrib.auth import get_user_model  # noqa: PLC0415
 
-    from .models import TermsOfService
-    from .models import TermsOfServiceAcceptance
-    from .models import TermsOfServiceNotification
+    from .models import TermsOfService  # noqa: PLC0415
+    from .models import TermsOfServiceAcceptance  # noqa: PLC0415
+    from .models import TermsOfServiceNotification  # noqa: PLC0415
 
-    User = get_user_model()
+    user_model = get_user_model()
 
     try:
         tos_version = TermsOfService.objects.get(id=tos_version_id)
@@ -137,12 +146,12 @@ def send_bulk_tos_notifications(tos_version_id: int, user_ids: list[int] | None 
 
         # Get users who need to be notified
         if user_ids:
-            users = User.objects.filter(id__in=user_ids).exclude(
+            users = user_model.objects.filter(id__in=user_ids).exclude(
                 id__in=accepted_user_ids,
             )
         else:
             # Get all active users who haven't accepted this version
-            users = User.objects.filter(
+            users = user_model.objects.filter(
                 is_active=True,
             ).exclude(
                 id__in=accepted_user_ids,
@@ -184,7 +193,7 @@ def send_bulk_tos_notifications(tos_version_id: int, user_ids: list[int] | None 
 
     except TermsOfService.DoesNotExist:
         error_msg = f"TermsOfService {tos_version_id} does not exist"
-        logger.error(error_msg)
+        logger.exception(error_msg)
         return {
             "created": 0,
             "queued": 0,

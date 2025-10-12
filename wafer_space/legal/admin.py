@@ -8,6 +8,7 @@ from django.utils.html import format_html
 from .models import TermsOfService
 from .models import TermsOfServiceAcceptance
 from .models import TermsOfServiceNotification
+from .tasks import send_tos_update_email
 
 
 @admin.register(TermsOfService)
@@ -205,8 +206,6 @@ class TermsOfServiceNotificationAdmin(admin.ModelAdmin):
     @admin.action(description="Resend selected notifications")
     def resend_notifications(self, request, queryset):
         """Resend failed or pending notifications."""
-        from .tasks import send_tos_update_email
-
         count = 0
         for notification in queryset:
             if notification.status in [

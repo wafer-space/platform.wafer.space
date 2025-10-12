@@ -3,6 +3,7 @@
 import pytest
 from django.contrib.auth import get_user_model
 
+from tests.browser.base import BaseBrowserTest
 from tests.browser.pages.login_page import LoginPage
 from tests.browser.pages.tos_page import TOSAcceptPage
 from tests.browser.pages.tos_page import TOSDisplayPage
@@ -12,16 +13,20 @@ from wafer_space.users.tests.factories import UserFactory
 
 User = get_user_model()
 
+# Test constants
+TEST_PASSWORD = "testpass123"  # noqa: S105
+MIN_VERSION_DISPLAY_COUNT = 2  # Minimum times version should appear on page
+
 
 @pytest.mark.django_db
 @pytest.mark.browser
-class TestTOSAcceptanceFlow:
+class TestTOSAcceptanceFlow(BaseBrowserTest):
     """Test the complete TOS acceptance flow."""
 
     def test_public_tos_display(self, driver, live_server_url):
         """Test that TOS can be viewed publicly without login."""
         # Create active TOS
-        tos = TermsOfServiceFactory(
+        TermsOfServiceFactory(
             is_active=True,
             version="1.0.0",
             content="Test TOS Content Lorem Ipsum",
@@ -46,7 +51,9 @@ class TestTOSAcceptanceFlow:
         # Should redirect to login page
         assert "/accounts/login/" in driver.current_url
 
-    def test_new_user_redirected_to_tos(self, driver, live_server_url, django_user_model):
+    def test_new_user_redirected_to_tos(
+        self, driver, live_server_url, django_user_model
+    ):
         """Test that new user is redirected to TOS after login."""
         # Create active TOS
         TermsOfServiceFactory(
@@ -56,7 +63,7 @@ class TestTOSAcceptanceFlow:
         )
 
         # Create user
-        test_password = "testpass123"
+        test_password = TEST_PASSWORD
         user = UserFactory()
         user.set_password(test_password)
         user.save()
@@ -69,7 +76,9 @@ class TestTOSAcceptanceFlow:
         # Should be redirected to TOS acceptance page
         assert "/legal/tos/accept/" in driver.current_url
 
-    def test_user_can_accept_tos(self, driver, live_server_url, django_user_model):
+    def test_user_can_accept_tos(
+        self, driver, live_server_url, django_user_model
+    ):
         """Test that user can accept TOS."""
         # Create active TOS
         tos = TermsOfServiceFactory(
@@ -79,7 +88,7 @@ class TestTOSAcceptanceFlow:
         )
 
         # Create and login user
-        test_password = "testpass123"
+        test_password = TEST_PASSWORD
         user = UserFactory()
         user.set_password(test_password)
         user.save()
@@ -107,13 +116,15 @@ class TestTOSAcceptanceFlow:
             tos_version=tos,
         ).exists()
 
-    def test_user_with_acceptance_not_blocked(self, driver, live_server_url, django_user_model):
+    def test_user_with_acceptance_not_blocked(
+        self, driver, live_server_url, django_user_model
+    ):
         """Test that user who has accepted TOS can access site."""
         # Create active TOS
         tos = TermsOfServiceFactory(is_active=True)
 
         # Create user and acceptance
-        test_password = "testpass123"
+        test_password = TEST_PASSWORD
         user = UserFactory()
         user.set_password(test_password)
         user.save()
@@ -136,13 +147,15 @@ class TestTOSAcceptanceFlow:
         driver.get(f"{live_server_url}/about/")
         assert "/legal/tos/accept/" not in driver.current_url
 
-    def test_cannot_submit_without_checkbox(self, driver, live_server_url, django_user_model):
+    def test_cannot_submit_without_checkbox(
+        self, driver, live_server_url, django_user_model
+    ):
         """Test that TOS cannot be accepted without checking the box."""
         # Create active TOS
         TermsOfServiceFactory(is_active=True)
 
         # Create and login user
-        test_password = "testpass123"
+        test_password = TEST_PASSWORD
         user = UserFactory()
         user.set_password(test_password)
         user.save()
@@ -164,13 +177,15 @@ class TestTOSAcceptanceFlow:
         # Verify acceptance was NOT created
         assert not TermsOfServiceAcceptance.objects.filter(user=user).exists()
 
-    def test_tos_blocks_all_site_access(self, driver, live_server_url, django_user_model):
+    def test_tos_blocks_all_site_access(
+        self, driver, live_server_url, django_user_model
+    ):
         """Test that TOS blocks access to all non-exempt pages."""
         # Create active TOS
         TermsOfServiceFactory(is_active=True)
 
         # Create and login user
-        test_password = "testpass123"
+        test_password = TEST_PASSWORD
         user = UserFactory()
         user.set_password(test_password)
         user.save()
@@ -188,13 +203,15 @@ class TestTOSAcceptanceFlow:
         # Should be redirected back to TOS page
         assert "/legal/tos/accept/" in driver.current_url
 
-    def test_redirect_after_acceptance(self, driver, live_server_url, django_user_model):
+    def test_redirect_after_acceptance(
+        self, driver, live_server_url, django_user_model
+    ):
         """Test that user is redirected to original page after accepting TOS."""
         # Create active TOS
-        tos = TermsOfServiceFactory(is_active=True)
+        TermsOfServiceFactory(is_active=True)
 
         # Create and login user
-        test_password = "testpass123"
+        test_password = TEST_PASSWORD
         user = UserFactory()
         user.set_password(test_password)
         user.save()
@@ -215,7 +232,9 @@ class TestTOSAcceptanceFlow:
         assert "/about/" in driver.current_url
         assert "/legal/tos/accept/" not in driver.current_url
 
-    def test_tos_version_displayed_on_accept_page(self, driver, live_server_url, django_user_model):
+    def test_tos_version_displayed_on_accept_page(
+        self, driver, live_server_url, django_user_model
+    ):
         """Test that TOS version is clearly displayed on accept page."""
         # Create active TOS with specific version
         TermsOfServiceFactory(
@@ -225,7 +244,7 @@ class TestTOSAcceptanceFlow:
         )
 
         # Create and login user
-        test_password = "testpass123"
+        test_password = TEST_PASSWORD
         user = UserFactory()
         user.set_password(test_password)
         user.save()
@@ -240,4 +259,4 @@ class TestTOSAcceptanceFlow:
         # Version should be displayed multiple times
         page_source = driver.page_source
         assert "2.5.3" in page_source
-        assert page_source.count("2.5.3") >= 2  # Should appear at least twice
+        assert page_source.count("2.5.3") >= MIN_VERSION_DISPLAY_COUNT

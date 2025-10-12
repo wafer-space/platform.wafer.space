@@ -1,5 +1,7 @@
 """Tests for legal app views."""
 
+from http import HTTPStatus
+
 import pytest
 from django.contrib.messages import get_messages
 from django.test import Client
@@ -24,7 +26,7 @@ class TestTOSDisplayView:
 
     def test_display_active_tos(self, client):
         """Test displaying active TOS."""
-        active_tos = TermsOfServiceFactory(
+        TermsOfServiceFactory(
             is_active=True,
             version="1.0.0",
             content="Test TOS content",
@@ -32,7 +34,7 @@ class TestTOSDisplayView:
 
         response = client.get(reverse("legal:tos_display"))
 
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
         assert "Test TOS content" in response.content.decode()
         assert "1.0.0" in response.content.decode()
 
@@ -43,7 +45,7 @@ class TestTOSDisplayView:
 
         response = client.get(reverse("legal:tos_display"))
 
-        assert response.status_code == 404
+        assert response.status_code == HTTPStatus.NOT_FOUND
 
     def test_display_public_access(self, client):
         """Test that TOS display is publicly accessible."""
@@ -52,7 +54,7 @@ class TestTOSDisplayView:
         # No login required
         response = client.get(reverse("legal:tos_display"))
 
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
 
 
 @pytest.mark.django_db
@@ -63,13 +65,13 @@ class TestTOSAcceptView:
         """Test that TOS accept view requires login."""
         response = client.get(reverse("legal:tos_accept"))
 
-        assert response.status_code == 302
+        assert response.status_code == HTTPStatus.FOUND
         assert "/accounts/login/" in response.url
 
     def test_accept_view_get(self, client):
         """Test GET request to TOS accept view."""
         user = UserFactory()
-        active_tos = TermsOfServiceFactory(
+        TermsOfServiceFactory(
             is_active=True,
             version="1.0.0",
             content="Test TOS content",
@@ -78,7 +80,7 @@ class TestTOSAcceptView:
         client.force_login(user)
         response = client.get(reverse("legal:tos_accept"))
 
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
         assert "Test TOS content" in response.content.decode()
         assert "1.0.0" in response.content.decode()
         assert "agree" in response.content.decode().lower()
@@ -101,7 +103,7 @@ class TestTOSAcceptView:
             follow=True,
         )
 
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
         assert response.redirect_chain[-1][0] == "/about/"
 
         # Check acceptance was created
@@ -126,7 +128,7 @@ class TestTOSAcceptView:
         client.force_login(user)
         response = client.post(reverse("legal:tos_accept"), {})
 
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
 
         # Check error message
         messages = list(get_messages(response.wsgi_request))
@@ -144,7 +146,7 @@ class TestTOSAcceptView:
         client.force_login(user)
         response = client.get(reverse("legal:tos_accept"), follow=True)
 
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
 
         # Check info message
         messages = list(get_messages(response.wsgi_request))
@@ -158,7 +160,7 @@ class TestTOSAcceptView:
         client.force_login(user)
         response = client.get(reverse("legal:tos_accept"), follow=True)
 
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
 
         # Check error message
         messages = list(get_messages(response.wsgi_request))
@@ -167,10 +169,10 @@ class TestTOSAcceptView:
     def test_accept_view_records_ip_address(self, client):
         """Test that IP address is recorded correctly."""
         user = UserFactory()
-        active_tos = TermsOfServiceFactory(is_active=True)
+        TermsOfServiceFactory(is_active=True)
 
         client.force_login(user)
-        response = client.post(
+        client.post(
             reverse("legal:tos_accept"),
             {"agree": "on"},
             REMOTE_ADDR="192.168.1.100",
@@ -182,10 +184,10 @@ class TestTOSAcceptView:
     def test_accept_view_records_user_agent(self, client):
         """Test that user agent is recorded correctly."""
         user = UserFactory()
-        active_tos = TermsOfServiceFactory(is_active=True)
+        TermsOfServiceFactory(is_active=True)
 
         client.force_login(user)
-        response = client.post(
+        client.post(
             reverse("legal:tos_accept"),
             {"agree": "on"},
             HTTP_USER_AGENT="Mozilla/5.0 Test Browser",
@@ -197,10 +199,10 @@ class TestTOSAcceptView:
     def test_accept_view_handles_x_forwarded_for(self, client):
         """Test that X-Forwarded-For header is handled correctly."""
         user = UserFactory()
-        active_tos = TermsOfServiceFactory(is_active=True)
+        TermsOfServiceFactory(is_active=True)
 
         client.force_login(user)
-        response = client.post(
+        client.post(
             reverse("legal:tos_accept"),
             {"agree": "on"},
             HTTP_X_FORWARDED_FOR="10.0.0.1, 192.168.1.1",
