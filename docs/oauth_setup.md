@@ -4,50 +4,30 @@ This guide walks through setting up OAuth applications for social authentication
 
 ## Quick Reference - wafer-space OAuth Applications
 
-### GitHub OAuth Apps (wafer-space organization)
-- **Development Client ID**: `Ov23liLB7RRJUzku13dU`
-- **Production Client ID**: `Ov23linEhI33aev2uGSU`
-- **Management URL**: https://github.com/wafer-space (organization settings)
-
-### GitLab OAuth Apps (wafer-space group ID: 116401955)
-- **Development Client ID**: `2a29dee626b3c8b544f6f2c3a8042f912130bd040f4d3c60ef0e5864a4962aaa`
-- **Production Client ID**: `f0fde384db4cd0fe11041488a6b87e9d3d20223385b78d1ba1ed4045fbea6c16`
-- **Management URL**: https://gitlab.com/groups/wafer-space/-/settings/applications
-
-### Google OAuth Apps (wafer-space project)
-- **Development Client ID**: `62545893239-jiesk1vfk22j87cth4ukq4alluc3nqhc.apps.googleusercontent.com`
-- **Production Client ID**: `62545893239-pgg1lcg28u9suivjh4nso9t8mev5qua2.apps.googleusercontent.com`
-- **Management URL**: https://console.cloud.google.com/apis/credentials
-
-### Discord OAuth Apps (wafer-space apps)
-- **Development Client ID**: `1426055950221054052`
-- **Development Client Secret**: ✅ Pre-configured (included in settings)
-- **Production Client ID**: `1426065281138167841`
-- **Production Client Secret**: ✅ Pre-configured (included in settings)
-- **Management URL**: https://discord.com/developers/applications
-
-### LinkedIn OAuth Apps (wafer-space apps)
-- **Development Client ID**: `86j973nx41hlk7`
-- **Development Client Secret**: ✅ Pre-configured (included in settings)
-- **Production Client ID**: `86q1gs3uqhpqt1`
-- **Production Client Secret**: ✅ Pre-configured (included in settings)
-- **Management URL**: https://www.linkedin.com/developers/apps
+| Provider | Development Client ID | Production Client ID | Secrets | Management URL |
+|----------|----------------------|---------------------|---------|----------------|
+| **GitHub** | `Ov23liLB7RRJUzku13dU` | `Ov23linEhI33aev2uGSU` | Environment variable required | [github.com/wafer-space](https://github.com/wafer-space) |
+| **Google** | `62545893239-jiesk1vfk22j87cth4ukq4alluc3nqhc.apps.googleusercontent.com` | `62545893239-pgg1lcg28u9suivjh4nso9t8mev5qua2.apps.googleusercontent.com` | Environment variable required | [console.cloud.google.com](https://console.cloud.google.com/apis/credentials) |
+| **GitLab** | `2a29dee626b3c8b544f6f2c3a8042f912130bd040f4d3c60ef0e5864a4962aaa` | `f0fde384db4cd0fe11041488a6b87e9d3d20223385b78d1ba1ed4045fbea6c16` | Environment variable required | [gitlab.com/groups/wafer-space](https://gitlab.com/groups/wafer-space/-/settings/applications) |
+| **Discord** | `1426055950221054052` | `1426065281138167841` | ✅ Pre-configured (zero setup) | [discord.com/developers](https://discord.com/developers/applications) |
+| **LinkedIn** | `86j973nx41hlk7` | `86q1gs3uqhpqt1` | ✅ Pre-configured (zero setup) | [linkedin.com/developers](https://www.linkedin.com/developers/apps) |
 
 ### Configuration Notes
-- ✅ **Client IDs** are configured in Django settings (safe to commit)
-- 🔐 **Client Secrets** are stored in environment variables (never committed)*
-- 🌍 Both development and production environments are fully configured
-- 📱 All apps are configured as "Confidential" for server-side web applications
-- ⚡ **Zero-Setup Development**: Discord and LinkedIn have pre-configured development secrets for instant developer experience
 
-*Except Discord and LinkedIn development apps which include secrets for developer convenience
+- ✅ **Client IDs** are configured in Django settings for all providers (safe to commit)
+- 🔐 **Client Secrets** are managed via environment variables or pre-configured defaults
+- 🌍 Both development and production environments are fully configured out of the box
+- 📱 All OAuth apps are configured as "Confidential" for secure server-side web applications
+- ⚡ **Zero-Setup Development**: Discord and LinkedIn include pre-configured secrets for instant testing
+- 🔑 **GitHub, Google, GitLab**: Require environment variable for client secret only (Client IDs pre-configured)
+- 🚀 **Quick Start**: Most developers can begin testing OAuth immediately with minimal configuration
 
 ## Table of Contents
 - [GitHub OAuth Setup](#github-oauth-setup)
 - [Google OAuth Setup](#google-oauth-setup)
 - [GitLab OAuth Setup](#gitlab-oauth-setup)
-- [LinkedIn OAuth Setup](#linkedin-oauth-setup)
 - [Discord OAuth Setup](#discord-oauth-setup)
+- [LinkedIn OAuth Setup](#linkedin-oauth-setup)
 - [Environment Configuration](#environment-configuration)
 - [Testing OAuth Integration](#testing-oauth-integration)
 - [Troubleshooting](#troubleshooting)
@@ -158,6 +138,13 @@ The GitHub provider is configured to request the following scope:
 
 **Note**: The application only requests minimal scopes required for authentication. Organization membership information is not accessed unless explicitly configured.
 
+### Callback URL Reference
+
+- **Development**: `http://localhost:8081/accounts/github/login/callback/`
+- **Production**: `https://platform.wafer.space/accounts/github/login/callback/`
+
+**Pattern**: `/accounts/github/login/callback/`
+
 ## Google OAuth Setup
 
 ### Creating a Google OAuth Application
@@ -233,12 +220,21 @@ The Google provider is configured to request the following scopes:
 - `profile` - Basic profile information
 - `email` - Email address
 
+### Callback URL Reference
+
+- **Development**: `http://localhost:8081/accounts/google/login/callback/`
+- **Production**: `https://platform.wafer.space/accounts/google/login/callback/`
+
+**Pattern**: `/accounts/google/login/callback/`
+
 ### Important Notes
 
-- Google OAuth requires HTTPS in production
-- The consent screen must be configured before OAuth will work
-- Google has strict policies about redirect URI matching
-- Client IDs ending in `.apps.googleusercontent.com` are normal
+- **HTTPS Requirement**: Google OAuth requires HTTPS in production environments
+- **Consent Screen**: The OAuth consent screen must be configured before OAuth will work
+- **Redirect URI Matching**: Google enforces strict redirect URI matching, including protocol and port
+- **Client ID Format**: Client IDs ending in `.apps.googleusercontent.com` are normal and expected
+- **Testing Mode**: New apps start in "Testing" mode with up to 100 test users; publish for production
+- **Port Configuration**: Development uses port 8081 (not 8000) to match the project's `make runserver` configuration
 
 ## GitLab OAuth Setup
 
@@ -339,14 +335,22 @@ The GitLab provider is configured to request the following scopes:
 - `read_user` - Read access to user profile information
 - `email` - Read access to user email addresses
 
+### Callback URL Reference
+
+- **Development**: `http://localhost:8081/accounts/gitlab/login/callback/`
+- **Production**: `https://platform.wafer.space/accounts/gitlab/login/callback/`
+
+**Pattern**: `/accounts/gitlab/login/callback/`
+
 ### Important Notes
 
-- **Confidential Applications**: Always check "Confidential" for server-side web applications like Django. This allows the app to securely store the client secret on the server.
-- **Non-Confidential Applications**: Only use for mobile apps or single-page applications that cannot securely store secrets.
-- GitLab OAuth works with both GitLab.com and self-hosted GitLab instances
-- For self-hosted GitLab, you may need to configure the provider URL in Django settings
-- GitLab requires exact redirect URI matching
-- The "email" scope is essential for account linking functionality
+- **Confidential Applications**: Always check "Confidential" for server-side web applications like Django - this allows secure storage of client secrets on the server
+- **Non-Confidential Applications**: Only use for mobile apps or single-page applications that cannot securely store secrets
+- **Self-Hosted Support**: GitLab OAuth works with both GitLab.com and self-hosted GitLab instances
+- **Custom Instances**: For self-hosted GitLab, configure the provider URL in Django settings
+- **Redirect URI Matching**: GitLab requires exact redirect URI matching, including protocol, port, and trailing slash
+- **Email Scope**: The "email" scope is essential for account linking functionality
+- **Port Configuration**: Development uses port 8081 (not 8000) to match the project's `make runserver` configuration
 
 ## LinkedIn OAuth Setup
 
@@ -404,13 +408,18 @@ The GitLab provider is configured to request the following scopes:
 
 ### Environment Variables
 
-Add these to your `.env` file:
+LinkedIn OAuth credentials are pre-configured for development:
 
 ```bash
-# LinkedIn OAuth
-# Create app at: https://www.linkedin.com/developers/apps
-LINKEDIN_CLIENT_ID=your_linkedin_client_id_here
-LINKEDIN_CLIENT_SECRET=your_linkedin_client_secret_here
+# LinkedIn OAuth credentials for wafer-space apps
+# Client IDs and Secrets are configured in Django settings:
+# - Development: 86j973nx41hlk7 (settings/base.py) with included secret
+# - Production: 86q1gs3uqhpqt1 (settings/production.py) with included secret
+# - Works out of the box in both environments - no .env configuration needed!
+#
+# Optionally override if using a different app:
+# LINKEDIN_CLIENT_ID=your_custom_client_id_here
+# LINKEDIN_CLIENT_SECRET=your_custom_client_secret_here
 ```
 
 ### Scopes
@@ -423,16 +432,6 @@ The LinkedIn provider is configured to request the following scopes:
 
 **Note on Scopes**: LinkedIn is transitioning to OpenID Connect. While the current django-allauth configuration uses legacy v2 scopes, new applications should request the "Sign In with LinkedIn using OpenID Connect" product, which provides equivalent access through the OpenID Connect protocol.
 
-### Important Notes
-
-- **Company Page Requirement**: LinkedIn requires all OAuth apps to be associated with a Company Page. For development, you can use any page you have admin access to.
-- **Verification Process**: LinkedIn may require email verification or additional steps before your app can be used in production.
-- **Redirect URI Matching**: LinkedIn enforces strict redirect URI matching. Ensure the redirect URI in your app matches exactly, including the trailing slash.
-- **HTTPS Requirement**: Production environments must use HTTPS. HTTP is only allowed for localhost development.
-- **Rate Limiting**: LinkedIn has rate limits on API calls. For authentication, this is typically not an issue, but be aware for high-traffic applications.
-- **Scope Migration**: LinkedIn is migrating from v2 API to OpenID Connect. New apps should use "Sign In with LinkedIn using OpenID Connect" product for future compatibility.
-- **Testing**: During development, you can test with your own LinkedIn account. Once verified and approved, any LinkedIn user can authenticate.
-
 ### Callback URL Reference
 
 - **Development**: `http://localhost:8081/accounts/linkedin_oauth2/login/callback/`
@@ -440,7 +439,19 @@ The LinkedIn provider is configured to request the following scopes:
 
 **Pattern**: `/accounts/linkedin_oauth2/login/callback/`
 
-Note the provider name is `linkedin_oauth2` (not just `linkedin`) - this distinguishes it from the older LinkedIn OAuth 1.0 provider.
+**Note**: The provider name is `linkedin_oauth2` (not just `linkedin`) - this distinguishes it from the older LinkedIn OAuth 1.0 provider.
+
+### Important Notes
+
+- **Company Page Requirement**: LinkedIn requires all OAuth apps to be associated with a Company Page - for development, you can use any page you have admin access to
+- **Verification Process**: LinkedIn may require email verification or additional steps before your app can be used in production
+- **Redirect URI Matching**: LinkedIn enforces strict redirect URI matching - ensure the redirect URI matches exactly, including protocol, port, and trailing slash
+- **HTTPS Requirement**: Production environments must use HTTPS - HTTP is only allowed for localhost development
+- **Rate Limiting**: LinkedIn has rate limits on API calls - for authentication this is typically not an issue, but be aware for high-traffic applications
+- **Scope Migration**: LinkedIn is transitioning from v2 API to OpenID Connect - new apps should use "Sign In with LinkedIn using OpenID Connect" product for future compatibility
+- **Testing**: During development, you can test with your own LinkedIn account - once verified and approved, any LinkedIn user can authenticate
+- **Port Configuration**: Development uses port 8081 (not 8000) to match the project's `make runserver` configuration
+- **Zero Setup**: LinkedIn credentials are pre-configured in both development and production for instant testing
 
 ## Discord OAuth Setup
 
@@ -497,13 +508,21 @@ The Discord provider is configured to request the following scopes:
 - `identify` - Required to fetch user ID and basic profile information (Discord requirement)
 - `email` - Read access to user email address (required for account linking)
 
+### Callback URL Reference
+
+- **Development**: `http://localhost:8081/accounts/discord/login/callback/`
+- **Production**: `https://platform.wafer.space/accounts/discord/login/callback/`
+
+**Pattern**: `/accounts/discord/login/callback/`
+
 ### Important Notes
 
-- **Application vs Bot**: Discord applications can be both OAuth apps and bots. For wafer.space, we **only** use OAuth authentication for user login. You do **not** need to add a bot or configure bot permissions - ignore the "Bot" section in the sidebar.
+- **Application vs Bot**: Discord applications can be both OAuth apps and bots - for wafer.space, we **only** use OAuth authentication for user login - you do **not** need to add a bot or configure bot permissions
 - **Redirect URI Matching**: Discord requires exact redirect URI matching, including protocol (`http://` vs `https://`), port, and trailing slash
-- **Client Secret Security**: The client secret is only shown once when generated. If lost, reset it in the Discord Developer Portal and update your environment variables
-- **Email Verification**: Users must have a verified email on Discord. The `VERIFIED_EMAIL: True` setting ensures only verified Discord accounts can authenticate
+- **Client Secret Security**: The client secret is only shown once when generated - if lost, reset it in the Discord Developer Portal and update your environment variables
+- **Email Verification**: Users must have a verified email on Discord - the `VERIFIED_EMAIL: True` setting ensures only verified Discord accounts can authenticate
 - **Port Configuration**: Development uses port 8081 (not 8000) to match the project's `make runserver` configuration
+- **Zero Setup**: Discord credentials are pre-configured in both development and production for instant testing
 
 ## Environment Configuration
 
