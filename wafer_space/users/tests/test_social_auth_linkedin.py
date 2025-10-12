@@ -4,10 +4,8 @@ from typing import Any
 
 import pytest
 from allauth.socialaccount.models import SocialAccount
-from allauth.socialaccount.models import SocialApp
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.contrib.sites.models import Site
 from django.test import Client
 from django.test import TestCase
 from django.test import override_settings
@@ -32,7 +30,10 @@ class TestLinkedInAuthenticationFlow(TestCase):
         """Set up test environment."""
         self.client = Client()
         self.login_url = reverse("account_login")
-        self.linkedin_login_url = reverse("openid_connect_login", kwargs={"provider_id": "linkedin"})
+        self.linkedin_login_url = reverse(
+            "openid_connect_login",
+            kwargs={"provider_id": "linkedin"},
+        )
 
         # LinkedIn now uses OpenID Connect provider configured in settings
         # No need to create database SocialApp objects - using configuration-based apps
@@ -164,7 +165,10 @@ class TestLinkedInAuthenticationSecurity(TestCase):
 
     def test_linkedin_oauth_uses_state_parameter(self):
         """Test that LinkedIn OAuth uses state parameter for CSRF protection."""
-        linkedin_login_url = reverse("openid_connect_login", kwargs={"provider_id": "linkedin"})
+        linkedin_login_url = reverse(
+            "openid_connect_login",
+            kwargs={"provider_id": "linkedin"},
+        )
         response = self.client.get(linkedin_login_url)
 
         # Check that state parameter is included (CSRF protection) if redirecting
@@ -177,7 +181,10 @@ class TestLinkedInAuthenticationSecurity(TestCase):
 
     def test_linkedin_callback_validates_state(self):
         """Test that LinkedIn callback validates state parameter."""
-        callback_url = reverse("openid_connect_callback", kwargs={"provider_id": "linkedin"})
+        callback_url = reverse(
+            "openid_connect_callback",
+            kwargs={"provider_id": "linkedin"},
+        )
 
         # Try callback without state parameter (should fail)
         response = self.client.get(callback_url)
@@ -204,11 +211,17 @@ class TestLinkedInAuthenticationSecurity(TestCase):
         apps = openid_config.get("APPS", [])
         if apps:
             # If APPS exists, find LinkedIn config
-            linkedin_app = next((app for app in apps if app.get("provider_id") == "linkedin"), None)
+            linkedin_app = next(
+                (app for app in apps if app.get("provider_id") == "linkedin"),
+                None,
+            )
             assert linkedin_app is not None
             # Name varies between environments (test vs production)
             assert "LinkedIn" in linkedin_app.get("name", "")
-            assert linkedin_app.get("settings", {}).get("server_url") == "https://www.linkedin.com/oauth"
+            assert (
+                linkedin_app.get("settings", {}).get("server_url")
+                == "https://www.linkedin.com/oauth"
+            )
 
 
 @pytest.mark.django_db
@@ -228,7 +241,10 @@ class TestLinkedInAuthenticationErrors(TestCase):
 
     def test_linkedin_auth_denied_by_user(self):
         """Test handling when user denies LinkedIn authentication."""
-        callback_url = reverse("openid_connect_callback", kwargs={"provider_id": "linkedin"})
+        callback_url = reverse(
+            "openid_connect_callback",
+            kwargs={"provider_id": "linkedin"},
+        )
 
         # Simulate user denying access
         response = self.client.get(callback_url, {"error": "access_denied"})
@@ -239,7 +255,10 @@ class TestLinkedInAuthenticationErrors(TestCase):
 
     def test_linkedin_auth_with_invalid_token(self):
         """Test handling of invalid LinkedIn token."""
-        callback_url = reverse("openid_connect_callback", kwargs={"provider_id": "linkedin"})
+        callback_url = reverse(
+            "openid_connect_callback",
+            kwargs={"provider_id": "linkedin"},
+        )
 
         # Simulate invalid token response
         response = self.client.get(
@@ -281,13 +300,19 @@ class TestLinkedInProviderConfiguration(TestCase):
         # In base.py, APPS list should contain LinkedIn
         apps = openid_config.get("APPS", [])
         if apps:
-            linkedin_app = next((app for app in apps if app.get("provider_id") == "linkedin"), None)
+            linkedin_app = next(
+                (app for app in apps if app.get("provider_id") == "linkedin"),
+                None,
+            )
             assert linkedin_app is not None
 
     def test_linkedin_callback_url_is_configured(self):
         """Test that LinkedIn callback URL is properly configured."""
         # Test that the callback URL can be reversed
-        callback_url = reverse("openid_connect_callback", kwargs={"provider_id": "linkedin"})
+        callback_url = reverse(
+            "openid_connect_callback",
+            kwargs={"provider_id": "linkedin"},
+        )
         assert "/accounts/oidc/linkedin/login/callback/" in callback_url
 
     def test_linkedin_server_url_configured(self):
@@ -298,6 +323,12 @@ class TestLinkedInProviderConfiguration(TestCase):
         # Check for LinkedIn app configuration
         apps = openid_config.get("APPS", [])
         if apps:
-            linkedin_app = next((app for app in apps if app.get("provider_id") == "linkedin"), None)
+            linkedin_app = next(
+                (app for app in apps if app.get("provider_id") == "linkedin"),
+                None,
+            )
             if linkedin_app:
-                assert linkedin_app.get("settings", {}).get("server_url") == "https://www.linkedin.com/oauth"
+                assert (
+                    linkedin_app.get("settings", {}).get("server_url")
+                    == "https://www.linkedin.com/oauth"
+                )

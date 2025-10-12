@@ -223,10 +223,12 @@ class TestSocialAccountProviderConfiguration(TestCase):
                 # OpenID Connect provider doesn't have VERIFIED_EMAIL at top level
                 # Email verification is handled by the OpenID Connect protocol
                 continue
-            assert "VERIFIED_EMAIL" in provider_config, (
+            # Type narrowing: provider_config must be a dict at this point
+            config: dict[str, Any] = provider_config  # type: ignore[assignment]
+            assert "VERIFIED_EMAIL" in config, (
                 f"{provider_name} missing VERIFIED_EMAIL setting"
             )
-            assert provider_config["VERIFIED_EMAIL"] is True, (
+            assert config["VERIFIED_EMAIL"] is True, (
                 f"{provider_name} should have VERIFIED_EMAIL: True"
             )
 

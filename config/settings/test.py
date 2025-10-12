@@ -83,7 +83,7 @@ SOCIALACCOUNT_PROVIDERS = {
     },
     "openid_connect": {
         # LinkedIn now uses OpenID Connect
-        # For tests, we use configuration-based apps instead of database SocialApp objects
+        # For tests, we use configuration-based apps instead of database objects
         "APPS": [
             {
                 "provider_id": "linkedin",
