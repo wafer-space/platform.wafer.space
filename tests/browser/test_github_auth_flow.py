@@ -52,7 +52,7 @@ LINKEDIN_SIGNUP_XPATH = (
 )
 
 
-@pytest.fixture(autouse=True, scope="function")
+@pytest.fixture(autouse=True)
 def social_apps(transactional_db):
     """Create SocialApp objects for all OAuth providers so buttons appear in UI.
 
