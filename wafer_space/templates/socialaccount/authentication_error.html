@@ -35,11 +35,12 @@
             Provider: {{ provider }}
         {% endelement %}
     {% endif %}
-    {% if exception %}
-        {% element p %}
-            Error: {{ exception }}
-        {% endelement %}
-    {% endif %}
+    {% element p %}
+        Error type: Authentication failure
+    {% endelement %}
+    {% element p %}
+        Note: Full error details are logged server-side for security reasons.
+    {% endelement %}
 {% endif %}
 
 {% element p %}

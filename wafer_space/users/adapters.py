@@ -62,13 +62,17 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
                     if last_name := data.get("last_name"):
                         user.name += f" {last_name}"
         except Exception as e:
+            # Log error without exposing sensitive OAuth data
+            safe_data_keys = ["email", "name", "first_name", "last_name", "username"]
+            safe_data = {k: data.get(k) for k in safe_data_keys if k in data}
             logger.exception(
                 "Error populating user from %s",
                 provider,
                 extra={
                     "provider": provider,
-                    "error": str(e),
-                    "data": data,
+                    "error_type": type(e).__name__,
+                    "safe_data": safe_data,
+                    "available_keys": list(data.keys()),
                 },
             )
             raise
@@ -140,54 +144,64 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
         else:
             provider_str = str(provider_id)
 
-        # Build detailed error context
+        # Build error context - only log safe information, not full error messages
+        # that could contain tokens or sensitive URLs
         error_context = {
             "provider": provider_str,
             "error_type": type(exc).__name__ if exc else "Unknown",
-            "error_message": str(exc) if exc else "No error details provided",
         }
 
+        # Only add safe extra context (exclude any OAuth response data)
         if extra_context:
-            error_context.update(extra_context)
+            safe_context = {
+                k: v
+                for k, v in extra_context.items()
+                if k not in ["error", "error_description", "error_uri"]
+            }
+            if safe_context:
+                error_context["extra"] = safe_context
 
-        # Log the error with full details
+        # Log the error with sanitized context
         logger.error(
-            "Social authentication error for %s",
+            "Social authentication error for %s: %s",
             provider_str,
+            error_context["error_type"],
             exc_info=exc if exc else None,
             extra=error_context,
         )
 
-        # Provide user-friendly error message
+        # Provide user-friendly error message WITHOUT exposing raw error details
         provider_name = provider_str.replace("_", " ").title()
 
         if exc:
-            error_msg = str(exc)
-            if "email" in error_msg.lower():
+            error_msg = str(exc).lower()
+            # Check for common error patterns but NEVER display the raw error
+            if "email" in error_msg:
                 messages.error(
                     request,
                     f"{provider_name} login failed: Email address is required. "
                     f"Please ensure your {provider_name} account has a "
                     f"verified email address.",
                 )
-            elif "scope" in error_msg.lower():
+            elif "scope" in error_msg or "permission" in error_msg:
                 messages.error(
                     request,
                     f"{provider_name} login failed: Required permissions "
                     f"were not granted. Please grant access to your profile "
                     f"and email when prompted.",
                 )
-            elif "token" in error_msg.lower() or "code" in error_msg.lower():
+            elif "token" in error_msg or "code" in error_msg:
                 messages.error(
                     request,
-                    f"{provider_name} login failed: Authentication token error. "
+                    f"{provider_name} login failed: Authentication error. "
                     f"Please try again or contact support if the problem persists.",
                 )
             else:
+                # Generic error - do NOT expose the actual error message
                 messages.error(
                     request,
-                    f"{provider_name} login failed: {error_msg}. "
-                    f"Please try again or contact support.",
+                    f"{provider_name} login failed. "
+                    f"Please try again or contact support if the problem persists.",
                 )
         else:
             messages.error(
