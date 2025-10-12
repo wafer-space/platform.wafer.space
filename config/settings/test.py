@@ -83,14 +83,9 @@ SOCIALACCOUNT_PROVIDERS = {
     },
     "linkedin_oauth2": {
         "SCOPE": [
-            "r_liteprofile",
-            "r_emailaddress",
-        ],
-        "PROFILE_FIELDS": [
-            "id",
-            "first-name",
-            "last-name",
-            "email-address",
+            "openid",
+            "profile",
+            "email",
         ],
         "VERIFIED_EMAIL": True,
     },

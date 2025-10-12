@@ -404,7 +404,7 @@ The GitLab provider is configured to request the following scopes:
      - `profile` - Basic profile information
      - `email` - Email address
 
-   **Note**: LinkedIn's OAuth API has migrated to OpenID Connect. The legacy scopes (`r_liteprofile`, `r_emailaddress`) are being phased out but are still configured in django-allauth for backwards compatibility.
+   **Note**: LinkedIn's OAuth API has migrated to OpenID Connect. This application uses the new OpenID Connect scopes.
 
 6. **Obtain Credentials**
    - Go to the **"Auth"** tab
@@ -431,13 +431,14 @@ LinkedIn OAuth credentials are fully pre-configured in Django settings:
 
 ### Scopes
 
-The LinkedIn provider is configured to request the following scopes:
+The LinkedIn provider is configured to request the following OpenID Connect scopes:
 
-**Current Configuration (Legacy API v2)**:
-- `r_liteprofile` - Basic profile information (first name, last name, profile picture)
-- `r_emailaddress` - Primary email address for account linking
+**Current Configuration (OpenID Connect)**:
+- `openid` - OpenID Connect authentication (required)
+- `profile` - Basic profile information (name, profile picture)
+- `email` - Email address for account linking
 
-**Note on Scopes**: LinkedIn is transitioning to OpenID Connect. While the current django-allauth configuration uses legacy v2 scopes, new applications should request the "Sign In with LinkedIn using OpenID Connect" product, which provides equivalent access through the OpenID Connect protocol.
+**Note**: LinkedIn uses OpenID Connect for OAuth authentication. Make sure your LinkedIn app has the "Sign In with LinkedIn using OpenID Connect" product enabled in the Products tab.
 
 ### Callback URL Reference
 

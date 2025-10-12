@@ -342,14 +342,9 @@ SOCIALACCOUNT_PROVIDERS = {
             "secret": env("LINKEDIN_CLIENT_SECRET", default=""),
         },
         "SCOPE": [
-            "r_liteprofile",
-            "r_emailaddress",
-        ],
-        "PROFILE_FIELDS": [
-            "id",
-            "first-name",
-            "last-name",
-            "email-address",
+            "openid",
+            "profile",
+            "email",
         ],
         "VERIFIED_EMAIL": True,
     },

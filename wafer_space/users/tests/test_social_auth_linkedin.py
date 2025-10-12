@@ -84,7 +84,7 @@ class TestLinkedInAuthenticationFlow(TestCase):
     @override_settings(
         SOCIALACCOUNT_PROVIDERS={
             "linkedin_oauth2": {
-                "SCOPE": ["r_liteprofile", "r_emailaddress"],
+                "SCOPE": ["openid", "profile", "email"],
                 "VERIFIED_EMAIL": True,
             },
         },
@@ -204,13 +204,14 @@ class TestLinkedInAuthenticationSecurity(TestCase):
         assert linkedin_config.get("VERIFIED_EMAIL") is True
 
     def test_linkedin_uses_correct_scopes(self):
-        """Test that LinkedIn provider uses correct scopes."""
+        """Test that LinkedIn provider uses correct OpenID Connect scopes."""
         linkedin_config = settings.SOCIALACCOUNT_PROVIDERS.get("linkedin_oauth2", {})
 
-        # Verify required scopes are configured
+        # Verify required OpenID Connect scopes are configured
         scopes = linkedin_config.get("SCOPE", [])
-        assert "r_liteprofile" in scopes
-        assert "r_emailaddress" in scopes
+        assert "openid" in scopes
+        assert "profile" in scopes
+        assert "email" in scopes
 
 
 @pytest.mark.django_db
@@ -281,13 +282,14 @@ class TestLinkedInProviderConfiguration(TestCase):
         )
 
     def test_linkedin_provider_scope_configuration(self):
-        """Test that LinkedIn provider requests correct scopes."""
+        """Test that LinkedIn provider requests correct OpenID Connect scopes."""
         linkedin_config = settings.SOCIALACCOUNT_PROVIDERS.get("linkedin_oauth2", {})
 
-        # Check required scopes are configured
+        # Check required OpenID Connect scopes are configured
         scopes = linkedin_config.get("SCOPE", [])
-        assert "r_liteprofile" in scopes
-        assert "r_emailaddress" in scopes
+        assert "openid" in scopes
+        assert "profile" in scopes
+        assert "email" in scopes
 
     def test_linkedin_callback_url_is_configured(self):
         """Test that LinkedIn callback URL is properly configured."""
@@ -313,9 +315,9 @@ class TestLinkedInProviderConfiguration(TestCase):
         assert "VERIFIED_EMAIL" in linkedin_config
 
     def test_linkedin_provider_uses_profile_scope(self):
-        """Test that LinkedIn provider includes required 'r_liteprofile' scope."""
+        """Test that LinkedIn provider includes required 'profile' scope."""
         linkedin_config = settings.SOCIALACCOUNT_PROVIDERS.get("linkedin_oauth2", {})
 
-        # LinkedIn requires 'r_liteprofile' scope to fetch user profile
+        # LinkedIn OpenID Connect requires 'profile' scope to fetch user profile
         scopes = linkedin_config.get("SCOPE", [])
-        assert "r_liteprofile" in scopes
+        assert "profile" in scopes
