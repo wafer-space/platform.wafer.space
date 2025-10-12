@@ -1,7 +1,6 @@
 """Tests for GitHub OAuth authentication integration."""
 
 from typing import Any
-from typing import cast
 
 import pytest
 from allauth.socialaccount.models import SocialAccount
@@ -65,14 +64,15 @@ class TestGitHubAuthenticationFlow(TestCase):
         assert response.status_code in [HTTP_OK, HTTP_REDIRECT]
         # If it's a redirect, it should be to GitHub
         if response.status_code == HTTP_REDIRECT:
-            assert "github.com/login/oauth" in response.url  # type: ignore[attr-defined]
+            redirect_url = getattr(response, "url", "")
+            assert "github.com/login/oauth" in redirect_url
 
     def test_github_oauth_redirect_contains_correct_params(self):
         """Test GitHub OAuth redirect parameters when redirect occurs."""
         response = self.client.get(self.github_login_url)
         # Only test redirect parameters if we actually get a redirect
         if response.status_code == HTTP_REDIRECT:
-            redirect_url = response.url  # type: ignore[attr-defined]
+            redirect_url = getattr(response, "url", "")
             # Check for required OAuth parameters
             assert "client_id=" in redirect_url
             assert "scope=" in redirect_url
@@ -190,7 +190,7 @@ class TestGitHubAuthenticationSecurity(TestCase):
 
     def test_github_requires_verified_email(self):
         """Test that GitHub provider requires verified email."""
-        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        providers: dict[str, Any] = getattr(settings, "SOCIALACCOUNT_PROVIDERS", {})
         github_config = providers.get("github", {})
 
         # Verify email verification is required
@@ -263,7 +263,7 @@ class TestGitHubProviderConfiguration(TestCase):
 
     def test_github_provider_scope_configuration(self):
         """Test that GitHub provider requests correct scopes."""
-        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        providers: dict[str, Any] = getattr(settings, "SOCIALACCOUNT_PROVIDERS", {})
         github_config = providers.get("github", {})
 
         # Check required scope is configured

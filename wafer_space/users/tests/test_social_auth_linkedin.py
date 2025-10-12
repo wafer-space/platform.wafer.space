@@ -1,7 +1,6 @@
 """Tests for LinkedIn OAuth authentication integration."""
 
 from typing import Any
-from typing import cast
 
 import pytest
 from allauth.socialaccount.models import SocialAccount
@@ -66,14 +65,15 @@ class TestLinkedInAuthenticationFlow(TestCase):
         assert response.status_code in [HTTP_OK, HTTP_REDIRECT]
         # If it's a redirect, it should be to LinkedIn
         if response.status_code == HTTP_REDIRECT:
-            assert "linkedin.com" in response.url  # type: ignore[attr-defined]
+            redirect_url = getattr(response, "url", "")
+            assert "linkedin.com" in redirect_url
 
     def test_linkedin_oauth_redirect_contains_correct_params(self):
         """Test LinkedIn OAuth redirect parameters when redirect occurs."""
         response = self.client.get(self.linkedin_login_url)
         # Only test redirect parameters if we actually get a redirect
         if response.status_code == HTTP_REDIRECT:
-            redirect_url = response.url  # type: ignore[attr-defined]
+            redirect_url = getattr(response, "url", "")
             # Check for required OAuth parameters
             assert "client_id=" in redirect_url
             assert "scope=" in redirect_url
@@ -177,7 +177,8 @@ class TestLinkedInAuthenticationSecurity(TestCase):
 
         # Check that state parameter is included (CSRF protection) if redirecting
         if response.status_code == HTTP_REDIRECT:
-            assert "state=" in response.url  # type: ignore[attr-defined]
+            redirect_url = getattr(response, "url", "")
+            assert "state=" in redirect_url
         else:
             # If no redirect, just verify the URL is accessible
             assert response.status_code == HTTP_OK
@@ -201,7 +202,7 @@ class TestLinkedInAuthenticationSecurity(TestCase):
 
     def test_linkedin_requires_verified_email(self):
         """Test that LinkedIn provider requires verified email."""
-        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        providers: dict[str, Any] = getattr(settings, "SOCIALACCOUNT_PROVIDERS", {})
         linkedin_config = providers.get("linkedin_oauth2", {})
 
         # Verify email verification is required
@@ -209,7 +210,7 @@ class TestLinkedInAuthenticationSecurity(TestCase):
 
     def test_linkedin_uses_correct_scopes(self):
         """Test that LinkedIn provider uses correct OpenID Connect scopes."""
-        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        providers: dict[str, Any] = getattr(settings, "SOCIALACCOUNT_PROVIDERS", {})
         linkedin_config = providers.get("linkedin_oauth2", {})
 
         # Verify required OpenID Connect scopes are configured
@@ -288,7 +289,7 @@ class TestLinkedInProviderConfiguration(TestCase):
 
     def test_linkedin_provider_scope_configuration(self):
         """Test that LinkedIn provider requests correct OpenID Connect scopes."""
-        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        providers: dict[str, Any] = getattr(settings, "SOCIALACCOUNT_PROVIDERS", {})
         linkedin_config = providers.get("linkedin_oauth2", {})
 
         # Check required OpenID Connect scopes are configured
@@ -305,7 +306,7 @@ class TestLinkedInProviderConfiguration(TestCase):
 
     def test_linkedin_provider_verified_email_setting(self):
         """Test that LinkedIn provider trusts verified emails."""
-        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        providers: dict[str, Any] = getattr(settings, "SOCIALACCOUNT_PROVIDERS", {})
         linkedin_config = providers.get("linkedin_oauth2", {})
 
         # LinkedIn emails should be trusted as verified
@@ -313,7 +314,7 @@ class TestLinkedInProviderConfiguration(TestCase):
 
     def test_linkedin_environment_variable_configuration(self):
         """Test that LinkedIn provider configuration is available."""
-        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        providers: dict[str, Any] = getattr(settings, "SOCIALACCOUNT_PROVIDERS", {})
         linkedin_config = providers.get("linkedin_oauth2", {})
 
         # In test environment, APP section is removed to avoid conflicts
@@ -324,7 +325,7 @@ class TestLinkedInProviderConfiguration(TestCase):
 
     def test_linkedin_provider_uses_profile_scope(self):
         """Test that LinkedIn provider includes required 'profile' scope."""
-        providers = cast("dict[str, Any]", settings.SOCIALACCOUNT_PROVIDERS)
+        providers: dict[str, Any] = getattr(settings, "SOCIALACCOUNT_PROVIDERS", {})
         linkedin_config = providers.get("linkedin_oauth2", {})
 
         # LinkedIn OpenID Connect requires 'profile' scope to fetch user profile
