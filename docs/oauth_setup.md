@@ -79,15 +79,15 @@ This guide walks through setting up OAuth applications for social authentication
 
 ### Environment Variables
 
-Add these to your `.env` file:
+GitHub OAuth Client IDs are pre-configured in Django settings:
 
 ```bash
 # GitHub OAuth credentials for wafer-space organization
 # Client IDs are configured in Django settings:
-# - Development: Ov23liLB7RRJUzku13dU (in settings/base.py)
-# - Production: Ov23linEhI33aev2uGSU (in settings/production.py)
+# - Development: Ov23liLB7RRJUzku13dU (settings/base.py)
+# - Production: Ov23linEhI33aev2uGSU (settings/production.py)
 #
-# You only need to set the secrets:
+# You only need to set the secret in your .env file:
 GITHUB_CLIENT_SECRET=your_github_client_secret_here
 
 # Optionally override the Client ID if using a different app:
@@ -206,11 +206,19 @@ The GitHub provider is configured to request the following scope:
 
 ### Environment Variables
 
-Add these to your `.env` file:
+Google OAuth Client IDs are pre-configured in Django settings:
 
 ```bash
-GOOGLE_CLIENT_ID=your_google_client_id_here.apps.googleusercontent.com
+# Google OAuth credentials for wafer-space project
+# Client IDs are configured in Django settings:
+# - Development: 62545893239-jiesk1vfk22j87cth4ukq4alluc3nqhc.apps.googleusercontent.com (settings/base.py)
+# - Production: 62545893239-pgg1lcg28u9suivjh4nso9t8mev5qua2.apps.googleusercontent.com (settings/production.py)
+#
+# You only need to set the secret in your .env file:
 GOOGLE_CLIENT_SECRET=your_google_client_secret_here
+
+# Optionally override the Client ID if using a different app:
+# GOOGLE_CLIENT_ID=your_custom_client_id_here
 ```
 
 ### Scopes
@@ -313,7 +321,7 @@ When using a Group-owned GitLab OAuth application:
 
 ### Environment Variables
 
-Add these to your `.env` file:
+GitLab OAuth Client IDs are pre-configured in Django settings:
 
 ```bash
 # GitLab OAuth credentials for wafer-space group (ID: 116401955)
@@ -321,7 +329,7 @@ Add these to your `.env` file:
 # - Development: 2a29dee626b3c8b544f6f2c3a8042f912130bd040f4d3c60ef0e5864a4962aaa (settings/base.py)
 # - Production: f0fde384db4cd0fe11041488a6b87e9d3d20223385b78d1ba1ed4045fbea6c16 (settings/production.py)
 #
-# You only need to set the secret:
+# You only need to set the secret in your .env file:
 GITLAB_CLIENT_SECRET=your_gitlab_application_secret_here
 
 # Optionally override the Client ID if using a different app:
@@ -407,7 +415,7 @@ The GitLab provider is configured to request the following scopes:
 
 ### Environment Variables
 
-LinkedIn OAuth credentials are pre-configured for development:
+LinkedIn OAuth credentials are fully pre-configured in Django settings:
 
 ```bash
 # LinkedIn OAuth credentials for wafer-space apps
@@ -488,13 +496,14 @@ The LinkedIn provider is configured to request the following scopes:
 
 ### Environment Variables
 
-Discord OAuth credentials are pre-configured for development:
+Discord OAuth credentials are fully pre-configured in Django settings:
 
 ```bash
-# Discord OAuth credentials for wafer-space development app
-# Client ID and Secret are configured in Django settings:
+# Discord OAuth credentials for wafer-space apps
+# Client IDs and Secrets are configured in Django settings:
 # - Development: 1426055950221054052 (settings/base.py) with included secret
-# - Works out of the box - no .env configuration needed!
+# - Production: 1426065281138167841 (settings/production.py) with included secret
+# - Works out of the box in both environments - no .env configuration needed!
 #
 # Optionally override if using a different app:
 # DISCORD_CLIENT_ID=your_custom_client_id_here
