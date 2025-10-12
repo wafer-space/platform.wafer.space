@@ -1,0 +1,48 @@
+{% extends "socialaccount/base_entrance.html" %}
+{% load i18n %}
+{% load allauth %}
+
+{% block head_title %}
+{% trans "Third-Party Login Failure" %}
+{% endblock head_title %}
+
+{% block content %}
+{% element h1 %}
+    {% trans "Third-Party Login Failure" %}
+{% endelement %}
+
+{% if messages %}
+    {% for message in messages %}
+        {% element p tags=message.tags %}
+            {{ message }}
+        {% endelement %}
+    {% endfor %}
+{% else %}
+    {% element p %}
+        {% trans "An error occurred while attempting to login via your third-party account." %}
+    {% endelement %}
+    {% element p %}
+        {% trans "Please try again. If the problem persists, please contact support." %}
+    {% endelement %}
+{% endif %}
+
+{% if debug %}
+    {% element p %}
+        <strong>Debug Information:</strong>
+    {% endelement %}
+    {% if provider %}
+        {% element p %}
+            Provider: {{ provider }}
+        {% endelement %}
+    {% endif %}
+    {% if exception %}
+        {% element p %}
+            Error: {{ exception }}
+        {% endelement %}
+    {% endif %}
+{% endif %}
+
+{% element p %}
+    <a href="{% url 'account_login' %}">{% trans "Return to login page" %}</a>
+{% endelement %}
+{% endblock content %}
