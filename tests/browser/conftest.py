@@ -145,6 +145,7 @@ def ensure_test_tos_exists(django_db_setup, django_db_blocker, request):
     database and is visible to the live_server.
     """
     from django.core.management import call_command  # noqa: PLC0415
+    from django.db import connection  # noqa: PLC0415
 
     # Only create TOS for browser tests involving legal
     test_paths = request.config.args
@@ -156,6 +157,8 @@ def ensure_test_tos_exists(django_db_setup, django_db_blocker, request):
             from wafer_space.legal.models import TermsOfService  # noqa: PLC0415
             if not TermsOfService.objects.filter(version="1.0.0").exists():
                 call_command("create_test_tos", verbosity=0)
+                # Ensure changes are committed to database
+                connection.cursor().execute("SELECT 1")  # Force connection
 
 
 @pytest.fixture(scope="session")
