@@ -412,8 +412,8 @@ def take_screenshot(driver):
     return _take_screenshot
 
 
-@pytest.fixture(scope="session")
-def social_apps(django_db_setup, django_db_blocker):
+@pytest.fixture
+def social_apps(db):
     """Create SocialApp objects for all OAuth providers so buttons appear in UI.
 
     This fixture creates Social App objects that are visible to both the test
@@ -422,98 +422,103 @@ def social_apps(django_db_setup, django_db_blocker):
 
     Browser tests that need OAuth buttons should use this fixture.
 
-    Session-scoped to prevent duplicate SocialApp creation in parallel tests.
+    Function-scoped to ensure clean state for each test.
     Must aggressively clean up SocialApps created by unit tests that run first.
     """
-    with django_db_blocker.unblock():
-        # CRITICAL: Aggressively delete ALL existing SocialApps
-        # Unit tests create SocialApps before browser tests run, and they persist
-        # in the file-based database even after transaction rollback
+    # CRITICAL: Aggressively delete ALL existing SocialApps
+    # Unit tests create SocialApps before browser tests run, and they persist
+    # in the file-based database even after transaction rollback
 
-        # Use raw SQL to bypass Django's transaction management
-        with connection.cursor() as cursor:
-            # Delete many-to-many relationships first
-            cursor.execute(
-                "DELETE FROM socialaccount_socialapp_sites "
-                "WHERE socialapp_id IN "
-                "(SELECT id FROM socialaccount_socialapp)"
-            )
-            # Then delete SocialApp objects
-            cursor.execute("DELETE FROM socialaccount_socialapp")
-
-        # Commit deletion and force database sync
-        transaction.commit()
-
-        # Force SQLite to checkpoint and sync (for file-based database)
-        with connection.cursor() as cursor:
-            cursor.execute("PRAGMA wal_checkpoint(RESTART)")
-            cursor.execute("PRAGMA synchronous=FULL")
-
-        # Close all connections to force reconnect
-        for conn in connections.all():
-            conn.close()
-
-        # Get the current site
-        site = Site.objects.get_current()
-
-        # Create test SocialApp objects
-        github_app = SocialApp.objects.create(
-            provider="github",
-            name="GitHub Browser Test App",
-            client_id="browser_test_github_client_id",
-            secret="browser_test_github_secret",  # noqa: S106
+    # Use raw SQL to bypass Django's transaction management
+    with connection.cursor() as cursor:
+        # Delete many-to-many relationships first
+        cursor.execute(
+            "DELETE FROM socialaccount_socialapp_sites "
+            "WHERE socialapp_id IN "
+            "(SELECT id FROM socialaccount_socialapp)"
         )
-        github_app.sites.add(site)
+        # Then delete SocialApp objects
+        cursor.execute("DELETE FROM socialaccount_socialapp")
 
-        google_app = SocialApp.objects.create(
-            provider="google",
-            name="Google Browser Test App",
-            client_id="browser_test_google_client_id.apps.googleusercontent.com",
-            secret="browser_test_google_secret",  # noqa: S106
-        )
-        google_app.sites.add(site)
+    # Commit deletion and force database sync
+    transaction.commit()
 
-        gitlab_app = SocialApp.objects.create(
-            provider="gitlab",
-            name="GitLab Browser Test App",
-            client_id="browser_test_gitlab_application_id",
-            secret="browser_test_gitlab_secret",  # noqa: S106
-        )
-        gitlab_app.sites.add(site)
+    # Force SQLite to checkpoint and sync (for file-based database)
+    with connection.cursor() as cursor:
+        cursor.execute("PRAGMA wal_checkpoint(RESTART)")
+        cursor.execute("PRAGMA synchronous=FULL")
 
-        linkedin_app = SocialApp.objects.create(
-            provider="openid_connect",
-            provider_id="linkedin",  # CRITICAL: Must set provider_id field for OIDC
-            name="LinkedIn",
-            client_id="browser_test_linkedin_client_id",
-            secret="browser_test_linkedin_secret",  # noqa: S106
-            settings={
-                "server_url": "https://www.linkedin.com/oauth",
-            },
-        )
-        linkedin_app.sites.add(site)
+    # Close all connections to force reconnect
+    for conn in connections.all():
+        conn.close()
 
-        discord_app = SocialApp.objects.create(
-            provider="discord",
-            name="Discord Browser Test App",
-            client_id="browser_test_discord_client_id",
-            secret="browser_test_discord_secret",  # noqa: S106
-        )
-        discord_app.sites.add(site)
+    # Get the current site
+    site = Site.objects.get_current()
 
-        # Commit creation and force database sync
-        transaction.commit()
+    # Create test SocialApp objects
+    github_app = SocialApp.objects.create(
+        provider="github",
+        name="GitHub Browser Test App",
+        client_id="browser_test_github_client_id",
+        secret="browser_test_github_secret",  # noqa: S106
+    )
+    github_app.sites.add(site)
 
-        with connection.cursor() as cursor:
-            cursor.execute("PRAGMA wal_checkpoint(RESTART)")
-            cursor.execute("PRAGMA synchronous=FULL")
+    google_app = SocialApp.objects.create(
+        provider="google",
+        name="Google Browser Test App",
+        client_id="browser_test_google_client_id.apps.googleusercontent.com",
+        secret="browser_test_google_secret",  # noqa: S106
+    )
+    google_app.sites.add(site)
 
-        for conn in connections.all():
-            conn.close()
+    gitlab_app = SocialApp.objects.create(
+        provider="gitlab",
+        name="GitLab Browser Test App",
+        client_id="browser_test_gitlab_application_id",
+        secret="browser_test_gitlab_secret",  # noqa: S106
+    )
+    gitlab_app.sites.add(site)
+
+    linkedin_app = SocialApp.objects.create(
+        provider="openid_connect",
+        provider_id="linkedin",  # CRITICAL: Must set provider_id field for OIDC
+        name="LinkedIn",
+        client_id="browser_test_linkedin_client_id",
+        secret="browser_test_linkedin_secret",  # noqa: S106
+        settings={
+            "server_url": "https://www.linkedin.com/oauth",
+        },
+    )
+    linkedin_app.sites.add(site)
+
+    discord_app = SocialApp.objects.create(
+        provider="discord",
+        name="Discord Browser Test App",
+        client_id="browser_test_discord_client_id",
+        secret="browser_test_discord_secret",  # noqa: S106
+    )
+    discord_app.sites.add(site)
+
+    # Commit creation and force database sync
+    transaction.commit()
+
+    with connection.cursor() as cursor:
+        cursor.execute("PRAGMA wal_checkpoint(RESTART)")
+        cursor.execute("PRAGMA synchronous=FULL")
+
+    for conn in connections.all():
+        conn.close()
 
     yield
 
-    # Cleanup after all tests complete
-    with django_db_blocker.unblock():
-        SocialApp.objects.all().delete()
-        transaction.commit()
+    # Cleanup after test
+    # Use raw SQL to ensure complete cleanup
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "DELETE FROM socialaccount_socialapp_sites "
+            "WHERE socialapp_id IN "
+            "(SELECT id FROM socialaccount_socialapp)"
+        )
+        cursor.execute("DELETE FROM socialaccount_socialapp")
+    transaction.commit()
