@@ -11,6 +11,8 @@ from pathlib import Path
 import pytest
 from allauth.socialaccount.models import SocialApp
 from django.contrib.sites.models import Site
+from django.db import connection
+from django.db import connections
 from django.db import transaction
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options as ChromeOptions
@@ -410,8 +412,8 @@ def take_screenshot(driver):
     return _take_screenshot
 
 
-@pytest.fixture
-def social_apps(db):
+@pytest.fixture(scope="session")
+def social_apps(django_db_setup, django_db_blocker):
     """Create SocialApp objects for all OAuth providers so buttons appear in UI.
 
     This fixture creates Social App objects that are visible to both the test
@@ -419,11 +421,24 @@ def social_apps(db):
     pytest_configure, the data is properly shared across threads.
 
     Browser tests that need OAuth buttons should use this fixture.
+
+    Session-scoped to prevent duplicate SocialApp creation in parallel tests.
     """
-    # Use atomic block to ensure data is committed immediately
-    with transaction.atomic():
+    with django_db_blocker.unblock():
         # Clean up any existing apps first
         SocialApp.objects.all().delete()
+
+        # Commit deletion and force database sync
+        transaction.commit()
+
+        # Force SQLite to checkpoint and sync (for file-based database)
+        with connection.cursor() as cursor:
+            cursor.execute("PRAGMA wal_checkpoint(RESTART)")
+            cursor.execute("PRAGMA synchronous=FULL")
+
+        # Close all connections to force reconnect
+        for conn in connections.all():
+            conn.close()
 
         # Get the current site
         site = Site.objects.get_current()
@@ -473,8 +488,19 @@ def social_apps(db):
         )
         discord_app.sites.add(site)
 
+        # Commit creation and force database sync
+        transaction.commit()
+
+        with connection.cursor() as cursor:
+            cursor.execute("PRAGMA wal_checkpoint(RESTART)")
+            cursor.execute("PRAGMA synchronous=FULL")
+
+        for conn in connections.all():
+            conn.close()
+
     yield
 
-    # Cleanup after test
-    with transaction.atomic():
+    # Cleanup after all tests complete
+    with django_db_blocker.unblock():
         SocialApp.objects.all().delete()
+        transaction.commit()
