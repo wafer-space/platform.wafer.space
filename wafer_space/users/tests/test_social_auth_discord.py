@@ -134,7 +134,6 @@ class TestDiscordAuthenticationSecurity(TestCase):
         """Set up test environment."""
         self.client = Client()
 
-
     def test_discord_oauth_uses_state_parameter(self):
         """Test that Discord OAuth uses state parameter for CSRF protection."""
         discord_login_url = reverse("discord_login")
@@ -190,7 +189,6 @@ class TestDiscordAuthenticationErrors(TestCase):
     def setUp(self):
         """Set up test environment."""
         self.client = Client()
-
 
     def test_discord_auth_denied_by_user(self):
         """Test handling when user denies Discord authentication."""

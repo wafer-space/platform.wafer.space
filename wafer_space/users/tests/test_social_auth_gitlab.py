@@ -134,7 +134,6 @@ class TestGitLabAuthenticationSecurity(TestCase):
         """Set up test environment."""
         self.client = Client()
 
-
     def test_gitlab_oauth_uses_state_parameter(self):
         """Test that GitLab OAuth uses state parameter for CSRF protection."""
         gitlab_login_url = reverse("gitlab_login")
@@ -190,7 +189,6 @@ class TestGitLabAuthenticationErrors(TestCase):
     def setUp(self):
         """Set up test environment."""
         self.client = Client()
-
 
     def test_gitlab_auth_denied_by_user(self):
         """Test handling when user denies GitLab authentication."""

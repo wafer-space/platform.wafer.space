@@ -134,7 +134,6 @@ class TestGoogleAuthenticationSecurity(TestCase):
         """Set up test environment."""
         self.client = Client()
 
-
     def test_google_oauth_uses_state_parameter(self):
         """Test that Google OAuth uses state parameter for CSRF protection."""
         google_login_url = reverse("google_login")
@@ -183,7 +182,6 @@ class TestGoogleAuthenticationErrors(TestCase):
     def setUp(self):
         """Set up test environment."""
         self.client = Client()
-
 
     def test_google_auth_denied_by_user(self):
         """Test handling when user denies Google authentication."""

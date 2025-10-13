@@ -132,7 +132,6 @@ class TestGitHubAuthenticationSecurity(TestCase):
         """Set up test environment."""
         self.client = Client()
 
-
     def test_github_oauth_uses_state_parameter(self):
         """Test that GitHub OAuth uses state parameter for CSRF protection."""
         github_login_url = reverse("github_login")
@@ -172,7 +171,6 @@ class TestGitHubAuthenticationErrors(TestCase):
     def setUp(self):
         """Set up test environment."""
         self.client = Client()
-
 
     def test_github_auth_denied_by_user(self):
         """Test handling when user denies GitHub authentication."""
