@@ -4,10 +4,8 @@ from typing import Any
 
 import pytest
 from allauth.socialaccount.models import SocialAccount
-from allauth.socialaccount.models import SocialApp
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.contrib.sites.models import Site
 from django.test import Client
 from django.test import TestCase
 from django.test import override_settings
@@ -33,22 +31,6 @@ class TestDiscordAuthenticationFlow(TestCase):
         self.client = Client()
         self.login_url = reverse("account_login")
         self.discord_login_url = reverse("discord_login")
-
-        # Create a test Discord OAuth app for unit testing
-        # Unit tests create their own isolated SocialApp objects
-        self.site = Site.objects.get_current()
-        self.discord_app = SocialApp.objects.create(
-            provider="discord",
-            name="Discord Unit Test App",
-            client_id="unit_test_discord_client_id",
-            secret="unit_test_discord_secret",  # noqa: S106
-        )
-        self.discord_app.sites.add(self.site)
-
-    def tearDown(self):
-        """Clean up test environment."""
-        # Clean up the test app
-        SocialApp.objects.filter(provider="discord").delete()
 
     def test_login_page_shows_discord_button(self):
         """Test that login page displays Discord authentication option."""
@@ -152,20 +134,6 @@ class TestDiscordAuthenticationSecurity(TestCase):
         """Set up test environment."""
         self.client = Client()
 
-        # Create a test Discord OAuth app for security testing
-        self.site = Site.objects.get_current()
-        self.discord_app = SocialApp.objects.create(
-            provider="discord",
-            name="Discord Security Test App",
-            client_id="security_test_discord_client_id",
-            secret="security_test_discord_secret",  # noqa: S106
-        )
-        self.discord_app.sites.add(self.site)
-
-    def tearDown(self):
-        """Clean up test environment."""
-        # Clean up the test app
-        SocialApp.objects.filter(provider="discord").delete()
 
     def test_discord_oauth_uses_state_parameter(self):
         """Test that Discord OAuth uses state parameter for CSRF protection."""
@@ -223,20 +191,6 @@ class TestDiscordAuthenticationErrors(TestCase):
         """Set up test environment."""
         self.client = Client()
 
-        # Create a test Discord OAuth app for error testing
-        self.site = Site.objects.get_current()
-        self.discord_app = SocialApp.objects.create(
-            provider="discord",
-            name="Discord Error Test App",
-            client_id="error_test_discord_client_id",
-            secret="error_test_discord_secret",  # noqa: S106
-        )
-        self.discord_app.sites.add(self.site)
-
-    def tearDown(self):
-        """Clean up test environment."""
-        # Clean up the test app
-        SocialApp.objects.filter(provider="discord").delete()
 
     def test_discord_auth_denied_by_user(self):
         """Test handling when user denies Discord authentication."""

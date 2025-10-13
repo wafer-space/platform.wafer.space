@@ -5,10 +5,8 @@ from typing import Any
 import pytest
 from allauth.socialaccount.models import EmailAddress
 from allauth.socialaccount.models import SocialAccount
-from allauth.socialaccount.models import SocialApp
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.contrib.sites.models import Site
 from django.test import TestCase
 from django.test import override_settings
 
@@ -25,37 +23,10 @@ class TestMultiProviderAuthentication(TestCase):
 
     def setUp(self):
         """Set up test environment with multiple OAuth providers."""
-        self.site = Site.objects.get_current()
         self.test_email = "user@example.com"
-
-        # Create test OAuth apps for different providers
-        self.github_app = SocialApp.objects.create(
-            provider="github",
-            name="GitHub Test App",
-            client_id="test_github_client",
-            secret="test_github_secret",  # noqa: S106
-        )
-        self.github_app.sites.add(self.site)
-
-        self.gitlab_app = SocialApp.objects.create(
-            provider="gitlab",
-            name="GitLab Test App",
-            client_id="test_gitlab_client",
-            secret="test_gitlab_secret",  # noqa: S106
-        )
-        self.gitlab_app.sites.add(self.site)
-
-        self.google_app = SocialApp.objects.create(
-            provider="google",
-            name="Google Test App",
-            client_id="test_google_client",
-            secret="test_google_secret",  # noqa: S106
-        )
-        self.google_app.sites.add(self.site)
 
     def tearDown(self):
         """Clean up test environment."""
-        SocialApp.objects.all().delete()
         User.objects.all().delete()
 
     @override_settings(

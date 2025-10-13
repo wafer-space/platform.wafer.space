@@ -4,10 +4,8 @@ from typing import Any
 
 import pytest
 from allauth.socialaccount.models import SocialAccount
-from allauth.socialaccount.models import SocialApp
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.contrib.sites.models import Site
 from django.test import Client
 from django.test import TestCase
 from django.test import override_settings
@@ -32,22 +30,6 @@ class TestGoogleAuthenticationFlow(TestCase):
         self.client = Client()
         self.login_url = reverse("account_login")
         self.google_login_url = reverse("google_login")
-
-        # Create a test Google OAuth app for unit testing
-        # Unit tests create their own isolated SocialApp objects
-        self.site = Site.objects.get_current()
-        self.google_app = SocialApp.objects.create(
-            provider="google",
-            name="Google Unit Test App",
-            client_id="unit_test_google_client_id.apps.googleusercontent.com",
-            secret="unit_test_google_client_secret",  # noqa: S106
-        )
-        self.google_app.sites.add(self.site)
-
-    def tearDown(self):
-        """Clean up test environment."""
-        # Clean up the test app
-        SocialApp.objects.filter(provider="google").delete()
 
     def test_login_page_shows_google_button(self):
         """Test that login page displays Google authentication option."""
@@ -152,20 +134,6 @@ class TestGoogleAuthenticationSecurity(TestCase):
         """Set up test environment."""
         self.client = Client()
 
-        # Create a test Google OAuth app for security testing
-        self.site = Site.objects.get_current()
-        self.google_app = SocialApp.objects.create(
-            provider="google",
-            name="Google Security Test App",
-            client_id="security_test_google_client_id.apps.googleusercontent.com",
-            secret="security_test_google_client_secret",  # noqa: S106
-        )
-        self.google_app.sites.add(self.site)
-
-    def tearDown(self):
-        """Clean up test environment."""
-        # Clean up the test app
-        SocialApp.objects.filter(provider="google").delete()
 
     def test_google_oauth_uses_state_parameter(self):
         """Test that Google OAuth uses state parameter for CSRF protection."""
@@ -216,20 +184,6 @@ class TestGoogleAuthenticationErrors(TestCase):
         """Set up test environment."""
         self.client = Client()
 
-        # Create a test Google OAuth app for error testing
-        self.site = Site.objects.get_current()
-        self.google_app = SocialApp.objects.create(
-            provider="google",
-            name="Google Error Test App",
-            client_id="error_test_google_client_id.apps.googleusercontent.com",
-            secret="error_test_google_client_secret",  # noqa: S106
-        )
-        self.google_app.sites.add(self.site)
-
-    def tearDown(self):
-        """Clean up test environment."""
-        # Clean up the test app
-        SocialApp.objects.filter(provider="google").delete()
 
     def test_google_auth_denied_by_user(self):
         """Test handling when user denies Google authentication."""

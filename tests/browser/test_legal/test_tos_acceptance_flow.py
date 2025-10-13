@@ -29,7 +29,7 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
     """Test the complete TOS acceptance flow."""
 
     @pytest.fixture(autouse=True)
-    def setup(self, social_apps):
+    def setup(self):
         """Set up test fixtures including OAuth providers."""
 
     def _ensure_data_visible(self):

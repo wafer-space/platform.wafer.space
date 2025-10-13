@@ -348,8 +348,178 @@ This is a Django 5.2+ application for wafer.space low cost silicon manufacturing
 - `.pre-commit-config.yaml`: Pre-commit hook configurations
 - `config/settings/base.py`: Core Django settings shared across environments
 - `config/settings/local.py`: Development-specific settings with debug toolbar
+- `config/settings/test.py`: Test-specific settings with OAuth configuration
 - `config/urls.py`: Main URL configuration
 - Never delete a test or reduce test functionality without an explicit request from the user.
+
+### OAuth Configuration Architecture
+
+**CRITICAL: This project uses SETTINGS-BASED OAuth configuration, NOT database-based configuration.**
+
+#### Settings-Based vs Database-Based Configuration
+
+django-allauth supports two approaches for OAuth provider configuration:
+
+1. **Settings-Based (PREFERRED - What we use)**:
+   - OAuth provider configuration defined in `SOCIALACCOUNT_PROVIDERS` setting
+   - Static configuration in settings files
+   - Perfect for single-tenant applications
+   - No database objects needed
+   - Simpler test isolation
+   - Used in: `config/settings/base.py`, `config/settings/test.py`
+
+2. **Database-Based (NOT USED)**:
+   - OAuth provider configuration stored in `SocialApp` model
+   - Dynamic configuration via Django admin
+   - Designed for multi-tenant applications
+   - Requires database transactions
+   - Complex test isolation issues
+   - **We do NOT use this approach**
+
+#### Why Settings-Based Configuration
+
+We switched from database-based to settings-based OAuth configuration because:
+
+1. **Simpler Testing**: No need to create `SocialApp` database objects in tests
+2. **Better Isolation**: Settings-based config avoids transaction isolation issues
+3. **Fewer Moving Parts**: No database queries needed for OAuth configuration
+4. **Single-Tenant App**: We don't need dynamic per-site OAuth configuration
+5. **CI Stability**: Eliminates file-based database complexity in browser tests
+
+#### Configuration Structure
+
+```python
+# config/settings/test.py - Test OAuth configuration
+SOCIALACCOUNT_PROVIDERS = {
+    "github": {
+        "APP": {
+            "client_id": "test_github_client_id",
+            "secret": "test_github_secret",
+        },
+        "SCOPE": ["user:email"],
+        "VERIFIED_EMAIL": True,
+    },
+    "google": {
+        "APP": {
+            "client_id": "test_google_client_id.apps.googleusercontent.com",
+            "secret": "test_google_secret",
+        },
+        "SCOPE": ["profile", "email"],
+        "AUTH_PARAMS": {"access_type": "online"},
+        "VERIFIED_EMAIL": True,
+    },
+    # ... other providers
+}
+
+# config/settings/base.py - Development/production use environment variables
+SOCIALACCOUNT_PROVIDERS = {
+    "github": {
+        "APP": {
+            "client_id": env("GITHUB_CLIENT_ID", default="dev_github_client_id"),
+            "secret": env("GITHUB_CLIENT_SECRET", default=""),
+        },
+        "SCOPE": ["user:email"],
+        "VERIFIED_EMAIL": True,
+    },
+    # ... other providers
+}
+```
+
+#### What NOT to Do
+
+```python
+# ❌ NEVER create SocialApp objects in tests
+from allauth.socialaccount.models import SocialApp
+
+def setUp(self):
+    # WRONG - database-based configuration
+    self.github_app = SocialApp.objects.create(
+        provider="github",
+        name="GitHub Test App",
+        client_id="test_client_id",
+        secret="test_secret",
+    )
+
+# ❌ NEVER use social_apps fixture
+def test_oauth(self, social_apps):  # WRONG
+    pass
+
+# ❌ NEVER import SocialApp unless absolutely necessary
+from allauth.socialaccount.models import SocialApp  # Only for admin/management
+```
+
+#### What TO Do
+
+```python
+# ✅ OAuth configuration comes from settings automatically
+def test_oauth_button_shows(self):
+    """Test that OAuth buttons appear on login page."""
+    response = self.client.get(reverse("account_login"))
+    assert b"GitHub" in response.content  # Works because of settings config
+
+# ✅ Browser tests use settings-based configuration
+def setup(self, live_server):
+    """Set up browser test - OAuth configured via settings."""
+    self.driver.get(f"{live_server.url}/accounts/login/")
+    # OAuth buttons work automatically from settings
+
+# ✅ Tests are simpler without database setup
+class TestGitHubAuth(TestCase):
+    def setUp(self):
+        """Set up test - no SocialApp creation needed."""
+        self.client = Client()
+        # OAuth already configured via settings
+```
+
+#### Adding New OAuth Providers
+
+When adding a new OAuth provider:
+
+1. **Update test settings** (`config/settings/test.py`):
+   ```python
+   SOCIALACCOUNT_PROVIDERS = {
+       # ... existing providers
+       "new_provider": {
+           "APP": {
+               "client_id": "test_provider_client_id",
+               "secret": "test_provider_secret",
+           },
+           "SCOPE": ["email", "profile"],
+           "VERIFIED_EMAIL": True,
+       },
+   }
+   ```
+
+2. **Update base settings** (`config/settings/base.py`):
+   ```python
+   SOCIALACCOUNT_PROVIDERS = {
+       # ... existing providers
+       "new_provider": {
+           "APP": {
+               "client_id": env("PROVIDER_CLIENT_ID", default="dev_client_id"),
+               "secret": env("PROVIDER_CLIENT_SECRET", default=""),
+           },
+           "SCOPE": ["email", "profile"],
+           "VERIFIED_EMAIL": True,
+       },
+   }
+   ```
+
+3. **Add provider to INSTALLED_APPS**:
+   ```python
+   INSTALLED_APPS = [
+       # ... other apps
+       "allauth.socialaccount.providers.new_provider",
+   ]
+   ```
+
+4. **NO database migrations needed** - settings-based config doesn't use database
+
+5. **Update secrets management** - See "Production Deployment and Secrets Management" section
+
+#### Migration Note
+
+If you see old code with `SocialApp.objects.create()` or `social_apps` fixtures, this is legacy code from before we migrated to settings-based configuration. These should be removed.
 
 ## CI/CD Best Practices
 

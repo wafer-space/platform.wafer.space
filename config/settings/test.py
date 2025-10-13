@@ -54,17 +54,25 @@ CELERY_TASK_EAGER_PROPAGATES = True
 
 # SOCIAL AUTHENTICATION
 # ------------------------------------------------------------------------------
-# Override SOCIALACCOUNT_PROVIDERS to avoid conflicts with test SocialApp objects
-# Tests create their own SocialApp objects in the database, so we don't want
-# settings-based apps that would cause MultipleObjectsReturned errors
+# Settings-based OAuth configuration for all tests (unit tests and browser tests)
+# This eliminates the need for database SocialApp objects and avoids
+# transaction isolation issues with file-based databases.
 SOCIALACCOUNT_PROVIDERS = {
     "github": {
+        "APP": {
+            "client_id": "test_github_client_id",
+            "secret": "test_github_secret",
+        },
         "SCOPE": [
             "user:email",
         ],
         "VERIFIED_EMAIL": True,
     },
     "gitlab": {
+        "APP": {
+            "client_id": "test_gitlab_client_id",
+            "secret": "test_gitlab_secret",
+        },
         "SCOPE": [
             "read_user",
             "email",
@@ -72,6 +80,10 @@ SOCIALACCOUNT_PROVIDERS = {
         "VERIFIED_EMAIL": True,
     },
     "google": {
+        "APP": {
+            "client_id": "test_google_client_id.apps.googleusercontent.com",
+            "secret": "test_google_secret",
+        },
         "SCOPE": [
             "profile",
             "email",
@@ -82,14 +94,13 @@ SOCIALACCOUNT_PROVIDERS = {
         "VERIFIED_EMAIL": True,
     },
     "openid_connect": {
-        # LinkedIn now uses OpenID Connect
-        # For tests, we use configuration-based apps instead of database objects
+        # LinkedIn uses OpenID Connect
         "APPS": [
             {
                 "provider_id": "linkedin",
-                "name": "LinkedIn Unit Test",
-                "client_id": "unit_test_linkedin_client_id",
-                "secret": "unit_test_linkedin_secret",
+                "name": "LinkedIn",
+                "client_id": "test_linkedin_client_id",
+                "secret": "test_linkedin_secret",
                 "settings": {
                     "server_url": "https://www.linkedin.com/oauth",
                 },
@@ -97,6 +108,10 @@ SOCIALACCOUNT_PROVIDERS = {
         ],
     },
     "discord": {
+        "APP": {
+            "client_id": "test_discord_client_id",
+            "secret": "test_discord_secret",
+        },
         "SCOPE": [
             "identify",
             "email",
