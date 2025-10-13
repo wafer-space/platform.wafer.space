@@ -137,22 +137,25 @@ def pytest_addoption(parser):
 
 
 @pytest.fixture(scope="session", autouse=True)
-def setup_test_tos(django_db_setup, django_db_blocker, request):
-    """Create test TOS data for browser tests.
+def ensure_test_tos_exists(django_db_setup, django_db_blocker, request):
+    """Ensure test TOS data exists in the database.
 
-    This fixture runs once per test session and creates TOS data
-    that browser tests can use. Browser tests should NOT create
-    database objects directly - they should work with pre-existing data.
+    This runs after django_db_setup to ensure TOS data is available
+    for all browser tests that need it. The data persists in the test
+    database and is visible to the live_server.
     """
     from django.core.management import call_command  # noqa: PLC0415
 
-    # Only run for browser tests involving TOS
+    # Only create TOS for browser tests involving legal
     test_paths = request.config.args
     is_tos_test = any("test_legal" in str(path) for path in test_paths)
 
     if is_tos_test:
         with django_db_blocker.unblock():
-            call_command("create_test_tos", verbosity=0)
+            # Create TOS in test database (will persist for all tests)
+            from wafer_space.legal.models import TermsOfService  # noqa: PLC0415
+            if not TermsOfService.objects.filter(version="1.0.0").exists():
+                call_command("create_test_tos", verbosity=0)
 
 
 @pytest.fixture(scope="session")
