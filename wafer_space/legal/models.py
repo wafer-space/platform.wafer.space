@@ -54,7 +54,8 @@ class TermsOfService(models.Model):
     @classmethod
     def get_active(cls):
         """Get the currently active Terms of Service version."""
-        return cls.objects.filter(is_active=True).first()
+        # Order by -created_at to ensure consistent results
+        return cls.objects.filter(is_active=True).order_by("-created_at").first()
 
 
 class TermsOfServiceAcceptance(models.Model):

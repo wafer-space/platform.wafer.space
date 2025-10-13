@@ -65,6 +65,7 @@ def pytest_configure(config):
     properly shared across threads.
     """
     from django.conf import settings  # noqa: PLC0415
+    from django.core.management import call_command  # noqa: PLC0415
 
     # Only apply to browser tests by checking if we're in the browser test directory
     # This is determined at configure time, before test collection
@@ -95,6 +96,7 @@ def pytest_configure(config):
                 },
             }
         }
+
 
 
 def pytest_unconfigure(config):
@@ -132,6 +134,25 @@ def pytest_addoption(parser):
         default="1920,1080",
         help="Browser window size (default: 1920,1080)",
     )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def setup_test_tos(django_db_setup, django_db_blocker, request):
+    """Create test TOS data for browser tests.
+
+    This fixture runs once per test session and creates TOS data
+    that browser tests can use. Browser tests should NOT create
+    database objects directly - they should work with pre-existing data.
+    """
+    from django.core.management import call_command  # noqa: PLC0415
+
+    # Only run for browser tests involving TOS
+    test_paths = request.config.args
+    is_tos_test = any("test_legal" in str(path) for path in test_paths)
+
+    if is_tos_test:
+        with django_db_blocker.unblock():
+            call_command("create_test_tos", verbosity=0)
 
 
 @pytest.fixture(scope="session")
