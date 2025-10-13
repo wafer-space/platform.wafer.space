@@ -1,12 +1,7 @@
 """Browser tests for TOS acceptance flow."""
 
-import time
-
 import pytest
 from django.contrib.auth import get_user_model
-from django.db import connection
-from django.db import connections
-from django.db import transaction
 
 from tests.browser.base import BaseBrowserTest
 from tests.browser.pages.login_page import LoginPage
@@ -23,36 +18,10 @@ TEST_PASSWORD = "testpass123"  # noqa: S105
 MIN_VERSION_DISPLAY_COUNT = 2  # Minimum times version should appear on page
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 @pytest.mark.browser
 class TestTOSAcceptanceFlow(BaseBrowserTest):
     """Test the complete TOS acceptance flow."""
-
-    @pytest.fixture(autouse=True)
-    def setup(self):
-        """Set up test fixtures including OAuth providers."""
-
-    def _ensure_data_visible(self):
-        """Force database commit to make data visible to live_server thread.
-
-        Browser tests create data dynamically during execution. With file-based
-        SQLite, we need to explicitly commit transactions and give time for
-        the live_server thread to see the data.
-        """
-        # Commit the current transaction to write data to disk
-        transaction.commit()
-
-        # Force SQLite to checkpoint and sync
-        with connection.cursor() as cursor:
-            cursor.execute("PRAGMA wal_checkpoint(RESTART)")
-            cursor.execute("PRAGMA synchronous=FULL")
-
-        # Close all connections to force reconnect
-        for conn in connections.all():
-            conn.close()
-
-        # Small delay to ensure file system and database sync
-        time.sleep(0.1)
 
     def test_public_tos_display(self, driver, live_server_url):
         """Test that TOS can be viewed publicly without login."""
@@ -99,9 +68,6 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
         user.set_password(test_password)
         user.save()
 
-        # Ensure data is visible to live_server
-        self._ensure_data_visible()
-
         # Login
         login_page = LoginPage(driver, live_server_url)
         login_page.go_to_login_page()
@@ -124,9 +90,6 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
         user = UserFactory()
         user.set_password(test_password)
         user.save()
-
-        # Ensure data is visible to live_server
-        self._ensure_data_visible()
 
         login_page = LoginPage(driver, live_server_url)
         login_page.go_to_login_page()
@@ -170,9 +133,6 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
             ip_address="127.0.0.1",
         )
 
-        # Ensure data is visible to live_server
-        self._ensure_data_visible()
-
         # Login
         login_page = LoginPage(driver, live_server_url)
         login_page.go_to_login_page()
@@ -197,9 +157,6 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
         user = UserFactory()
         user.set_password(test_password)
         user.save()
-
-        # Ensure data is visible to live_server
-        self._ensure_data_visible()
 
         login_page = LoginPage(driver, live_server_url)
         login_page.go_to_login_page()
@@ -231,9 +188,6 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
         user.set_password(test_password)
         user.save()
 
-        # Ensure data is visible to live_server
-        self._ensure_data_visible()
-
         login_page = LoginPage(driver, live_server_url)
         login_page.go_to_login_page()
         login_page.login(user.username, test_password)
@@ -259,9 +213,6 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
         user = UserFactory()
         user.set_password(test_password)
         user.save()
-
-        # Ensure data is visible to live_server
-        self._ensure_data_visible()
 
         login_page = LoginPage(driver, live_server_url)
         login_page.go_to_login_page()
@@ -295,9 +246,6 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
         user = UserFactory()
         user.set_password(test_password)
         user.save()
-
-        # Ensure data is visible to live_server
-        self._ensure_data_visible()
 
         login_page = LoginPage(driver, live_server_url)
         login_page.go_to_login_page()
