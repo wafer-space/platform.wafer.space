@@ -93,7 +93,7 @@ collectstatic: ## Collect static files
 # ==================== Testing ====================
 
 .PHONY: test
-test: ## Run all tests
+test: ## Run all tests (unit + browser, all headless by default)
 	@echo "$(BLUE)Running all tests...$(NC)"
 	@$(UV) run pytest
 	@echo "$(GREEN)✓ Tests complete$(NC)"
@@ -149,52 +149,62 @@ test-marker: ## Run tests with specific marker (use MARKER=slow)
 # ==================== Browser Testing ====================
 
 .PHONY: test-browser
-test-browser: ## Run all browser tests with Chrome in visible mode
-	@echo "$(BLUE)Running browser tests with Chrome (visible mode)...$(NC)"
+test-browser: ## Run browser tests (headless by default, screenshots capture state)
+	@echo "$(BLUE)Running browser tests in headless mode...$(NC)"
 	@mkdir -p tests/browser/screenshots
 	@$(UV) run pytest tests/browser/ --browser=chrome -v
 
-.PHONY: test-browser-headless
-test-browser-headless: ## Run browser tests in headless mode
-	@echo "$(BLUE)Running browser tests in headless mode...$(NC)"
-	@mkdir -p tests/browser/screenshots
-	@$(UV) run pytest tests/browser/ --browser=chrome --headless -v
-
 .PHONY: test-browser-firefox
-test-browser-firefox: ## Run browser tests with Firefox
-	@echo "$(BLUE)Running browser tests with Firefox...$(NC)"
+test-browser-firefox: ## Run browser tests with Firefox (headless)
+	@echo "$(BLUE)Running browser tests with Firefox (headless)...$(NC)"
 	@mkdir -p tests/browser/screenshots
 	@$(UV) run pytest tests/browser/ --browser=firefox -v
 
-.PHONY: test-browser-firefox-headless
-test-browser-firefox-headless: ## Run browser tests with Firefox in headless mode
-	@echo "$(BLUE)Running browser tests with Firefox (headless)...$(NC)"
-	@mkdir -p tests/browser/screenshots
-	@$(UV) run pytest tests/browser/ --browser=firefox --headless -v
-
 .PHONY: test-browser-parallel
-test-browser-parallel: ## Run browser tests in parallel
+test-browser-parallel: ## Run browser tests in parallel (headless)
 	@echo "$(BLUE)Running browser tests in parallel...$(NC)"
 	@mkdir -p tests/browser/screenshots
-	@$(UV) run pytest tests/browser/ --browser=chrome --headless -n auto -v
+	@$(UV) run pytest tests/browser/ --browser=chrome -n auto -v
 
-.PHONY: test-browser-debug
-test-browser-debug: ## Run browser tests with debugging (visible, slower)
-	@echo "$(BLUE)Running browser tests in debug mode...$(NC)"
+.PHONY: test-manual
+test-manual: ## Run manual/visual tests with VISIBLE browser (human debugging only)
+	@if [ "$$CLAUDECODE" = "1" ]; then \
+		echo "$(RED)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"; \
+		echo "$(RED)ERROR: Manual tests are BLOCKED in Claude Code$(NC)"; \
+		echo "$(RED)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"; \
+		echo ""; \
+		echo "$(YELLOW)Manual tests are for HUMAN visual debugging only.$(NC)"; \
+		echo "$(YELLOW)They open visible browser windows and disturb the user.$(NC)"; \
+		echo ""; \
+		echo "$(BLUE)What you should do instead:$(NC)"; \
+		echo "  make test                    # All tests (headless)"; \
+		echo "  make test-browser            # Browser tests (headless)"; \
+		echo ""; \
+		echo "$(RED)Claude Code cannot run manual tests. This is not negotiable.$(NC)"; \
+		echo ""; \
+		exit 1; \
+	fi
+	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
+	@echo "$(YELLOW)⚠️  MANUAL TEST MODE - VISIBLE BROWSERS WILL OPEN$(NC)"
+	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
+	@echo ""
+	@echo "$(BLUE)Running manual tests with visible browser windows...$(NC)"
+	@echo "$(BLUE)These tests are for visual debugging by humans only.$(NC)"
+	@echo ""
 	@mkdir -p tests/browser/screenshots
-	@$(UV) run pytest tests/browser/ --browser=chrome -v -s --tb=short
+	@$(UV) run pytest -m manual --visible --browser=chrome -v -s
 
 .PHONY: test-browser-mobile
-test-browser-mobile: ## Run browser tests with mobile viewport
+test-browser-mobile: ## Run browser tests with mobile viewport (headless)
 	@echo "$(BLUE)Running browser tests with mobile viewport...$(NC)"
 	@mkdir -p tests/browser/screenshots
-	@$(UV) run pytest tests/browser/ --browser=chrome --headless --window-size=375,667 -v
+	@$(UV) run pytest tests/browser/ --browser=chrome --window-size=375,667 -v
 
 .PHONY: test-browser-tablet
-test-browser-tablet: ## Run browser tests with tablet viewport
+test-browser-tablet: ## Run browser tests with tablet viewport (headless)
 	@echo "$(BLUE)Running browser tests with tablet viewport...$(NC)"
 	@mkdir -p tests/browser/screenshots
-	@$(UV) run pytest tests/browser/ --browser=chrome --headless --window-size=768,1024 -v
+	@$(UV) run pytest tests/browser/ --browser=chrome --window-size=768,1024 -v
 
 .PHONY: test-browser-screenshots
 test-browser-screenshots: ## Clean browser test screenshots

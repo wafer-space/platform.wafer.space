@@ -1,12 +1,17 @@
 # ==== pytest ====
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "--ds=config.settings.test --reuse-db --import-mode=importlib"
+addopts = "--ds=config.settings.test --reuse-db --import-mode=importlib -m 'not manual'"
+markers = [
+    "manual: marks tests as manual/visual tests requiring visible browser (deselect by default)",
+    "browser: marks tests as browser tests (included by default, always headless)",
+]
 python_files = [
     "tests.py",
     "test_*.py",
 ]
-# Note: Headless browser environment variables are set in conftest.py and Makefile
+# Note: Display environment is cleared at tests/browser/conftest.py import time
+# Browser tests are always headless by default. Use --visible for manual debugging.
 
 # ==== Coverage ====
 [tool.coverage.run]

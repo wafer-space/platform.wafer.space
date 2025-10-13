@@ -23,6 +23,36 @@ from selenium.webdriver.support.wait import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.firefox import GeckoDriverManager
 
+# ============================================================================
+# CRITICAL: Block display for all browser tests by default
+# This prevents accidental GUI browser windows in automated testing
+# Display is only restored if --visible flag is explicitly passed
+# ============================================================================
+
+# Store original display environment before we clear it
+_ORIGINAL_DISPLAY_ENV = {
+    "DISPLAY": os.environ.get("DISPLAY", ""),
+    "WAYLAND_DISPLAY": os.environ.get("WAYLAND_DISPLAY", ""),
+    "QT_QPA_PLATFORM": os.environ.get("QT_QPA_PLATFORM", ""),
+}
+
+# Immediately clear display environment to prevent GUI connections
+# This makes it IMPOSSIBLE for browsers to pop up accidentally
+os.environ["DISPLAY"] = ""
+os.environ["WAYLAND_DISPLAY"] = ""
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+os.environ["MOZ_HEADLESS"] = "1"
+os.environ["CHROME_HEADLESS"] = "1"
+
+
+def restore_display_environment():
+    """Restore display environment for --visible mode (human debugging only)."""
+    for key, value in _ORIGINAL_DISPLAY_ENV.items():
+        if value:
+            os.environ[key] = value
+        else:
+            os.environ.pop(key, None)
+
 
 def pytest_configure(config):
     """Configure file-based database for browser tests.
@@ -94,10 +124,15 @@ def pytest_addoption(parser):
         choices=["chrome", "firefox"],
     )
     parser.addoption(
-        "--headless",
+        "--visible",
         action="store_true",
         default=False,
-        help="Run browser tests in headless mode",
+        help=(
+            "Run browser tests with VISIBLE browser windows "
+            "(for manual debugging only). "
+            "By default, all browser tests run headless with display blocked. "
+            "This flag is BLOCKED in CI and Claude Code environments."
+        ),
     )
     parser.addoption(
         "--window-size",
@@ -109,21 +144,88 @@ def pytest_addoption(parser):
 
 @pytest.fixture(scope="session")
 def browser_config(request):
-    """Get browser configuration from command-line options."""
-    # Force headless mode in CI environments
+    """Get browser configuration from command-line options.
+
+    By default, all browser tests run headless with display environment cleared.
+    This prevents accidental GUI browser windows in automated testing.
+
+    The --visible flag enables visible browser mode for manual debugging only.
+    It is automatically blocked in CI and Claude Code environments.
+    """
+    visible_requested = request.config.getoption("--visible", default=False)
+
+    # Check for automated environments
     is_ci = os.environ.get("CI", "false").lower() == "true"
-    headless = request.config.getoption("--headless") or is_ci
+    is_claudecode = os.environ.get("CLAUDECODE", "").lower() in ("1", "true")
+
+    # BLOCK visible mode in automated environments with loud error
+    if visible_requested and is_claudecode:
+        error_msg = """
+🚨🚨🚨 CRITICAL ERROR: --visible FLAG BLOCKED IN CLAUDE CODE 🚨🚨🚨
+
+Claude Code environment detected! You attempted to use --visible flag.
+
+❌ WHAT YOU DID WRONG:
+You tried to run browser tests with visible browser windows.
+This is PROHIBITED in Claude Code - it disturbs the user.
+
+✅ WHAT YOU SHOULD DO INSTEAD:
+Remove the --visible flag. Browser tests are headless by default.
+
+Correct commands:
+  make test                        # All tests, browser tests are headless
+  make test-browser                # Browser tests only, headless
+  uv run pytest tests/browser/     # Direct pytest, headless by default
+
+🔧 THE --visible FLAG IS FOR:
+- Manual debugging by HUMAN developers
+- Visual inspection of animations/styling
+- Local development ONLY (not automation)
+
+Claude Code cannot use --visible. This is not negotiable.
+
+DETECTED ENVIRONMENT:
+  CLAUDECODE={claudecode}
+
+PROHIBITED FLAG DETECTED:
+  --visible
+
+Please remove --visible and run tests in headless mode (the default).
+"""
+        pytest.exit(
+            error_msg.format(claudecode=os.environ.get("CLAUDECODE")),
+            returncode=1,
+        )
+
+    if visible_requested and is_ci:
+        pytest.exit(
+            "ERROR: --visible flag is blocked in CI environment. "
+            "Browser tests must run headless in CI.",
+            returncode=1,
+        )
+
+    # Restore display environment if visible mode requested (and allowed)
+    if visible_requested:
+        restore_display_environment()
+
+    # headless = NOT visible (inverse relationship)
+    headless = not visible_requested
 
     return {
         "browser": request.config.getoption("--browser"),
         "headless": headless,
+        "visible": visible_requested,
         "window_size": request.config.getoption("--window-size"),
     }
 
 
 @pytest.fixture
 def chrome_options(browser_config):
-    """Configure Chrome options."""
+    """Configure Chrome options.
+
+    Headless mode is always enabled unless --visible flag is passed.
+    Display environment is always cleared unless --visible flag is passed.
+    """
     options = ChromeOptions()
 
     # Set window size
@@ -163,7 +265,11 @@ def chrome_options(browser_config):
 
 @pytest.fixture
 def firefox_options(browser_config):
-    """Configure Firefox options."""
+    """Configure Firefox options.
+
+    Headless mode is always enabled unless --visible flag is passed.
+    Display environment is always cleared unless --visible flag is passed.
+    """
     options = FirefoxOptions()
 
     # Set window size

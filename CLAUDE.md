@@ -39,48 +39,150 @@ uv run pytest                      # Less preferred - less configuration
 
 ### Running Tests
 
-#### 🚨🚨🚨 ABSOLUTE CRITICAL RULE - ZERO TOLERANCE 🚨🚨🚨
-**THIS IS A BINDING REQUIREMENT - NO EXCEPTIONS EVER**
+#### Test Architecture
 
-**RULE**: Browser tests MUST NEVER open visible browser windows when using Claude Code.
+**All browser tests are headless by default.** The display environment is cleared automatically to prevent accidental GUI windows. This makes it impossible for browsers to pop up during normal testing.
+
+**Browser tests are normal tests** - included in all test runs automatically. Screenshots capture visual state, so visible browsers are never needed.
+
+**Manual tests are rare** - a tiny category (possibly zero tests) for human visual debugging only. These require the `--visible` flag and are blocked in automation.
+
+#### Standard Test Commands
 
 ```bash
-# ❌❌❌ ABSOLUTELY FORBIDDEN - WILL EXPLODE WITH ERROR ❌❌❌
-uv run pytest tests/browser/          # FORBIDDEN! WILL BLOCK EXECUTION!
-pytest tests/browser/test_file.py     # FORBIDDEN! WILL BLOCK EXECUTION!
-python -m pytest tests/browser/       # FORBIDDEN! WILL BLOCK EXECUTION!
+# ✅ Run all tests (unit + browser, all headless)
+make test
 
-# ✅✅✅ ONLY THESE COMMANDS ARE PERMITTED ✅✅✅
-make test-browser-headless           # MANDATORY FOR ALL BROWSER TESTS
-make test-browser-firefox-headless   # Alternative headless only
-make test-browser-parallel           # Parallel headless only
+# ✅ Run only browser tests (headless)
+make test-browser
+
+# ✅ Run browser tests in parallel (headless)
+make test-browser-parallel
+
+# ✅ Run tests with coverage
+make test-coverage
+make test-coverage-html
+
+# ✅ Run specific app tests
+make test-app APP=users
+
+# ✅ Direct pytest (headless by default)
+uv run pytest
+uv run pytest tests/browser/
 ```
 
-**AUTOMATIC ENFORCEMENT ACTIVE:**
-- Code will EXPLODE with detailed error if CLAUDECODE environment is detected
-- Environment variables automatically block GUI display connections
-- pytest configuration forces headless mode for all browser tests
-- Multiple protection layers prevent accidental visible browser execution
+**No special flags needed.** Browser tests are always headless by default.
 
-**MANDATORY CHECK BEFORE EVERY TEST COMMAND:**
-1. Does the command contain "tests/browser/"?
-2. If YES → STOP! Use `make test-browser-headless` instead
-3. If NO → Proceed with command
+#### Display Environment Protection
 
-**THIS PROTECTION IS NON-NEGOTIABLE AND CANNOT BE BYPASSED**
+**Automatic display blocking:**
+- Display environment variables cleared at import time
+- `DISPLAY=""` prevents X11 connections
+- `QT_QPA_PLATFORM=offscreen` forces Qt headless mode
+- Applies to ALL test runs (not just Claude Code)
 
-#### Unit Tests (Non-Browser)
+**Why this matters:**
+- Prevents accidental GUI browser windows
+- Makes headless mode the only option for automation
+- Impossible to accidentally disturb the user
+- Works even if configuration is wrong
+
+#### Manual/Visual Tests (Human Debugging Only)
+
 ```bash
-# ✅ PREFERRED: Use Makefile commands
-make test                        # Run all unit tests
-make test-verbose               # Run tests with verbose output
-make test-fast                  # Run tests in parallel
-make test-coverage              # Run tests with coverage report
-make test-coverage-html         # Generate HTML coverage report
-make test-app APP=users         # Run tests for specific app
+# ⚠️ Run manual tests with VISIBLE browser windows
+make test-manual
 
-# ❌ DIRECT COMMANDS: For very specific operations
-uv run pytest path/to/specific_test.py  # For very specific test files
+# ⚠️ Run specific test with visible browser
+uv run pytest tests/browser/test_foo.py --visible -v
+
+# This command:
+# - Opens visible browser windows (will disturb the user!)
+# - Only for human visual debugging (animations, styling, etc.)
+# - Requires explicit --visible flag
+# - Automatically BLOCKED in CLAUDECODE environment
+# - Automatically BLOCKED in CI environment
+```
+
+**Manual tests are for humans only.** They cannot run in automation.
+
+#### Creating Manual Tests (Very Rare)
+
+Only create manual tests when you need to:
+- Debug animation timing that screenshots can't capture
+- Inspect visual effects requiring human judgment
+- Verify responsive behavior interactively
+
+Mark with decorator:
+```python
+@pytest.mark.manual
+@pytest.mark.browser
+def test_animation_smooth_rendering(driver, live_server_url):
+    """Manual test: Verify animation renders smoothly.
+
+    This test requires visual inspection by a human.
+    Run with: pytest -m manual --visible
+    """
+    # Test code here
+    ...
+```
+
+**Default behavior:** Manual tests are excluded by pytest config (`-m 'not manual'` in addopts)
+
+#### CLAUDECODE Environment Behavior
+
+When `CLAUDECODE=1` (Claude Code environment):
+
+1. ✅ Display environment cleared automatically (no flag needed)
+2. ✅ All browser tests run headless by default
+3. ✅ `--visible` flag triggers loud error and exits immediately
+4. ✅ `make test-manual` blocked with clear error message
+5. ✅ Multiple protection layers ensure zero visible browsers
+
+**You cannot use --visible in Claude Code.** It will error immediately with explanation.
+
+#### What Changed from Before
+
+**Old behavior:**
+- Browser tests defaulted to visible mode
+- Needed `--headless` flag to prevent GUI windows
+- Protection ran too late (after browser opened)
+- Easy to accidentally open browsers
+
+**New behavior:**
+- Browser tests default to headless mode
+- Display environment cleared proactively
+- `--visible` flag needed for GUI windows
+- Impossible to accidentally open browsers
+
+#### Forbidden Actions in Claude Code
+
+```bash
+# ❌ NEVER use --visible flag in Claude Code
+uv run pytest tests/browser/ --visible        # BLOCKED with error
+
+# ❌ NEVER run manual test targets
+make test-manual                               # BLOCKED with error
+
+# ❌ NEVER try to restore display environment
+export DISPLAY=:0                              # Won't work, cleared at import
+```
+
+These will all fail with loud, clear error messages explaining what you did wrong.
+
+#### Allowed Actions in Claude Code
+
+```bash
+# ✅ Always safe - browser tests are headless
+make test
+make test-browser
+make test-browser-parallel
+uv run pytest
+uv run pytest tests/browser/
+
+# ✅ All of these run headless automatically
+# ✅ Display environment is cleared automatically
+# ✅ Zero risk of GUI browser windows
 ```
 
 ### Code Quality and Linting
@@ -179,8 +281,8 @@ make dev-install              # Install development dependencies
 **Most Common Commands (Use These 90% of the Time):**
 ```bash
 make runserver                 # Start development server
-make test                      # Run all unit tests
-make test-browser-headless     # Run browser tests (headless only)
+make test                      # Run all tests (unit + browser, all headless)
+make test-browser              # Run browser tests only (headless)
 make lint-fix                  # Fix code style issues
 make migrate                   # Apply database migrations
 make check-all                 # Run all quality checks before commit

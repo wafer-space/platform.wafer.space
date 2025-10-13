@@ -1,8 +1,11 @@
 """Browser tests for TOS acceptance flow."""
 
+import time
+
 import pytest
 from django.contrib.auth import get_user_model
 from django.db import connection
+from django.db import connections
 from django.db import transaction
 
 from tests.browser.base import BaseBrowserTest
@@ -36,8 +39,6 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
         SQLite, we need to explicitly commit transactions and give time for
         the live_server thread to see the data.
         """
-        import time
-
         # Commit the current transaction to write data to disk
         transaction.commit()
 
@@ -47,7 +48,6 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
             cursor.execute("PRAGMA synchronous=FULL")
 
         # Close all connections to force reconnect
-        from django.db import connections
         for conn in connections.all():
             conn.close()
 
