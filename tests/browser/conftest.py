@@ -423,10 +423,23 @@ def social_apps(django_db_setup, django_db_blocker):
     Browser tests that need OAuth buttons should use this fixture.
 
     Session-scoped to prevent duplicate SocialApp creation in parallel tests.
+    Must aggressively clean up SocialApps created by unit tests that run first.
     """
     with django_db_blocker.unblock():
-        # Clean up any existing apps first
-        SocialApp.objects.all().delete()
+        # CRITICAL: Aggressively delete ALL existing SocialApps
+        # Unit tests create SocialApps before browser tests run, and they persist
+        # in the file-based database even after transaction rollback
+
+        # Use raw SQL to bypass Django's transaction management
+        with connection.cursor() as cursor:
+            # Delete many-to-many relationships first
+            cursor.execute(
+                "DELETE FROM socialaccount_socialapp_sites "
+                "WHERE socialapp_id IN "
+                "(SELECT id FROM socialaccount_socialapp)"
+            )
+            # Then delete SocialApp objects
+            cursor.execute("DELETE FROM socialaccount_socialapp")
 
         # Commit deletion and force database sync
         transaction.commit()
