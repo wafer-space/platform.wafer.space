@@ -65,7 +65,6 @@ def pytest_configure(config):
     properly shared across threads.
     """
     from django.conf import settings  # noqa: PLC0415
-    from django.core.management import call_command  # noqa: PLC0415
 
     # Only apply to browser tests by checking if we're in the browser test directory
     # This is determined at configure time, before test collection
@@ -96,7 +95,6 @@ def pytest_configure(config):
                 },
             }
         }
-
 
 
 def pytest_unconfigure(config):
@@ -151,12 +149,15 @@ def ensure_test_tos_exists(django_db_setup, django_db_blocker, request):
     # (in CI, all tests run together)
     test_paths = request.config.args
     # Check if we're running browser tests at all
-    is_browser_test = any("browser" in str(path) for path in test_paths) or not test_paths
+    is_browser_test = (
+        any("browser" in str(path) for path in test_paths) or not test_paths
+    )
 
     if is_browser_test:
         with django_db_blocker.unblock():
             # Create TOS in test database (will persist for all tests)
             from wafer_space.legal.models import TermsOfService  # noqa: PLC0415
+
             if not TermsOfService.objects.filter(version="1.0.0").exists():
                 call_command("create_test_tos", verbosity=0)
                 # Ensure changes are committed to database

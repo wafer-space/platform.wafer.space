@@ -1,14 +1,15 @@
 """Browser tests for TOS acceptance flow."""
 
+import time
+
 import pytest
+from selenium.webdriver.support import expected_conditions as EC  # noqa: N812
 from selenium.webdriver.support.wait import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 
 from tests.browser.base import BaseBrowserTest
-from tests.browser.pages.login_page import LoginPage
+from tests.browser.pages.signup_page import SignupPage
 from tests.browser.pages.tos_page import TOSAcceptPage
 from tests.browser.pages.tos_page import TOSDisplayPage
-from tests.browser.pages.signup_page import SignupPage
 
 # Test constants
 TEST_PASSWORD = "testpass123"  # noqa: S105
@@ -35,7 +36,9 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
         # Either case is valid - we're testing the page loads publicly
         if "No Terms of Service is currently active" in page_source:
             # No TOS exists - verify error is shown
-            assert "Page not found" in page_source or "No Terms of Service" in page_source
+            assert (
+                "Page not found" in page_source or "No Terms of Service" in page_source
+            )
         else:
             # TOS exists - verify it's displayed
             assert "Terms of Service" in page_source
@@ -51,7 +54,6 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
     def test_new_user_sees_tos_after_signup(self, driver, live_server_url):
         """Test that new user is redirected to TOS after signing up."""
         # Generate unique test user details
-        import time
         timestamp = str(int(time.time()))
         test_username = f"testuser{timestamp}"
         test_email = f"test{timestamp}@example.com"
@@ -65,7 +67,7 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
             username=test_username,
             email=test_email,
             password1=TEST_PASSWORD,
-            password2=TEST_PASSWORD
+            password2=TEST_PASSWORD,
         )
 
         # Wait for redirect away from signup
@@ -87,7 +89,6 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
     def test_tos_page_shows_content_and_checkbox(self, driver, live_server_url):
         """Test that TOS accept page displays content and acceptance checkbox."""
         # Create a new user via signup
-        import time
         timestamp = str(int(time.time()))
         test_username = f"testuser{timestamp}"
         test_email = f"test{timestamp}@example.com"
@@ -99,7 +100,7 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
             username=test_username,
             email=test_email,
             password1=TEST_PASSWORD,
-            password2=TEST_PASSWORD
+            password2=TEST_PASSWORD,
         )
 
         # Wait for redirect
@@ -122,7 +123,6 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
     def test_cannot_submit_tos_without_checkbox(self, driver, live_server_url):
         """Test that TOS cannot be accepted without checking the box."""
         # Create a new user
-        import time
         timestamp = str(int(time.time()))
         test_username = f"testuser{timestamp}"
         test_email = f"test{timestamp}@example.com"
@@ -134,7 +134,7 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
             username=test_username,
             email=test_email,
             password1=TEST_PASSWORD,
-            password2=TEST_PASSWORD
+            password2=TEST_PASSWORD,
         )
 
         # Wait for redirect
@@ -163,7 +163,9 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
         # If TOS doesn't exist, that's a valid state to test
         if "No Terms of Service is currently active" in page_source:
             # Verify the error message is displayed properly
-            assert "Page not found" in page_source or "No Terms of Service" in page_source
+            assert (
+                "Page not found" in page_source or "No Terms of Service" in page_source
+            )
         else:
             # TOS exists, verify it's displayed properly
             assert "1.0.0" in page_source
@@ -172,7 +174,6 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
     def test_tos_acceptance_flow_complete(self, driver, live_server_url):
         """Test complete flow: signup -> view TOS -> accept -> redirect."""
         # Create unique user
-        import time
         timestamp = str(int(time.time()))
         test_username = f"testuser{timestamp}"
         test_email = f"test{timestamp}@example.com"
@@ -184,7 +185,7 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
             username=test_username,
             email=test_email,
             password1=TEST_PASSWORD,
-            password2=TEST_PASSWORD
+            password2=TEST_PASSWORD,
         )
 
         # Wait for redirect
