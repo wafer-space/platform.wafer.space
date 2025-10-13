@@ -147,11 +147,13 @@ def ensure_test_tos_exists(django_db_setup, django_db_blocker, request):
     from django.core.management import call_command  # noqa: PLC0415
     from django.db import connection  # noqa: PLC0415
 
-    # Only create TOS for browser tests involving legal
+    # Create TOS for any test run that includes browser tests
+    # (in CI, all tests run together)
     test_paths = request.config.args
-    is_tos_test = any("test_legal" in str(path) for path in test_paths)
+    # Check if we're running browser tests at all
+    is_browser_test = any("browser" in str(path) for path in test_paths) or not test_paths
 
-    if is_tos_test:
+    if is_browser_test:
         with django_db_blocker.unblock():
             # Create TOS in test database (will persist for all tests)
             from wafer_space.legal.models import TermsOfService  # noqa: PLC0415
