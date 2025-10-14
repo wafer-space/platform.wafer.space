@@ -443,7 +443,7 @@ def _handle_download_retry(
     Raises:
         Retry: To retry the task
     """
-    retry_delay = 60 * (2 ** task_self.request.retries)
+    retry_delay = 60 * (2**task_self.request.retries)
 
     try:
         _project, project_file = _get_project_file_for_download(project_id)

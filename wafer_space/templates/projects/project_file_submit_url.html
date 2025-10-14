@@ -3,31 +3,39 @@
 {% load static %}
 {% load crispy_forms_tags %}
 
-{% block title %}Submit File URL - {{ project.name }}{% endblock title %}
-
+{% block title %}
+  Submit File URL - {{ project.name }}
+{% endblock title %}
 {% block content %}
   <div class="container">
     <div class="row">
       <div class="col-sm-12">
         <h2>Submit File URL</h2>
         <p class="lead">Project: {{ project.name }}</p>
-
         <div class="alert alert-info" role="alert">
           <h5 class="alert-heading">Supported Platforms</h5>
           <p>The system automatically converts URLs from these platforms to direct download links:</p>
           <ul class="mb-0">
-            <li><strong>GitHub:</strong> Blob URLs → Raw content URLs</li>
-            <li><strong>GitLab:</strong> Blob URLs → Raw content URLs</li>
-            <li><strong>Dropbox:</strong> Share URLs → Direct download URLs</li>
-            <li><strong>Google Drive:</strong> Share URLs → Direct download URLs</li>
-            <li><strong>OneDrive:</strong> Share URLs → Direct download URLs</li>
+            <li>
+              <strong>GitHub:</strong> Blob URLs → Raw content URLs
+            </li>
+            <li>
+              <strong>GitLab:</strong> Blob URLs → Raw content URLs
+            </li>
+            <li>
+              <strong>Dropbox:</strong> Share URLs → Direct download URLs
+            </li>
+            <li>
+              <strong>Google Drive:</strong> Share URLs → Direct download URLs
+            </li>
+            <li>
+              <strong>OneDrive:</strong> Share URLs → Direct download URLs
+            </li>
           </ul>
         </div>
-
         <form method="post">
           {% csrf_token %}
           {{ form|crispy }}
-
           <div class="alert alert-warning" role="alert">
             <h5 class="alert-heading">Important Notes</h5>
             <ul class="mb-0">
@@ -37,12 +45,13 @@
               <li>Optional MD5/SHA1 hashes for file verification</li>
             </ul>
           </div>
-
           <div class="d-flex gap-2 mt-3">
             <button type="submit" class="btn btn-primary">
               <i class="bi bi-download"></i> Submit for Download
             </button>
-            <a class="btn btn-secondary" href="{% url 'projects:detail' pk=project.pk %}" role="button">
+            <a class="btn btn-secondary"
+               href="{% url 'projects:detail' pk=project.pk %}"
+               role="button">
               <i class="bi bi-x-circle"></i> Cancel
             </a>
           </div>

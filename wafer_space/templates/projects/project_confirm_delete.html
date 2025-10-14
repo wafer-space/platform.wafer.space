@@ -2,14 +2,14 @@
 
 {% load static %}
 
-{% block title %}Delete Project{% endblock title %}
-
+{% block title %}
+  Delete Project
+{% endblock title %}
 {% block content %}
   <div class="container">
     <div class="row">
       <div class="col-sm-12">
         <h2>Delete Project</h2>
-
         <div class="alert alert-danger" role="alert">
           <h4 class="alert-heading">Are you sure?</h4>
           <p>
@@ -17,19 +17,19 @@
             This action cannot be undone.
           </p>
           {% if object.description %}
-            <hr>
+            <hr />
             <p class="mb-0 text-muted">Description: {{ object.description|truncatewords:20 }}</p>
           {% endif %}
         </div>
-
         <form method="post">
           {% csrf_token %}
-
           <div class="d-flex gap-2">
             <button type="submit" class="btn btn-danger">
               <i class="bi bi-trash"></i> Yes, Delete This Project
             </button>
-            <a class="btn btn-secondary" href="{% url 'projects:detail' pk=object.pk %}" role="button">
+            <a class="btn btn-secondary"
+               href="{% url 'projects:detail' pk=object.pk %}"
+               role="button">
               <i class="bi bi-x-circle"></i> Cancel
             </a>
           </div>

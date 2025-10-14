@@ -2,8 +2,9 @@
 
 {% load static %}
 
-{% block title %}{{ project.name }}{% endblock title %}
-
+{% block title %}
+  {{ project.name }}
+{% endblock title %}
 {% block content %}
   <div class="container">
     <div class="row">
@@ -11,15 +12,18 @@
         <div class="d-flex justify-content-between align-items-center mb-3">
           <h2>{{ project.name }}</h2>
           <div>
-            <a class="btn btn-primary" href="{% url 'projects:update' pk=project.pk %}" role="button">
+            <a class="btn btn-primary"
+               href="{% url 'projects:update' pk=project.pk %}"
+               role="button">
               <i class="bi bi-pencil"></i> Edit
             </a>
-            <a class="btn btn-danger" href="{% url 'projects:delete' pk=project.pk %}" role="button">
+            <a class="btn btn-danger"
+               href="{% url 'projects:delete' pk=project.pk %}"
+               role="button">
               <i class="bi bi-trash"></i> Delete
             </a>
           </div>
         </div>
-
         {% if project.description %}
           <div class="card mb-3">
             <div class="card-body">
@@ -28,7 +32,6 @@
             </div>
           </div>
         {% endif %}
-
         <div class="card mb-3">
           <div class="card-header">
             <h5 class="mb-0">Project File</h5>
@@ -38,15 +41,10 @@
               <h6>Active File: {{ active_file.original_filename }}</h6>
               <p class="text-muted">
                 Status:
-                <span class="badge
-                      {% if active_file.download_status == 'completed' %}bg-success
-                      {% elif active_file.download_status == 'failed' %}bg-danger
-                      {% elif active_file.download_status == 'downloading' %}bg-primary
-                      {% else %}bg-secondary{% endif %}">
+                <span class="badge {% if active_file.download_status == 'completed' %}bg-success {% elif active_file.download_status == 'failed' %}bg-danger {% elif active_file.download_status == 'downloading' %}bg-primary {% else %}bg-secondary{% endif %}">
                   {{ active_file.get_download_status_display }}
                 </span>
               </p>
-
               {% if show_progress %}
                 <div class="progress mb-3">
                   <div class="progress-bar progress-bar-striped progress-bar-animated"
@@ -54,55 +52,58 @@
                        style="width: {{ progress.progress }}%"
                        aria-valuenow="{{ progress.progress }}"
                        aria-valuemin="0"
-                       aria-valuemax="100">
-                    {{ progress.progress }}%
-                  </div>
+                       aria-valuemax="100">{{ progress.progress }}%</div>
                 </div>
                 <p>{{ progress.message }}</p>
               {% endif %}
-
               {% if active_file.original_url %}
-                <p><strong>Original URL:</strong> <a href="{{ active_file.original_url }}" target="_blank">{{ active_file.original_url|truncatechars:80 }}</a></p>
+                <p>
+                  <strong>Original URL:</strong> <a href="{{ active_file.original_url }}" target="_blank">{{ active_file.original_url|truncatechars:80 }}</a>
+                </p>
               {% endif %}
-
               {% if active_file.file_size %}
-                <p><strong>File Size:</strong> {{ active_file.file_size|filesizeformat }}</p>
+                <p>
+                  <strong>File Size:</strong> {{ active_file.file_size|filesizeformat }}
+                </p>
               {% endif %}
             {% else %}
               <p class="text-muted">No file uploaded yet.</p>
             {% endif %}
-
             <div class="mt-3">
-              <a class="btn btn-primary" href="{% url 'projects:submit_url' pk=project.pk %}" role="button">
+              <a class="btn btn-primary"
+                 href="{% url 'projects:submit_url' pk=project.pk %}"
+                 role="button">
                 <i class="bi bi-link"></i> Submit File URL
               </a>
-              <a class="btn btn-primary" href="{% url 'projects:upload' pk=project.pk %}" role="button">
+              <a class="btn btn-primary"
+                 href="{% url 'projects:upload' pk=project.pk %}"
+                 role="button">
                 <i class="bi bi-upload"></i> Upload File
               </a>
             </div>
           </div>
         </div>
-
         <div class="card">
           <div class="card-body">
             <p class="text-muted mb-0">
               <small>Created: {{ project.created_at|date:"F d, Y, g:i a" }}</small>
               {% if project.updated_at != project.created_at %}
-                <br><small>Last modified: {{ project.updated_at|date:"F d, Y, g:i a" }}</small>
+                <br />
+                <small>Last modified: {{ project.updated_at|date:"F d, Y, g:i a" }}</small>
               {% endif %}
             </p>
           </div>
         </div>
-
         <div class="mt-3">
-          <a class="btn btn-secondary" href="{% url 'projects:list' %}" role="button">
+          <a class="btn btn-secondary"
+             href="{% url 'projects:list' %}"
+             role="button">
             <i class="bi bi-arrow-left"></i> Back to Projects
           </a>
         </div>
       </div>
     </div>
   </div>
-
   {% if show_progress %}
     <script>
       // Poll for progress updates
@@ -114,7 +115,7 @@
               location.reload();
             }
           });
-      }, 3000);  // Poll every 3 seconds
+      }, 3000); // Poll every 3 seconds
     </script>
   {% endif %}
 {% endblock content %}

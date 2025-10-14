@@ -56,7 +56,9 @@ class URLValidator:
             raise SecurityValidationError(msg)
 
         if parsed.scheme.lower() not in cls.ALLOWED_SCHEMES:
-            msg = f"URL scheme '{parsed.scheme}' is not allowed. Use http:// or https://"
+            msg = (
+                f"URL scheme '{parsed.scheme}' is not allowed. Use http:// or https://"
+            )
             raise SecurityValidationError(msg)
 
     @classmethod

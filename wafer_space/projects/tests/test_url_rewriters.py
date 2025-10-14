@@ -1,6 +1,5 @@
 """Tests for URL rewriting module."""
 
-
 from wafer_space.projects.url_rewriters import URLRewriter
 
 
@@ -155,7 +154,9 @@ class TestURLRewriter:
     def test_onedrive_share_link_rewrite(self):
         """Test OneDrive share link gets download=1 parameter."""
         url = "https://onedrive.live.com/embed?resid=ABC123&authkey=DEF456"
-        expected = "https://onedrive.live.com/embed?resid=ABC123&authkey=DEF456&download=1"
+        expected = (
+            "https://onedrive.live.com/embed?resid=ABC123&authkey=DEF456&download=1"
+        )
 
         rewritten_url, was_rewritten, reason = URLRewriter.rewrite_url(url)
 
@@ -195,7 +196,9 @@ class TestURLRewriter:
     def test_complex_github_path_with_subdirectories(self):
         """Test GitHub URLs with complex paths."""
         url = "https://github.com/user/repo/blob/main/subdir1/subdir2/file.gds"
-        expected = "https://raw.githubusercontent.com/user/repo/main/subdir1/subdir2/file.gds"
+        expected = (
+            "https://raw.githubusercontent.com/user/repo/main/subdir1/subdir2/file.gds"
+        )
 
         rewritten_url, was_rewritten, _reason = URLRewriter.rewrite_url(url)
 

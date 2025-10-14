@@ -229,9 +229,7 @@ class ProjectFileService:
         if task.state in ("PENDING", "STARTED"):
             status = "pending" if task.state == "PENDING" else "downloading"
             message = (
-                "Download pending"
-                if task.state == "PENDING"
-                else "Download starting"
+                "Download pending" if task.state == "PENDING" else "Download starting"
             )
             return {
                 "status": status,

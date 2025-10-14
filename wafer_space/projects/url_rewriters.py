@@ -101,14 +101,16 @@ class URLRewriter:
             if "dl" in params and params["dl"][0] == "0":
                 params["dl"] = ["1"]
                 new_query = urlencode(params, doseq=True)
-                new_url = urlunparse((
-                    parsed.scheme,
-                    parsed.netloc,
-                    parsed.path,
-                    parsed.params,
-                    new_query,
-                    parsed.fragment,
-                ))
+                new_url = urlunparse(
+                    (
+                        parsed.scheme,
+                        parsed.netloc,
+                        parsed.path,
+                        parsed.params,
+                        new_query,
+                        parsed.fragment,
+                    )
+                )
                 return new_url, True, "Converted Dropbox share link to direct download"
 
         return url, False, ""
@@ -155,7 +157,6 @@ class URLRewriter:
                     "Converted Google Drive share link to direct download",
                 )
 
-
         return url, False, ""
 
     @staticmethod
@@ -175,14 +176,16 @@ class URLRewriter:
                 params = parse_qs(parsed.query)
                 params["download"] = ["1"]
                 new_query = urlencode(params, doseq=True)
-                new_url = urlunparse((
-                    parsed.scheme,
-                    parsed.netloc,
-                    parsed.path,
-                    parsed.params,
-                    new_query,
-                    parsed.fragment,
-                ))
+                new_url = urlunparse(
+                    (
+                        parsed.scheme,
+                        parsed.netloc,
+                        parsed.path,
+                        parsed.params,
+                        new_query,
+                        parsed.fragment,
+                    )
+                )
                 return new_url, True, "Converted OneDrive share link to direct download"
 
         return url, False, ""
