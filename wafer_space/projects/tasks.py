@@ -19,6 +19,8 @@ from django.core.files.base import File
 from django.utils import timezone
 from django_celery_results.models import TaskResult
 
+from wafer_space.notifications.services import NotificationService
+
 from .models import ManufacturabilityCheck
 from .models import Project
 from .models import ProjectFile
@@ -481,7 +483,15 @@ def _handle_download_failure(
     try:
         _project, project_file = _get_project_file_for_download(project_id)
         if project_file:
-            project_file.mark_download_failed(f"Max retries reached: {exc!s}")
+            error_msg = f"Max retries reached: {exc!s}"
+            project_file.mark_download_failed(error_msg)
+
+            # Create failure notification
+            NotificationService.create_download_failed_notification(
+                user=project_file.project.user,
+                project_file=project_file,
+                error_message=str(exc),
+            )
     except Project.DoesNotExist:
         pass
 
@@ -570,6 +580,24 @@ def download_project_file(self, project_id):
         )
         project_file.hash_verified = hash_verified
         project_file.mark_download_complete()
+
+        # Create notifications
+        NotificationService.create_download_complete_notification(
+            user=project_file.project.user,
+            project_file=project_file,
+        )
+
+        if hash_verified:
+            NotificationService.create_checksum_verified_notification(
+                user=project_file.project.user,
+                project_file=project_file,
+            )
+        elif verification_errors:
+            NotificationService.create_checksum_mismatch_notification(
+                user=project_file.project.user,
+                project_file=project_file,
+                errors=verification_errors,
+            )
 
         # Clean up temp file
         with contextlib.suppress(OSError):

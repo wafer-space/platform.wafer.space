@@ -44,6 +44,7 @@ class ProjectFileURLSubmitForm(forms.Form):
     url = forms.URLField(
         label="File URL",
         max_length=2048,
+        assume_scheme="https",
         widget=forms.URLInput(
             attrs={
                 "class": "form-control",
