@@ -18,20 +18,18 @@ def mock_tos_directory(monkeypatch):
 
         # Mock the function that returns the TOS directory
         monkeypatch.setattr(
-            "wafer_space.legal.utils.get_tos_versions_directory",
-            lambda: temp_tos_dir
+            "wafer_space.legal.utils.get_tos_versions_directory", lambda: temp_tos_dir
         )
 
         # Also mock it in the models module (already imported)
         monkeypatch.setattr(
-            "wafer_space.legal.models.get_tos_versions_directory",
-            lambda: temp_tos_dir
+            "wafer_space.legal.models.get_tos_versions_directory", lambda: temp_tos_dir
         )
 
         # And in the factories module
         monkeypatch.setattr(
             "wafer_space.legal.tests.factories.get_tos_versions_directory",
-            lambda: temp_tos_dir
+            lambda: temp_tos_dir,
         )
 
         yield temp_tos_dir

@@ -45,8 +45,7 @@ class TermsOfServiceAdmin(admin.ModelAdmin):
             {
                 "fields": ("content_preview",),
                 "description": (
-                    "Content is stored in "
-                    "wafer_space/legal/tos_versions/{version}.md"
+                    "Content is stored in wafer_space/legal/tos_versions/{version}.md"
                 ),
             },
         ),

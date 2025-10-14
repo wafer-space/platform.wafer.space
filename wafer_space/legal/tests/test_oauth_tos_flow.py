@@ -110,13 +110,16 @@ class TestOAuthUserTOSFlow:
         response = client.get(f"/users/{user.username}/")
         assert response.status_code == HTTPStatus.OK
 
-    @pytest.mark.parametrize(("provider", "username_prefix"), [
-        ("github", "gh_"),
-        ("google", "google_"),
-        ("gitlab", "gl_"),
-        ("discord", "discord_"),
-        ("linkedin", "li_"),
-    ])
+    @pytest.mark.parametrize(
+        ("provider", "username_prefix"),
+        [
+            ("github", "gh_"),
+            ("google", "google_"),
+            ("gitlab", "gl_"),
+            ("discord", "discord_"),
+            ("linkedin", "li_"),
+        ],
+    )
     def test_all_oauth_providers_require_tos(
         self, client, active_tos, provider, username_prefix
     ):
