@@ -165,8 +165,8 @@ class TestProjectFileDownload(BaseBrowserTest):
         )
         submit_button.click()
 
-        # Wait for redirect to project detail page
-        self.wait_for_element(self.driver, (By.TAG_NAME, "body"), timeout=10)
+        # Wait for redirect to project detail page (with more time for form processing)
+        time.sleep(3)  # Give time for form submission and redirect
 
         # Verify ProjectFile was created
         project_files = ProjectFile.objects.filter(project=self.project)
