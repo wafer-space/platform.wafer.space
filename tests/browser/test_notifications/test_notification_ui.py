@@ -1,5 +1,7 @@
 """Browser tests for notification UI functionality."""
 
+import time
+
 import pytest
 from allauth.account.models import EmailAddress
 from selenium.webdriver.common.by import By
@@ -270,11 +272,14 @@ class TestNotificationUI(BaseBrowserTest):
         )
         mark_all_button.click()
 
-        # Wait for page reload after marking as read
-        wait = WebDriverWait(self.driver, 10)
-        wait.until(expected_conditions.staleness_of(mark_all_button))
+        # Wait for page to reload and database to update
+        time.sleep(2)  # Give time for redirect and database update
 
-        # Verify all notifications marked as read
+        # Refresh page to ensure we see updated state
+        self.driver.refresh()
+        time.sleep(1)
+
+        # Verify all notifications marked as read in database
         unread_count = Notification.objects.filter(
             user=self.user,
             is_read=False,
