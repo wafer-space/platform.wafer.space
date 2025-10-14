@@ -273,18 +273,19 @@ class TestNotificationUI(BaseBrowserTest):
         mark_all_button.click()
 
         # Wait for page to reload and database to update
-        time.sleep(2)  # Give time for redirect and database update
+        # Retry up to 5 times with 1 second delay
+        max_retries = 5
+        for attempt in range(max_retries):
+            time.sleep(1)
+            unread_count = Notification.objects.filter(
+                user=self.user,
+                is_read=False,
+            ).count()
+            if unread_count == 0:
+                break
 
-        # Refresh page to ensure we see updated state
-        self.driver.refresh()
-        time.sleep(1)
-
-        # Verify all notifications marked as read in database
-        unread_count = Notification.objects.filter(
-            user=self.user,
-            is_read=False,
-        ).count()
-        assert unread_count == 0
+        # Final verification
+        assert unread_count == 0, f"Expected 0 unread, got {unread_count} after {max_retries} attempts"
 
     def test_filter_tabs_display(self):
         """Test that filter tabs (All, Unread, Read) display correctly."""
