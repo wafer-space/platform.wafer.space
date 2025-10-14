@@ -131,13 +131,13 @@ class ProjectFile(models.Model):
     )
 
     # URL-based file handling
+    original_url = models.URLField(
+        blank=True,
+        help_text="Original URL submitted by user (before any rewriting)",
+    )
     source_url = models.URLField(
         blank=True,
-        help_text="URL to download the file from",
-    )
-    url_source = models.URLField(
-        blank=True,
-        help_text="Original URL if file was fetched from remote source",
+        help_text="Actual URL to download from (after URL rewriting if applicable)",
     )
     download_status = models.CharField(
         max_length=20,
@@ -148,6 +148,11 @@ class ProjectFile(models.Model):
     download_completed_at = models.DateTimeField(null=True, blank=True)
     download_error = models.TextField(blank=True)
     download_task_id = models.CharField(max_length=100, blank=True)
+    last_activity = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Last activity timestamp for download progress tracking",
+    )
 
     # File verification (provided by user)
     expected_hash_md5 = models.CharField(
@@ -172,10 +177,31 @@ class ProjectFile(models.Model):
     content_type = models.CharField(max_length=100, blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
+    # File replacement tracking
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Whether this is the currently active file for the project",
+    )
+    replaced_by = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="replaces",
+        help_text="The file that replaced this one",
+    )
+
     class Meta:
         verbose_name = "Project File"
         verbose_name_plural = "Project Files"
         ordering = ["uploaded_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["project"],
+                condition=models.Q(is_active=True),
+                name="one_active_file_per_project",
+            ),
+        ]
 
     def __str__(self):
         if self.source_url:
