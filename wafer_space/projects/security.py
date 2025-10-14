@@ -130,17 +130,18 @@ class URLValidator:
                 msg = f"Invalid file size: {file_size} bytes"
                 raise SecurityValidationError(msg)
 
-            if file_size > cls.MAX_FILE_SIZE:
-                # Convert to GB for error message
-                size_gb = file_size / (1024 * 1024 * 1024)
-                max_gb = cls.MAX_FILE_SIZE / (1024 * 1024 * 1024)
-                msg = (
-                    f"File size {size_gb:.2f}GB exceeds maximum "
-                    f"allowed size of {max_gb:.0f}GB"
-                )
-                raise SecurityValidationError(msg)
-            else:
+            # Check if file size is within acceptable limits
+            if file_size <= cls.MAX_FILE_SIZE:
                 return file_size
+
+            # File size exceeds maximum - convert to GB for error message
+            size_gb = file_size / (1024 * 1024 * 1024)
+            max_gb = cls.MAX_FILE_SIZE / (1024 * 1024 * 1024)
+            msg = (
+                f"File size {size_gb:.2f}GB exceeds maximum "
+                f"allowed size of {max_gb:.0f}GB"
+            )
+            raise SecurityValidationError(msg)
         except requests.RequestException as e:
             msg = f"Failed to check file size: {e}"
             raise SecurityValidationError(msg) from e

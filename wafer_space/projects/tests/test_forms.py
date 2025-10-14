@@ -276,7 +276,8 @@ class TestProjectFileURLSubmitForm(TestCase):
         """Test SHA1 hash with non-hex characters is invalid."""
         form_data = {
             "url": "https://example.com/file.gds",
-            "expected_hash_sha1": "gggggggggggggggggggggggggggggggggggggggg",  # 'g' is not hex
+            # 'g' is not a valid hex character
+            "expected_hash_sha1": "gggggggggggggggggggggggggggggggggggggggg",
         }
         form = ProjectFileURLSubmitForm(data=form_data)
 
@@ -331,7 +332,8 @@ class TestProjectFileLocalUploadForm(TestCase):
         # Will be invalid due to missing file, but MD5 should be cleaned
         form.is_valid()
         if "expected_hash_md5" not in form.errors:
-            assert form.cleaned_data["expected_hash_md5"] == "abc123def456789012345678901234ab"
+            expected_md5 = "abc123def456789012345678901234ab"
+            assert form.cleaned_data["expected_hash_md5"] == expected_md5
 
     def test_form_sha1_validation_same_as_url_form(self):
         """Test SHA1 validation matches URL form."""
@@ -344,4 +346,5 @@ class TestProjectFileLocalUploadForm(TestCase):
         # Will be invalid due to missing file, but SHA1 should be cleaned
         form.is_valid()
         if "expected_hash_sha1" not in form.errors:
-            assert form.cleaned_data["expected_hash_sha1"] == "abc123def456789012345678901234567890abcd"
+            expected_sha1 = "abc123def456789012345678901234567890abcd"
+            assert form.cleaned_data["expected_hash_sha1"] == expected_sha1

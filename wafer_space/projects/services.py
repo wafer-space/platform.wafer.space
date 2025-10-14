@@ -228,7 +228,11 @@ class ProjectFileService:
         # Map task states to status and message
         if task.state in ("PENDING", "STARTED"):
             status = "pending" if task.state == "PENDING" else "downloading"
-            message = "Download pending" if task.state == "PENDING" else "Download starting"
+            message = (
+                "Download pending"
+                if task.state == "PENDING"
+                else "Download starting"
+            )
             return {
                 "status": status,
                 "progress": 0,

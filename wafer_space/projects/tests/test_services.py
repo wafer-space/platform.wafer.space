@@ -220,7 +220,7 @@ class TestProjectFileService(TestCase):
         mock_task.return_value = Mock(id="task-456")
 
         # Submit new file
-        new_file, metadata = ProjectFileService.submit_file_from_url(
+        new_file, _metadata = ProjectFileService.submit_file_from_url(
             project=self.project,
             url=url,
         )
@@ -263,7 +263,7 @@ class TestProjectFileService(TestCase):
         }
         mock_task.return_value = Mock(id="task-789")
 
-        project_file, metadata = ProjectFileService.submit_file_from_url(
+        project_file, _metadata = ProjectFileService.submit_file_from_url(
             project=self.project,
             url=url,
         )
@@ -292,7 +292,7 @@ class TestProjectFileService(TestCase):
         }
         mock_task.return_value = Mock(id="task-abc")
 
-        project_file, metadata = ProjectFileService.submit_file_from_url(
+        project_file, _metadata = ProjectFileService.submit_file_from_url(
             project=self.project,
             url=url,
         )
@@ -321,7 +321,7 @@ class TestProjectFileService(TestCase):
         }
         mock_task.return_value = Mock(id="task-xyz-123")
 
-        project_file, metadata = ProjectFileService.submit_file_from_url(
+        project_file, _metadata = ProjectFileService.submit_file_from_url(
             project=self.project,
             url=url,
         )

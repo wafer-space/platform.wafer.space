@@ -386,6 +386,115 @@ def _download_with_progress(
     return md5_hasher.hexdigest(), sha1_hasher.hexdigest()
 
 
+def _get_project_file_for_download(
+    project_id: str,
+) -> tuple[Project, ProjectFile | None]:
+    """Get project and its active file for download.
+
+    Args:
+        project_id: UUID of the project
+
+    Returns:
+        tuple: (Project, ProjectFile or None)
+
+    Raises:
+        Project.DoesNotExist: If project not found
+    """
+    project = Project.objects.get(id=project_id)
+    project_file = project.files.filter(is_active=True).first()
+    return project, project_file
+
+
+def _initialize_download(project_file: ProjectFile) -> None:
+    """Mark file download as started and set initial metadata.
+
+    Args:
+        project_file: The file to initialize
+    """
+    project_file.download_status = ProjectFile.DownloadStatus.DOWNLOADING
+    project_file.download_started_at = timezone.now()
+    project_file.last_activity = timezone.now()
+    project_file.save(
+        update_fields=[
+            "download_status",
+            "download_started_at",
+            "last_activity",
+        ],
+    )
+
+    if not project_file.original_filename:
+        filename = _extract_filename_from_url(project_file.source_url)
+        project_file.original_filename = filename
+        project_file.save(update_fields=["original_filename"])
+
+
+def _handle_download_retry(
+    task_self,
+    project_id: str,
+    exc: Exception,
+) -> None:
+    """Handle download retry with exponential backoff.
+
+    Args:
+        task_self: The Celery task instance
+        project_id: UUID of the project
+        exc: The exception that caused the retry
+
+    Raises:
+        Retry: To retry the task
+    """
+    retry_delay = 60 * (2 ** task_self.request.retries)
+
+    try:
+        _project, project_file = _get_project_file_for_download(project_id)
+        if project_file:
+            error_msg = (
+                f"Retry {task_self.request.retries + 1}/"
+                f"{task_self.max_retries}: {exc!s}"
+            )
+            project_file.download_error = error_msg
+            project_file.last_activity = timezone.now()
+            project_file.save(
+                update_fields=["download_error", "last_activity"],
+            )
+    except Project.DoesNotExist:
+        pass
+
+    raise task_self.retry(exc=exc, countdown=retry_delay) from exc
+
+
+def _handle_download_failure(
+    project_id: str,
+    exc: Exception,
+    temp_path: Path | None,
+) -> dict[str, str | int]:
+    """Handle final download failure after max retries.
+
+    Args:
+        project_id: UUID of the project
+        exc: The exception that caused the failure
+        temp_path: Path to temp file to clean up
+
+    Returns:
+        dict: Failure status information
+    """
+    try:
+        _project, project_file = _get_project_file_for_download(project_id)
+        if project_file:
+            project_file.mark_download_failed(f"Max retries reached: {exc!s}")
+    except Project.DoesNotExist:
+        pass
+
+    if temp_path and temp_path.exists():
+        with contextlib.suppress(OSError):
+            temp_path.unlink()
+
+    return {
+        "status": "failed",
+        "message": str(exc),
+    }
+
+
 @shared_task(bind=True, max_retries=5, default_retry_delay=60)
 def download_project_file(self, project_id):
     """Background task to download a project file from a URL.
@@ -406,9 +515,8 @@ def download_project_file(self, project_id):
     temp_path = None
 
     try:
-        # Get the project and its active file
-        project = Project.objects.get(id=project_id)
-        project_file = project.files.filter(is_active=True).first()
+        # Get and validate project file
+        _project, project_file = _get_project_file_for_download(project_id)
 
         if not project_file:
             return {
@@ -422,30 +530,15 @@ def download_project_file(self, project_id):
                 "message": "No source URL provided for file download",
             }
 
-        # Mark download as started
-        project_file.download_status = ProjectFile.DownloadStatus.DOWNLOADING
-        project_file.download_started_at = timezone.now()
-        project_file.last_activity = timezone.now()
-        project_file.save(
-            update_fields=[
-                "download_status",
-                "download_started_at",
-                "last_activity",
-            ],
-        )
-
-        # Set up filename if not already provided
-        if not project_file.original_filename:
-            filename = _extract_filename_from_url(project_file.source_url)
-            project_file.original_filename = filename
-            project_file.save(update_fields=["original_filename"])
+        # Initialize download
+        _initialize_download(project_file)
 
         # Set up temporary directory and file path
         temp_dir = _setup_temp_directory()
         temp_filename = f"{project_file.id}_{project_file.original_filename}"
         temp_path = temp_dir / temp_filename
 
-        # Download with progress tracking and resume capability
+        # Download with progress tracking
         md5_hash, sha1_hash = _download_with_progress(
             self,
             project_file,
@@ -454,7 +547,10 @@ def download_project_file(self, project_id):
 
         # Save to Django file field
         with temp_path.open("rb") as temp_file:
-            django_file = File(temp_file, name=project_file.original_filename)
+            django_file = File(
+                temp_file,
+                name=project_file.original_filename,
+            )
             project_file.file.save(
                 project_file.original_filename,
                 django_file,
@@ -473,8 +569,6 @@ def download_project_file(self, project_id):
             sha1_hash,
         )
         project_file.hash_verified = hash_verified
-
-        # Mark as complete
         project_file.mark_download_complete()
 
         # Clean up temp file
@@ -500,45 +594,10 @@ def download_project_file(self, project_id):
         }
 
     except (OSError, ValueError, requests.RequestException) as exc:
-        # Handle task retry logic with exponential backoff
-        retry_delay = 60 * (2 ** self.request.retries)  # Exponential backoff
-
         if self.request.retries < self.max_retries:
-            # Update file with retry info
-            try:
-                project = Project.objects.get(id=project_id)
-                project_file = project.files.filter(is_active=True).first()
-                if project_file:
-                    project_file.download_error = (
-                        f"Retry {self.request.retries + 1}/{self.max_retries}: {exc!s}"
-                    )
-                    project_file.last_activity = timezone.now()
-                    project_file.save(update_fields=["download_error", "last_activity"])
-            except Project.DoesNotExist:
-                pass
-
-            # Retry the task with exponential backoff
-            raise self.retry(exc=exc, countdown=retry_delay) from exc
-
-        # Max retries reached, mark as failed
-        try:
-            project = Project.objects.get(id=project_id)
-            project_file = project.files.filter(is_active=True).first()
-            if project_file:
-                project_file.mark_download_failed(f"Max retries reached: {exc!s}")
-        except Project.DoesNotExist:
-            pass
-
-        # Clean up temp file on final failure
-        if temp_path and temp_path.exists():
-            with contextlib.suppress(OSError):
-                temp_path.unlink()
-
-        return {
-            "status": "failed",
-            "message": str(exc),
-            "retries": self.request.retries,
-        }
+            _handle_download_retry(self, project_id, exc)
+        else:
+            return _handle_download_failure(project_id, exc, temp_path)
 
 
 @shared_task

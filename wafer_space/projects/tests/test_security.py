@@ -59,7 +59,8 @@ class TestURLValidator:
         ]
 
         for url in test_cases:
-            with pytest.raises(SecurityValidationError, match="Cannot download from localhost"):
+            match_str = "Cannot download from localhost"
+            with pytest.raises(SecurityValidationError, match=match_str):
                 URLValidator.validate_hostname(url)
 
     def test_validate_hostname_missing(self):
@@ -84,7 +85,11 @@ class TestURLValidator:
 
     @patch("socket.gethostbyname")
     @patch("requests.head")
-    def test_validate_hostname_rfc1918_ranges_rejected(self, mock_head, mock_gethostbyname):
+    def test_validate_hostname_rfc1918_ranges_rejected(
+        self,
+        mock_head,
+        mock_gethostbyname,
+    ):
         """Test that all RFC 1918 private IP ranges are rejected."""
         mock_head.return_value = Mock(status_code=200)
 
@@ -95,7 +100,7 @@ class TestURLValidator:
             ("169.254.0.1", "169.254.0.0/16"),  # Link-local
         ]
 
-        for ip, description in test_cases:
+        for ip, _description in test_cases:
             mock_gethostbyname.return_value = ip
             url = f"http://host-{ip.replace('.', '-')}.example.com/file.gds"
 
@@ -104,7 +109,11 @@ class TestURLValidator:
 
     @patch("socket.gethostbyname")
     @patch("requests.head")
-    def test_validate_hostname_unresolvable_rejected(self, mock_head, mock_gethostbyname):
+    def test_validate_hostname_unresolvable_rejected(
+        self,
+        mock_head,
+        mock_gethostbyname,
+    ):
         """Test that unresolvable hostnames are rejected."""
         # Mock requests.head to succeed (so it doesn't fail first)
         mock_head.return_value = Mock(status_code=200)
@@ -143,7 +152,8 @@ class TestURLValidator:
 
         url = "http://example.com/file.gds"
 
-        with pytest.raises(SecurityValidationError, match="did not provide Content-Length"):
+        match_str = "did not provide Content-Length"
+        with pytest.raises(SecurityValidationError, match=match_str):
             URLValidator.validate_file_size(url)
 
     @patch("requests.head")
@@ -158,7 +168,8 @@ class TestURLValidator:
 
         url = "http://example.com/huge_file.gds"
 
-        with pytest.raises(SecurityValidationError, match="exceeds maximum allowed size"):
+        match_str = "exceeds maximum allowed size"
+        with pytest.raises(SecurityValidationError, match=match_str):
             URLValidator.validate_file_size(url)
 
     @patch("requests.head")

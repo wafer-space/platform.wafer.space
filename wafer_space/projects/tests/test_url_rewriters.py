@@ -45,7 +45,7 @@ class TestURLRewriter:
         ]
 
         for original, expected in test_cases:
-            rewritten_url, was_rewritten, reason = URLRewriter.rewrite_url(original)
+            rewritten_url, was_rewritten, _reason = URLRewriter.rewrite_url(original)
             assert rewritten_url == expected
             assert was_rewritten is True
 
@@ -58,7 +58,7 @@ class TestURLRewriter:
         ]
 
         for url in test_cases:
-            rewritten_url, was_rewritten, reason = URLRewriter.rewrite_url(url)
+            rewritten_url, was_rewritten, _reason = URLRewriter.rewrite_url(url)
             assert rewritten_url == url
             assert was_rewritten is False
 
@@ -78,7 +78,7 @@ class TestURLRewriter:
         url = "https://gitlab.example.com/user/repo/-/blob/main/file.gds"
         expected = "https://gitlab.example.com/user/repo/-/raw/main/file.gds"
 
-        rewritten_url, was_rewritten, reason = URLRewriter.rewrite_url(url)
+        rewritten_url, was_rewritten, _reason = URLRewriter.rewrite_url(url)
 
         assert rewritten_url == expected
         assert was_rewritten is True
@@ -98,7 +98,7 @@ class TestURLRewriter:
         """Test Dropbox links with dl=1 are not rewritten."""
         url = "https://www.dropbox.com/s/abc123/file.gds?dl=1"
 
-        rewritten_url, was_rewritten, reason = URLRewriter.rewrite_url(url)
+        rewritten_url, was_rewritten, _reason = URLRewriter.rewrite_url(url)
 
         assert rewritten_url == url
         assert was_rewritten is False
@@ -107,7 +107,7 @@ class TestURLRewriter:
         """Test Dropbox links without dl parameter are not rewritten."""
         url = "https://www.dropbox.com/s/abc123/file.gds"
 
-        rewritten_url, was_rewritten, reason = URLRewriter.rewrite_url(url)
+        rewritten_url, was_rewritten, _reason = URLRewriter.rewrite_url(url)
 
         assert rewritten_url == url
         assert was_rewritten is False
@@ -128,7 +128,7 @@ class TestURLRewriter:
         url = "https://drive.google.com/file/d/1ABC123DEF456/"
         expected = "https://drive.google.com/uc?export=download&id=1ABC123DEF456"
 
-        rewritten_url, was_rewritten, reason = URLRewriter.rewrite_url(url)
+        rewritten_url, was_rewritten, _reason = URLRewriter.rewrite_url(url)
 
         assert rewritten_url == expected
         assert was_rewritten is True
@@ -138,7 +138,7 @@ class TestURLRewriter:
         url = "https://drive.google.com/open?id=1ABC123DEF456"
         expected = "https://drive.google.com/uc?export=download&id=1ABC123DEF456"
 
-        rewritten_url, was_rewritten, reason = URLRewriter.rewrite_url(url)
+        rewritten_url, was_rewritten, _reason = URLRewriter.rewrite_url(url)
 
         assert rewritten_url == expected
         assert was_rewritten is True
@@ -147,7 +147,7 @@ class TestURLRewriter:
         """Test Google Drive direct download URLs are not rewritten."""
         url = "https://drive.google.com/uc?export=download&id=1ABC123DEF456"
 
-        rewritten_url, was_rewritten, reason = URLRewriter.rewrite_url(url)
+        rewritten_url, was_rewritten, _reason = URLRewriter.rewrite_url(url)
 
         assert rewritten_url == url
         assert was_rewritten is False
@@ -167,7 +167,7 @@ class TestURLRewriter:
         """Test 1drv.ms short links get download parameter."""
         url = "https://1drv.ms/u/s!ABC123"
 
-        rewritten_url, was_rewritten, reason = URLRewriter.rewrite_url(url)
+        rewritten_url, was_rewritten, _reason = URLRewriter.rewrite_url(url)
 
         assert was_rewritten is True
         assert "download=1" in rewritten_url
@@ -176,7 +176,7 @@ class TestURLRewriter:
         """Test OneDrive links with download parameter are not rewritten."""
         url = "https://onedrive.live.com/embed?resid=ABC&download=1"
 
-        rewritten_url, was_rewritten, reason = URLRewriter.rewrite_url(url)
+        rewritten_url, _was_rewritten, _reason = URLRewriter.rewrite_url(url)
 
         # Should not rewrite if "download" is already in path
         # The logic checks for "download" not in parsed.path
@@ -187,7 +187,7 @@ class TestURLRewriter:
         """Test that rewriters are tried in order."""
         # GitHub rewriter should match before others
         url = "https://github.com/user/repo/blob/main/file.gds"
-        rewritten_url, was_rewritten, reason = URLRewriter.rewrite_url(url)
+        rewritten_url, _was_rewritten, reason = URLRewriter.rewrite_url(url)
 
         assert "raw.githubusercontent.com" in rewritten_url
         assert "GitHub" in reason
@@ -197,7 +197,7 @@ class TestURLRewriter:
         url = "https://github.com/user/repo/blob/main/subdir1/subdir2/file.gds"
         expected = "https://raw.githubusercontent.com/user/repo/main/subdir1/subdir2/file.gds"
 
-        rewritten_url, was_rewritten, reason = URLRewriter.rewrite_url(url)
+        rewritten_url, was_rewritten, _reason = URLRewriter.rewrite_url(url)
 
         assert rewritten_url == expected
         assert was_rewritten is True
@@ -207,7 +207,7 @@ class TestURLRewriter:
         url = "https://gitlab.com/user/repo/-/blob/main/subdir/file.gds"
         expected = "https://gitlab.com/user/repo/-/raw/main/subdir/file.gds"
 
-        rewritten_url, was_rewritten, reason = URLRewriter.rewrite_url(url)
+        rewritten_url, was_rewritten, _reason = URLRewriter.rewrite_url(url)
 
         assert rewritten_url == expected
         assert was_rewritten is True
@@ -216,7 +216,7 @@ class TestURLRewriter:
         """Test Dropbox URLs with multiple query parameters."""
         url = "https://www.dropbox.com/s/abc123/file.gds?dl=0&foo=bar"
 
-        rewritten_url, was_rewritten, reason = URLRewriter.rewrite_url(url)
+        rewritten_url, was_rewritten, _reason = URLRewriter.rewrite_url(url)
 
         assert was_rewritten is True
         assert "dl=1" in rewritten_url
@@ -225,7 +225,7 @@ class TestURLRewriter:
     def test_empty_url(self):
         """Test empty URL returns unchanged."""
         url = ""
-        rewritten_url, was_rewritten, reason = URLRewriter.rewrite_url(url)
+        rewritten_url, was_rewritten, _reason = URLRewriter.rewrite_url(url)
 
         assert rewritten_url == url
         assert was_rewritten is False
@@ -239,6 +239,6 @@ class TestURLRewriter:
         ]
 
         for url in test_cases:
-            rewritten_url, was_rewritten, reason = URLRewriter.rewrite_url(url)
+            rewritten_url, was_rewritten, _reason = URLRewriter.rewrite_url(url)
             assert rewritten_url == url
             assert was_rewritten is False

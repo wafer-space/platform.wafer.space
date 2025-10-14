@@ -14,7 +14,6 @@ from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.security import SecurityValidationError
 from wafer_space.users.models import User
 
-from .constants import DEFAULT_PAGE_SIZE
 from .constants import EXPECTED_USER_PROJECTS
 from .constants import FIVE_MB
 from .constants import HTTP_FORBIDDEN
@@ -413,7 +412,8 @@ class TestProjectFileSubmitURLView(TestCase):
     def test_submit_url_security_error(self, mock_submit):
         """Test URL submission with security error."""
         # Mock security validation error
-        mock_submit.side_effect = SecurityValidationError("Cannot download from localhost")
+        error_msg = "Cannot download from localhost"
+        mock_submit.side_effect = SecurityValidationError(error_msg)
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:submit_url", kwargs={"pk": self.project.pk})
