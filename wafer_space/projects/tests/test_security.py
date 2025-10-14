@@ -1,5 +1,6 @@
 """Tests for security validation module."""
 
+import socket
 from unittest.mock import Mock
 from unittest.mock import patch
 
@@ -8,6 +9,9 @@ import requests
 
 from wafer_space.projects.security import SecurityValidationError
 from wafer_space.projects.security import URLValidator
+
+from .constants import EXPECTED_IP_RANGE_COUNT
+from .constants import ONE_MB
 
 
 class TestURLValidator:
@@ -102,8 +106,6 @@ class TestURLValidator:
     @patch("requests.head")
     def test_validate_hostname_unresolvable_rejected(self, mock_head, mock_gethostbyname):
         """Test that unresolvable hostnames are rejected."""
-        import socket
-
         # Mock requests.head to succeed (so it doesn't fail first)
         mock_head.return_value = Mock(status_code=200)
 
@@ -120,14 +122,14 @@ class TestURLValidator:
         """Test successful file size validation."""
         # Mock response with Content-Length header
         mock_response = Mock()
-        mock_response.headers = {"Content-Length": "1048576"}  # 1 MB
+        mock_response.headers = {"Content-Length": str(ONE_MB)}  # 1 MB
         mock_response.raise_for_status = Mock()
         mock_head.return_value = mock_response
 
         url = "http://example.com/file.gds"
         file_size = URLValidator.validate_file_size(url)
 
-        assert file_size == 1048576
+        assert file_size == ONE_MB
         mock_head.assert_called_once()
 
     @patch("requests.head")
@@ -235,7 +237,7 @@ class TestURLValidator:
         # Mock HEAD request response
         mock_response = Mock()
         mock_response.headers = {
-            "Content-Length": "1048576",  # 1 MB
+            "Content-Length": str(ONE_MB),  # 1 MB
             "Content-Type": "application/octet-stream",
             "ETag": '"abc123"',
             "Accept-Ranges": "bytes",
@@ -246,7 +248,7 @@ class TestURLValidator:
         url = "https://example.com/file.gds"
         result = URLValidator.validate_url(url)
 
-        assert result["file_size"] == 1048576
+        assert result["file_size"] == ONE_MB
         assert result["content_type"] == "application/octet-stream"
         assert result["etag"] == '"abc123"'
         assert result["supports_range"] is True
@@ -261,7 +263,7 @@ class TestURLValidator:
         # Mock HEAD request without Range support
         mock_response = Mock()
         mock_response.headers = {
-            "Content-Length": "1048576",
+            "Content-Length": str(ONE_MB),
             "Content-Type": "application/octet-stream",
         }
         mock_response.raise_for_status = Mock()
@@ -270,7 +272,7 @@ class TestURLValidator:
         url = "https://example.com/file.gds"
         result = URLValidator.validate_url(url)
 
-        assert result["file_size"] == 1048576
+        assert result["file_size"] == ONE_MB
         assert result["supports_range"] is False
         assert result["etag"] is None
 
@@ -330,7 +332,7 @@ class TestURLValidator:
     def test_private_ip_ranges_defined(self):
         """Test that private IP ranges are properly defined."""
         # Should include RFC 1918, RFC 4193, RFC 3927, and loopback
-        assert len(URLValidator.PRIVATE_IP_RANGES) >= 8
+        assert len(URLValidator.PRIVATE_IP_RANGES) >= EXPECTED_IP_RANGE_COUNT
 
         # Check for some key ranges
         range_strings = [str(r) for r in URLValidator.PRIVATE_IP_RANGES]

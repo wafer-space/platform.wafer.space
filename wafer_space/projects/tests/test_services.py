@@ -12,6 +12,13 @@ from wafer_space.projects.security import SecurityValidationError
 from wafer_space.projects.services import ProjectFileService
 from wafer_space.users.models import User
 
+from .constants import FIVE_MB
+from .constants import ONE_MB
+from .constants import PROGRESS_COMPLETE
+from .constants import PROGRESS_HALF
+from .constants import TEN_MB
+from .constants import TEST_PASSWORD
+
 
 @pytest.mark.django_db
 class TestProjectFileService(TestCase):
@@ -22,7 +29,7 @@ class TestProjectFileService(TestCase):
         self.user = User.objects.create_user(
             username="testuser",
             email="test@example.com",
-            password="testpass123",
+            password=TEST_PASSWORD,
         )
         self.project = Project.objects.create(
             user=self.user,
@@ -51,7 +58,7 @@ class TestProjectFileService(TestCase):
 
         # Mock validation
         mock_validate.return_value = {
-            "file_size": 1048576,
+            "file_size": ONE_MB,
             "content_type": "application/octet-stream",
             "etag": '"abc123"',
             "supports_range": True,
@@ -75,7 +82,7 @@ class TestProjectFileService(TestCase):
         assert project_file.source_url == rewritten_url
         assert project_file.expected_hash_md5 == "abc123"
         assert project_file.expected_hash_sha1 == "def456"
-        assert project_file.file_size == 1048576
+        assert project_file.file_size == ONE_MB
         assert project_file.content_type == "application/octet-stream"
         assert project_file.is_active is True
         assert project_file.download_status == ProjectFile.DownloadStatus.PENDING
@@ -83,7 +90,7 @@ class TestProjectFileService(TestCase):
         # Verify metadata
         assert metadata["url_rewritten"] is True
         assert "GitHub blob URL" in metadata["rewrite_reason"]
-        assert metadata["file_size"] == 1048576
+        assert metadata["file_size"] == ONE_MB
         assert metadata["supports_range"] is True
 
         # Verify URL rewriting was called
@@ -203,7 +210,7 @@ class TestProjectFileService(TestCase):
 
         # Mock validation
         mock_validate.return_value = {
-            "file_size": 1048576,
+            "file_size": ONE_MB,
             "content_type": "application/octet-stream",
             "etag": None,
             "supports_range": True,
@@ -249,7 +256,7 @@ class TestProjectFileService(TestCase):
 
         mock_rewrite.return_value = (url, False, "")
         mock_validate.return_value = {
-            "file_size": 1048576,
+            "file_size": ONE_MB,
             "content_type": "application/octet-stream",
             "etag": None,
             "supports_range": True,
@@ -278,7 +285,7 @@ class TestProjectFileService(TestCase):
 
         mock_rewrite.return_value = (url, False, "")
         mock_validate.return_value = {
-            "file_size": 1048576,
+            "file_size": ONE_MB,
             "content_type": "application/octet-stream",
             "etag": None,
             "supports_range": True,
@@ -307,7 +314,7 @@ class TestProjectFileService(TestCase):
 
         mock_rewrite.return_value = (url, False, "")
         mock_validate.return_value = {
-            "file_size": 1048576,
+            "file_size": ONE_MB,
             "content_type": "application/octet-stream",
             "etag": None,
             "supports_range": True,
@@ -329,7 +336,7 @@ class TestProjectFileService(TestCase):
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
-            file_size=1048576,
+            file_size=ONE_MB,
             download_status=ProjectFile.DownloadStatus.PENDING,
         )
 
@@ -338,10 +345,10 @@ class TestProjectFileService(TestCase):
         assert progress["status"] == ProjectFile.DownloadStatus.PENDING
         assert progress["progress"] == 0
         assert progress["current"] == 0
-        assert progress["total"] == 1048576
+        assert progress["total"] == ONE_MB
         assert "not started" in progress["message"].lower()
 
-    @patch("celery.result.AsyncResult")
+    @patch("wafer_space.projects.services.AsyncResult")
     def test_get_download_progress_pending(self, mock_async_result):
         """Test getting progress when task is pending."""
         project_file = ProjectFile.objects.create(
@@ -349,7 +356,7 @@ class TestProjectFileService(TestCase):
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
-            file_size=1048576,
+            file_size=ONE_MB,
             download_task_id="task-123",
             download_status=ProjectFile.DownloadStatus.PENDING,
         )
@@ -365,7 +372,7 @@ class TestProjectFileService(TestCase):
         assert progress["progress"] == 0
         assert progress["message"] == "Download pending"
 
-    @patch("celery.result.AsyncResult")
+    @patch("wafer_space.projects.services.AsyncResult")
     def test_get_download_progress_in_progress(self, mock_async_result):
         """Test getting progress when task is downloading."""
         project_file = ProjectFile.objects.create(
@@ -373,7 +380,7 @@ class TestProjectFileService(TestCase):
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
-            file_size=10485760,
+            file_size=TEN_MB,
             download_task_id="task-123",
             download_status=ProjectFile.DownloadStatus.DOWNLOADING,
         )
@@ -382,9 +389,9 @@ class TestProjectFileService(TestCase):
         mock_task = Mock()
         mock_task.state = "PROGRESS"
         mock_task.info = {
-            "progress": 45,
-            "current": 4718592,
-            "total": 10485760,
+            "progress": PROGRESS_HALF,
+            "current": FIVE_MB,
+            "total": TEN_MB,
             "message": "Downloaded 4,718,592 of 10,485,760 bytes",
         }
         mock_async_result.return_value = mock_task
@@ -392,12 +399,12 @@ class TestProjectFileService(TestCase):
         progress = ProjectFileService.get_download_progress(project_file)
 
         assert progress["status"] == "downloading"
-        assert progress["progress"] == 45
-        assert progress["current"] == 4718592
-        assert progress["total"] == 10485760
+        assert progress["progress"] == PROGRESS_HALF
+        assert progress["current"] == FIVE_MB
+        assert progress["total"] == TEN_MB
         assert "4,718,592" in progress["message"]
 
-    @patch("celery.result.AsyncResult")
+    @patch("wafer_space.projects.services.AsyncResult")
     def test_get_download_progress_completed(self, mock_async_result):
         """Test getting progress when task is completed."""
         project_file = ProjectFile.objects.create(
@@ -405,7 +412,7 @@ class TestProjectFileService(TestCase):
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
-            file_size=1048576,
+            file_size=ONE_MB,
             download_task_id="task-123",
             download_status=ProjectFile.DownloadStatus.COMPLETED,
         )
@@ -418,12 +425,12 @@ class TestProjectFileService(TestCase):
         progress = ProjectFileService.get_download_progress(project_file)
 
         assert progress["status"] == "completed"
-        assert progress["progress"] == 100
-        assert progress["current"] == 1048576
-        assert progress["total"] == 1048576
+        assert progress["progress"] == PROGRESS_COMPLETE
+        assert progress["current"] == ONE_MB
+        assert progress["total"] == ONE_MB
         assert "completed" in progress["message"].lower()
 
-    @patch("celery.result.AsyncResult")
+    @patch("wafer_space.projects.services.AsyncResult")
     def test_get_download_progress_failed(self, mock_async_result):
         """Test getting progress when task failed."""
         project_file = ProjectFile.objects.create(
@@ -431,7 +438,7 @@ class TestProjectFileService(TestCase):
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
-            file_size=1048576,
+            file_size=ONE_MB,
             download_task_id="task-123",
             download_status=ProjectFile.DownloadStatus.FAILED,
         )

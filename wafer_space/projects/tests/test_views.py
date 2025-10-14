@@ -14,6 +14,17 @@ from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.security import SecurityValidationError
 from wafer_space.users.models import User
 
+from .constants import DEFAULT_PAGE_SIZE
+from .constants import EXPECTED_USER_PROJECTS
+from .constants import FIVE_MB
+from .constants import HTTP_FORBIDDEN
+from .constants import HTTP_FOUND
+from .constants import HTTP_NOT_FOUND
+from .constants import HTTP_OK
+from .constants import PROGRESS_HALF
+from .constants import TEN_MB
+from .constants import TEST_PASSWORD
+
 
 @pytest.mark.django_db
 class TestProjectListView(TestCase):
@@ -25,12 +36,12 @@ class TestProjectListView(TestCase):
         self.user = User.objects.create_user(
             username="testuser",
             email="test@example.com",
-            password="testpass123",
+            password=TEST_PASSWORD,
         )
         self.other_user = User.objects.create_user(
             username="otheruser",
             email="other@example.com",
-            password="testpass123",
+            password=TEST_PASSWORD,
         )
 
         # Create projects for both users
@@ -56,21 +67,21 @@ class TestProjectListView(TestCase):
         response = self.client.get(url)
 
         # Should redirect to login
-        assert response.status_code == 302
+        assert response.status_code == HTTP_FOUND
         assert "/accounts/login/" in response.url
 
     def test_shows_only_user_projects(self):
         """Test that view shows only current user's projects."""
-        self.client.login(username="testuser", password="testpass123")
+        self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:list")
         response = self.client.get(url)
 
-        assert response.status_code == 200
+        assert response.status_code == HTTP_OK
         assert "projects" in response.context
         projects = response.context["projects"]
 
-        # Should show 2 projects
-        assert len(projects) == 2
+        # Should show user's projects
+        assert len(projects) == EXPECTED_USER_PROJECTS
         assert self.project1 in projects
         assert self.project2 in projects
         assert self.other_project not in projects
@@ -86,12 +97,12 @@ class TestProjectDetailView(TestCase):
         self.user = User.objects.create_user(
             username="testuser",
             email="test@example.com",
-            password="testpass123",
+            password=TEST_PASSWORD,
         )
         self.other_user = User.objects.create_user(
             username="otheruser",
             email="other@example.com",
-            password="testpass123",
+            password=TEST_PASSWORD,
         )
         self.project = Project.objects.create(
             user=self.user,
@@ -105,26 +116,26 @@ class TestProjectDetailView(TestCase):
         response = self.client.get(url)
 
         # Should redirect to login
-        assert response.status_code == 302
+        assert response.status_code == HTTP_FOUND
         assert "/accounts/login/" in response.url
 
     def test_owner_can_view(self):
         """Test that owner can view project."""
-        self.client.login(username="testuser", password="testpass123")
+        self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:detail", kwargs={"pk": self.project.pk})
         response = self.client.get(url)
 
-        assert response.status_code == 200
+        assert response.status_code == HTTP_OK
         assert response.context["project"] == self.project
 
     def test_non_owner_cannot_view(self):
         """Test that non-owner cannot view project."""
-        self.client.login(username="otheruser", password="testpass123")
+        self.client.login(username="otheruser", password=TEST_PASSWORD)
         url = reverse("projects:detail", kwargs={"pk": self.project.pk})
         response = self.client.get(url)
 
         # Should return 403 Forbidden
-        assert response.status_code == 403
+        assert response.status_code == HTTP_FORBIDDEN
 
     def test_includes_active_file_in_context(self):
         """Test that active file is included in context."""
@@ -137,11 +148,11 @@ class TestProjectDetailView(TestCase):
             is_active=True,
         )
 
-        self.client.login(username="testuser", password="testpass123")
+        self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:detail", kwargs={"pk": self.project.pk})
         response = self.client.get(url)
 
-        assert response.status_code == 200
+        assert response.status_code == HTTP_OK
         assert response.context["active_file"] == active_file
 
 
@@ -155,7 +166,7 @@ class TestProjectCreateView(TestCase):
         self.user = User.objects.create_user(
             username="testuser",
             email="test@example.com",
-            password="testpass123",
+            password=TEST_PASSWORD,
         )
 
     def test_requires_login(self):
@@ -164,21 +175,21 @@ class TestProjectCreateView(TestCase):
         response = self.client.get(url)
 
         # Should redirect to login
-        assert response.status_code == 302
+        assert response.status_code == HTTP_FOUND
         assert "/accounts/login/" in response.url
 
     def test_displays_form(self):
         """Test that GET displays the form."""
-        self.client.login(username="testuser", password="testpass123")
+        self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:create")
         response = self.client.get(url)
 
-        assert response.status_code == 200
+        assert response.status_code == HTTP_OK
         assert "form" in response.context
 
     def test_creates_project(self):
         """Test that POST creates a project."""
-        self.client.login(username="testuser", password="testpass123")
+        self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:create")
 
         form_data = {
@@ -188,7 +199,7 @@ class TestProjectCreateView(TestCase):
         response = self.client.post(url, form_data)
 
         # Should redirect to detail page
-        assert response.status_code == 302
+        assert response.status_code == HTTP_FOUND
 
         # Verify project was created
         assert Project.objects.count() == 1
@@ -213,12 +224,12 @@ class TestProjectUpdateView(TestCase):
         self.user = User.objects.create_user(
             username="testuser",
             email="test@example.com",
-            password="testpass123",
+            password=TEST_PASSWORD,
         )
         self.other_user = User.objects.create_user(
             username="otheruser",
             email="other@example.com",
-            password="testpass123",
+            password=TEST_PASSWORD,
         )
         self.project = Project.objects.create(
             user=self.user,
@@ -232,12 +243,12 @@ class TestProjectUpdateView(TestCase):
         response = self.client.get(url)
 
         # Should redirect to login
-        assert response.status_code == 302
+        assert response.status_code == HTTP_FOUND
         assert "/accounts/login/" in response.url
 
     def test_owner_can_update(self):
         """Test that owner can update project."""
-        self.client.login(username="testuser", password="testpass123")
+        self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:update", kwargs={"pk": self.project.pk})
 
         form_data = {
@@ -247,7 +258,7 @@ class TestProjectUpdateView(TestCase):
         response = self.client.post(url, form_data)
 
         # Should redirect
-        assert response.status_code == 302
+        assert response.status_code == HTTP_FOUND
 
         # Verify project was updated
         self.project.refresh_from_db()
@@ -256,12 +267,12 @@ class TestProjectUpdateView(TestCase):
 
     def test_non_owner_cannot_update(self):
         """Test that non-owner cannot update project."""
-        self.client.login(username="otheruser", password="testpass123")
+        self.client.login(username="otheruser", password=TEST_PASSWORD)
         url = reverse("projects:update", kwargs={"pk": self.project.pk})
         response = self.client.get(url)
 
         # Should return 403 Forbidden
-        assert response.status_code == 403
+        assert response.status_code == HTTP_FORBIDDEN
 
 
 @pytest.mark.django_db
@@ -274,12 +285,12 @@ class TestProjectDeleteView(TestCase):
         self.user = User.objects.create_user(
             username="testuser",
             email="test@example.com",
-            password="testpass123",
+            password=TEST_PASSWORD,
         )
         self.other_user = User.objects.create_user(
             username="otheruser",
             email="other@example.com",
-            password="testpass123",
+            password=TEST_PASSWORD,
         )
         self.project = Project.objects.create(
             user=self.user,
@@ -293,30 +304,30 @@ class TestProjectDeleteView(TestCase):
         response = self.client.get(url)
 
         # Should redirect to login
-        assert response.status_code == 302
+        assert response.status_code == HTTP_FOUND
         assert "/accounts/login/" in response.url
 
     def test_owner_can_delete(self):
         """Test that owner can delete project."""
-        self.client.login(username="testuser", password="testpass123")
+        self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:delete", kwargs={"pk": self.project.pk})
 
         response = self.client.post(url)
 
         # Should redirect to list page
-        assert response.status_code == 302
+        assert response.status_code == HTTP_FOUND
 
         # Verify project was deleted
         assert Project.objects.count() == 0
 
     def test_non_owner_cannot_delete(self):
         """Test that non-owner cannot delete project."""
-        self.client.login(username="otheruser", password="testpass123")
+        self.client.login(username="otheruser", password=TEST_PASSWORD)
         url = reverse("projects:delete", kwargs={"pk": self.project.pk})
         response = self.client.get(url)
 
         # Should return 403 Forbidden
-        assert response.status_code == 403
+        assert response.status_code == HTTP_FORBIDDEN
 
 
 @pytest.mark.django_db
@@ -329,12 +340,12 @@ class TestProjectFileSubmitURLView(TestCase):
         self.user = User.objects.create_user(
             username="testuser",
             email="test@example.com",
-            password="testpass123",
+            password=TEST_PASSWORD,
         )
         self.other_user = User.objects.create_user(
             username="otheruser",
             email="other@example.com",
-            password="testpass123",
+            password=TEST_PASSWORD,
         )
         self.project = Project.objects.create(
             user=self.user,
@@ -348,26 +359,26 @@ class TestProjectFileSubmitURLView(TestCase):
         response = self.client.get(url)
 
         # Should redirect to login
-        assert response.status_code == 302
+        assert response.status_code == HTTP_FOUND
         assert "/accounts/login/" in response.url
 
     def test_owner_can_view_form(self):
         """Test that owner can view form."""
-        self.client.login(username="testuser", password="testpass123")
+        self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:submit_url", kwargs={"pk": self.project.pk})
         response = self.client.get(url)
 
-        assert response.status_code == 200
+        assert response.status_code == HTTP_OK
         assert "form" in response.context
 
     def test_non_owner_cannot_view_form(self):
         """Test that non-owner cannot view form."""
-        self.client.login(username="otheruser", password="testpass123")
+        self.client.login(username="otheruser", password=TEST_PASSWORD)
         url = reverse("projects:submit_url", kwargs={"pk": self.project.pk})
         response = self.client.get(url)
 
         # Should return 403 Forbidden
-        assert response.status_code == 403
+        assert response.status_code == HTTP_FORBIDDEN
 
     @patch("wafer_space.projects.views.ProjectFileService.submit_file_from_url")
     def test_submit_url_success(self, mock_submit):
@@ -382,7 +393,7 @@ class TestProjectFileSubmitURLView(TestCase):
         }
         mock_submit.return_value = (mock_file, mock_metadata)
 
-        self.client.login(username="testuser", password="testpass123")
+        self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:submit_url", kwargs={"pk": self.project.pk})
 
         form_data = {
@@ -393,7 +404,7 @@ class TestProjectFileSubmitURLView(TestCase):
         response = self.client.post(url, form_data)
 
         # Should redirect to detail page
-        assert response.status_code == 302
+        assert response.status_code == HTTP_FOUND
 
         # Verify service was called
         mock_submit.assert_called_once()
@@ -404,7 +415,7 @@ class TestProjectFileSubmitURLView(TestCase):
         # Mock security validation error
         mock_submit.side_effect = SecurityValidationError("Cannot download from localhost")
 
-        self.client.login(username="testuser", password="testpass123")
+        self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:submit_url", kwargs={"pk": self.project.pk})
 
         form_data = {
@@ -415,7 +426,7 @@ class TestProjectFileSubmitURLView(TestCase):
         response = self.client.post(url, form_data)
 
         # Should re-render form with error
-        assert response.status_code == 200
+        assert response.status_code == HTTP_OK
         messages = list(get_messages(response.wsgi_request))
         assert any("Security validation failed" in str(m) for m in messages)
 
@@ -430,12 +441,12 @@ class TestProjectFileUploadView(TestCase):
         self.user = User.objects.create_user(
             username="testuser",
             email="test@example.com",
-            password="testpass123",
+            password=TEST_PASSWORD,
         )
         self.other_user = User.objects.create_user(
             username="otheruser",
             email="other@example.com",
-            password="testpass123",
+            password=TEST_PASSWORD,
         )
         self.project = Project.objects.create(
             user=self.user,
@@ -449,26 +460,26 @@ class TestProjectFileUploadView(TestCase):
         response = self.client.get(url)
 
         # Should redirect to login
-        assert response.status_code == 302
+        assert response.status_code == HTTP_FOUND
         assert "/accounts/login/" in response.url
 
     def test_owner_can_view_form(self):
         """Test that owner can view form."""
-        self.client.login(username="testuser", password="testpass123")
+        self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:upload", kwargs={"pk": self.project.pk})
         response = self.client.get(url)
 
-        assert response.status_code == 200
+        assert response.status_code == HTTP_OK
         assert "form" in response.context
 
     def test_non_owner_cannot_view_form(self):
         """Test that non-owner cannot view form."""
-        self.client.login(username="otheruser", password="testpass123")
+        self.client.login(username="otheruser", password=TEST_PASSWORD)
         url = reverse("projects:upload", kwargs={"pk": self.project.pk})
         response = self.client.get(url)
 
         # Should return 403 Forbidden
-        assert response.status_code == 403
+        assert response.status_code == HTTP_FORBIDDEN
 
 
 @pytest.mark.django_db
@@ -481,12 +492,12 @@ class TestProjectFileProgressView(TestCase):
         self.user = User.objects.create_user(
             username="testuser",
             email="test@example.com",
-            password="testpass123",
+            password=TEST_PASSWORD,
         )
         self.other_user = User.objects.create_user(
             username="otheruser",
             email="other@example.com",
-            password="testpass123",
+            password=TEST_PASSWORD,
         )
         self.project = Project.objects.create(
             user=self.user,
@@ -500,26 +511,26 @@ class TestProjectFileProgressView(TestCase):
         response = self.client.get(url)
 
         # Should redirect to login
-        assert response.status_code == 302
+        assert response.status_code == HTTP_FOUND
         assert "/accounts/login/" in response.url
 
     def test_non_owner_cannot_view_progress(self):
         """Test that non-owner cannot view progress."""
-        self.client.login(username="otheruser", password="testpass123")
+        self.client.login(username="otheruser", password=TEST_PASSWORD)
         url = reverse("projects:progress", kwargs={"pk": self.project.pk})
         response = self.client.get(url)
 
         # Should return 403 Forbidden
-        assert response.status_code == 403
+        assert response.status_code == HTTP_FORBIDDEN
 
     def test_no_active_file_returns_404(self):
         """Test that no active file returns 404."""
-        self.client.login(username="testuser", password="testpass123")
+        self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:progress", kwargs={"pk": self.project.pk})
         response = self.client.get(url)
 
         # Should return 404
-        assert response.status_code == 404
+        assert response.status_code == HTTP_NOT_FOUND
         data = response.json()
         assert "error" in data
 
@@ -539,19 +550,19 @@ class TestProjectFileProgressView(TestCase):
         # Mock progress
         mock_progress.return_value = {
             "status": "downloading",
-            "progress": 45,
-            "current": 4718592,
-            "total": 10485760,
+            "progress": PROGRESS_HALF,
+            "current": FIVE_MB,
+            "total": TEN_MB,
             "message": "Downloaded 4,718,592 of 10,485,760 bytes",
         }
 
-        self.client.login(username="testuser", password="testpass123")
+        self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:progress", kwargs={"pk": self.project.pk})
         response = self.client.get(url)
 
-        assert response.status_code == 200
+        assert response.status_code == HTTP_OK
         data = response.json()
         assert data["status"] == "downloading"
-        assert data["progress"] == 45
-        assert data["current"] == 4718592
-        assert data["total"] == 10485760
+        assert data["progress"] == PROGRESS_HALF
+        assert data["current"] == FIVE_MB
+        assert data["total"] == TEN_MB

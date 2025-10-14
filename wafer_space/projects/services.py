@@ -11,12 +11,14 @@ from dataclasses import dataclass
 from urllib.parse import unquote
 from urllib.parse import urlparse
 
+from celery.result import AsyncResult
 from django.db import transaction
 
 from .models import Project
 from .models import ProjectFile
 from .security import SecurityValidationError
 from .security import URLValidator
+from .tasks import download_project_file
 from .url_rewriters import URLRewriter
 
 
@@ -184,8 +186,6 @@ class ProjectFileService:
         Returns:
             str: The Celery task ID
         """
-        from .tasks import download_project_file
-
         # Start the download task
         task = download_project_file.delay(str(project_file.project.id))
 
@@ -222,9 +222,6 @@ class ProjectFileService:
                 "total": project_file.file_size or 0,
                 "message": "Download not started",
             }
-
-        # Import here to avoid circular dependency
-        from celery.result import AsyncResult
 
         task = AsyncResult(project_file.download_task_id)
 

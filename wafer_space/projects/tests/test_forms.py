@@ -9,6 +9,8 @@ from wafer_space.projects.forms import ProjectForm
 from wafer_space.projects.models import Project
 from wafer_space.users.models import User
 
+from .constants import TEST_PASSWORD
+
 
 @pytest.mark.django_db
 class TestProjectForm(TestCase):
@@ -63,7 +65,7 @@ class TestProjectForm(TestCase):
         user = User.objects.create_user(
             username="testuser",
             email="test@example.com",
-            password="testpass123",
+            password=TEST_PASSWORD,
         )
 
         form_data = {

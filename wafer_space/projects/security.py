@@ -139,8 +139,8 @@ class URLValidator:
                     f"allowed size of {max_gb:.0f}GB"
                 )
                 raise SecurityValidationError(msg)
-
-            return file_size
+            else:
+                return file_size
         except requests.RequestException as e:
             msg = f"Failed to check file size: {e}"
             raise SecurityValidationError(msg) from e
