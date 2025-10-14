@@ -22,7 +22,8 @@ class TestTermsOfService:
         """Test creating a Terms of Service."""
         tos = TermsOfServiceFactory()
         assert tos.version
-        assert tos.content
+        assert tos.content  # Should have content from markdown file
+        assert tos.content_file_path.exists()  # Markdown file should exist
         assert not tos.is_active
         assert tos.created_at
         assert str(tos) == f"TOS v{tos.version}"
@@ -32,6 +33,18 @@ class TestTermsOfService:
         tos = TermsOfServiceFactory(is_active=True)
         assert tos.is_active
         assert " (Active)" in str(tos)
+
+    def test_content_html_rendering(self):
+        """Test that markdown content is rendered to HTML."""
+        # Use a different version to avoid the pre-populated mock 1.0.0 file
+        tos = TermsOfServiceFactory(version="2.0.0")
+        html = tos.content_html
+        assert "<h1>Terms of Service</h1>" in html
+        # Check for test content created by the factory
+        assert "Test Terms of Service" in html
+        assert "Test clause 1" in html
+        # Check that metadata is accessible
+        assert tos.metadata["version"] == "2.0.0"
 
     def test_only_one_active_tos(self):
         """Test that only one TOS can be active at a time."""

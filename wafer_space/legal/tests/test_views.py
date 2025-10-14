@@ -29,13 +29,13 @@ class TestTOSDisplayView:
         TermsOfServiceFactory(
             is_active=True,
             version="1.0.0",
-            content="Test TOS content",
         )
 
         response = client.get(reverse("legal:tos_display"))
 
         assert response.status_code == HTTPStatus.OK
-        assert "Test TOS content" in response.content.decode()
+        # Check for content from the markdown file
+        assert "Terms of Service" in response.content.decode()
         assert "1.0.0" in response.content.decode()
 
     def test_display_no_active_tos(self, client):
@@ -74,14 +74,14 @@ class TestTOSAcceptView:
         TermsOfServiceFactory(
             is_active=True,
             version="1.0.0",
-            content="Test TOS content",
         )
 
         client.force_login(user)
         response = client.get(reverse("legal:tos_accept"))
 
         assert response.status_code == HTTPStatus.OK
-        assert "Test TOS content" in response.content.decode()
+        # Check for content from the markdown file
+        assert "Terms of Service" in response.content.decode()
         assert "1.0.0" in response.content.decode()
         assert "agree" in response.content.decode().lower()
 

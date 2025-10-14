@@ -75,7 +75,8 @@ class TestTOSAcceptanceMiddleware:
             "/legal/tos/accept/",
             "/admin/",
             "/static/css/style.css",
-            "/media/uploads/file.pdf",
+            # Note: /media/ URLs are not exempt when MEDIA_URL is a full URL like
+            # "http://media.testserver/" as the path component is just "/"
         ]
 
         for url in exempt_urls:

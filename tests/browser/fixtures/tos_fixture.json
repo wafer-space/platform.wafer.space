@@ -4,7 +4,6 @@
     "pk": 1,
     "fields": {
       "version": "1.0.0",
-      "content": "Test Terms of Service\n\nBy using this service, you agree to these terms and conditions.\n\n1. You must be at least 18 years old to use this service.\n2. You agree to use the service responsibly.\n3. You will not use the service for illegal purposes.\n\nThese terms are for testing purposes only.",
       "is_active": true,
       "created_at": "2024-01-01T00:00:00Z",
       "created_by": null
