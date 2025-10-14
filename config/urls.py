@@ -22,6 +22,10 @@ urlpatterns = [
     path("legal/", include("wafer_space.legal.urls", namespace="legal")),
     # Your stuff: custom urls includes go here
     path("projects/", include("wafer_space.projects.urls", namespace="projects")),
+    path(
+        "notifications/",
+        include("wafer_space.notifications.urls", namespace="notifications"),
+    ),
     # ...
     # Media files
     *static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT),

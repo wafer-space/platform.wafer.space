@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% load static %}
+
+{% block title %}
+  Notifications
+{% endblock title %}
+{% block content %}
+  <div class="container">
+    <div class="row">
+      <div class="col-sm-12">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h2>Notifications</h2>
+          {% if unread_count > 0 %}
+            <form method="post" action="{% url 'notifications:mark_all_read' %}">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-outline-primary">Mark All as Read</button>
+            </form>
+          {% endif %}
+        </div>
+        <!-- Filter tabs -->
+        <ul class="nav nav-tabs mb-3">
+          <li class="nav-item">
+            <a class="nav-link {% if status_filter == 'all' %}active{% endif %}"
+               href="{% url 'notifications:list' %}">All</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if status_filter == 'unread' %}active{% endif %}"
+               href="{% url 'notifications:list' %}?status=unread">
+              Unread
+              {% if unread_count > 0 %}
+                <span class="badge bg-primary">{{ unread_count }}</span>
+              {% endif %}
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if status_filter == 'read' %}active{% endif %}"
+               href="{% url 'notifications:list' %}?status=read">Read</a>
+          </li>
+        </ul>
+        {% if notifications %}
+          <div class="list-group">
+            {% for notification in notifications %}
+              <a href="{% url 'notifications:mark_read' notification.id %}"
+                 class="list-group-item list-group-item-action {% if not notification.is_read %}list-group-item-primary{% endif %}">
+                <div class="d-flex w-100 justify-content-between">
+                  <h5 class="mb-1">
+                    {% if not notification.is_read %}<strong>{% endif %}
+                    {{ notification.title }}
+                    {% if not notification.is_read %}</strong>{% endif %}
+                  </h5>
+                  <small class="text-muted">{{ notification.created_at|timesince }} ago</small>
+                </div>
+                <p class="mb-1">{{ notification.message }}</p>
+                <div class="d-flex justify-content-between align-items-center">
+                  <small>
+                    <span class="badge {% if notification.notification_type == 'download_complete' %}bg-success{% elif notification.notification_type == 'download_failed' %}bg-danger{% elif notification.notification_type == 'checksum_verified' %}bg-success{% elif notification.notification_type == 'checksum_mismatch' %}bg-warning{% else %}bg-secondary{% endif %}">
+                      {{ notification.get_notification_type_display }}
+                    </span>
+                  </small>
+                  {% if not notification.is_read %}
+                    <small class="text-primary">
+                      <i class="bi bi-circle-fill"></i> New
+                    </small>
+                  {% endif %}
+                </div>
+              </a>
+            {% endfor %}
+          </div>
+          {% if is_paginated %}
+            <nav aria-label="Notifications pagination" class="mt-3">
+              <ul class="pagination">
+                {% if page_obj.has_previous %}
+                  <li class="page-item">
+                    <a class="page-link"
+                       href="?page={{ page_obj.previous_page_number }}{% if status_filter != 'all' %}&status={{ status_filter }}{% endif %}">Previous</a>
+                  </li>
+                {% else %}
+                  <li class="page-item disabled">
+                    <span class="page-link">Previous</span>
+                  </li>
+                {% endif %}
+                {% for num in page_obj.paginator.page_range %}
+                  {% if page_obj.number == num %}
+                    <li class="page-item active">
+                      <span class="page-link">{{ num }}</span>
+                    </li>
+                  {% else %}
+                    <li class="page-item">
+                      <a class="page-link"
+                         href="?page={{ num }}{% if status_filter != 'all' %}&status={{ status_filter }}{% endif %}">{{ num }}</a>
+                    </li>
+                  {% endif %}
+                {% endfor %}
+                {% if page_obj.has_next %}
+                  <li class="page-item">
+                    <a class="page-link"
+                       href="?page={{ page_obj.next_page_number }}{% if status_filter != 'all' %}&status={{ status_filter }}{% endif %}">Next</a>
+                  </li>
+                {% else %}
+                  <li class="page-item disabled">
+                    <span class="page-link">Next</span>
+                  </li>
+                {% endif %}
+              </ul>
+            </nav>
+          {% endif %}
+        {% else %}
+          <div class="alert alert-info" role="alert">
+            <h4 class="alert-heading">No notifications!</h4>
+            {% if status_filter == 'unread' %}
+              <p>You don't have any unread notifications.</p>
+            {% elif status_filter == 'read' %}
+              <p>You don't have any read notifications.</p>
+            {% else %}
+              <p>You haven't received any notifications yet.</p>
+            {% endif %}
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endblock content %}
