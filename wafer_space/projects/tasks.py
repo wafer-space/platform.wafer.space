@@ -23,6 +23,9 @@ from .models import ManufacturabilityCheck
 from .models import Project
 from .models import ProjectFile
 
+# HTTP status codes
+HTTP_PARTIAL_CONTENT = 206  # Server supports range requests
+
 
 # Helper functions for file download
 def _setup_temp_directory() -> Path:
@@ -321,7 +324,7 @@ def _download_with_progress(
     response = requests.get(url, headers=headers, stream=True, timeout=30)
 
     # Check if server supports resume
-    if resume_byte_pos > 0 and response.status_code != 206:
+    if resume_byte_pos > 0 and response.status_code != HTTP_PARTIAL_CONTENT:
         # Server doesn't support resume, start from beginning
         resume_byte_pos = 0
         temp_path.unlink(missing_ok=True)

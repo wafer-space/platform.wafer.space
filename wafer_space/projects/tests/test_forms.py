@@ -105,25 +105,27 @@ class TestProjectFileURLSubmitForm(TestCase):
 
     def test_form_valid_with_md5_hash(self):
         """Test form is valid with MD5 hash."""
+        expected_md5 = "abc123def456789012345678901234ab"
         form_data = {
             "url": "https://example.com/file.gds",
-            "expected_hash_md5": "abc123def456789012345678901234ab",
+            "expected_hash_md5": expected_md5,
         }
         form = ProjectFileURLSubmitForm(data=form_data)
 
         assert form.is_valid()
-        assert form.cleaned_data["expected_hash_md5"] == "abc123def456789012345678901234ab"
+        assert form.cleaned_data["expected_hash_md5"] == expected_md5
 
     def test_form_valid_with_sha1_hash(self):
         """Test form is valid with SHA1 hash."""
+        expected_sha1 = "abc123def456789012345678901234567890abcd"
         form_data = {
             "url": "https://example.com/file.gds",
-            "expected_hash_sha1": "abc123def456789012345678901234567890abcd",
+            "expected_hash_sha1": expected_sha1,
         }
         form = ProjectFileURLSubmitForm(data=form_data)
 
         assert form.is_valid()
-        assert form.cleaned_data["expected_hash_sha1"] == "abc123def456789012345678901234567890abcd"
+        assert form.cleaned_data["expected_hash_sha1"] == expected_sha1
 
     def test_form_valid_with_both_hashes(self):
         """Test form is valid with both MD5 and SHA1 hashes."""
@@ -186,6 +188,7 @@ class TestProjectFileURLSubmitForm(TestCase):
 
     def test_form_md5_hash_cleaned_lowercase(self):
         """Test MD5 hash is converted to lowercase."""
+        expected_md5 = "abc123def456789012345678901234ab"
         form_data = {
             "url": "https://example.com/file.gds",
             "expected_hash_md5": "ABC123DEF456789012345678901234AB",
@@ -193,10 +196,11 @@ class TestProjectFileURLSubmitForm(TestCase):
         form = ProjectFileURLSubmitForm(data=form_data)
 
         assert form.is_valid()
-        assert form.cleaned_data["expected_hash_md5"] == "abc123def456789012345678901234ab"
+        assert form.cleaned_data["expected_hash_md5"] == expected_md5
 
     def test_form_sha1_hash_cleaned_lowercase(self):
         """Test SHA1 hash is converted to lowercase."""
+        expected_sha1 = "abc123def456789012345678901234567890abcd"
         form_data = {
             "url": "https://example.com/file.gds",
             "expected_hash_sha1": "ABC123DEF456789012345678901234567890ABCD",
@@ -204,7 +208,7 @@ class TestProjectFileURLSubmitForm(TestCase):
         form = ProjectFileURLSubmitForm(data=form_data)
 
         assert form.is_valid()
-        assert form.cleaned_data["expected_hash_sha1"] == "abc123def456789012345678901234567890abcd"
+        assert form.cleaned_data["expected_hash_sha1"] == expected_sha1
 
     def test_form_md5_hash_with_whitespace_invalid(self):
         """Test MD5 hash with whitespace is invalid (pattern validation)."""

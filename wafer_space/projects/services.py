@@ -7,6 +7,10 @@ This service layer prevents circular imports by providing a clean separation:
 - Tasks handle background processing
 """
 
+from dataclasses import dataclass
+from urllib.parse import unquote
+from urllib.parse import urlparse
+
 from django.db import transaction
 
 from .models import Project
@@ -14,6 +18,18 @@ from .models import ProjectFile
 from .security import SecurityValidationError
 from .security import URLValidator
 from .url_rewriters import URLRewriter
+
+
+@dataclass
+class FileCreationData:
+    """Data required to create a ProjectFile record."""
+
+    original_url: str
+    source_url: str
+    expected_hash_md5: str
+    expected_hash_sha1: str
+    file_size: int
+    content_type: str
 
 
 class ProjectFileService:
@@ -78,8 +94,7 @@ class ProjectFileService:
         cls._handle_file_replacement(project)
 
         # Step 4: Create ProjectFile record
-        project_file = cls._create_project_file(
-            project=project,
+        file_data = FileCreationData(
             original_url=url,
             source_url=rewritten_url,
             expected_hash_md5=expected_hash_md5,
@@ -87,6 +102,7 @@ class ProjectFileService:
             file_size=validation_result["file_size"],
             content_type=validation_result.get("content_type", ""),
         )
+        project_file = cls._create_project_file(project=project, file_data=file_data)
 
         # Step 5: Start download task
         cls._start_download_task(project_file)
@@ -127,51 +143,36 @@ class ProjectFileService:
         cls,
         *,
         project: Project,
-        original_url: str,
-        source_url: str,
-        expected_hash_md5: str,
-        expected_hash_sha1: str,
-        file_size: int,
-        content_type: str,
+        file_data: FileCreationData,
     ) -> ProjectFile:
         """Create a ProjectFile record.
 
         Args:
             project: The project to associate the file with
-            original_url: The URL submitted by the user
-            source_url: The URL after rewriting
-            expected_hash_md5: Optional MD5 hash for verification
-            expected_hash_sha1: Optional SHA1 hash for verification
-            file_size: File size in bytes
-            content_type: Content type from server
+            file_data: File creation data (URLs, hashes, size, content type)
 
         Returns:
             ProjectFile: The created file record
         """
         # Extract filename from URL
-        from urllib.parse import unquote
-        from urllib.parse import urlparse
-
-        parsed = urlparse(source_url)
+        parsed = urlparse(file_data.source_url)
         filename = parsed.path.split("/")[-1] or "download"
         filename = unquote(filename)
 
         # Create the file record
-        project_file = ProjectFile.objects.create(
+        return ProjectFile.objects.create(
             project=project,
-            original_url=original_url,
-            source_url=source_url,
-            expected_hash_md5=expected_hash_md5.strip().lower(),
-            expected_hash_sha1=expected_hash_sha1.strip().lower(),
-            file_size=file_size,
-            content_type=content_type,
+            original_url=file_data.original_url,
+            source_url=file_data.source_url,
+            expected_hash_md5=file_data.expected_hash_md5.strip().lower(),
+            expected_hash_sha1=file_data.expected_hash_sha1.strip().lower(),
+            file_size=file_data.file_size,
+            content_type=file_data.content_type,
             original_filename=filename,
             download_status=ProjectFile.DownloadStatus.PENDING,
             is_active=True,  # New file is active
             file_type=ProjectFile.FileType.DESIGN,
         )
-
-        return project_file
 
     @classmethod
     def _start_download_task(cls, project_file: ProjectFile) -> str:
@@ -227,21 +228,16 @@ class ProjectFileService:
 
         task = AsyncResult(project_file.download_task_id)
 
-        if task.state == "PENDING":
+        # Map task states to status and message
+        if task.state in ("PENDING", "STARTED"):
+            status = "pending" if task.state == "PENDING" else "downloading"
+            message = "Download pending" if task.state == "PENDING" else "Download starting"
             return {
-                "status": "pending",
+                "status": status,
                 "progress": 0,
                 "current": 0,
                 "total": project_file.file_size or 0,
-                "message": "Download pending",
-            }
-        if task.state == "STARTED":
-            return {
-                "status": "downloading",
-                "progress": 0,
-                "current": 0,
-                "total": project_file.file_size or 0,
-                "message": "Download starting",
+                "message": message,
             }
         if task.state == "PROGRESS":
             # Get progress from task meta
