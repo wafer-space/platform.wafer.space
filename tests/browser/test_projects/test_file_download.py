@@ -174,9 +174,7 @@ class TestProjectFileDownload(BaseBrowserTest):
         project_file = project_files.first()
         assert project_file.original_url == test_url
         assert project_file.is_active is True
-        assert (
-            project_file.download_status == ProjectFile.DownloadStatus.PENDING
-        )
+        assert project_file.download_status == ProjectFile.DownloadStatus.PENDING
 
     @patch("wafer_space.projects.services.URLValidator.validate_url")
     @patch("wafer_space.projects.services.URLRewriter.rewrite_url")
@@ -210,9 +208,7 @@ class TestProjectFileDownload(BaseBrowserTest):
         submit_button.click()
 
         # Wait for error message
-        error_xpath = (
-            "//*[contains(text(), 'validation') or contains(text(), 'error')]"
-        )
+        error_xpath = "//*[contains(text(), 'validation') or contains(text(), 'error')]"
         self.wait_for_element(self.driver, (By.XPATH, error_xpath), timeout=10)
 
         # Verify no ProjectFile was created
@@ -250,8 +246,7 @@ class TestProjectFileDownload(BaseBrowserTest):
         # Check for progress indicators
         progress_xpath = "//*[contains(@class, 'progress') or contains(text(), '%')]"
         downloading_xpath = (
-            "//*[contains(text(), 'downloading') or "
-            "contains(text(), 'Downloading')]"
+            "//*[contains(text(), 'downloading') or contains(text(), 'Downloading')]"
         )
         try:
             # Look for progress bar or percentage
@@ -319,9 +314,7 @@ class TestProjectFileDownload(BaseBrowserTest):
         self.navigate_to(self.driver, f"/projects/{self.project.id}/")
 
         # Check for failed status
-        failed_xpath = (
-            "//*[contains(text(), 'failed') or contains(text(), 'Failed')]"
-        )
+        failed_xpath = "//*[contains(text(), 'failed') or contains(text(), 'Failed')]"
         status_element = self.wait_for_element(
             self.driver, (By.XPATH, failed_xpath), timeout=10
         )

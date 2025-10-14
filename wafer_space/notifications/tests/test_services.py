@@ -88,9 +88,7 @@ class TestNotificationService:
 
         assert notification is not None
         assert notification.user == self.user
-        assert (
-            notification.notification_type == Notification.Type.CHECKSUM_VERIFIED
-        )
+        assert notification.notification_type == Notification.Type.CHECKSUM_VERIFIED
         assert "test_design.gds" in notification.title
         assert "integrity verified" in notification.message.lower()
         assert notification.is_read is False
@@ -110,9 +108,7 @@ class TestNotificationService:
 
         assert notification is not None
         assert notification.user == self.user
-        assert (
-            notification.notification_type == Notification.Type.CHECKSUM_MISMATCH
-        )
+        assert notification.notification_type == Notification.Type.CHECKSUM_MISMATCH
         assert "test_design.gds" in notification.title
         assert "MD5 mismatch" in notification.message
         assert "SHA1 mismatch" in notification.message
