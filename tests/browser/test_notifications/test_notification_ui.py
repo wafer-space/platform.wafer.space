@@ -275,7 +275,7 @@ class TestNotificationUI(BaseBrowserTest):
         # Wait for page to reload and database to update
         # Retry up to 5 times with 1 second delay
         max_retries = 5
-        for attempt in range(max_retries):
+        for _attempt in range(max_retries):
             time.sleep(1)
             unread_count = Notification.objects.filter(
                 user=self.user,
@@ -285,7 +285,10 @@ class TestNotificationUI(BaseBrowserTest):
                 break
 
         # Final verification
-        assert unread_count == 0, f"Expected 0 unread, got {unread_count} after {max_retries} attempts"
+        error_msg = (
+            f"Expected 0 unread, got {unread_count} after {max_retries} attempts"
+        )
+        assert unread_count == 0, error_msg
 
     def test_filter_tabs_display(self):
         """Test that filter tabs (All, Unread, Read) display correctly."""
