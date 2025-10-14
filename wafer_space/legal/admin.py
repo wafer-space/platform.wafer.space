@@ -3,7 +3,9 @@
 from django.contrib import admin
 from django.contrib import messages
 from django.db.models import Count
+from django.utils.html import escape
 from django.utils.html import format_html
+from django.utils.text import Truncator
 
 from .models import TermsOfService
 from .models import TermsOfServiceAcceptance
@@ -18,23 +20,34 @@ class TermsOfServiceAdmin(admin.ModelAdmin):
     list_display = [
         "version",
         "is_active_badge",
+        "file_exists_badge",
         "acceptance_count",
         "created_at",
         "created_by",
     ]
     list_filter = ["is_active", "created_at"]
-    search_fields = ["version", "content"]
-    readonly_fields = ["created_at", "created_by"]
+    search_fields = ["version"]
+    readonly_fields = ["created_at", "created_by", "content_preview"]
     date_hierarchy = "created_at"
     actions = ["activate_version", "deactivate_version"]
 
     fieldsets = (
-        (None, {"fields": ("version", "content")}),
+        (None, {"fields": ("version",)}),
         (
             "Status",
             {
                 "fields": ("is_active",),
                 "description": "Only one TOS version can be active at a time.",
+            },
+        ),
+        (
+            "Content Preview",
+            {
+                "fields": ("content_preview",),
+                "description": (
+                    "Content is stored in "
+                    "wafer_space/legal/tos_versions/{version}.md"
+                ),
             },
         ),
         (
@@ -57,6 +70,29 @@ class TermsOfServiceAdmin(admin.ModelAdmin):
         if obj.is_active:
             return format_html('<span style="color: green;">✓ Active</span>')
         return format_html('<span style="color: gray;">○ Inactive</span>')
+
+    @admin.display(description="File")
+    def file_exists_badge(self, obj) -> str:
+        """Display whether the markdown file exists."""
+        if obj.content_file_path.exists():
+            return format_html('<span style="color: green;">✓ Found</span>')
+        return format_html('<span style="color: red;">✗ Missing</span>')
+
+    @admin.display(description="Content Preview")
+    def content_preview(self, obj) -> str:
+        """Display a preview of the markdown content."""
+        if not obj.content_file_path.exists():
+            return format_html(
+                '<div style="color: red;">Markdown file not found: {}</div>',
+                obj.content_file_path.name,
+            )
+
+        truncated = Truncator(obj.content).chars(500)
+        return format_html(
+            '<pre style="background: #f8f9fa; '
+            'padding: 10px; border-radius: 5px;">{}</pre>',
+            escape(truncated),
+        )
 
     @admin.display(
         description="Acceptances",
