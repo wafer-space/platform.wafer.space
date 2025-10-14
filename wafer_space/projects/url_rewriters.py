@@ -124,6 +124,12 @@ class URLRewriter:
         parsed = urlparse(url)
 
         if "drive.google.com" in parsed.netloc:
+            # Check if already in direct download format
+            params = parse_qs(parsed.query)
+            if parsed.path == "/uc" and "export" in params and "download" in params.get("export", []):
+                # Already a direct download URL
+                return url, False, ""
+
             # Extract file ID from various Google Drive URL formats
             file_id = None
 
@@ -133,10 +139,8 @@ class URLRewriter:
                 file_id = match.group(1)
 
             # Format 2: /open?id=FILE_ID
-            if not file_id:
-                params = parse_qs(parsed.query)
-                if "id" in params:
-                    file_id = params["id"][0]
+            if not file_id and "id" in params:
+                file_id = params["id"][0]
 
             if file_id:
                 new_url = f"https://drive.google.com/uc?export=download&id={file_id}"
