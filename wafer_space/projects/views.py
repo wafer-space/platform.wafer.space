@@ -34,7 +34,7 @@ class ProjectListView(LoginRequiredMixin, ListView):
 
     def get_queryset(self):
         """Return only projects owned by the current user."""
-        return Project.objects.filter(user=self.request.user).order_by("-created")
+        return Project.objects.filter(user=self.request.user).order_by("-created_at")
 
 
 class ProjectDetailView(LoginRequiredMixin, UserPassesTestMixin, DetailView):

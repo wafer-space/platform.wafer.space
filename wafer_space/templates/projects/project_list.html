@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% load static %}
+
+{% block title %}My Projects{% endblock title %}
+
+{% block content %}
+  <div class="container">
+    <div class="row">
+      <div class="col-sm-12">
+        <h2>My Projects</h2>
+
+        <div class="mb-3">
+          <a class="btn btn-primary" href="{% url 'projects:create' %}" role="button">
+            <i class="bi bi-plus-circle"></i> Create New Project
+          </a>
+        </div>
+
+        {% if projects %}
+          <div class="list-group">
+            {% for project in projects %}
+              <a href="{% url 'projects:detail' pk=project.pk %}" class="list-group-item list-group-item-action">
+                <div class="d-flex w-100 justify-content-between">
+                  <h5 class="mb-1">{{ project.name }}</h5>
+                  <small class="text-muted">{{ project.created_at|date:"M d, Y" }}</small>
+                </div>
+                {% if project.description %}
+                  <p class="mb-1">{{ project.description|truncatewords:30 }}</p>
+                {% endif %}
+              </a>
+            {% endfor %}
+          </div>
+
+          {% if is_paginated %}
+            <nav aria-label="Projects pagination" class="mt-3">
+              <ul class="pagination">
+                {% if page_obj.has_previous %}
+                  <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
+                  </li>
+                {% else %}
+                  <li class="page-item disabled">
+                    <span class="page-link">Previous</span>
+                  </li>
+                {% endif %}
+
+                {% for num in page_obj.paginator.page_range %}
+                  {% if page_obj.number == num %}
+                    <li class="page-item active">
+                      <span class="page-link">{{ num }}</span>
+                    </li>
+                  {% else %}
+                    <li class="page-item">
+                      <a class="page-link" href="?page={{ num }}">{{ num }}</a>
+                    </li>
+                  {% endif %}
+                {% endfor %}
+
+                {% if page_obj.has_next %}
+                  <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
+                  </li>
+                {% else %}
+                  <li class="page-item disabled">
+                    <span class="page-link">Next</span>
+                  </li>
+                {% endif %}
+              </ul>
+            </nav>
+          {% endif %}
+        {% else %}
+          <div class="alert alert-info" role="alert">
+            <h4 class="alert-heading">No projects yet!</h4>
+            <p>You haven't created any projects yet. Create your first project to get started.</p>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endblock content %}

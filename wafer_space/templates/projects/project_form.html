@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% load static %}
+{% load crispy_forms_tags %}
+
+{% block title %}
+  {% if object %}Edit Project{% else %}Create Project{% endif %}
+{% endblock title %}
+
+{% block content %}
+  <div class="container">
+    <div class="row">
+      <div class="col-sm-12">
+        <h2>{% if object %}Edit Project{% else %}Create New Project{% endif %}</h2>
+
+        <form method="post">
+          {% csrf_token %}
+          {{ form|crispy }}
+
+          <div class="d-flex gap-2 mt-3">
+            <button type="submit" class="btn btn-primary">
+              {% if object %}
+                <i class="bi bi-save"></i> Save Changes
+              {% else %}
+                <i class="bi bi-plus-circle"></i> Create Project
+              {% endif %}
+            </button>
+            <a class="btn btn-secondary" href="{% if object %}{% url 'projects:detail' pk=object.pk %}{% else %}{% url 'projects:list' %}{% endif %}" role="button">
+              <i class="bi bi-x-circle"></i> Cancel
+            </a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+{% endblock content %}
