@@ -1,1 +1,308 @@
-# Create your views here.
+"""Views for project management."""
+
+from django.contrib import messages
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.mixins import UserPassesTestMixin
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
+from django.shortcuts import redirect
+from django.shortcuts import render
+from django.urls import reverse_lazy
+from django.views.generic import CreateView
+from django.views.generic import DeleteView
+from django.views.generic import DetailView
+from django.views.generic import ListView
+from django.views.generic import UpdateView
+from django.views.generic import View
+
+from .forms import ProjectFileLocalUploadForm
+from .forms import ProjectFileURLSubmitForm
+from .forms import ProjectForm
+from .models import Project
+from .models import ProjectFile
+from .security import SecurityValidationError
+from .services import ProjectFileService
+
+
+class ProjectListView(LoginRequiredMixin, ListView):
+    """List all projects for the current user."""
+
+    model = Project
+    template_name = "projects/project_list.html"
+    context_object_name = "projects"
+    paginate_by = 20
+
+    def get_queryset(self):
+        """Return only projects owned by the current user."""
+        return Project.objects.filter(user=self.request.user).order_by("-created")
+
+
+class ProjectDetailView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
+    """View a single project with its files."""
+
+    model = Project
+    template_name = "projects/project_detail.html"
+    context_object_name = "project"
+
+    def test_func(self):
+        """Only allow the owner to view the project."""
+        project = self.get_object()
+        return project.user == self.request.user
+
+    def get_context_data(self, **kwargs):
+        """Add active project file to context."""
+        context = super().get_context_data(**kwargs)
+        project = self.get_object()
+
+        # Get active file if exists
+        active_file = ProjectFile.objects.filter(
+            project=project,
+            is_active=True,
+        ).first()
+
+        context["active_file"] = active_file
+
+        # If there's an active file with a download in progress, add progress info
+        if active_file and active_file.download_status in [
+            ProjectFile.DownloadStatus.PENDING,
+            ProjectFile.DownloadStatus.DOWNLOADING,
+        ]:
+            context["show_progress"] = True
+            progress = ProjectFileService.get_download_progress(active_file)
+            context["progress"] = progress
+
+        return context
+
+
+class ProjectCreateView(LoginRequiredMixin, CreateView):
+    """Create a new project."""
+
+    model = Project
+    form_class = ProjectForm
+    template_name = "projects/project_form.html"
+
+    def form_valid(self, form):
+        """Set the user before saving."""
+        form.instance.user = self.request.user
+        messages.success(self.request, f"Project '{form.instance.name}' created successfully!")
+        return super().form_valid(form)
+
+    def get_success_url(self):
+        """Redirect to project detail page."""
+        return reverse_lazy("projects:detail", kwargs={"pk": self.object.pk})
+
+
+class ProjectUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
+    """Update an existing project."""
+
+    model = Project
+    form_class = ProjectForm
+    template_name = "projects/project_form.html"
+
+    def test_func(self):
+        """Only allow the owner to update the project."""
+        project = self.get_object()
+        return project.user == self.request.user
+
+    def form_valid(self, form):
+        """Show success message."""
+        messages.success(self.request, f"Project '{form.instance.name}' updated successfully!")
+        return super().form_valid(form)
+
+    def get_success_url(self):
+        """Redirect to project detail page."""
+        return reverse_lazy("projects:detail", kwargs={"pk": self.object.pk})
+
+
+class ProjectDeleteView(LoginRequiredMixin, UserPassesTestMixin, DeleteView):
+    """Delete a project."""
+
+    model = Project
+    template_name = "projects/project_confirm_delete.html"
+    success_url = reverse_lazy("projects:list")
+
+    def test_func(self):
+        """Only allow the owner to delete the project."""
+        project = self.get_object()
+        return project.user == self.request.user
+
+    def form_valid(self, form):
+        """Show success message."""
+        project_name = self.object.name
+        messages.success(self.request, f"Project '{project_name}' deleted successfully!")
+        return super().form_valid(form)
+
+
+class ProjectFileSubmitURLView(LoginRequiredMixin, UserPassesTestMixin, View):
+    """Submit a file URL for background download."""
+
+    def test_func(self):
+        """Only allow the owner to submit files."""
+        project = get_object_or_404(Project, pk=self.kwargs["pk"])
+        return project.user == self.request.user
+
+    def get(self, request, pk):
+        """Show the URL submission form."""
+        project = get_object_or_404(Project, pk=pk)
+
+        # Check if user owns the project
+        if project.user != request.user:
+            messages.error(request, "You don't have permission to add files to this project.")
+            return redirect("projects:detail", pk=pk)
+
+        form = ProjectFileURLSubmitForm()
+        return self.render_form(request, project, form)
+
+    def post(self, request, pk):
+        """Process the URL submission."""
+        project = get_object_or_404(Project, pk=pk)
+
+        # Check if user owns the project
+        if project.user != request.user:
+            messages.error(request, "You don't have permission to add files to this project.")
+            return redirect("projects:detail", pk=pk)
+
+        form = ProjectFileURLSubmitForm(request.POST)
+
+        if form.is_valid():
+            try:
+                # Submit file for download via service layer
+                project_file, metadata = ProjectFileService.submit_file_from_url(
+                    project=project,
+                    url=form.cleaned_data["url"],
+                    expected_hash_md5=form.cleaned_data.get("expected_hash_md5", ""),
+                    expected_hash_sha1=form.cleaned_data.get("expected_hash_sha1", ""),
+                )
+
+                # Build success message
+                msg = f"File '{project_file.original_filename}' submitted for download!"
+                if metadata["url_rewritten"]:
+                    msg += f" (URL rewritten: {metadata['rewrite_reason']})"
+
+                messages.success(request, msg)
+                return redirect("projects:detail", pk=pk)
+
+            except SecurityValidationError as e:
+                messages.error(request, f"Security validation failed: {e}")
+                return self.render_form(request, project, form)
+
+            except ValueError as e:
+                messages.error(request, f"Invalid input: {e}")
+                return self.render_form(request, project, form)
+
+            except Exception as e:
+                messages.error(request, f"An error occurred: {e}")
+                return self.render_form(request, project, form)
+
+        return self.render_form(request, project, form)
+
+    def render_form(self, request, project, form):
+        """Render the form template."""
+        return render(
+            request,
+            "projects/project_file_submit_url.html",
+            {
+                "project": project,
+                "form": form,
+            },
+        )
+
+
+class ProjectFileUploadView(LoginRequiredMixin, UserPassesTestMixin, View):
+    """Upload a file directly (not from URL)."""
+
+    def test_func(self):
+        """Only allow the owner to upload files."""
+        project = get_object_or_404(Project, pk=self.kwargs["pk"])
+        return project.user == self.request.user
+
+    def get(self, request, pk):
+        """Show the file upload form."""
+        project = get_object_or_404(Project, pk=pk)
+
+        # Check if user owns the project
+        if project.user != request.user:
+            messages.error(request, "You don't have permission to add files to this project.")
+            return redirect("projects:detail", pk=pk)
+
+        form = ProjectFileLocalUploadForm()
+        return self.render_form(request, project, form)
+
+    def post(self, request, pk):
+        """Process the file upload."""
+        project = get_object_or_404(Project, pk=pk)
+
+        # Check if user owns the project
+        if project.user != request.user:
+            messages.error(request, "You don't have permission to add files to this project.")
+            return redirect("projects:detail", pk=pk)
+
+        form = ProjectFileLocalUploadForm(request.POST, request.FILES)
+
+        if form.is_valid():
+            try:
+                # Mark any existing active file as inactive
+                ProjectFile.objects.filter(project=project, is_active=True).update(
+                    is_active=False,
+                )
+
+                # Save the uploaded file
+                project_file = form.save(commit=False)
+                project_file.project = project
+                project_file.download_status = ProjectFile.DownloadStatus.LOCAL_UPLOAD
+                project_file.is_active = True
+                project_file.save()
+
+                messages.success(
+                    request,
+                    f"File '{project_file.file.name}' uploaded successfully!",
+                )
+                return redirect("projects:detail", pk=pk)
+
+            except Exception as e:
+                messages.error(request, f"An error occurred: {e}")
+                return self.render_form(request, project, form)
+
+        return self.render_form(request, project, form)
+
+    def render_form(self, request, project, form):
+        """Render the form template."""
+        return render(
+            request,
+            "projects/project_file_upload.html",
+            {
+                "project": project,
+                "form": form,
+            },
+        )
+
+
+class ProjectFileProgressView(LoginRequiredMixin, UserPassesTestMixin, View):
+    """Get download progress for a project file (AJAX endpoint)."""
+
+    def test_func(self):
+        """Only allow the owner to view progress."""
+        project = get_object_or_404(Project, pk=self.kwargs["pk"])
+        return project.user == self.request.user
+
+    def get(self, request, pk):
+        """Return progress as JSON."""
+        project = get_object_or_404(Project, pk=pk)
+
+        # Check if user owns the project
+        if project.user != request.user:
+            return JsonResponse({"error": "Permission denied"}, status=403)
+
+        # Get active file
+        active_file = ProjectFile.objects.filter(
+            project=project,
+            is_active=True,
+        ).first()
+
+        if not active_file:
+            return JsonResponse({"error": "No active file found"}, status=404)
+
+        # Get progress from service layer
+        progress = ProjectFileService.get_download_progress(active_file)
+
+        return JsonResponse(progress)
