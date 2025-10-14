@@ -61,9 +61,13 @@ class TOSAcceptanceMiddleware:
         # Handle both path and full URL formats
         if settings.STATIC_URL:
             static_path = urlparse(settings.STATIC_URL).path or settings.STATIC_URL
-            exempt_patterns.append(static_path)
+            # Only add if it's a meaningful path (not just "/")
+            if static_path and static_path != "/":
+                exempt_patterns.append(static_path)
         if settings.MEDIA_URL:
             media_path = urlparse(settings.MEDIA_URL).path or settings.MEDIA_URL
-            exempt_patterns.append(media_path)
+            # Only add if it's a meaningful path (not just "/")
+            if media_path and media_path != "/":
+                exempt_patterns.append(media_path)
 
         return any(pattern and path.startswith(pattern) for pattern in exempt_patterns)
