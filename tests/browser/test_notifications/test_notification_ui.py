@@ -268,7 +268,6 @@ class TestNotificationUI(BaseBrowserTest):
             self.driver,
             (By.CSS_SELECTOR, 'button[type="submit"]'),
         )
-        current_url = self.driver.current_url
         mark_all_button.click()
 
         # Wait for page reload after marking as read
