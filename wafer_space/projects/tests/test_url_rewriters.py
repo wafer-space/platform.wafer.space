@@ -1,6 +1,5 @@
 """Tests for URL rewriting module."""
 
-import pytest
 
 from wafer_space.projects.url_rewriters import URLRewriter
 

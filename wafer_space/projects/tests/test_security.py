@@ -1,6 +1,5 @@
 """Tests for security validation module."""
 
-from unittest.mock import MagicMock
 from unittest.mock import Mock
 from unittest.mock import patch
 
@@ -326,7 +325,7 @@ class TestURLValidator:
 
     def test_allowed_schemes_constant(self):
         """Test that only http and https are allowed."""
-        assert URLValidator.ALLOWED_SCHEMES == {"http", "https"}
+        assert {"http", "https"} == URLValidator.ALLOWED_SCHEMES
 
     def test_private_ip_ranges_defined(self):
         """Test that private IP ranges are properly defined."""

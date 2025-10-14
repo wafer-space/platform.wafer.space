@@ -84,7 +84,10 @@ class ProjectCreateView(LoginRequiredMixin, CreateView):
     def form_valid(self, form):
         """Set the user before saving."""
         form.instance.user = self.request.user
-        messages.success(self.request, f"Project '{form.instance.name}' created successfully!")
+        messages.success(
+            self.request,
+            f"Project '{form.instance.name}' created successfully!",
+        )
         return super().form_valid(form)
 
     def get_success_url(self):
@@ -106,7 +109,10 @@ class ProjectUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
 
     def form_valid(self, form):
         """Show success message."""
-        messages.success(self.request, f"Project '{form.instance.name}' updated successfully!")
+        messages.success(
+            self.request,
+            f"Project '{form.instance.name}' updated successfully!",
+        )
         return super().form_valid(form)
 
     def get_success_url(self):
@@ -129,7 +135,10 @@ class ProjectDeleteView(LoginRequiredMixin, UserPassesTestMixin, DeleteView):
     def form_valid(self, form):
         """Show success message."""
         project_name = self.object.name
-        messages.success(self.request, f"Project '{project_name}' deleted successfully!")
+        messages.success(
+            self.request,
+            f"Project '{project_name}' deleted successfully!",
+        )
         return super().form_valid(form)
 
 
@@ -147,7 +156,10 @@ class ProjectFileSubmitURLView(LoginRequiredMixin, UserPassesTestMixin, View):
 
         # Check if user owns the project
         if project.user != request.user:
-            messages.error(request, "You don't have permission to add files to this project.")
+            messages.error(
+                request,
+                "You don't have permission to add files to this project.",
+            )
             return redirect("projects:detail", pk=pk)
 
         form = ProjectFileURLSubmitForm()
@@ -159,7 +171,10 @@ class ProjectFileSubmitURLView(LoginRequiredMixin, UserPassesTestMixin, View):
 
         # Check if user owns the project
         if project.user != request.user:
-            messages.error(request, "You don't have permission to add files to this project.")
+            messages.error(
+                request,
+                "You don't have permission to add files to this project.",
+            )
             return redirect("projects:detail", pk=pk)
 
         form = ProjectFileURLSubmitForm(request.POST)
@@ -190,7 +205,8 @@ class ProjectFileSubmitURLView(LoginRequiredMixin, UserPassesTestMixin, View):
                 messages.error(request, f"Invalid input: {e}")
                 return self.render_form(request, project, form)
 
-            except Exception as e:
+            except OSError as e:
+                # Catch file and network-related errors
                 messages.error(request, f"An error occurred: {e}")
                 return self.render_form(request, project, form)
 
@@ -222,7 +238,10 @@ class ProjectFileUploadView(LoginRequiredMixin, UserPassesTestMixin, View):
 
         # Check if user owns the project
         if project.user != request.user:
-            messages.error(request, "You don't have permission to add files to this project.")
+            messages.error(
+                request,
+                "You don't have permission to add files to this project.",
+            )
             return redirect("projects:detail", pk=pk)
 
         form = ProjectFileLocalUploadForm()
@@ -234,7 +253,10 @@ class ProjectFileUploadView(LoginRequiredMixin, UserPassesTestMixin, View):
 
         # Check if user owns the project
         if project.user != request.user:
-            messages.error(request, "You don't have permission to add files to this project.")
+            messages.error(
+                request,
+                "You don't have permission to add files to this project.",
+            )
             return redirect("projects:detail", pk=pk)
 
         form = ProjectFileLocalUploadForm(request.POST, request.FILES)
@@ -259,7 +281,8 @@ class ProjectFileUploadView(LoginRequiredMixin, UserPassesTestMixin, View):
                 )
                 return redirect("projects:detail", pk=pk)
 
-            except Exception as e:
+            except (OSError, ValueError) as e:
+                # Catch file operations and validation errors
                 messages.error(request, f"An error occurred: {e}")
                 return self.render_form(request, project, form)
 

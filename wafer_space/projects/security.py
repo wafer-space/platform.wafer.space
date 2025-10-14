@@ -8,7 +8,6 @@ Prevents SSRF (Server-Side Request Forgery) attacks and validates file downloads
 """
 
 import ipaddress
-import re
 import socket
 from urllib.parse import urlparse
 
@@ -84,9 +83,6 @@ class URLValidator:
 
         # Try to resolve hostname to IP address
         try:
-            # Use requests to resolve the hostname
-            # This will follow redirects and give us the final IP
-            response = requests.head(url, allow_redirects=True, timeout=10)
             # Get the IP address from the socket
             ip_address = socket.gethostbyname(parsed.hostname)
             ip_obj = ipaddress.ip_address(ip_address)
@@ -96,12 +92,12 @@ class URLValidator:
                 if ip_obj in private_range:
                     msg = f"Cannot download from private IP address: {ip_address}"
                     raise SecurityValidationError(msg)
-        except (socket.gaierror, socket.herror):
+        except (socket.gaierror, socket.herror) as e:
             msg = f"Cannot resolve hostname: {hostname}"
-            raise SecurityValidationError(msg)
+            raise SecurityValidationError(msg) from e
         except requests.RequestException as e:
             msg = f"Cannot connect to URL: {e}"
-            raise SecurityValidationError(msg)
+            raise SecurityValidationError(msg) from e
 
     @classmethod
     def validate_file_size(cls, url: str) -> int:
@@ -122,7 +118,10 @@ class URLValidator:
 
             content_length = response.headers.get("Content-Length")
             if not content_length:
-                msg = "Server did not provide Content-Length header. Cannot validate file size."
+                msg = (
+                    "Server did not provide Content-Length header. "
+                    "Cannot validate file size."
+                )
                 raise SecurityValidationError(msg)
 
             file_size = int(content_length)
@@ -135,16 +134,19 @@ class URLValidator:
                 # Convert to GB for error message
                 size_gb = file_size / (1024 * 1024 * 1024)
                 max_gb = cls.MAX_FILE_SIZE / (1024 * 1024 * 1024)
-                msg = f"File size {size_gb:.2f}GB exceeds maximum allowed size of {max_gb:.0f}GB"
+                msg = (
+                    f"File size {size_gb:.2f}GB exceeds maximum "
+                    f"allowed size of {max_gb:.0f}GB"
+                )
                 raise SecurityValidationError(msg)
 
             return file_size
         except requests.RequestException as e:
             msg = f"Failed to check file size: {e}"
-            raise SecurityValidationError(msg)
+            raise SecurityValidationError(msg) from e
         except ValueError as e:
             msg = f"Invalid Content-Length header: {e}"
-            raise SecurityValidationError(msg)
+            raise SecurityValidationError(msg) from e
 
     @classmethod
     def validate_url(cls, url: str) -> dict[str, int | str | None]:
@@ -185,4 +187,4 @@ class URLValidator:
             }
         except requests.RequestException as e:
             msg = f"Failed to retrieve file metadata: {e}"
-            raise SecurityValidationError(msg)
+            raise SecurityValidationError(msg) from e

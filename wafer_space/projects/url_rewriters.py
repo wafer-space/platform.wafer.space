@@ -10,8 +10,8 @@ Automatically converts web interface URLs to direct download URLs for:
 
 import re
 from urllib.parse import parse_qs
-from urllib.parse import urlparse
 from urllib.parse import urlencode
+from urllib.parse import urlparse
 from urllib.parse import urlunparse
 
 
@@ -126,7 +126,12 @@ class URLRewriter:
         if "drive.google.com" in parsed.netloc:
             # Check if already in direct download format
             params = parse_qs(parsed.query)
-            if parsed.path == "/uc" and "export" in params and "download" in params.get("export", []):
+            is_direct_download = (
+                parsed.path == "/uc"
+                and "export" in params
+                and "download" in params.get("export", [])
+            )
+            if is_direct_download:
                 # Already a direct download URL
                 return url, False, ""
 
@@ -144,7 +149,12 @@ class URLRewriter:
 
             if file_id:
                 new_url = f"https://drive.google.com/uc?export=download&id={file_id}"
-                return new_url, True, "Converted Google Drive share link to direct download"
+                return (
+                    new_url,
+                    True,
+                    "Converted Google Drive share link to direct download",
+                )
+
 
         return url, False, ""
 

@@ -19,10 +19,10 @@ class Notification(models.Model):
         CHECKSUM_VERIFIED = "checksum_verified", "Checksum Verified"
         CHECKSUM_MISMATCH = "checksum_mismatch", "Checksum Mismatch"
 
-        # Manufacturing-related (future)
+        # Future: Manufacturing notifications
         MANUFACTURING_COMPLETE = "manufacturing_complete", "Manufacturing Complete"
 
-        # Legal-related (future migration from TOS app)
+        # Future: Legal notifications (migration from TOS app)
         TOS_UPDATE = "tos_update", "Terms of Service Update"
 
     user = models.ForeignKey(

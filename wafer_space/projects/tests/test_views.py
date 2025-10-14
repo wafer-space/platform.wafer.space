@@ -527,7 +527,7 @@ class TestProjectFileProgressView(TestCase):
     def test_returns_progress_json(self, mock_progress):
         """Test that view returns progress as JSON."""
         # Create active file
-        active_file = ProjectFile.objects.create(
+        ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",

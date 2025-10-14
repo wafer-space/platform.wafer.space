@@ -6,6 +6,10 @@ from django.core.exceptions import ValidationError
 from .models import Project
 from .models import ProjectFile
 
+# Hash length constants
+MD5_HASH_LENGTH = 32
+SHA1_HASH_LENGTH = 40
+
 
 class ProjectForm(forms.ModelForm):
     """Form for creating and editing projects."""
@@ -46,7 +50,10 @@ class ProjectFileURLSubmitForm(forms.Form):
                 "placeholder": "https://github.com/user/repo/blob/main/design.gds",
             },
         ),
-        help_text="URL to your GDS file (up to 100GB). Supports GitHub, GitLab, Dropbox, Google Drive, OneDrive.",
+        help_text=(
+            "URL to your GDS file (up to 100GB). "
+            "Supports GitHub, GitLab, Dropbox, Google Drive, OneDrive."
+        ),
     )
 
     expected_hash_md5 = forms.CharField(
@@ -105,8 +112,8 @@ class ProjectFileURLSubmitForm(forms.Form):
         md5_hash = md5_hash.replace(" ", "").replace("-", "")
 
         # Validate length
-        if len(md5_hash) != 32:
-            msg = "MD5 hash must be exactly 32 hexadecimal characters"
+        if len(md5_hash) != MD5_HASH_LENGTH:
+            msg = f"MD5 hash must be exactly {MD5_HASH_LENGTH} hexadecimal characters"
             raise ValidationError(msg)
 
         # Validate hex characters
@@ -129,8 +136,8 @@ class ProjectFileURLSubmitForm(forms.Form):
         sha1_hash = sha1_hash.replace(" ", "").replace("-", "")
 
         # Validate length
-        if len(sha1_hash) != 40:
-            msg = "SHA1 hash must be exactly 40 hexadecimal characters"
+        if len(sha1_hash) != SHA1_HASH_LENGTH:
+            msg = f"SHA1 hash must be exactly {SHA1_HASH_LENGTH} hexadecimal characters"
             raise ValidationError(msg)
 
         # Validate hex characters
@@ -192,8 +199,8 @@ class ProjectFileLocalUploadForm(forms.ModelForm):
         # Remove any whitespace or dashes
         md5_hash = md5_hash.replace(" ", "").replace("-", "")
 
-        if len(md5_hash) != 32:
-            msg = "MD5 hash must be exactly 32 hexadecimal characters"
+        if len(md5_hash) != MD5_HASH_LENGTH:
+            msg = f"MD5 hash must be exactly {MD5_HASH_LENGTH} hexadecimal characters"
             raise ValidationError(msg)
 
         try:
@@ -214,8 +221,8 @@ class ProjectFileLocalUploadForm(forms.ModelForm):
         # Remove any whitespace or dashes
         sha1_hash = sha1_hash.replace(" ", "").replace("-", "")
 
-        if len(sha1_hash) != 40:
-            msg = "SHA1 hash must be exactly 40 hexadecimal characters"
+        if len(sha1_hash) != SHA1_HASH_LENGTH:
+            msg = f"SHA1 hash must be exactly {SHA1_HASH_LENGTH} hexadecimal characters"
             raise ValidationError(msg)
 
         try:

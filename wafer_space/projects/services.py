@@ -8,7 +8,6 @@ This service layer prevents circular imports by providing a clean separation:
 """
 
 from django.db import transaction
-from django.utils import timezone
 
 from .models import Project
 from .models import ProjectFile
@@ -197,7 +196,10 @@ class ProjectFileService:
         return task.id
 
     @classmethod
-    def get_download_progress(cls, project_file: ProjectFile) -> dict[str, str | int | float]:
+    def get_download_progress(
+        cls,
+        project_file: ProjectFile,
+    ) -> dict[str, str | int | float]:
         """Get current download progress from Celery task state.
 
         Args:
