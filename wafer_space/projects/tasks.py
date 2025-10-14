@@ -12,8 +12,10 @@ from urllib.parse import urlparse
 from urllib.request import Request
 from urllib.request import urlopen
 
+import requests
 from celery import shared_task
 from django.core.files.base import ContentFile
+from django.core.files.base import File
 from django.utils import timezone
 from django_celery_results.models import TaskResult
 
@@ -288,20 +290,128 @@ def _save_file_to_django(project_file, file_content: bytes, temp_dir: Path) -> N
         temp_path.unlink()
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def download_project_file(self, file_id):
-    """
-    Background task to download a project file from a URL.
+def _download_with_progress(
+    task,
+    project_file,
+    temp_path: Path,
+    *,
+    chunk_size: int = 1024 * 1024,  # 1MB chunks
+) -> tuple[str, str]:
+    """Download file with progress tracking and resume capability.
 
     Args:
-        file_id: The ID of the ProjectFile instance
+        task: The Celery task instance (for progress updates)
+        project_file: The ProjectFile instance
+        temp_path: Path to temporary file for download
+        chunk_size: Size of download chunks in bytes
+
+    Returns:
+        tuple: (md5_hash, sha1_hash) of downloaded content
+    """
+    url = project_file.source_url
+    headers = {"User-Agent": "wafer.space/1.0"}
+
+    # Check if we're resuming a partial download
+    resume_byte_pos = 0
+    if temp_path.exists():
+        resume_byte_pos = temp_path.stat().st_size
+        headers["Range"] = f"bytes={resume_byte_pos}-"
+
+    # Start download
+    response = requests.get(url, headers=headers, stream=True, timeout=30)
+
+    # Check if server supports resume
+    if resume_byte_pos > 0 and response.status_code != 206:
+        # Server doesn't support resume, start from beginning
+        resume_byte_pos = 0
+        temp_path.unlink(missing_ok=True)
+        response = requests.get(url, headers=headers, stream=True, timeout=30)
+
+    response.raise_for_status()
+
+    # Get total file size
+    total_size = project_file.file_size or 0
+    if "Content-Length" in response.headers:
+        content_length = int(response.headers["Content-Length"])
+        if resume_byte_pos > 0:
+            total_size = resume_byte_pos + content_length
+        else:
+            total_size = content_length
+
+    # Initialize hash calculators
+    md5_hasher = hashlib.md5(usedforsecurity=False)
+    sha1_hasher = hashlib.sha1(usedforsecurity=False)
+
+    # If resuming, read existing content for hash calculation
+    if resume_byte_pos > 0:
+        with temp_path.open("rb") as existing_file:
+            existing_content = existing_file.read()
+            md5_hasher.update(existing_content)
+            sha1_hasher.update(existing_content)
+
+    # Download with progress updates
+    downloaded = resume_byte_pos
+    last_db_update_progress = 0
+    mode = "ab" if resume_byte_pos > 0 else "wb"
+
+    with temp_path.open(mode) as temp_file:
+        for chunk in response.iter_content(chunk_size=chunk_size):
+            if chunk:  # filter out keep-alive chunks
+                temp_file.write(chunk)
+                md5_hasher.update(chunk)
+                sha1_hasher.update(chunk)
+                downloaded += len(chunk)
+
+                # Update progress in Celery task state (every chunk)
+                progress = int((downloaded / total_size) * 100) if total_size > 0 else 0
+                task.update_state(
+                    state="PROGRESS",
+                    meta={
+                        "current": downloaded,
+                        "total": total_size,
+                        "progress": progress,
+                        "message": f"Downloaded {downloaded:,} of {total_size:,} bytes",
+                    },
+                )
+
+                # Update database every 5% progress
+                if progress >= last_db_update_progress + 5:
+                    project_file.last_activity = timezone.now()
+                    project_file.save(update_fields=["last_activity"])
+                    last_db_update_progress = progress
+
+    return md5_hasher.hexdigest(), sha1_hasher.hexdigest()
+
+
+@shared_task(bind=True, max_retries=5, default_retry_delay=60)
+def download_project_file(self, project_id):
+    """Background task to download a project file from a URL.
+
+    Supports:
+    - Chunked downloading for large files (up to 100GB)
+    - Resume capability with HTTP Range requests
+    - Progress tracking via Celery task state
+    - Hash verification (MD5, SHA1)
+    - Exponential backoff retry on failures
+
+    Args:
+        project_id: The UUID of the Project (not ProjectFile ID)
 
     Returns:
         dict: Result data with status and details
     """
+    temp_path = None
+
     try:
-        # Get the project file instance
-        project_file = ProjectFile.objects.get(id=file_id)
+        # Get the project and its active file
+        project = Project.objects.get(id=project_id)
+        project_file = project.files.filter(is_active=True).first()
+
+        if not project_file:
+            return {
+                "status": "error",
+                "message": f"No active file found for project {project_id}",
+            }
 
         if not project_file.source_url:
             return {
@@ -309,40 +419,69 @@ def download_project_file(self, file_id):
                 "message": "No source URL provided for file download",
             }
 
+        # Mark download as started
+        project_file.download_status = ProjectFile.DownloadStatus.DOWNLOADING
+        project_file.download_started_at = timezone.now()
+        project_file.last_activity = timezone.now()
+        project_file.save(
+            update_fields=[
+                "download_status",
+                "download_started_at",
+                "last_activity",
+            ],
+        )
+
         # Set up filename if not already provided
         if not project_file.original_filename:
             filename = _extract_filename_from_url(project_file.source_url)
             project_file.original_filename = filename
-            project_file.save()
+            project_file.save(update_fields=["original_filename"])
 
-        # Set up temporary directory
+        # Set up temporary directory and file path
         temp_dir = _setup_temp_directory()
+        temp_filename = f"{project_file.id}_{project_file.original_filename}"
+        temp_path = temp_dir / temp_filename
 
-        # Download file content
-        file_content = _download_file_content(project_file)
+        # Download with progress tracking and resume capability
+        md5_hash, sha1_hash = _download_with_progress(
+            self,
+            project_file,
+            temp_path,
+        )
 
         # Save to Django file field
-        _save_file_to_django(project_file, file_content, temp_dir)
+        with temp_path.open("rb") as temp_file:
+            django_file = File(temp_file, name=project_file.original_filename)
+            project_file.file.save(
+                project_file.original_filename,
+                django_file,
+                save=False,
+            )
 
-        # Set file size
-        project_file.file_size = len(file_content)
-
-        # Calculate and verify file hashes
-        md5_hash, sha1_hash = _calculate_file_hashes(file_content)
+        # Set file size and hashes
+        project_file.file_size = temp_path.stat().st_size
         project_file.hash_md5 = md5_hash
         project_file.hash_sha1 = sha1_hash
 
+        # Verify hashes
         hash_verified, verification_errors = _verify_file_hashes(
             project_file,
             md5_hash,
             sha1_hash,
         )
         project_file.hash_verified = hash_verified
+
+        # Mark as complete
         project_file.mark_download_complete()
+
+        # Clean up temp file
+        with contextlib.suppress(OSError):
+            temp_path.unlink()
 
         return {
             "status": "completed",
-            "file_id": str(file_id),
+            "project_id": str(project_id),
+            "file_id": str(project_file.id),
             "original_filename": project_file.original_filename,
             "file_size": project_file.file_size,
             "hash_verified": hash_verified,
@@ -351,33 +490,46 @@ def download_project_file(self, file_id):
             "sha1": project_file.hash_sha1,
         }
 
-    except ProjectFile.DoesNotExist:
+    except Project.DoesNotExist:
         return {
             "status": "error",
-            "message": f"ProjectFile with id {file_id} not found",
+            "message": f"Project with id {project_id} not found",
         }
 
-    except (OSError, ValueError) as exc:
-        # Handle task retry logic
+    except (OSError, ValueError, requests.RequestException) as exc:
+        # Handle task retry logic with exponential backoff
+        retry_delay = 60 * (2 ** self.request.retries)  # Exponential backoff
+
         if self.request.retries < self.max_retries:
             # Update file with retry info
             try:
-                project_file = ProjectFile.objects.get(id=file_id)
-                project_file.download_error = (
-                    f"Retry {self.request.retries + 1}: {exc!s}"
-                )
-                project_file.save()
-            except ProjectFile.DoesNotExist:
+                project = Project.objects.get(id=project_id)
+                project_file = project.files.filter(is_active=True).first()
+                if project_file:
+                    project_file.download_error = (
+                        f"Retry {self.request.retries + 1}/{self.max_retries}: {exc!s}"
+                    )
+                    project_file.last_activity = timezone.now()
+                    project_file.save(update_fields=["download_error", "last_activity"])
+            except Project.DoesNotExist:
                 pass
 
-            # Retry the task
-            raise self.retry(exc=exc) from exc
+            # Retry the task with exponential backoff
+            raise self.retry(exc=exc, countdown=retry_delay) from exc
+
         # Max retries reached, mark as failed
         try:
-            project_file = ProjectFile.objects.get(id=file_id)
-            project_file.mark_download_failed(f"Max retries reached: {exc!s}")
-        except ProjectFile.DoesNotExist:
+            project = Project.objects.get(id=project_id)
+            project_file = project.files.filter(is_active=True).first()
+            if project_file:
+                project_file.mark_download_failed(f"Max retries reached: {exc!s}")
+        except Project.DoesNotExist:
             pass
+
+        # Clean up temp file on final failure
+        if temp_path and temp_path.exists():
+            with contextlib.suppress(OSError):
+                temp_path.unlink()
 
         return {
             "status": "failed",
