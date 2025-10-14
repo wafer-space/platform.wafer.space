@@ -185,6 +185,8 @@ dependencies = [
     "celery>=5.3.0",
     "kombu[sqlalchemy]>=5.3.0",  # SQLAlchemy transport for Celery broker
     "django-celery-results>=2.5.0",
+    "markdown==3.6",  # For rendering markdown TOS files
+    "python-frontmatter==1.1.0",  # For parsing markdown front matter
     "sqlalchemy>=2.0.0",  # Required for SQLAlchemy broker
     "pillow==11.3.0",
     "psycopg[c]==3.2.10",

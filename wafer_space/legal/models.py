@@ -1,20 +1,23 @@
 """Models for Terms of Service management."""
 
+from pathlib import Path
+
+import frontmatter
+import markdown
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+from .utils import get_tos_versions_directory
+
 
 class TermsOfService(models.Model):
-    """Terms of Service version with content."""
+    """Terms of Service version metadata (content stored in markdown files)."""
 
     version = models.CharField(
         max_length=50,
         unique=True,
         help_text="Version number (e.g., '1.0.0', '2.0.0')",
-    )
-    content = models.TextField(
-        help_text="Full text of the Terms of Service (lorem ipsum for now)",
     )
     is_active = models.BooleanField(
         default=False,
@@ -47,15 +50,122 @@ class TermsOfService(models.Model):
     def save(self, *args, **kwargs) -> None:
         """Override save to ensure only one active TOS at a time."""
         if self.is_active:
-            # Deactivate all other TOS versions
+            # Deactivate all other TOS versions in the database
             TermsOfService.objects.exclude(pk=self.pk).update(is_active=False)
+            # Update is_active in all markdown files
+            self._update_active_status_in_files()
         super().save(*args, **kwargs)
+
+    @property
+    def content_file_path(self) -> Path:
+        """Get the path to the markdown file for this version."""
+        return get_tos_versions_directory() / f"{self.version}.md"
+
+    @property
+    def _frontmatter_post(self):
+        """Load and parse the markdown file with front matter."""
+        try:
+            with self.content_file_path.open() as f:
+                return frontmatter.load(f)
+        except FileNotFoundError:
+            # Return a dummy post with error content
+            post = frontmatter.Post(
+                f"Terms of Service content for version {self.version} not found."
+            )
+            post.metadata = {}
+            return post
+
+    @property
+    def content(self) -> str:
+        """Get the raw markdown content from the file (without front matter)."""
+        return self._frontmatter_post.content
+
+    @property
+    def content_html(self) -> str:
+        """Get the rendered HTML content from the markdown file."""
+        md = markdown.Markdown(extensions=["extra", "nl2br", "sane_lists"])
+        return md.convert(self.content)
+
+    @property
+    def metadata(self) -> dict:
+        """Get the front matter metadata from the markdown file."""
+        return self._frontmatter_post.metadata
+
+    def _update_active_status_in_files(self) -> None:
+        """Update is_active status in markdown front matter."""
+        base_dir = get_tos_versions_directory()
+        if not base_dir.exists():
+            return
+
+        # Set all files to inactive
+        for file_path in base_dir.glob("*.md"):
+            if file_path.stem == "README":
+                continue
+
+            try:
+                with file_path.open() as f:
+                    post = frontmatter.load(f)
+
+                # Update is_active status
+                if file_path.stem == self.version:
+                    post.metadata["is_active"] = True
+                else:
+                    post.metadata["is_active"] = False
+
+                # Write back to file
+                with file_path.open("w") as f:
+                    f.write(frontmatter.dumps(post))
+            except (FileNotFoundError, KeyError):
+                continue
 
     @classmethod
     def get_active(cls):
         """Get the currently active Terms of Service version."""
         # Order by -created_at to ensure consistent results
         return cls.objects.filter(is_active=True).order_by("-created_at").first()
+
+    @classmethod
+    def get_available_versions(cls) -> list[str]:
+        """Get list of available TOS versions from the filesystem."""
+        base_dir = get_tos_versions_directory()
+        if not base_dir.exists():
+            return []
+
+        versions = [
+            file_path.stem
+            for file_path in base_dir.glob("*.md")
+            if file_path.stem != "README"
+        ]
+        return sorted(versions, reverse=True)
+
+    @classmethod
+    def sync_from_files(cls):
+        """Sync database with markdown files (useful for initial setup or recovery)."""
+        base_dir = get_tos_versions_directory()
+        if not base_dir.exists():
+            return
+
+        for file_path in base_dir.glob("*.md"):
+            if file_path.stem == "README":
+                continue
+
+            try:
+                with file_path.open() as f:
+                    post = frontmatter.load(f)
+
+                version = file_path.stem
+                is_active = post.metadata.get("is_active", False)
+
+                # Create or update database entry
+                tos, created = cls.objects.get_or_create(
+                    version=version,
+                    defaults={"is_active": is_active},
+                )
+                if not created and tos.is_active != is_active:
+                    tos.is_active = is_active
+                    tos.save(update_fields=["is_active"])
+            except (FileNotFoundError, KeyError, ValueError):
+                continue
 
 
 class TermsOfServiceAcceptance(models.Model):

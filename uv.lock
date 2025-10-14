@@ -830,6 +830,15 @@ sqlalchemy = [
 ]
 
 [[package]]
+name = "markdown"
+version = "3.6"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/22/02/4785861427848cc11e452cc62bb541006a1087cf04a1de83aedd5530b948/Markdown-3.6.tar.gz", hash = "sha256:ed4f41f6daecbeeb96e576ce414c41d2d876daa9a16cb35fa8ed8c2ddfad0224", size = 354715, upload-time = "2024-03-14T15:37:59.775Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fc/b3/0c0c994fe49cd661084f8d5dc06562af53818cc0abefaca35bdc894577c3/Markdown-3.6-py3-none-any.whl", hash = "sha256:48f276f4d8cfb8ce6527c8f79e2ee29708508bf4d40aa410fbc3b4ee832c850f", size = 105381, upload-time = "2024-03-14T15:37:57.457Z" },
+]
+
+[[package]]
 name = "markupsafe"
 version = "3.0.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1308,6 +1317,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f6/b0/4bc07ccd3572a2f9df7e6782f52b0c6c90dcbb803ac4a167702d7d0dfe1e/python_dotenv-1.1.1.tar.gz", hash = "sha256:a8a6399716257f45be6a007360200409fce5cda2661e3dec71d23dc15f6189ab", size = 41978, upload-time = "2025-06-24T04:21:07.341Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5f/ed/539768cf28c661b5b068d66d96a2f155c4971a5d55684a514c1a0e0dec2f/python_dotenv-1.1.1-py3-none-any.whl", hash = "sha256:31f23644fe2602f88ff55e1f5c79ba497e01224ee7737937930c448e4d0e24dc", size = 20556, upload-time = "2025-06-24T04:21:06.073Z" },
+]
+
+[[package]]
+name = "python-frontmatter"
+version = "1.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyyaml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/96/de/910fa208120314a12f9a88ea63e03707261692af782c99283f1a2c8a5e6f/python-frontmatter-1.1.0.tar.gz", hash = "sha256:7118d2bd56af9149625745c58c9b51fb67e8d1294a0c76796dafdc72c36e5f6d", size = 16256, upload-time = "2024-01-16T18:50:04.052Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/49/87/3c8da047b3ec5f99511d1b4d7a5bc72d4b98751c7e78492d14dc736319c5/python_frontmatter-1.1.0-py3-none-any.whl", hash = "sha256:335465556358d9d0e6c98bbeb69b1c969f2a4a21360587b9873bfc3b213407c1", size = 9834, upload-time = "2024-01-16T18:50:00.911Z" },
 ]
 
 [[package]]
@@ -1818,9 +1839,11 @@ dependencies = [
     { name = "django-model-utils" },
     { name = "gunicorn" },
     { name = "kombu", extra = ["sqlalchemy"] },
+    { name = "markdown" },
     { name = "pillow" },
     { name = "psycopg", extra = ["c"] },
     { name = "psycopg2-binary" },
+    { name = "python-frontmatter" },
     { name = "python-slugify" },
     { name = "sqlalchemy" },
     { name = "whitenoise" },
@@ -1866,9 +1889,11 @@ requires-dist = [
     { name = "django-model-utils", specifier = "==5.0.0" },
     { name = "gunicorn", specifier = "==23.0.0" },
     { name = "kombu", extras = ["sqlalchemy"], specifier = ">=5.3.0" },
+    { name = "markdown", specifier = "==3.6" },
     { name = "pillow", specifier = "==11.3.0" },
     { name = "psycopg", extras = ["c"], specifier = "==3.2.10" },
     { name = "psycopg2-binary", specifier = ">=2.9.0" },
+    { name = "python-frontmatter", specifier = "==1.1.0" },
     { name = "python-slugify", specifier = "==8.0.4" },
     { name = "sqlalchemy", specifier = ">=2.0.0" },
     { name = "whitenoise", specifier = "==6.11.0" },

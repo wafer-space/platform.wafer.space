@@ -21,6 +21,7 @@ def tos_display(request):
 
     context = {
         "tos": active_tos,
+        "content_html": active_tos.content_html,
     }
     return render(request, "legal/tos_display.html", context)
 
@@ -78,5 +79,6 @@ def tos_accept(request):
 
     context = {
         "tos": active_tos,
+        "content_html": active_tos.content_html,
     }
     return render(request, "legal/tos_accept.html", context)
