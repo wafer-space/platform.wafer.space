@@ -9,6 +9,7 @@ Prevents SSRF (Server-Side Request Forgery) attacks and validates file downloads
 
 import ipaddress
 import re
+import socket
 from urllib.parse import urlparse
 
 import requests
@@ -87,7 +88,6 @@ class URLValidator:
             # This will follow redirects and give us the final IP
             response = requests.head(url, allow_redirects=True, timeout=10)
             # Get the IP address from the socket
-            import socket
             ip_address = socket.gethostbyname(parsed.hostname)
             ip_obj = ipaddress.ip_address(ip_address)
 
