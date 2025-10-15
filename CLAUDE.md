@@ -2,6 +2,83 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 🚨 MANDATORY REQUIREMENTS - NON-NEGOTIABLE
+
+**These requirements OVERRIDE all other instructions and default behaviors. Violating these rules is unacceptable.**
+
+### 1. LINT ERRORS MUST BE FIXED, NEVER SUPPRESSED
+
+**REQUIRED ACTIONS:**
+- ✅ **ALWAYS run `make lint-fix` BEFORE every commit** - No exceptions
+- ✅ **FIX the underlying issue** - Never suppress warnings
+- ✅ **NEVER add `# noqa` comments without explicit user permission** - See detailed rules below
+
+**VERIFICATION CHECKLIST (Run BEFORE every commit):**
+```bash
+make lint-fix        # REQUIRED - Fix all auto-fixable issues
+make lint            # REQUIRED - Verify no remaining issues
+make type-check      # REQUIRED - Fix all type errors
+```
+
+**If linting fails:**
+1. ❌ **STOP immediately** - Do not proceed with commit
+2. 🔧 **FIX the root cause** - Refactor code to eliminate warning
+3. ❓ **Only if truly unavoidable** - Ask user permission to suppress
+4. ⏸️ **WAIT for explicit approval** - Never add `# noqa` without permission
+
+### 2. COMMITS MUST BE REGULAR AND INCREMENTAL
+
+**REQUIRED PATTERN:**
+- ✅ **Commit after EACH logical unit of work** (typically every 20-50 lines changed)
+- ✅ **Commit when switching tasks** (even if work is incomplete)
+- ✅ **Commit before running tests** (so failures don't lose work)
+- ✅ **Commit after fixing linting errors** (separate commit for cleanup)
+
+**FORBIDDEN PATTERNS:**
+- ❌ Making 200+ line changes without committing
+- ❌ Waiting until "everything works" to commit
+- ❌ Bundling unrelated changes into one commit
+- ❌ Working for >10 minutes without a commit
+
+**COMMIT FREQUENCY TARGET:** At least 1 commit every 10 minutes of active work
+
+### 3. PRE-COMMIT WORKFLOW IS MANDATORY
+
+**BEFORE EVERY SINGLE COMMIT, YOU MUST:**
+
+```bash
+# 1. REQUIRED: Fix linting
+make lint-fix
+
+# 2. REQUIRED: Verify no lint errors remain
+make lint
+
+# 3. REQUIRED: Fix type errors
+make type-check
+
+# 4. REQUIRED: Run tests (appropriate scope)
+make test                    # For code changes
+make test-browser-headless   # If browser tests affected
+
+# 5. OPTIONAL: Full verification (use when unsure)
+make check-all
+```
+
+**NO SHORTCUTS ALLOWED.** Even for "small" changes, "just comments", or "obvious fixes".
+
+### 4. VERIFICATION BEFORE PROCEEDING
+
+**After making changes, ALWAYS:**
+1. Run the verification checklist above
+2. Review all modified files for quality
+3. Confirm no `# noqa` comments added without permission
+4. Verify commit message is descriptive
+5. Check that changes are focused and incremental
+
+**If you cannot complete verification:** STOP and ask the user before proceeding.
+
+---
+
 ## 🎯 PREFERRED DEVELOPMENT APPROACH
 
 **ALWAYS prefer Makefile commands over direct command execution.** The project provides a comprehensive Makefile with standardized, tested commands that handle proper environment setup and configuration.
@@ -141,20 +218,6 @@ When `CLAUDECODE=1` (Claude Code environment):
 
 **You cannot use --visible in Claude Code.** It will error immediately with explanation.
 
-#### What Changed from Before
-
-**Old behavior:**
-- Browser tests defaulted to visible mode
-- Needed `--headless` flag to prevent GUI windows
-- Protection ran too late (after browser opened)
-- Easy to accidentally open browsers
-
-**New behavior:**
-- Browser tests default to headless mode
-- Display environment cleared proactively
-- `--visible` flag needed for GUI windows
-- Impossible to accidentally open browsers
-
 #### Forbidden Actions in Claude Code
 
 ```bash
@@ -234,33 +297,53 @@ make docs-live                  # Start live documentation server
 ```
 
 ### Git Workflow
+
+**🚨 MANDATORY: See "MANDATORY REQUIREMENTS" section at top of file for commit frequency rules 🚨**
+
+**REQUIRED COMMIT PATTERN:**
+- Commit every 20-50 lines of changes
+- Commit when switching tasks
+- Commit before running tests
+- Commit after fixing lint errors
+- Target: 1 commit every 10 minutes minimum
+
+**BEFORE EVERY COMMIT (NO EXCEPTIONS):**
 ```bash
-# Check current status and staged changes
-git status
-git diff --staged
+# 1. REQUIRED: Fix all linting issues
+make lint-fix
 
-# Add specific files to staging
+# 2. REQUIRED: Verify clean
+make lint
+
+# 3. REQUIRED: Fix type errors
+make type-check
+
+# 4. REQUIRED: Run appropriate tests
+make test                    # For code changes
+make test-browser-headless   # If browser code affected
+
+# 5. VERIFY: No suppressions added without permission
+git diff | grep -E '# noqa|# type: ignore'  # Should be empty!
+
+# 6. NOW commit
 git add <file_path>
+git commit -m "Brief description
 
-# Commit changes with descriptive message
-git commit -m "Brief description of change
-
-More detailed explanation if needed.
+Detailed explanation if needed.
 
 🤖 Generated with [Claude Code](https://claude.ai/code)
 
 Co-Authored-By: Claude <noreply@anthropic.com>"
-
-# Push changes to remote
-git push origin <branch_name>
 ```
 
-**Commit Guidelines:**
-- Make small, focused commits with single improvements or bug fixes
-- Use descriptive commit messages in present tense
-- Include context about why the change was made
-- **ALWAYS run `make check-all` before committing** (combines linting, type-checking, and tests)
-- Use `make lint-fix` to automatically fix code style issues
+**Commit Requirements:**
+- ✅ Small, focused commits (one logical change)
+- ✅ Descriptive messages in present tense
+- ✅ All checks pass before commit
+- ✅ No `# noqa` without permission
+- ❌ NO large multi-file commits
+- ❌ NO waiting until "everything works"
+- ❌ NO skipping lint-fix
 
 ### Utility Commands
 ```bash
@@ -388,42 +471,12 @@ We switched from database-based to settings-based OAuth configuration because:
 
 #### Configuration Structure
 
-```python
-# config/settings/test.py - Test OAuth configuration
-SOCIALACCOUNT_PROVIDERS = {
-    "github": {
-        "APP": {
-            "client_id": "test_github_client_id",
-            "secret": "test_github_secret",
-        },
-        "SCOPE": ["user:email"],
-        "VERIFIED_EMAIL": True,
-    },
-    "google": {
-        "APP": {
-            "client_id": "test_google_client_id.apps.googleusercontent.com",
-            "secret": "test_google_secret",
-        },
-        "SCOPE": ["profile", "email"],
-        "AUTH_PARAMS": {"access_type": "online"},
-        "VERIFIED_EMAIL": True,
-    },
-    # ... other providers
-}
+**Settings-based configuration** uses the `SOCIALACCOUNT_PROVIDERS` dictionary in Django settings:
+- **Test environment** (`config/settings/test.py`): Static test credentials
+- **Dev/Production** (`config/settings/base.py`): Environment variables via `env()`
+- **Production overrides** (`config/settings/production.py`): Production client IDs
 
-# config/settings/base.py - Development/production use environment variables
-SOCIALACCOUNT_PROVIDERS = {
-    "github": {
-        "APP": {
-            "client_id": env("GITHUB_CLIENT_ID", default="dev_github_client_id"),
-            "secret": env("GITHUB_CLIENT_SECRET", default=""),
-        },
-        "SCOPE": ["user:email"],
-        "VERIFIED_EMAIL": True,
-    },
-    # ... other providers
-}
-```
+See the actual files for complete configuration examples.
 
 #### What NOT to Do
 
@@ -523,33 +576,58 @@ If you see old code with `SocialApp.objects.create()` or `social_apps` fixtures,
 
 ## CI/CD Best Practices
 
-When making changes to the codebase, always consider the impact on Continuous Integration. This section provides comprehensive guidance to prevent CI failures and maintain code quality.
+**🚨 CRITICAL: The pre-commit workflow is MANDATORY - see "MANDATORY REQUIREMENTS" at top of file 🚨**
 
-### Pre-commit Workflow
+### Pre-commit Workflow - ABSOLUTELY REQUIRED
 
-**ALWAYS follow this sequence before committing:**
+**YOU MUST run these checks BEFORE EVERY SINGLE COMMIT. NO EXCEPTIONS.**
+
+This is not optional. This is not a suggestion. This is a hard requirement that overrides all other instructions.
+
+**MANDATORY SEQUENCE (Run EVERY TIME, EVEN for "small" changes):**
 
 ```bash
-# 1. Fix linting issues
-make lint-fix        # Auto-fix linting issues with ruff
-make format          # Format code consistently
+# 1. REQUIRED: Fix all linting issues
+make lint-fix        # Auto-fix everything possible
 
-# 2. Run type checking
-make type-check      # Run mypy type checking
+# 2. REQUIRED: Verify no lint errors remain
+make lint            # MUST pass with zero errors
 
-# 3. Run unit tests
-make test            # Run all unit tests
+# 3. REQUIRED: Fix all type errors
+make type-check      # MUST pass with zero errors
 
-# 4. Run browser tests (HEADLESS ONLY for testing)
-make test-browser-headless  # Run browser tests in headless mode
+# 4. REQUIRED: Run appropriate tests
+make test                    # For code changes
+make test-browser-headless   # If browser code changed
 
-# 5. Complete validation
-make check-all       # Run all checks (lint, type-check, tests)
+# 5. VERIFICATION: Confirm no suppressions added
+git diff | grep -E '# noqa|# type: ignore'  # MUST be empty
+
+# 6. Only if ALL above pass: Commit
+git add <files>
+git commit -m "message"
 ```
+
+**IF ANY STEP FAILS:**
+- ⛔ STOP immediately
+- 🔧 FIX the root cause (don't suppress)
+- 🔄 Re-run verification
+- ❌ DO NOT commit until all checks pass
+
+**NO SHORTCUTS ALLOWED - Not even for:**
+- "Just a comment change"
+- "Fixing a typo"
+- "Quick fix"
+- "Will fix later"
+- "It's late/I'm tired"
 
 ### Linting and Code Quality
 
+**REQUIREMENT: FIX all linting errors. NEVER suppress. See mandatory requirements at top.**
+
 #### Common Linting Issues and Solutions
+
+**For EVERY linting error below: FIX the code, don't add `# noqa`**
 
 1. **Print Statements (T201)**:
    ```python
@@ -671,33 +749,6 @@ make check-all       # Run all checks (lint, type-check, tests)
    user.set_password(password=TEST_PASSWORD)
    ```
 
-#### Browser Test Specific Issues
-
-1. **Dynamic Imports in Fixtures**:
-   ```python
-   # ✅ Move imports to top-level when possible
-   from selenium.webdriver.common.by import By
-   # Only use local imports when absolutely necessary to avoid circular dependencies
-   ```
-
-2. **Path Operations**:
-   ```python
-   # ✅ Use pathlib when possible
-   from pathlib import Path
-   screenshot_path = Path("screenshots") / f"{name}.png"
-
-   # ✅ Convert any os.path usage to pathlib
-   import os
-   path = Path(dir) / filename
-   ```
-
-3. **Magic Numbers in Performance Tests**:
-   ```python
-   # ✅ Use descriptive constants
-   PERFORMANCE_THRESHOLD_MS = 5000  # Maximum acceptable load time in milliseconds
-   assert load_time < PERFORMANCE_THRESHOLD_MS
-   ```
-
 ### Testing Strategy
 
 #### Unit Tests
@@ -723,390 +774,128 @@ make test-browser-parallel           # Parallel headless execution
 
 #### Browser Test Best Practices
 
-1. **Page Object Model Pattern**:
-   ```python
-   # ✅ Organize tests with Page Objects
-   class LoginPage(BasePage):
-       USERNAME_INPUT = (By.NAME, "login")
-
-       def login(self, username, password):
-           self.fill_input(self.USERNAME_INPUT, username)
-           self.click_submit()
-   ```
-
-2. **Proper Wait Conditions**:
-   ```python
-   # ✅ Use explicit waits
-   wait = WebDriverWait(driver, 10)
-   element = wait.until(
-       expected_conditions.presence_of_element_located(locator)
-   )
-
-   # ❌ Avoid implicit waits or sleep
-   time.sleep(2)  # Unreliable
-   ```
-
-3. **Responsive Testing Considerations**:
-   ```python
-   # ✅ Account for headless behavior differences
-   def test_mobile_navigation(self, driver):
-       driver.set_window_size(375, 667)  # Mobile viewport
-       # Test may behave differently in headless mode
-       navbar_toggler = driver.find_elements(By.CLASS_NAME, "navbar-toggler")
-       if navbar_toggler and navbar_toggler[0].is_displayed():
-           # Handle case where toggler is visible
-           pass
-   ```
-
-4. **Screenshot Management**:
-   ```python
-   # ✅ Automatic screenshots on failure
-   @pytest.fixture(autouse=True)
-   def _screenshot_on_failure(request, driver):
-       yield
-       if hasattr(request.node, "rep_call") and request.node.rep_call.failed:
-           # Screenshots saved to tests/browser/screenshots/
-           driver.save_screenshot(screenshot_path)
-   ```
-
-### Dependency Management
-
-1. **Adding New Dependencies**:
-   ```bash
-   # Add to pyproject.toml [dependency-groups]
-   uv sync --dev  # Install new dependencies
-   ```
-
-2. **Browser Testing Dependencies**:
-   ```toml
-   [dependency-groups]
-   dev = [
-       "selenium==4.27.1",
-       "pytest-selenium==4.1.0",
-       "webdriver-manager==4.0.2",
-       "pytest-xdist==3.6.1",  # For parallel execution
-   ]
-   ```
+- **Page Object Pattern**: Organize with page classes (see `tests/browser/pages/`)
+- **Explicit waits**: Use `WebDriverWait` not `time.sleep()`
+- **Responsive testing**: Account for viewport differences in headless mode
+- **Screenshots**: Auto-captured on failure to `tests/browser/screenshots/`
 
 ### GitHub Actions Troubleshooting
 
-#### Common CI Failure Patterns
+**Common failures:**
+- Linting: Run `make lint-fix` first, fix underlying issue (don't suppress)
+- Import errors: Check top-level imports, verify `pyproject.toml` dependencies
+- Browser tests: Use headless mode, add proper waits, check viewport sizes
+- Migrations: Create migrations for model changes, use transactional fixtures
 
-1. **Linting Failures**:
-   - Run `make lint-fix` locally first
-   - Check the specific ruff rule and fix accordingly
-   - Fix the underlying issue rather than suppressing warnings
+**Debug locally:**
+```bash
+make test-browser-headless  # Reproduce CI environment
+make test-verbose           # Detailed output
+```
 
-2. **Test Import Errors**:
-   - Ensure all imports are at top-level when possible
-   - Check that dependencies are in pyproject.toml
-   - Verify Python path and module structure
-
-3. **Browser Test Failures**:
-   - Always use headless mode in CI
-   - Add proper wait conditions for dynamic content
-   - Account for timing differences in CI environment
-   - Use appropriate viewport sizes for responsive tests
-
-4. **Database/Migration Issues**:
-   - Ensure migrations are created for model changes
-   - Test with fresh database state
-   - Use transactional fixtures for test isolation
-
-#### Debugging CI Failures
-
-1. **Reproduce Locally**:
-   ```bash
-   # Use same commands as CI
-   make test-browser-headless  # Same as CI environment
-   make ci-test               # CI-specific test suite
-   ```
-
-2. **Check Logs**:
-   ```bash
-   # View detailed test output
-   make test-verbose
-   make test-browser-headless -v -s --tb=long
-   ```
-
-3. **Environment Parity**:
-   - Use same Python version as CI (3.13.7)
-   - Run in clean virtual environment
-   - Check for environment-specific issues
+**Environment parity:** Python 3.13.7, clean venv, match CI config
 
 ### Code Quality Standards
 
-#### Documentation Requirements
-```python
-def complex_function(param1: str, param2: int) -> dict[str, Any]:
-    """
-    Process data with specific parameters.
-
-    Args:
-        param1: Description of first parameter
-        param2: Description of second parameter
-
-    Returns:
-        Dictionary containing processed results
-
-    Raises:
-        ValueError: When param1 is invalid
-    """
-```
-
-#### Error Handling Patterns
-```python
-# ✅ Specific exception handling
-try:
-    result = process_data(data)
-except ValidationError as e:
-    logger.error("Data validation failed: %s", e)
-    raise ProcessingError(f"Cannot process data: {e}") from e
-```
-
-#### Security Best Practices
-```python
-# ✅ Use environment variables for secrets
-import os
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY")
-
-# ✅ Validate user input
-def process_user_input(user_data: dict) -> dict:
-    validated_data = UserInputSchema(**user_data)
-    return process(validated_data)
-```
+**Documentation:** Use docstrings with Args/Returns/Raises for complex functions
+**Error handling:** Catch specific exceptions, use proper chaining (`raise ... from exc`)
+**Security:** Use env vars for secrets, validate user input, specific exception types
 
 ### Database Migrations
 
-#### Migration Workflow
-```bash
-# 1. Make model changes
-# 2. Create migration
-make makemigrations
-
-# 3. Review migration file
-# 4. Test migration
-make migrate
-
-# 5. Test reverse migration (when applicable)
-uv run python manage.py migrate app_name previous_migration
-
-# 6. Re-apply forward migration
-make migrate
-```
-
-#### Migration Best Practices
-1. **Descriptive Names**:
-   ```bash
-   make makemigrations projects --name add_url_download_fields
-   ```
-
-2. **Data Migration Safety**:
-   ```python
-   # Always handle missing data gracefully
-   def forwards_func(apps, schema_editor):
-       MyModel = apps.get_model("myapp", "MyModel")
-       for obj in MyModel.objects.all():
-           if not obj.new_field:
-               obj.new_field = "default_value"
-               obj.save()
-   ```
-
-### Performance Considerations
-
-1. **Test Execution Time**:
-   ```bash
-   make test-browser-parallel  # Faster execution
-   make test-fast              # Parallel unit tests
-   ```
-
-2. **CI Resource Usage**:
-   - Use headless browsers to reduce memory usage
-   - Run tests in parallel when possible
-   - Cache dependencies between CI runs
-
-3. **Database Performance**:
-   ```python
-   # ✅ Use appropriate test database settings
-   @pytest.mark.django_db(transaction=True)  # When needed
-   def test_with_transactions():
-       pass
-   ```
-
-This comprehensive guide ensures consistent code quality and prevents CI failures. Always refer to this section when encountering build issues or implementing new features.
-
-## Code Quality Standards
+**Workflow:** Model changes → `make makemigrations` → Review → `make migrate` → Test reverse
+**Best practices:** Use descriptive names (`--name`), handle missing data gracefully in data migrations
 
 ### CRITICAL: Architectural Principles to Prevent Circular Imports
 
 **Circular imports are architectural failures that must be prevented through proper design.**
 
-#### Layer Separation (Django Best Practices)
-```python
-# ✅ Proper layered architecture
+**Layer separation (Django):**
+- **Models** (data only) → NEVER import tasks/views/services
+- **Services** (business logic) → can import models + tasks
+- **Views** (presentation) → can import models + services
+- **Tasks** (background) → can import models
 
-# models.py - Data layer only
-class Project(models.Model):
-    name = models.CharField(max_length=100)
-    # Only data representation, no business logic
+**Red flags:**
+- Models importing tasks/views/services
+- Unused methods creating dependencies (DELETE them)
+- Business logic in models (move to services)
 
-# services.py - Business logic layer
-def start_project_processing(project):
-    """Business logic for processing projects."""
-    from .tasks import process_project  # OK: services can import tasks
-    project.status = 'processing'
-    project.save()
-    return process_project.delay(project.id)
-
-# views.py - Presentation layer
-from .services import start_project_processing
-from .models import Project
-
-def project_view(request, project_id):
-    project = Project.objects.get(id=project_id)
-    task = start_project_processing(project)  # Proper orchestration
-    return JsonResponse({'task_id': task.id})
-
-# tasks.py - Background processing layer
-from .models import Project  # OK: tasks can import models
-
-@shared_task
-def process_project(project_id):
-    project = Project.objects.get(id=project_id)
-    # Process the project
-    project.status = 'completed'
-    project.save()
-```
-
-#### Import Direction Rules
-1. **Models** should NEVER import from tasks, views, or services
-2. **Services** can import from models and tasks (business orchestration)
-3. **Views** can import from models and services (presentation orchestration)
-4. **Tasks** can import from models (data access)
-
-#### Red Flags That Indicate Poor Architecture
-```python
-# 🚨 These patterns indicate architectural problems:
-
-# models.py importing tasks/views/services
-from .tasks import some_task  # ❌ Models calling tasks directly
-
-# Unused methods that create dependencies
-def start_download(self):  # ❌ If unused, DELETE it
-    from .tasks import download_task
-    return download_task.delay(self.id)
-
-# Business logic in models
-class Project(models.Model):
-    def complex_business_operation(self):  # ❌ Move to services
-        # Complex logic doesn't belong in models
-```
-
-#### When You Encounter Circular Import Errors
-1. **FIRST**: Question if the dependency is actually needed
-2. **SECOND**: Consider if unused code can be deleted
-3. **THIRD**: Restructure using proper layer separation
-4. **NEVER**: Use local imports as a "quick fix"
+**Resolution steps:**
+1. Question if dependency is needed → 2. Delete unused code → 3. Restructure layers → 4. NEVER use local imports as "fix"
 
 ### ABSOLUTE PROHIBITION: Never Add `# noqa` Comments Without User Permission
 
-**🚨 CRITICAL RULE: You must ALWAYS, ALWAYS, ALWAYS ask the user for explicit permission before adding ANY `# noqa` comment. 🚨**
+**🚨 THIS IS A MANDATORY REQUIREMENT - SEE TOP OF FILE - VIOLATIONS ARE UNACCEPTABLE 🚨**
 
-**This rule has NO exceptions. It applies to:**
-- ALL linting warnings (ruff, flake8, pylint, etc.)
-- ALL type checking warnings (mypy, pyright, etc.)
-- ALL security warnings (bandit, safety, etc.)
-- ALL import warnings (isort, import-linter, etc.)
-- ALL formatting warnings (black, autopep8, etc.)
-- ANY other code quality warnings from ANY tool
-- Even if the warning seems "trivial" or "obviously needed"
-- Even if you are 100% confident the suppression is correct
-- Even if the warning is a false positive
-- Even if you've used the same suppression before
-- Even in emergency situations or time pressure
+**ZERO-TOLERANCE POLICY:** Adding ANY `# noqa`, `# type: ignore`, `# pylint: disable`, or similar suppression comment WITHOUT EXPLICIT USER PERMISSION is a violation of project standards.
 
-**The process you MUST follow:**
-1. **STOP** when you encounter a linting error
-2. **First try to fix the underlying issue properly** without suppression
-3. **Only if the warning is unavoidable** - ask the user for permission
-4. **Explain in detail** why you want to suppress the warning
-5. **Wait for explicit user approval** before proceeding
-6. **Only add the comment if approved** with proper explanation
+**This prohibition applies to:**
+- ✋ **ALL** linting warnings (ruff, flake8, pylint, etc.)
+- ✋ **ALL** type checking warnings (mypy, pyright, etc.)
+- ✋ **ALL** security warnings (bandit, safety, etc.)
+- ✋ **ALL** import warnings (isort, import-linter, etc.)
+- ✋ **ALL** formatting warnings (black, autopep8, etc.)
+- ✋ **ANY** code quality warning from **ANY** tool
 
-**Examples of what is FORBIDDEN:**
+**NO EXCEPTIONS FOR:**
+- ❌ "Trivial" or "obvious" suppressions
+- ❌ False positives
+- ❌ Suppressions you've used before
+- ❌ Emergency situations
+- ❌ Time pressure
+- ❌ "Just this once"
+- ❌ Warnings that "can't be fixed"
+
+**MANDATORY PROCESS when you encounter a linting error:**
+
+1. ⛔ **STOP IMMEDIATELY** - Do not write code, do not commit
+2. 🔧 **FIX THE ROOT CAUSE** - Refactor code to eliminate warning:
+   - Unused import? Remove it
+   - Complex function? Break it down
+   - Hardcoded value? Extract to constant
+   - Circular import? Restructure architecture
+3. ✅ **VERIFY FIX** - Run `make lint-fix && make lint`
+4. ❓ **IF AND ONLY IF truly unavoidable** (rare!):
+   - Stop and ask: "I have a linting error [CODE] that says [MESSAGE]. I tried [ATTEMPTS]. May I suppress it because [DETAILED_REASON]?"
+   - Provide full context: file, line, error code, what you tried
+   - Wait for explicit "yes" - **DO NOT PROCEED** without approval
+5. ✅ **IF APPROVED**: Add suppression with detailed comment explaining why
+
+**FORBIDDEN - NEVER DO THIS:**
 ```python
-# ALL of these are WRONG - never do any of these without permission:
 import os  # noqa: F401
 from .tasks import foo  # noqa: PLC0415
 request = Request(url)  # noqa: S310
 password = "test"  # noqa: S105
+result = some_call()  # type: ignore
+# pylint: disable=too-many-branches
 ```
 
-**What TO do instead:**
-1. **Ask permission first**: "May I add `# noqa: F401` to suppress the unused import warning for `import os`? This import is needed for X specific reason and cannot be avoided because Y."
-2. **Wait for user approval** - do not proceed without explicit "yes"
-3. **Only then add the comment** if the user approves
-4. **Include detailed explanation** in the comment when approved
+**CORRECT APPROACH - ALWAYS DO THIS:**
+1. Fix the issue: Remove unused import, refactor complex function, use constant
+2. If impossible to fix: ASK FIRST, then suppress only if approved
 
-**Remember: It doesn't matter how small, trivial, or "obviously correct" the suppression seems - you MUST ask first.**
+**SELF-CHECK BEFORE EVERY COMMIT:**
+```bash
+# Run this and confirm NO suppressions added without permission:
+git diff | grep -E '# noqa|# type: ignore|# pylint: disable'
+
+# If output is empty: ✅ Good
+# If output shows suppressions: ❌ STOP - Did you ask permission?
+```
+
+**Remember:** 99% of linting errors can and should be fixed. If you think you need a suppression, you probably don't - try harder to fix it properly.
 
 ### Code Quality Prevention Guidelines
 
-#### Write Clean Code from the Start
-- **Functions must be simple and focused** - Keep complexity (C901) under 10
-- **Limit branches and statements** - No more than 12 branches (PLR0912) or 50 statements (PLR0915)
-- **Use modern Python patterns** - Always use `pathlib.Path` instead of `os.path`
-- **Handle exceptions specifically** - Never use broad `except Exception:` (BLE001)
-- **Use secure practices** - Be mindful of URL handling (S310) and hash functions (S324)
-- **Follow proper exception chaining** - Use `raise ... from exc` (B904)
+**Clean code basics:**
+- Simple, focused functions (complexity <10, branches <12, statements <50)
+- Use `pathlib.Path` not `os.path`, specific exceptions not `except Exception`
+- Proper exception chaining (`raise ... from exc`), context managers for cleanup
+- Single responsibility, early returns, type hints
 
-#### Function Design Principles
-- **Single Responsibility**: Each function should do one thing well
-- **Avoid deep nesting**: Use early returns and guard clauses
-- **Extract complex logic**: Break large functions into smaller helper functions
-- **Use context managers**: Prefer `contextlib.suppress()` over try/except/pass
-
-#### Modern Python Standards
-```python
-# ✅ Good: Use pathlib
-from pathlib import Path
-temp_dir = Path(tempfile.gettempdir()) / "wafer_space_downloads"
-temp_dir.mkdir(parents=True, exist_ok=True)
-
-# ❌ Bad: Use os.path
-import os
-temp_dir = os.path.join(tempfile.gettempdir(), "wafer_space_downloads")
-os.makedirs(temp_dir, exist_ok=True)
-
-# ✅ Good: Specific exceptions
-try:
-    operation()
-except (IOError, OSError) as exc:
-    raise ProcessingError("Operation failed") from exc
-
-# ❌ Bad: Broad exceptions
-try:
-    operation()
-except Exception:
-    return False
-
-# ✅ Good: Context managers for cleanup
-with contextlib.suppress(OSError):
-    path.unlink()
-
-# ❌ Bad: Manual exception handling
-try:
-    os.remove(path)
-except OSError:
-    pass
-```
-
-#### Complexity Management
-- **Break down complex functions** into smaller, testable units
-- **Use early returns** to reduce nesting levels
-- **Extract configuration** and constants to module level
-- **Limit function parameters** - prefer configuration objects for complex functions
-- **Use type hints** for better code clarity and tooling support
+**Modern Python:** `pathlib`, `contextlib.suppress()`, specific exceptions, type hints
 
 ## 🚀 Production Deployment and Secrets Management
 
@@ -1145,268 +934,48 @@ platform.wafer.space/
 
 **MANDATORY CHECKLIST** - Complete ALL steps when adding new secrets or OAuth providers:
 
-#### 1. Add Secret to Secrets Repository
-```bash
-# In your local secrets/ directory (which is a git clone of the secrets repo)
-cd secrets/
-echo "your_secret_value" > new-secret-name
-git add new-secret-name
-git commit -m "Add new-secret-name for [purpose]"
-git push
-```
+1. **Add secret file** to secrets repository (`secrets/provider-oauth`)
+2. **Update Django settings** in `config/settings/base.py` to use `env("SECRET_NAME", default="")`
+3. **⚠️ CRITICAL: Update deployment script** `deployment/scripts/03a-update-env-secrets.sh` (often forgotten!)
+   - Add bash code to read secret file and inject into `.env`
+   - Follow existing pattern in the script
+4. **Update documentation**: `docs/oauth_setup.md`, `.env.example`
+5. **Test locally**: Verify secret loads with `settings.SECRET_NAME` in Django shell
 
-#### 2. Update Django Settings
-```python
-# config/settings/base.py - Add environment variable reference
-NEW_SECRET = env("NEW_SECRET_NAME", default="")
-
-# For OAuth providers specifically:
-SOCIALACCOUNT_PROVIDERS = {
-    "provider_name": {
-        "APP": {
-            "client_id": env("PROVIDER_CLIENT_ID", default="dev_client_id"),
-            "secret": env("PROVIDER_CLIENT_SECRET", default=""),  # Empty default!
-        },
-        # ... other config
-    }
-}
-
-# config/settings/production.py - Override with production Client ID
-SOCIALACCOUNT_PROVIDERS["provider_name"]["APP"]["client_id"] = env(
-    "PROVIDER_CLIENT_ID",
-    default="prod_client_id",  # Production Client ID can be in code
-)
-# Secret MUST come from environment variable, never hardcode!
-```
-
-#### 3. Update Deployment Script (`deployment/scripts/03a-update-env-secrets.sh`)
-
-**THIS STEP IS CRITICAL AND OFTEN FORGOTTEN!**
-
-```bash
-# Add a new section to read and inject the secret
-# Read Provider OAuth secret
-if [ ! -f "$SECRETS_DIR/provider-oauth" ]; then
-    echo "Error: Required secret file not found: $SECRETS_DIR/provider-oauth"
-    exit 1
-fi
-PROVIDER_SECRET=$(cat "$SECRETS_DIR/provider-oauth" | tr -d '\n')
-if grep -q "^PROVIDER_CLIENT_SECRET=" "$ENV_FILE"; then
-    sed -i "s|^PROVIDER_CLIENT_SECRET=.*|PROVIDER_CLIENT_SECRET=$PROVIDER_SECRET|" "$ENV_FILE"
-else
-    echo "PROVIDER_CLIENT_SECRET=$PROVIDER_SECRET" >> "$ENV_FILE"
-fi
-echo "✓ Updated Provider OAuth secret"
-```
-
-#### 4. Update Documentation
-```bash
-# Update relevant documentation files:
-docs/oauth_setup.md              # OAuth provider setup instructions
-docs/developer_onboarding.md     # Development environment setup
-.env.example                     # Example environment variables (NO REAL SECRETS!)
-```
-
-#### 5. Test Locally
-```bash
-# Verify the secret is properly loaded
-uv run python manage.py shell
->>> from django.conf import settings
->>> settings.PROVIDER_CLIENT_SECRET  # Should show your dev secret from .env
->>> settings.SOCIALACCOUNT_PROVIDERS['provider_name']['APP']['secret']
-```
+See `deployment/scripts/03a-update-env-secrets.sh` for the exact bash pattern to follow.
 
 ### Deployment Scripts Reference
 
-#### `deployment/scripts/02a-setup-secrets.sh`
-**Purpose**: Clone or update the secrets repository on the production server
+**`02a-setup-secrets.sh`**: Clone/update secrets repository to `/home/django/.secrets`
+- Run on: Initial setup, when adding new secret files
 
-**When to run**:
-- Initial server setup
-- When secrets repository structure changes
-- When adding completely new secret files
-
-**What it does**:
-```bash
-# Run as sudo
-sudo ./deployment/scripts/02a-setup-secrets.sh
-
-# Clones git@github.com:mithro/platform.wafer.space-secrets.git
-# Into /home/django/.secrets
-# Sets proper permissions (700, owned by django user)
-```
-
-#### `deployment/scripts/03a-update-env-secrets.sh`
-**Purpose**: Read secrets from the secrets repository and update production `.env` file
-
-**When to run**:
-- After adding new secrets to secrets repository
-- When rotating existing secrets
-- During deployment when secrets have changed
+**`03a-update-env-secrets.sh`**: Read secrets and inject into production `.env`
+- Run on: After adding secrets, when rotating, during deployment
 - **MUST be updated when adding new secret types**
+- Handles: Mailgun, GitHub, GitLab, Google, Discord, LinkedIn OAuth secrets
 
-**What it does**:
-```bash
-# Run as sudo
-sudo ./deployment/scripts/03a-update-env-secrets.sh
-
-# 1. Pulls latest secrets from git repository (git pull)
-# 2. Reads each secret file from /home/django/.secrets/
-# 3. Updates /home/django/platform.wafer.space/.env
-# 4. Sets proper file permissions
-# Requires services restart to take effect
-```
-
-**Secrets handled by deployment script:**
-- Mailgun API key (`mailgun`)
-- GitHub OAuth Client Secret (`github-oauth`)
-- GitLab OAuth Client Secret (`gitlab-oauth`)
-- Google OAuth Client Secret (`google-auth.json`)
-- Discord OAuth Client Secret (`discord-oauth`)
-- LinkedIn OAuth Client Secret (`linkedin-oauth`)
-
-**CRITICAL**: All OAuth secrets must be provided via environment variables. Never use non-empty default values in Django settings files, even for development environments.
+**CRITICAL**: All OAuth secrets MUST use `env()` with empty defaults. Never hardcode secrets in settings files.
 
 ### Secret Rotation
 
-**When to rotate secrets:**
-- **Emergency**: Secret leaked, committed to git, or security incident (rotate immediately)
-- **Scheduled**: Production secrets every 90 days, development every 180 days
-- **Team changes**: When team members with secret access leave
+**When to rotate:**
+- Emergency (leaked/committed), Scheduled (prod: 90 days, dev: 180 days), Team changes
 
-**How to rotate secrets:**
-See the comprehensive guide: [docs/oauth_secret_rotation.md](../docs/oauth_secret_rotation.md)
+**Process:** See [docs/oauth_secret_rotation.md](../docs/oauth_secret_rotation.md)
+1. Generate new secret at provider → Update secrets repo → Run `03a-update-env-secrets.sh` → Restart services → Verify → Remove old secret
 
-The rotation process involves:
-1. Backup current secrets
-2. Generate new secrets on OAuth provider platforms
-3. Update secrets repository
-4. Run `03a-update-env-secrets.sh` to update production `.env`
-5. Restart services
-6. Verify all OAuth flows work
-7. Remove old secrets from providers
+### Common Pitfalls
 
-**Emergency rotation**: If secrets are leaked, rotate immediately without waiting for maintenance window.
+❌ **Forgetting deployment script update** - Most common! See checklist above.
+❌ **Hardcoding secrets** - Always use `env("SECRET", default="")` never `"actual_value"`
+❌ **Committing secrets** - Use `.gitignore`, pre-commit hooks (issue #28), empty defaults
+❌ **Inconsistent naming** - Use: `PROVIDER_CLIENT_SECRET` (settings), `provider-oauth` (file)
 
-### Common Pitfalls and How to Avoid Them
+### Key Principles
 
-#### ❌ Pitfall 1: Forgetting to Update Deployment Script
-**Problem**: You add a new OAuth provider or secret to Django settings but forget to update `deployment/scripts/03a-update-env-secrets.sh`. Result: Production deployment fails or uses empty/default secrets.
-
-**MANDATORY CHECKLIST when adding new OAuth providers or secrets:**
-1. ✅ Add secret file to secrets repository (`/home/django/.secrets/provider-name`)
-2. ✅ Update Django settings to use `env("PROVIDER_SECRET", default="")`
-3. ✅ **Add secret handling to `deployment/scripts/03a-update-env-secrets.sh`** following the existing pattern
-4. ✅ Update this documentation to list the new secret
-5. ✅ Test the deployment script in production
-
-**Pattern to follow in deployment script:**
-```bash
-# Read Provider OAuth secret
-if [ ! -f "$SECRETS_DIR/provider-oauth" ]; then
-    echo "Error: Required secret file not found: $SECRETS_DIR/provider-oauth"
-    exit 1
-fi
-PROVIDER_SECRET=$(cat "$SECRETS_DIR/provider-oauth" | tr -d '\n')
-if grep -q "^PROVIDER_CLIENT_SECRET=" "$ENV_FILE"; then
-    sed -i "s|^PROVIDER_CLIENT_SECRET=.*|PROVIDER_CLIENT_SECRET=$PROVIDER_SECRET|" "$ENV_FILE"
-else
-    echo "PROVIDER_CLIENT_SECRET=$PROVIDER_SECRET" >> "$ENV_FILE"
-fi
-echo "✓ Updated Provider OAuth secret"
-```
-
-#### ❌ Pitfall 2: Hardcoding Secrets in Settings
-**Problem**: Adding secrets directly to `config/settings/production.py` like this:
-```python
-# ❌ NEVER DO THIS
-SOCIALACCOUNT_PROVIDERS["provider"]["APP"]["secret"] = "actual_secret_value"
-```
-
-**Solution**: Always use environment variables:
-```python
-# ✅ CORRECT
-SOCIALACCOUNT_PROVIDERS["provider"]["APP"]["secret"] = env("PROVIDER_SECRET", default="")
-```
-
-#### ❌ Pitfall 3: Committing Secrets to Git
-**Problem**: Accidentally adding real secrets to any tracked file.
-
-**Solution**:
-- Use `.gitignore` for `secrets/` directory and `.env` files
-- Use pre-commit hooks for secret detection (see issue #28)
-- Never set non-empty defaults for secrets in settings files
-- If you commit secrets, immediately rotate them and rewrite git history
-
-#### ❌ Pitfall 4: Different Secret Names in Different Places
-**Problem**: Using different environment variable names in settings vs deployment scripts.
-
-**Solution**: Use consistent naming convention:
-- Settings file: `PROVIDER_CLIENT_SECRET`
-- Deployment script: Same variable name
-- Secrets file: `provider-oauth` (kebab-case)
-
-### Secret Management Best Practices
-
-1. **Client IDs vs Secrets**:
-   - **Client IDs**: Public, can be committed to git in settings files
-   - **Client Secrets**: Private, MUST be in environment variables only
-
-2. **Development vs Production**:
-   - Development secrets go in local `.env` file (gitignored)
-   - Production secrets go in secrets repository
-   - Use different OAuth apps for dev and prod
-
-3. **Secret Rotation**:
-   ```bash
-   # 1. Update secret in secrets repository
-   cd secrets/
-   echo "new_secret_value" > provider-oauth
-   git commit -am "Rotate provider OAuth secret"
-   git push
-
-   # 2. On production server
-   sudo ./deployment/scripts/02a-setup-secrets.sh  # Pull latest secrets
-   sudo ./deployment/scripts/03a-update-env-secrets.sh  # Update .env
-   sudo systemctl restart django-gunicorn django-celery  # Restart services
-   ```
-
-4. **Verifying Deployment**:
-   ```bash
-   # After deploying, verify secrets are loaded
-   sudo -u django bash
-   cd ~/platform.wafer.space
-   source venv/bin/activate
-   python manage.py shell
-   >>> from django.conf import settings
-   >>> settings.GITHUB_CLIENT_SECRET  # Should be non-empty
-   >>> len(settings.GITHUB_CLIENT_SECRET)  # Should show secret length
-   ```
-
-### Emergency: Secret Compromised
-
-If a secret is accidentally committed or exposed:
-
-1. **Immediately rotate** the secret at the provider (GitHub, Google, etc.)
-2. **Update secrets repository** with new secret
-3. **Run deployment script** on production: `sudo ./deployment/scripts/03a-update-env-secrets.sh`
-4. **Restart services**: `sudo systemctl restart django-gunicorn django-celery`
-5. **Rewrite git history** if committed (use with caution)
-6. **Verify** the old secret no longer works
-
-### Testing Deployment Scripts Locally
-
-You can test the deployment script logic locally (without sudo):
-
-```bash
-# Test secret reading logic
-cd secrets/
-cat github-oauth  # Should show the secret value
-cat google-auth.json | python3 -c "import json, sys; print(json.load(sys.stdin)['web']['client_secret'])"
-
-# Verify .env gets updated correctly
-# Create a test .env file and run the script logic manually
-```
+- **Client IDs**: Public (committable), **Secrets**: Private (env vars only)
+- **Dev vs Prod**: Separate `.env` file (dev) vs secrets repo (prod), different OAuth apps
+- **Naming convention**: Settings `PROVIDER_CLIENT_SECRET`, file `provider-oauth`
 
 ### Related Documentation
 
