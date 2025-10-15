@@ -384,7 +384,9 @@ SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = True
 
 # Celery Configuration
 # ------------------------------------------------------------------------------
-# Use SQLAlchemy as broker (experimental - consider Redis/RabbitMQ for production)
+# IMPORTANT: This project uses PostgreSQL as the Celery broker via SQLAlchemy.
+# Redis and RabbitMQ are BANNED - they add unnecessary deployment complexity
+# for a project that will never operate at scale requiring dedicated message brokers.
 # Convert DATABASE_URL to sqla+postgresql:// format for Celery broker
 _database_url = env("DATABASE_URL", default="postgres:///wafer_space")
 if _database_url.startswith("postgres://"):

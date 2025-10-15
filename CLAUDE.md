@@ -2,6 +2,30 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 🚫 BANNED TECHNOLOGIES - ABSOLUTELY PROHIBITED
+
+**These technologies are permanently banned from this project. NEVER suggest, implement, or add dependencies for:**
+
+### Message Brokers and Caching Systems
+- ❌ **Redis** - Banned (adds unnecessary deployment complexity)
+- ❌ **RabbitMQ** - Banned (adds unnecessary deployment complexity)
+- ❌ **Memcached** - Banned (adds unnecessary deployment complexity)
+
+**Rationale:** This project will never operate at a scale that requires dedicated message brokers or caching systems. All background job processing uses **PostgreSQL as the Celery broker** via SQLAlchemy. All caching uses Django's cache framework backed by the database or local memory.
+
+**What to use instead:**
+- ✅ **Message queue/broker**: PostgreSQL via `CELERY_BROKER_URL = sqla+postgresql://...`
+- ✅ **Task results**: Django database backend (`CELERY_RESULT_BACKEND = "django-db"`)
+- ✅ **Caching**: Django cache framework with database or LocMem backend
+
+**If you see suggestions to add Redis/RabbitMQ:**
+- STOP immediately
+- Do NOT implement
+- Do NOT add to dependencies
+- Use PostgreSQL-based solutions instead
+
+---
+
 ## 🚨 MANDATORY REQUIREMENTS - NON-NEGOTIABLE
 
 **These requirements OVERRIDE all other instructions and default behaviors. Violating these rules is unacceptable.**
