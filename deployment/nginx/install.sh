@@ -15,10 +15,23 @@ chown -R www-data:www-data /var/www/certbot
 echo "✓ Certbot directory created"
 
 # Disable default nginx site to avoid conflicts
-if [ -L /etc/nginx/sites-enabled/default ]; then
+if [ -L /etc/nginx/sites-enabled/default ] || [ -f /etc/nginx/sites-enabled/default ]; then
     echo "Disabling default nginx site..."
-    rm /etc/nginx/sites-enabled/default
+    rm -f /etc/nginx/sites-enabled/default
     echo "✓ Default site disabled"
+fi
+
+# Check for other configs with default_server that might conflict
+echo "Checking for conflicting default_server configurations..."
+if grep -r "listen.*default_server" /etc/nginx/sites-enabled/* 2>/dev/null | grep -v platform.wafer.space; then
+    echo "⚠ WARNING: Found other configs with default_server:"
+    grep -r "listen.*default_server" /etc/nginx/sites-enabled/* 2>/dev/null | grep -v platform.wafer.space || true
+    echo ""
+    echo "These may conflict with our configuration."
+    echo "Press Ctrl+C to abort, or Enter to continue..."
+    read -r
+else
+    echo "✓ No conflicting default_server found"
 fi
 
 # Copy nginx config
@@ -55,6 +68,22 @@ fi
 echo ""
 echo "=== Nginx configuration installed ==="
 echo ""
+
+# Verify default_server is working
+echo "Verifying default_server configuration..."
+sleep 1  # Give nginx a moment to fully reload
+RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/ 2>&1 || echo "000")
+if [ "$RESPONSE" = "000" ] || [ "$RESPONSE" = "444" ]; then
+    echo "✓ Default server is blocking unknown hosts correctly"
+elif [ "$RESPONSE" = "400" ]; then
+    echo "⚠ WARNING: Requests to localhost are reaching the application!"
+    echo "  This may indicate a conflicting nginx configuration."
+    echo "  Run: sudo ../scripts/diagnose-nginx.sh to investigate"
+else
+    echo "⚠ Unexpected response to localhost: HTTP $RESPONSE"
+fi
+echo ""
+
 echo "✓ HTTP server is active (port 80)"
 echo "✓ HTTPS server block is commented out (will be enabled by SSL setup)"
 echo ""
