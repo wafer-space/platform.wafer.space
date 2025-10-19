@@ -397,7 +397,7 @@ class TestProjectFileSubmitURLView(TestCase):
 
         form_data = {
             "url": "https://github.com/user/repo/blob/main/file.gds",
-            "expected_hash_md5": "",
+            "expected_hash_md5": "abc123def456789012345678901234ab",
             "expected_hash_sha1": "",
         }
         response = self.client.post(url, form_data)
@@ -420,7 +420,7 @@ class TestProjectFileSubmitURLView(TestCase):
 
         form_data = {
             "url": "http://localhost/file.gds",
-            "expected_hash_md5": "",
+            "expected_hash_md5": "abc123def456789012345678901234ab",
             "expected_hash_sha1": "",
         }
         response = self.client.post(url, form_data)

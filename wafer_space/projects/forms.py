@@ -148,3 +148,22 @@ class ProjectFileURLSubmitForm(forms.Form):
             raise ValidationError(msg) from e
 
         return sha1_hash.lower()
+
+    def clean(self):
+        """Validate that at least one hash is provided."""
+        cleaned_data = super().clean()
+        if cleaned_data is None:
+            return cleaned_data
+
+        md5_hash = cleaned_data.get("expected_hash_md5", "").strip()
+        sha1_hash = cleaned_data.get("expected_hash_sha1", "").strip()
+
+        # Require at least one hash
+        if not md5_hash and not sha1_hash:
+            msg = (
+                "At least one checksum (MD5 or SHA1) is required for file "
+                "verification. This ensures file integrity during download."
+            )
+            raise ValidationError(msg)
+
+        return cleaned_data

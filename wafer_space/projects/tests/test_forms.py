@@ -92,17 +92,16 @@ class TestProjectForm(TestCase):
 class TestProjectFileURLSubmitForm(TestCase):
     """Test ProjectFileURLSubmitForm."""
 
-    def test_form_valid_with_url_only(self):
-        """Test form is valid with just URL."""
+    def test_form_invalid_with_url_only(self):
+        """Test form is invalid with just URL (requires at least one hash)."""
         form_data = {
             "url": "https://example.com/file.gds",
         }
         form = ProjectFileURLSubmitForm(data=form_data)
 
-        assert form.is_valid()
-        assert form.cleaned_data["url"] == "https://example.com/file.gds"
-        assert form.cleaned_data["expected_hash_md5"] == ""
-        assert form.cleaned_data["expected_hash_sha1"] == ""
+        assert not form.is_valid()
+        assert "__all__" in form.errors
+        assert "At least one checksum" in str(form.errors["__all__"])
 
     def test_form_valid_with_md5_hash(self):
         """Test form is valid with MD5 hash."""
@@ -171,6 +170,7 @@ class TestProjectFileURLSubmitForm(TestCase):
         """Test form strips whitespace from URL."""
         form_data = {
             "url": "  https://example.com/file.gds  ",
+            "expected_hash_md5": "abc123def456789012345678901234ab",
         }
         form = ProjectFileURLSubmitForm(data=form_data)
 
@@ -284,24 +284,45 @@ class TestProjectFileURLSubmitForm(TestCase):
         assert "expected_hash_sha1" in form.errors
         assert "hexadecimal characters" in str(form.errors["expected_hash_sha1"])
 
-    def test_form_empty_md5_hash_allowed(self):
-        """Test empty MD5 hash is allowed (optional field)."""
+    def test_form_empty_md5_hash_allowed_with_sha1(self):
+        """Test empty MD5 hash is allowed when SHA1 is provided."""
+        expected_sha1 = "abc123def456789012345678901234567890abcd"
         form_data = {
             "url": "https://example.com/file.gds",
             "expected_hash_md5": "",
+            "expected_hash_sha1": expected_sha1,
         }
         form = ProjectFileURLSubmitForm(data=form_data)
 
         assert form.is_valid()
         assert form.cleaned_data["expected_hash_md5"] == ""
+        assert form.cleaned_data["expected_hash_sha1"] == expected_sha1
 
-    def test_form_empty_sha1_hash_allowed(self):
-        """Test empty SHA1 hash is allowed (optional field)."""
+    def test_form_empty_sha1_hash_allowed_with_md5(self):
+        """Test empty SHA1 hash is allowed when MD5 is provided."""
+        expected_md5 = "abc123def456789012345678901234ab"
         form_data = {
             "url": "https://example.com/file.gds",
+            "expected_hash_md5": expected_md5,
             "expected_hash_sha1": "",
         }
         form = ProjectFileURLSubmitForm(data=form_data)
 
         assert form.is_valid()
+        assert form.cleaned_data["expected_hash_md5"] == expected_md5
         assert form.cleaned_data["expected_hash_sha1"] == ""
+
+    def test_form_requires_at_least_one_hash(self):
+        """Test that form requires at least one hash (MD5 or SHA1)."""
+        form_data = {
+            "url": "https://example.com/file.gds",
+            "expected_hash_md5": "",
+            "expected_hash_sha1": "",
+        }
+        form = ProjectFileURLSubmitForm(data=form_data)
+
+        assert not form.is_valid()
+        assert "__all__" in form.errors
+        error_msg = str(form.errors["__all__"])
+        assert "At least one checksum" in error_msg
+        assert "MD5 or SHA1" in error_msg
