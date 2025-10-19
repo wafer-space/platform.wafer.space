@@ -399,7 +399,7 @@ class ManufacturabilityCheck(models.Model):
     # Processing details
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
-    task_id = models.CharField(max_length=100, blank=True)  # Celery task ID
+    task_id = models.CharField(max_length=100, blank=True, default="")  # Celery task ID
 
     # Results
     is_manufacturable = models.BooleanField(null=True, blank=True)

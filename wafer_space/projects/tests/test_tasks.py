@@ -243,6 +243,7 @@ class TestManufacturabilityCheckTask(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             status=ManufacturabilityCheck.Status.QUEUED,
+            task_id="test-task-123",
         )
 
         # Run task
@@ -272,6 +273,7 @@ class TestManufacturabilityCheckTask(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             status=ManufacturabilityCheck.Status.QUEUED,
+            task_id="test-task-123",
         )
 
         # Run task
@@ -310,6 +312,7 @@ class TestManufacturabilityCheckTask(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             status=ManufacturabilityCheck.Status.QUEUED,
+            task_id="test-task-123",
         )
 
         # Run task
@@ -375,6 +378,7 @@ class TestManufacturabilityCheckTask(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             status=ManufacturabilityCheck.Status.QUEUED,
+            task_id="test-task-456",
         )
 
         # Run task

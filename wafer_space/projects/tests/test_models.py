@@ -280,6 +280,7 @@ class TestProjectSubmit(TestCase):
         existing_check = ManufacturabilityCheck.objects.create(
             project=self.project,
             status=ManufacturabilityCheck.Status.PROCESSING,
+            task_id="existing-task-123",
         )
 
         self.project.submit()

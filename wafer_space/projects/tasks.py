@@ -114,7 +114,8 @@ def check_project_manufacturability(self, check_id):  # noqa: PLR0915
     try:
         # Get the manufacturability check instance
         check = ManufacturabilityCheck.objects.get(id=check_id)
-        check.task_id = self.request.id
+        check.task_id = self.request.id or "test-task"  # Handle test environment
+        check.save(update_fields=["task_id"])  # Save task_id first
         check.start_processing()
 
         project = check.project

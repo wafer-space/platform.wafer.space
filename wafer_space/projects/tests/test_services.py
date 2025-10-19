@@ -755,7 +755,7 @@ class TestManufacturabilityService(TestCase):
 
     @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
     def test_queue_check_does_not_reset_queued_check(self, mock_task):
-        """Test that queue_check doesn't reset a check already in QUEUED state."""
+        """Test that queue_check doesn't reset/re-queue a check already QUEUED."""
         # Create an existing queued check
         existing_check = ManufacturabilityCheck.objects.create(
             project=self.project,
@@ -769,13 +769,15 @@ class TestManufacturabilityService(TestCase):
         # Queue the check again
         check = ManufacturabilityService.queue_check(self.project)
 
-        # Verify it's the same check instance
+        # Verify it's the same check instance and unchanged
         assert check.id == existing_check.id
         assert check.status == ManufacturabilityCheck.Status.QUEUED
 
-        # Task should still be called and task_id updated
-        mock_task.assert_called_once_with(check.id)
-        assert check.task_id == "task-789"
+        # Task should NOT be called again (already queued)
+        mock_task.assert_not_called()
+
+        # task_id should remain unchanged
+        assert check.task_id == "existing-task-id"
 
     def test_get_check_status_returns_correct_data(self):
         """Test that get_check_status returns correct status information."""

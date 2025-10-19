@@ -419,8 +419,16 @@ class ManufacturabilityService:
             },
         )
 
-        # If check already exists, reset it to QUEUED state
-        if not created and check.status != ManufacturabilityCheck.Status.QUEUED:
+        # If check already exists and is processing/queued, don't re-queue
+        if not created and check.status in [
+            ManufacturabilityCheck.Status.PROCESSING,
+            ManufacturabilityCheck.Status.QUEUED,
+        ]:
+            # Check is already in progress, don't modify it
+            return check
+
+        # If check exists but failed/completed, reset and re-queue
+        if not created:
             check.status = ManufacturabilityCheck.Status.QUEUED
             check.is_manufacturable = None
             check.errors = []
@@ -429,7 +437,7 @@ class ManufacturabilityService:
             check.retry_count = 0
             check.save()
 
-        # Trigger Celery task
+        # Trigger Celery task (only for new or reset checks)
         task = check_project_manufacturability.delay(check.id)
         check.task_id = task.id
         check.save(update_fields=["task_id"])
