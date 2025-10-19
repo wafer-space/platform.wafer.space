@@ -59,7 +59,7 @@ class ProjectFileURLSubmitForm(forms.Form):
     )
 
     expected_hash_md5 = forms.CharField(
-        label="MD5 Hash (Optional)",
+        label="MD5 Hash",
         max_length=32,
         required=False,
         widget=forms.TextInput(
@@ -69,11 +69,11 @@ class ProjectFileURLSubmitForm(forms.Form):
                 "pattern": "[a-fA-F0-9]{32}",
             },
         ),
-        help_text="Optional: MD5 hash for verification (32 hex characters)",
+        help_text="MD5 checksum for file integrity verification (32 hex characters)",
     )
 
     expected_hash_sha1 = forms.CharField(
-        label="SHA1 Hash (Optional)",
+        label="SHA1 Hash",
         max_length=40,
         required=False,
         widget=forms.TextInput(
@@ -83,7 +83,7 @@ class ProjectFileURLSubmitForm(forms.Form):
                 "pattern": "[a-fA-F0-9]{40}",
             },
         ),
-        help_text="Optional: SHA1 hash for verification (40 hex characters)",
+        help_text="SHA1 checksum for file integrity verification (40 hex characters)",
     )
 
     def clean_url(self):

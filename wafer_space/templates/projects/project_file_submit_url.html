@@ -26,6 +26,10 @@
         </div>
         <form method="post">
           {% csrf_token %}
+          <div class="alert alert-primary" role="alert">
+            <strong><i class="bi bi-shield-check"></i> File Integrity Verification Required:</strong>
+            You must provide at least one checksum (MD5 or SHA1) to verify file integrity during download.
+          </div>
           {{ form|crispy }}
           <div class="alert alert-warning" role="alert">
             <h5 class="alert-heading">
@@ -40,9 +44,6 @@
               </li>
               <li>
                 <strong>Progress tracking:</strong> Monitor download status on the project detail page
-              </li>
-              <li>
-                <strong>File verification:</strong> Provide MD5 or SHA1 checksums if you have them for integrity verification
               </li>
             </ul>
           </div>
