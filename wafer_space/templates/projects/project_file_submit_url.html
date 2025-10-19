@@ -13,36 +13,37 @@
         <h2>Submit File URL</h2>
         <p class="lead">Project: {{ project.name }}</p>
         <div class="alert alert-info" role="alert">
-          <h5 class="alert-heading">Supported Platforms</h5>
-          <p>The system automatically converts URLs from these platforms to direct download links:</p>
-          <ul class="mb-0">
-            <li>
-              <strong>GitHub:</strong> Blob URLs → Raw content URLs
-            </li>
-            <li>
-              <strong>GitLab:</strong> Blob URLs → Raw content URLs
-            </li>
-            <li>
-              <strong>Dropbox:</strong> Share URLs → Direct download URLs
-            </li>
-            <li>
-              <strong>Google Drive:</strong> Share URLs → Direct download URLs
-            </li>
-            <li>
-              <strong>OneDrive:</strong> Share URLs → Direct download URLs
-            </li>
-          </ul>
+          <h5 class="alert-heading">
+            <i class="bi bi-info-circle"></i> Submit Your GDS/OASIS Design File
+          </h5>
+          <p>
+            Provide a direct download URL to your design file. The system supports common hosting platforms
+            and will automatically rewrite URLs when needed (e.g., GitHub blob → raw URLs).
+          </p>
+          <p class="mb-0">
+            <strong>Accepted formats:</strong> .gds, .gdsii, .gds2, .oas, .oasis (optionally compressed with .gz, .zip, .bz2, .xz)
+          </p>
         </div>
         <form method="post">
           {% csrf_token %}
           {{ form|crispy }}
           <div class="alert alert-warning" role="alert">
-            <h5 class="alert-heading">Important Notes</h5>
+            <h5 class="alert-heading">
+              <i class="bi bi-exclamation-triangle"></i> Important Notes
+            </h5>
             <ul class="mb-0">
-              <li>Maximum file size: 100GB</li>
-              <li>File download happens in the background</li>
-              <li>You can track progress on the project detail page</li>
-              <li>Optional MD5/SHA1 hashes for file verification</li>
+              <li>
+                <strong>File size limit:</strong> Up to 100GB supported
+              </li>
+              <li>
+                <strong>Background processing:</strong> File download happens asynchronously - you can leave this page
+              </li>
+              <li>
+                <strong>Progress tracking:</strong> Monitor download status on the project detail page
+              </li>
+              <li>
+                <strong>File verification:</strong> Provide MD5 or SHA1 checksums if you have them for integrity verification
+              </li>
             </ul>
           </div>
           <div class="d-flex gap-2 mt-3">
