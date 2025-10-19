@@ -515,3 +515,248 @@ class TestProjectFileProgressView(TestCase):
         assert data["progress"] == PROGRESS_HALF
         assert data["current"] == FIVE_MB
         assert data["total"] == TEN_MB
+
+
+@pytest.mark.django_db
+class TestProjectSubmitView(TestCase):
+    """Test ProjectSubmitView."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.client = Client()
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.other_user = User.objects.create_user(
+            username="otheruser",
+            email="other@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+            status=Project.Status.DRAFT,
+        )
+
+    def test_requires_login(self):
+        """Test that view requires login."""
+        url = reverse("projects:submit", kwargs={"pk": self.project.pk})
+        response = self.client.post(url)
+
+        # Should redirect to login
+        assert response.status_code == HTTP_FOUND
+        assert "/accounts/login/" in response.url
+
+    def test_requires_ownership(self):
+        """Test that only owner can submit project."""
+        self.client.login(username="otheruser", password=TEST_PASSWORD)
+        url = reverse("projects:submit", kwargs={"pk": self.project.pk})
+        response = self.client.post(url)
+
+        # Should return 403 Forbidden
+        assert response.status_code == HTTP_FORBIDDEN
+
+    def test_successful_submission(self):
+        """Test successful project submission."""
+        # Create completed and verified file
+        ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+            download_status=ProjectFile.DownloadStatus.COMPLETED,
+            hash_verified=True,
+        )
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:submit", kwargs={"pk": self.project.pk})
+        response = self.client.post(url)
+
+        # Should redirect to project detail
+        assert response.status_code == HTTP_FOUND
+        detail_url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+        assert response.url == detail_url
+
+        # Verify project was submitted
+        self.project.refresh_from_db()
+        assert self.project.status == Project.Status.SUBMITTED
+        assert self.project.submitted_at is not None
+
+        # Verify success message
+        messages = list(get_messages(response.wsgi_request))
+        assert len(messages) == 1
+        assert "submitted successfully" in str(messages[0]).lower()
+
+    def test_submission_fails_without_active_file(self):
+        """Test that submission fails without active file."""
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:submit", kwargs={"pk": self.project.pk})
+        response = self.client.post(url)
+
+        # Should redirect back to project detail
+        assert response.status_code == HTTP_FOUND
+
+        # Verify project was NOT submitted
+        self.project.refresh_from_db()
+        assert self.project.status == Project.Status.DRAFT
+        assert self.project.submitted_at is None
+
+        # Verify error message
+        messages = list(get_messages(response.wsgi_request))
+        assert len(messages) == 1
+        assert "no active file" in str(messages[0]).lower()
+
+    def test_submission_fails_with_pending_download(self):
+        """Test that submission fails with pending download."""
+        ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+            download_status=ProjectFile.DownloadStatus.PENDING,
+        )
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:submit", kwargs={"pk": self.project.pk})
+        response = self.client.post(url)
+
+        # Should redirect back to project detail
+        assert response.status_code == HTTP_FOUND
+
+        # Verify project was NOT submitted
+        self.project.refresh_from_db()
+        assert self.project.status == Project.Status.DRAFT
+
+        # Verify error message mentions download not completed
+        messages = list(get_messages(response.wsgi_request))
+        assert len(messages) == 1
+        message_text = str(messages[0]).lower()
+        assert "download" in message_text
+        assert "not completed" in message_text or "pending" in message_text
+
+    def test_submission_fails_with_failed_download(self):
+        """Test that submission fails with failed download."""
+        ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+            download_status=ProjectFile.DownloadStatus.FAILED,
+            download_error="Download failed",
+        )
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:submit", kwargs={"pk": self.project.pk})
+        response = self.client.post(url)
+
+        # Should redirect back to project detail
+        assert response.status_code == HTTP_FOUND
+
+        # Verify project was NOT submitted
+        self.project.refresh_from_db()
+        assert self.project.status == Project.Status.DRAFT
+
+        # Verify error message
+        messages = list(get_messages(response.wsgi_request))
+        assert len(messages) == 1
+        assert "download" in str(messages[0]).lower()
+
+    def test_submission_fails_with_unverified_hash(self):
+        """Test that submission fails with unverified hash."""
+        ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+            download_status=ProjectFile.DownloadStatus.COMPLETED,
+            hash_verified=False,
+        )
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:submit", kwargs={"pk": self.project.pk})
+        response = self.client.post(url)
+
+        # Should redirect back to project detail
+        assert response.status_code == HTTP_FOUND
+
+        # Verify project was NOT submitted
+        self.project.refresh_from_db()
+        assert self.project.status == Project.Status.DRAFT
+
+        # Verify error message
+        messages = list(get_messages(response.wsgi_request))
+        assert len(messages) == 1
+        assert "hash" in str(messages[0]).lower()
+
+    def test_submission_fails_if_already_submitted(self):
+        """Test that submission fails if already submitted."""
+        # Create completed file
+        ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+            download_status=ProjectFile.DownloadStatus.COMPLETED,
+            hash_verified=True,
+        )
+
+        # Submit once
+        self.project.submit()
+        first_submitted_at = self.project.submitted_at
+
+        # Try to submit again
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:submit", kwargs={"pk": self.project.pk})
+        response = self.client.post(url)
+
+        # Should redirect back to project detail
+        assert response.status_code == HTTP_FOUND
+
+        # Verify submitted_at didn't change
+        self.project.refresh_from_db()
+        assert self.project.submitted_at == first_submitted_at
+
+        # Verify error message
+        messages = list(get_messages(response.wsgi_request))
+        assert len(messages) == 1
+        assert "already" in str(messages[0]).lower()
+
+    def test_prevents_double_submission_race_condition(self):
+        """Test that double submission is prevented even with race condition."""
+        # Create completed file
+        ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+            download_status=ProjectFile.DownloadStatus.COMPLETED,
+            hash_verified=True,
+        )
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:submit", kwargs={"pk": self.project.pk})
+
+        # First submission
+        response1 = self.client.post(url)
+        assert response1.status_code == HTTP_FOUND
+
+        # Second submission (simulating race condition)
+        response2 = self.client.post(url)
+        assert response2.status_code == HTTP_FOUND
+
+        # Verify only submitted once
+        self.project.refresh_from_db()
+        assert self.project.status == Project.Status.SUBMITTED
+
+        # Second request should have error message
+        messages = list(get_messages(response2.wsgi_request))
+        assert any("already" in str(m).lower() for m in messages)

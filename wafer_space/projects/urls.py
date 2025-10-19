@@ -13,6 +13,8 @@ urlpatterns = [
     path("create/", views.ProjectCreateView.as_view(), name="create"),
     path("<uuid:pk>/update/", views.ProjectUpdateView.as_view(), name="update"),
     path("<uuid:pk>/delete/", views.ProjectDeleteView.as_view(), name="delete"),
+    # Project submission
+    path("<uuid:pk>/submit/", views.ProjectSubmitView.as_view(), name="submit"),
     # File submission
     path(
         "<uuid:pk>/submit-url/",

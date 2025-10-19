@@ -1,8 +1,11 @@
 """Views for project management."""
 
+import logging
+
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.mixins import UserPassesTestMixin
+from django.core.exceptions import ValidationError
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.shortcuts import redirect
@@ -21,6 +24,8 @@ from .models import Project
 from .models import ProjectFile
 from .security import SecurityValidationError
 from .services import ProjectFileService
+
+logger = logging.getLogger(__name__)
 
 
 class ProjectListView(LoginRequiredMixin, ListView):
@@ -252,3 +257,55 @@ class ProjectFileProgressView(LoginRequiredMixin, UserPassesTestMixin, View):
         progress = ProjectFileService.get_download_progress(active_file)
 
         return JsonResponse(progress)
+
+
+class ProjectSubmitView(LoginRequiredMixin, UserPassesTestMixin, View):
+    """Submit a project for manufacturing (POST-only)."""
+
+    def test_func(self):
+        """Only allow the owner to submit the project."""
+        project = get_object_or_404(Project, pk=self.kwargs["pk"])
+        return project.user == self.request.user
+
+    def post(self, request, pk):
+        """Handle project submission."""
+        project = get_object_or_404(Project, pk=pk)
+
+        # Verify ownership (redundant with test_func but explicit)
+        if project.user != request.user:
+            messages.error(
+                request,
+                "You don't have permission to submit this project.",
+            )
+            return redirect("projects:detail", pk=pk)
+
+        try:
+            # Attempt to submit the project
+            project.submit()
+
+            messages.success(
+                request,
+                f"Project '{project.name}' submitted successfully for manufacturing!",
+            )
+
+        except ValidationError as e:
+            # Handle validation errors with user-friendly messages
+            messages.error(
+                request,
+                f"Cannot submit project: {e.message}",
+            )
+
+        except Exception:
+            # Log unexpected errors
+            logger.exception(
+                "Unexpected error submitting project %s",
+                project.pk,
+            )
+            messages.error(
+                request,
+                "An unexpected error occurred while submitting the project. "
+                "Please try again later.",
+            )
+
+        # Always redirect back to project detail page
+        return redirect("projects:detail", pk=pk)
