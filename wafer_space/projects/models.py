@@ -2,6 +2,7 @@ import hashlib
 import uuid
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.utils import timezone
@@ -63,11 +64,58 @@ class Project(models.Model):
     def __str__(self):
         return f"{self.name} ({self.user.username})"
 
+    def can_submit(self) -> tuple[bool, str]:
+        """Check if project can be submitted.
+
+        Returns:
+            tuple[bool, str]: (can_submit, reason_if_not)
+                - can_submit: True if project can be submitted
+                - reason_if_not: Empty string if can submit, error message otherwise
+        """
+        # Check if project has active file
+        try:
+            active_file = self.files.get(is_active=True)
+        except ProjectFile.DoesNotExist:
+            return False, "Project has no active file"
+
+        # Check if download is completed
+        if active_file.download_status != ProjectFile.DownloadStatus.COMPLETED:
+            status_display = active_file.get_download_status_display()
+            return False, f"File download is not completed (status: {status_display})"
+
+        # Check if hash is verified
+        if not active_file.hash_verified:
+            return False, "File hash has not been verified"
+
+        # Check if project is in DRAFT status
+        if self.status != self.Status.DRAFT:
+            return False, "Project has already been submitted (status must be DRAFT)"
+
+        return True, ""
+
     def submit(self):
-        """Mark project as submitted."""
+        """Mark project as submitted and create manufacturability check.
+
+        Raises:
+            ValidationError: If project cannot be submitted
+        """
+        # Validate submission
+        can_submit, reason = self.can_submit()
+        if not can_submit:
+            raise ValidationError(reason)
+
+        # Update project status
         self.status = self.Status.SUBMITTED
         self.submitted_at = timezone.now()
         self.save()
+
+        # Create manufacturability check if it doesn't exist
+        ManufacturabilityCheck.objects.get_or_create(
+            project=self,
+            defaults={
+                "status": ManufacturabilityCheck.Status.QUEUED,
+            },
+        )
 
 
 def project_file_upload_path(instance, filename):
