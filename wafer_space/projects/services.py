@@ -182,8 +182,14 @@ class ProjectFileService:
             handler_name = handler_metadata.get("handler")
 
         # Step 3: Validate URL security and get metadata
+        # For URLs with handlers (like Google Source), allow missing Content-Length
+        # because the handler transforms the content (e.g., base64 decode)
+        allow_missing_length = handler is not None
         try:
-            validation_result = URLValidator.validate_url(rewritten_url)
+            validation_result = URLValidator.validate_url(
+                rewritten_url,
+                allow_missing_content_length=allow_missing_length,
+            )
         except SecurityValidationError as e:
             # Re-raise with better context
             msg = f"URL validation failed: {e}"

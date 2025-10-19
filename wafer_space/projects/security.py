@@ -102,14 +102,23 @@ class URLValidator:
             raise SecurityValidationError(msg) from e
 
     @classmethod
-    def validate_file_size(cls, url: str) -> int:
+    def validate_file_size(
+        cls,
+        url: str,
+        *,
+        allow_missing_content_length: bool = False,
+    ) -> int:
         """Validate file size is within allowed limits.
 
         Args:
             url: The URL to check
+            allow_missing_content_length: If True, return 0 when Content-Length
+                is missing (useful for URLs with special handlers that transform
+                content, like Google Source base64-encoded responses)
 
         Returns:
-            int: The file size in bytes
+            int: The file size in bytes (or 0 if Content-Length missing and
+                allowed)
 
         Raises:
             SecurityValidationError: If file size exceeds limits or cannot be determined
@@ -120,6 +129,10 @@ class URLValidator:
 
             content_length = response.headers.get("Content-Length")
             if not content_length:
+                if allow_missing_content_length:
+                    # Content-Length not provided, but allowed for this URL
+                    # (e.g., Google Source base64-encoded responses)
+                    return 0
                 msg = (
                     "Server did not provide Content-Length header. "
                     "Cannot validate file size."
@@ -152,15 +165,23 @@ class URLValidator:
             raise SecurityValidationError(msg) from e
 
     @classmethod
-    def validate_url(cls, url: str) -> dict[str, int | str | None]:
+    def validate_url(
+        cls,
+        url: str,
+        *,
+        allow_missing_content_length: bool = False,
+    ) -> dict[str, int | str | None]:
         """Perform complete URL validation.
 
         Args:
             url: The URL to validate
+            allow_missing_content_length: If True, allow missing Content-Length header
+                                         (useful for URLs with special handlers)
 
         Returns:
             dict: Validation results containing:
-                - file_size: File size in bytes
+                - file_size: File size in bytes (0 if Content-Length missing
+                    and allowed)
                 - content_type: Content type from server
                 - etag: ETag header if available
                 - supports_range: Whether server supports range requests
@@ -175,7 +196,10 @@ class URLValidator:
         cls.validate_hostname(url)
 
         # Validate file size
-        file_size = cls.validate_file_size(url)
+        file_size = cls.validate_file_size(
+            url,
+            allow_missing_content_length=allow_missing_content_length,
+        )
 
         # Get additional metadata from HEAD request
         try:
