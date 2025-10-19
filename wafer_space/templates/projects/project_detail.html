@@ -104,9 +104,7 @@
                   <h6 class="text-danger">
                     <i class="bi bi-exclamation-triangle"></i> Errors
                   </h6>
-                  {% for error in check_status.errors %}
-                    <div class="alert alert-danger" role="alert">{{ error }}</div>
-                  {% endfor %}
+                  {% for error in check_status.errors %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endfor %}
                 </div>
               {% endif %}
               {# Display warnings if any #}
@@ -146,7 +144,9 @@
               <div class="alert alert-danger mb-3" role="alert">
                 <strong>Error:</strong> {{ error_message|default:"Download failed. Please try again." }}
               </div>
-              <p class="mb-2"><strong>Failed URL:</strong></p>
+              <p class="mb-2">
+                <strong>Failed URL:</strong>
+              </p>
               <p class="text-muted small">{{ active_file.original_url }}</p>
               <div class="mt-3">
                 <a class="btn btn-warning"
@@ -305,7 +305,7 @@
               {% if project.can_submit.0 %}
                 <form action="{% url 'projects:submit' pk=project.pk %}"
                       method="post"
-                      style="display: inline;"
+                      style="display: inline"
                       onsubmit="return confirm('Are you sure you want to submit this project for manufacturing? This action cannot be undone.');">
                   {% csrf_token %}
                   <button type="submit" class="btn btn-success">
@@ -448,7 +448,7 @@
     // Initialize Bootstrap tooltips
     document.addEventListener('DOMContentLoaded', function() {
       var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-      var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+      var tooltipList = tooltipTriggerList.map(function(tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl);
       });
     });
