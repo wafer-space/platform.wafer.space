@@ -8,6 +8,7 @@ import logging
 import random
 import tempfile
 import time
+from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 from urllib.parse import urlparse
@@ -318,6 +319,195 @@ def _save_file_to_django(project_file, file_content: bytes, temp_dir: Path) -> N
         temp_path.unlink()
 
 
+def _prepare_download_request(
+    url: str,
+    temp_path: Path,
+) -> tuple[dict[str, str], int]:
+    """Prepare download request with resume support.
+
+    Returns:
+        tuple: (headers dict, resume byte position)
+    """
+    logger = logging.getLogger(__name__)
+    headers = {"User-Agent": "wafer.space/1.0"}
+    resume_byte_pos = 0
+
+    if temp_path.exists():
+        resume_byte_pos = temp_path.stat().st_size
+        headers["Range"] = f"bytes={resume_byte_pos}-"
+        logger.info(
+            "  Resume: Found partial download (%s bytes)", f"{resume_byte_pos:,}"
+        )
+
+    return headers, resume_byte_pos
+
+
+def _get_download_response(
+    url: str,
+    headers: dict[str, str],
+    temp_path: Path,
+    resume_byte_pos: int,
+) -> tuple[requests.Response, int]:
+    """Get HTTP response for download, handling resume failures.
+
+    Returns:
+        tuple: (response object, adjusted resume byte position)
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("  Sending HTTP GET request...")
+    response = requests.get(url, headers=headers, stream=True, timeout=30)
+    logger.info("  Response status: %s", response.status_code)
+
+    # Check if server supports resume
+    if resume_byte_pos > 0 and response.status_code != HTTP_PARTIAL_CONTENT:
+        logger.info("  Server doesn't support resume - restarting from beginning")
+        resume_byte_pos = 0
+        temp_path.unlink(missing_ok=True)
+        response = requests.get(url, headers=headers, stream=True, timeout=30)
+
+    response.raise_for_status()
+    return response, resume_byte_pos
+
+
+def _log_file_size(
+    response: requests.Response,
+    project_file,
+    resume_byte_pos: int,
+) -> int:
+    """Log file size and return total size.
+
+    Returns:
+        int: Total file size in bytes
+    """
+    logger = logging.getLogger(__name__)
+    total_size = project_file.file_size or 0
+
+    if "Content-Length" in response.headers:
+        content_length = int(response.headers["Content-Length"])
+        total_size = (
+            resume_byte_pos + content_length if resume_byte_pos > 0 else content_length
+        )
+        size_mb = total_size / (1024 * 1024)
+        logger.info(
+            "  Total file size: %s bytes (%s MB)", f"{total_size:,}", f"{size_mb:.2f}"
+        )
+    else:
+        logger.info("  No Content-Length header - size unknown")
+
+    return total_size
+
+
+def _initialize_hash_calculators(
+    temp_path: Path,
+    resume_byte_pos: int,
+) -> tuple[hashlib._Hash, hashlib._Hash]:
+    """Initialize hash calculators, updating with existing content if resuming.
+
+    Returns:
+        tuple: (md5_hasher, sha1_hasher)
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("  Initializing hash calculators (MD5, SHA1)...")
+
+    md5_hasher = hashlib.md5(usedforsecurity=False)
+    sha1_hasher = hashlib.sha1(usedforsecurity=False)
+
+    if resume_byte_pos > 0:
+        logger.info("  Reading existing partial download for hash calculation...")
+        with temp_path.open("rb") as existing_file:
+            existing_content = existing_file.read()
+            md5_hasher.update(existing_content)
+            sha1_hasher.update(existing_content)
+        logger.info("  ✓ Hashes updated with %s existing bytes", f"{resume_byte_pos:,}")
+
+    return md5_hasher, sha1_hasher
+
+
+@dataclass
+class _ChunkDownloadState:
+    """State for chunk-based file download."""
+
+    response: requests.Response
+    temp_path: Path
+    task: object  # Celery task instance
+    project_file: object  # ProjectFile instance
+    total_size: int
+    resume_byte_pos: int
+    md5_hasher: hashlib._Hash
+    sha1_hasher: hashlib._Hash
+    chunk_size: int
+
+
+def _download_chunks(state: _ChunkDownloadState) -> int:
+    """Download file chunks with progress tracking.
+
+    Returns:
+        int: Number of chunks downloaded
+    """
+    logger = logging.getLogger(__name__)
+    downloaded = state.resume_byte_pos
+    last_db_update_progress = 0
+    last_log_progress = 0
+    mode = "ab" if state.resume_byte_pos > 0 else "wb"
+
+    logger.info(
+        "  Starting chunked download (chunk size: %s bytes)...", f"{state.chunk_size:,}"
+    )
+    chunk_count = 0
+
+    with state.temp_path.open(mode) as temp_file:
+        for chunk in state.response.iter_content(chunk_size=state.chunk_size):
+            if not chunk:  # filter out keep-alive chunks
+                continue
+
+            temp_file.write(chunk)
+            state.md5_hasher.update(chunk)
+            state.sha1_hasher.update(chunk)
+            downloaded += len(chunk)
+            chunk_count += 1
+
+            # Update progress in Celery task state (every chunk)
+            progress = (
+                int((downloaded / state.total_size) * 100)
+                if state.total_size > 0
+                else 0
+            )
+            progress_msg = f"Downloaded {downloaded:,} of {state.total_size:,} bytes"
+            state.task.update_state(
+                state="PROGRESS",
+                meta={
+                    "current": downloaded,
+                    "total": state.total_size,
+                    "progress": progress,
+                    "message": progress_msg,
+                },
+            )
+
+            # Log progress every 10% change
+            if progress >= last_log_progress + 10:
+                logger.info(
+                    "  Progress: %d%% (%s / %s bytes, %d chunks)",
+                    progress,
+                    f"{downloaded:,}",
+                    f"{state.total_size:,}",
+                    chunk_count,
+                )
+                last_log_progress = progress
+
+            # Update database every 5% progress
+            if progress >= last_db_update_progress + 5:
+                state.project_file.last_activity = timezone.now()
+                state.project_file.save(update_fields=["last_activity"])
+                last_db_update_progress = progress
+
+    logger.info(
+        "  ✓ Download complete! Total chunks: %d, Total bytes: %s",
+        chunk_count,
+        f"{downloaded:,}",
+    )
+    return chunk_count
+
+
 def _download_with_progress(
     task,
     project_file,
@@ -337,76 +527,34 @@ def _download_with_progress(
         tuple: (md5_hash, sha1_hash) of downloaded content
     """
     url = project_file.source_url
-    headers = {"User-Agent": "wafer.space/1.0"}
 
-    # Check if we're resuming a partial download
-    resume_byte_pos = 0
-    if temp_path.exists():
-        resume_byte_pos = temp_path.stat().st_size
-        headers["Range"] = f"bytes={resume_byte_pos}-"
+    # Prepare request with resume support
+    headers, resume_byte_pos = _prepare_download_request(url, temp_path)
 
-    # Start download
-    response = requests.get(url, headers=headers, stream=True, timeout=30)
+    # Get HTTP response
+    response, resume_byte_pos = _get_download_response(
+        url, headers, temp_path, resume_byte_pos
+    )
 
-    # Check if server supports resume
-    if resume_byte_pos > 0 and response.status_code != HTTP_PARTIAL_CONTENT:
-        # Server doesn't support resume, start from beginning
-        resume_byte_pos = 0
-        temp_path.unlink(missing_ok=True)
-        response = requests.get(url, headers=headers, stream=True, timeout=30)
-
-    response.raise_for_status()
-
-    # Get total file size
-    total_size = project_file.file_size or 0
-    if "Content-Length" in response.headers:
-        content_length = int(response.headers["Content-Length"])
-        if resume_byte_pos > 0:
-            total_size = resume_byte_pos + content_length
-        else:
-            total_size = content_length
+    # Log file size information
+    total_size = _log_file_size(response, project_file, resume_byte_pos)
 
     # Initialize hash calculators
-    md5_hasher = hashlib.md5(usedforsecurity=False)
-    sha1_hasher = hashlib.sha1(usedforsecurity=False)
+    md5_hasher, sha1_hasher = _initialize_hash_calculators(temp_path, resume_byte_pos)
 
-    # If resuming, read existing content for hash calculation
-    if resume_byte_pos > 0:
-        with temp_path.open("rb") as existing_file:
-            existing_content = existing_file.read()
-            md5_hasher.update(existing_content)
-            sha1_hasher.update(existing_content)
-
-    # Download with progress updates
-    downloaded = resume_byte_pos
-    last_db_update_progress = 0
-    mode = "ab" if resume_byte_pos > 0 else "wb"
-
-    with temp_path.open(mode) as temp_file:
-        for chunk in response.iter_content(chunk_size=chunk_size):
-            if chunk:  # filter out keep-alive chunks
-                temp_file.write(chunk)
-                md5_hasher.update(chunk)
-                sha1_hasher.update(chunk)
-                downloaded += len(chunk)
-
-                # Update progress in Celery task state (every chunk)
-                progress = int((downloaded / total_size) * 100) if total_size > 0 else 0
-                task.update_state(
-                    state="PROGRESS",
-                    meta={
-                        "current": downloaded,
-                        "total": total_size,
-                        "progress": progress,
-                        "message": f"Downloaded {downloaded:,} of {total_size:,} bytes",
-                    },
-                )
-
-                # Update database every 5% progress
-                if progress >= last_db_update_progress + 5:
-                    project_file.last_activity = timezone.now()
-                    project_file.save(update_fields=["last_activity"])
-                    last_db_update_progress = progress
+    # Download chunks with progress tracking
+    download_state = _ChunkDownloadState(
+        response=response,
+        temp_path=temp_path,
+        task=task,
+        project_file=project_file,
+        total_size=total_size,
+        resume_byte_pos=resume_byte_pos,
+        md5_hasher=md5_hasher,
+        sha1_hasher=sha1_hasher,
+        chunk_size=chunk_size,
+    )
+    _download_chunks(download_state)
 
     return md5_hasher.hexdigest(), sha1_hasher.hexdigest()
 
@@ -561,6 +709,180 @@ def _apply_post_download_processing(
     return content
 
 
+def _process_and_save_content(
+    project_file: ProjectFile,
+    downloaded_content: bytes,
+    temp_path: Path,
+    md5_hash: str,
+    sha1_hash: str,
+) -> tuple[bytes, str, str]:
+    """Process downloaded content and save to Django storage.
+
+    Returns:
+        tuple: (processed_content, final_md5_hash, final_sha1_hash)
+    """
+    logger = logging.getLogger(__name__)
+
+    # Apply URL handler post-download processing
+    logger.info("Step 6: Checking for post-download processing...")
+    if project_file.handler_metadata:
+        logger.info("  Handler metadata found: %s", project_file.handler_metadata)
+    processed_content = _apply_post_download_processing(
+        project_file,
+        downloaded_content,
+    )
+
+    # Recalculate hashes if content was transformed
+    final_md5 = md5_hash
+    final_sha1 = sha1_hash
+
+    if processed_content != downloaded_content:
+        logger.info("  Content was transformed by handler - recalculating hashes...")
+        logger.info("  Original size: %s bytes", f"{len(downloaded_content):,}")
+        logger.info("  Processed size: %s bytes", f"{len(processed_content):,}")
+        final_md5, final_sha1 = _calculate_file_hashes(processed_content)
+        logger.info("  ✓ Recalculated MD5: %s", final_md5)
+        logger.info("  ✓ Recalculated SHA1: %s", final_sha1)
+        temp_path.write_bytes(processed_content)
+    else:
+        logger.info("  ✓ No transformation needed - using original content")
+
+    # Save to Django file field
+    logger.info("Step 7: Saving file to Django storage...")
+    django_file = ContentFile(processed_content)
+    django_file.name = project_file.original_filename
+    project_file.file.save(
+        project_file.original_filename,
+        django_file,
+        save=False,
+    )
+    logger.info("  ✓ File saved to Django storage")
+
+    # Set file size and hashes
+    project_file.file_size = len(processed_content)
+    project_file.hash_md5 = final_md5
+    project_file.hash_sha1 = final_sha1
+    logger.info("  ✓ File size: %s bytes", f"{project_file.file_size:,}")
+
+    return processed_content, final_md5, final_sha1
+
+
+def _verify_and_notify(
+    project_file: ProjectFile,
+    md5_hash: str,
+    sha1_hash: str,
+) -> tuple[bool, list[str]]:
+    """Verify file hashes and create notifications.
+
+    Returns:
+        tuple: (hash_verified, verification_errors)
+    """
+    logger = logging.getLogger(__name__)
+
+    # Verify hashes
+    logger.info("Step 8: Verifying file integrity...")
+    if project_file.expected_hash_md5:
+        logger.info("  Expected MD5: %s", project_file.expected_hash_md5)
+        logger.info("  Actual MD5:   %s", md5_hash)
+    if project_file.expected_hash_sha1:
+        logger.info("  Expected SHA1: %s", project_file.expected_hash_sha1)
+        logger.info("  Actual SHA1:   %s", sha1_hash)
+
+    hash_verified, verification_errors = _verify_file_hashes(
+        project_file,
+        md5_hash,
+        sha1_hash,
+    )
+
+    if hash_verified:
+        logger.info("  ✓ Hash verification PASSED!")
+    else:
+        logger.warning("  ⚠ Hash verification FAILED!")
+        for error in verification_errors:
+            logger.warning("    - %s", error)
+
+    project_file.hash_verified = hash_verified
+    project_file.mark_download_complete()
+    logger.info("  ✓ Download marked as COMPLETE")
+
+    # Create notifications
+    logger.info("Step 9: Creating notifications...")
+    NotificationService.create_download_complete_notification(
+        user=project_file.project.user,
+        project_file=project_file,
+    )
+    logger.info("  ✓ Download completion notification created")
+
+    if hash_verified:
+        NotificationService.create_checksum_verified_notification(
+            user=project_file.project.user,
+            project_file=project_file,
+        )
+        logger.info("  ✓ Checksum verified notification created")
+    elif verification_errors:
+        NotificationService.create_checksum_mismatch_notification(
+            user=project_file.project.user,
+            project_file=project_file,
+            errors=verification_errors,
+        )
+        logger.warning("  ⚠ Checksum mismatch notification created")
+
+    return hash_verified, verification_errors
+
+
+def _log_download_start(project_id: str, project_file: ProjectFile) -> None:
+    """Log download task start information."""
+    logger = logging.getLogger(__name__)
+    logger.info("=" * 80)
+    logger.info("DOWNLOAD TASK STARTED - Project ID: %s", project_id)
+    logger.info("=" * 80)
+
+    logger.info("Step 1: Looking up project and active file...")
+    logger.info("  ✓ Found active file: %s", project_file.id)
+    logger.info("  ✓ Original filename: %s", project_file.original_filename)
+    logger.info("  ✓ Source URL: %s", project_file.source_url)
+
+
+def _setup_download_temp_path(project_file: ProjectFile) -> Path:
+    """Set up temporary directory and return temp file path.
+
+    Returns:
+        Path: Path to temporary file for download
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("Step 3: Setting up temporary download directory...")
+    temp_dir = _setup_temp_directory()
+    temp_filename = f"{project_file.id}_{project_file.original_filename}"
+    temp_path = temp_dir / temp_filename
+    logger.info("  ✓ Temp file path: %s", temp_path)
+    return temp_path
+
+
+def _log_download_completion(
+    project_id: str,
+    project_file: ProjectFile,
+    *,
+    hash_verified: bool,
+) -> None:
+    """Log download task completion information."""
+    logger = logging.getLogger(__name__)
+    logger.info("Step 10: Cleaning up temporary files...")
+
+    logger.info("=" * 80)
+    logger.info("DOWNLOAD TASK COMPLETED SUCCESSFULLY")
+    logger.info("  Project ID: %s", project_id)
+    logger.info("  File ID: %s", project_file.id)
+    logger.info("  Filename: %s", project_file.original_filename)
+    file_size_mb = project_file.file_size / (1024 * 1024)
+    logger.info(
+        "  Size: %s bytes (%s MB)",
+        f"{project_file.file_size:,}",
+        f"{file_size_mb:.2f}",
+    )
+    logger.info("  Hash Verified: %s", hash_verified)
+    logger.info("=" * 80)
+
+
 @shared_task(bind=True, max_retries=5, default_retry_delay=60)
 def download_project_file(self, project_id):
     """Background task to download a project file from a URL.
@@ -578,6 +900,7 @@ def download_project_file(self, project_id):
     Returns:
         dict: Result data with status and details
     """
+    logger = logging.getLogger(__name__)
     temp_path = None
 
     try:
@@ -585,93 +908,82 @@ def download_project_file(self, project_id):
         _project, project_file = _get_project_file_for_download(project_id)
 
         if not project_file:
+            logger.error("ERROR: No active file found for project %s", project_id)
             return {
                 "status": "error",
                 "message": f"No active file found for project {project_id}",
             }
 
         if not project_file.source_url:
+            logger.error("ERROR: No source URL provided for file download")
             return {
                 "status": "error",
                 "message": "No source URL provided for file download",
             }
 
-        # Initialize download
-        _initialize_download(project_file)
+        # Log start
+        _log_download_start(project_id, project_file)
 
-        # Set up temporary directory and file path
-        temp_dir = _setup_temp_directory()
-        temp_filename = f"{project_file.id}_{project_file.original_filename}"
-        temp_path = temp_dir / temp_filename
+        # Initialize download
+        logger.info("Step 2: Initializing download (marking as DOWNLOADING)...")
+        _initialize_download(project_file)
+        logger.info("  ✓ Download status set to DOWNLOADING")
+
+        # Set up temporary directory
+        temp_path = _setup_download_temp_path(project_file)
 
         # Download with progress tracking
+        logger.info("Step 4: Starting chunked download from URL...")
+        max_url_len = 100
+        url_display = (
+            project_file.source_url[:max_url_len] + "..."
+            if len(project_file.source_url) > max_url_len
+            else project_file.source_url
+        )
+        logger.info("  URL: %s", url_display)
+        expected_size = (
+            f"{project_file.file_size:,}" if project_file.file_size else "unknown"
+        )
+        logger.info("  Expected file size: %s bytes", expected_size)
         md5_hash, sha1_hash = _download_with_progress(
             self,
             project_file,
             temp_path,
         )
+        logger.info("  ✓ Download completed successfully!")
+        logger.info("  ✓ MD5: %s", md5_hash)
+        logger.info("  ✓ SHA1: %s", sha1_hash)
 
-        # Read downloaded content for post-processing
+        # Read downloaded content
+        logger.info("Step 5: Reading downloaded content...")
         with temp_path.open("rb") as temp_file:
             downloaded_content = temp_file.read()
+        logger.info("  ✓ Read %s bytes from temp file", f"{len(downloaded_content):,}")
 
-        # Apply URL handler post-download processing
-        # (e.g., base64 decode for Google Source)
-        processed_content = _apply_post_download_processing(
+        # Process and save content
+        _processed_content, final_md5, final_sha1 = _process_and_save_content(
             project_file,
             downloaded_content,
-        )
-
-        # Recalculate hashes on processed content (if content was transformed)
-        if processed_content != downloaded_content:
-            md5_hash, sha1_hash = _calculate_file_hashes(processed_content)
-            # Update temp file with processed content for size calculation
-            temp_path.write_bytes(processed_content)
-
-        # Save to Django file field
-        django_file = ContentFile(processed_content)
-        django_file.name = project_file.original_filename
-        project_file.file.save(
-            project_file.original_filename,
-            django_file,
-            save=False,
-        )
-
-        # Set file size and hashes (from processed content)
-        project_file.file_size = len(processed_content)
-        project_file.hash_md5 = md5_hash
-        project_file.hash_sha1 = sha1_hash
-
-        # Verify hashes
-        hash_verified, verification_errors = _verify_file_hashes(
-            project_file,
+            temp_path,
             md5_hash,
             sha1_hash,
         )
-        project_file.hash_verified = hash_verified
-        project_file.mark_download_complete()
 
-        # Create notifications
-        NotificationService.create_download_complete_notification(
-            user=project_file.project.user,
-            project_file=project_file,
+        # Verify hashes and create notifications
+        hash_verified, verification_errors = _verify_and_notify(
+            project_file,
+            final_md5,
+            final_sha1,
         )
 
-        if hash_verified:
-            NotificationService.create_checksum_verified_notification(
-                user=project_file.project.user,
-                project_file=project_file,
-            )
-        elif verification_errors:
-            NotificationService.create_checksum_mismatch_notification(
-                user=project_file.project.user,
-                project_file=project_file,
-                errors=verification_errors,
-            )
-
         # Clean up temp file
+        logger.info("Step 10: Cleaning up temporary files...")
         with contextlib.suppress(OSError):
             temp_path.unlink()
+        logger.info("  ✓ Temp file removed")
+
+        # Log completion
+        _log_download_completion(project_id, project_file, hash_verified=hash_verified)
 
         return {
             "status": "completed",
@@ -686,15 +998,28 @@ def download_project_file(self, project_id):
         }
 
     except Project.DoesNotExist:
+        logger.exception("DOWNLOAD TASK FAILED - Project not found: %s", project_id)
         return {
             "status": "error",
             "message": f"Project with id {project_id} not found",
         }
 
     except (OSError, ValueError, requests.RequestException) as exc:
+        logger.exception("DOWNLOAD TASK ERROR")
         if self.request.retries < self.max_retries:
+            retry_num = self.request.retries + 1
+            retry_delay = 60 * (2**self.request.retries)
+            logger.info(
+                "Retry %d/%d - Will retry in %d seconds",
+                retry_num,
+                self.max_retries,
+                retry_delay,
+            )
             _handle_download_retry(self, project_id, exc)
         else:
+            logger.exception(
+                "DOWNLOAD TASK FAILED - Max retries reached for project %s", project_id
+            )
             return _handle_download_failure(project_id, exc, temp_path)
 
 
