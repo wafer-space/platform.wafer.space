@@ -34,6 +34,24 @@
         {% endif %}
         <div class="card mb-3">
           <div class="card-header">
+            <h5 class="mb-0">Project Status</h5>
+          </div>
+          <div class="card-body">
+            <p>
+              <strong>Status:</strong>
+              <span class="badge {% if project.status == 'draft' %}bg-secondary {% elif project.status == 'submitted' %}bg-primary {% elif project.status == 'manufacturable' %}bg-success {% elif project.status == 'not_manufacturable' %}bg-danger {% else %}bg-info{% endif %}">
+                {{ project.get_status_display }}
+              </span>
+            </p>
+            {% if project.submitted_at %}
+              <p>
+                <strong>Submitted:</strong> {{ project.submitted_at|date:"F d, Y, g:i a" }}
+              </p>
+            {% endif %}
+          </div>
+        </div>
+        <div class="card mb-3">
+          <div class="card-header">
             <h5 class="mb-0">Project File</h5>
           </div>
           <div class="card-body">
@@ -44,6 +62,15 @@
                 <span class="badge {% if active_file.download_status == 'completed' %}bg-success {% elif active_file.download_status == 'failed' %}bg-danger {% elif active_file.download_status == 'downloading' %}bg-primary {% else %}bg-secondary{% endif %}">
                   {{ active_file.get_download_status_display }}
                 </span>
+                {% if active_file.hash_verified %}
+                  <span class="badge bg-success">
+                    <i class="bi bi-check-circle"></i> Hash Verified
+                  </span>
+                {% else %}
+                  <span class="badge bg-warning">
+                    <i class="bi bi-exclamation-triangle"></i> Hash Not Verified
+                  </span>
+                {% endif %}
               </p>
               {% if show_progress %}
                 <div class="progress mb-3">
@@ -75,6 +102,26 @@
                  role="button">
                 <i class="bi bi-link"></i> Submit File URL
               </a>
+              {% if project.can_submit.0 %}
+                <form action="{% url 'projects:submit' pk=project.pk %}"
+                      method="post"
+                      style="display: inline;"
+                      onsubmit="return confirm('Are you sure you want to submit this project for manufacturing? This action cannot be undone.');">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-success">
+                    <i class="bi bi-send"></i> Submit for Manufacturing
+                  </button>
+                </form>
+              {% else %}
+                <button type="button"
+                        class="btn btn-success"
+                        disabled
+                        data-bs-toggle="tooltip"
+                        data-bs-placement="top"
+                        title="{{ project.can_submit.1 }}">
+                  <i class="bi bi-send"></i> Submit for Manufacturing
+                </button>
+              {% endif %}
             </div>
           </div>
         </div>
@@ -113,4 +160,13 @@
       }, 3000); // Poll every 3 seconds
     </script>
   {% endif %}
+  <script>
+    // Initialize Bootstrap tooltips
+    document.addEventListener('DOMContentLoaded', function() {
+      var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+      var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+      });
+    });
+  </script>
 {% endblock content %}

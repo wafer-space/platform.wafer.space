@@ -54,7 +54,7 @@ class ProjectDetailView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
         return project.user == self.request.user
 
     def get_context_data(self, **kwargs):
-        """Add active project file to context."""
+        """Add active project file and submission status to context."""
         context = super().get_context_data(**kwargs)
         project = self.get_object()
 
