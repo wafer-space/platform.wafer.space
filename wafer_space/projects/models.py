@@ -106,18 +106,18 @@ class ProjectFile(models.Model):
         validators=[
             FileExtensionValidator(
                 allowed_extensions=[
-                    "zip",
-                    "rar",
-                    "7z",
-                    "tar",
-                    "gz",
+                    # GDS formats
                     "gds",
                     "gdsii",
-                    "cif",
-                    "pdf",
-                    "png",
-                    "jpg",
-                    "svg",
+                    "gds2",
+                    # OASIS formats
+                    "oas",
+                    "oasis",
+                    # Compression formats
+                    "gz",
+                    "zip",
+                    "bz2",
+                    "xz",
                 ],
             ),
         ],

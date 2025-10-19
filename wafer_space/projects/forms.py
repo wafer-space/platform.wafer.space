@@ -51,7 +51,9 @@ class ProjectFileURLSubmitForm(forms.Form):
             },
         ),
         help_text=(
-            "URL to your GDS file (up to 100GB). "
+            "URL to your GDS/OASIS file (up to 100GB). "
+            "Accepted formats: .gds, .gdsii, .gds2, .oas, .oasis "
+            "(optionally compressed: .gz, .zip, .bz2, .xz). "
             "Supports GitHub, GitLab, Dropbox, Google Drive, OneDrive."
         ),
     )

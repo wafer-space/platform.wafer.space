@@ -8,6 +8,7 @@ This service layer prevents circular imports by providing a clean separation:
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import unquote
 from urllib.parse import urlparse
 
@@ -20,6 +21,80 @@ from .security import SecurityValidationError
 from .security import URLValidator
 from .tasks import download_project_file
 from .url_rewriters import URLRewriter
+
+# Valid GDS/OASIS file formats
+VALID_GDS_FORMATS = {".gds", ".gdsii", ".gds2"}
+VALID_OASIS_FORMATS = {".oas", ".oasis"}
+VALID_COMPRESSION_FORMATS = {".gz", ".zip", ".bz2", ".xz"}
+VALID_BASE_FORMATS = VALID_GDS_FORMATS | VALID_OASIS_FORMATS
+VALID_ALL_FORMATS = VALID_BASE_FORMATS | VALID_COMPRESSION_FORMATS
+
+
+def _validate_filename_format(filename: str) -> None:
+    """Validate that filename has a GDS or OASIS format.
+
+    Valid formats:
+    - GDS: .gds, .gdsii, .gds2
+    - OASIS: .oas, .oasis
+    - Compressed: .gds.gz, .gds.zip, .oas.bz2, etc.
+
+    Args:
+        filename: The filename to validate
+
+    Raises:
+        ValueError: If filename doesn't have a valid GDS/OASIS format
+    """
+    path = Path(filename.lower())
+
+    # Get all suffixes (e.g., ['.gds', '.gz'] for 'file.gds.gz')
+    suffixes = path.suffixes
+
+    if not suffixes:
+        compression_str = ", ".join(sorted(VALID_COMPRESSION_FORMATS))
+        msg = (
+            f"Invalid file format: '{filename}'. "
+            f"Only GDS/OASIS files are accepted. "
+            f"Valid formats: {', '.join(sorted(VALID_BASE_FORMATS))} "
+            f"(optionally compressed with {compression_str})"
+        )
+        raise ValueError(msg)
+
+    # Check if last suffix is compression
+    last_suffix = suffixes[-1]
+    if last_suffix in VALID_COMPRESSION_FORMATS:
+        # Compressed file - check if there's a base format before compression
+        if len(suffixes) < 2:  # noqa: PLR2004
+            msg = (
+                f"Invalid file format: '{filename}'. "
+                f"Compressed files must have a GDS/OASIS extension before compression. "
+                f"Valid formats: file.gds.gz, file.oas.zip, etc."
+            )
+            raise ValueError(msg)
+
+        # Check the extension before compression
+        base_suffix = suffixes[-2]
+        if base_suffix not in VALID_BASE_FORMATS:
+            compression_str = ", ".join(sorted(VALID_COMPRESSION_FORMATS))
+            msg = (
+                f"Invalid file format: '{filename}'. "
+                f"File must be GDS/OASIS format. "
+                f"Valid formats: {', '.join(sorted(VALID_BASE_FORMATS))} "
+                f"(optionally compressed with {compression_str})"
+            )
+            raise ValueError(msg)
+    elif last_suffix in VALID_BASE_FORMATS:
+        # Uncompressed GDS/OASIS file - valid
+        pass
+    else:
+        # Invalid format
+        compression_str = ", ".join(sorted(VALID_COMPRESSION_FORMATS))
+        msg = (
+            f"Invalid file format: '{filename}'. "
+            f"Only GDS/OASIS files are accepted. "
+            f"Valid formats: {', '.join(sorted(VALID_BASE_FORMATS))} "
+            f"(optionally compressed with {compression_str})"
+        )
+        raise ValueError(msg)
 
 
 @dataclass
@@ -92,10 +167,18 @@ class ProjectFileService:
             msg = f"URL validation failed: {e}"
             raise SecurityValidationError(msg) from e
 
-        # Step 3: Handle file replacement if needed
+        # Step 3: Extract filename and validate format
+        parsed = urlparse(rewritten_url)
+        filename = parsed.path.split("/")[-1] or "download"
+        filename = unquote(filename)
+
+        # Validate filename format (GDS/OASIS only)
+        _validate_filename_format(filename)
+
+        # Step 4: Handle file replacement if needed
         cls._handle_file_replacement(project)
 
-        # Step 4: Create ProjectFile record
+        # Step 5: Create ProjectFile record
         file_data = FileCreationData(
             original_url=url,
             source_url=rewritten_url,
@@ -104,9 +187,13 @@ class ProjectFileService:
             file_size=validation_result["file_size"],
             content_type=validation_result.get("content_type", ""),
         )
-        project_file = cls._create_project_file(project=project, file_data=file_data)
+        project_file = cls._create_project_file(
+            project=project,
+            file_data=file_data,
+            filename=filename,
+        )
 
-        # Step 5: Start download task
+        # Step 6: Start download task
         cls._start_download_task(project_file)
 
         # Return file and metadata
@@ -146,21 +233,18 @@ class ProjectFileService:
         *,
         project: Project,
         file_data: FileCreationData,
+        filename: str,
     ) -> ProjectFile:
         """Create a ProjectFile record.
 
         Args:
             project: The project to associate the file with
             file_data: File creation data (URLs, hashes, size, content type)
+            filename: The extracted and validated filename
 
         Returns:
             ProjectFile: The created file record
         """
-        # Extract filename from URL
-        parsed = urlparse(file_data.source_url)
-        filename = parsed.path.split("/")[-1] or "download"
-        filename = unquote(filename)
-
         # Create the file record
         return ProjectFile.objects.create(
             project=project,

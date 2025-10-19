@@ -454,3 +454,224 @@ class TestProjectFileService(TestCase):
         assert progress["status"] == "failed"
         assert progress["progress"] == 0
         assert "Connection timeout" in progress["message"]
+
+    @patch("wafer_space.projects.services.URLValidator.validate_url")
+    @patch("wafer_space.projects.services.URLRewriter.rewrite_url")
+    def test_submit_file_rejects_invalid_format_pdf(
+        self,
+        mock_rewrite,
+        mock_validate,
+    ):
+        """Test that PDF files are rejected."""
+        url = "https://example.com/design.pdf"
+
+        mock_rewrite.return_value = (url, False, "")
+        mock_validate.return_value = {
+            "file_size": ONE_MB,
+            "content_type": "application/pdf",
+            "etag": None,
+            "supports_range": True,
+        }
+
+        with pytest.raises(ValueError, match=r"Invalid file format.*pdf"):
+            ProjectFileService.submit_file_from_url(
+                project=self.project,
+                url=url,
+            )
+
+        # Verify no file was created
+        assert ProjectFile.objects.count() == 0
+
+    @patch("wafer_space.projects.services.URLValidator.validate_url")
+    @patch("wafer_space.projects.services.URLRewriter.rewrite_url")
+    def test_submit_file_rejects_invalid_format_svg(
+        self,
+        mock_rewrite,
+        mock_validate,
+    ):
+        """Test that SVG files are rejected."""
+        url = "https://example.com/schematic.svg"
+
+        mock_rewrite.return_value = (url, False, "")
+        mock_validate.return_value = {
+            "file_size": ONE_MB,
+            "content_type": "image/svg+xml",
+            "etag": None,
+            "supports_range": True,
+        }
+
+        with pytest.raises(ValueError, match=r"Invalid file format.*svg"):
+            ProjectFileService.submit_file_from_url(
+                project=self.project,
+                url=url,
+            )
+
+        # Verify no file was created
+        assert ProjectFile.objects.count() == 0
+
+    @patch("wafer_space.projects.services.URLValidator.validate_url")
+    @patch("wafer_space.projects.services.URLRewriter.rewrite_url")
+    def test_submit_file_rejects_invalid_format_cif(
+        self,
+        mock_rewrite,
+        mock_validate,
+    ):
+        """Test that CIF files are rejected."""
+        url = "https://example.com/layout.cif"
+
+        mock_rewrite.return_value = (url, False, "")
+        mock_validate.return_value = {
+            "file_size": ONE_MB,
+            "content_type": "application/octet-stream",
+            "etag": None,
+            "supports_range": True,
+        }
+
+        with pytest.raises(ValueError, match=r"Invalid file format.*cif"):
+            ProjectFileService.submit_file_from_url(
+                project=self.project,
+                url=url,
+            )
+
+        # Verify no file was created
+        assert ProjectFile.objects.count() == 0
+
+    @patch("wafer_space.projects.tasks.download_project_file.delay")
+    @patch("wafer_space.projects.services.URLValidator.validate_url")
+    @patch("wafer_space.projects.services.URLRewriter.rewrite_url")
+    def test_submit_file_accepts_gds_formats(
+        self,
+        mock_rewrite,
+        mock_validate,
+        mock_task,
+    ):
+        """Test that all GDS formats are accepted."""
+        gds_formats = ["design.gds", "chip.gdsii", "layout.gds2"]
+
+        for filename in gds_formats:
+            url = f"https://example.com/{filename}"
+
+            mock_rewrite.return_value = (url, False, "")
+            mock_validate.return_value = {
+                "file_size": ONE_MB,
+                "content_type": "application/octet-stream",
+                "etag": None,
+                "supports_range": True,
+            }
+            mock_task.return_value = Mock(id=f"task-{filename}")
+
+            project_file, _metadata = ProjectFileService.submit_file_from_url(
+                project=self.project,
+                url=url,
+            )
+
+            # Verify file was created with correct filename
+            assert project_file.original_filename == filename
+
+            # Clean up for next iteration
+            project_file.delete()
+
+    @patch("wafer_space.projects.tasks.download_project_file.delay")
+    @patch("wafer_space.projects.services.URLValidator.validate_url")
+    @patch("wafer_space.projects.services.URLRewriter.rewrite_url")
+    def test_submit_file_accepts_oasis_formats(
+        self,
+        mock_rewrite,
+        mock_validate,
+        mock_task,
+    ):
+        """Test that all OASIS formats are accepted."""
+        oasis_formats = ["design.oas", "chip.oasis"]
+
+        for filename in oasis_formats:
+            url = f"https://example.com/{filename}"
+
+            mock_rewrite.return_value = (url, False, "")
+            mock_validate.return_value = {
+                "file_size": ONE_MB,
+                "content_type": "application/octet-stream",
+                "etag": None,
+                "supports_range": True,
+            }
+            mock_task.return_value = Mock(id=f"task-{filename}")
+
+            project_file, _metadata = ProjectFileService.submit_file_from_url(
+                project=self.project,
+                url=url,
+            )
+
+            # Verify file was created with correct filename
+            assert project_file.original_filename == filename
+
+            # Clean up for next iteration
+            project_file.delete()
+
+    @patch("wafer_space.projects.tasks.download_project_file.delay")
+    @patch("wafer_space.projects.services.URLValidator.validate_url")
+    @patch("wafer_space.projects.services.URLRewriter.rewrite_url")
+    def test_submit_file_accepts_compressed_formats(
+        self,
+        mock_rewrite,
+        mock_validate,
+        mock_task,
+    ):
+        """Test that compressed GDS/OASIS files are accepted."""
+        compressed_formats = [
+            "design.gds.gz",
+            "chip.gdsii.zip",
+            "layout.oas.bz2",
+            "test.oasis.xz",
+        ]
+
+        for filename in compressed_formats:
+            url = f"https://example.com/{filename}"
+
+            mock_rewrite.return_value = (url, False, "")
+            mock_validate.return_value = {
+                "file_size": ONE_MB,
+                "content_type": "application/octet-stream",
+                "etag": None,
+                "supports_range": True,
+            }
+            mock_task.return_value = Mock(id=f"task-{filename}")
+
+            project_file, _metadata = ProjectFileService.submit_file_from_url(
+                project=self.project,
+                url=url,
+            )
+
+            # Verify file was created with correct filename
+            assert project_file.original_filename == filename
+
+            # Clean up for next iteration
+            project_file.delete()
+
+    @patch("wafer_space.projects.services.URLValidator.validate_url")
+    @patch("wafer_space.projects.services.URLRewriter.rewrite_url")
+    def test_submit_file_rejects_compressed_without_gds_extension(
+        self,
+        mock_rewrite,
+        mock_validate,
+    ):
+        """Test that compressed files without GDS/OASIS extension are rejected."""
+        url = "https://example.com/file.zip"
+
+        mock_rewrite.return_value = (url, False, "")
+        mock_validate.return_value = {
+            "file_size": ONE_MB,
+            "content_type": "application/zip",
+            "etag": None,
+            "supports_range": True,
+        }
+
+        with pytest.raises(
+            ValueError,
+            match="Compressed files must have a GDS/OASIS extension",
+        ):
+            ProjectFileService.submit_file_from_url(
+                project=self.project,
+                url=url,
+            )
+
+        # Verify no file was created
+        assert ProjectFile.objects.count() == 0
