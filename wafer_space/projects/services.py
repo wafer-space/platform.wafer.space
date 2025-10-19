@@ -15,10 +15,12 @@ from urllib.parse import urlparse
 from celery.result import AsyncResult
 from django.db import transaction
 
+from .models import ManufacturabilityCheck
 from .models import Project
 from .models import ProjectFile
 from .security import SecurityValidationError
 from .security import URLValidator
+from .tasks import check_project_manufacturability
 from .tasks import download_project_file
 from .url_handlers import GoogleSourceHandler
 from .url_handlers import URLHandlerRegistry
@@ -391,3 +393,76 @@ class ProjectFileService:
             "total": project_file.file_size or 0,
             "message": f"Unknown state: {task.state}",
         }
+
+
+class ManufacturabilityService:
+    """Service for handling manufacturability check operations."""
+
+    @classmethod
+    def queue_check(cls, project: Project) -> ManufacturabilityCheck:
+        """Queue a manufacturability check for a project.
+
+        Creates or gets an existing check, sets status to QUEUED,
+        and triggers the Celery task for processing.
+
+        Args:
+            project: The project to check
+
+        Returns:
+            ManufacturabilityCheck: The queued check instance
+        """
+        # Get or create the check
+        check, created = ManufacturabilityCheck.objects.get_or_create(
+            project=project,
+            defaults={
+                "status": ManufacturabilityCheck.Status.QUEUED,
+            },
+        )
+
+        # If check already exists, reset it to QUEUED state
+        if not created and check.status != ManufacturabilityCheck.Status.QUEUED:
+            check.status = ManufacturabilityCheck.Status.QUEUED
+            check.is_manufacturable = None
+            check.errors = []
+            check.warnings = []
+            check.processing_logs = ""
+            check.retry_count = 0
+            check.save()
+
+        # Trigger Celery task
+        task = check_project_manufacturability.delay(check.id)
+        check.task_id = task.id
+        check.save(update_fields=["task_id"])
+
+        return check
+
+    @classmethod
+    def get_check_status(cls, project: Project) -> dict | None:
+        """Get check status information for UI display.
+
+        Args:
+            project: The project to get check status for
+
+        Returns:
+            dict with check status information:
+                - status: Current check status
+                - is_manufacturable: Whether project is manufacturable (or None)
+                - errors: List of error messages
+                - warnings: List of warning messages
+                - started_at: When check started (or None)
+                - completed_at: When check completed (or None)
+            Returns None if no check exists.
+        """
+        try:
+            check = ManufacturabilityCheck.objects.get(project=project)
+        except ManufacturabilityCheck.DoesNotExist:
+            return None
+        else:
+            return {
+                "status": check.status,
+                "is_manufacturable": check.is_manufacturable,
+                "errors": check.errors,
+                "warnings": check.warnings,
+                "started_at": check.started_at,
+                "completed_at": check.completed_at,
+            }

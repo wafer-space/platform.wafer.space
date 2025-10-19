@@ -4,6 +4,8 @@ Background tasks for project processing.
 
 import contextlib
 import hashlib
+import logging
+import random
 import tempfile
 import time
 from datetime import timedelta
@@ -25,6 +27,11 @@ from .models import Project
 from .models import ProjectFile
 from .url_handlers import GoogleSourceHandler
 from .url_handlers import URLHandlerRegistry
+
+# Mock manufacturability check constants
+MOCK_PROCESSING_TIME_MIN = 2.0
+MOCK_PROCESSING_TIME_MAX = 5.0
+MOCK_SUCCESS_RATE = 0.8  # 80% success rate for testing
 
 # HTTP status codes
 HTTP_PARTIAL_CONTENT = 206  # Server supports range requests
@@ -89,9 +96,12 @@ def _verify_file_hashes(
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def check_project_manufacturability(self, check_id):
-    """
-    Background task to check project manufacturability.
+def check_project_manufacturability(self, check_id):  # noqa: PLR0915
+    """Background task to check project manufacturability.
+
+    This task performs manufacturability analysis on a project's design files.
+    Currently uses mock implementation - will be replaced with real GDS/OASIS
+    analysis tools in the future.
 
     Args:
         check_id: The ID of the ManufacturabilityCheck instance
@@ -99,60 +109,63 @@ def check_project_manufacturability(self, check_id):
     Returns:
         dict: Result data with status and details
     """
+    logger = logging.getLogger(__name__)
+
     try:
         # Get the manufacturability check instance
         check = ManufacturabilityCheck.objects.get(id=check_id)
         check.task_id = self.request.id
         check.start_processing()
 
-        # Simulate manufacturability checking process
-        # In a real implementation, this would:
-        # 1. Parse design files
-        # 2. Run DRC (Design Rule Check)
-        # 3. Validate against manufacturing constraints
-        # 4. Generate reports
-
         project = check.project
         errors = []
         warnings = []
         logs = f"Starting manufacturability check for project: {project.name}\n"
 
-        # Simulate processing time
-        time.sleep(2)
+        logger.info("Starting manufacturability check for project %s", project.id)
 
-        # Basic validation checks (placeholder logic)
-        logs += "Checking design files...\n"
+        # TODO: Replace with real GDS/OASIS analysis
+        # Simulate processing time (2-5 seconds)
+        processing_time = random.uniform(  # noqa: S311
+            MOCK_PROCESSING_TIME_MIN,
+            MOCK_PROCESSING_TIME_MAX,
+        )
+        logs += f"Processing design files (simulated {processing_time:.1f}s)...\n"
+        time.sleep(processing_time)
 
-        if not project.files.exists():
-            errors.append("No design files uploaded")
-            logs += "ERROR: No design files found\n"
-        else:
-            file_count = project.files.count()
-            logs += f"Found {file_count} design file(s)\n"
-
-            # Check file verification
-            unverified_files = project.files.filter(hash_verified=False)
-            if unverified_files.exists():
-                warnings.append(
-                    f"{unverified_files.count()} files have unverified hashes",
-                )
-                count = unverified_files.count()
-                logs += f"WARNING: {count} files with unverified hashes\n"
-
-        # Simulate additional checks
-        logs += "Running design rule checks...\n"
-        time.sleep(1)
-
-        logs += "Validating manufacturing constraints...\n"
-        time.sleep(1)
-
-        # Determine if manufacturable (simplified logic)
-        is_manufacturable = len(errors) == 0
+        # Mock implementation: 80% success rate for testing
+        is_manufacturable = random.random() < MOCK_SUCCESS_RATE  # noqa: S311
 
         if is_manufacturable:
-            logs += "SUCCESS: Project passed all manufacturability checks\n"
+            # Success case - add sample warning
+            warnings.append("Sample warning: Design uses non-standard layer")
+            logs += "Design rule checks: PASSED\n"
+            logs += "Manufacturing constraints: PASSED\n"
+            logs += "Layer validation: PASSED (with warnings)\n"
+            logs += "SUCCESS: Project is manufacturable\n"
+
+            logger.info(
+                "Manufacturability check completed: %s - MANUFACTURABLE",
+                project.id,
+            )
         else:
-            logs += f"FAILED: Project failed with {len(errors)} errors\n"
+            # Failure case - add sample errors
+            error_msg = (
+                "Sample error: Minimum feature size violated "
+                "(found 45nm, minimum is 50nm)"
+            )
+            errors.append(error_msg)
+            errors.append("Sample error: Metal layer spacing below minimum threshold")
+            warnings.append("Sample warning: High density area may affect yield")
+            logs += "Design rule checks: FAILED\n"
+            logs += "  - Minimum feature size violation detected\n"
+            logs += "  - Metal layer spacing violation detected\n"
+            logs += f"FAILED: Project is not manufacturable ({len(errors)} errors)\n"
+
+            logger.warning(
+                "Manufacturability check completed: %s - NOT MANUFACTURABLE",
+                project.id,
+            )
 
         # Complete the check
         check.complete(
@@ -171,12 +184,15 @@ def check_project_manufacturability(self, check_id):
         }
 
     except ManufacturabilityCheck.DoesNotExist:
+        logger.exception("ManufacturabilityCheck with id %s not found", check_id)
         return {
             "status": "error",
             "message": f"ManufacturabilityCheck with id {check_id} not found",
         }
 
     except Exception as exc:
+        logger.exception("Error in manufacturability check task")
+
         # Handle task retry logic
         if self.request.retries < self.max_retries:
             # Update check with retry info
@@ -190,6 +206,7 @@ def check_project_manufacturability(self, check_id):
 
             # Retry the task
             raise self.retry(exc=exc) from exc
+
         # Max retries reached, mark as failed
         try:
             check = ManufacturabilityCheck.objects.get(id=check_id)

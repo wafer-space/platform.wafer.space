@@ -23,6 +23,7 @@ from .forms import ProjectForm
 from .models import Project
 from .models import ProjectFile
 from .security import SecurityValidationError
+from .services import ManufacturabilityService
 from .services import ProjectFileService
 
 logger = logging.getLogger(__name__)
@@ -54,7 +55,7 @@ class ProjectDetailView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
         return project.user == self.request.user
 
     def get_context_data(self, **kwargs):
-        """Add active project file and submission status to context."""
+        """Add active project file, submission status, and check status to context."""
         context = super().get_context_data(**kwargs)
         project = self.get_object()
 
@@ -82,6 +83,10 @@ class ProjectDetailView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
         ):
             context["show_error"] = True
             context["error_message"] = active_file.download_error
+
+        # Add manufacturability check status
+        check_status = ManufacturabilityService.get_check_status(project)
+        context["check_status"] = check_status
 
         return context
 

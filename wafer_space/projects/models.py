@@ -94,7 +94,7 @@ class Project(models.Model):
         return True, ""
 
     def submit(self):
-        """Mark project as submitted and create manufacturability check.
+        """Mark project as submitted and queue manufacturability check.
 
         Raises:
             ValidationError: If project cannot be submitted
@@ -109,13 +109,11 @@ class Project(models.Model):
         self.submitted_at = timezone.now()
         self.save()
 
-        # Create manufacturability check if it doesn't exist
-        ManufacturabilityCheck.objects.get_or_create(
-            project=self,
-            defaults={
-                "status": ManufacturabilityCheck.Status.QUEUED,
-            },
-        )
+        # Queue manufacturability check using service layer
+        # Import here to avoid circular import
+        from .services import ManufacturabilityService  # noqa: PLC0415
+
+        ManufacturabilityService.queue_check(self)
 
 
 def project_file_upload_path(instance, filename):

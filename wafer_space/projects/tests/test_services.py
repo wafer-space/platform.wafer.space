@@ -6,9 +6,11 @@ from unittest.mock import patch
 import pytest
 from django.test import TestCase
 
+from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.security import SecurityValidationError
+from wafer_space.projects.services import ManufacturabilityService
 from wafer_space.projects.services import ProjectFileService
 from wafer_space.users.models import User
 
@@ -675,3 +677,198 @@ class TestProjectFileService(TestCase):
 
         # Verify no file was created
         assert ProjectFile.objects.count() == 0
+
+
+@pytest.mark.django_db
+class TestManufacturabilityService(TestCase):
+    """Test ManufacturabilityService class."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project for manufacturability checks",
+        )
+
+    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    def test_queue_check_creates_new_check(self, mock_task):
+        """Test that queue_check creates a new check and triggers task."""
+        # Mock the Celery task
+        mock_task.return_value = Mock(id="task-123")
+
+        # Queue the check
+        check = ManufacturabilityService.queue_check(self.project)
+
+        # Verify check was created
+        assert check is not None
+        assert check.project == self.project
+        assert check.status == ManufacturabilityCheck.Status.QUEUED
+        assert check.task_id == "task-123"
+
+        # Verify task was called
+        mock_task.assert_called_once_with(check.id)
+
+        # Verify check exists in database
+        assert ManufacturabilityCheck.objects.filter(project=self.project).count() == 1
+
+    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    def test_queue_check_resets_existing_check(self, mock_task):
+        """Test that queue_check resets an existing completed check."""
+        # Create an existing completed check
+        existing_check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            status=ManufacturabilityCheck.Status.COMPLETED,
+            is_manufacturable=True,
+            errors=["Old error"],
+            warnings=["Old warning"],
+            processing_logs="Old logs",
+            retry_count=2,
+        )
+
+        # Mock the Celery task
+        mock_task.return_value = Mock(id="task-456")
+
+        # Queue the check again
+        check = ManufacturabilityService.queue_check(self.project)
+
+        # Verify it's the same check instance, but reset
+        assert check.id == existing_check.id
+        assert check.status == ManufacturabilityCheck.Status.QUEUED
+        assert check.is_manufacturable is None
+        assert check.errors == []
+        assert check.warnings == []
+        assert check.processing_logs == ""
+        assert check.retry_count == 0
+        assert check.task_id == "task-456"
+
+        # Verify task was called
+        mock_task.assert_called_once_with(check.id)
+
+        # Verify only one check exists
+        assert ManufacturabilityCheck.objects.filter(project=self.project).count() == 1
+
+    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    def test_queue_check_does_not_reset_queued_check(self, mock_task):
+        """Test that queue_check doesn't reset a check already in QUEUED state."""
+        # Create an existing queued check
+        existing_check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            status=ManufacturabilityCheck.Status.QUEUED,
+            task_id="existing-task-id",
+        )
+
+        # Mock the Celery task
+        mock_task.return_value = Mock(id="task-789")
+
+        # Queue the check again
+        check = ManufacturabilityService.queue_check(self.project)
+
+        # Verify it's the same check instance
+        assert check.id == existing_check.id
+        assert check.status == ManufacturabilityCheck.Status.QUEUED
+
+        # Task should still be called and task_id updated
+        mock_task.assert_called_once_with(check.id)
+        assert check.task_id == "task-789"
+
+    def test_get_check_status_returns_correct_data(self):
+        """Test that get_check_status returns correct status information."""
+        # Create a completed check
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            status=ManufacturabilityCheck.Status.COMPLETED,
+            is_manufacturable=False,
+            errors=["Error 1", "Error 2"],
+            warnings=["Warning 1"],
+        )
+        check.start_processing()
+        check.complete(
+            is_manufacturable=False,
+            errors=["Error 1", "Error 2"],
+            warnings=["Warning 1"],
+        )
+
+        # Get status
+        status = ManufacturabilityService.get_check_status(self.project)
+
+        # Verify status data
+        assert status is not None
+        assert status["status"] == ManufacturabilityCheck.Status.COMPLETED
+        assert status["is_manufacturable"] is False
+        assert status["errors"] == ["Error 1", "Error 2"]
+        assert status["warnings"] == ["Warning 1"]
+        assert status["started_at"] is not None
+        assert status["completed_at"] is not None
+
+    def test_get_check_status_returns_none_when_no_check(self):
+        """Test that get_check_status returns None when no check exists."""
+        # Get status for project with no check
+        status = ManufacturabilityService.get_check_status(self.project)
+
+        # Verify None is returned
+        assert status is None
+
+    def test_get_check_status_for_queued_check(self):
+        """Test get_check_status for a queued check."""
+        # Create a queued check
+        ManufacturabilityCheck.objects.create(
+            project=self.project,
+            status=ManufacturabilityCheck.Status.QUEUED,
+        )
+
+        # Get status
+        status = ManufacturabilityService.get_check_status(self.project)
+
+        # Verify status data
+        assert status is not None
+        assert status["status"] == ManufacturabilityCheck.Status.QUEUED
+        assert status["is_manufacturable"] is None
+        assert status["errors"] == []
+        assert status["warnings"] == []
+        assert status["started_at"] is None
+        assert status["completed_at"] is None
+
+    def test_get_check_status_for_processing_check(self):
+        """Test get_check_status for a processing check."""
+        # Create and start processing a check
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            status=ManufacturabilityCheck.Status.QUEUED,
+        )
+        check.start_processing()
+
+        # Get status
+        status = ManufacturabilityService.get_check_status(self.project)
+
+        # Verify status data
+        assert status is not None
+        assert status["status"] == ManufacturabilityCheck.Status.PROCESSING
+        assert status["is_manufacturable"] is None
+        assert status["started_at"] is not None
+        assert status["completed_at"] is None
+
+    def test_get_check_status_for_failed_check(self):
+        """Test get_check_status for a failed check."""
+        # Create a failed check
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            status=ManufacturabilityCheck.Status.QUEUED,
+        )
+        check.start_processing()
+        check.fail("Test error message")
+
+        # Get status
+        status = ManufacturabilityService.get_check_status(self.project)
+
+        # Verify status data
+        assert status is not None
+        assert status["status"] == ManufacturabilityCheck.Status.FAILED
+        assert status["is_manufacturable"] is None
+        assert status["started_at"] is not None
+        assert status["completed_at"] is not None

@@ -9,6 +9,7 @@ from django.test import Client
 from django.test import TestCase
 from django.urls import reverse
 
+from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.security import SecurityValidationError
@@ -950,3 +951,80 @@ class TestEnhancedProgressDashboard(TestCase):
         assert data["progress"] == PROGRESS_COMPLETE
         assert data["current"] == TEN_MB
         assert data["total"] == TEN_MB
+
+
+@pytest.mark.django_db
+class TestProjectDetailViewManufacturabilityCheck(TestCase):
+    """Test ProjectDetailView with manufacturability check integration."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test Description",
+        )
+
+    def test_detail_view_includes_check_status_when_check_exists(self):
+        """Test that detail view includes check status in context."""
+        # Create a manufacturability check
+        ManufacturabilityCheck.objects.create(
+            project=self.project,
+            status=ManufacturabilityCheck.Status.QUEUED,
+        )
+
+        # Log in and access detail view
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        assert "check_status" in response.context
+        assert response.context["check_status"] is not None
+        assert (
+            response.context["check_status"]["status"]
+            == ManufacturabilityCheck.Status.QUEUED
+        )
+
+    def test_detail_view_check_status_none_when_no_check(self):
+        """Test that check_status is None when no check exists."""
+        # Log in and access detail view
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        assert "check_status" in response.context
+        assert response.context["check_status"] is None
+
+    def test_detail_view_shows_completed_check_status(self):
+        """Test that detail view shows completed check with results."""
+        # Create a completed check
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            status=ManufacturabilityCheck.Status.QUEUED,
+        )
+        check.start_processing()
+        check.complete(
+            is_manufacturable=False,
+            errors=["Error 1", "Error 2"],
+            warnings=["Warning 1"],
+        )
+
+        # Log in and access detail view
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        check_status = response.context["check_status"]
+        assert check_status is not None
+        assert check_status["status"] == ManufacturabilityCheck.Status.COMPLETED
+        assert check_status["is_manufacturable"] is False
+        assert check_status["errors"] == ["Error 1", "Error 2"]
+        assert check_status["warnings"] == ["Warning 1"]
