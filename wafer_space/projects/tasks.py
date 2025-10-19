@@ -15,7 +15,6 @@ from urllib.request import urlopen
 import requests
 from celery import shared_task
 from django.core.files.base import ContentFile
-from django.core.files.base import File
 from django.utils import timezone
 from django_celery_results.models import TaskResult
 
@@ -24,9 +23,15 @@ from wafer_space.notifications.services import NotificationService
 from .models import ManufacturabilityCheck
 from .models import Project
 from .models import ProjectFile
+from .url_handlers import GoogleSourceHandler
+from .url_handlers import URLHandlerRegistry
 
 # HTTP status codes
 HTTP_PARTIAL_CONTENT = 206  # Server supports range requests
+
+# Initialize URL handler registry for post-download processing
+_url_handler_registry = URLHandlerRegistry()
+_url_handler_registry.register(GoogleSourceHandler())
 
 
 # Helper functions for file download
@@ -505,6 +510,39 @@ def _handle_download_failure(
     }
 
 
+def _apply_post_download_processing(
+    project_file: ProjectFile,
+    content: bytes,
+) -> bytes:
+    """Apply URL handler post-download processing if applicable.
+
+    Args:
+        project_file: The project file with handler_metadata
+        content: The raw downloaded content
+
+    Returns:
+        bytes: Processed content (or original if no handler)
+    """
+    # Check if handler metadata exists
+    if not project_file.handler_metadata:
+        return content
+
+    handler_name = project_file.handler_metadata.get("handler")
+    if not handler_name:
+        return content
+
+    # Get the appropriate handler from registry
+    # We use the handler name to recreate the handler instance
+    handler = None
+    if handler_name == "GoogleSourceHandler":
+        handler = GoogleSourceHandler()
+
+    if handler:
+        return handler.post_download(content, project_file.handler_metadata)
+
+    return content
+
+
 @shared_task(bind=True, max_retries=5, default_retry_delay=60)
 def download_project_file(self, project_id):
     """Background task to download a project file from a URL.
@@ -555,20 +593,34 @@ def download_project_file(self, project_id):
             temp_path,
         )
 
-        # Save to Django file field
+        # Read downloaded content for post-processing
         with temp_path.open("rb") as temp_file:
-            django_file = File(
-                temp_file,
-                name=project_file.original_filename,
-            )
-            project_file.file.save(
-                project_file.original_filename,
-                django_file,
-                save=False,
-            )
+            downloaded_content = temp_file.read()
 
-        # Set file size and hashes
-        project_file.file_size = temp_path.stat().st_size
+        # Apply URL handler post-download processing
+        # (e.g., base64 decode for Google Source)
+        processed_content = _apply_post_download_processing(
+            project_file,
+            downloaded_content,
+        )
+
+        # Recalculate hashes on processed content (if content was transformed)
+        if processed_content != downloaded_content:
+            md5_hash, sha1_hash = _calculate_file_hashes(processed_content)
+            # Update temp file with processed content for size calculation
+            temp_path.write_bytes(processed_content)
+
+        # Save to Django file field
+        django_file = ContentFile(processed_content)
+        django_file.name = project_file.original_filename
+        project_file.file.save(
+            project_file.original_filename,
+            django_file,
+            save=False,
+        )
+
+        # Set file size and hashes (from processed content)
+        project_file.file_size = len(processed_content)
         project_file.hash_md5 = md5_hash
         project_file.hash_sha1 = sha1_hash
 

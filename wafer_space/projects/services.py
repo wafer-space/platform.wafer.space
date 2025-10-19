@@ -20,6 +20,8 @@ from .models import ProjectFile
 from .security import SecurityValidationError
 from .security import URLValidator
 from .tasks import download_project_file
+from .url_handlers import GoogleSourceHandler
+from .url_handlers import URLHandlerRegistry
 from .url_rewriters import URLRewriter
 
 # Valid GDS/OASIS file formats
@@ -28,6 +30,10 @@ VALID_OASIS_FORMATS = {".oas", ".oasis"}
 VALID_COMPRESSION_FORMATS = {".gz", ".zip", ".bz2", ".xz"}
 VALID_BASE_FORMATS = VALID_GDS_FORMATS | VALID_OASIS_FORMATS
 VALID_ALL_FORMATS = VALID_BASE_FORMATS | VALID_COMPRESSION_FORMATS
+
+# Initialize URL handler registry with known handlers
+_url_handler_registry = URLHandlerRegistry()
+_url_handler_registry.register(GoogleSourceHandler())
 
 
 def _validate_filename_format(filename: str) -> None:
@@ -120,16 +126,17 @@ class ProjectFileService:
         *,
         expected_hash_md5: str = "",
         expected_hash_sha1: str = "",
-    ) -> tuple[ProjectFile, dict[str, bool | str]]:
+    ) -> tuple[ProjectFile, dict[str, bool | str | int | None]]:
         """Submit a file URL for download with validation and rewriting.
 
         This is the main entry point for URL-based file submission. It:
         1. Rewrites URLs for common hosting platforms
-        2. Validates URL security (SSRF prevention)
-        3. Checks file size and accessibility
-        4. Replaces existing active file if needed
-        5. Creates ProjectFile record
-        6. Starts background download task
+        2. Applies URL handlers for special processing (e.g., Google Source)
+        3. Validates URL security (SSRF prevention)
+        4. Checks file size and accessibility
+        5. Replaces existing active file if needed
+        6. Creates ProjectFile record with handler metadata
+        7. Starts background download task
 
         Args:
             project: The project to associate the file with
@@ -142,6 +149,7 @@ class ProjectFileService:
                 metadata contains:
                 - url_rewritten: bool - Whether URL was rewritten
                 - rewrite_reason: str - Explanation of URL rewriting
+                - handler_used: str | None - Name of URL handler used
                 - file_size: int - File size in bytes
                 - content_type: str - Content type from server
                 - supports_range: bool - Whether resume is supported
@@ -159,7 +167,19 @@ class ProjectFileService:
         # Step 1: Rewrite URL for common hosting platforms
         rewritten_url, was_rewritten, rewrite_reason = URLRewriter.rewrite_url(url)
 
-        # Step 2: Validate URL security and get metadata
+        # Step 2: Check for URL handler (e.g., Google Source)
+        handler = _url_handler_registry.get_handler(rewritten_url)
+        handler_metadata = {}
+        handler_name = None
+
+        if handler:
+            # Apply handler pre-processing
+            handler_result = handler.process_url(rewritten_url)
+            rewritten_url = handler_result["url"]
+            handler_metadata = handler_result["metadata"]
+            handler_name = handler_metadata.get("handler")
+
+        # Step 3: Validate URL security and get metadata
         try:
             validation_result = URLValidator.validate_url(rewritten_url)
         except SecurityValidationError as e:
@@ -167,7 +187,7 @@ class ProjectFileService:
             msg = f"URL validation failed: {e}"
             raise SecurityValidationError(msg) from e
 
-        # Step 3: Extract filename and validate format
+        # Step 4: Extract filename and validate format
         parsed = urlparse(rewritten_url)
         filename = parsed.path.split("/")[-1] or "download"
         filename = unquote(filename)
@@ -175,31 +195,42 @@ class ProjectFileService:
         # Validate filename format (GDS/OASIS only)
         _validate_filename_format(filename)
 
-        # Step 4: Handle file replacement if needed
+        # Step 5: Handle file replacement if needed
         cls._handle_file_replacement(project)
 
-        # Step 5: Create ProjectFile record
+        # Step 6: Create ProjectFile record with handler metadata
+        file_size = validation_result["file_size"]
+        content_type = validation_result.get("content_type", "")
+
+        # Ensure types are correct for FileCreationData
+        if not isinstance(file_size, int):
+            file_size = 0
+        if not isinstance(content_type, str):
+            content_type = ""
+
         file_data = FileCreationData(
             original_url=url,
             source_url=rewritten_url,
             expected_hash_md5=expected_hash_md5,
             expected_hash_sha1=expected_hash_sha1,
-            file_size=validation_result["file_size"],
-            content_type=validation_result.get("content_type", ""),
+            file_size=file_size,
+            content_type=content_type,
         )
         project_file = cls._create_project_file(
             project=project,
             file_data=file_data,
             filename=filename,
+            handler_metadata=handler_metadata,
         )
 
-        # Step 6: Start download task
+        # Step 7: Start download task
         cls._start_download_task(project_file)
 
         # Return file and metadata
         metadata = {
             "url_rewritten": was_rewritten,
             "rewrite_reason": rewrite_reason,
+            "handler_used": handler_name,
             "file_size": validation_result["file_size"],
             "content_type": validation_result.get("content_type"),
             "supports_range": validation_result.get("supports_range", False),
@@ -234,6 +265,7 @@ class ProjectFileService:
         project: Project,
         file_data: FileCreationData,
         filename: str,
+        handler_metadata: dict | None = None,
     ) -> ProjectFile:
         """Create a ProjectFile record.
 
@@ -241,6 +273,7 @@ class ProjectFileService:
             project: The project to associate the file with
             file_data: File creation data (URLs, hashes, size, content type)
             filename: The extracted and validated filename
+            handler_metadata: Optional metadata from URL handler
 
         Returns:
             ProjectFile: The created file record
@@ -255,6 +288,7 @@ class ProjectFileService:
             file_size=file_data.file_size,
             content_type=file_data.content_type,
             original_filename=filename,
+            handler_metadata=handler_metadata or {},
             download_status=ProjectFile.DownloadStatus.PENDING,
             is_active=True,  # New file is active
             file_type=ProjectFile.FileType.DESIGN,

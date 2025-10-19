@@ -170,6 +170,16 @@ class ProjectFile(models.Model):
     hash_sha1 = models.CharField(max_length=40, blank=True)
     hash_verified = models.BooleanField(default=False)
 
+    # URL handler metadata
+    handler_metadata = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            "Metadata from URL handler "
+            "(e.g., which handler was used, handler-specific data)"
+        ),
+    )
+
     # Metadata
     file_size = models.BigIntegerField(null=True, blank=True)
     original_filename = models.CharField(max_length=255)
