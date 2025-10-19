@@ -50,6 +50,31 @@
             {% endif %}
           </div>
         </div>
+        {# Error Display Section #}
+        {% if show_error and active_file %}
+          <div class="card mb-3 border-danger">
+            <div class="card-header bg-danger text-white">
+              <h5 class="mb-0">
+                <i class="bi bi-exclamation-triangle"></i> Download Failed
+              </h5>
+            </div>
+            <div class="card-body">
+              <div class="alert alert-danger mb-3" role="alert">
+                <strong>Error:</strong> {{ error_message|default:"Download failed. Please try again." }}
+              </div>
+              <p class="mb-2"><strong>Failed URL:</strong></p>
+              <p class="text-muted small">{{ active_file.original_url }}</p>
+              <div class="mt-3">
+                <a class="btn btn-warning"
+                   href="{% url 'projects:submit_url' pk=project.pk %}"
+                   role="button">
+                  <i class="bi bi-arrow-clockwise"></i> Retry Download
+                </a>
+              </div>
+            </div>
+          </div>
+        {% endif %}
+        {# Project File Section #}
         <div class="card mb-3">
           <div class="card-header">
             <h5 class="mb-0">Project File</h5>
@@ -57,42 +82,133 @@
           <div class="card-body">
             {% if active_file %}
               <h6>Active File: {{ active_file.original_filename }}</h6>
-              <p class="text-muted">
-                Status:
-                <span class="badge {% if active_file.download_status == 'completed' %}bg-success {% elif active_file.download_status == 'failed' %}bg-danger {% elif active_file.download_status == 'downloading' %}bg-primary {% else %}bg-secondary{% endif %}">
-                  {{ active_file.get_download_status_display }}
+              {# Status Badges #}
+              <p class="mb-3">
+                <strong>Download Status:</strong>
+                <span id="status-badge"
+                      class="badge {% if active_file.download_status == 'completed' %}bg-success {% elif active_file.download_status == 'failed' %}bg-danger {% elif active_file.download_status == 'downloading' %}bg-primary {% else %}bg-secondary{% endif %}">
+                  {% if active_file.download_status == 'completed' %}
+                    <i class="bi bi-check-circle"></i>
+                  {% elif active_file.download_status == 'failed' %}
+                    <i class="bi bi-exclamation-triangle"></i>
+                  {% elif active_file.download_status == 'downloading' %}
+                    <span class="spinner-border spinner-border-sm"
+                          role="status"
+                          aria-hidden="true"></span>
+                  {% else %}
+                    <i class="bi bi-clock"></i>
+                  {% endif %}
+                  <span id="status-text">{{ active_file.get_download_status_display }}</span>
                 </span>
                 {% if active_file.hash_verified %}
                   <span class="badge bg-success">
                     <i class="bi bi-check-circle"></i> Hash Verified
                   </span>
-                {% else %}
-                  <span class="badge bg-warning">
+                {% elif active_file.download_status == 'completed' %}
+                  <span class="badge bg-warning text-dark">
                     <i class="bi bi-exclamation-triangle"></i> Hash Not Verified
                   </span>
                 {% endif %}
               </p>
+              {# Progress Bar #}
               {% if show_progress %}
-                <div class="progress mb-3">
-                  <div class="progress-bar progress-bar-striped progress-bar-animated"
-                       role="progressbar"
-                       style="width: {{ progress.progress }}%"
-                       aria-valuenow="{{ progress.progress }}"
-                       aria-valuemin="0"
-                       aria-valuemax="100">{{ progress.progress }}%</div>
+                <div id="progress-container" class="mb-3">
+                  <div class="progress" style="height: 25px;">
+                    <div id="progress-bar"
+                         class="progress-bar progress-bar-striped progress-bar-animated"
+                         role="progressbar"
+                         style="width: {{ progress.progress }}%"
+                         aria-valuenow="{{ progress.progress }}"
+                         aria-valuemin="0"
+                         aria-valuemax="100">
+                      <span id="progress-text">{{ progress.progress }}%</span>
+                    </div>
+                  </div>
+                  <p id="progress-message" class="mt-2 text-muted">{{ progress.message }}</p>
                 </div>
-                <p>{{ progress.message }}</p>
               {% endif %}
-              {% if active_file.original_url %}
-                <p>
-                  <strong>Original URL:</strong> <a href="{{ active_file.original_url }}" target="_blank">{{ active_file.original_url|truncatechars:80 }}</a>
-                </p>
-              {% endif %}
-              {% if active_file.file_size %}
-                <p>
-                  <strong>File Size:</strong> {{ active_file.file_size|filesizeformat }}
-                </p>
-              {% endif %}
+              {# Download Information #}
+              <div class="card bg-light mb-3">
+                <div class="card-body">
+                  <h6 class="card-title">Download Information</h6>
+                  {% if active_file.original_url %}
+                    <p class="mb-2">
+                      <strong>Original URL:</strong>
+                      <a href="{{ active_file.original_url }}"
+                         target="_blank"
+                         rel="noopener noreferrer">
+                        {{ active_file.original_url|truncatechars:80 }}
+                        <i class="bi bi-box-arrow-up-right"></i>
+                      </a>
+                    </p>
+                  {% endif %}
+                  {% if active_file.source_url and active_file.source_url != active_file.original_url %}
+                    <p class="mb-2">
+                      <strong>Source URL:</strong>
+                      <a href="{{ active_file.source_url }}"
+                         target="_blank"
+                         rel="noopener noreferrer">
+                        {{ active_file.source_url|truncatechars:80 }}
+                        <i class="bi bi-box-arrow-up-right"></i>
+                      </a>
+                      <span class="badge bg-info text-dark">
+                        <i class="bi bi-info-circle"></i> URL was rewritten
+                      </span>
+                    </p>
+                  {% endif %}
+                  {% if active_file.file_size %}
+                    <p class="mb-2">
+                      <strong>File Size:</strong> {{ active_file.file_size|filesizeformat }}
+                    </p>
+                  {% endif %}
+                  {% if active_file.download_started_at %}
+                    <p class="mb-2">
+                      <strong>Download Started:</strong> {{ active_file.download_started_at|date:"F d, Y, g:i a" }}
+                    </p>
+                  {% endif %}
+                  {% if active_file.download_completed_at %}
+                    <p class="mb-2">
+                      <strong>Download Completed:</strong> {{ active_file.download_completed_at|date:"F d, Y, g:i a" }}
+                    </p>
+                  {% endif %}
+                  {% if active_file.hash_md5 or active_file.hash_sha1 %}
+                    <hr />
+                    <h6>File Hashes</h6>
+                    {% if active_file.hash_md5 %}
+                      <p class="mb-1">
+                        <strong>MD5:</strong> <code>{{ active_file.hash_md5 }}</code>
+                        {% if active_file.expected_hash_md5 %}
+                          {% if active_file.hash_md5|lower == active_file.expected_hash_md5|lower %}
+                            <span class="badge bg-success">
+                              <i class="bi bi-check-circle"></i> Verified
+                            </span>
+                          {% else %}
+                            <span class="badge bg-danger">
+                              <i class="bi bi-x-circle"></i> Mismatch
+                            </span>
+                          {% endif %}
+                        {% endif %}
+                      </p>
+                    {% endif %}
+                    {% if active_file.hash_sha1 %}
+                      <p class="mb-1">
+                        <strong>SHA1:</strong> <code>{{ active_file.hash_sha1 }}</code>
+                        {% if active_file.expected_hash_sha1 %}
+                          {% if active_file.hash_sha1|lower == active_file.expected_hash_sha1|lower %}
+                            <span class="badge bg-success">
+                              <i class="bi bi-check-circle"></i> Verified
+                            </span>
+                          {% else %}
+                            <span class="badge bg-danger">
+                              <i class="bi bi-x-circle"></i> Mismatch
+                            </span>
+                          {% endif %}
+                        {% endif %}
+                      </p>
+                    {% endif %}
+                  {% endif %}
+                </div>
+              </div>
             {% else %}
               <p class="text-muted">No file uploaded yet.</p>
             {% endif %}
@@ -148,16 +264,79 @@
   </div>
   {% if show_progress %}
     <script>
-      // Poll for progress updates
-      setInterval(function() {
-        fetch('{% url "projects:progress" pk=project.pk %}')
-          .then(response => response.json())
-          .then(data => {
-            if (data.status === 'completed' || data.status === 'failed') {
-              location.reload();
-            }
-          });
-      }, 3000); // Poll every 3 seconds
+      // Real-time progress polling
+      (function() {
+        let pollInterval;
+        const progressUrl = '{% url "projects:progress" pk=project.pk %}';
+
+        function updateProgress() {
+          fetch(progressUrl)
+            .then(response => {
+              if (!response.ok) {
+                throw new Error('Progress request failed');
+              }
+              return response.json();
+            })
+            .then(data => {
+              // Update progress bar
+              const progressBar = document.getElementById('progress-bar');
+              const progressText = document.getElementById('progress-text');
+              const progressMessage = document.getElementById('progress-message');
+              const statusBadge = document.getElementById('status-badge');
+              const statusText = document.getElementById('status-text');
+
+              if (progressBar && progressText) {
+                progressBar.style.width = data.progress + '%';
+                progressBar.setAttribute('aria-valuenow', data.progress);
+                progressText.textContent = data.progress + '%';
+              }
+
+              if (progressMessage && data.message) {
+                progressMessage.textContent = data.message;
+              }
+
+              // Update status badge
+              if (statusBadge && statusText && data.status) {
+                statusText.textContent = data.message || data.status;
+
+                // Update badge color based on status
+                statusBadge.className = 'badge';
+                if (data.status === 'completed') {
+                  statusBadge.classList.add('bg-success');
+                } else if (data.status === 'failed') {
+                  statusBadge.classList.add('bg-danger');
+                } else if (data.status === 'downloading') {
+                  statusBadge.classList.add('bg-primary');
+                } else {
+                  statusBadge.classList.add('bg-secondary');
+                }
+              }
+
+              // Stop polling and reload if completed or failed
+              if (data.status === 'completed' || data.status === 'failed') {
+                clearInterval(pollInterval);
+                setTimeout(() => {
+                  location.reload();
+                }, 1000); // Wait 1 second before reload for visual feedback
+              }
+            })
+            .catch(error => {
+              console.error('Error fetching progress:', error);
+              // Continue polling even on error
+            });
+        }
+
+        // Start polling every 3 seconds
+        pollInterval = setInterval(updateProgress, 3000);
+
+        // Initial update
+        updateProgress();
+
+        // Clean up on page unload
+        window.addEventListener('beforeunload', () => {
+          clearInterval(pollInterval);
+        });
+      })();
     </script>
   {% endif %}
   <script>

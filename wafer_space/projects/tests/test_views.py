@@ -20,6 +20,7 @@ from .constants import HTTP_FORBIDDEN
 from .constants import HTTP_FOUND
 from .constants import HTTP_NOT_FOUND
 from .constants import HTTP_OK
+from .constants import PROGRESS_COMPLETE
 from .constants import PROGRESS_HALF
 from .constants import TEN_MB
 from .constants import TEST_PASSWORD
@@ -760,3 +761,192 @@ class TestProjectSubmitView(TestCase):
         # Second request should have error message
         messages = list(get_messages(response2.wsgi_request))
         assert any("already" in str(m).lower() for m in messages)
+
+
+@pytest.mark.django_db
+class TestEnhancedProgressDashboard(TestCase):
+    """Test enhanced progress dashboard features."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.client = Client()
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+
+    def test_detail_view_shows_progress_flag_when_downloading(self):
+        """Test that detail view sets show_progress flag when downloading."""
+        ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
+        )
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        assert response.context["show_progress"] is True
+        assert "progress" in response.context
+
+    def test_detail_view_shows_progress_flag_when_pending(self):
+        """Test that detail view sets show_progress flag when pending."""
+        ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+            download_status=ProjectFile.DownloadStatus.PENDING,
+        )
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        assert response.context["show_progress"] is True
+        assert "progress" in response.context
+
+    def test_detail_view_shows_error_flag_when_failed(self):
+        """Test that detail view sets show_error flag when download failed."""
+        ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+            download_status=ProjectFile.DownloadStatus.FAILED,
+            download_error="Connection timeout",
+        )
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        assert response.context["show_error"] is True
+        assert response.context["error_message"] == "Connection timeout"
+
+    def test_detail_view_no_progress_when_completed(self):
+        """Test that detail view doesn't set show_progress when completed."""
+        ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+            download_status=ProjectFile.DownloadStatus.COMPLETED,
+        )
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        show_progress = response.context.get("show_progress", False)
+        assert not show_progress
+
+    @patch("wafer_space.projects.views.ProjectFileService.get_download_progress")
+    def test_progress_view_returns_error_field_when_failed(self, mock_progress):
+        """Test that progress view includes error field when download failed."""
+        ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+            download_status=ProjectFile.DownloadStatus.FAILED,
+            download_error="Network error occurred",
+        )
+
+        mock_progress.return_value = {
+            "status": "failed",
+            "progress": 0,
+            "current": 0,
+            "total": TEN_MB,
+            "message": "Download failed",
+        }
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:progress", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        data = response.json()
+        assert data["status"] == "failed"
+        assert "error" in data
+        assert data["error"] == "Network error occurred"
+
+    @patch("wafer_space.projects.views.ProjectFileService.get_download_progress")
+    def test_progress_view_with_pending_status(self, mock_progress):
+        """Test progress view with pending download status."""
+        ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+            download_status=ProjectFile.DownloadStatus.PENDING,
+        )
+
+        mock_progress.return_value = {
+            "status": "pending",
+            "progress": 0,
+            "current": 0,
+            "total": TEN_MB,
+            "message": "Download pending - waiting to start",
+        }
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:progress", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        data = response.json()
+        assert data["status"] == "pending"
+        assert data["progress"] == 0
+        assert "pending" in data["message"].lower()
+
+    @patch("wafer_space.projects.views.ProjectFileService.get_download_progress")
+    def test_progress_view_with_completed_status(self, mock_progress):
+        """Test progress view with completed download status."""
+        ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+            download_status=ProjectFile.DownloadStatus.COMPLETED,
+            file_size=TEN_MB,
+        )
+
+        mock_progress.return_value = {
+            "status": "completed",
+            "progress": 100,
+            "current": TEN_MB,
+            "total": TEN_MB,
+            "message": "Download completed successfully",
+        }
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:progress", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        data = response.json()
+        assert data["status"] == "completed"
+        assert data["progress"] == PROGRESS_COMPLETE
+        assert data["current"] == TEN_MB
+        assert data["total"] == TEN_MB

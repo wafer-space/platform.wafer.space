@@ -10,6 +10,7 @@ from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.users.models import User
 
+from .constants import PROGRESS_COMPLETE
 from .constants import TEST_PASSWORD
 
 
@@ -304,3 +305,140 @@ class TestProjectSubmit(TestCase):
         # Verify submitted_at didn't change
         self.project.refresh_from_db()
         assert self.project.submitted_at == first_submitted_at
+
+
+@pytest.mark.django_db
+class TestProjectFileProgressMethods(TestCase):
+    """Test ProjectFile progress helper methods."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+
+    def test_get_progress_percentage_completed(self):
+        """Test get_progress_percentage returns 100 when completed."""
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            download_status=ProjectFile.DownloadStatus.COMPLETED,
+        )
+
+        assert project_file.get_progress_percentage() == PROGRESS_COMPLETE
+
+    def test_get_progress_percentage_failed(self):
+        """Test get_progress_percentage returns 0 when failed."""
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            download_status=ProjectFile.DownloadStatus.FAILED,
+        )
+
+        assert project_file.get_progress_percentage() == 0
+
+    def test_get_progress_percentage_downloading_no_size(self):
+        """Test get_progress_percentage returns 0 when downloading without size info."""
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
+            file_size=None,
+        )
+
+        assert project_file.get_progress_percentage() == 0
+
+    def test_get_progress_percentage_pending(self):
+        """Test get_progress_percentage returns 0 when pending."""
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            download_status=ProjectFile.DownloadStatus.PENDING,
+        )
+
+        assert project_file.get_progress_percentage() == 0
+
+    def test_get_progress_message_completed(self):
+        """Test get_progress_message for completed download."""
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            download_status=ProjectFile.DownloadStatus.COMPLETED,
+        )
+
+        message = project_file.get_progress_message()
+        assert "completed" in message.lower()
+        assert "success" in message.lower()
+
+    def test_get_progress_message_failed_with_error(self):
+        """Test get_progress_message for failed download with error."""
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            download_status=ProjectFile.DownloadStatus.FAILED,
+            download_error="Connection timeout",
+        )
+
+        message = project_file.get_progress_message()
+        assert "failed" in message.lower()
+        assert "Connection timeout" in message
+
+    def test_get_progress_message_failed_without_error(self):
+        """Test get_progress_message for failed download without specific error."""
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            download_status=ProjectFile.DownloadStatus.FAILED,
+            download_error="",
+        )
+
+        message = project_file.get_progress_message()
+        assert "failed" in message.lower()
+
+    def test_get_progress_message_downloading(self):
+        """Test get_progress_message for downloading status."""
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
+        )
+
+        message = project_file.get_progress_message()
+        assert "downloading" in message.lower()
+
+    def test_get_progress_message_pending(self):
+        """Test get_progress_message for pending status."""
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            download_status=ProjectFile.DownloadStatus.PENDING,
+        )
+
+        message = project_file.get_progress_message()
+        assert "pending" in message.lower()
+        assert "waiting" in message.lower()

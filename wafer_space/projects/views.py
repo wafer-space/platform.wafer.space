@@ -75,6 +75,14 @@ class ProjectDetailView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
             progress = ProjectFileService.get_download_progress(active_file)
             context["progress"] = progress
 
+        # Add error information if download failed
+        if (
+            active_file
+            and active_file.download_status == ProjectFile.DownloadStatus.FAILED
+        ):
+            context["show_error"] = True
+            context["error_message"] = active_file.download_error
+
         return context
 
 
@@ -237,7 +245,17 @@ class ProjectFileProgressView(LoginRequiredMixin, UserPassesTestMixin, View):
         return project.user == self.request.user
 
     def get(self, request, pk):
-        """Return progress as JSON."""
+        """Return progress as JSON with comprehensive status information.
+
+        Returns:
+            JsonResponse: Progress data containing:
+                - status: Current download status
+                - progress: Percentage (0-100)
+                - current: Bytes downloaded
+                - total: Total file size
+                - message: User-friendly status message
+                - error: Error message if failed (optional)
+        """
         project = get_object_or_404(Project, pk=pk)
 
         # Check if user owns the project
@@ -255,6 +273,10 @@ class ProjectFileProgressView(LoginRequiredMixin, UserPassesTestMixin, View):
 
         # Get progress from service layer
         progress = ProjectFileService.get_download_progress(active_file)
+
+        # Add error information if download failed
+        if active_file.download_status == ProjectFile.DownloadStatus.FAILED:
+            progress["error"] = active_file.download_error or "Download failed"
 
         return JsonResponse(progress)
 

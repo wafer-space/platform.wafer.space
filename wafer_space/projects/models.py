@@ -330,6 +330,52 @@ class ProjectFile(models.Model):
         self.download_completed_at = timezone.now()
         self.save()
 
+    def get_progress_percentage(self) -> int:
+        """Calculate download progress percentage.
+
+        Returns:
+            int: Progress percentage (0-100)
+        """
+        if self.download_status == self.DownloadStatus.COMPLETED:
+            return 100
+
+        if self.download_status == self.DownloadStatus.FAILED:
+            return 0
+
+        # If no file size info, can't calculate percentage
+        if not self.file_size:
+            return 0
+
+        # Note: Actual progress during download comes from Celery task state
+        # This method is for when we only have model data
+        if self.download_status == self.DownloadStatus.DOWNLOADING:
+            # Return indeterminate progress if no detailed info
+            return 0
+
+        return 0
+
+    def get_progress_message(self) -> str:
+        """Get user-friendly progress message.
+
+        Returns:
+            str: Human-readable status message
+        """
+        if self.download_status == self.DownloadStatus.COMPLETED:
+            return "Download completed successfully"
+
+        if self.download_status == self.DownloadStatus.FAILED:
+            if self.download_error:
+                return f"Download failed: {self.download_error}"
+            return "Download failed"
+
+        if self.download_status == self.DownloadStatus.DOWNLOADING:
+            return "Downloading file..."
+
+        if self.download_status == self.DownloadStatus.PENDING:
+            return "Download pending - waiting to start"
+
+        return f"Unknown status: {self.download_status}"
+
 
 class ManufacturabilityCheck(models.Model):
     """Track manufacturability checking process for projects."""
