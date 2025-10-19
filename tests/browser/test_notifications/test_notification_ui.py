@@ -198,7 +198,11 @@ class TestNotificationUI(BaseBrowserTest):
         assert "Unread Notification" in notification_item.text
 
     def test_clicking_notification_marks_as_read(self):
-        """Test that clicking a notification marks it as read."""
+        """Test that clicking a notification marks it as read.
+
+        This test uses condition-based waiting to handle the asynchronous
+        nature of the click -> redirect -> database update flow.
+        """
         # Create unread notification
         notification = Notification.objects.create(
             user=self.user,
@@ -211,14 +215,32 @@ class TestNotificationUI(BaseBrowserTest):
         self.login()
         self.navigate_to(self.driver, "/notifications/")
 
-        # Click notification
+        # Click notification using JavaScript to ensure it triggers
         notification_link = self.wait_for_element(
             self.driver,
             (By.CSS_SELECTOR, ".list-group-item"),
         )
-        notification_link.click()
+        # Use JavaScript click for more reliable execution
+        self.driver.execute_script("arguments[0].click();", notification_link)
 
-        # Verify notification was marked as read in database
+        # Small delay to allow the request to be sent
+        time.sleep(1.0)
+
+        # Use condition-based waiting to poll for database state change
+        # This is more reliable than waiting for page events which may not
+        # indicate database transaction completion.
+        # Poll the database until is_read is True or timeout (20 seconds)
+        wait = WebDriverWait(self.driver, 20, poll_frequency=0.5)
+
+        def notification_is_read(_driver):
+            """Custom wait condition: check if notification is marked as read."""
+            notification.refresh_from_db()
+            return notification.is_read
+
+        # Wait until the notification is marked as read
+        wait.until(notification_is_read)
+
+        # Final verification with fresh database fetch
         notification.refresh_from_db()
         assert notification.is_read is True
         assert notification.read_at is not None
