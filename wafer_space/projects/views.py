@@ -15,7 +15,6 @@ from django.views.generic import ListView
 from django.views.generic import UpdateView
 from django.views.generic import View
 
-from .forms import ProjectFileLocalUploadForm
 from .forms import ProjectFileURLSubmitForm
 from .forms import ProjectForm
 from .models import Project
@@ -217,82 +216,6 @@ class ProjectFileSubmitURLView(LoginRequiredMixin, UserPassesTestMixin, View):
         return render(
             request,
             "projects/project_file_submit_url.html",
-            {
-                "project": project,
-                "form": form,
-            },
-        )
-
-
-class ProjectFileUploadView(LoginRequiredMixin, UserPassesTestMixin, View):
-    """Upload a file directly (not from URL)."""
-
-    def test_func(self):
-        """Only allow the owner to upload files."""
-        project = get_object_or_404(Project, pk=self.kwargs["pk"])
-        return project.user == self.request.user
-
-    def get(self, request, pk):
-        """Show the file upload form."""
-        project = get_object_or_404(Project, pk=pk)
-
-        # Check if user owns the project
-        if project.user != request.user:
-            messages.error(
-                request,
-                "You don't have permission to add files to this project.",
-            )
-            return redirect("projects:detail", pk=pk)
-
-        form = ProjectFileLocalUploadForm()
-        return self.render_form(request, project, form)
-
-    def post(self, request, pk):
-        """Process the file upload."""
-        project = get_object_or_404(Project, pk=pk)
-
-        # Check if user owns the project
-        if project.user != request.user:
-            messages.error(
-                request,
-                "You don't have permission to add files to this project.",
-            )
-            return redirect("projects:detail", pk=pk)
-
-        form = ProjectFileLocalUploadForm(request.POST, request.FILES)
-
-        if form.is_valid():
-            try:
-                # Mark any existing active file as inactive
-                ProjectFile.objects.filter(project=project, is_active=True).update(
-                    is_active=False,
-                )
-
-                # Save the uploaded file
-                project_file = form.save(commit=False)
-                project_file.project = project
-                project_file.download_status = ProjectFile.DownloadStatus.LOCAL_UPLOAD
-                project_file.is_active = True
-                project_file.save()
-
-                messages.success(
-                    request,
-                    f"File '{project_file.file.name}' uploaded successfully!",
-                )
-                return redirect("projects:detail", pk=pk)
-
-            except (OSError, ValueError) as e:
-                # Catch file operations and validation errors
-                messages.error(request, f"An error occurred: {e}")
-                return self.render_form(request, project, form)
-
-        return self.render_form(request, project, form)
-
-    def render_form(self, request, project, form):
-        """Render the form template."""
-        return render(
-            request,
-            "projects/project_file_upload.html",
             {
                 "project": project,
                 "form": form,

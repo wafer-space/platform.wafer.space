@@ -91,7 +91,6 @@ class ProjectFile(models.Model):
         DOWNLOADING = "downloading", "Downloading"
         COMPLETED = "completed", "Download Completed"
         FAILED = "failed", "Download Failed"
-        LOCAL_UPLOAD = "local", "Local Upload"
 
     project = models.ForeignKey(
         Project,

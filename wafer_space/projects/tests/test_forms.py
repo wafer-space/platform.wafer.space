@@ -3,7 +3,6 @@
 import pytest
 from django.test import TestCase
 
-from wafer_space.projects.forms import ProjectFileLocalUploadForm
 from wafer_space.projects.forms import ProjectFileURLSubmitForm
 from wafer_space.projects.forms import ProjectForm
 from wafer_space.projects.models import Project
@@ -306,45 +305,3 @@ class TestProjectFileURLSubmitForm(TestCase):
 
         assert form.is_valid()
         assert form.cleaned_data["expected_hash_sha1"] == ""
-
-
-@pytest.mark.django_db
-class TestProjectFileLocalUploadForm(TestCase):
-    """Test ProjectFileLocalUploadForm."""
-
-    def test_form_has_correct_fields(self):
-        """Test form has expected fields."""
-        form = ProjectFileLocalUploadForm()
-
-        assert "file" in form.fields
-        assert "file_type" in form.fields
-        assert "expected_hash_md5" in form.fields
-        assert "expected_hash_sha1" in form.fields
-
-    def test_form_md5_validation_same_as_url_form(self):
-        """Test MD5 validation matches URL form."""
-        # Test valid MD5
-        form_data = {
-            "expected_hash_md5": "abc123def456789012345678901234ab",
-        }
-        form = ProjectFileLocalUploadForm(data=form_data)
-
-        # Will be invalid due to missing file, but MD5 should be cleaned
-        form.is_valid()
-        if "expected_hash_md5" not in form.errors:
-            expected_md5 = "abc123def456789012345678901234ab"
-            assert form.cleaned_data["expected_hash_md5"] == expected_md5
-
-    def test_form_sha1_validation_same_as_url_form(self):
-        """Test SHA1 validation matches URL form."""
-        # Test valid SHA1
-        form_data = {
-            "expected_hash_sha1": "abc123def456789012345678901234567890abcd",
-        }
-        form = ProjectFileLocalUploadForm(data=form_data)
-
-        # Will be invalid due to missing file, but SHA1 should be cleaned
-        form.is_valid()
-        if "expected_hash_sha1" not in form.errors:
-            expected_sha1 = "abc123def456789012345678901234567890abcd"
-            assert form.cleaned_data["expected_hash_sha1"] == expected_sha1

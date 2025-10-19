@@ -19,7 +19,6 @@ urlpatterns = [
         views.ProjectFileSubmitURLView.as_view(),
         name="submit_url",
     ),
-    path("<uuid:pk>/upload/", views.ProjectFileUploadView.as_view(), name="upload"),
     # AJAX endpoints
     path(
         "<uuid:pk>/progress/",

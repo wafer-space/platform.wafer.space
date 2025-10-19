@@ -432,57 +432,6 @@ class TestProjectFileSubmitURLView(TestCase):
 
 
 @pytest.mark.django_db
-class TestProjectFileUploadView(TestCase):
-    """Test ProjectFileUploadView."""
-
-    def setUp(self):
-        """Set up test fixtures."""
-        self.client = Client()
-        self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
-        )
-        self.other_user = User.objects.create_user(
-            username="otheruser",
-            email="other@example.com",
-            password=TEST_PASSWORD,
-        )
-        self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            description="Test project",
-        )
-
-    def test_requires_login(self):
-        """Test that view requires login."""
-        url = reverse("projects:upload", kwargs={"pk": self.project.pk})
-        response = self.client.get(url)
-
-        # Should redirect to login
-        assert response.status_code == HTTP_FOUND
-        assert "/accounts/login/" in response.url
-
-    def test_owner_can_view_form(self):
-        """Test that owner can view form."""
-        self.client.login(username="testuser", password=TEST_PASSWORD)
-        url = reverse("projects:upload", kwargs={"pk": self.project.pk})
-        response = self.client.get(url)
-
-        assert response.status_code == HTTP_OK
-        assert "form" in response.context
-
-    def test_non_owner_cannot_view_form(self):
-        """Test that non-owner cannot view form."""
-        self.client.login(username="otheruser", password=TEST_PASSWORD)
-        url = reverse("projects:upload", kwargs={"pk": self.project.pk})
-        response = self.client.get(url)
-
-        # Should return 403 Forbidden
-        assert response.status_code == HTTP_FORBIDDEN
-
-
-@pytest.mark.django_db
 class TestProjectFileProgressView(TestCase):
     """Test ProjectFileProgressView."""
 
