@@ -1,5 +1,8 @@
 """Tests for project models."""
 
+from unittest.mock import Mock
+from unittest.mock import patch
+
 import pytest
 from django.core.exceptions import ValidationError
 from django.test import TestCase
@@ -192,8 +195,11 @@ class TestProjectSubmit(TestCase):
 
         assert "hash" in str(exc_info.value).lower()
 
-    def test_submit_sets_status_to_submitted(self):
+    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    def test_submit_sets_status_to_submitted(self, mock_task):
         """Test that submit() sets status to SUBMITTED."""
+        mock_task.return_value = Mock(id="task-123")
+
         ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
@@ -229,8 +235,11 @@ class TestProjectSubmit(TestCase):
         assert self.project.submitted_at is not None
         assert before <= self.project.submitted_at <= after
 
-    def test_submit_creates_manufacturability_check(self):
+    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    def test_submit_creates_manufacturability_check(self, mock_task):
         """Test that submit() creates a manufacturability check."""
+        mock_task.return_value = Mock(id="task-123")
+
         ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
@@ -252,8 +261,11 @@ class TestProjectSubmit(TestCase):
         check = ManufacturabilityCheck.objects.get(project=self.project)
         assert check.status == ManufacturabilityCheck.Status.QUEUED
 
-    def test_submit_does_not_create_duplicate_check(self):
+    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    def test_submit_does_not_create_duplicate_check(self, mock_task):
         """Test that submit() does not create duplicate manufacturability check."""
+        mock_task.return_value = Mock(id="task-123")
+
         ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
