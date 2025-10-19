@@ -400,7 +400,7 @@ def _log_file_size(
 def _initialize_hash_calculators(
     temp_path: Path,
     resume_byte_pos: int,
-) -> tuple[hashlib._Hash, hashlib._Hash]:
+):
     """Initialize hash calculators, updating with existing content if resuming.
 
     Returns:
@@ -433,8 +433,8 @@ class _ChunkDownloadState:
     project_file: object  # ProjectFile instance
     total_size: int
     resume_byte_pos: int
-    md5_hasher: hashlib._Hash
-    sha1_hasher: hashlib._Hash
+    md5_hasher: object  # hashlib hash object
+    sha1_hasher: object  # hashlib hash object
     chunk_size: int
 
 
