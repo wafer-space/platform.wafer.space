@@ -423,11 +423,23 @@ DOWNLOAD_RETRY_BASE_DELAY_MINUTES = 5
 DOWNLOAD_RETRY_BACKOFF_MULTIPLIER = 3
 DOWNLOAD_RETRY_CHECK_INTERVAL_SECONDS = 300.0  # Check every 5 minutes
 
+# Orphaned download detection configuration
+# Timeout for downloads stuck in DOWNLOADING state (15 minutes in production)
+DOWNLOAD_ORPHAN_TIMEOUT_SECONDS = 900.0  # 15 minutes
+# Timeout for downloads stuck in PENDING state (10 minutes in production)
+DOWNLOAD_PENDING_TIMEOUT_SECONDS = 600.0  # 10 minutes
+# How often to check for orphaned downloads (5 minutes in production)
+DOWNLOAD_ORPHAN_CHECK_INTERVAL_SECONDS = 300.0  # 5 minutes
+
 # Celery Beat periodic tasks
 CELERY_BEAT_SCHEDULE = {
     "retry-failed-downloads": {
         "task": "wafer_space.projects.tasks.retry_failed_downloads",
         "schedule": DOWNLOAD_RETRY_CHECK_INTERVAL_SECONDS,
+    },
+    "check-orphaned-downloads": {
+        "task": "wafer_space.projects.tasks.check_orphaned_downloads",
+        "schedule": DOWNLOAD_ORPHAN_CHECK_INTERVAL_SECONDS,
     },
 }
 
