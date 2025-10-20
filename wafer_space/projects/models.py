@@ -374,6 +374,51 @@ class ProjectFile(models.Model):
 
         return f"Unknown status: {self.download_status}"
 
+    @property
+    def download_duration_seconds(self) -> float | None:
+        """Calculate download duration in seconds.
+
+        Returns:
+            float: Duration in seconds, or None if download hasn't completed
+        """
+        if not self.download_started_at or not self.download_completed_at:
+            return None
+
+        duration = self.download_completed_at - self.download_started_at
+        return duration.total_seconds()
+
+    @property
+    def download_speed_bytes_per_second(self) -> float | None:
+        """Calculate download speed in bytes per second.
+
+        Returns:
+            float: Download speed in bytes/sec, or None if not calculable
+        """
+        duration = self.download_duration_seconds
+        if not duration or not self.file_size or duration <= 0:
+            return None
+
+        return self.file_size / duration
+
+    @property
+    def download_speed_formatted(self) -> str | None:
+        """Get formatted download speed in human-readable format.
+
+        Returns:
+            str: Formatted speed like "2.50 MB/s", or None if not calculable
+        """
+        speed = self.download_speed_bytes_per_second
+        if speed is None:
+            return None
+
+        # Convert bytes/sec to human-readable format
+        bytes_per_kb = 1024
+        for unit in ("B/s", "KB/s", "MB/s", "GB/s", "TB/s"):
+            if speed < bytes_per_kb:
+                return f"{speed:.2f} {unit}"
+            speed /= bytes_per_kb
+        return f"{speed:.2f} PB/s"
+
 
 class ManufacturabilityCheck(models.Model):
     """Track manufacturability checking process for projects."""

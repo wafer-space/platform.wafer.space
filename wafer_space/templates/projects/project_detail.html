@@ -255,6 +255,16 @@
                       <strong>Download Completed:</strong> {{ active_file.download_completed_at|date:"F d, Y, g:i a" }}
                     </p>
                   {% endif %}
+                  {% if active_file.download_duration_seconds %}
+                    <p class="mb-2">
+                      <strong>Download Duration:</strong> {{ active_file.download_duration_seconds|floatformat:1 }} seconds
+                    </p>
+                  {% endif %}
+                  {% if active_file.download_speed_formatted %}
+                    <p class="mb-2">
+                      <strong>Average Download Speed:</strong> {{ active_file.download_speed_formatted }}
+                    </p>
+                  {% endif %}
                   {% if active_file.hash_md5 or active_file.hash_sha1 %}
                     <hr />
                     <h6>File Hashes</h6>
