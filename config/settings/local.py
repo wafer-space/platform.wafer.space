@@ -80,5 +80,9 @@ INSTALLED_APPS += ["django_extensions"]
 # Eager mode disabled - tasks run asynchronously via worker process
 # Start worker with: make runserver (uses Honcho to run web + worker)
 
+# Use SQLite as Celery broker in local development (matches DATABASES config)
+# https://docs.celeryq.dev/en/stable/userguide/configuration.html#broker-url
+CELERY_BROKER_URL = f"sqla+sqlite:///{BASE_DIR / 'db.sqlite3'}"  # noqa: F405
+
 # Your stuff...
 # ------------------------------------------------------------------------------
