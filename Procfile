@@ -10,3 +10,8 @@ web: python manage.py runserver 8081
 # --pool=solo: Use solo pool (simplest, single-threaded, good for debugging)
 # -Q: Listen to specific queues (celery=default, manufacturability=project tasks, referrals=referral tasks)
 worker: celery -A config worker -Q celery,manufacturability,referrals --loglevel=info --concurrency=1 --pool=solo
+
+# Celery Beat scheduler for periodic tasks (auto-retry failed downloads)
+# --loglevel=info: Show scheduling logs
+# Runs periodic tasks defined in CELERY_BEAT_SCHEDULE (e.g., retry_failed_downloads every 5 minutes)
+beat: celery -A config beat --loglevel=info
