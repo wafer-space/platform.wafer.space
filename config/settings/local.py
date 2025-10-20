@@ -76,10 +76,9 @@ INSTALLED_APPS += ["django_extensions"]
 
 # Celery
 # ------------------------------------------------------------------------------
-# Run Celery tasks synchronously in local development (no broker/worker needed)
-# https://docs.celeryq.dev/en/stable/userguide/configuration.html#task-always-eager
-CELERY_TASK_ALWAYS_EAGER = True
-CELERY_TASK_EAGER_PROPAGATES = True
+# Use real Celery worker in local development (started via Honcho/Procfile)
+# Eager mode disabled - tasks run asynchronously via worker process
+# Start worker with: make runserver (uses Honcho to run web + worker)
 
 # Your stuff...
 # ------------------------------------------------------------------------------

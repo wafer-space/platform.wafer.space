@@ -251,9 +251,9 @@ check-all: lint type-check test ## Run all checks (lint, type-check, tests)
 # ==================== Development Server ====================
 
 .PHONY: runserver
-runserver: ## Run Django development server
-	@echo "$(BLUE)Starting development server...$(NC)"
-	@$(MANAGE) runserver 8081
+runserver: ## Run Django development server with Celery worker (via Honcho)
+	@echo "$(BLUE)Starting development server and Celery worker...$(NC)"
+	@$(UV_RUN) honcho start
 
 .PHONY: shell
 shell: ## Open Django shell
