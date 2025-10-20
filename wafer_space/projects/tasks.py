@@ -37,12 +37,31 @@ MOCK_SUCCESS_RATE = 0.8  # 80% success rate for testing
 # HTTP status codes
 HTTP_PARTIAL_CONTENT = 206  # Server supports range requests
 
+# Byte conversion constants
+BYTES_PER_KILOBYTE = 1024
+
 # Initialize URL handler registry for post-download processing
 _url_handler_registry = URLHandlerRegistry()
 _url_handler_registry.register(GoogleSourceHandler())
 
 
 # Helper functions for file download
+def _format_bytes(num_bytes: int) -> str:
+    """Format bytes in human-readable format (KB, MB, GB, TB).
+
+    Args:
+        num_bytes: Number of bytes to format
+
+    Returns:
+        str: Formatted string like "1.23 MB" or "456.78 GB"
+    """
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if num_bytes < BYTES_PER_KILOBYTE:
+            return f"{num_bytes:.2f} {unit}"
+        num_bytes /= BYTES_PER_KILOBYTE
+    return f"{num_bytes:.2f} PB"
+
+
 def _setup_temp_directory() -> Path:
     """Create and return temporary directory for downloads."""
     temp_dir = Path(tempfile.gettempdir()) / "wafer_space_downloads"
@@ -335,9 +354,8 @@ def _prepare_download_request(
     if temp_path.exists():
         resume_byte_pos = temp_path.stat().st_size
         headers["Range"] = f"bytes={resume_byte_pos}-"
-        logger.info(
-            "  Resume: Found partial download (%s bytes)", f"{resume_byte_pos:,}"
-        )
+        formatted_size = _format_bytes(resume_byte_pos)
+        logger.info("  Resume: Found partial download (%s)", formatted_size)
 
     return headers, resume_byte_pos
 
@@ -387,10 +405,7 @@ def _log_file_size(
         total_size = (
             resume_byte_pos + content_length if resume_byte_pos > 0 else content_length
         )
-        size_mb = total_size / (1024 * 1024)
-        logger.info(
-            "  Total file size: %s bytes (%s MB)", f"{total_size:,}", f"{size_mb:.2f}"
-        )
+        logger.info("  Total file size: %s", _format_bytes(total_size))
     else:
         logger.info("  No Content-Length header - size unknown")
 
@@ -418,7 +433,7 @@ def _initialize_hash_calculators(
             existing_content = existing_file.read()
             md5_hasher.update(existing_content)
             sha1_hasher.update(existing_content)
-        logger.info("  ✓ Hashes updated with %s existing bytes", f"{resume_byte_pos:,}")
+        logger.info("  ✓ Hashes updated with %s", _format_bytes(resume_byte_pos))
 
     return md5_hasher, sha1_hasher
 
@@ -436,6 +451,7 @@ class _ChunkDownloadState:
     md5_hasher: object  # hashlib hash object
     sha1_hasher: object  # hashlib hash object
     chunk_size: int
+    start_time: float  # Unix timestamp when download started
 
 
 def _should_log_progress(
@@ -470,25 +486,32 @@ def _log_download_progress(
     total_size: int,
     downloaded: int,
     chunk_count: int,
+    start_time: float,
 ) -> None:
-    """Log download progress information."""
+    """Log download progress information with speed."""
     logger = logging.getLogger(__name__)
+
+    # Calculate download speed
+    elapsed_time = time.time() - start_time
+    speed_bytes_per_sec = downloaded / elapsed_time if elapsed_time > 0 else 0
+    speed_formatted = _format_bytes(int(speed_bytes_per_sec))
 
     if total_size > 0:
         progress = int((downloaded / total_size) * 100)
         logger.info(
-            "  Progress: %d%% (%s / %s bytes, %d chunks)",
+            "  Progress: %d%% (%s / %s, %d chunks, %s/s)",
             progress,
-            f"{downloaded:,}",
-            f"{total_size:,}",
+            _format_bytes(downloaded),
+            _format_bytes(total_size),
             chunk_count,
+            speed_formatted,
         )
     else:
         logger.info(
-            "  Progress: %s bytes (%s MB), %d chunks",
-            f"{downloaded:,}",
-            f"{downloaded / (1024 * 1024):.2f}",
+            "  Progress: %s, %d chunks, %s/s",
+            _format_bytes(downloaded),
             chunk_count,
+            speed_formatted,
         )
 
 
@@ -533,9 +556,8 @@ def _download_chunks(state: _ChunkDownloadState) -> int:
     last_log_bytes = 0
     mode = "ab" if state.resume_byte_pos > 0 else "wb"
 
-    logger.info(
-        "  Starting chunked download (chunk size: %s bytes)...", f"{state.chunk_size:,}"
-    )
+    formatted_chunk_size = _format_bytes(state.chunk_size)
+    logger.info("  Starting chunked download (chunk size: %s)...", formatted_chunk_size)
     chunk_count = 0
 
     with state.temp_path.open(mode) as temp_file:
@@ -552,7 +574,11 @@ def _download_chunks(state: _ChunkDownloadState) -> int:
 
             # Log first chunk to confirm download is working
             if chunk_count == 1:
-                logger.info("  ✓ Received first chunk (%s bytes)", f"{len(chunk):,}")
+                logger.info("  ✓ Received first chunk (%s)", _format_bytes(len(chunk)))
+
+            # Calculate download speed for task state
+            elapsed_time = time.time() - state.start_time
+            speed_bytes_per_sec = downloaded / elapsed_time if elapsed_time > 0 else 0
 
             # Update Celery task state with progress
             progress = (
@@ -560,11 +586,18 @@ def _download_chunks(state: _ChunkDownloadState) -> int:
                 if state.total_size > 0
                 else 0
             )
-            progress_msg = (
-                f"Downloaded {downloaded:,} of {state.total_size:,} bytes"
-                if state.total_size > 0
-                else f"Downloaded {downloaded:,} bytes (size unknown)"
-            )
+            if state.total_size > 0:
+                progress_msg = (
+                    f"Downloaded {_format_bytes(downloaded)} of "
+                    f"{_format_bytes(state.total_size)} "
+                    f"({_format_bytes(int(speed_bytes_per_sec))}/s)"
+                )
+            else:
+                progress_msg = (
+                    f"Downloaded {_format_bytes(downloaded)} "
+                    f"({_format_bytes(int(speed_bytes_per_sec))}/s)"
+                )
+
             state.task.update_state(
                 state="PROGRESS",
                 meta={
@@ -572,6 +605,7 @@ def _download_chunks(state: _ChunkDownloadState) -> int:
                     "total": state.total_size,
                     "progress": progress,
                     "message": progress_msg,
+                    "speed": speed_bytes_per_sec,
                 },
             )
 
@@ -587,6 +621,7 @@ def _download_chunks(state: _ChunkDownloadState) -> int:
                     total_size=state.total_size,
                     downloaded=downloaded,
                     chunk_count=chunk_count,
+                    start_time=state.start_time,
                 )
 
             # Check if we should update database
@@ -601,10 +636,15 @@ def _download_chunks(state: _ChunkDownloadState) -> int:
                 state.project_file.last_activity = timezone.now()
                 state.project_file.save(update_fields=["last_activity"])
 
+    # Calculate final download speed
+    elapsed_time = time.time() - state.start_time
+    speed_bytes_per_sec = downloaded / elapsed_time if elapsed_time > 0 else 0
+
     logger.info(
-        "  ✓ Download complete! Total chunks: %d, Total bytes: %s",
+        "  ✓ Download complete! Total: %s, %d chunks, Average speed: %s/s",
+        _format_bytes(downloaded),
         chunk_count,
-        f"{downloaded:,}",
+        _format_bytes(int(speed_bytes_per_sec)),
     )
     return chunk_count
 
@@ -654,6 +694,7 @@ def _download_with_progress(
         md5_hasher=md5_hasher,
         sha1_hasher=sha1_hasher,
         chunk_size=chunk_size,
+        start_time=time.time(),
     )
     _download_chunks(download_state)
 
@@ -839,8 +880,8 @@ def _process_and_save_content(
 
     if processed_content != downloaded_content:
         logger.info("  Content was transformed by handler - recalculating hashes...")
-        logger.info("  Original size: %s bytes", f"{len(downloaded_content):,}")
-        logger.info("  Processed size: %s bytes", f"{len(processed_content):,}")
+        logger.info("  Original size: %s", _format_bytes(len(downloaded_content)))
+        logger.info("  Processed size: %s", _format_bytes(len(processed_content)))
         final_md5, final_sha1 = _calculate_file_hashes(processed_content)
         logger.info("  ✓ Recalculated MD5: %s", final_md5)
         logger.info("  ✓ Recalculated SHA1: %s", final_sha1)
@@ -863,7 +904,7 @@ def _process_and_save_content(
     project_file.file_size = len(processed_content)
     project_file.hash_md5 = final_md5
     project_file.hash_sha1 = final_sha1
-    logger.info("  ✓ File size: %s bytes", f"{project_file.file_size:,}")
+    logger.info("  ✓ File size: %s", _format_bytes(project_file.file_size))
 
     return processed_content, final_md5, final_sha1
 
@@ -974,12 +1015,7 @@ def _log_download_completion(
     logger.info("  Project ID: %s", project_id)
     logger.info("  File ID: %s", project_file.id)
     logger.info("  Filename: %s", project_file.original_filename)
-    file_size_mb = project_file.file_size / (1024 * 1024)
-    logger.info(
-        "  Size: %s bytes (%s MB)",
-        f"{project_file.file_size:,}",
-        f"{file_size_mb:.2f}",
-    )
+    logger.info("  Size: %s", _format_bytes(project_file.file_size))
     logger.info("  Hash Verified: %s", hash_verified)
     logger.info("=" * 80)
 
@@ -1043,9 +1079,11 @@ def download_project_file(self, project_id):
         )
         logger.info("  URL: %s", url_display)
         expected_size = (
-            f"{project_file.file_size:,}" if project_file.file_size else "unknown"
+            _format_bytes(project_file.file_size)
+            if project_file.file_size
+            else "unknown"
         )
-        logger.info("  Expected file size: %s bytes", expected_size)
+        logger.info("  Expected file size: %s", expected_size)
         md5_hash, sha1_hash = _download_with_progress(
             self,
             project_file,
@@ -1059,7 +1097,8 @@ def download_project_file(self, project_id):
         logger.info("Step 5: Reading downloaded content...")
         with temp_path.open("rb") as temp_file:
             downloaded_content = temp_file.read()
-        logger.info("  ✓ Read %s bytes from temp file", f"{len(downloaded_content):,}")
+        formatted_size = _format_bytes(len(downloaded_content))
+        logger.info("  ✓ Read %s from temp file", formatted_size)
 
         # Process and save content
         _processed_content, final_md5, final_sha1 = _process_and_save_content(
