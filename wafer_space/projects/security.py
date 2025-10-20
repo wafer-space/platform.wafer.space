@@ -86,6 +86,9 @@ class URLValidator:
         # Try to resolve hostname to IP address
         try:
             # Get the IP address from the socket
+            if parsed.hostname is None:
+                msg = f"URL has no hostname: {url}"
+                raise ValueError(msg)
             ip_address = socket.gethostbyname(parsed.hostname)
             ip_obj = ipaddress.ip_address(ip_address)
 

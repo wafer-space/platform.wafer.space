@@ -355,11 +355,14 @@ class ProjectFile(models.Model):
         self.download_error = error_message
         self.download_completed_at = timezone.now()
 
+        # Save the failed status first
+        self.save(
+            update_fields=["download_status", "download_error", "download_completed_at"]
+        )
+
         # Schedule automatic retry if enabled and under max retries
         if self.auto_retry_enabled and self.retry_count < self.max_retries:
             self.schedule_retry()
-        else:
-            self.save()
 
     def calculate_next_retry_time(self) -> datetime:
         """Calculate when the next retry should happen using exponential backoff.

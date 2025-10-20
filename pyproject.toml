@@ -158,6 +158,8 @@ dev = [
     "selenium==4.27.1",
     "sphinx==8.2.3",
     "sphinx-autobuild==2025.8.25",
+    "types-markdown>=3.9.0.20250906",
+    "types-requests>=2.32.4.20250913",
     "webdriver-manager==4.0.2",
     "werkzeug[watchdog]==3.1.3",
 ]

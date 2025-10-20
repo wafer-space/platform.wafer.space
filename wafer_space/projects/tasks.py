@@ -58,11 +58,12 @@ def _format_bytes(num_bytes: int) -> str:
     Returns:
         str: Formatted string like "1.23 MB" or "456.78 GB"
     """
+    bytes_float = float(num_bytes)
     for unit in ("B", "KB", "MB", "GB", "TB"):
-        if num_bytes < BYTES_PER_KILOBYTE:
-            return f"{num_bytes:.2f} {unit}"
-        num_bytes /= BYTES_PER_KILOBYTE
-    return f"{num_bytes:.2f} PB"
+        if bytes_float < BYTES_PER_KILOBYTE:
+            return f"{bytes_float:.2f} {unit}"
+        bytes_float /= BYTES_PER_KILOBYTE
+    return f"{bytes_float:.2f} PB"
 
 
 def _setup_temp_directory() -> Path:
@@ -447,12 +448,12 @@ class _ChunkDownloadState:
 
     response: requests.Response
     temp_path: Path
-    task: object  # Celery task instance
-    project_file: object  # ProjectFile instance
+    task: "shared_task"  # Celery task instance (use string to avoid circular import)
+    project_file: ProjectFile
     total_size: int
     resume_byte_pos: int
-    md5_hasher: object  # hashlib hash object
-    sha1_hasher: object  # hashlib hash object
+    md5_hasher: "hashlib._Hash"  # hashlib hash object
+    sha1_hasher: "hashlib._Hash"  # hashlib hash object
     chunk_size: int
     start_time: float  # Unix timestamp when download started
 
@@ -1026,7 +1027,10 @@ def _log_download_completion(
     logger.info("  Project ID: %s", project_id)
     logger.info("  File ID: %s", project_file.id)
     logger.info("  Filename: %s", project_file.original_filename)
-    logger.info("  Size: %s", _format_bytes(project_file.file_size))
+    logger.info(
+        "  Size: %s",
+        _format_bytes(project_file.file_size) if project_file.file_size else "Unknown",
+    )
     logger.info("  Hash Verified: %s", hash_verified)
     logger.info("=" * 80)
 

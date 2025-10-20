@@ -83,6 +83,7 @@ class TestProjectForm(TestCase):
         # Verify saved correctly
         assert Project.objects.count() == 1
         saved_project = Project.objects.first()
+        assert saved_project is not None
         assert saved_project.name == "My Project"
         assert saved_project.description == "My description"
         assert saved_project.user == user
@@ -140,7 +141,7 @@ class TestProjectFileURLSubmitForm(TestCase):
 
     def test_form_invalid_without_url(self):
         """Test form is invalid without URL."""
-        form_data = {}
+        form_data: dict[str, str] = {}
         form = ProjectFileURLSubmitForm(data=form_data)
 
         assert not form.is_valid()

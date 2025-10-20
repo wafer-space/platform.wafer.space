@@ -1,6 +1,10 @@
 """Views for project management."""
 
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
+from typing import cast
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -28,6 +32,9 @@ from .services import ProjectFileService
 
 logger = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    from wafer_space.users.models import User
+
 
 class ProjectListView(LoginRequiredMixin, ListView):
     """List all projects for the current user."""
@@ -39,7 +46,9 @@ class ProjectListView(LoginRequiredMixin, ListView):
 
     def get_queryset(self):
         """Return only projects owned by the current user."""
-        return Project.objects.filter(user=self.request.user).order_by("-created_at")
+        # Cast user since LoginRequiredMixin ensures authentication
+        user = cast("User", self.request.user)
+        return Project.objects.filter(user=user).order_by("-created_at")
 
 
 class ProjectDetailView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
@@ -109,6 +118,8 @@ class ProjectCreateView(LoginRequiredMixin, CreateView):
 
     def get_success_url(self):
         """Redirect to project detail page."""
+        # self.object is set after form_valid succeeds
+        assert self.object is not None
         return reverse_lazy("projects:detail", kwargs={"pk": self.object.pk})
 
 
@@ -134,6 +145,8 @@ class ProjectUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
 
     def get_success_url(self):
         """Redirect to project detail page."""
+        # self.object is set after form_valid succeeds
+        assert self.object is not None
         return reverse_lazy("projects:detail", kwargs={"pk": self.object.pk})
 
 

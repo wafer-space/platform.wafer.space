@@ -91,7 +91,10 @@ class TestProjectFileService(TestCase):
 
         # Verify metadata
         assert metadata["url_rewritten"] is True
-        assert "GitHub blob URL" in metadata["rewrite_reason"]
+        # Type assertion for string field
+        rewrite_reason = metadata["rewrite_reason"]
+        assert isinstance(rewrite_reason, str)
+        assert "GitHub blob URL" in rewrite_reason
         assert metadata["file_size"] == ONE_MB
         assert metadata["supports_range"] is True
 
@@ -351,7 +354,10 @@ class TestProjectFileService(TestCase):
         assert progress["progress"] == 0
         assert progress["current"] == 0
         assert progress["total"] == ONE_MB
-        assert "not started" in progress["message"].lower()
+        # Type assertion for string field
+        message = progress["message"]
+        assert isinstance(message, str)
+        assert "not started" in message.lower()
 
     @patch("wafer_space.projects.services.AsyncResult")
     def test_get_download_progress_pending(self, mock_async_result):
@@ -407,7 +413,10 @@ class TestProjectFileService(TestCase):
         assert progress["progress"] == PROGRESS_HALF
         assert progress["current"] == FIVE_MB
         assert progress["total"] == TEN_MB
-        assert "4,718,592" in progress["message"]
+        # Type assertion for string field
+        message = progress["message"]
+        assert isinstance(message, str)
+        assert "4,718,592" in message
 
     @patch("wafer_space.projects.services.AsyncResult")
     def test_get_download_progress_completed(self, mock_async_result):
@@ -433,7 +442,10 @@ class TestProjectFileService(TestCase):
         assert progress["progress"] == PROGRESS_COMPLETE
         assert progress["current"] == ONE_MB
         assert progress["total"] == ONE_MB
-        assert "completed" in progress["message"].lower()
+        # Type assertion for string field
+        message = progress["message"]
+        assert isinstance(message, str)
+        assert "completed" in message.lower()
 
     @patch("wafer_space.projects.services.AsyncResult")
     def test_get_download_progress_failed(self, mock_async_result):
@@ -458,7 +470,10 @@ class TestProjectFileService(TestCase):
 
         assert progress["status"] == "failed"
         assert progress["progress"] == 0
-        assert "Connection timeout" in progress["message"]
+        # Type assertion for string field
+        message = progress["message"]
+        assert isinstance(message, str)
+        assert "Connection timeout" in message
 
     @patch("wafer_space.projects.services.URLValidator.validate_url")
     @patch("wafer_space.projects.services.URLRewriter.rewrite_url")

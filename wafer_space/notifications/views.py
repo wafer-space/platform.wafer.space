@@ -1,6 +1,10 @@
 """Views for notifications."""
 
+from __future__ import annotations
+
 import contextlib
+from typing import TYPE_CHECKING
+from typing import cast
 
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -10,6 +14,9 @@ from django.shortcuts import redirect
 from django.views.generic import ListView
 
 from .models import Notification
+
+if TYPE_CHECKING:
+    from wafer_space.users.models import User
 
 
 class NotificationListView(LoginRequiredMixin, ListView):
@@ -22,7 +29,9 @@ class NotificationListView(LoginRequiredMixin, ListView):
 
     def get_queryset(self):
         """Get notifications for current user."""
-        queryset = Notification.objects.filter(user=self.request.user)
+        # Cast user since LoginRequiredMixin ensures authentication
+        user = cast("User", self.request.user)
+        queryset = Notification.objects.filter(user=user)
 
         # Filter by read status if requested
         status_filter = self.request.GET.get("status")
@@ -36,8 +45,10 @@ class NotificationListView(LoginRequiredMixin, ListView):
     def get_context_data(self, **kwargs):
         """Add unread count to context."""
         context = super().get_context_data(**kwargs)
+        # Cast user since LoginRequiredMixin ensures authentication
+        user = cast("User", self.request.user)
         context["unread_count"] = Notification.objects.filter(
-            user=self.request.user,
+            user=user,
             is_read=False,
         ).count()
         context["status_filter"] = self.request.GET.get("status", "all")

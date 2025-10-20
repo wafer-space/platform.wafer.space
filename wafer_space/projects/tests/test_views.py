@@ -69,7 +69,8 @@ class TestProjectListView(TestCase):
 
         # Should redirect to login
         assert response.status_code == HTTP_FOUND
-        assert "/accounts/login/" in response.url
+        # Check redirect location (use Location header for type safety)
+        assert "/accounts/login/" in response["Location"]
 
     def test_shows_only_user_projects(self):
         """Test that view shows only current user's projects."""
@@ -118,7 +119,8 @@ class TestProjectDetailView(TestCase):
 
         # Should redirect to login
         assert response.status_code == HTTP_FOUND
-        assert "/accounts/login/" in response.url
+        # Check redirect location (use Location header for type safety)
+        assert "/accounts/login/" in response["Location"]
 
     def test_owner_can_view(self):
         """Test that owner can view project."""
@@ -177,7 +179,8 @@ class TestProjectCreateView(TestCase):
 
         # Should redirect to login
         assert response.status_code == HTTP_FOUND
-        assert "/accounts/login/" in response.url
+        # Check redirect location (use Location header for type safety)
+        assert "/accounts/login/" in response["Location"]
 
     def test_displays_form(self):
         """Test that GET displays the form."""
@@ -205,6 +208,7 @@ class TestProjectCreateView(TestCase):
         # Verify project was created
         assert Project.objects.count() == 1
         project = Project.objects.first()
+        assert project is not None
         assert project.name == "New Project"
         assert project.description == "New project description"
         assert project.user == self.user
@@ -245,7 +249,8 @@ class TestProjectUpdateView(TestCase):
 
         # Should redirect to login
         assert response.status_code == HTTP_FOUND
-        assert "/accounts/login/" in response.url
+        # Check redirect location (use Location header for type safety)
+        assert "/accounts/login/" in response["Location"]
 
     def test_owner_can_update(self):
         """Test that owner can update project."""
@@ -306,7 +311,8 @@ class TestProjectDeleteView(TestCase):
 
         # Should redirect to login
         assert response.status_code == HTTP_FOUND
-        assert "/accounts/login/" in response.url
+        # Check redirect location (use Location header for type safety)
+        assert "/accounts/login/" in response["Location"]
 
     def test_owner_can_delete(self):
         """Test that owner can delete project."""
@@ -361,7 +367,8 @@ class TestProjectFileSubmitURLView(TestCase):
 
         # Should redirect to login
         assert response.status_code == HTTP_FOUND
-        assert "/accounts/login/" in response.url
+        # Check redirect location (use Location header for type safety)
+        assert "/accounts/login/" in response["Location"]
 
     def test_owner_can_view_form(self):
         """Test that owner can view form."""
@@ -463,7 +470,8 @@ class TestProjectFileProgressView(TestCase):
 
         # Should redirect to login
         assert response.status_code == HTTP_FOUND
-        assert "/accounts/login/" in response.url
+        # Check redirect location (use Location header for type safety)
+        assert "/accounts/login/" in response["Location"]
 
     def test_non_owner_cannot_view_progress(self):
         """Test that non-owner cannot view progress."""
@@ -550,7 +558,8 @@ class TestProjectSubmitView(TestCase):
 
         # Should redirect to login
         assert response.status_code == HTTP_FOUND
-        assert "/accounts/login/" in response.url
+        # Check redirect location (use Location header for type safety)
+        assert "/accounts/login/" in response["Location"]
 
     def test_requires_ownership(self):
         """Test that only owner can submit project."""
@@ -584,7 +593,8 @@ class TestProjectSubmitView(TestCase):
         # Should redirect to project detail
         assert response.status_code == HTTP_FOUND
         detail_url = reverse("projects:detail", kwargs={"pk": self.project.pk})
-        assert response.url == detail_url
+        # Check redirect location (use Location header for type safety)
+        assert response["Location"] == detail_url
 
         # Verify project was submitted
         self.project.refresh_from_db()
