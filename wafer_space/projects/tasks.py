@@ -18,6 +18,7 @@ from urllib.request import urlopen
 import requests
 from celery import shared_task
 from django.core.files.base import ContentFile
+from django.db import models
 from django.utils import timezone
 from django_celery_results.models import TaskResult
 
@@ -1170,6 +1171,84 @@ def download_project_file(self, project_id):
                 "DOWNLOAD TASK FAILED - Max retries reached for project %s", project_id
             )
             return _handle_download_failure(project_id, exc, temp_path)
+
+
+@shared_task
+def retry_failed_downloads():
+    """Periodic task to automatically retry failed downloads.
+
+    This task runs every 5 minutes and:
+    1. Finds all failed downloads that are eligible for retry
+    2. Checks exponential backoff timing
+    3. Re-queues the download task
+    4. Updates retry counters
+
+    Returns:
+        dict: Statistics about retries attempted
+    """
+    logger = logging.getLogger(__name__)
+
+    # Find all failed downloads eligible for retry
+    failed_files = ProjectFile.objects.filter(
+        download_status=ProjectFile.DownloadStatus.FAILED,
+        auto_retry_enabled=True,
+        retry_count__lt=models.F("max_retries"),
+    ).filter(
+        models.Q(next_retry_at__isnull=True)
+        | models.Q(next_retry_at__lte=timezone.now())
+    )
+
+    retried_count = 0
+    skipped_count = 0
+
+    for project_file in failed_files:
+        # Double-check should_auto_retry (belt and suspenders)
+        if not project_file.should_auto_retry():
+            skipped_count += 1
+            continue
+
+        logger.info(
+            "Auto-retrying failed download for file %s (retry %d/%d)",
+            project_file.id,
+            project_file.retry_count + 1,
+            project_file.max_retries,
+        )
+
+        # Update retry tracking
+        project_file.retry_count += 1
+        project_file.last_retry_at = timezone.now()
+        project_file.download_status = ProjectFile.DownloadStatus.PENDING
+        project_file.download_error = ""  # Clear previous error
+        project_file.next_retry_at = None  # Clear next retry time
+
+        # Queue the download task and store task ID
+        task = download_project_file.delay(str(project_file.project.id))
+        project_file.download_task_id = task.id
+
+        project_file.save(
+            update_fields=[
+                "retry_count",
+                "last_retry_at",
+                "download_status",
+                "download_error",
+                "next_retry_at",
+                "download_task_id",
+            ]
+        )
+
+        retried_count += 1
+
+    logger.info(
+        "Auto-retry task completed: %d retried, %d skipped",
+        retried_count,
+        skipped_count,
+    )
+
+    return {
+        "status": "completed",
+        "retried": retried_count,
+        "skipped": skipped_count,
+    }
 
 
 @shared_task

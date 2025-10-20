@@ -1,5 +1,7 @@
 import hashlib
 import uuid
+from datetime import datetime
+from datetime import timedelta
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -199,6 +201,32 @@ class ProjectFile(models.Model):
         help_text="Last activity timestamp for download progress tracking",
     )
 
+    # Automatic retry configuration
+    auto_retry_enabled = models.BooleanField(
+        default=True,
+        help_text="Enable automatic retry for failed downloads",
+    )
+    retry_count = models.IntegerField(
+        default=0,
+        help_text="Number of automatic retries attempted",
+    )
+    max_retries = models.IntegerField(
+        default=3,
+        help_text="Maximum number of automatic retries before giving up",
+    )
+    last_retry_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the last automatic retry was attempted",
+    )
+    next_retry_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "When the next automatic retry should be attempted (exponential backoff)"
+        ),
+    )
+
     # File verification (provided by user)
     expected_hash_md5 = models.CharField(
         max_length=32,
@@ -322,11 +350,59 @@ class ProjectFile(models.Model):
         self.save()
 
     def mark_download_failed(self, error_message):
-        """Mark download as failed with error message."""
+        """Mark download as failed and schedule retry if applicable."""
         self.download_status = self.DownloadStatus.FAILED
         self.download_error = error_message
         self.download_completed_at = timezone.now()
-        self.save()
+
+        # Schedule automatic retry if enabled and under max retries
+        if self.auto_retry_enabled and self.retry_count < self.max_retries:
+            self.schedule_retry()
+        else:
+            self.save()
+
+    def calculate_next_retry_time(self) -> datetime:
+        """Calculate when the next retry should happen using exponential backoff.
+
+        Returns:
+            datetime: When the next retry should be attempted
+
+        Backoff strategy:
+            - Retry 1: 5 minutes
+            - Retry 2: 15 minutes (5 * 3)
+            - Retry 3: 45 minutes (15 * 3)
+            - etc.
+        """
+        base_delay_minutes = 5
+        backoff_multiplier = 3
+        delay_minutes = base_delay_minutes * (backoff_multiplier**self.retry_count)
+        return timezone.now() + timedelta(minutes=delay_minutes)
+
+    def should_auto_retry(self) -> bool:
+        """Check if this file should be automatically retried.
+
+        Returns:
+            bool: True if should retry, False otherwise
+        """
+        # Must be failed status
+        if self.download_status != self.DownloadStatus.FAILED:
+            return False
+
+        # Auto-retry must be enabled
+        if not self.auto_retry_enabled:
+            return False
+
+        # Must not have exceeded max retries
+        if self.retry_count >= self.max_retries:
+            return False
+
+        # If next_retry_at is set, must be past that time
+        return not (self.next_retry_at and timezone.now() < self.next_retry_at)
+
+    def schedule_retry(self) -> None:
+        """Schedule the next automatic retry attempt."""
+        self.next_retry_at = self.calculate_next_retry_time()
+        self.save(update_fields=["next_retry_at"])
 
     def get_progress_percentage(self) -> int:
         """Calculate download progress percentage.

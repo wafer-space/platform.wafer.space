@@ -262,7 +262,30 @@
                   {% endif %}
                   {% if active_file.download_speed_formatted %}
                     <p class="mb-2">
-                      <strong>Average Download Speed:</strong> {{ active_file.download_speed_formatted }}
+                      <strong>Average Download Speed:</strong> {{ active_file.download_speed_formatted %}
+                    </p>
+                  {% endif %}
+                  {% if active_file.retry_count > 0 %}
+                    <p class="mb-2">
+                      <strong>Auto-Retry Attempts:</strong> {{ active_file.retry_count }}/{{ active_file.max_retries }}
+                    </p>
+                  {% endif %}
+                  {% if active_file.download_status == 'failed' and active_file.auto_retry_enabled %}
+                    <p class="mb-2">
+                      <strong>Auto-Retry:</strong>
+                      {% if active_file.retry_count >= active_file.max_retries %}
+                        <span class="badge bg-danger">
+                          <i class="bi bi-x-circle"></i> Max retries reached
+                        </span>
+                      {% elif active_file.next_retry_at %}
+                        <span class="badge bg-warning text-dark">
+                          <i class="bi bi-clock"></i> Next retry at {{ active_file.next_retry_at|date:"g:i a" }}
+                        </span>
+                      {% else %}
+                        <span class="badge bg-info text-dark">
+                          <i class="bi bi-arrow-repeat"></i> Retry pending
+                        </span>
+                      {% endif %}
                     </p>
                   {% endif %}
                   {% if active_file.chunks.exists %}

@@ -417,6 +417,14 @@ CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes hard time limit
 CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes soft time limit
 
+# Celery Beat periodic tasks
+CELERY_BEAT_SCHEDULE = {
+    "retry-failed-downloads": {
+        "task": "wafer_space.projects.tasks.retry_failed_downloads",
+        "schedule": 300.0,  # Run every 5 minutes
+    },
+}
+
 
 # Your stuff...
 # ------------------------------------------------------------------------------
