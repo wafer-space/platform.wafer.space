@@ -438,6 +438,88 @@ class _ChunkDownloadState:
     chunk_size: int
 
 
+def _should_log_progress(
+    *,
+    total_size: int,
+    downloaded: int,
+    last_log_progress: int,
+    last_log_bytes: int,
+) -> tuple[bool, int, int]:
+    """Determine if progress should be logged.
+
+    Returns:
+        tuple: (should_log, new_last_log_progress, new_last_log_bytes)
+    """
+    if total_size > 0:
+        # Known size: log every 10% change
+        progress = int((downloaded / total_size) * 100)
+        if progress >= last_log_progress + 10:
+            return True, progress, last_log_bytes
+    else:
+        # Unknown size: log every 10MB downloaded
+        mb_downloaded = downloaded / (1024 * 1024)
+        mb_last_log = last_log_bytes / (1024 * 1024)
+        if mb_downloaded >= mb_last_log + 10:
+            return True, last_log_progress, downloaded
+
+    return False, last_log_progress, last_log_bytes
+
+
+def _log_download_progress(
+    *,
+    total_size: int,
+    downloaded: int,
+    chunk_count: int,
+) -> None:
+    """Log download progress information."""
+    logger = logging.getLogger(__name__)
+
+    if total_size > 0:
+        progress = int((downloaded / total_size) * 100)
+        logger.info(
+            "  Progress: %d%% (%s / %s bytes, %d chunks)",
+            progress,
+            f"{downloaded:,}",
+            f"{total_size:,}",
+            chunk_count,
+        )
+    else:
+        logger.info(
+            "  Progress: %s bytes (%s MB), %d chunks",
+            f"{downloaded:,}",
+            f"{downloaded / (1024 * 1024):.2f}",
+            chunk_count,
+        )
+
+
+def _should_update_database(
+    *,
+    total_size: int,
+    downloaded: int,
+    last_db_update_progress: int,
+    chunk_count: int,
+    chunk_size: int,
+) -> tuple[bool, int]:
+    """Determine if database should be updated.
+
+    Returns:
+        tuple: (should_update, new_last_db_update_progress)
+    """
+    if total_size > 0:
+        # Known size: update every 5% progress
+        progress = int((downloaded / total_size) * 100)
+        if progress >= last_db_update_progress + 5:
+            return True, progress
+    else:
+        # Unknown size: update every 5MB
+        mb_downloaded = downloaded / (1024 * 1024)
+        mb_last_update = (last_db_update_progress * chunk_size) / (1024 * 1024)
+        if mb_downloaded >= mb_last_update + 5:
+            return True, chunk_count
+
+    return False, last_db_update_progress
+
+
 def _download_chunks(state: _ChunkDownloadState) -> int:
     """Download file chunks with progress tracking.
 
@@ -448,6 +530,7 @@ def _download_chunks(state: _ChunkDownloadState) -> int:
     downloaded = state.resume_byte_pos
     last_db_update_progress = 0
     last_log_progress = 0
+    last_log_bytes = 0
     mode = "ab" if state.resume_byte_pos > 0 else "wb"
 
     logger.info(
@@ -460,19 +543,28 @@ def _download_chunks(state: _ChunkDownloadState) -> int:
             if not chunk:  # filter out keep-alive chunks
                 continue
 
+            # Write chunk and update hashes
             temp_file.write(chunk)
             state.md5_hasher.update(chunk)
             state.sha1_hasher.update(chunk)
             downloaded += len(chunk)
             chunk_count += 1
 
-            # Update progress in Celery task state (every chunk)
+            # Log first chunk to confirm download is working
+            if chunk_count == 1:
+                logger.info("  ✓ Received first chunk (%s bytes)", f"{len(chunk):,}")
+
+            # Update Celery task state with progress
             progress = (
                 int((downloaded / state.total_size) * 100)
                 if state.total_size > 0
                 else 0
             )
-            progress_msg = f"Downloaded {downloaded:,} of {state.total_size:,} bytes"
+            progress_msg = (
+                f"Downloaded {downloaded:,} of {state.total_size:,} bytes"
+                if state.total_size > 0
+                else f"Downloaded {downloaded:,} bytes (size unknown)"
+            )
             state.task.update_state(
                 state="PROGRESS",
                 meta={
@@ -483,22 +575,31 @@ def _download_chunks(state: _ChunkDownloadState) -> int:
                 },
             )
 
-            # Log progress every 10% change
-            if progress >= last_log_progress + 10:
-                logger.info(
-                    "  Progress: %d%% (%s / %s bytes, %d chunks)",
-                    progress,
-                    f"{downloaded:,}",
-                    f"{state.total_size:,}",
-                    chunk_count,
+            # Check if we should log progress
+            should_log, last_log_progress, last_log_bytes = _should_log_progress(
+                total_size=state.total_size,
+                downloaded=downloaded,
+                last_log_progress=last_log_progress,
+                last_log_bytes=last_log_bytes,
+            )
+            if should_log:
+                _log_download_progress(
+                    total_size=state.total_size,
+                    downloaded=downloaded,
+                    chunk_count=chunk_count,
                 )
-                last_log_progress = progress
 
-            # Update database every 5% progress
-            if progress >= last_db_update_progress + 5:
+            # Check if we should update database
+            should_update_db, last_db_update_progress = _should_update_database(
+                total_size=state.total_size,
+                downloaded=downloaded,
+                last_db_update_progress=last_db_update_progress,
+                chunk_count=chunk_count,
+                chunk_size=state.chunk_size,
+            )
+            if should_update_db:
                 state.project_file.last_activity = timezone.now()
                 state.project_file.save(update_fields=["last_activity"])
-                last_db_update_progress = progress
 
     logger.info(
         "  ✓ Download complete! Total chunks: %d, Total bytes: %s",
