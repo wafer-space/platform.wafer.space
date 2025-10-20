@@ -6,22 +6,26 @@ Security-Critical Tests:
 - Only http:// and https:// schemes are allowed for file downloads
 """
 
+from datetime import timedelta
 from unittest.mock import Mock
 from unittest.mock import patch
 
 import pytest
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.utils import timezone
+from django_celery_results.models import TaskResult
 
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.tasks import _safe_urlopen
+from wafer_space.projects.tasks import check_orphaned_downloads
 from wafer_space.projects.tasks import check_project_manufacturability
 
 User = get_user_model()
 TEST_PASSWORD = "testpass123"  # noqa: S105
-
 
 class URLValidationSecurityTests(TestCase):
     """Security tests for URL validation in file download functionality."""
@@ -146,7 +150,6 @@ class URLValidationSecurityTests(TestCase):
             # Verify the request was made with correct headers
             assert mock_urlopen.called
 
-
 class URLValidationBehaviorTests(TestCase):
     """Tests to verify the behavior of URL validation security measures."""
 
@@ -207,7 +210,6 @@ class URLValidationBehaviorTests(TestCase):
                 ),
             ):
                 _safe_urlopen(url)
-
 
 @pytest.mark.django_db
 class TestManufacturabilityCheckTask(TestCase):
@@ -389,7 +391,6 @@ class TestManufacturabilityCheckTask(TestCase):
         assert self.project.status == Project.Status.MANUFACTURABLE
         assert self.project.is_manufacturable is True
 
-
 @pytest.mark.django_db
 class TestProjectSubmissionIntegration(TestCase):
     """Integration tests for project submission with manufacturability check."""
@@ -438,3 +439,226 @@ class TestProjectSubmissionIntegration(TestCase):
         # Verify project status
         assert self.project.status == Project.Status.SUBMITTED
         assert self.project.submitted_at is not None
+
+class OrphanedDownloadDetectionTests(TestCase):
+    """Tests for orphaned download detection and recovery."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test Description",
+        )
+
+    def test_detects_orphaned_downloading_file(self):
+        """Test that files stuck in DOWNLOADING state are detected as orphaned."""
+        # Create a file in DOWNLOADING state with old last_activity
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            source_url="http://example.com/test.gds",
+            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
+            download_task_id="old-task-123",
+            last_activity=timezone.now() - timedelta(minutes=20),
+        )
+
+        # Create a terminal TaskResult (FAILURE state)
+        TaskResult.objects.create(
+            task_id="old-task-123",
+            status="FAILURE",
+            result="{}",
+        )
+
+        # Run the orphan detection
+        result = check_orphaned_downloads()
+
+        # Verify the file was marked as orphaned
+        project_file.refresh_from_db()
+        assert project_file.download_status == ProjectFile.DownloadStatus.FAILED
+        assert "orphaned" in project_file.download_error.lower()
+        assert "no activity" in project_file.download_error
+        assert result["orphaned"] == 1
+        assert result["active"] == 0
+
+    def test_detects_orphaned_pending_file(self):
+        """Test that files stuck in PENDING state are detected as orphaned."""
+        # Create a file in PENDING state with old uploaded_at timestamp
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            source_url="http://example.com/test.gds",
+            download_status=ProjectFile.DownloadStatus.PENDING,
+            download_task_id="old-task-456",
+            uploaded_at=timezone.now() - timedelta(minutes=15),
+        )
+
+        # No TaskResult exists (task never started)
+
+        # Run the orphan detection
+        result = check_orphaned_downloads()
+
+        # Verify the file was marked as orphaned
+        project_file.refresh_from_db()
+        assert project_file.download_status == ProjectFile.DownloadStatus.FAILED
+        assert "never started" in project_file.download_error.lower()
+        assert "pending" in project_file.download_error.lower()
+        assert result["orphaned"] == 1
+        assert result["active"] == 0
+
+    def test_does_not_mark_active_downloading_file(self):
+        """Test that actively downloading files are not marked as orphaned."""
+
+        # Create a file in DOWNLOADING state with recent activity
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            source_url="http://example.com/test.gds",
+            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
+            download_task_id="active-task-789",
+            last_activity=timezone.now() - timedelta(seconds=30),  # Recent
+        )
+
+        # Create an active TaskResult (STARTED state)
+        TaskResult.objects.create(
+            task_id="active-task-789",
+            status="STARTED",
+            result="{}",
+        )
+
+        # Run the orphan detection
+        result = check_orphaned_downloads()
+
+        # Verify the file was NOT marked as orphaned
+        project_file.refresh_from_db()
+        assert project_file.download_status == ProjectFile.DownloadStatus.DOWNLOADING
+        assert project_file.download_error == ""
+        assert result["orphaned"] == 0
+        assert result["active"] == 1
+
+    def test_does_not_mark_active_pending_file(self):
+        """Test that recently queued PENDING files are not marked as orphaned."""
+
+        # Create a file in PENDING state with recent timestamp
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            source_url="http://example.com/test.gds",
+            download_status=ProjectFile.DownloadStatus.PENDING,
+            download_task_id="pending-task-999",
+            uploaded_at=timezone.now() - timedelta(seconds=30),  # Recent
+        )
+
+        # Create a pending TaskResult (PENDING state)
+        TaskResult.objects.create(
+            task_id="pending-task-999",
+            status="PENDING",
+            result="{}",
+        )
+
+        # Run the orphan detection
+        result = check_orphaned_downloads()
+
+        # Verify the file was NOT marked as orphaned
+        project_file.refresh_from_db()
+        assert project_file.download_status == ProjectFile.DownloadStatus.PENDING
+        assert project_file.download_error == ""
+        assert result["orphaned"] == 0
+        assert result["active"] == 1
+
+    def test_detects_orphaned_file_with_missing_task_result(self):
+        """Test that files with missing TaskResult are detected as orphaned."""
+
+        # Create a file in DOWNLOADING state with old activity
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            source_url="http://example.com/test.gds",
+            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
+            download_task_id="missing-task-111",
+            last_activity=timezone.now() - timedelta(minutes=20),
+        )
+
+        # No TaskResult exists (worker crashed, database cleaned up, etc.)
+
+        # Run the orphan detection
+        result = check_orphaned_downloads()
+
+        # Verify the file was marked as orphaned
+        project_file.refresh_from_db()
+        assert project_file.download_status == ProjectFile.DownloadStatus.FAILED
+        assert "orphaned" in project_file.download_error.lower()
+        assert result["orphaned"] == 1
+
+    def test_handles_multiple_orphaned_files(self):
+        """Test that multiple orphaned files are detected in one run."""
+
+        # Create multiple orphaned files
+        num_orphaned_files = 3
+        for i in range(num_orphaned_files):
+            ProjectFile.objects.create(
+                project=self.project,
+                source_url=f"http://example.com/test{i}.gds",
+                download_status=ProjectFile.DownloadStatus.DOWNLOADING,
+                download_task_id=f"orphan-task-{i}",
+                last_activity=timezone.now() - timedelta(minutes=20),
+            )
+
+        # Run the orphan detection
+        result = check_orphaned_downloads()
+
+        # Verify all files were marked as orphaned
+        assert result["orphaned"] == num_orphaned_files
+        assert result["active"] == 0
+
+        # Verify all files are now FAILED
+        failed_count = ProjectFile.objects.filter(
+            download_status=ProjectFile.DownloadStatus.FAILED
+        ).count()
+        assert failed_count == num_orphaned_files
+
+    def test_orphaned_file_triggers_auto_retry(self):
+        """Test that orphaned files are set up for auto-retry."""
+
+        # Create an orphaned file with retry enabled
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            source_url="http://example.com/test.gds",
+            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
+            download_task_id="retry-task-222",
+            last_activity=timezone.now() - timedelta(minutes=20),
+            auto_retry_enabled=True,
+            retry_count=0,
+            max_retries=3,
+        )
+
+        # Run the orphan detection
+        check_orphaned_downloads()
+
+        # Verify the file is set up for auto-retry
+        project_file.refresh_from_db()
+        assert project_file.download_status == ProjectFile.DownloadStatus.FAILED
+        assert project_file.next_retry_at is not None
+        # Retry count not incremented yet - retry task will do that
+        assert project_file.retry_count == 0
+
+    def test_respects_timeout_thresholds(self):
+        """Test that timeout thresholds are respected correctly."""
+
+        # Create a file just before the timeout threshold
+        timeout = settings.DOWNLOAD_ORPHAN_TIMEOUT_SECONDS
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            source_url="http://example.com/test.gds",
+            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
+            download_task_id="threshold-task-333",
+            last_activity=timezone.now() - timedelta(seconds=timeout - 10),
+        )
+
+        # Run the orphan detection
+        result = check_orphaned_downloads()
+
+        # Verify the file was NOT marked as orphaned (within threshold)
+        project_file.refresh_from_db()
+        assert project_file.download_status == ProjectFile.DownloadStatus.DOWNLOADING
+        assert result["orphaned"] == 0
