@@ -367,15 +367,19 @@ class ProjectFile(models.Model):
         Returns:
             datetime: When the next retry should be attempted
 
-        Backoff strategy:
+        Backoff strategy (production):
             - Retry 1: 5 minutes
             - Retry 2: 15 minutes (5 * 3)
             - Retry 3: 45 minutes (15 * 3)
-            - etc.
+
+        Backoff strategy (development):
+            - Retry 1: 30 seconds
+            - Retry 2: 90 seconds (30 * 3)
+            - Retry 3: 270 seconds (90 * 3)
         """
-        base_delay_minutes = 5
-        backoff_multiplier = 3
-        delay_minutes = base_delay_minutes * (backoff_multiplier**self.retry_count)
+        base_delay = settings.DOWNLOAD_RETRY_BASE_DELAY_MINUTES
+        backoff_multiplier = settings.DOWNLOAD_RETRY_BACKOFF_MULTIPLIER
+        delay_minutes = base_delay * (backoff_multiplier**self.retry_count)
         return timezone.now() + timedelta(minutes=delay_minutes)
 
     def should_auto_retry(self) -> bool:

@@ -84,5 +84,18 @@ INSTALLED_APPS += ["django_extensions"]
 # https://docs.celeryq.dev/en/stable/userguide/configuration.html#broker-url
 CELERY_BROKER_URL = f"sqla+sqlite:///{BASE_DIR / 'db.sqlite3'}"  # noqa: F405
 
+# Download retry configuration - use seconds for faster testing in development
+# ------------------------------------------------------------------------------
+DOWNLOAD_RETRY_BASE_DELAY_MINUTES = 30 / 60  # 30 seconds (expressed in minutes)
+DOWNLOAD_RETRY_CHECK_INTERVAL_SECONDS = 30.0  # Check every 30 seconds
+
+# Override Celery Beat schedule with development intervals
+CELERY_BEAT_SCHEDULE = {
+    "retry-failed-downloads": {
+        "task": "wafer_space.projects.tasks.retry_failed_downloads",
+        "schedule": DOWNLOAD_RETRY_CHECK_INTERVAL_SECONDS,
+    },
+}
+
 # Your stuff...
 # ------------------------------------------------------------------------------
