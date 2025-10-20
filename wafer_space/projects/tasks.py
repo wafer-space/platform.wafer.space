@@ -1317,7 +1317,7 @@ def check_orphaned_downloads():
     pending_cutoff = now - timedelta(seconds=pending_timeout)
     pending_files = ProjectFile.objects.filter(
         download_status=ProjectFile.DownloadStatus.PENDING,
-        created_at__lt=pending_cutoff,
+        uploaded_at__lt=pending_cutoff,
     )
 
     for project_file in pending_files:
