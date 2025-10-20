@@ -8,4 +8,5 @@ web: python manage.py runserver 8081
 # --concurrency=1: Single worker process for local development
 # --loglevel=info: Show task execution logs
 # --pool=solo: Use solo pool (simplest, single-threaded, good for debugging)
-worker: celery -A config worker --loglevel=info --concurrency=1 --pool=solo
+# -Q: Listen to specific queues (celery=default, manufacturability=project tasks, referrals=referral tasks)
+worker: celery -A config worker -Q celery,manufacturability,referrals --loglevel=info --concurrency=1 --pool=solo
