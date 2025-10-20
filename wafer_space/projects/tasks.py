@@ -26,6 +26,7 @@ from wafer_space.notifications.services import NotificationService
 from .models import ManufacturabilityCheck
 from .models import Project
 from .models import ProjectFile
+from .models import ProjectFileChunk
 from .url_handlers import GoogleSourceHandler
 from .url_handlers import URLHandlerRegistry
 
@@ -633,8 +634,16 @@ def _download_chunks(state: _ChunkDownloadState) -> int:
                 chunk_size=state.chunk_size,
             )
             if should_update_db:
+                # Update last activity timestamp
                 state.project_file.last_activity = timezone.now()
                 state.project_file.save(update_fields=["last_activity"])
+
+                # Record chunk checkpoint for performance analysis
+                ProjectFileChunk.objects.create(
+                    project_file=state.project_file,
+                    bytes_downloaded=downloaded,
+                    chunk_number=chunk_count,
+                )
 
     # Calculate final download speed
     elapsed_time = time.time() - state.start_time

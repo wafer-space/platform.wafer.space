@@ -420,6 +420,80 @@ class ProjectFile(models.Model):
         return f"{speed:.2f} PB/s"
 
 
+class ProjectFileChunk(models.Model):
+    """Track individual chunk downloads for performance analysis and resume capability.
+
+    Records are created periodically during download (e.g., every 5MB) rather than
+    for every single chunk, to balance granularity with database overhead.
+    """
+
+    project_file = models.ForeignKey(
+        ProjectFile,
+        on_delete=models.CASCADE,
+        related_name="chunks",
+    )
+    timestamp = models.DateTimeField(
+        auto_now_add=True,
+        help_text="When this checkpoint was recorded",
+    )
+    bytes_downloaded = models.BigIntegerField(
+        help_text="Cumulative bytes downloaded at this checkpoint",
+    )
+    chunk_number = models.IntegerField(
+        help_text="Sequential chunk number for ordering",
+    )
+
+    class Meta:
+        ordering = ["chunk_number"]
+        indexes = [
+            models.Index(fields=["project_file", "chunk_number"]),
+            models.Index(fields=["project_file", "timestamp"]),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.project_file.original_filename} - "
+            f"Chunk {self.chunk_number} ({self.bytes_downloaded:,} bytes)"
+        )
+
+    @property
+    def speed_since_previous(self) -> float | None:
+        """Calculate download speed since the previous chunk.
+
+        Returns:
+            float: Speed in bytes/sec, or None if this is the first chunk
+        """
+        # Get previous chunk
+        previous = (
+            ProjectFileChunk.objects.filter(
+                project_file=self.project_file,
+                chunk_number__lt=self.chunk_number,
+            )
+            .order_by("-chunk_number")
+            .first()
+        )
+
+        if not previous:
+            # This is the first chunk, calculate from download start
+            if not self.project_file.download_started_at:
+                return None
+
+            time_diff = self.timestamp - self.project_file.download_started_at
+            duration = time_diff.total_seconds()
+            if duration <= 0:
+                return None
+
+            return self.bytes_downloaded / duration
+
+        # Calculate speed since previous chunk
+        duration = (self.timestamp - previous.timestamp).total_seconds()
+        if duration <= 0:
+            return None
+
+        bytes_since_previous = self.bytes_downloaded - previous.bytes_downloaded
+        return bytes_since_previous / duration
+
+
 class ManufacturabilityCheck(models.Model):
     """Track manufacturability checking process for projects."""
 

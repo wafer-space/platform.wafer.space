@@ -265,6 +265,46 @@
                       <strong>Average Download Speed:</strong> {{ active_file.download_speed_formatted }}
                     </p>
                   {% endif %}
+                  {% if active_file.chunks.exists %}
+                    <hr />
+                    <h6>Download Performance</h6>
+                    <p class="mb-2">
+                      <strong>Checkpoints Tracked:</strong> {{ active_file.chunks.count }}
+                    </p>
+                    <details>
+                      <summary class="text-primary" style="cursor: pointer;">
+                        <i class="bi bi-graph-up"></i> View Download Timeline
+                      </summary>
+                      <div class="table-responsive mt-2">
+                        <table class="table table-sm table-striped">
+                          <thead>
+                            <tr>
+                              <th>Checkpoint</th>
+                              <th>Downloaded</th>
+                              <th>Time</th>
+                              <th>Speed</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {% for chunk in active_file.chunks.all %}
+                              <tr>
+                                <td>#{{ chunk.chunk_number }}</td>
+                                <td>{{ chunk.bytes_downloaded|filesizeformat }}</td>
+                                <td>{{ chunk.timestamp|date:"H:i:s" }}</td>
+                                <td>
+                                  {% if chunk.speed_since_previous %}
+                                    {{ chunk.speed_since_previous|floatformat:0|filesizeformat }}/s
+                                  {% else %}
+                                    <span class="text-muted">-</span>
+                                  {% endif %}
+                                </td>
+                              </tr>
+                            {% endfor %}
+                          </tbody>
+                        </table>
+                      </div>
+                    </details>
+                  {% endif %}
                   {% if active_file.hash_md5 or active_file.hash_sha1 %}
                     <hr />
                     <h6>File Hashes</h6>
