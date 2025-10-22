@@ -297,3 +297,6 @@ client_secret_*.json
 
 # Secrets repository (cloned separately)
 secrets/
+
+# Git worktrees (isolated workspaces)
+.worktrees/
