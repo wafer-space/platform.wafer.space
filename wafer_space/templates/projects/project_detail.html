@@ -250,7 +250,7 @@
                       <strong>Download Started:</strong> {{ active_file.download_started_at|date:"F d, Y, g:i a" }}
                     </p>
                   {% endif %}
-                  {% if active_file.download_completed_at %}
+                  {% if active_file.download_completed_at and active_file.download_status == 'completed' %}
                     <p class="mb-2">
                       <strong>Download Completed:</strong> {{ active_file.download_completed_at|date:"F d, Y, g:i a" }}
                     </p>
