@@ -547,7 +547,10 @@ def _should_update_database(
         mb_downloaded = downloaded / (1024 * 1024)
         mb_last_update = last_db_update_bytes / (1024 * 1024)
         if mb_downloaded >= mb_last_update + 5:
-            return True, last_db_update_progress, downloaded
+            # Round down to nearest 5MB boundary for clean checkpoint values
+            checkpoint_mb = int(mb_downloaded / 5) * 5
+            checkpoint_bytes = checkpoint_mb * 1024 * 1024
+            return True, last_db_update_progress, checkpoint_bytes
 
     return False, last_db_update_progress, last_db_update_bytes
 
@@ -662,9 +665,10 @@ def _download_chunks(state: _ChunkDownloadState) -> int:
                 state.project_file.save(update_fields=["last_activity"])
 
                 # Record chunk checkpoint for performance analysis
+                # Use rounded checkpoint values at exact 5MB boundaries
                 ProjectFileChunk.objects.create(
                     project_file=state.project_file,
-                    bytes_downloaded=downloaded,
+                    bytes_downloaded=last_db_update_bytes,
                     chunk_number=chunk_count,
                 )
 
