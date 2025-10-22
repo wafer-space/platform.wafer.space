@@ -316,7 +316,14 @@ def driver(browser_config, chrome_options, firefox_options):
     browser = browser_config["browser"]
 
     if browser == "chrome":
-        service = ChromeService(ChromeDriverManager().install())
+        # Get chromedriver path from manager
+        driver_path = ChromeDriverManager().install()
+        # Fix for webdriver-manager bug: ensure we use 'chromedriver' not other files
+        driver_dir = Path(driver_path).parent
+        actual_driver = driver_dir / "chromedriver"
+        if actual_driver.exists():
+            driver_path = str(actual_driver)
+        service = ChromeService(driver_path)
         driver = webdriver.Chrome(service=service, options=chrome_options)
     elif browser == "firefox":
         service = FirefoxService(GeckoDriverManager().install())
