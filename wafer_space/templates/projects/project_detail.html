@@ -313,7 +313,7 @@
                               <tr>
                                 <td>#{{ chunk.chunk_number }}</td>
                                 <td>{{ chunk.bytes_downloaded|filesizeformat }}</td>
-                                <td>{{ chunk.timestamp|date:"M d, Y H:i:s" }}</td>
+                                <td>{{ chunk.timestamp|date:"Y-m-d H:i:s" }}</td>
                                 <td>
                                   {% if chunk.speed_since_previous %}
                                     {{ chunk.speed_since_previous|floatformat:0|filesizeformat }}/s
