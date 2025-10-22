@@ -530,27 +530,26 @@ def _should_update_database(
     total_size: int,
     downloaded: int,
     last_db_update_progress: int,
-    chunk_count: int,
-    chunk_size: int,
-) -> tuple[bool, int]:
+    last_db_update_bytes: int,
+) -> tuple[bool, int, int]:
     """Determine if database should be updated.
 
     Returns:
-        tuple: (should_update, new_last_db_update_progress)
+        tuple: (should_update, new_last_db_update_progress, new_last_db_update_bytes)
     """
     if total_size > 0:
         # Known size: update every 5% progress
         progress = int((downloaded / total_size) * 100)
         if progress >= last_db_update_progress + 5:
-            return True, progress
+            return True, progress, last_db_update_bytes
     else:
         # Unknown size: update every 5MB
         mb_downloaded = downloaded / (1024 * 1024)
-        mb_last_update = (last_db_update_progress * chunk_size) / (1024 * 1024)
+        mb_last_update = last_db_update_bytes / (1024 * 1024)
         if mb_downloaded >= mb_last_update + 5:
-            return True, chunk_count
+            return True, last_db_update_progress, downloaded
 
-    return False, last_db_update_progress
+    return False, last_db_update_progress, last_db_update_bytes
 
 
 def _download_chunks(state: _ChunkDownloadState) -> int:
@@ -563,11 +562,18 @@ def _download_chunks(state: _ChunkDownloadState) -> int:
     downloaded = state.resume_byte_pos
     last_db_update_progress = 0
     last_log_progress = 0
+
     # Align last_log_bytes to 10MB boundaries for consistent logging
     # E.g., if resumed at 42.31 MB, set to 40 MB so next log is at 50 MB
     mb_downloaded = state.resume_byte_pos / (1024 * 1024)
     last_log_mb = int(mb_downloaded / 10) * 10  # Round down to nearest 10MB
     last_log_bytes = last_log_mb * 1024 * 1024
+
+    # Align last_db_update_bytes to 5MB boundaries for consistent database checkpoints
+    # E.g., if resumed at 42.31 MB, set to 40 MB so next checkpoint is at 45 MB
+    last_db_update_mb = int(mb_downloaded / 5) * 5  # Round down to nearest 5MB
+    last_db_update_bytes = last_db_update_mb * 1024 * 1024
+
     mode = "ab" if state.resume_byte_pos > 0 else "wb"
 
     formatted_chunk_size = _format_bytes(state.chunk_size)
@@ -640,12 +646,15 @@ def _download_chunks(state: _ChunkDownloadState) -> int:
                 )
 
             # Check if we should update database
-            should_update_db, last_db_update_progress = _should_update_database(
+            (
+                should_update_db,
+                last_db_update_progress,
+                last_db_update_bytes,
+            ) = _should_update_database(
                 total_size=state.total_size,
                 downloaded=downloaded,
                 last_db_update_progress=last_db_update_progress,
-                chunk_count=chunk_count,
-                chunk_size=state.chunk_size,
+                last_db_update_bytes=last_db_update_bytes,
             )
             if should_update_db:
                 # Update last activity timestamp
