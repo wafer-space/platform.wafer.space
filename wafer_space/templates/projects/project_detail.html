@@ -398,6 +398,66 @@
             </div>
           </div>
         </div>
+        {# File History Section #}
+        {% if all_files %}
+          <div class="card mb-3">
+            <div class="card-header">
+              <h5 class="mb-0">
+                <i class="bi bi-clock-history"></i> File History
+              </h5>
+            </div>
+            <div class="card-body">
+              <div class="table-responsive">
+                <table class="table table-sm table-hover">
+                  <thead>
+                    <tr>
+                      <th>Filename</th>
+                      <th>Uploaded</th>
+                      <th>Size</th>
+                      <th>Status</th>
+                      <th>Active</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for file in all_files %}
+                      <tr>
+                        <td>
+                          <i class="bi bi-file-earmark"></i>
+                          {{ file.original_filename }}
+                        </td>
+                        <td>{{ file.uploaded_at|date:"Y-m-d H:i:s" }}</td>
+                        <td>
+                          {% if file.file_size %}
+                            {{ file.file_size|filesizeformat }}
+                          {% else %}
+                            <span class="text-muted">Unknown</span>
+                          {% endif %}
+                        </td>
+                        <td>
+                          <span class="badge {% if file.download_status == 'completed' %}bg-success{% elif file.download_status == 'failed' %}bg-danger{% elif file.download_status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
+                            {{ file.get_download_status_display }}
+                          </span>
+                          {% if file.hash_verified %}
+                            <span class="badge bg-success">
+                              <i class="bi bi-check-circle"></i> Verified
+                            </span>
+                          {% endif %}
+                        </td>
+                        <td>
+                          {% if file.is_active %}
+                            <span class="badge bg-info">
+                              <i class="bi bi-star-fill"></i> Active
+                            </span>
+                          {% endif %}
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        {% endif %}
         <div class="card">
           <div class="card-body">
             <p class="text-muted mb-0">

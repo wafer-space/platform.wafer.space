@@ -93,6 +93,10 @@ class ProjectDetailView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
             context["show_error"] = True
             context["error_message"] = active_file.download_error
 
+        # Add all files for history display (newest first)
+        all_files = ProjectFile.objects.filter(project=project).order_by("-uploaded_at")
+        context["all_files"] = all_files
+
         # Add manufacturability check status
         check_status = ManufacturabilityService.get_check_status(project)
         context["check_status"] = check_status
