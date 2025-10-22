@@ -17,11 +17,20 @@ ALLOWED_HOSTS = ["localhost", "0.0.0.0", "127.0.0.1"]  # noqa: S104
 
 # DATABASES
 # ------------------------------------------------------------------------------
-# Use SQLite for local development
+# Use SQLite for local development with WAL mode and increased timeout
+# to prevent "database is locked" errors with concurrent access
+# (Django dev server + Celery workers)
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": BASE_DIR / "db.sqlite3",  # noqa: F405
+        # Increase timeout to 30 seconds (default is 5)
+        "timeout": 30,
+        "OPTIONS": {
+            # Enable WAL mode for better concurrent access
+            # WAL allows multiple readers while one writer is active
+            "init_command": "PRAGMA journal_mode=WAL;",
+        },
     },
 }
 

@@ -43,6 +43,8 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": ":memory:",  # Use in-memory database for speed
+        # Increase timeout to prevent locking issues in parallel tests
+        "timeout": 30,
     },
 }
 
