@@ -563,7 +563,11 @@ def _download_chunks(state: _ChunkDownloadState) -> int:
     downloaded = state.resume_byte_pos
     last_db_update_progress = 0
     last_log_progress = 0
-    last_log_bytes = 0
+    # Align last_log_bytes to 10MB boundaries for consistent logging
+    # E.g., if resumed at 42.31 MB, set to 40 MB so next log is at 50 MB
+    mb_downloaded = state.resume_byte_pos / (1024 * 1024)
+    last_log_mb = int(mb_downloaded / 10) * 10  # Round down to nearest 10MB
+    last_log_bytes = last_log_mb * 1024 * 1024
     mode = "ab" if state.resume_byte_pos > 0 else "wb"
 
     formatted_chunk_size = _format_bytes(state.chunk_size)
