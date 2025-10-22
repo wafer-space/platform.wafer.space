@@ -41,6 +41,16 @@ class Project(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     submitted_at = models.DateTimeField(null=True, blank=True)
 
+    # Track which file was submitted for manufacturing
+    submitted_file = models.ForeignKey(
+        "ProjectFile",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="submitted_for_project",
+        help_text="The file that was submitted for manufacturing",
+    )
+
     # Manufacturability check results
     is_manufacturable = models.BooleanField(null=True, blank=True)
     manufacturability_errors = models.JSONField(default=list, blank=True)
@@ -106,9 +116,13 @@ class Project(models.Model):
         if not can_submit:
             raise ValidationError(reason)
 
+        # Get the active file that's being submitted
+        active_file = self.files.get(is_active=True)
+
         # Update project status
         self.status = self.Status.SUBMITTED
         self.submitted_at = timezone.now()
+        self.submitted_file = active_file
         self.save()
 
         # Queue manufacturability check using service layer

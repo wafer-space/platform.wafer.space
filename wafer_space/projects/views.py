@@ -64,38 +64,61 @@ class ProjectDetailView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
         return project.user == self.request.user
 
     def get_context_data(self, **kwargs):
-        """Add active project file, submission status, and check status to context."""
+        """Add project files and status to context."""
         context = super().get_context_data(**kwargs)
         project = self.get_object()
 
-        # Get active file if exists
-        active_file = ProjectFile.objects.filter(
+        # Get submitted file (file that was submitted for manufacturing)
+        submitted_file = project.submitted_file
+        context["submitted_file"] = submitted_file
+
+        # Get in-progress file (current active file being worked on)
+        in_progress_file = ProjectFile.objects.filter(
             project=project,
             is_active=True,
         ).first()
 
-        context["active_file"] = active_file
+        # If in-progress file is same as submitted file, don't show it twice
+        if (
+            in_progress_file
+            and submitted_file
+            and in_progress_file.id == submitted_file.id
+        ):
+            in_progress_file = None
 
-        # If there's an active file with a download in progress, add progress info
-        if active_file and active_file.download_status in [
+        context["in_progress_file"] = in_progress_file
+
+        # If there's an in-progress file with a download in progress, add progress info
+        if in_progress_file and in_progress_file.download_status in [
             ProjectFile.DownloadStatus.PENDING,
             ProjectFile.DownloadStatus.DOWNLOADING,
         ]:
             context["show_progress"] = True
-            progress = ProjectFileService.get_download_progress(active_file)
+            progress = ProjectFileService.get_download_progress(in_progress_file)
             context["progress"] = progress
 
         # Add error information if download failed
         if (
-            active_file
-            and active_file.download_status == ProjectFile.DownloadStatus.FAILED
+            in_progress_file
+            and in_progress_file.download_status == ProjectFile.DownloadStatus.FAILED
         ):
             context["show_error"] = True
-            context["error_message"] = active_file.download_error
+            context["error_message"] = in_progress_file.download_error
 
-        # Add all files for history display (newest first)
-        all_files = ProjectFile.objects.filter(project=project).order_by("-uploaded_at")
-        context["all_files"] = all_files
+        # Get file history (non-active files, newest first)
+        # Exclude both submitted and in-progress files from history
+        exclude_ids = []
+        if submitted_file:
+            exclude_ids.append(submitted_file.id)
+        if in_progress_file:
+            exclude_ids.append(in_progress_file.id)
+
+        history_files = (
+            ProjectFile.objects.filter(project=project)
+            .exclude(id__in=exclude_ids)
+            .order_by("-uploaded_at")
+        )
+        context["history_files"] = history_files
 
         # Add manufacturability check status
         check_status = ManufacturabilityService.get_check_status(project)

@@ -158,65 +158,51 @@
             </div>
           </div>
         {% endif %}
-        {# Project File Section #}
-        <div class="card mb-3">
-          <div class="card-header d-flex justify-content-between align-items-center">
-            <h5 class="mb-0">Project File</h5>
-            <div>
-              {% if project.can_submit.0 %}
-                <form action="{% url 'projects:submit' pk=project.pk %}"
-                      method="post"
-                      style="display: inline"
-                      onsubmit="return confirm('Are you sure you want to submit this project for manufacturing? This action cannot be undone.');">
-                  {% csrf_token %}
-                  <button type="submit" class="btn btn-success">
-                    <i class="bi bi-send"></i> Submit for Manufacturing
-                  </button>
-                </form>
-              {% else %}
-                <button type="button"
-                        class="btn btn-success"
-                        disabled
-                        data-bs-toggle="tooltip"
-                        data-bs-placement="top"
-                        title="{{ project.can_submit.1 }}">
-                  <i class="bi bi-send"></i> Submit for Manufacturing
-                </button>
-              {% endif %}
+        {# Submitted File Section #}
+        {% if submitted_file %}
+          <div class="card mb-3 border-success">
+            <div class="card-header bg-success text-white">
+              <h5 class="mb-0">
+                <i class="bi bi-check-circle-fill"></i> Submitted for Manufacturing
+              </h5>
+            </div>
+            <div class="card-body">
+              {% include "projects/_file_display.html" with file=submitted_file %}
             </div>
           </div>
-          <div class="card-body">
-            {% if active_file %}
-              <h6>Active File: {{ active_file.original_filename }}</h6>
-              {# Status Badges #}
-              <p class="mb-3">
-                <strong>Download Status:</strong>
-                <span id="status-badge"
-                      class="badge {% if active_file.download_status == 'completed' %}bg-success {% elif active_file.download_status == 'failed' %}bg-danger {% elif active_file.download_status == 'downloading' %}bg-primary {% else %}bg-secondary{% endif %}">
-                  {% if active_file.download_status == 'completed' %}
-                    <i class="bi bi-check-circle"></i>
-                  {% elif active_file.download_status == 'failed' %}
-                    <i class="bi bi-exclamation-triangle"></i>
-                  {% elif active_file.download_status == 'downloading' %}
-                    <span class="spinner-border spinner-border-sm"
-                          role="status"
-                          aria-hidden="true"></span>
-                  {% else %}
-                    <i class="bi bi-clock"></i>
-                  {% endif %}
-                  <span id="status-text">{{ active_file.get_download_status_display }}</span>
-                </span>
-                {% if active_file.hash_verified %}
-                  <span class="badge bg-success">
-                    <i class="bi bi-check-circle"></i> Hash Verified
-                  </span>
-                {% elif active_file.download_status == 'completed' %}
-                  <span class="badge bg-warning text-dark">
-                    <i class="bi bi-exclamation-triangle"></i> Hash Not Verified
-                  </span>
+        {% endif %}
+        {# In-Progress File Section #}
+        {% if in_progress_file %}
+          <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <h5 class="mb-0">
+                <i class="bi bi-file-earmark"></i> File In Progress
+              </h5>
+              <div>
+                {% if project.can_submit.0 %}
+                  <form action="{% url 'projects:submit' pk=project.pk %}"
+                        method="post"
+                        style="display: inline"
+                        onsubmit="return confirm('Are you sure you want to submit this project for manufacturing? This action cannot be undone.');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-success">
+                      <i class="bi bi-send"></i> Submit for Manufacturing
+                    </button>
+                  </form>
+                {% else %}
+                  <button type="button"
+                          class="btn btn-success"
+                          disabled
+                          data-bs-toggle="tooltip"
+                          data-bs-placement="top"
+                          title="{{ project.can_submit.1 }}">
+                    <i class="bi bi-send"></i> Submit for Manufacturing
+                  </button>
                 {% endif %}
-              </p>
-              {# Progress Bar #}
+              </div>
+            </div>
+            <div class="card-body">
+              {# Progress Bar for downloading files #}
               {% if show_progress %}
                 <div id="progress-container" class="mb-3">
                   <div class="progress" style="height: 25px;">
@@ -233,175 +219,31 @@
                   <p id="progress-message" class="mt-2 text-muted">{{ progress.message }}</p>
                 </div>
               {% endif %}
-              {# Download Information #}
-              <div class="card bg-light mb-3">
-                <div class="card-body">
-                  <h6 class="card-title">Download Information</h6>
-                  {% if active_file.original_url %}
-                    <p class="mb-2">
-                      <strong>Original URL:</strong>
-                      <a href="{{ active_file.original_url }}"
-                         target="_blank"
-                         rel="noopener noreferrer">
-                        {{ active_file.original_url|truncatechars:80 }}
-                        <i class="bi bi-box-arrow-up-right"></i>
-                      </a>
-                    </p>
-                  {% endif %}
-                  {% if active_file.source_url and active_file.source_url != active_file.original_url %}
-                    <p class="mb-2">
-                      <strong>Source URL:</strong>
-                      <a href="{{ active_file.source_url }}"
-                         target="_blank"
-                         rel="noopener noreferrer">
-                        {{ active_file.source_url|truncatechars:80 }}
-                        <i class="bi bi-box-arrow-up-right"></i>
-                      </a>
-                      <span class="badge bg-info text-dark">
-                        <i class="bi bi-info-circle"></i> URL was rewritten
-                      </span>
-                    </p>
-                  {% endif %}
-                  {% if active_file.file_size %}
-                    <p class="mb-2">
-                      <strong>File Size:</strong> {{ active_file.file_size|filesizeformat }}
-                    </p>
-                  {% endif %}
-                  {% if active_file.download_started_at %}
-                    <p class="mb-2">
-                      <strong>Download Started:</strong> {{ active_file.download_started_at|date:"F d, Y, g:i a" }}
-                    </p>
-                  {% endif %}
-                  {% if active_file.download_completed_at and active_file.download_status == 'completed' %}
-                    <p class="mb-2">
-                      <strong>Download Completed:</strong> {{ active_file.download_completed_at|date:"F d, Y, g:i a" }}
-                    </p>
-                  {% endif %}
-                  {% if active_file.download_duration_seconds %}
-                    <p class="mb-2">
-                      <strong>Download Duration:</strong> {{ active_file.download_duration_seconds|floatformat:1 }} seconds
-                    </p>
-                  {% endif %}
-                  {% if active_file.download_speed_formatted %}
-                    <p class="mb-2">
-                      <strong>Average Download Speed:</strong> {{ active_file.download_speed_formatted }}
-                    </p>
-                  {% endif %}
-                  {% if active_file.retry_count > 0 %}
-                    <p class="mb-2">
-                      <strong>Auto-Retry Attempts:</strong> {{ active_file.retry_count }}/{{ active_file.max_retries }}
-                    </p>
-                  {% endif %}
-                  {% if active_file.download_status == 'failed' and active_file.auto_retry_enabled %}
-                    <p class="mb-2">
-                      <strong>Auto-Retry:</strong>
-                      {% if active_file.retry_count >= active_file.max_retries %}
-                        <span class="badge bg-danger">
-                          <i class="bi bi-x-circle"></i> Max retries reached
-                        </span>
-                      {% elif active_file.next_retry_at %}
-                        <span class="badge bg-warning text-dark">
-                          <i class="bi bi-clock"></i> Next retry at {{ active_file.next_retry_at|date:"g:i a" }}
-                        </span>
-                      {% else %}
-                        <span class="badge bg-info text-dark">
-                          <i class="bi bi-arrow-repeat"></i> Retry pending
-                        </span>
-                      {% endif %}
-                    </p>
-                  {% endif %}
-                  {% if active_file.chunks.exists %}
-                    <hr />
-                    <h6>Download Performance</h6>
-                    <p class="mb-2">
-                      <strong>Checkpoints Tracked:</strong> {{ active_file.chunks.count }}
-                    </p>
-                    <details>
-                      <summary class="text-primary" style="cursor: pointer;">
-                        <i class="bi bi-graph-up"></i> View Download Timeline
-                      </summary>
-                      <div class="table-responsive mt-2">
-                        <table class="table table-sm table-striped">
-                          <thead>
-                            <tr>
-                              <th>Checkpoint</th>
-                              <th>Downloaded</th>
-                              <th>Time</th>
-                              <th>Speed</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {% for chunk in active_file.chunks.all|dictsortreversed:"chunk_number" %}
-                              <tr>
-                                <td>#{{ chunk.chunk_number }}</td>
-                                <td>{{ chunk.bytes_downloaded|filesizeformat }}</td>
-                                <td>{{ chunk.timestamp|date:"Y-m-d H:i:s" }}</td>
-                                <td>
-                                  {% if chunk.speed_since_previous %}
-                                    {{ chunk.speed_since_previous|floatformat:0|filesizeformat }}/s
-                                  {% else %}
-                                    <span class="text-muted">-</span>
-                                  {% endif %}
-                                </td>
-                              </tr>
-                            {% endfor %}
-                          </tbody>
-                        </table>
-                      </div>
-                    </details>
-                  {% endif %}
-                  {% if active_file.hash_md5 or active_file.hash_sha1 %}
-                    <hr />
-                    <h6>File Hashes</h6>
-                    {% if active_file.hash_md5 %}
-                      <p class="mb-1">
-                        <strong>MD5:</strong> <code>{{ active_file.hash_md5 }}</code>
-                        {% if active_file.expected_hash_md5 %}
-                          {% if active_file.hash_md5|lower == active_file.expected_hash_md5|lower %}
-                            <span class="badge bg-success">
-                              <i class="bi bi-check-circle"></i> Verified
-                            </span>
-                          {% else %}
-                            <span class="badge bg-danger">
-                              <i class="bi bi-x-circle"></i> Mismatch
-                            </span>
-                          {% endif %}
-                        {% endif %}
-                      </p>
-                    {% endif %}
-                    {% if active_file.hash_sha1 %}
-                      <p class="mb-1">
-                        <strong>SHA1:</strong> <code>{{ active_file.hash_sha1 }}</code>
-                        {% if active_file.expected_hash_sha1 %}
-                          {% if active_file.hash_sha1|lower == active_file.expected_hash_sha1|lower %}
-                            <span class="badge bg-success">
-                              <i class="bi bi-check-circle"></i> Verified
-                            </span>
-                          {% else %}
-                            <span class="badge bg-danger">
-                              <i class="bi bi-x-circle"></i> Mismatch
-                            </span>
-                          {% endif %}
-                        {% endif %}
-                      </p>
-                    {% endif %}
-                  {% endif %}
-                </div>
-              </div>
-            {% else %}
-              <p class="text-muted">No file uploaded yet.</p>
-            {% endif %}
-            <div class="mt-3">
-              <a class="btn btn-primary"
-                 href="{% url 'projects:submit_url' pk=project.pk %}"
-                 role="button">
-                <i class="bi bi-link"></i> Submit File URL
-              </a>
+              {% include "projects/_file_display.html" with file=in_progress_file %}
             </div>
+          </div>
+        {% endif %}
+        {# Submit New File Button #}
+        <div class="card mb-3">
+          <div class="card-body text-center">
+            <p class="mb-3">
+              {% if in_progress_file %}
+                <i class="bi bi-info-circle text-primary"></i>
+                Submitting a new file will replace the current file in progress.
+              {% else %}
+                <i class="bi bi-info-circle text-primary"></i>
+                Upload a design file to get started.
+              {% endif %}
+            </p>
+            <a class="btn btn-primary btn-lg"
+               href="{% url 'projects:submit_url' pk=project.pk %}"
+               role="button">
+              <i class="bi bi-link"></i> Submit New File URL
+            </a>
           </div>
         </div>
         {# File History Section #}
-        {% if all_files %}
+        {% if history_files %}
           <div class="card mb-3">
             <div class="card-header">
               <h5 class="mb-0">
@@ -421,7 +263,7 @@
                     </tr>
                   </thead>
                   <tbody>
-                    {% for file in all_files %}
+                    {% for file in history_files %}
                       <tr>
                         <td>
                           <i class="bi bi-file-earmark"></i>
