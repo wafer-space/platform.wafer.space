@@ -31,6 +31,8 @@ from .models import ProjectFile
 from .models import ProjectFileChunk
 from .url_handlers import GoogleSourceHandler
 from .url_handlers import URLHandlerRegistry
+from .verification import is_task_actively_running
+from .verification import is_task_queued
 
 # Mock manufacturability check constants
 MOCK_PROCESSING_TIME_MIN = 2.0
@@ -1361,6 +1363,83 @@ def check_orphaned_downloads():
         "status": "completed",
         "orphaned": orphaned_count,
         "active": skipped_count,
+    }
+
+
+@shared_task
+def check_download_states():
+    """Verify all downloading files are in correct state.
+
+    Runs frequently (every 30s) - no timeout needed.
+
+    Returns:
+        dict: Status with counts of created_tasks, orphaned, verified
+    """
+    logger = logging.getLogger(__name__)
+
+    created_tasks = 0
+    orphaned_count = 0
+    verified_count = 0
+
+    # PENDING: Create tasks if missing
+    pending_files = ProjectFile.objects.filter(
+        download_status=ProjectFile.DownloadStatus.PENDING
+    )
+
+    for project_file in pending_files:
+        if not project_file.download_task_id:
+            # Create task and transition to QUEUED
+            task = download_project_file.delay(project_file.project.id)
+            project_file.download_task_id = task.id
+            project_file.download_status = ProjectFile.DownloadStatus.QUEUED
+            project_file.save(update_fields=["download_task_id", "download_status"])
+            created_tasks += 1
+            logger.info("Created task for pending file %s", project_file.id)
+        else:
+            # Has task - should be QUEUED
+            project_file.download_status = ProjectFile.DownloadStatus.QUEUED
+            project_file.save(update_fields=["download_status"])
+
+    # QUEUED: Verify task in Celery queue
+    queued_files = ProjectFile.objects.filter(
+        download_status=ProjectFile.DownloadStatus.QUEUED
+    ).exclude(download_task_id="")
+
+    for project_file in queued_files:
+        if is_task_queued(project_file):
+            verified_count += 1
+        else:
+            error_msg = "Task not found in Celery queue (worker may be down)"
+            logger.warning("Orphaned queued file %s", project_file.id)
+            project_file.mark_download_failed(error_msg)
+            orphaned_count += 1
+
+    # DOWNLOADING: Verify task executing AND PID exists
+    downloading_files = ProjectFile.objects.filter(
+        download_status=ProjectFile.DownloadStatus.DOWNLOADING
+    ).exclude(download_task_id="")
+
+    for project_file in downloading_files:
+        if is_task_actively_running(project_file):
+            verified_count += 1
+        else:
+            error_msg = "Task not running (worker crashed or task failed)"
+            logger.warning("Orphaned downloading file %s", project_file.id)
+            project_file.mark_download_failed(error_msg)
+            orphaned_count += 1
+
+    logger.info(
+        "State check: %d created, %d orphaned, %d verified",
+        created_tasks,
+        orphaned_count,
+        verified_count,
+    )
+
+    return {
+        "status": "completed",
+        "created_tasks": created_tasks,
+        "orphaned": orphaned_count,
+        "verified": verified_count,
     }
 
 
