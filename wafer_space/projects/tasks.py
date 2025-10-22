@@ -490,7 +490,7 @@ def _should_log_progress(
 
 def _log_download_progress(
     *,
-    filename: str,
+    file_path: Path,
     total_size: int,
     downloaded: int,
     chunk_count: int,
@@ -508,7 +508,7 @@ def _log_download_progress(
         progress = int((downloaded / total_size) * 100)
         logger.info(
             "  Progress [%s]: %d%% (%s / %s, %d chunks, %s/s)",
-            filename,
+            file_path,
             progress,
             _format_bytes(downloaded),
             _format_bytes(total_size),
@@ -518,7 +518,7 @@ def _log_download_progress(
     else:
         logger.info(
             "  Progress [%s]: %s, %d chunks, %s/s",
-            filename,
+            file_path,
             _format_bytes(downloaded),
             chunk_count,
             speed_formatted,
@@ -628,7 +628,7 @@ def _download_chunks(state: _ChunkDownloadState) -> int:
             )
             if should_log:
                 _log_download_progress(
-                    filename=state.project_file.original_filename,
+                    file_path=state.temp_path,
                     total_size=state.total_size,
                     downloaded=downloaded,
                     chunk_count=chunk_count,
