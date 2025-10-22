@@ -160,8 +160,30 @@
         {% endif %}
         {# Project File Section #}
         <div class="card mb-3">
-          <div class="card-header">
+          <div class="card-header d-flex justify-content-between align-items-center">
             <h5 class="mb-0">Project File</h5>
+            <div>
+              {% if project.can_submit.0 %}
+                <form action="{% url 'projects:submit' pk=project.pk %}"
+                      method="post"
+                      style="display: inline"
+                      onsubmit="return confirm('Are you sure you want to submit this project for manufacturing? This action cannot be undone.');">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-success">
+                    <i class="bi bi-send"></i> Submit for Manufacturing
+                  </button>
+                </form>
+              {% else %}
+                <button type="button"
+                        class="btn btn-success"
+                        disabled
+                        data-bs-toggle="tooltip"
+                        data-bs-placement="top"
+                        title="{{ project.can_submit.1 }}">
+                  <i class="bi bi-send"></i> Submit for Manufacturing
+                </button>
+              {% endif %}
+            </div>
           </div>
           <div class="card-body">
             {% if active_file %}
@@ -375,26 +397,6 @@
                  role="button">
                 <i class="bi bi-link"></i> Submit File URL
               </a>
-              {% if project.can_submit.0 %}
-                <form action="{% url 'projects:submit' pk=project.pk %}"
-                      method="post"
-                      style="display: inline"
-                      onsubmit="return confirm('Are you sure you want to submit this project for manufacturing? This action cannot be undone.');">
-                  {% csrf_token %}
-                  <button type="submit" class="btn btn-success">
-                    <i class="bi bi-send"></i> Submit for Manufacturing
-                  </button>
-                </form>
-              {% else %}
-                <button type="button"
-                        class="btn btn-success"
-                        disabled
-                        data-bs-toggle="tooltip"
-                        data-bs-placement="top"
-                        title="{{ project.can_submit.1 }}">
-                  <i class="bi bi-send"></i> Submit for Manufacturing
-                </button>
-              {% endif %}
             </div>
           </div>
         </div>
