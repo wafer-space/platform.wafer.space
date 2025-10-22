@@ -481,8 +481,12 @@ class ProjectFile(models.Model):
         """Calculate download duration in seconds.
 
         Returns:
-            float: Duration in seconds, or None if download hasn't completed
+            float: Duration in seconds, or None if not completed successfully
         """
+        # Only calculate duration for successfully completed downloads
+        if self.download_status != self.DownloadStatus.COMPLETED:
+            return None
+
         if not self.download_started_at or not self.download_completed_at:
             return None
 
