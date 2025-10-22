@@ -502,3 +502,20 @@ class TestProjectFile(TestCase):
         assert project_file.worker_pid == TEST_WORKER_PID
         assert project_file.worker_hostname == "worker-01"
         assert project_file.task_started_at is not None
+
+    def test_projectfile_queued_status_exists(self):
+        """Test that QUEUED status exists in DownloadStatus choices."""
+        # Verify QUEUED is in choices
+        statuses = [choice[0] for choice in ProjectFile.DownloadStatus.choices]
+        assert "queued" in statuses
+
+        # Verify we can create a file with QUEUED status
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            source_url="http://example.com/test.gds",
+            download_status=ProjectFile.DownloadStatus.QUEUED,
+            download_task_id="task-123",
+            is_active=False,
+        )
+
+        assert project_file.download_status == ProjectFile.DownloadStatus.QUEUED

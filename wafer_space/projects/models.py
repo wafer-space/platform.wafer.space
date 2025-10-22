@@ -136,6 +136,7 @@ class ProjectFile(models.Model):
 
     class DownloadStatus(models.TextChoices):
         PENDING = "pending", "Download Pending"
+        QUEUED = "queued", "Queued"
         DOWNLOADING = "downloading", "Downloading"
         COMPLETED = "completed", "Download Completed"
         FAILED = "failed", "Download Failed"
