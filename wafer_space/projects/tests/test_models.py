@@ -15,6 +15,7 @@ from wafer_space.users.models import User
 
 from .constants import PROGRESS_COMPLETE
 from .constants import TEST_PASSWORD
+from .constants import TEST_WORKER_PID
 
 
 @pytest.mark.django_db
@@ -455,3 +456,49 @@ class TestProjectFileProgressMethods(TestCase):
         message = project_file.get_progress_message()
         assert "pending" in message.lower()
         assert "waiting" in message.lower()
+
+
+@pytest.mark.django_db
+class TestProjectFile(TestCase):
+    """Test ProjectFile model fields and behavior."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+
+    def test_projectfile_has_worker_tracking_fields(self):
+        """Test that ProjectFile has worker tracking fields."""
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            source_url="http://example.com/test.gds",
+            download_status=ProjectFile.DownloadStatus.PENDING,
+            is_active=False,
+        )
+
+        # Verify fields exist and are nullable
+        assert hasattr(project_file, "worker_pid")
+        assert hasattr(project_file, "worker_hostname")
+        assert hasattr(project_file, "task_started_at")
+        assert project_file.worker_pid is None
+        assert project_file.worker_hostname == ""
+        assert project_file.task_started_at is None
+
+        # Verify we can set values
+        project_file.worker_pid = TEST_WORKER_PID
+        project_file.worker_hostname = "worker-01"
+        project_file.task_started_at = timezone.now()
+        project_file.save()
+
+        project_file.refresh_from_db()
+        assert project_file.worker_pid == TEST_WORKER_PID
+        assert project_file.worker_hostname == "worker-01"
+        assert project_file.task_started_at is not None

@@ -227,6 +227,24 @@ class ProjectFile(models.Model):
         ),
     )
 
+    # Worker tracking for verification
+    worker_pid = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Process ID of Celery worker executing download",
+    )
+    worker_hostname = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Hostname of worker machine",
+    )
+    task_started_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When download task actually began execution",
+    )
+
     # File verification (provided by user)
     expected_hash_md5 = models.CharField(
         max_length=32,
