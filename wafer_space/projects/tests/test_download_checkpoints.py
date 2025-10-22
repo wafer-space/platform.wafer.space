@@ -8,9 +8,9 @@ These tests verify that:
 """
 
 import logging
+import tempfile
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone as dt_timezone
-from io import BytesIO
 from pathlib import Path
 from unittest.mock import Mock
 from unittest.mock import patch
@@ -33,6 +33,27 @@ TEST_PASSWORD = "testpass123"  # noqa: S105
 # Test constants
 MB = 1024 * 1024
 CHUNK_SIZE = 1 * MB  # 1MB chunks
+
+# Expected checkpoint counts for test verification
+EXPECTED_CHECKPOINTS_25MB = 5  # 25MB file: checkpoints at 5, 10, 15, 20, 25 MB
+EXPECTED_CHECKPOINTS_100MB = 20  # 100MB file at 5% intervals
+EXPECTED_CHECKPOINTS_230MB = 46  # 230MB file: checkpoints at 5, 10, ... 230 MB
+EXPECTED_CHECKPOINTS_RESUME_60MB = 4  # Resume from 42MB to 60MB
+EXPECTED_CHECKPOINTS_10MB = 2  # 10MB file: checkpoints at 5, 10 MB
+
+# Expected log counts
+EXPECTED_LOGS_50MB = 5  # 50MB file: logs at 10, 20, 30, 40, 50 MB
+EXPECTED_LOGS_100MB = 10  # 100MB file at 10% intervals
+
+# Expected chunk counts for downloads
+DOWNLOAD_CHUNKS_25MB = 25  # 25MB / 1MB chunks = 25 chunks
+DOWNLOAD_CHUNKS_18MB = 18  # 18MB / 1MB chunks = 18 chunks (resume test)
+DOWNLOAD_CHUNKS_50MB = 50  # 50MB / 1MB chunks = 50 chunks (logging test)
+
+# Alignment boundaries
+ALIGNMENT_40MB = 40  # Resume from 42.31 MB aligns to 40 MB
+ALIGNMENT_5MB_CHUNK = 5  # Chunk number for 5MB downloaded at 1MB chunks
+ALIGNMENT_10MB_CHUNK = 10  # Chunk number for 10MB downloaded at 1MB chunks
 
 
 @pytest.mark.django_db
@@ -80,7 +101,7 @@ class DatabaseCheckpointFrequencyTests(TestCase):
                 last_db_update_bytes = new_bytes
 
         # Verify checkpoints at: 5MB, 10MB, 15MB, 20MB, 25MB
-        assert len(checkpoints) == 5
+        assert len(checkpoints) == EXPECTED_CHECKPOINTS_25MB
         assert checkpoints == [5 * MB, 10 * MB, 15 * MB, 20 * MB, 25 * MB]
 
     def test_checkpoint_every_5_percent_known_size(self):
@@ -105,11 +126,29 @@ class DatabaseCheckpointFrequencyTests(TestCase):
 
         # Verify checkpoints at: 5%, 10%, 15%, ... 100%
         # 5% of 100MB = 5MB, 10% = 10MB, etc.
-        expected = [5 * MB, 10 * MB, 15 * MB, 20 * MB, 25 * MB, 30 * MB,
-                   35 * MB, 40 * MB, 45 * MB, 50 * MB, 55 * MB, 60 * MB,
-                   65 * MB, 70 * MB, 75 * MB, 80 * MB, 85 * MB, 90 * MB,
-                   95 * MB, 100 * MB]
-        assert len(checkpoints) == 20
+        expected = [
+            5 * MB,
+            10 * MB,
+            15 * MB,
+            20 * MB,
+            25 * MB,
+            30 * MB,
+            35 * MB,
+            40 * MB,
+            45 * MB,
+            50 * MB,
+            55 * MB,
+            60 * MB,
+            65 * MB,
+            70 * MB,
+            75 * MB,
+            80 * MB,
+            85 * MB,
+            90 * MB,
+            95 * MB,
+            100 * MB,
+        ]
+        assert len(checkpoints) == EXPECTED_CHECKPOINTS_100MB
         assert checkpoints == expected
 
     def test_checkpoint_alignment_on_resume(self):
@@ -124,8 +163,8 @@ class DatabaseCheckpointFrequencyTests(TestCase):
         last_db_update_bytes = last_db_update_mb * MB
 
         # Verify aligned to 40MB
-        assert last_db_update_mb == 40
-        assert last_db_update_bytes == 40 * MB
+        assert last_db_update_mb == ALIGNMENT_40MB
+        assert last_db_update_bytes == ALIGNMENT_40MB * MB
 
         # Verify next checkpoint triggers at 45MB
         last_db_update_progress = 0
@@ -166,7 +205,7 @@ class DatabaseCheckpointFrequencyTests(TestCase):
                 last_db_update_bytes = new_bytes
 
         # Verify 46 checkpoints (5, 10, 15, ... 230)
-        assert len(checkpoints) == 46
+        assert len(checkpoints) == EXPECTED_CHECKPOINTS_230MB
         assert checkpoints[0] == 5 * MB  # First checkpoint
         assert checkpoints[-1] == 230 * MB  # Last checkpoint
 
@@ -195,7 +234,7 @@ class ProgressLoggingFrequencyTests(TestCase):
                 last_log_bytes = new_bytes
 
         # Verify logs at: 10MB, 20MB, 30MB, 40MB, 50MB
-        assert len(logs) == 5
+        assert len(logs) == EXPECTED_LOGS_50MB
         assert logs == [10 * MB, 20 * MB, 30 * MB, 40 * MB, 50 * MB]
 
     def test_log_every_10_percent_known_size(self):
@@ -218,9 +257,19 @@ class ProgressLoggingFrequencyTests(TestCase):
                 last_log_bytes = new_bytes
 
         # Verify logs at: 10%, 20%, 30%, ... 100%
-        expected = [10 * MB, 20 * MB, 30 * MB, 40 * MB, 50 * MB,
-                   60 * MB, 70 * MB, 80 * MB, 90 * MB, 100 * MB]
-        assert len(logs) == 10
+        expected = [
+            10 * MB,
+            20 * MB,
+            30 * MB,
+            40 * MB,
+            50 * MB,
+            60 * MB,
+            70 * MB,
+            80 * MB,
+            90 * MB,
+            100 * MB,
+        ]
+        assert len(logs) == EXPECTED_LOGS_100MB
         assert logs == expected
 
     def test_log_alignment_on_resume(self):
@@ -235,8 +284,8 @@ class ProgressLoggingFrequencyTests(TestCase):
         last_log_bytes = last_log_mb * MB
 
         # Verify aligned to 40MB
-        assert last_log_mb == 40
-        assert last_log_bytes == 40 * MB
+        assert last_log_mb == ALIGNMENT_40MB
+        assert last_log_bytes == ALIGNMENT_40MB * MB
 
         # Verify next log triggers at 50MB
         last_log_progress = 0
@@ -285,21 +334,22 @@ class DownloadChunksIntegrationTests(TestCase):
     def test_creates_database_checkpoints_during_download(self, mock_timezone):
         """Test that database checkpoints are created during download."""
         # Mock time to avoid test flakiness
-        mock_timezone.now.return_value = datetime(2025, 1, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
+        mock_timezone.now.return_value = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
 
         # Create mock response with 25MB of data (should create 5 checkpoints)
-        file_size = 25 * MB
         mock_response = Mock()
         # Simulate streaming 1MB chunks
-        chunks = [b"x" * MB for _ in range(25)]
+        chunks = [b"x" * MB for _ in range(DOWNLOAD_CHUNKS_25MB)]
         mock_response.iter_content.return_value = iter(chunks)
 
         # Create mock task
         mock_task = Mock()
         mock_task.update_state = Mock()
 
-        # Create temp file path
-        temp_path = Path("/tmp/test_download.gds")
+        # Create temp file path in project directory
+        temp_dir = Path(tempfile.gettempdir()) / "wafer_space_test_downloads"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_path = temp_dir / "test_download.gds"
         temp_path.unlink(missing_ok=True)
 
         try:
@@ -320,8 +370,8 @@ class DownloadChunksIntegrationTests(TestCase):
             # Run download
             chunk_count = _download_chunks(state)
 
-            # Verify chunks downloaded
-            assert chunk_count == 25
+            # Verify chunks downloaded (25 chunks of 1MB each)
+            assert chunk_count == DOWNLOAD_CHUNKS_25MB
 
             # Verify database checkpoints created
             checkpoints = ProjectFileChunk.objects.filter(
@@ -329,7 +379,7 @@ class DownloadChunksIntegrationTests(TestCase):
             ).order_by("bytes_downloaded")
 
             # Should have 5 checkpoints: 5MB, 10MB, 15MB, 20MB, 25MB
-            assert checkpoints.count() == 5
+            assert checkpoints.count() == EXPECTED_CHECKPOINTS_25MB
             assert checkpoints[0].bytes_downloaded == 5 * MB
             assert checkpoints[1].bytes_downloaded == 10 * MB
             assert checkpoints[2].bytes_downloaded == 15 * MB
@@ -343,23 +393,24 @@ class DownloadChunksIntegrationTests(TestCase):
     @patch("wafer_space.projects.tasks.timezone")
     def test_checkpoints_with_resume(self, mock_timezone):
         """Test checkpoints align correctly when resuming download."""
-        mock_timezone.now.return_value = datetime(2025, 1, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
+        mock_timezone.now.return_value = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
 
         # Resume from 42MB, download to 60MB (18MB more)
         resume_pos = 42 * MB
-        additional_data = 18 * MB
 
         # Create mock response
         mock_response = Mock()
-        chunks = [b"x" * MB for _ in range(18)]  # 18 more MB
+        chunks = [b"x" * MB for _ in range(DOWNLOAD_CHUNKS_18MB)]  # 18 more MB
         mock_response.iter_content.return_value = iter(chunks)
 
         # Create mock task
         mock_task = Mock()
         mock_task.update_state = Mock()
 
-        # Create temp file with existing data
-        temp_path = Path("/tmp/test_resume_download.gds")
+        # Create temp file with existing data in project directory
+        temp_dir = Path(tempfile.gettempdir()) / "wafer_space_test_downloads"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_path = temp_dir / "test_resume_download.gds"
         temp_path.write_bytes(b"x" * resume_pos)
 
         try:
@@ -381,7 +432,7 @@ class DownloadChunksIntegrationTests(TestCase):
             chunk_count = _download_chunks(state)
 
             # Verify chunks downloaded
-            assert chunk_count == 18
+            assert chunk_count == DOWNLOAD_CHUNKS_18MB
 
             # Verify database checkpoints align to clean boundaries
             checkpoints = ProjectFileChunk.objects.filter(
@@ -390,7 +441,7 @@ class DownloadChunksIntegrationTests(TestCase):
 
             # Resume from 42MB, aligned to 40MB
             # Next checkpoints: 45MB, 50MB, 55MB, 60MB (4 checkpoints)
-            assert checkpoints.count() == 4
+            assert checkpoints.count() == EXPECTED_CHECKPOINTS_RESUME_60MB
             assert checkpoints[0].bytes_downloaded == 45 * MB
             assert checkpoints[1].bytes_downloaded == 50 * MB
             assert checkpoints[2].bytes_downloaded == 55 * MB
@@ -403,18 +454,19 @@ class DownloadChunksIntegrationTests(TestCase):
     @patch("wafer_space.projects.tasks.timezone")
     def test_checkpoint_data_accuracy(self, mock_timezone):
         """Test checkpoint stores accurate data (bytes, chunk number)."""
-        mock_timezone.now.return_value = datetime(2025, 1, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
+        mock_timezone.now.return_value = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
 
         # Download 10MB (should create 2 checkpoints: 5MB, 10MB)
-        file_size = 10 * MB
         mock_response = Mock()
-        chunks = [b"x" * MB for _ in range(10)]
+        chunks = [b"x" * MB for _ in range(ALIGNMENT_10MB_CHUNK)]
         mock_response.iter_content.return_value = iter(chunks)
 
         mock_task = Mock()
         mock_task.update_state = Mock()
 
-        temp_path = Path("/tmp/test_checkpoint_data.gds")
+        temp_dir = Path(tempfile.gettempdir()) / "wafer_space_test_downloads"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_path = temp_dir / "test_checkpoint_data.gds"
         temp_path.unlink(missing_ok=True)
 
         try:
@@ -438,15 +490,15 @@ class DownloadChunksIntegrationTests(TestCase):
                 project_file=self.project_file
             ).order_by("bytes_downloaded")
 
-            assert checkpoints.count() == 2
+            assert checkpoints.count() == EXPECTED_CHECKPOINTS_10MB
 
             # First checkpoint: 5MB downloaded, chunk #5
-            assert checkpoints[0].bytes_downloaded == 5 * MB
-            assert checkpoints[0].chunk_number == 5
+            assert checkpoints[0].bytes_downloaded == ALIGNMENT_5MB_CHUNK * MB
+            assert checkpoints[0].chunk_number == ALIGNMENT_5MB_CHUNK
 
             # Second checkpoint: 10MB downloaded, chunk #10
-            assert checkpoints[1].bytes_downloaded == 10 * MB
-            assert checkpoints[1].chunk_number == 10
+            assert checkpoints[1].bytes_downloaded == ALIGNMENT_10MB_CHUNK * MB
+            assert checkpoints[1].chunk_number == ALIGNMENT_10MB_CHUNK
 
         finally:
             temp_path.unlink(missing_ok=True)
@@ -479,18 +531,19 @@ class ProgressLoggingIntegrationTests(TestCase):
     @patch("wafer_space.projects.tasks.timezone")
     def test_progress_logs_at_correct_intervals(self, mock_timezone):
         """Test progress logs occur at 10MB intervals."""
-        mock_timezone.now.return_value = datetime(2025, 1, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
+        mock_timezone.now.return_value = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
 
         # Download 50MB (should log at: 10, 20, 30, 40, 50 MB)
-        file_size = 50 * MB
         mock_response = Mock()
-        chunks = [b"x" * MB for _ in range(50)]
+        chunks = [b"x" * MB for _ in range(DOWNLOAD_CHUNKS_50MB)]
         mock_response.iter_content.return_value = iter(chunks)
 
         mock_task = Mock()
         mock_task.update_state = Mock()
 
-        temp_path = Path("/tmp/test_progress_logs.gds")
+        temp_dir = Path(tempfile.gettempdir()) / "wafer_space_test_downloads"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_path = temp_dir / "test_progress_logs.gds"
         temp_path.unlink(missing_ok=True)
 
         try:
@@ -508,23 +561,26 @@ class ProgressLoggingIntegrationTests(TestCase):
             )
 
             # Capture log output
-            with self.assertLogs("wafer_space.projects.tasks", level=logging.INFO) as log_context:
+            logger_name = "wafer_space.projects.tasks"
+            with self.assertLogs(logger_name, level=logging.INFO) as log_context:
                 _download_chunks(state)
 
             # Verify progress logs appear in output
             log_output = "\n".join(log_context.output)
 
             # Should contain progress logs with file path
-            assert "Progress [/tmp/test_progress_logs.gds]" in log_output
+            expected_path_str = str(temp_path)
+            assert f"Progress [{expected_path_str}]" in log_output
 
-            # Count progress log entries (not including "Starting chunked download" or "Download complete")
+            # Count progress log entries (not including start/complete messages)
             progress_logs = [
-                line for line in log_context.output
+                line
+                for line in log_context.output
                 if "Progress [" in line and "chunks" in line
             ]
 
             # Should have 5 progress logs: 10, 20, 30, 40, 50 MB
-            assert len(progress_logs) >= 5
+            assert len(progress_logs) >= EXPECTED_LOGS_50MB
 
         finally:
             temp_path.unlink(missing_ok=True)
