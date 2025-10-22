@@ -193,6 +193,7 @@ dependencies = [
     "python-frontmatter==1.1.0",  # For parsing markdown front matter
     "sqlalchemy>=2.0.0",  # Required for SQLAlchemy broker
     "pillow==11.3.0",
+    "psutil>=6.1.0",  # For process verification in download tasks
     "psycopg[c]==3.2.10",
     "psycopg2-binary>=2.9.0",  # Required by SQLAlchemy for Celery broker
     "python-slugify==8.0.4",
