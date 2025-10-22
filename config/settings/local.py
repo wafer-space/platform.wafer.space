@@ -89,10 +89,8 @@ CELERY_BROKER_URL = f"sqla+sqlite:///{BASE_DIR / 'db.sqlite3'}"  # noqa: F405
 DOWNLOAD_RETRY_BASE_DELAY_MINUTES = 30 / 60  # 30 seconds (expressed in minutes)
 DOWNLOAD_RETRY_CHECK_INTERVAL_SECONDS = 30.0  # Check every 30 seconds
 
-# Orphaned download detection - use shorter timeouts for development
-DOWNLOAD_ORPHAN_TIMEOUT_SECONDS = 120.0  # 2 minutes (vs 15 min in production)
-DOWNLOAD_PENDING_TIMEOUT_SECONDS = 60.0  # 1 minute (vs 10 min in production)
-DOWNLOAD_ORPHAN_CHECK_INTERVAL_SECONDS = 30.0  # Check every 30 seconds
+# Download state verification - faster checks in development
+DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS = 30.0  # Check every 30 seconds
 
 # Override Celery Beat schedule with development intervals
 CELERY_BEAT_SCHEDULE = {
@@ -100,9 +98,9 @@ CELERY_BEAT_SCHEDULE = {
         "task": "wafer_space.projects.tasks.retry_failed_downloads",
         "schedule": DOWNLOAD_RETRY_CHECK_INTERVAL_SECONDS,
     },
-    "check-orphaned-downloads": {
-        "task": "wafer_space.projects.tasks.check_orphaned_downloads",
-        "schedule": DOWNLOAD_ORPHAN_CHECK_INTERVAL_SECONDS,
+    "check-download-states": {
+        "task": "wafer_space.projects.tasks.check_download_states",
+        "schedule": DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS,
     },
 }
 
