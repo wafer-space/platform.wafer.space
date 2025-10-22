@@ -309,11 +309,11 @@
                             </tr>
                           </thead>
                           <tbody>
-                            {% for chunk in active_file.chunks.all %}
+                            {% for chunk in active_file.chunks.all|dictsortreversed:"chunk_number" %}
                               <tr>
                                 <td>#{{ chunk.chunk_number }}</td>
                                 <td>{{ chunk.bytes_downloaded|filesizeformat }}</td>
-                                <td>{{ chunk.timestamp|date:"H:i:s" }}</td>
+                                <td>{{ chunk.timestamp|date:"M d, Y H:i:s" }}</td>
                                 <td>
                                   {% if chunk.speed_since_previous %}
                                     {{ chunk.speed_since_previous|floatformat:0|filesizeformat }}/s
