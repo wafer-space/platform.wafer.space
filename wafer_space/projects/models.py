@@ -76,7 +76,7 @@ class Project(models.Model):
     def __str__(self):
         return f"{self.name} ({self.user.username})"
 
-    def can_submit(self) -> tuple[bool, str]:
+    def can_submit(self) -> tuple[bool, str]:  # noqa: PLR0911
         """Check if project can be submitted.
 
         Returns:
@@ -90,16 +90,22 @@ class Project(models.Model):
         except ProjectFile.DoesNotExist:
             return False, "Project has no active file"
 
-        # Check if download is completed
+        # Check file download and verification status
         if active_file.download_status != ProjectFile.DownloadStatus.COMPLETED:
             status_display = active_file.get_download_status_display()
             return False, f"File download is not completed (status: {status_display})"
 
-        # Check if hash is verified
         if not active_file.hash_verified:
             return False, "File hash has not been verified"
 
-        # Check if project is in DRAFT status
+        # Check manufacturability
+        if self.is_manufacturable is None:
+            return False, "Manufacturability check has not been completed"
+
+        if not self.is_manufacturable:
+            return False, "File did not pass manufacturability checks"
+
+        # Check project status
         if self.status != self.Status.DRAFT:
             return False, "Project has already been submitted (status must be DRAFT)"
 
@@ -125,11 +131,8 @@ class Project(models.Model):
         self.submitted_file = active_file
         self.save()
 
-        # Queue manufacturability check using service layer
-        # Import here to avoid circular import
-        from .services import ManufacturabilityService  # noqa: PLC0415
-
-        ManufacturabilityService.queue_check(self)
+        # Note: Manufacturability check has already been completed
+        # (it was triggered automatically when file hash was verified)
 
 
 def project_file_upload_path(instance, filename):

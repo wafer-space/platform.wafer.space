@@ -50,88 +50,6 @@
             {% endif %}
           </div>
         </div>
-        {# Manufacturability Check Section #}
-        {% if check_status %}
-          <div class="card mb-3">
-            <div class="card-header">
-              <h5 class="mb-0">
-                <i class="bi bi-check-circle"></i> Manufacturability Check
-              </h5>
-            </div>
-            <div class="card-body">
-              <p>
-                <strong>Status:</strong>
-                {% if check_status.status == 'queued' %}
-                  <span class="badge bg-secondary">
-                    <i class="bi bi-clock"></i> Queued for checking
-                  </span>
-                {% elif check_status.status == 'processing' %}
-                  <span id="check-status-badge" class="badge bg-primary">
-                    <span class="spinner-border spinner-border-sm"
-                          role="status"
-                          aria-hidden="true"></span>
-                    <span id="check-status-text">Checking manufacturability...</span>
-                  </span>
-                {% elif check_status.status == 'completed' %}
-                  {% if check_status.is_manufacturable %}
-                    <span class="badge bg-success">
-                      <i class="bi bi-check-circle"></i> Manufacturable
-                    </span>
-                  {% else %}
-                    <span class="badge bg-danger">
-                      <i class="bi bi-x-circle"></i> Not Manufacturable
-                    </span>
-                  {% endif %}
-                {% elif check_status.status == 'failed' %}
-                  <span class="badge bg-danger">
-                    <i class="bi bi-exclamation-triangle"></i> Check Failed
-                  </span>
-                {% endif %}
-              </p>
-              {% if check_status.started_at %}
-                <p>
-                  <strong>Started:</strong> {{ check_status.started_at|date:"F d, Y, g:i a" }}
-                </p>
-              {% endif %}
-              {% if check_status.completed_at %}
-                <p>
-                  <strong>Completed:</strong> {{ check_status.completed_at|date:"F d, Y, g:i a" }}
-                </p>
-              {% endif %}
-              {# Display errors if check completed with errors #}
-              {% if check_status.status == 'completed' and check_status.errors %}
-                <div class="mt-3">
-                  <h6 class="text-danger">
-                    <i class="bi bi-exclamation-triangle"></i> Errors
-                  </h6>
-                  {% for error in check_status.errors %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endfor %}
-                </div>
-              {% endif %}
-              {# Display warnings if any #}
-              {% if check_status.status == 'completed' and check_status.warnings %}
-                <div class="mt-3">
-                  <h6 class="text-warning">
-                    <i class="bi bi-exclamation-circle"></i> Warnings
-                  </h6>
-                  {% for warning in check_status.warnings %}
-                    <div class="alert alert-warning" role="alert">{{ warning }}</div>
-                  {% endfor %}
-                </div>
-              {% endif %}
-            </div>
-          </div>
-        {% elif project.status == 'draft' %}
-          <div class="card mb-3 border-secondary">
-            <div class="card-header bg-light">
-              <h5 class="mb-0">
-                <i class="bi bi-info-circle"></i> Manufacturability Check
-              </h5>
-            </div>
-            <div class="card-body">
-              <p class="text-muted mb-0">Submit project to trigger manufacturability check</p>
-            </div>
-          </div>
-        {% endif %}
         {# Error Display Section #}
         {% if show_error and active_file %}
           <div class="card mb-3 border-danger">
@@ -220,6 +138,80 @@
                 </div>
               {% endif %}
               {% include "projects/_file_display.html" with file=in_progress_file %}
+              {# Manufacturability Check (shown only for in-progress files) #}
+              {% if check_status %}
+                <hr class="my-4" />
+                <h6>
+                  <i class="bi bi-check-circle"></i> Manufacturability Check
+                </h6>
+                <p class="mb-2">
+                  <strong>Status:</strong>
+                  {% if check_status.status == 'queued' %}
+                    <span class="badge bg-secondary">
+                      <i class="bi bi-clock"></i> Queued for checking
+                    </span>
+                  {% elif check_status.status == 'processing' %}
+                    <span id="check-status-badge" class="badge bg-primary">
+                      <span class="spinner-border spinner-border-sm"
+                            role="status"
+                            aria-hidden="true"></span>
+                      <span id="check-status-text">Checking manufacturability...</span>
+                    </span>
+                  {% elif check_status.status == 'completed' %}
+                    {% if check_status.is_manufacturable %}
+                      <span class="badge bg-success">
+                        <i class="bi bi-check-circle"></i> Manufacturable
+                      </span>
+                    {% else %}
+                      <span class="badge bg-danger">
+                        <i class="bi bi-x-circle"></i> Not Manufacturable
+                      </span>
+                    {% endif %}
+                  {% elif check_status.status == 'failed' %}
+                    <span class="badge bg-danger">
+                      <i class="bi bi-exclamation-triangle"></i> Check Failed
+                    </span>
+                  {% endif %}
+                </p>
+                {% if check_status.started_at %}
+                  <p class="mb-2">
+                    <strong>Started:</strong> {{ check_status.started_at|date:"Y-m-d H:i:s" }}
+                  </p>
+                {% endif %}
+                {% if check_status.completed_at %}
+                  <p class="mb-2">
+                    <strong>Completed:</strong> {{ check_status.completed_at|date:"Y-m-d H:i:s" }}
+                  </p>
+                {% endif %}
+                {# Display errors if check completed with errors #}
+                {% if check_status.status == 'completed' and check_status.errors %}
+                  <div class="mt-3">
+                    <h6 class="text-danger">
+                      <i class="bi bi-exclamation-triangle"></i> Errors
+                    </h6>
+                    {% for error in check_status.errors %}
+                      <div class="alert alert-danger" role="alert">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+                {# Display warnings if any #}
+                {% if check_status.status == 'completed' and check_status.warnings %}
+                  <div class="mt-3">
+                    <h6 class="text-warning">
+                      <i class="bi bi-exclamation-circle"></i> Warnings
+                    </h6>
+                    {% for warning in check_status.warnings %}
+                      <div class="alert alert-warning" role="alert">{{ warning }}</div>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              {% elif project.status == 'draft' and in_progress_file.hash_verified %}
+                <hr class="my-4" />
+                <div class="alert alert-info" role="alert">
+                  <i class="bi bi-info-circle"></i>
+                  <strong>Ready for manufacturability check</strong> - Hash has been verified. The manufacturability check will run automatically once the file is fully downloaded and verified.
+                </div>
+              {% endif %}
             </div>
           </div>
         {% endif %}
