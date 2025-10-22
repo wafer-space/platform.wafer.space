@@ -19,7 +19,6 @@ from urllib.request import urlopen
 
 import requests
 from celery import shared_task
-from django.conf import settings
 from django.core.files.base import ContentFile
 from django.db import models
 from django.utils import timezone
@@ -1270,114 +1269,6 @@ def retry_failed_downloads():
         "status": "completed",
         "retried": retried_count,
         "skipped": skipped_count,
-    }
-
-
-@shared_task
-def check_orphaned_downloads():
-    """Periodic task to detect and handle orphaned downloads.
-
-    An orphaned download is one where:
-    - Status is DOWNLOADING or PENDING
-    - Last activity timestamp is too old (indicates stuck task)
-    - Celery task is missing, failed, or revoked
-
-    This handles cases where:
-    - Celery worker crashed during download
-    - Task was manually revoked/killed
-    - Network issues caused task to hang indefinitely
-    - Database shows downloading but no actual task is running
-
-    Orphaned downloads are marked as FAILED so auto-retry can pick them up.
-    """
-    logger = logging.getLogger(__name__)
-
-    # Get timeout thresholds from settings
-    downloading_timeout = settings.DOWNLOAD_ORPHAN_TIMEOUT_SECONDS
-    pending_timeout = settings.DOWNLOAD_PENDING_TIMEOUT_SECONDS
-
-    now = timezone.now()
-    orphaned_count = 0
-    skipped_count = 0
-
-    # Check files stuck in DOWNLOADING state
-    downloading_cutoff = now - timedelta(seconds=downloading_timeout)
-    downloading_files = ProjectFile.objects.filter(
-        download_status=ProjectFile.DownloadStatus.DOWNLOADING,
-        last_activity__lt=downloading_cutoff,
-    ).exclude(download_task_id="")
-
-    for project_file in downloading_files:
-        # Check if Celery task still exists and is active
-        if project_file.download_task_id:
-            task_result = TaskResult.objects.filter(
-                task_id=project_file.download_task_id
-            ).first()
-
-            # If task exists and is still running, skip
-            if task_result and task_result.status in ["PENDING", "STARTED", "RETRY"]:
-                skipped_count += 1
-                continue
-
-        # Task is missing or in terminal state - mark as orphaned/failed
-        error_msg = (
-            f"Download task orphaned - no activity for "
-            f"{downloading_timeout}s (task may have crashed)"
-        )
-
-        logger.warning(
-            "Orphaned download detected for file %s: %s",
-            project_file.id,
-            error_msg,
-        )
-
-        project_file.mark_download_failed(error_msg)
-        orphaned_count += 1
-
-    # Check files stuck in PENDING state for too long
-    pending_cutoff = now - timedelta(seconds=pending_timeout)
-    pending_files = ProjectFile.objects.filter(
-        download_status=ProjectFile.DownloadStatus.PENDING,
-        uploaded_at__lt=pending_cutoff,
-    )
-
-    for project_file in pending_files:
-        # Check if task was ever started
-        if project_file.download_task_id:
-            task_result = TaskResult.objects.filter(
-                task_id=project_file.download_task_id
-            ).first()
-
-            # If task exists and is queued/running, skip
-            if task_result and task_result.status in ["PENDING", "STARTED", "RETRY"]:
-                skipped_count += 1
-                continue
-
-        # Task never started or failed to start
-        error_msg = (
-            f"Download task never started - pending for "
-            f"{pending_timeout}s (worker may be down)"
-        )
-
-        logger.warning(
-            "Stuck pending download detected for file %s: %s",
-            project_file.id,
-            error_msg,
-        )
-
-        project_file.mark_download_failed(error_msg)
-        orphaned_count += 1
-
-    logger.info(
-        "Orphan check completed: %d orphaned, %d active",
-        orphaned_count,
-        skipped_count,
-    )
-
-    return {
-        "status": "completed",
-        "orphaned": orphaned_count,
-        "active": skipped_count,
     }
 
 
