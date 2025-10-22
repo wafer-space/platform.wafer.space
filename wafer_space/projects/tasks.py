@@ -1001,8 +1001,15 @@ def _verify_and_notify(
 def _log_download_start(project_id: str, project_file: ProjectFile) -> None:
     """Log download task start information."""
     logger = logging.getLogger(__name__)
+
+    # Calculate temp path for display
+    temp_dir = Path(tempfile.gettempdir()) / "wafer_space_downloads"
+    temp_filename = f"{project_file.id}_{project_file.original_filename}"
+    temp_path = temp_dir / temp_filename
+
     logger.info("=" * 80)
     logger.info("DOWNLOAD TASK STARTED - Project ID: %s", project_id)
+    logger.info("  File: %s", temp_path)
     logger.info("=" * 80)
 
     logger.info("Step 1: Looking up project and active file...")
