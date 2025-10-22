@@ -5,7 +5,9 @@ Background tasks for project processing.
 import contextlib
 import hashlib
 import logging
+import os
 import random
+import socket
 import tempfile
 import time
 from dataclasses import dataclass
@@ -740,12 +742,19 @@ def _initialize_download(project_file: ProjectFile) -> None:
     Args:
         project_file: The file to initialize
     """
+    # Transition QUEUED → DOWNLOADING and capture worker info
     project_file.download_status = ProjectFile.DownloadStatus.DOWNLOADING
+    project_file.worker_pid = os.getpid()
+    project_file.worker_hostname = socket.gethostname()
+    project_file.task_started_at = timezone.now()
     project_file.download_started_at = timezone.now()
     project_file.last_activity = timezone.now()
     project_file.save(
         update_fields=[
             "download_status",
+            "worker_pid",
+            "worker_hostname",
+            "task_started_at",
             "download_started_at",
             "last_activity",
         ],
@@ -1081,7 +1090,13 @@ def download_project_file(self, project_id):
         # Initialize download
         logger.info("Step 2: Initializing download (marking as DOWNLOADING)...")
         _initialize_download(project_file)
-        logger.info("  ✓ Download status set to DOWNLOADING")
+        logger.info(
+            "  ✓ Download started: file=%s, PID=%s, host=%s, task_id=%s",
+            project_file.id,
+            project_file.worker_pid,
+            project_file.worker_hostname,
+            self.request.id,
+        )
 
         # Set up temporary directory
         temp_path = _setup_download_temp_path(project_file)

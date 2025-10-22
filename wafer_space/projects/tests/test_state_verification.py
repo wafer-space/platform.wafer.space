@@ -1,5 +1,6 @@
 """Tests for download state verification periodic task."""
 
+import contextlib
 from unittest.mock import Mock
 from unittest.mock import patch
 
@@ -10,9 +11,12 @@ from django.test import TestCase
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.tasks import check_download_states
+from wafer_space.projects.tasks import download_project_file
 
 User = get_user_model()
 TEST_PASSWORD = "testpass123"  # noqa: S105
+TEST_WORKER_PID = 12345
+TEST_WORKER_HOSTNAME = "worker-01"
 
 
 @pytest.mark.django_db
@@ -169,3 +173,29 @@ class DownloadStateVerificationTests(TestCase):
         project_file.refresh_from_db()
         assert project_file.download_status == ProjectFile.DownloadStatus.FAILED
         assert "not running" in project_file.download_error
+
+    @patch("wafer_space.projects.tasks.socket")
+    @patch("wafer_space.projects.tasks.os")
+    def test_download_task_captures_worker_info(self, mock_os, mock_socket):
+        """Test that download task captures PID and hostname."""
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            source_url="http://example.com/small.txt",
+            download_status=ProjectFile.DownloadStatus.QUEUED,
+            download_task_id="task-123",
+            is_active=True,
+        )
+
+        # Mock PID and hostname
+        mock_os.getpid.return_value = TEST_WORKER_PID
+        mock_socket.gethostname.return_value = TEST_WORKER_HOSTNAME
+
+        # This will fail to download (no server), but should capture worker info
+        with contextlib.suppress(Exception):
+            download_project_file(self.project.id)
+
+        # Verify worker info was captured
+        project_file.refresh_from_db()
+        assert project_file.worker_pid == TEST_WORKER_PID
+        assert project_file.worker_hostname == TEST_WORKER_HOSTNAME
+        assert project_file.task_started_at is not None
