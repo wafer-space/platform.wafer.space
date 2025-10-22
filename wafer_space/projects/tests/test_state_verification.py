@@ -48,7 +48,7 @@ class DownloadStateVerificationTests(TestCase):
             project=self.project,
             source_url="http://example.com/test.gds",
             download_status=ProjectFile.DownloadStatus.PENDING,
-            is_active=False,
+            is_active=True,
         )
 
         # Mock task creation
@@ -81,7 +81,7 @@ class DownloadStateVerificationTests(TestCase):
             source_url="http://example.com/test.gds",
             download_status=ProjectFile.DownloadStatus.QUEUED,
             download_task_id="task-123",
-            is_active=False,
+            is_active=True,
         )
 
         # Mock verification returns True
@@ -106,7 +106,7 @@ class DownloadStateVerificationTests(TestCase):
             source_url="http://example.com/test.gds",
             download_status=ProjectFile.DownloadStatus.QUEUED,
             download_task_id="task-456",
-            is_active=False,
+            is_active=True,
         )
 
         # Mock verification returns False
@@ -132,7 +132,7 @@ class DownloadStateVerificationTests(TestCase):
             source_url="http://example.com/test.gds",
             download_status=ProjectFile.DownloadStatus.DOWNLOADING,
             download_task_id="task-789",
-            is_active=False,
+            is_active=True,
         )
 
         # Mock verification returns True
@@ -157,7 +157,7 @@ class DownloadStateVerificationTests(TestCase):
             source_url="http://example.com/test.gds",
             download_status=ProjectFile.DownloadStatus.DOWNLOADING,
             download_task_id="task-999",
-            is_active=False,
+            is_active=True,
         )
 
         # Mock verification returns False

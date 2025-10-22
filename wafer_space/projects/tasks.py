@@ -1212,6 +1212,7 @@ def retry_failed_downloads():
     # Find all failed downloads eligible for retry
     failed_files = ProjectFile.objects.filter(
         download_status=ProjectFile.DownloadStatus.FAILED,
+        is_active=True,
         auto_retry_enabled=True,
         retry_count__lt=models.F("max_retries"),
     ).filter(
@@ -1289,7 +1290,8 @@ def check_download_states():
 
     # PENDING: Create tasks if missing
     pending_files = ProjectFile.objects.filter(
-        download_status=ProjectFile.DownloadStatus.PENDING
+        download_status=ProjectFile.DownloadStatus.PENDING,
+        is_active=True,
     )
 
     for project_file in pending_files:
@@ -1308,7 +1310,8 @@ def check_download_states():
 
     # QUEUED: Verify task in Celery queue
     queued_files = ProjectFile.objects.filter(
-        download_status=ProjectFile.DownloadStatus.QUEUED
+        download_status=ProjectFile.DownloadStatus.QUEUED,
+        is_active=True,
     ).exclude(download_task_id="")
 
     for project_file in queued_files:
@@ -1322,7 +1325,8 @@ def check_download_states():
 
     # DOWNLOADING: Verify task executing AND PID exists
     downloading_files = ProjectFile.objects.filter(
-        download_status=ProjectFile.DownloadStatus.DOWNLOADING
+        download_status=ProjectFile.DownloadStatus.DOWNLOADING,
+        is_active=True,
     ).exclude(download_task_id="")
 
     for project_file in downloading_files:
