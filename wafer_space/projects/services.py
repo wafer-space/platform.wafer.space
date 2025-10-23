@@ -7,8 +7,10 @@ This service layer prevents circular imports by providing a clean separation:
 - Tasks handle background processing
 """
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import parse_qs
 from urllib.parse import unquote
 from urllib.parse import urlparse
 
@@ -36,6 +38,90 @@ VALID_ALL_FORMATS = VALID_BASE_FORMATS | VALID_COMPRESSION_FORMATS
 # Initialize URL handler registry with known handlers
 _url_handler_registry = URLHandlerRegistry()
 _url_handler_registry.register(GoogleSourceHandler())
+
+
+def _extract_filename_from_content_disposition(content_disposition: str) -> str | None:
+    """Extract filename from Content-Disposition header.
+
+    Args:
+        content_disposition: Content-Disposition header value
+
+    Returns:
+        Extracted filename or None if not found
+    """
+    if not content_disposition:
+        return None
+
+    # Try filename*=UTF-8'' format first (RFC 5987)
+    utf8_match = re.search(r"filename\*=UTF-8''(.+?)(?:;|$)", content_disposition)
+    if utf8_match:
+        return unquote(utf8_match.group(1))
+
+    # Try regular filename= format
+    filename_match = re.search(r'filename="?([^";\r\n]+)"?', content_disposition)
+    if filename_match:
+        return filename_match.group(1).strip('"')
+
+    return None
+
+
+def _extract_filename_from_url(
+    url: str,
+    *,
+    content_disposition: str | None = None,
+) -> str:
+    """Extract filename from URL, Content-Disposition header, or query parameters.
+
+    Args:
+        url: The URL to extract filename from
+        content_disposition: Optional Content-Disposition header value
+
+    Returns:
+        Extracted filename (may be a default like "download.zip")
+    """
+    # Try Content-Disposition header first
+    if content_disposition:
+        filename = _extract_filename_from_content_disposition(content_disposition)
+        if filename:
+            return filename
+
+    # Parse URL
+    parsed = urlparse(url)
+
+    # Try to extract from URL path
+    path_parts = parsed.path.rstrip("/").split("/")
+    if path_parts:
+        filename = path_parts[-1]
+        # Only use path filename if it has a file extension
+        if filename and filename != "download" and "." in filename:
+            return unquote(filename)
+
+    # Try to get format hint from query parameters
+    query_params = parse_qs(parsed.query)
+
+    # Check common query parameters that hint at file format
+    format_hints = [
+        query_params.get("accept", []),
+        query_params.get("format", []),
+        query_params.get("type", []),
+    ]
+
+    for values in format_hints:
+        if values:
+            format_hint = values[0].lower()
+            # Ensure format hint starts with a dot
+            if not format_hint.startswith("."):
+                format_hint = f".{format_hint}"
+            # Map format hints to appropriate extensions
+            if format_hint in VALID_COMPRESSION_FORMATS:
+                # For compression formats, assume it's a compressed GDS file
+                return f"download.gds{format_hint}"
+            if format_hint in VALID_ALL_FORMATS:
+                return f"download{format_hint}"
+
+    # No filename found - return generic default
+    # This will fail validation, which is appropriate
+    return "download"
 
 
 def _validate_filename_format(filename: str) -> None:
@@ -196,9 +282,14 @@ class ProjectFileService:
             raise SecurityValidationError(msg) from e
 
         # Step 4: Extract filename and validate format
-        parsed = urlparse(rewritten_url)
-        filename = parsed.path.split("/")[-1] or "download"
-        filename = unquote(filename)
+        content_disposition = validation_result.get("content_disposition")
+        # Ensure content_disposition is str | None (not int)
+        if isinstance(content_disposition, int):
+            content_disposition = None
+        filename = _extract_filename_from_url(
+            rewritten_url,
+            content_disposition=content_disposition,
+        )
 
         # Validate filename format (GDS/OASIS only)
         _validate_filename_format(filename)

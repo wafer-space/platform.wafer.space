@@ -186,6 +186,7 @@ class URLValidator:
                 - file_size: File size in bytes (0 if Content-Length missing
                     and allowed)
                 - content_type: Content type from server
+                - content_disposition: Content-Disposition header if available
                 - etag: ETag header if available
                 - supports_range: Whether server supports range requests
 
@@ -212,6 +213,7 @@ class URLValidator:
             return {
                 "file_size": file_size,
                 "content_type": response.headers.get("Content-Type"),
+                "content_disposition": response.headers.get("Content-Disposition"),
                 "etag": response.headers.get("ETag"),
                 "supports_range": response.headers.get("Accept-Ranges") == "bytes",
             }
