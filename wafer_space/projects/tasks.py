@@ -1081,7 +1081,7 @@ def _log_download_completion(
 
 
 @shared_task(bind=True, max_retries=5, default_retry_delay=60)
-def download_project_file(self, project_id):
+def download_project_file(self, project_id):  # noqa: PLR0915
     """Background task to download a project file from a URL.
 
     Supports:
@@ -1166,7 +1166,36 @@ def download_project_file(self, project_id):
         formatted_size = _format_bytes(len(downloaded_content))
         logger.info("  ✓ Read %s from temp file", formatted_size)
 
+        # Detect file type from actual content
+        logger.info("Step 6: Detecting file type from content...")
+        from .services import detect_file_type_from_data  # noqa: PLC0415
+
+        # Use first 1MB for MIME detection (or entire file if smaller)
+        detection_data = downloaded_content[: 1024 * 1024]
+        try:
+            mime_type, detected_extension = detect_file_type_from_data(detection_data)
+            logger.info("  ✓ Detected MIME type: %s", mime_type)
+            logger.info("  ✓ Detected extension: %s", detected_extension)
+
+            # Update filename based on detected type
+            base_name = project_file.original_filename.rsplit(".", 1)[0]
+            if base_name == "download" or not base_name:
+                base_name = "file"
+            new_filename = f"{base_name}{detected_extension}"
+            old_name = project_file.original_filename
+            logger.info("  ✓ Updated filename: %s → %s", old_name, new_filename)
+            project_file.original_filename = new_filename
+            project_file.save(update_fields=["original_filename"])
+        except ValueError as e:
+            logger.exception("  ✗ File type detection failed")
+            # Mark download as failed
+            project_file.download_status = ProjectFile.DownloadStatus.FAILED
+            project_file.download_error = str(e)
+            project_file.save(update_fields=["download_status", "download_error"])
+            raise
+
         # Process and save content
+        logger.info("Step 7: Processing and saving content...")
         _processed_content, final_md5, final_sha1 = _process_and_save_content(
             project_file,
             downloaded_content,
@@ -1176,6 +1205,7 @@ def download_project_file(self, project_id):
         )
 
         # Verify hashes and create notifications
+        logger.info("Step 8: Verifying hashes and creating notifications...")
         hash_verified, verification_errors = _verify_and_notify(
             project_file,
             final_md5,
@@ -1183,7 +1213,7 @@ def download_project_file(self, project_id):
         )
 
         # Clean up temp file
-        logger.info("Step 10: Cleaning up temporary files...")
+        logger.info("Step 9: Cleaning up temporary files...")
         with contextlib.suppress(OSError):
             temp_path.unlink()
         logger.info("  ✓ Temp file removed")
