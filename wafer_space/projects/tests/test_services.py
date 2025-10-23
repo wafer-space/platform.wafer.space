@@ -12,6 +12,7 @@ from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.security import SecurityValidationError
 from wafer_space.projects.services import ManufacturabilityService
 from wafer_space.projects.services import ProjectFileService
+from wafer_space.projects.services import detect_file_type_from_data
 from wafer_space.users.models import User
 
 from .constants import FIVE_MB
@@ -536,6 +537,69 @@ class TestProjectFileService(TestCase):
         # Verify filename was extracted and URL-decoded
         assert project_file.original_filename == "my design.oas"
         assert metadata["file_size"] == FIVE_MB
+
+
+class TestDetectFileType(TestCase):
+    """Test MIME type detection for file validation."""
+
+    def test_detect_gzip_file(self):
+        """Test detection of gzip compressed file."""
+        # Gzip magic bytes
+        gzip_data = b"\x1f\x8b\x08\x00" + b"\x00" * 100
+        mime_type, extension = detect_file_type_from_data(gzip_data)
+        assert mime_type == "application/gzip"
+        assert extension == ".gds.gz"
+
+    def test_detect_zip_file(self):
+        """Test detection of zip compressed file."""
+        # ZIP magic bytes (PK header)
+        zip_data = b"PK\x03\x04" + b"\x00" * 100
+        mime_type, extension = detect_file_type_from_data(zip_data)
+        assert mime_type in ["application/zip", "application/x-zip-compressed"]
+        assert extension == ".gds.zip"
+
+    def test_detect_bzip2_file(self):
+        """Test detection of bzip2 compressed file."""
+        # Bzip2 magic bytes
+        bz2_data = b"BZh9" + b"\x00" * 100
+        mime_type, extension = detect_file_type_from_data(bz2_data)
+        assert mime_type == "application/x-bzip2"
+        assert extension == ".gds.bz2"
+
+    def test_detect_xz_file(self):
+        """Test detection of xz compressed file."""
+        # XZ magic bytes
+        xz_data = b"\xfd7zXZ\x00" + b"\x00" * 100
+        mime_type, extension = detect_file_type_from_data(xz_data)
+        assert mime_type == "application/x-xz"
+        assert extension == ".gds.xz"
+
+    def test_detect_binary_file_as_gds(self):
+        """Test detection of generic binary file (assumed to be GDS)."""
+        # Generic binary data
+        binary_data = b"\x00\x01\x02\x03" + b"\x00" * 100
+        mime_type, extension = detect_file_type_from_data(binary_data)
+        assert mime_type == "application/octet-stream"
+        assert extension == ".gds"
+
+    def test_reject_text_file(self):
+        """Test that text files are rejected."""
+        text_data = b"This is a text file, not a GDS file"
+        with pytest.raises(ValueError, match="Unsupported file type"):
+            detect_file_type_from_data(text_data)
+
+    def test_reject_html_file(self):
+        """Test that HTML files are rejected."""
+        html_data = b"<!DOCTYPE html><html><body>Not a GDS file</body></html>"
+        with pytest.raises(ValueError, match="Unsupported file type"):
+            detect_file_type_from_data(html_data)
+
+    def test_reject_pdf_file(self):
+        """Test that PDF files are rejected."""
+        # PDF magic bytes
+        pdf_data = b"%PDF-1.4" + b"\x00" * 100
+        with pytest.raises(ValueError, match="Unsupported file type"):
+            detect_file_type_from_data(pdf_data)
 
 
 @pytest.mark.django_db
