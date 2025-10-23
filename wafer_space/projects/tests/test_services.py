@@ -699,38 +699,6 @@ class TestProjectFileService(TestCase):
     @patch("wafer_space.projects.tasks.download_project_file.delay")
     @patch("wafer_space.projects.services.URLValidator.validate_url")
     @patch("wafer_space.projects.services.URLRewriter.rewrite_url")
-    def test_submit_file_extracts_filename_from_query_param(
-        self,
-        mock_rewrite,
-        mock_validate,
-        mock_task,
-    ):
-        """Test filename extraction from query parameter (Nextcloud case)."""
-        # Nextcloud WebDAV URL with ?accept=zip parameter
-        url = "https://cloud.example.com/public.php/dav/files/TOKEN/?accept=zip"
-
-        mock_rewrite.return_value = (url, False, "")
-        mock_validate.return_value = {
-            "file_size": FIVE_MB,
-            "content_type": "application/zip",
-            "content_disposition": None,
-            "etag": None,
-            "supports_range": True,
-        }
-        mock_task.return_value = Mock(id="task-nextcloud")
-
-        project_file, metadata = ProjectFileService.submit_file_from_url(
-            project=self.project,
-            url=url,
-        )
-
-        # Verify filename was extracted from query parameter (assumes compressed GDS)
-        assert project_file.original_filename == "download.gds.zip"
-        assert metadata["file_size"] == FIVE_MB
-
-    @patch("wafer_space.projects.tasks.download_project_file.delay")
-    @patch("wafer_space.projects.services.URLValidator.validate_url")
-    @patch("wafer_space.projects.services.URLRewriter.rewrite_url")
     def test_submit_file_extracts_filename_from_content_disposition(
         self,
         mock_rewrite,

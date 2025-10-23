@@ -10,7 +10,6 @@ This service layer prevents circular imports by providing a clean separation:
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import parse_qs
 from urllib.parse import unquote
 from urllib.parse import urlparse
 
@@ -95,29 +94,6 @@ def _extract_filename_from_url(
         # Only use path filename if it has a file extension
         if filename and filename != "download" and "." in filename:
             return unquote(filename)
-
-    # Try to get format hint from query parameters
-    query_params = parse_qs(parsed.query)
-
-    # Check common query parameters that hint at file format
-    format_hints = [
-        query_params.get("accept", []),
-        query_params.get("format", []),
-        query_params.get("type", []),
-    ]
-
-    for values in format_hints:
-        if values:
-            format_hint = values[0].lower()
-            # Ensure format hint starts with a dot
-            if not format_hint.startswith("."):
-                format_hint = f".{format_hint}"
-            # Map format hints to appropriate extensions
-            if format_hint in VALID_COMPRESSION_FORMATS:
-                # For compression formats, assume it's a compressed GDS file
-                return f"download.gds{format_hint}"
-            if format_hint in VALID_ALL_FORMATS:
-                return f"download{format_hint}"
 
     # No filename found - return generic default
     # This will fail validation, which is appropriate
