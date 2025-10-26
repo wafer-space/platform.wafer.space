@@ -251,8 +251,9 @@ class TestProjectSubmit(TestCase):
     def test_submit_does_not_create_new_manufacturability_check(self):
         """Test that submit() does not create a new manufacturability check.
 
-        Manufacturability checks are created earlier in the workflow (when hash is verified),
-        not during submission. This test verifies submit() doesn't create duplicate checks.
+        Manufacturability checks are created earlier in the workflow
+        (when hash is verified), not during submission.
+        This test verifies submit() doesn't create duplicate checks.
         """
         ProjectFile.objects.create(
             project=self.project,

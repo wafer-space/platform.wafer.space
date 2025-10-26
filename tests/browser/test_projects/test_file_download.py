@@ -97,9 +97,11 @@ class TestProjectFileDownload(BaseBrowserTest):
         self.navigate_to(self.driver, f"/projects/{self.project.id}/")
 
         # Check for "Submit File URL" button or link
+        # Use contains(., ...) instead of contains(text(), ...)
+        # to match all descendant text
         self.wait_for_element(
             self.driver,
-            (By.XPATH, "//*[contains(text(), 'Submit') or contains(text(), 'File')]"),
+            (By.XPATH, "//*[contains(., 'Submit') or contains(., 'File')]"),
             timeout=10,
         )
 
@@ -304,9 +306,8 @@ class TestProjectFileDownload(BaseBrowserTest):
         self.navigate_to(self.driver, f"/projects/{self.project.id}/")
 
         # Check for completed status
-        completed_xpath = (
-            "//*[contains(text(), 'completed') or contains(text(), 'Completed')]"
-        )
+        # Use contains(., ...) to match all descendant text, not just direct text nodes
+        completed_xpath = "//*[contains(., 'Download Completed')]"
         status_element = self.wait_for_element(
             self.driver, (By.XPATH, completed_xpath), timeout=10
         )
@@ -333,7 +334,8 @@ class TestProjectFileDownload(BaseBrowserTest):
         self.navigate_to(self.driver, f"/projects/{self.project.id}/")
 
         # Check for failed status
-        failed_xpath = "//*[contains(text(), 'failed') or contains(text(), 'Failed')]"
+        # Use contains(., ...) to match all descendant text, not just direct text nodes
+        failed_xpath = "//*[contains(., 'Download Failed')]"
         status_element = self.wait_for_element(
             self.driver, (By.XPATH, failed_xpath), timeout=10
         )
