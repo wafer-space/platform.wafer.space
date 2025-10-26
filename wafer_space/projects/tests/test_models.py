@@ -126,7 +126,8 @@ class TestProjectCanSubmit(TestCase):
             hash_verified=True,
         )
 
-        # Mark as submitted
+        # Mark as manufacturable and submitted
+        self.project.is_manufacturable = True
         self.project.status = Project.Status.SUBMITTED
         self.project.save()
 
@@ -147,6 +148,9 @@ class TestProjectCanSubmit(TestCase):
             download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=True,
         )
+        # Mark as manufacturable
+        self.project.is_manufacturable = True
+        self.project.save()
 
         can_submit, reason = self.project.can_submit()
 
@@ -211,6 +215,10 @@ class TestProjectSubmit(TestCase):
             hash_verified=True,
         )
 
+        # Mark as manufacturable
+        self.project.is_manufacturable = True
+        self.project.save()
+
         self.project.submit()
 
         self.project.refresh_from_db()
@@ -228,6 +236,10 @@ class TestProjectSubmit(TestCase):
             hash_verified=True,
         )
 
+        # Mark as manufacturable
+        self.project.is_manufacturable = True
+        self.project.save()
+
         before = timezone.now()
         self.project.submit()
         after = timezone.now()
@@ -236,11 +248,12 @@ class TestProjectSubmit(TestCase):
         assert self.project.submitted_at is not None
         assert before <= self.project.submitted_at <= after
 
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
-    def test_submit_creates_manufacturability_check(self, mock_task):
-        """Test that submit() creates a manufacturability check."""
-        mock_task.return_value = Mock(id="task-123")
+    def test_submit_does_not_create_new_manufacturability_check(self):
+        """Test that submit() does not create a new manufacturability check.
 
+        Manufacturability checks are created earlier in the workflow (when hash is verified),
+        not during submission. This test verifies submit() doesn't create duplicate checks.
+        """
         ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
@@ -251,16 +264,22 @@ class TestProjectSubmit(TestCase):
             hash_verified=True,
         )
 
-        # Verify no check exists
-        assert not hasattr(self.project, "manufacturability_check")
+        # Mark as manufacturable (simulating completed check from earlier workflow)
+        self.project.is_manufacturable = True
+        self.project.save()
+
+        # Verify no check exists before submission
+        initial_check_count = ManufacturabilityCheck.objects.filter(
+            project=self.project
+        ).count()
 
         self.project.submit()
 
-        # Verify check was created
-        self.project.refresh_from_db()
-        assert hasattr(self.project, "manufacturability_check")
-        check = ManufacturabilityCheck.objects.get(project=self.project)
-        assert check.status == ManufacturabilityCheck.Status.QUEUED
+        # Verify submit() did not create a check
+        final_check_count = ManufacturabilityCheck.objects.filter(
+            project=self.project
+        ).count()
+        assert final_check_count == initial_check_count
 
     @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
     def test_submit_does_not_create_duplicate_check(self, mock_task):
@@ -276,6 +295,10 @@ class TestProjectSubmit(TestCase):
             download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=True,
         )
+
+        # Mark as manufacturable
+        self.project.is_manufacturable = True
+        self.project.save()
 
         # Create existing check
         existing_check = ManufacturabilityCheck.objects.create(
@@ -304,6 +327,10 @@ class TestProjectSubmit(TestCase):
             download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=True,
         )
+
+        # Mark as manufacturable
+        self.project.is_manufacturable = True
+        self.project.save()
 
         # First submission should succeed
         self.project.submit()

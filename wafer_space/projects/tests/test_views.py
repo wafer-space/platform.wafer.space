@@ -156,7 +156,8 @@ class TestProjectDetailView(TestCase):
         response = self.client.get(url)
 
         assert response.status_code == HTTP_OK
-        assert response.context["active_file"] == active_file
+        # Active file is provided as in_progress_file in the context
+        assert response.context["in_progress_file"] == active_file
 
 
 @pytest.mark.django_db
@@ -586,6 +587,10 @@ class TestProjectSubmitView(TestCase):
             hash_verified=True,
         )
 
+        # Mark as manufacturable
+        self.project.is_manufacturable = True
+        self.project.save()
+
         self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:submit", kwargs={"pk": self.project.pk})
         response = self.client.post(url)
@@ -723,6 +728,10 @@ class TestProjectSubmitView(TestCase):
             hash_verified=True,
         )
 
+        # Mark as manufacturable
+        self.project.is_manufacturable = True
+        self.project.save()
+
         # Submit once
         self.project.submit()
         first_submitted_at = self.project.submitted_at
@@ -759,6 +768,10 @@ class TestProjectSubmitView(TestCase):
             download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=True,
         )
+
+        # Mark as manufacturable
+        self.project.is_manufacturable = True
+        self.project.save()
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:submit", kwargs={"pk": self.project.pk})

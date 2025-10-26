@@ -417,24 +417,20 @@ class TestProjectSubmissionIntegration(TestCase):
             hash_verified=True,
         )
 
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
-    def test_submit_queues_manufacturability_check(self, mock_task):
-        """Test that submitting a project queues a manufacturability check."""
-        # Mock the Celery task
-        mock_task.return_value = Mock(id="task-123")
+    def test_submit_updates_project_status(self):
+        """Test that submitting a project updates its status to SUBMITTED.
+
+        Note: Manufacturability checks are created earlier in the workflow
+        (when file hash is verified), not during submission.
+        """
+        # Mark as manufacturable (simulating completed check from earlier workflow)
+        self.project.is_manufacturable = True
+        self.project.save()
 
         # Submit the project
         self.project.submit()
 
-        # Verify check was created and queued
-        assert ManufacturabilityCheck.objects.filter(project=self.project).count() == 1
-        check = ManufacturabilityCheck.objects.get(project=self.project)
-        assert check.status == ManufacturabilityCheck.Status.QUEUED
-        assert check.task_id == "task-123"
-
-        # Verify task was called
-        mock_task.assert_called_once_with(check.id)
-
-        # Verify project status
+        # Verify project status was updated
         assert self.project.status == Project.Status.SUBMITTED
         assert self.project.submitted_at is not None
+        assert self.project.submitted_file == self.project_file
