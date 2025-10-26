@@ -1,9 +1,8 @@
 {% load static %}
+
 {# Reusable file display partial - used for both submitted and in-progress files #}
 {# Parameters: file, show_submit_button #}
-
 <h6>{{ file.original_filename }}</h6>
-
 {# Status Badges #}
 <p class="mb-3">
   <strong>Download Status:</strong>
@@ -31,7 +30,6 @@
     </span>
   {% endif %}
 </p>
-
 {# Download Information #}
 <div class="card bg-light">
   <div class="card-body">

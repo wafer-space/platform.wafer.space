@@ -84,9 +84,7 @@
                 <i class="bi bi-check-circle-fill"></i> Submitted for Manufacturing
               </h5>
             </div>
-            <div class="card-body">
-              {% include "projects/_file_display.html" with file=submitted_file %}
-            </div>
+            <div class="card-body">{% include "projects/_file_display.html" with file=submitted_file %}</div>
           </div>
         {% endif %}
         {# In-Progress File Section #}
@@ -189,9 +187,7 @@
                     <h6 class="text-danger">
                       <i class="bi bi-exclamation-triangle"></i> Errors
                     </h6>
-                    {% for error in check_status.errors %}
-                      <div class="alert alert-danger" role="alert">{{ error }}</div>
-                    {% endfor %}
+                    {% for error in check_status.errors %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endfor %}
                   </div>
                 {% endif %}
                 {# Display warnings if any #}
