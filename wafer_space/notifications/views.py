@@ -11,6 +11,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.shortcuts import redirect
+from django.utils import timezone
 from django.views.generic import ListView
 
 from .models import Notification
@@ -88,6 +89,7 @@ def mark_all_notifications_read(request):
     if request.method == "POST":
         Notification.objects.filter(user=request.user, is_read=False).update(
             is_read=True,
+            read_at=timezone.now(),
         )
 
     return redirect("notifications:list")

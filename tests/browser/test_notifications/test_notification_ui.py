@@ -267,7 +267,11 @@ class TestNotificationUI(BaseBrowserTest):
         assert "Mark All as Read" in mark_all_button.text
 
     def test_mark_all_as_read_functionality(self):
-        """Test that mark all as read button works correctly."""
+        """Test that mark all as read button works correctly.
+
+        This test uses condition-based waiting to handle the asynchronous
+        nature of the form submission -> redirect -> database update flow.
+        """
         # Create multiple unread notifications
         Notification.objects.create(
             user=self.user,
@@ -294,23 +298,28 @@ class TestNotificationUI(BaseBrowserTest):
         )
         mark_all_button.click()
 
-        # Wait for page to reload and database to update
-        # Retry up to 5 times with 1 second delay
-        max_retries = 5
-        for _attempt in range(max_retries):
-            time.sleep(1)
+        # Use condition-based waiting to poll for database state change
+        # This is more reliable than sleeping for a fixed duration.
+        # Poll the database until all notifications are read or timeout (20 seconds)
+        wait = WebDriverWait(self.driver, 20, poll_frequency=0.5)
+
+        def all_notifications_read(_driver):
+            """Custom wait condition: check if all notifications are marked as read."""
             unread_count = Notification.objects.filter(
                 user=self.user,
                 is_read=False,
             ).count()
-            if unread_count == 0:
-                break
+            return unread_count == 0
 
-        # Final verification
-        error_msg = (
-            f"Expected 0 unread, got {unread_count} after {max_retries} attempts"
-        )
-        assert unread_count == 0, error_msg
+        # Wait until all notifications are marked as read
+        wait.until(all_notifications_read)
+
+        # Final verification with fresh database fetch
+        unread_count = Notification.objects.filter(
+            user=self.user,
+            is_read=False,
+        ).count()
+        assert unread_count == 0
 
     def test_filter_tabs_display(self):
         """Test that filter tabs (All, Unread, Read) display correctly."""
