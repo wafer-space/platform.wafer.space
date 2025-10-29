@@ -190,5 +190,8 @@
     </script>
       {% endcomment %}
     {% endblock inline_javascript %}
+    {% if user.is_authenticated %}
+      <script src="{% static 'js/notifications.js' %}"></script>
+    {% endif %}
   </body>
 </html>
