@@ -11,3 +11,18 @@
   background-color: #f2dede;
   border-color: #eed3d7;
 }
+
+/* Notification badge positioning and styling */
+#notification-badge {
+  font-size: 0.65rem;      /* Small, compact text */
+  min-width: 1.25em;       /* Minimum width for circular shape */
+  height: 1.25em;          /* Fixed height */
+  line-height: 1.25em;     /* Center text vertically */
+  padding: 0 0.4em;        /* Horizontal padding for wider numbers */
+  z-index: 10;             /* Above other elements */
+}
+
+/* Bell icon color change when unread notifications exist */
+#notification-bell.has-unread .bi-bell {
+  fill: #dc3545;           /* Bootstrap danger red */
+}
