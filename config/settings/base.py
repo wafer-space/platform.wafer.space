@@ -235,6 +235,7 @@ TEMPLATES = [
                 "wafer_space.users.context_processors.allauth_settings",
                 "wafer_space.contrib.git_info.git_info",
                 "wafer_space.contrib.hostname_info.hostname_info",
+                "wafer_space.notifications.context_processors.unread_notifications_count",
             ],
         },
     },
