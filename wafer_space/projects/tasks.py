@@ -1033,6 +1033,7 @@ def _log_download_start(project_id: str, project_file: ProjectFile) -> None:
 
     logger.info("=" * 80)
     logger.info("DOWNLOAD TASK STARTED - Project ID: %s", project_id)
+    logger.info("  User: %s", project_file.project.user.username)
     logger.info("  File: %s", temp_path)
     logger.info("=" * 80)
 
