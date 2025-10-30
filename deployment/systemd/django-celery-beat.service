@@ -16,7 +16,8 @@ ExecStart=/home/django/platform.wafer.space/.venv/bin/celery \
     beat \
     --loglevel=info \
     --logfile=/var/log/platform.wafer.space/celery-beat.log \
-    --pidfile=/run/platform.wafer.space/celery-beat.pid
+    --pidfile=/run/platform.wafer.space/celery-beat.pid \
+    --schedule=/run/platform.wafer.space/celerybeat-schedule
 
 # Security hardening
 NoNewPrivileges=true
