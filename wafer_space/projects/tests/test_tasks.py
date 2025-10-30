@@ -6,6 +6,7 @@ Security-Critical Tests:
 - Only http:// and https:// schemes are allowed for file downloads
 """
 
+import logging
 from unittest.mock import Mock
 from unittest.mock import patch
 
@@ -16,6 +17,7 @@ from django.test import TestCase
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
+from wafer_space.projects.tasks import _log_download_start
 from wafer_space.projects.tasks import _safe_urlopen
 from wafer_space.projects.tasks import check_project_manufacturability
 
@@ -434,3 +436,40 @@ class TestProjectSubmissionIntegration(TestCase):
         assert self.project.status == Project.Status.SUBMITTED
         assert self.project.submitted_at is not None
         assert self.project.submitted_file == self.project_file
+
+
+class TestDownloadLogging(TestCase):
+    """Tests for download task logging functionality."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test Description",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test.gds",
+            source_url="https://example.com/test.gds",
+            file_size=1024,
+            is_active=True,
+        )
+
+    def test_log_download_start_includes_user_info(self):
+        """Test that download start log includes user information."""
+        # Capture log output
+        with self.assertLogs(
+            "wafer_space.projects.tasks",
+            level=logging.INFO,
+        ) as log_context:
+            _log_download_start(str(self.project.id), self.project_file)
+
+        # Verify user information is in the log output
+        log_output = "\n".join(log_context.output)
+        assert "testuser" in log_output or "test@example.com" in log_output
