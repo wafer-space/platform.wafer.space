@@ -39,7 +39,8 @@ EXPECTED_CHECKPOINTS_25MB = 5  # 25MB file: checkpoints at 5, 10, 15, 20, 25 MB
 EXPECTED_CHECKPOINTS_100MB = 20  # 100MB file at 5% intervals
 EXPECTED_CHECKPOINTS_230MB = 46  # 230MB file: checkpoints at 5, 10, ... 230 MB
 EXPECTED_CHECKPOINTS_RESUME_60MB = 4  # Resume from 42MB to 60MB
-EXPECTED_CHECKPOINTS_10MB = 2  # 10MB file: checkpoints at 5, 10 MB
+EXPECTED_CHECKPOINTS_10MB = 2  # 10MB file: checkpoints at 5, 10 MB (unknown size)
+EXPECTED_CHECKPOINTS_10MB_KNOWN = 10  # 10MB file with known size: every 10%
 
 # Expected log counts
 EXPECTED_LOGS_50MB = 5  # 50MB file: logs at 10, 20, 30, 40, 50 MB
@@ -499,6 +500,109 @@ class DownloadChunksIntegrationTests(TestCase):
             # Second checkpoint: 10MB downloaded, chunk #10
             assert checkpoints[1].bytes_downloaded == ALIGNMENT_10MB_CHUNK * MB
             assert checkpoints[1].chunk_number == ALIGNMENT_10MB_CHUNK
+
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+
+@pytest.mark.django_db
+class KnownSizeCheckpointTests(TestCase):
+    """Tests for checkpoint creation with known file size."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test Description",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            source_url="http://example.com/test.gds",
+            original_filename="test.gds",
+            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
+            is_active=True,
+        )
+
+    @patch("wafer_space.projects.tasks.timezone")
+    def test_checkpoint_data_with_known_size(self, mock_timezone):
+        """Test checkpoint stores correct bytes_downloaded for known-size files.
+
+        This is a regression test for issue #32 where checkpoints showed 0 bytes
+        for all downloads with known file size.
+        """
+        mock_timezone.now.return_value = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+
+        # Download 10MB with KNOWN total size
+        # With 5% checkpoints and 1MB chunks, we get checkpoints at 10%, 20%... 100%
+        # That's 10 checkpoints total
+        total_size = 10 * MB  # Known size
+        mock_response = Mock()
+        chunks = [b"x" * MB for _ in range(ALIGNMENT_10MB_CHUNK)]
+        mock_response.iter_content.return_value = iter(chunks)
+
+        mock_task = Mock()
+        mock_task.update_state = Mock()
+
+        temp_dir = Path(tempfile.gettempdir()) / "wafer_space_test_downloads"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_path = temp_dir / "test_known_size_checkpoint.gds"
+        temp_path.unlink(missing_ok=True)
+
+        try:
+            state = _ChunkDownloadState(
+                response=mock_response,
+                temp_path=temp_path,
+                task=mock_task,
+                project_file=self.project_file,
+                total_size=total_size,  # KNOWN SIZE - triggers the buggy code path
+                resume_byte_pos=0,
+                md5_hasher=Mock(update=Mock()),
+                sha1_hasher=Mock(update=Mock()),
+                chunk_size=CHUNK_SIZE,
+                start_time=0.0,
+            )
+
+            _download_chunks(state)
+
+            # Verify checkpoints have correct bytes_downloaded values
+            checkpoints = ProjectFileChunk.objects.filter(
+                project_file=self.project_file
+            ).order_by("bytes_downloaded")
+
+            # With 10MB file and 1MB chunks, checkpoints trigger at 10%, 20%... 100%
+            assert checkpoints.count() == EXPECTED_CHECKPOINTS_10MB_KNOWN
+
+            # THE KEY BUG FIX: Verify bytes_downloaded contains actual byte counts
+            # Before fix: all checkpoints showed "0 bytes"
+            # After fix: checkpoints show correct byte counts (1MB, 2MB, 3MB, etc.)
+            assert checkpoints[0].bytes_downloaded == 1 * MB, (
+                f"First checkpoint should have 1MB downloaded, "
+                f"but got {checkpoints[0].bytes_downloaded / MB}MB. "
+                f"Bug #32: checkpoints were showing 0 bytes instead of actual values."
+            )
+
+            assert checkpoints[4].bytes_downloaded == 5 * MB, (
+                f"Fifth checkpoint should have 5MB downloaded, "
+                f"but got {checkpoints[4].bytes_downloaded / MB}MB"
+            )
+
+            assert checkpoints[9].bytes_downloaded == 10 * MB, (
+                f"Tenth checkpoint should have 10MB downloaded, "
+                f"but got {checkpoints[9].bytes_downloaded / MB}MB"
+            )
+
+            # Verify ALL checkpoints have non-zero bytes (the original bug)
+            for checkpoint in checkpoints:
+                assert checkpoint.bytes_downloaded > 0, (
+                    f"Checkpoint {checkpoint.chunk_number} has 0 bytes - "
+                    f"this is the bug from issue #32!"
+                )
 
         finally:
             temp_path.unlink(missing_ok=True)
