@@ -541,7 +541,7 @@ def _should_update_database(
         # Known size: update every 5% progress
         progress = int((downloaded / total_size) * 100)
         if progress >= last_db_update_progress + 5:
-            return True, progress, last_db_update_bytes
+            return True, progress, downloaded
     else:
         # Unknown size: update every 5MB
         mb_downloaded = downloaded / (1024 * 1024)
