@@ -26,6 +26,8 @@ regexes = [
     '''TEST_PASSWORD''',
     '''fake_token''',
     '''dummy_key''',
+    '''browser_test_''',
+    '''_REDACTED''',
 ]
 
 # Custom rules for Django/OAuth specific secrets
