@@ -11,6 +11,7 @@ paths = [
     '''\.env\.production\.template$''', # Production template is safe
     '''docs/''',                         # Documentation files
     '''tests/''',                        # All test files with fake OAuth secrets
+    '''\.github/workflows/''',           # CI configuration with test database credentials
     '''\.venv/''',                       # Virtual environment
     '''\.worktrees/''',                  # Git worktrees
     '''node_modules/''',                 # Node modules
