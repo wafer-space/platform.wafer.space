@@ -73,13 +73,13 @@ tags = ["github", "oauth"]
 [[rules]]
 id = "gitlab-oauth-secret"
 description = "GitLab OAuth Client Secret"
-regex = '''(?i)gitlab.*client[_-]?secret\s*[:=]\s*['"][a-f0-9]{64}['"]'''
+regex = '''(?i)gitlab.*client[_-]?secret\s*[:=]\s*['"][a-f0-9]{64,}['"]'''
 tags = ["gitlab", "oauth"]
 
 [[rules]]
 id = "google-oauth-secret"
 description = "Google OAuth Client Secret"
-regex = '''(?i)google.*client[_-]?secret\s*[:=]\s*['"][a-zA-Z0-9_\-]{24}['"]'''
+regex = '''(?i)google.*client[_-]?secret\s*[:=]\s*['"]GOCSPX-[a-zA-Z0-9_\-]{28}['"]'''
 tags = ["google", "oauth"]
 
 [[rules]]
@@ -91,7 +91,7 @@ tags = ["discord", "oauth"]
 [[rules]]
 id = "linkedin-oauth-secret"
 description = "LinkedIn OAuth Client Secret"
-regex = '''(?i)linkedin.*client[_-]?secret\s*[:=]\s*['"][a-zA-Z0-9]{16}['"]'''
+regex = '''(?i)linkedin.*client[_-]?secret\s*[:=]\s*['"][a-zA-Z0-9]{16,}['"]'''
 tags = ["linkedin", "oauth"]
 
 [[rules]]
