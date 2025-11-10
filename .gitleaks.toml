@@ -10,8 +10,7 @@ paths = [
     '''\.env\.example$''',              # Template files are safe
     '''\.env\.production\.template$''', # Production template is safe
     '''docs/''',                         # Documentation files
-    '''tests/fixtures/''',               # Test fixture data
-    '''tests/browser/conftest\.py$''',   # Browser test fixtures with fake OAuth secrets
+    '''tests/''',                        # All test files with fake OAuth secrets
     '''\.venv/''',                       # Virtual environment
     '''\.worktrees/''',                  # Git worktrees
     '''node_modules/''',                 # Node modules
