@@ -12,6 +12,7 @@ paths = [
     '''docs/''',                         # Documentation files
     '''tests/''',                        # All test files with fake OAuth secrets
     '''\.github/workflows/''',           # CI configuration with test database credentials
+    '''config/settings/base\.py$''',     # Base settings with dev defaults and admin emails
     '''\.venv/''',                       # Virtual environment
     '''\.worktrees/''',                  # Git worktrees
     '''node_modules/''',                 # Node modules
