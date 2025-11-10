@@ -48,6 +48,8 @@ regexes = [
     '''fake_''',
     '''dummy_''',
     '''env\(''',  # Allow env() calls - secrets loaded from environment
+    '''browser_test_''',  # Browser test fixtures
+    '''REDACTED''',  # Placeholder values
 ]
 
 [[rules]]
