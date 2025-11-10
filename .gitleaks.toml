@@ -1,0 +1,127 @@
+# Gitleaks configuration for wafer.space platform
+# Documentation: https://github.com/gitleaks/gitleaks/tree/master
+
+title = "Gitleaks configuration for wafer.space"
+
+# Allowlisting specific paths that should never be scanned
+[allowlist]
+description = "Allowlisted files and patterns"
+paths = [
+    '''\.env\.example$''',              # Template files are safe
+    '''\.env\.production\.template$''', # Production template is safe
+    '''docs/''',                         # Documentation files
+    '''tests/fixtures/''',               # Test fixture data
+    '''\.venv/''',                       # Virtual environment
+    '''\.worktrees/''',                  # Git worktrees
+    '''node_modules/''',                 # Node modules
+    '''staticfiles/''',                  # Collected static files
+    '''deployment/scripts/''',           # Deployment scripts manage secrets safely
+]
+
+# Common patterns for test files with fake credentials
+regexes = [
+    '''test_client_id''',
+    '''test_secret''',
+    '''testpass123''',
+    '''TEST_PASSWORD''',
+    '''fake_token''',
+    '''dummy_key''',
+]
+
+# Custom rules for Django/OAuth specific secrets
+[[rules]]
+id = "django-secret-key"
+description = "Django SECRET_KEY"
+regex = '''(?i)SECRET_KEY\s*=\s*['"][^'"]{40,}['"]'''
+tags = ["django", "secret"]
+
+[[rules]]
+id = "oauth-client-secret"
+description = "OAuth Client Secret in settings"
+regex = '''(?i)(client_secret|secret)\s*[:=]\s*['"][a-zA-Z0-9_\-]{20,}['"]'''
+tags = ["oauth", "secret"]
+[rules.allowlist]
+regexes = [
+    '''test_''',
+    '''fake_''',
+    '''dummy_''',
+    '''env\(''',  # Allow env() calls - secrets loaded from environment
+]
+
+[[rules]]
+id = "mailgun-api-key"
+description = "Mailgun API Key"
+regex = '''(?i)mailgun[_-]?api[_-]?key\s*[:=]\s*['"][a-z0-9]{32}['"]'''
+tags = ["mailgun", "api-key"]
+
+[[rules]]
+id = "database-password"
+description = "Database password in connection string"
+regex = '''postgres://[^:]+:([^@]{8,})@'''
+tags = ["database", "password"]
+[rules.allowlist]
+regexes = [
+    '''postgres''',  # Allow 'postgres' as password in dev/test
+]
+
+[[rules]]
+id = "github-oauth-secret"
+description = "GitHub OAuth Client Secret"
+regex = '''(?i)github.*client[_-]?secret\s*[:=]\s*['"][a-f0-9]{40}['"]'''
+tags = ["github", "oauth"]
+
+[[rules]]
+id = "gitlab-oauth-secret"
+description = "GitLab OAuth Client Secret"
+regex = '''(?i)gitlab.*client[_-]?secret\s*[:=]\s*['"][a-f0-9]{64}['"]'''
+tags = ["gitlab", "oauth"]
+
+[[rules]]
+id = "google-oauth-secret"
+description = "Google OAuth Client Secret"
+regex = '''(?i)google.*client[_-]?secret\s*[:=]\s*['"][a-zA-Z0-9_\-]{24}['"]'''
+tags = ["google", "oauth"]
+
+[[rules]]
+id = "discord-oauth-secret"
+description = "Discord OAuth Client Secret"
+regex = '''(?i)discord.*client[_-]?secret\s*[:=]\s*['"][a-zA-Z0-9_\-]{32}['"]'''
+tags = ["discord", "oauth"]
+
+[[rules]]
+id = "linkedin-oauth-secret"
+description = "LinkedIn OAuth Client Secret"
+regex = '''(?i)linkedin.*client[_-]?secret\s*[:=]\s*['"][a-zA-Z0-9]{16}['"]'''
+tags = ["linkedin", "oauth"]
+
+[[rules]]
+id = "aws-access-key"
+description = "AWS Access Key ID"
+regex = '''(?i)aws[_-]?access[_-]?key[_-]?id\s*[:=]\s*['"]AKIA[0-9A-Z]{16}['"]'''
+tags = ["aws", "access-key"]
+
+[[rules]]
+id = "aws-secret-key"
+description = "AWS Secret Access Key"
+regex = '''(?i)aws[_-]?secret[_-]?access[_-]?key\s*[:=]\s*['"][a-zA-Z0-9/+=]{40}['"]'''
+tags = ["aws", "secret-key"]
+
+[[rules]]
+id = "private-key"
+description = "Private Key (RSA, SSH, etc.)"
+regex = '''-----BEGIN (RSA |EC |DSA )?PRIVATE KEY-----'''
+tags = ["private-key", "ssh"]
+
+[[rules]]
+id = "generic-api-key"
+description = "Generic API Key"
+regex = '''(?i)api[_-]?key\s*[:=]\s*['"][a-zA-Z0-9_\-]{20,}['"]'''
+tags = ["api-key"]
+[rules.allowlist]
+regexes = [
+    '''test_''',
+    '''fake_''',
+    '''dummy_''',
+    '''example''',
+    '''your-api-key-here''',
+]
