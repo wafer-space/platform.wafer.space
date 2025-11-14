@@ -10,14 +10,10 @@ paths = [
     '''\.env\.example$''',              # Template files are safe
     '''\.env\.production\.template$''', # Production template is safe
     '''docs/''',                         # Documentation files
-    '''tests/''',                        # All test files with fake OAuth secrets
-    '''\.github/workflows/''',           # CI configuration with test database credentials
-    '''config/settings/base\.py$''',     # Base settings with dev defaults and admin emails
     '''\.venv/''',                       # Virtual environment
     '''\.worktrees/''',                  # Git worktrees
     '''node_modules/''',                 # Node modules
     '''staticfiles/''',                  # Collected static files
-    '''deployment/scripts/''',           # Deployment scripts manage secrets safely
 ]
 
 # Common patterns for test files with fake credentials
@@ -35,8 +31,19 @@ regexes = [
 # Custom rules for Django/OAuth specific secrets
 [[rules]]
 id = "django-secret-key"
-description = "Django SECRET_KEY"
+description = "Django SECRET_KEY in assignment"
 regex = '''(?i)SECRET_KEY\s*=\s*['"][^'"]{40,}['"]'''
+tags = ["django", "secret"]
+[rules.allowlist]
+regexes = [
+    '''env\(''',  # Allow env() calls - secrets loaded from environment
+    '''get_random_secret_key\(''',  # Allow Django's random secret key generator
+]
+
+[[rules]]
+id = "django-secret-key-in-default"
+description = "Django SECRET_KEY in env() default parameter"
+regex = '''env\([^,]+,\s*default\s*=\s*['"][^'"]{40,}['"]'''
 tags = ["django", "secret"]
 
 [[rules]]
@@ -67,7 +74,7 @@ regex = '''postgres://[^:]+:([^@]{8,})@'''
 tags = ["database", "password"]
 [rules.allowlist]
 regexes = [
-    '''postgres''',  # Allow 'postgres' as password in dev/test
+    '''postgres://[^:]+:postgres@''',  # Allow literal 'postgres' password only
 ]
 
 [[rules]]
