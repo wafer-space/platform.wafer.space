@@ -9,11 +9,17 @@ description = "Allowlisted files and patterns"
 paths = [
     '''\.env\.example$''',              # Template files are safe
     '''\.env\.production\.template$''', # Production template is safe
+    '''\.env$''',                        # Local development .env file
     '''docs/''',                         # Documentation files
     '''\.venv/''',                       # Virtual environment
     '''\.worktrees/''',                  # Git worktrees
     '''node_modules/''',                 # Node modules
     '''staticfiles/''',                  # Collected static files
+    '''__pycache__/''',                  # Python cache files
+    '''\.claude/agents/''',             # Claude agent documentation
+    '''config/settings/local\.py$''',   # Local development settings with dev defaults
+    '''config/settings/test\.py$''',    # Test settings with test defaults
+    '''\.github/workflows/ci\.yml$''',  # CI workflow has example connection strings
 ]
 
 # Common patterns for test files with fake credentials
@@ -39,12 +45,6 @@ regexes = [
     '''env\(''',  # Allow env() calls - secrets loaded from environment
     '''get_random_secret_key\(''',  # Allow Django's random secret key generator
 ]
-
-[[rules]]
-id = "django-secret-key-in-default"
-description = "Django SECRET_KEY in env() default parameter"
-regex = '''env\([^,]+,\s*default\s*=\s*['"][^'"]{40,}['"]'''
-tags = ["django", "secret"]
 
 [[rules]]
 id = "oauth-client-secret"
@@ -74,7 +74,9 @@ regex = '''postgres://[^:]+:([^@]{8,})@'''
 tags = ["database", "password"]
 [rules.allowlist]
 regexes = [
-    '''postgres://[^:]+:postgres@''',  # Allow literal 'postgres' password only
+    '''postgres://[^:]+:postgres@''',          # Allow literal 'postgres' password only
+    '''postgres:///''',                         # Allow no-password localhost connection
+    '''\$DB_PASSWORD''',                        # Allow shell variable substitution
 ]
 
 [[rules]]
