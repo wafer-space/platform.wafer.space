@@ -977,3 +977,69 @@ class ManufacturabilityCheck(models.Model):
     def can_retry(self):
         """Check if this check can be retried."""
         return self.retry_count < self.max_retries
+
+
+class ProjectComplianceCertification(models.Model):
+    """Export compliance attestation for a specific project."""
+
+    project = models.OneToOneField(
+        Project,
+        on_delete=models.CASCADE,
+        related_name="compliance_certification",
+    )
+
+    # Attestations
+    export_control_compliant = models.BooleanField(
+        default=False,
+        help_text="User confirms compliance with EAR/ITAR export control regulations",
+    )
+    end_use_statement = models.TextField(
+        help_text=(
+            "Description of intended end-use (commercial, research, educational, etc.)"
+        ),
+    )
+    not_restricted_entity = models.BooleanField(
+        default=False,
+        help_text=(
+            "User confirms they are not from a restricted country or sanctioned entity"
+        ),
+    )
+
+    # Tracking
+    certified_at = models.DateTimeField(auto_now_add=True)
+    certified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="compliance_certifications",
+    )
+    ip_address = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        help_text="IP address from which certification was submitted",
+    )
+    user_agent = models.TextField(
+        blank=True,
+        help_text="Browser user agent string",
+    )
+
+    # Admin review (optional - can be added later)
+    admin_reviewed = models.BooleanField(default=False)
+    admin_reviewer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_certifications",
+    )
+    admin_notes = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = "Compliance Certification"
+        verbose_name_plural = "Compliance Certifications"
+        indexes = [
+            models.Index(fields=["certified_at"]),
+            models.Index(fields=["admin_reviewed"]),
+        ]
+
+    def __str__(self):
+        return f"Compliance Certification for {self.project.name}"
