@@ -6,7 +6,6 @@ import contextlib
 import hashlib
 import logging
 import os
-import random
 import socket
 import tempfile
 import time
@@ -19,6 +18,7 @@ from urllib.parse import urlparse
 from urllib.request import Request
 from urllib.request import urlopen
 
+import docker
 import requests
 from celery import shared_task
 from django.conf import settings
@@ -36,16 +36,16 @@ from .models import ManufacturabilityCheck
 from .models import Project
 from .models import ProjectFile
 from .models import ProjectFileChunk
+<<<<<<< HEAD
 from .url_handlers import GitHubArtifactHandler
+=======
+from .precheck_parser import PrecheckLogParser
+from .precheck_parser import classify_failure
+>>>>>>> 4673f0e (Refactor check_project_manufacturability to reduce complexity)
 from .url_handlers import GoogleSourceHandler
 from .url_handlers import URLHandlerRegistry
 from .verification import is_task_actively_running
 from .verification import is_task_queued
-
-# Mock manufacturability check constants
-MOCK_PROCESSING_TIME_MIN = 2.0
-MOCK_PROCESSING_TIME_MAX = 5.0
-MOCK_SUCCESS_RATE = 0.8  # 80% success rate for testing
 
 # HTTP status codes
 HTTP_PARTIAL_CONTENT = 206  # Server supports range requests
@@ -130,13 +130,273 @@ def _verify_file_hashes(
     return verified, errors
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def check_project_manufacturability(self, check_id):  # noqa: PLR0915
-    """Background task to check project manufacturability.
+@dataclass
+class _CheckContext:
+    """Context object for manufacturability check execution."""
 
-    This task performs manufacturability analysis on a project's design files.
-    Currently uses mock implementation - will be replaced with real GDS/OASIS
-    analysis tools in the future.
+    check: "ManufacturabilityCheck"
+    client: "docker.DockerClient"
+    project: "Project"
+    gds_path: str
+    task_instance: "shared_task"
+    logger: logging.Logger
+
+
+def _pull_and_record_image(context: _CheckContext):
+    """Pull Docker image and record metadata.
+
+    Args:
+        context: Check execution context
+
+    Returns:
+        Docker image object
+    """
+    context.logger.info("Pulling Docker image: %s", settings.PRECHECK_DOCKER_IMAGE)
+    image = context.client.images.pull(settings.PRECHECK_DOCKER_IMAGE)
+    context.check.docker_image = (
+        image.tags[0] if image.tags else settings.PRECHECK_DOCKER_IMAGE
+    )
+    context.check.docker_image_digest = image.id
+    context.check.save(update_fields=["docker_image", "docker_image_digest"])
+    context.logger.info(
+        "Image pulled: %s (digest: %s)",
+        context.check.docker_image,
+        context.check.docker_image_digest,
+    )
+    return image
+
+
+def _run_container_and_stream_logs(context: _CheckContext):
+    """Run Docker container and stream logs with progress updates.
+
+    Args:
+        context: Check execution context
+
+    Returns:
+        tuple: (logs string, exit_code int, container object)
+    """
+    context.logger.info("Starting Docker container...")
+    container = context.client.containers.run(
+        image=settings.PRECHECK_DOCKER_IMAGE,
+        command=[
+            "python3",
+            "/precheck/precheck.py",
+            "--input",
+            "/input/design.gds",
+            "--top",
+            context.project.name,
+            "--id",
+            str(context.project.id),
+        ],
+        volumes={context.gds_path: {"bind": "/input/design.gds", "mode": "ro"}},
+        detach=True,
+        mem_limit="8g",
+        cpu_quota=100000,  # 1 CPU
+    )
+    context.logger.info("Container started: %s", container.id)
+
+    # Stream logs and update progress
+    logs = ""
+    for line in container.logs(stream=True):
+        line_text = line.decode("utf-8")
+        logs += line_text
+
+        # Update last activity and logs
+        context.check.last_activity = timezone.now()
+        context.check.processing_logs = logs
+        context.check.save(update_fields=["last_activity", "processing_logs"])
+
+        # Update Celery task state
+        context.task_instance.update_state(
+            state="PROGRESS",
+            meta={
+                "message": "Running precheck...",
+                "logs": logs[-1000:],  # Last 1000 chars
+            },
+        )
+
+    # Wait for completion
+    result = container.wait(timeout=settings.PRECHECK_TIMEOUT_SECONDS)
+    exit_code = result["StatusCode"]
+    context.logger.info("Container completed with exit code: %d", exit_code)
+
+    return logs, exit_code, container
+
+
+def _handle_check_result(check, logs, exit_code, logger):
+    """Parse logs and update check status based on results.
+
+    Args:
+        check: ManufacturabilityCheck instance
+        logs: Container logs string
+        exit_code: Container exit code
+        logger: Logger instance
+
+    Returns:
+        dict: Result data with status and details
+    """
+    # Extract version information
+    check.tool_versions = {
+        "pdk": "gf180mcuD",  # Will extract from logs
+        "magic": "unknown",  # Will extract from logs
+        "klayout": "unknown",  # Will extract from logs
+    }
+    check.save(update_fields=["tool_versions"])
+
+    # Parse logs
+    parsed = PrecheckLogParser.parse_logs(logs, exit_code)
+    logger.info(
+        "Log parsing completed: success=%s, errors=%d, warnings=%d",
+        parsed["success"],
+        len(parsed["errors"]),
+        len(parsed["warnings"]),
+    )
+
+    # Handle results based on exit code
+    if exit_code == 0:
+        # Success
+        check.complete(
+            is_manufacturable=True,
+            errors=[],
+            warnings=parsed.get("warnings", []),
+            logs=logs,
+        )
+        logger.info("Check completed successfully - project is manufacturable")
+        return "success"
+
+    # Failure - classify
+    failure_type = classify_failure(logs, exit_code)
+    logger.info("Check failed with type: %s", failure_type)
+
+    if failure_type == "system":
+        # System failure - prepare for retry
+        error_summary = (
+            parsed["errors"][0]["message"]
+            if parsed["errors"]
+            else "Unknown system error"
+        )
+        return "system", error_summary
+
+    # Design failure - complete with errors
+    check.complete(
+        is_manufacturable=False,
+        errors=parsed.get("errors", []),
+        warnings=parsed.get("warnings", []),
+        logs=logs,
+    )
+    logger.info("Design errors found - check completed with errors")
+    return "design"
+
+
+def _validate_project_file(project):
+    """Validate that project has a valid GDS file.
+
+    Args:
+        project: Project instance
+
+    Returns:
+        ProjectFile instance
+
+    Raises:
+        ValueError: If no valid file available
+    """
+    project_file = (
+        project.submitted_file or project.files.filter(is_active=True).first()
+    )
+
+    if not project_file or not project_file.file:
+        msg = "No GDS file available for checking"
+        raise ValueError(msg)
+
+    return project_file
+
+
+def _handle_retry(check, error_summary, task_instance, logger):
+    """Handle retry logic for system failures.
+
+    Args:
+        check: ManufacturabilityCheck instance
+        error_summary: Error message string
+        task_instance: Celery task instance
+        logger: Logger instance
+
+    Raises:
+        Retry: If retry count < max_retries
+    """
+    check.retry_count += 1
+    check.processing_logs += (
+        f"\nSystem error detected - retry {check.retry_count}/"
+        f"{check.max_retries}: {error_summary}\n"
+    )
+    check.save(update_fields=["retry_count", "processing_logs"])
+
+    if check.retry_count < check.max_retries:
+        logger.info(
+            "System failure - retrying (%d/%d)",
+            check.retry_count,
+            check.max_retries,
+        )
+        exc_msg = f"System failure: {error_summary}"
+        raise task_instance.retry(exc=Exception(exc_msg)) from None
+
+    logger.error("Max retries reached after system failure - marking as failed")
+    check.fail("Max retries reached - system error")
+
+
+def _handle_exception_retry(check_id, exc, task_instance, logger):
+    """Handle retry logic for exceptions.
+
+    Args:
+        check_id: ManufacturabilityCheck ID
+        exc: Exception instance
+        task_instance: Celery task instance
+        logger: Logger instance
+
+    Raises:
+        Retry: If retry count < max_retries
+    """
+    try:
+        check = ManufacturabilityCheck.objects.get(id=check_id)
+        check.retry_count += 1
+        check.processing_logs += f"\nRetry {check.retry_count}: {exc!s}\n"
+        check.save(update_fields=["retry_count", "processing_logs"])
+
+        if check.retry_count < check.max_retries:
+            raise task_instance.retry(exc=exc) from exc
+
+        # Max retries reached, mark as failed
+        check.fail(f"Max retries reached: {exc!s}")
+    except ManufacturabilityCheck.DoesNotExist:
+        pass
+
+
+def _cleanup_container(container, logger):
+    """Remove Docker container safely.
+
+    Args:
+        container: Docker container object or None
+        logger: Logger instance
+    """
+    if container:
+        try:
+            container.remove()
+            logger.info("Container removed")
+        except docker.errors.DockerException as exc:
+            logger.warning("Failed to remove container: %s", exc)
+
+
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    time_limit=settings.PRECHECK_TIMEOUT_SECONDS,
+    soft_time_limit=settings.PRECHECK_TIMEOUT_SECONDS - 300,
+)
+def check_project_manufacturability(self, check_id):
+    """Run manufacturability check in Docker container.
+
+    This task performs manufacturability analysis using the gf180mcu-precheck
+    tool running in a Docker container. It replaces the previous mock implementation.
 
     Args:
         check_id: The ID of the ManufacturabilityCheck instance
@@ -145,30 +405,25 @@ def check_project_manufacturability(self, check_id):  # noqa: PLR0915
         dict: Result data with status and details
     """
     logger = logging.getLogger(__name__)
+    container = None
 
     try:
-        # Get the manufacturability check instance
+        # 1. Get check and project
         check = ManufacturabilityCheck.objects.get(id=check_id)
-        check.task_id = self.request.id or "test-task"  # Handle test environment
-        check.save(update_fields=["task_id"])  # Save task_id first
+        check.task_id = self.request.id or "test-task"
+        check.save(update_fields=["task_id"])
         check.start_processing()
 
         project = check.project
-        errors = []
-        warnings = []
-        logs = f"Starting manufacturability check for project: {project.name}\n"
+        project_file = _validate_project_file(project)
 
-        logger.info("Starting manufacturability check for project %s", project.id)
-
-        # TODO: Replace with real GDS/OASIS analysis
-        # Simulate processing time (2-5 seconds)
-        processing_time = random.uniform(  # noqa: S311
-            MOCK_PROCESSING_TIME_MIN,
-            MOCK_PROCESSING_TIME_MAX,
+        logger.info(
+            "Starting manufacturability check for project %s with file %s",
+            project.id,
+            project_file.original_filename,
         )
-        logs += f"Processing design files (simulated {processing_time:.1f}s)...\n"
-        time.sleep(processing_time)
 
+<<<<<<< HEAD
         # Mock implementation: use file count to determine result
         # 0 files or odd number -> not manufacturable, even (non-zero) -> manufacturable
         file_count = project.files.count()
@@ -212,13 +467,40 @@ def check_project_manufacturability(self, check_id):  # noqa: PLR0915
             errors=errors,
             warnings=warnings,
             logs=logs,
+=======
+        # 2. Create execution context
+        client = docker.from_env()
+        context = _CheckContext(
+            check=check,
+            client=client,
+            project=project,
+            gds_path=project_file.file.path,
+            task_instance=self,
+            logger=logger,
+>>>>>>> 4673f0e (Refactor check_project_manufacturability to reduce complexity)
         )
+
+        # 3. Pull image and run container
+        _pull_and_record_image(context)
+        logger.info("GDS file path: %s", context.gds_path)
+
+        logs, exit_code, container = _run_container_and_stream_logs(context)
+
+        # 4. Handle results
+        result = _handle_check_result(check, logs, exit_code, logger)
+
+        # Handle system failures
+        if isinstance(result, tuple) and result[0] == "system":
+            _handle_retry(check, result[1], self, logger)
+
+        # 5. Cleanup
+        _cleanup_container(container, logger)
 
         return {
             "status": "completed",
-            "is_manufacturable": is_manufacturable,
-            "errors": errors,
-            "warnings": warnings,
+            "is_manufacturable": check.is_manufacturable,
+            "errors": check.errors,
+            "warnings": check.warnings,
             "project_id": str(project.id),
         }
 
@@ -229,30 +511,43 @@ def check_project_manufacturability(self, check_id):  # noqa: PLR0915
             "message": f"ManufacturabilityCheck with id {check_id} not found",
         }
 
-    except Exception as exc:
-        logger.exception("Error in manufacturability check task")
+    except docker.errors.ContainerError as exc:
+        logger.exception("Container error during precheck execution")
+        _handle_exception_retry(check_id, exc, self, logger)
+        return {
+            "status": "failed",
+            "message": f"Container error: {exc!s}",
+        }
 
-        # Handle task retry logic
-        if self.request.retries < self.max_retries:
-            # Update check with retry info
-            try:
-                check = ManufacturabilityCheck.objects.get(id=check_id)
-                check.retry_count += 1
-                check.processing_logs += f"\nRetry {check.retry_count}: {exc!s}\n"
-                check.save()
-            except ManufacturabilityCheck.DoesNotExist:
-                pass
+    except docker.errors.ImageNotFound:
+        logger.exception(
+            "Docker image not found: %s",
+            settings.PRECHECK_DOCKER_IMAGE,
+        )
 
-            # Retry the task
-            raise self.retry(exc=exc) from exc
-
-        # Max retries reached, mark as failed
         try:
             check = ManufacturabilityCheck.objects.get(id=check_id)
-            check.fail(f"Max retries reached: {exc!s}")
+            error_msg = f"Docker image not found: {settings.PRECHECK_DOCKER_IMAGE}"
+            check.fail(error_msg)
         except ManufacturabilityCheck.DoesNotExist:
             pass
 
+        return {
+            "status": "failed",
+            "message": "Docker image not found",
+        }
+
+    except docker.errors.APIError as exc:
+        logger.exception("Docker API error")
+        _handle_exception_retry(check_id, exc, self, logger)
+        return {
+            "status": "failed",
+            "message": f"Docker API error: {exc!s}",
+        }
+
+    except Exception as exc:
+        logger.exception("Unexpected error in manufacturability check task")
+        _handle_exception_retry(check_id, exc, self, logger)
         return {
             "status": "failed",
             "message": str(exc),
