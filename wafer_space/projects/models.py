@@ -881,6 +881,58 @@ class ManufacturabilityCheck(models.Model):
     retry_count = models.PositiveIntegerField(default=0)
     max_retries = models.PositiveIntegerField(default=3)
 
+    # Version tracking
+    docker_image = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text=(
+            "Docker image used (e.g., ghcr.io/wafer-space/gf180mcu-precheck:latest)"
+        ),
+    )
+    docker_image_digest = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        help_text="SHA256 digest of Docker image for reproducibility",
+    )
+    tool_versions = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            "Tool versions: "
+            "{magic: '8.3.x', klayout: '0.28.x', pdk: 'gf180mcuD-v1.2.3'}"
+        ),
+    )
+    precheck_version = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        help_text="gf180mcu-precheck version/commit hash",
+    )
+
+    # Activity tracking
+    last_activity = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Last activity timestamp for progress tracking",
+    )
+
+    # Admin controls
+    rerun_requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="requested_precheck_reruns",
+        help_text="Admin who requested re-run",
+    )
+    rerun_reason = models.TextField(
+        blank=True,
+        default="",
+        help_text="Why this check was re-run (e.g., 'Updated DRC rules')",
+    )
+
     class Meta:
         verbose_name = "Manufacturability Check"
         verbose_name_plural = "Manufacturability Checks"
