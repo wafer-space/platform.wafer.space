@@ -1,4 +1,6 @@
 import hashlib
+import json
+import urllib.parse
 import uuid
 
 from django.conf import settings
@@ -977,6 +979,89 @@ class ManufacturabilityCheck(models.Model):
     def can_retry(self):
         """Check if this check can be retried."""
         return self.retry_count < self.max_retries
+
+    def get_reproduction_instructions(self) -> str:
+        """Generate markdown instructions for reproducing check locally."""
+        project_file = (
+            self.project.submitted_file
+            or self.project.files.filter(is_active=True).first()
+        )
+
+        if not project_file:
+            return "No file available for reproduction instructions."
+
+        return f"""# Reproducing Manufacturability Check Locally
+
+## Prerequisites
+- Docker installed and running
+- Access to your GDS file
+
+## Steps
+
+### 1. Pull the exact Docker image used
+```bash
+docker pull {self.docker_image}
+# Verify digest matches: {self.docker_image_digest}
+docker images --digests | grep gf180mcu-precheck
+```
+
+### 2. Run the precheck
+```bash
+docker run --rm \\
+  -v $(pwd)/{project_file.original_filename}:/input/design.gds:ro \\
+  {self.docker_image} \\
+  python3 /precheck/precheck.py \\
+    --input /input/design.gds \\
+    --top {self.project.name} \\
+    --id {self.project.id}
+```
+
+### 3. Verify file hash
+Your GDS file should have:
+- MD5: {project_file.hash_md5}
+- SHA1: {project_file.hash_sha1}
+
+## Environment
+- Precheck Version: {self.precheck_version}
+- Tool Versions: {json.dumps(self.tool_versions, indent=2)}
+
+## Need Help?
+[Report issue on GitHub]({self.generate_github_issue_url()})
+"""
+
+    def generate_github_issue_url(self) -> str:
+        """Generate pre-filled GitHub issue URL."""
+        title = f"Issue with precheck for project {self.project.name}"
+
+        body = f"""### Environment
+- Docker Image: `{self.docker_image}`
+- Image Digest: `{self.docker_image_digest}`
+- Precheck Version: `{self.precheck_version}`
+- Tool Versions: {json.dumps(self.tool_versions, indent=2)}
+
+### Issue Description
+<!-- Describe the issue here -->
+
+### Logs
+<details>
+<summary>Click to expand logs</summary>
+
+```
+{self.processing_logs[-5000:]}
+```
+</details>
+
+### Error Messages
+```json
+{json.dumps(self.errors, indent=2)}
+```
+"""
+
+        params = urllib.parse.urlencode(
+            {"title": title, "body": body, "labels": "bug,from-platform"}
+        )
+
+        return f"https://github.com/wafer-space/gf180mcu-precheck/issues/new?{params}"
 
 
 class ProjectComplianceCertification(models.Model):
