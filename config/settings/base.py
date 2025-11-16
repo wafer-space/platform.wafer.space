@@ -449,6 +449,16 @@ CELERY_BEAT_SCHEDULE = {
     },
 }
 
+# Precheck (Manufacturability Checking) configuration
+# See: Design document for manufacturability checking implementation
+PRECHECK_DOCKER_IMAGE = env(
+    "PRECHECK_DOCKER_IMAGE",
+    default="ghcr.io/wafer-space/gf180mcu-precheck:latest",
+)
+PRECHECK_CONCURRENT_LIMIT = env.int("PRECHECK_CONCURRENT_LIMIT", default=4)
+PRECHECK_PER_USER_LIMIT = env.int("PRECHECK_PER_USER_LIMIT", default=1)
+PRECHECK_TIMEOUT_SECONDS = env.int("PRECHECK_TIMEOUT_SECONDS", default=10800)  # 3 hours
+
 # File Download and Processing Configuration
 # ------------------------------------------------------------------------------
 # Maximum file size limits for downloads and content extraction
