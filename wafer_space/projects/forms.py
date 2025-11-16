@@ -4,10 +4,14 @@ from django import forms
 from django.core.exceptions import ValidationError
 
 from .models import Project
+from .models import ProjectComplianceCertification
 
 # Hash length constants
 MD5_HASH_LENGTH = 32
 SHA1_HASH_LENGTH = 40
+
+# Compliance form validation constants
+MIN_END_USE_STATEMENT_LENGTH = 10
 
 
 class ProjectForm(forms.ModelForm):
@@ -169,3 +173,79 @@ class ProjectFileURLSubmitForm(forms.Form):
             raise ValidationError(msg)
 
         return cleaned_data
+
+
+class ComplianceCertificationForm(forms.ModelForm):
+    """Form for export compliance certification."""
+
+    class Meta:
+        model = ProjectComplianceCertification
+        fields = [
+            "export_control_compliant",
+            "end_use_statement",
+            "not_restricted_entity",
+        ]
+        widgets = {
+            "export_control_compliant": forms.CheckboxInput(
+                attrs={"class": "form-check-input", "required": True},
+            ),
+            "not_restricted_entity": forms.CheckboxInput(
+                attrs={"class": "form-check-input", "required": True},
+            ),
+            "end_use_statement": forms.Textarea(
+                attrs={
+                    "class": "form-control",
+                    "rows": 4,
+                    "placeholder": (
+                        "Describe the intended use of this chip (e.g., research, "
+                        "commercial product, educational demonstration)"
+                    ),
+                    "required": True,
+                },
+            ),
+        }
+        help_texts = {
+            "export_control_compliant": (
+                "I confirm this design complies with U.S. Export Control "
+                "Regulations (EAR/ITAR)"
+            ),
+            "not_restricted_entity": (
+                "I confirm I am not from a restricted country or sanctioned entity"
+            ),
+            "end_use_statement": (
+                "Provide a clear description of how this chip will be used"
+            ),
+        }
+
+    def clean_export_control_compliant(self):
+        """Ensure export control compliance is confirmed."""
+        value = self.cleaned_data.get("export_control_compliant")
+        if not value:
+            msg = "You must confirm compliance with export control regulations"
+            raise ValidationError(msg)
+        return value
+
+    def clean_not_restricted_entity(self):
+        """Ensure not restricted entity confirmation."""
+        value = self.cleaned_data.get("not_restricted_entity")
+        if not value:
+            msg = (
+                "You must confirm you are not from a restricted country "
+                "or sanctioned entity"
+            )
+            raise ValidationError(msg)
+        return value
+
+    def clean_end_use_statement(self):
+        """Validate end-use statement."""
+        value = self.cleaned_data.get("end_use_statement", "").strip()
+        if not value:
+            msg = "End-use statement is required"
+            raise ValidationError(msg)
+        if len(value) < MIN_END_USE_STATEMENT_LENGTH:
+            msg = (
+                f"Please provide a more detailed end-use statement "
+                f"(at least {MIN_END_USE_STATEMENT_LENGTH} characters)"
+            )
+            raise ValidationError(msg)
+        return value

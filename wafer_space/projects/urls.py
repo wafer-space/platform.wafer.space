@@ -3,6 +3,7 @@
 from django.urls import path
 
 from . import views
+from .views_compliance import compliance_certification_create
 
 app_name = "projects"
 
@@ -26,5 +27,11 @@ urlpatterns = [
         "<uuid:pk>/progress/",
         views.ProjectFileProgressView.as_view(),
         name="progress",
+    ),
+    # Compliance certification
+    path(
+        "<uuid:pk>/compliance/certify/",
+        compliance_certification_create,
+        name="compliance_certify",
     ),
 ]
