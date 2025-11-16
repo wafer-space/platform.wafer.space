@@ -1,162 +1,147 @@
 {% extends "base.html" %}
+
 {% load crispy_forms_tags %}
 
-{% block title %}Export Compliance Certification - {{ project.name }}{% endblock %}
-
+{% block title %}
+  Export Compliance Certification - {{ project.name }}
+{% endblock title %}
 {% block content %}
-<div class="container mt-4">
-  <nav aria-label="breadcrumb">
-    <ol class="breadcrumb">
-      <li class="breadcrumb-item"><a href="{% url 'projects:list' %}">Projects</a></li>
-      <li class="breadcrumb-item"><a href="{% url 'projects:detail' project.pk %}">{{ project.name }}</a></li>
-      <li class="breadcrumb-item active" aria-current="page">Compliance Certification</li>
-    </ol>
-  </nav>
-
-  <div class="row">
-    <div class="col-lg-8">
-      <h1>Export Compliance Certification</h1>
-      <p class="lead">{{ project.name }}</p>
-
-      <div class="alert alert-warning" role="alert">
-        <h5 class="alert-heading">
-          <i class="bi bi-exclamation-triangle-fill"></i>
-          Important Legal Requirement
-        </h5>
-        <p>
-          Before your project can be assigned to a manufacturing shuttle, you must certify
-          compliance with U.S. export control regulations. This certification is required
-          by law and will be recorded with your IP address and timestamp.
-        </p>
-        <hr>
-        <p class="mb-0">
-          <strong>Note:</strong> Providing false information may result in civil and criminal penalties
-          under the Export Administration Regulations (EAR) and International Traffic in Arms
-          Regulations (ITAR).
-        </p>
-      </div>
-
-      <div class="card">
-        <div class="card-body">
-          <h5 class="card-title">Certification Form</h5>
-
-          <form method="post">
-            {% csrf_token %}
-
-            <div class="mb-4">
-              <div class="form-check">
-                {{ form.export_control_compliant }}
-                <label class="form-check-label" for="{{ form.export_control_compliant.id_for_label }}">
-                  <strong>I confirm this design complies with U.S. Export Control Regulations (EAR/ITAR)</strong>
+  <div class="container mt-4">
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb">
+        <li class="breadcrumb-item">
+          <a href="{% url 'projects:list' %}">Projects</a>
+        </li>
+        <li class="breadcrumb-item">
+          <a href="{% url 'projects:detail' project.pk %}">{{ project.name }}</a>
+        </li>
+        <li class="breadcrumb-item active" aria-current="page">Compliance Certification</li>
+      </ol>
+    </nav>
+    <div class="row">
+      <div class="col-lg-8">
+        <h1>Export Compliance Certification</h1>
+        <p class="lead">{{ project.name }}</p>
+        <div class="alert alert-warning" role="alert">
+          <h5 class="alert-heading">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            Important Legal Requirement
+          </h5>
+          <p>
+            Before your project can be assigned to a manufacturing shuttle, you must certify
+            compliance with U.S. export control regulations. This certification is required
+            by law and will be recorded with your IP address and timestamp.
+          </p>
+          <hr />
+          <p class="mb-0">
+            <strong>Note:</strong> Providing false information may result in civil and criminal penalties
+            under the Export Administration Regulations (EAR) and International Traffic in Arms
+            Regulations (ITAR).
+          </p>
+        </div>
+        <div class="card">
+          <div class="card-body">
+            <h5 class="card-title">Certification Form</h5>
+            <form method="post">
+              {% csrf_token %}
+              <div class="mb-4">
+                <div class="form-check">
+                  {{ form.export_control_compliant }}
+                  <label class="form-check-label"
+                         for="{{ form.export_control_compliant.id_for_label }}">
+                    <strong>I confirm this design complies with U.S. Export Control Regulations (EAR/ITAR)</strong>
+                  </label>
+                  {% if form.export_control_compliant.errors %}
+                    <div class="invalid-feedback d-block">{{ form.export_control_compliant.errors }}</div>
+                  {% endif %}
+                  <div class="form-text">{{ form.fields.export_control_compliant.help_text }}</div>
+                </div>
+              </div>
+              <div class="mb-4">
+                <div class="form-check">
+                  {{ form.not_restricted_entity }}
+                  <label class="form-check-label"
+                         for="{{ form.not_restricted_entity.id_for_label }}">
+                    <strong>I confirm I am not from a restricted country or sanctioned entity</strong>
+                  </label>
+                  {% if form.not_restricted_entity.errors %}
+                    <div class="invalid-feedback d-block">{{ form.not_restricted_entity.errors }}</div>
+                  {% endif %}
+                  <div class="form-text">{{ form.fields.not_restricted_entity.help_text }}</div>
+                </div>
+              </div>
+              <div class="mb-4">
+                <label for="{{ form.end_use_statement.id_for_label }}" class="form-label">
+                  <strong>Intended End-Use</strong>
                 </label>
-                {% if form.export_control_compliant.errors %}
-                  <div class="invalid-feedback d-block">
-                    {{ form.export_control_compliant.errors }}
-                  </div>
+                {{ form.end_use_statement }}
+                {% if form.end_use_statement.errors %}
+                  <div class="invalid-feedback d-block">{{ form.end_use_statement.errors }}</div>
                 {% endif %}
-                <div class="form-text">
-                  {{ form.fields.export_control_compliant.help_text }}
-                </div>
+                <div class="form-text">{{ form.fields.end_use_statement.help_text }}</div>
               </div>
-            </div>
-
-            <div class="mb-4">
-              <div class="form-check">
-                {{ form.not_restricted_entity }}
-                <label class="form-check-label" for="{{ form.not_restricted_entity.id_for_label }}">
-                  <strong>I confirm I am not from a restricted country or sanctioned entity</strong>
-                </label>
-                {% if form.not_restricted_entity.errors %}
-                  <div class="invalid-feedback d-block">
-                    {{ form.not_restricted_entity.errors }}
-                  </div>
-                {% endif %}
-                <div class="form-text">
-                  {{ form.fields.not_restricted_entity.help_text }}
-                </div>
+              <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                <a href="{% url 'projects:detail' project.pk %}"
+                   class="btn btn-secondary">Cancel</a>
+                <button type="submit" class="btn btn-primary">
+                  <i class="bi bi-check-circle"></i>
+                  Certify and Continue
+                </button>
               </div>
-            </div>
-
-            <div class="mb-4">
-              <label for="{{ form.end_use_statement.id_for_label }}" class="form-label">
-                <strong>Intended End-Use</strong>
-              </label>
-              {{ form.end_use_statement }}
-              {% if form.end_use_statement.errors %}
-                <div class="invalid-feedback d-block">
-                  {{ form.end_use_statement.errors }}
-                </div>
-              {% endif %}
-              <div class="form-text">
-                {{ form.fields.end_use_statement.help_text }}
-              </div>
-            </div>
-
-            <div class="d-grid gap-2 d-md-flex justify-content-md-end">
-              <a href="{% url 'projects:detail' project.pk %}" class="btn btn-secondary">
-                Cancel
-              </a>
-              <button type="submit" class="btn btn-primary">
-                <i class="bi bi-check-circle"></i>
-                Certify and Continue
-              </button>
-            </div>
-          </form>
+            </form>
+          </div>
+        </div>
+        <div class="card mt-4">
+          <div class="card-body">
+            <h6 class="card-title">Additional Information</h6>
+            <p class="small text-muted mb-2">
+              <strong>What is recorded:</strong>
+            </p>
+            <ul class="small text-muted">
+              <li>Your certification responses</li>
+              <li>IP address from which you submit this form</li>
+              <li>Timestamp of certification</li>
+              <li>Browser user agent information</li>
+            </ul>
+            <p class="small text-muted mb-0">
+              <strong>Resources:</strong>
+            </p>
+            <ul class="small text-muted mb-0">
+              <li>
+                <a href="https://www.bis.doc.gov/index.php/regulations/export-administration-regulations-ear"
+                   target="_blank"
+                   rel="noopener">Export Administration Regulations (EAR)</a>
+              </li>
+              <li>
+                <a href="https://www.pmddtc.state.gov/ddtc_public/ddtc_public?id=ddtc_public_portal_itar_landing"
+                   target="_blank"
+                   rel="noopener">International Traffic in Arms Regulations (ITAR)</a>
+              </li>
+            </ul>
+          </div>
         </div>
       </div>
-
-      <div class="card mt-4">
-        <div class="card-body">
-          <h6 class="card-title">Additional Information</h6>
-          <p class="small text-muted mb-2">
-            <strong>What is recorded:</strong>
-          </p>
-          <ul class="small text-muted">
-            <li>Your certification responses</li>
-            <li>IP address from which you submit this form</li>
-            <li>Timestamp of certification</li>
-            <li>Browser user agent information</li>
-          </ul>
-          <p class="small text-muted mb-0">
-            <strong>Resources:</strong>
-          </p>
-          <ul class="small text-muted mb-0">
-            <li>
-              <a href="https://www.bis.doc.gov/index.php/regulations/export-administration-regulations-ear"
-                 target="_blank" rel="noopener">
-                Export Administration Regulations (EAR)
-              </a>
-            </li>
-            <li>
-              <a href="https://www.pmddtc.state.gov/ddtc_public/ddtc_public?id=ddtc_public_portal_itar_landing"
-                 target="_blank" rel="noopener">
-                International Traffic in Arms Regulations (ITAR)
-              </a>
-            </li>
-          </ul>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-lg-4">
-      <div class="card">
-        <div class="card-body">
-          <h6 class="card-title">Project Information</h6>
-          <dl class="row mb-0">
-            <dt class="col-sm-5">Project:</dt>
-            <dd class="col-sm-7">{{ project.name }}</dd>
-
-            <dt class="col-sm-5">Status:</dt>
-            <dd class="col-sm-7">
-              <span class="badge bg-success">Manufacturable</span>
-            </dd>
-
-            <dt class="col-sm-5">Owner:</dt>
-            <dd class="col-sm-7">{{ project.user.username }}</dd>
-          </dl>
+      <div class="col-lg-4">
+        <div class="card">
+          <div class="card-body">
+            <h6 class="card-title">Project Information</h6>
+            <dl class="row mb-0">
+              <dt class="col-sm-5">Project:</dt>
+              <dd class="col-sm-7">
+                {{ project.name }}
+              </dd>
+              <dt class="col-sm-5">Status:</dt>
+              <dd class="col-sm-7">
+                <span class="badge bg-success">Manufacturable</span>
+              </dd>
+              <dt class="col-sm-5">Owner:</dt>
+              <dd class="col-sm-7">
+                {{ project.user.username }}
+              </dd>
+            </dl>
+          </div>
         </div>
       </div>
     </div>
   </div>
-</div>
-{% endblock %}
+{% endblock content %}
