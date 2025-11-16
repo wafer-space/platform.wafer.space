@@ -1,6 +1,7 @@
 """Tests for precheck log parser."""
 
 from wafer_space.projects.precheck_parser import PrecheckLogParser
+from wafer_space.projects.precheck_parser import classify_failure
 
 
 class TestPrecheckLogParser:
@@ -38,3 +39,33 @@ class TestPrecheckLogParser:
         result = PrecheckLogParser.parse_logs(logs, exit_code=0)
 
         assert result["raw_output"] == logs
+
+
+class TestClassifyFailure:
+    """Test error classification."""
+
+    def test_classify_success(self):
+        """Test that exit code 0 is success."""
+        result = classify_failure("Some output", exit_code=0)
+        assert result == "success"
+
+    def test_classify_system_error_traceback(self):
+        """Test system error detection via traceback."""
+        logs = (
+            "Error: The precheck failed with the following exception:\n"
+            "Traceback (most recent call last):"
+        )
+        result = classify_failure(logs, exit_code=1)
+        assert result == "system"
+
+    def test_classify_system_error_memory(self):
+        """Test system error detection via MemoryError."""
+        logs = "MemoryError: cannot allocate memory"
+        result = classify_failure(logs, exit_code=1)
+        assert result == "system"
+
+    def test_classify_design_error_default(self):
+        """Test design error as default for exit 1."""
+        logs = "DRC violation at layer metal1"
+        result = classify_failure(logs, exit_code=1)
+        assert result == "design"

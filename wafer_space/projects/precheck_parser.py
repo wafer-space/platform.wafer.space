@@ -6,6 +6,7 @@ the actual output format from real precheck runs.
 TODO: Update patterns after running real precheck tests with sample GDS files.
 """
 
+import re
 from typing import TypedDict
 
 
@@ -25,6 +26,41 @@ class ParseResult(TypedDict):
     warnings: list[dict]
     raw_output: str
     detected_checks: list[str]
+
+
+# System error patterns (infrastructure failures that should retry)
+SYSTEM_ERROR_PATTERNS = [
+    r"Error: The precheck failed with the following exception:",
+    r"Traceback \(most recent call last\):",
+    r"MemoryError",
+    r"TimeoutError",
+    r"Docker.*error",
+    r"Container.*failed",
+]
+
+
+def classify_failure(logs: str, exit_code: int) -> str:
+    """Classify failure as 'system', 'design', or 'success'.
+
+    Args:
+        logs: Raw output from precheck
+        exit_code: Process exit code
+
+    Returns:
+        'success' if exit code 0
+        'system' if infrastructure failure (should retry)
+        'design' if user's design has errors (no retry)
+    """
+    if exit_code == 0:
+        return "success"
+
+    # Check for system error patterns
+    for pattern in SYSTEM_ERROR_PATTERNS:
+        if re.search(pattern, logs, re.IGNORECASE):
+            return "system"
+
+    # Default to design error (user must fix)
+    return "design"
 
 
 class PrecheckLogParser:
