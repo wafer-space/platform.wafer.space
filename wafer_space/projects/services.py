@@ -612,72 +612,57 @@ class ManufacturabilityService:
             ValidationError: If user already has a check running
         """
         with transaction.atomic():
-            # Lock the user's active checks to prevent race conditions
+            # Build filter for get_or_create
+            filter_kwargs: dict = {"project": project}
+            if project_file:
+                filter_kwargs["project_file"] = project_file
+
+            # Get or create the check FIRST (within transaction)
+            check, created = ManufacturabilityCheck.objects.get_or_create(
+                **filter_kwargs,
+                defaults={"status": ManufacturabilityCheck.Status.QUEUED},
+            )
+
+            # If already queued/processing, return immediately (idempotent)
+            if not created and check.status in [
+                ManufacturabilityCheck.Status.QUEUED,
+                ManufacturabilityCheck.Status.PROCESSING,
+            ]:
+                return check
+
+            # NOW check per-user limit (excluding THIS project's check)
+            # Lock the user's OTHER active checks to prevent race conditions
             active_checks_qs = ManufacturabilityCheck.objects.select_for_update()
-            active_user_checks = active_checks_qs.filter(
-                project__user=project.user,
-                status__in=[
-                    ManufacturabilityCheck.Status.QUEUED,
-                    ManufacturabilityCheck.Status.PROCESSING,
-                ],
-            ).count()
+            active_user_checks = (
+                active_checks_qs.filter(
+                    project__user=project.user,
+                    status__in=[
+                        ManufacturabilityCheck.Status.QUEUED,
+                        ManufacturabilityCheck.Status.PROCESSING,
+                    ],
+                )
+                .exclude(id=check.id)
+                .count()
+            )  # Exclude THIS check
 
             per_user_limit = getattr(settings, "PRECHECK_PER_USER_LIMIT", 1)
             if active_user_checks >= per_user_limit:
+                # If we just created this check, delete it before raising
+                if created:
+                    check.delete()
                 msg = (
                     f"You already have {active_user_checks} check(s) running. "
                     "Please wait for them to complete before starting a new check."
                 )
                 raise ValidationError(msg)
 
-            # Create or get existing check (still within the transaction)
-            check, created = ManufacturabilityCheck.objects.get_or_create(
-                project=project,
-                defaults={"status": ManufacturabilityCheck.Status.QUEUED},
-            )
-
-            if not created and check.status in [
-                ManufacturabilityCheck.Status.QUEUED,
-                ManufacturabilityCheck.Status.PROCESSING,
-            ]:
-                # Already queued/processing
-                return check
-
-        per_user_limit = getattr(settings, "PRECHECK_PER_USER_LIMIT", 1)
-        if active_user_checks >= per_user_limit:
-            msg = (
-                f"You already have {active_user_checks} check(s) running. "
-                "Please wait for them to complete before starting a new check."
-            )
-            raise ValidationError(msg)
-
-        # Build filter for get_or_create
-        filter_kwargs: dict = {"project": project}
-        if project_file:
-            filter_kwargs["project_file"] = project_file
-
-        # Get or create the check
-        check, created = ManufacturabilityCheck.objects.get_or_create(
-            **filter_kwargs,
-            defaults={
-                "status": ManufacturabilityCheck.Status.QUEUED,
-            },
-        )
-
-        # If check already exists and is processing/queued, don't re-queue
-        if not created and check.status in [
-            ManufacturabilityCheck.Status.PROCESSING,
-            ManufacturabilityCheck.Status.QUEUED,
-        ]:
-            # Check is already in progress, don't modify it
-            return check
-
-        # If check exists but failed/completed, reset and re-queue
-        if not created:
+            # Reset for new run (including ALL fields)
             check.status = ManufacturabilityCheck.Status.QUEUED
+            check.is_manufacturable = None  # Reset manufacturability
             check.errors = []
             check.warnings = []
             check.processing_logs = ""
+            check.retry_count = 0  # Reset retry count
             check.save()
 
             # Queue task
