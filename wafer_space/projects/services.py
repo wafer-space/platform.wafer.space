@@ -598,24 +598,50 @@ class ManufacturabilityService:
         Creates or gets an existing check for the file, sets status to QUEUED,
         and triggers the Celery task for processing.
 
+        Thread-safe: Uses database transaction to ensure per-user
+        concurrency limits are enforced atomically.
+
         Args:
             project: The project to check
             project_file: The specific file to check (optional for backwards compat)
 
         Returns:
-            ManufacturabilityCheck: The queued check instance
+            ManufacturabilityCheck instance
 
         Raises:
             ValidationError: If user already has a check running
         """
-        # Check per-user limit
-        active_user_checks = ManufacturabilityCheck.objects.filter(
-            project__user=project.user,
-            status__in=[
+        with transaction.atomic():
+            # Lock the user's active checks to prevent race conditions
+            active_checks_qs = ManufacturabilityCheck.objects.select_for_update()
+            active_user_checks = active_checks_qs.filter(
+                project__user=project.user,
+                status__in=[
+                    ManufacturabilityCheck.Status.QUEUED,
+                    ManufacturabilityCheck.Status.PROCESSING,
+                ],
+            ).count()
+
+            per_user_limit = getattr(settings, "PRECHECK_PER_USER_LIMIT", 1)
+            if active_user_checks >= per_user_limit:
+                msg = (
+                    f"You already have {active_user_checks} check(s) running. "
+                    "Please wait for them to complete before starting a new check."
+                )
+                raise ValidationError(msg)
+
+            # Create or get existing check (still within the transaction)
+            check, created = ManufacturabilityCheck.objects.get_or_create(
+                project=project,
+                defaults={"status": ManufacturabilityCheck.Status.QUEUED},
+            )
+
+            if not created and check.status in [
                 ManufacturabilityCheck.Status.QUEUED,
                 ManufacturabilityCheck.Status.PROCESSING,
-            ],
-        ).count()
+            ]:
+                # Already queued/processing
+                return check
 
         per_user_limit = getattr(settings, "PRECHECK_PER_USER_LIMIT", 1)
         if active_user_checks >= per_user_limit:
@@ -649,19 +675,17 @@ class ManufacturabilityService:
         # If check exists but failed/completed, reset and re-queue
         if not created:
             check.status = ManufacturabilityCheck.Status.QUEUED
-            check.is_manufacturable = None
             check.errors = []
             check.warnings = []
             check.processing_logs = ""
-            check.retry_count = 0
             check.save()
 
-        # Trigger Celery task (only for new or reset checks)
-        task = check_project_manufacturability.delay(check.id)
-        check.task_id = task.id
-        check.save(update_fields=["task_id"])
+            # Queue task
+            task = check_project_manufacturability.delay(check.id)
+            check.task_id = task.id
+            check.save(update_fields=["task_id"])
 
-        return check
+            return check
 
     @classmethod
     def get_check_status_for_file(cls, project_file: "ProjectFile") -> dict | None:
