@@ -15,6 +15,8 @@ from urllib.parse import urlparse
 
 import magic
 from celery.result import AsyncResult
+from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from .models import ManufacturabilityCheck
@@ -602,7 +604,27 @@ class ManufacturabilityService:
 
         Returns:
             ManufacturabilityCheck: The queued check instance
+
+        Raises:
+            ValidationError: If user already has a check running
         """
+        # Check per-user limit
+        active_user_checks = ManufacturabilityCheck.objects.filter(
+            project__user=project.user,
+            status__in=[
+                ManufacturabilityCheck.Status.QUEUED,
+                ManufacturabilityCheck.Status.PROCESSING,
+            ],
+        ).count()
+
+        per_user_limit = getattr(settings, "PRECHECK_PER_USER_LIMIT", 1)
+        if active_user_checks >= per_user_limit:
+            msg = (
+                f"You already have {active_user_checks} check(s) running. "
+                "Please wait for them to complete before starting a new check."
+            )
+            raise ValidationError(msg)
+
         # Build filter for get_or_create
         filter_kwargs: dict = {"project": project}
         if project_file:

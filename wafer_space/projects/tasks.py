@@ -36,12 +36,9 @@ from .models import ManufacturabilityCheck
 from .models import Project
 from .models import ProjectFile
 from .models import ProjectFileChunk
-<<<<<<< HEAD
-from .url_handlers import GitHubArtifactHandler
-=======
 from .precheck_parser import PrecheckLogParser
 from .precheck_parser import classify_failure
->>>>>>> 4673f0e (Refactor check_project_manufacturability to reduce complexity)
+from .url_handlers import GitHubArtifactHandler
 from .url_handlers import GoogleSourceHandler
 from .url_handlers import URLHandlerRegistry
 from .verification import is_task_actively_running
@@ -423,51 +420,6 @@ def check_project_manufacturability(self, check_id):
             project_file.original_filename,
         )
 
-<<<<<<< HEAD
-        # Mock implementation: use file count to determine result
-        # 0 files or odd number -> not manufacturable, even (non-zero) -> manufacturable
-        file_count = project.files.count()
-        is_manufacturable = file_count > 0 and file_count % 2 == 0
-        logs += f"File count: {file_count}\n"
-
-        if is_manufacturable:
-            # Success case - add sample warning
-            warnings.append("Sample warning: Design uses non-standard layer")
-            logs += "Design rule checks: PASSED\n"
-            logs += "Manufacturing constraints: PASSED\n"
-            logs += "Layer validation: PASSED (with warnings)\n"
-            logs += "SUCCESS: Project is manufacturable\n"
-
-            logger.info(
-                "Manufacturability check completed: %s - MANUFACTURABLE",
-                project.id,
-            )
-        else:
-            # Failure case - add sample errors
-            error_msg = (
-                "Sample error: Minimum feature size violated "
-                "(found 45nm, minimum is 50nm)"
-            )
-            errors.append(error_msg)
-            errors.append("Sample error: Metal layer spacing below minimum threshold")
-            warnings.append("Sample warning: High density area may affect yield")
-            logs += "Design rule checks: FAILED\n"
-            logs += "  - Minimum feature size violation detected\n"
-            logs += "  - Metal layer spacing violation detected\n"
-            logs += f"FAILED: Project is not manufacturable ({len(errors)} errors)\n"
-
-            logger.warning(
-                "Manufacturability check completed: %s - NOT MANUFACTURABLE",
-                project.id,
-            )
-
-        # Complete the check
-        check.complete(
-            is_manufacturable=is_manufacturable,
-            errors=errors,
-            warnings=warnings,
-            logs=logs,
-=======
         # 2. Create execution context
         client = docker.from_env()
         context = _CheckContext(
@@ -477,7 +429,6 @@ def check_project_manufacturability(self, check_id):
             gds_path=project_file.file.path,
             task_instance=self,
             logger=logger,
->>>>>>> 4673f0e (Refactor check_project_manufacturability to reduce complexity)
         )
 
         # 3. Pull image and run container
