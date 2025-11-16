@@ -182,8 +182,8 @@ class ComplianceCertificationForm(forms.ModelForm):
         model = ProjectComplianceCertification
         fields = [
             "export_control_compliant",
-            "end_use_statement",
             "not_restricted_entity",
+            "end_use_statement",
         ]
         widgets = {
             "export_control_compliant": forms.CheckboxInput(

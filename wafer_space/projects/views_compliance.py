@@ -1,5 +1,7 @@
 """Views for export compliance certification."""
 
+from ipaddress import ip_address
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404
@@ -13,13 +15,29 @@ from .models import ProjectComplianceCertification
 
 
 def get_client_ip(request):
-    """Extract client IP address from request."""
+    """Extract and validate client IP address from request.
+
+    Args:
+        request: Django request object
+
+    Returns:
+        str: Validated IP address or None if invalid
+    """
     x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
     if x_forwarded_for:
-        ip = x_forwarded_for.split(",")[0]
+        # Get first IP from comma-separated list
+        potential_ip = x_forwarded_for.split(",")[0].strip()
     else:
-        ip = request.META.get("REMOTE_ADDR")
-    return ip
+        potential_ip = request.META.get("REMOTE_ADDR")
+
+    # Validate IP address format
+    try:
+        ip_address(potential_ip)  # Validates IPv4/IPv6
+    except (ValueError, TypeError, AttributeError):
+        # Fall back to REMOTE_ADDR if validation fails
+        return request.META.get("REMOTE_ADDR")
+    else:
+        return potential_ip
 
 
 @login_required
@@ -52,35 +70,58 @@ def compliance_certification_create(request, pk):
         )
         return redirect("projects:detail", pk=project.pk)
 
-    # Get or create certification
-    certification, _created = ProjectComplianceCertification.objects.get_or_create(
-        project=project,
-        defaults={"certified_by": request.user},
-    )
+    # Check if already certified for context
+    try:
+        existing_cert = ProjectComplianceCertification.objects.get(project=project)
+    except ProjectComplianceCertification.DoesNotExist:
+        existing_cert = None
 
     if request.method == "POST":
-        form = ComplianceCertificationForm(request.POST, instance=certification)
+        form = ComplianceCertificationForm(request.POST)
         if form.is_valid():
-            certification = form.save(commit=False)
-            certification.project = project
-            certification.certified_by = request.user
+            # Check if already exists
+            if existing_cert:
+                # Update existing certification
+                for field in [
+                    "export_control_compliant",
+                    "not_restricted_entity",
+                    "end_use_statement",
+                ]:
+                    setattr(existing_cert, field, form.cleaned_data[field])
+                certification = existing_cert
+            else:
+                # Create new certification
+                certification = form.save(commit=False)
+                certification.project = project
+                certification.certified_by = request.user
+
+            # Capture IP address and user agent
             certification.ip_address = get_client_ip(request)
             certification.user_agent = request.META.get("HTTP_USER_AGENT", "")
             certification.save()
 
             messages.success(
                 request,
-                "Compliance certification submitted successfully. "
-                "You may now request a shuttle slot.",
+                "Compliance certification completed successfully.",
             )
-            return redirect("shuttles:list")
+            return redirect("projects:detail", pk=project.pk)
+
+        messages.error(request, "Please correct the errors below.")
+    # Pre-populate form if already certified
+    elif existing_cert:
+        form = ComplianceCertificationForm(instance=existing_cert)
+        messages.info(
+            request,
+            "This project has already been certified. "
+            "You can update your certification below.",
+        )
     else:
-        form = ComplianceCertificationForm(instance=certification)
+        form = ComplianceCertificationForm()
 
     context = {
         "project": project,
         "form": form,
-        "certification": certification,
+        "certification": existing_cert,
     }
 
     return render(
