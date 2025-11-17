@@ -8,7 +8,7 @@ Type=forking
 User=www-data
 Group=www-data
 WorkingDirectory=/home/django/platform.wafer.space
-Environment="DJANGO_SETTINGS_MODULE=config.settings.production"
+Environment="DJANGO_SETTINGS_MODULE=config.settings.prod"
 EnvironmentFile=/home/django/platform.wafer.space/.env
 PIDFile=/run/platform.wafer.space/celery.pid
 
