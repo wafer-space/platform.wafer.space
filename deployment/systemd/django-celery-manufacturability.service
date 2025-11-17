@@ -1,26 +1,26 @@
 [Unit]
-Description=platform.wafer.space Celery Worker
+Description=platform.wafer.space Celery Worker (Manufacturability)
 After=network.target postgresql.service django-gunicorn.service
-Requires=postgresql.service
+Requires=postgresql.service docker.service
 
 [Service]
 Type=forking
-User=www-data
-Group=www-data
+User=celery-mfg
+Group=celery-mfg
 WorkingDirectory=/home/django/platform.wafer.space
-# DJANGO_SETTINGS_MODULE is set in .env file (auto-detected: stage or prod)
+Environment="DJANGO_SETTINGS_MODULE=config.settings.production"
 EnvironmentFile=/home/django/platform.wafer.space/.env
-PIDFile=/run/platform.wafer.space/celery.pid
+PIDFile=/run/platform.wafer.space/celery-manufacturability.pid
 
 ExecStart=/home/django/platform.wafer.space/.venv/bin/celery \
     -A config \
     worker \
     --loglevel=info \
-    --logfile=/var/log/platform.wafer.space/celery.log \
-    --pidfile=/run/platform.wafer.space/celery.pid \
+    --logfile=/var/log/platform.wafer.space/celery-manufacturability.log \
+    --pidfile=/run/platform.wafer.space/celery-manufacturability.pid \
     --detach \
-    --queues=referrals \
-    --hostname=referrals@%h
+    --queues=manufacturability \
+    --hostname=manufacturability@%h
 
 ExecStop=/bin/kill -s TERM $MAINPID
 ExecReload=/bin/kill -s HUP $MAINPID
@@ -28,17 +28,16 @@ ExecReload=/bin/kill -s HUP $MAINPID
 # Startup timeout - give celery time to write PID file
 TimeoutStartSec=30s
 
-# Runtime directory (automatically created on boot)
-RuntimeDirectory=platform.wafer.space
-RuntimeDirectoryMode=0755
-
-# Security hardening
+# Security hardening (minimal - Docker access requires elevated privileges)
+# NOTE: This service requires Docker socket access, which is root-equivalent.
+# The celery-mfg user must be in the 'docker' group.
 NoNewPrivileges=true
-PrivateDevices=true
 PrivateTmp=true
-ProtectSystem=strict
 ReadOnlyPaths=/home/django/platform.wafer.space
 ReadWritePaths=/var/log/platform.wafer.space /run/platform.wafer.space /home/django/platform.wafer.space/wafer_space/media
+
+# Docker socket access
+SupplementaryGroups=docker
 
 # Restart policy
 Restart=on-failure

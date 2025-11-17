@@ -26,6 +26,7 @@ from .forms import ProjectFileURLSubmitForm
 from .forms import ProjectForm
 from .models import DownloadAttempt
 from .models import Project
+from .models import ProjectComplianceCertification
 from .models import ProjectFile
 from .security import SecurityValidationError
 from .services import ManufacturabilityService
@@ -150,6 +151,13 @@ class ProjectDetailView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
         # Add manufacturability check status
         check_status = ManufacturabilityService.get_check_status(project)
         context["check_status"] = check_status
+
+        # Add compliance certification status
+        try:
+            compliance_cert = project.compliance_certification
+            context["compliance_certification"] = compliance_cert
+        except ProjectComplianceCertification.DoesNotExist:
+            context["compliance_certification"] = None
 
         return context
 

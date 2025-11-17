@@ -50,6 +50,7 @@ deployment/
 ├── systemd/          # Systemd service files (same on both servers)
 │   ├── django-gunicorn.service
 │   ├── django-celery.service
+│   ├── django-celery-manufacturability.service
 │   ├── django-celery-beat.service
 │   └── install.sh
 ├── nginx/            # Nginx configuration (auto-selected by environment)
@@ -86,8 +87,32 @@ cd systemd && sudo ./install.sh
 cd nginx && sudo ./install.sh
 ```
 
+## Manufacturability Checking Setup
+
+The platform includes automated manufacturability checking using Docker containers. **This requires a separate Celery worker with Docker access.**
+
+### Required Steps
+
+1. **Create dedicated user** (`celery-mfg`) for the manufacturability worker
+2. **Install Docker Engine** on the production server
+3. **Grant Docker access** to the `celery-mfg` user
+4. **Pull the precheck image**: `docker pull ghcr.io/wafer-space/gf180mcu-precheck:latest`
+5. **Install the manufacturability service**: `django-celery-manufacturability.service`
+
+**See [DOCKER_ACCESS.md](./DOCKER_ACCESS.md) for complete step-by-step guide.**
+
+### Architecture
+
+The system uses **two separate Celery workers** for security:
+
+- **`django-celery.service`** (as `www-data`): Handles general background tasks (referrals queue)
+- **`django-celery-manufacturability.service`** (as `celery-mfg`): Handles manufacturability checks with Docker access
+
+This separation ensures that Docker access (which is root-equivalent) is isolated from the web server user.
+
 ## Architecture
 
-- **Privilege Separation**: `django` user owns code, `www-data` runs services
-- **Security**: File permissions 750/640, systemd hardening, HTTPS enforced
-- **Stack**: Django 5.2+ → Gunicorn → Nginx, PostgreSQL 17+, Celery workers
+- **Privilege Separation**: `django` user owns code, `www-data` runs web services, `celery-mfg` runs manufacturability worker
+- **Security**: File permissions 750/640, systemd hardening, HTTPS enforced, Docker access isolated to dedicated user
+- **Stack**: Django 5.2+ → Gunicorn → Nginx, PostgreSQL 17+, Celery workers (2 separate services)
+- **Manufacturability**: Docker containers for isolated precheck validation (runs as `celery-mfg` with Docker access)
