@@ -1,7 +1,7 @@
 # ==== pytest ====
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "--ds=config.settings.test --reuse-db --import-mode=importlib -m 'not manual'"
+addopts = "--ds=config.settings.pytest --reuse-db --import-mode=importlib -m 'not manual'"
 markers = [
     "manual: marks tests as manual/visual tests requiring visible browser (deselect by default)",
     "browser: marks tests as browser tests (included by default, always headless)",
@@ -37,7 +37,7 @@ module = "*.migrations.*"
 ignore_errors = true
 
 [tool.django-stubs]
-django_settings_module = "config.settings.test"
+django_settings_module = "config.settings.pytest"
 
 # ==== djLint ====
 [tool.djlint]

@@ -454,8 +454,10 @@ This is a Django 5.2+ application for wafer.space low cost silicon manufacturing
 - `pyproject.toml`: Project dependencies and tool configurations (pytest, mypy, ruff, djlint)
 - `.pre-commit-config.yaml`: Pre-commit hook configurations
 - `config/settings/base.py`: Core Django settings shared across environments
-- `config/settings/local.py`: Development-specific settings with debug toolbar
-- `config/settings/test.py`: Test-specific settings with OAuth configuration
+- `config/settings/dev.py`: Development-specific settings with debug toolbar
+- `config/settings/pytest.py`: Test-specific settings with OAuth configuration
+- `config/settings/stage.py`: Staging deployment settings for test-platform.wafer.space
+- `config/settings/prod.py`: Production settings for platform.wafer.space
 - `config/urls.py`: Main URL configuration
 - Never delete a test or reduce test functionality without an explicit request from the user.
 
@@ -473,7 +475,7 @@ django-allauth supports two approaches for OAuth provider configuration:
    - Perfect for single-tenant applications
    - No database objects needed
    - Simpler test isolation
-   - Used in: `config/settings/base.py`, `config/settings/test.py`
+   - Used in: `config/settings/base.py`, `config/settings/pytest.py`, `config/settings/stage.py`, `config/settings/prod.py`
 
 2. **Database-Based (NOT USED)**:
    - OAuth provider configuration stored in `SocialApp` model
@@ -496,9 +498,10 @@ We switched from database-based to settings-based OAuth configuration because:
 #### Configuration Structure
 
 **Settings-based configuration** uses the `SOCIALACCOUNT_PROVIDERS` dictionary in Django settings:
-- **Test environment** (`config/settings/test.py`): Static test credentials
-- **Dev/Production** (`config/settings/base.py`): Environment variables via `env()`
-- **Production overrides** (`config/settings/production.py`): Production client IDs
+- **Base settings** (`config/settings/base.py`): Dev client IDs with environment variable secrets
+- **pytest environment** (`config/settings/pytest.py`): Static test credentials for testing
+- **Staging overrides** (`config/settings/stage.py`): Staging client IDs (required from env)
+- **Production overrides** (`config/settings/prod.py`): Production client IDs
 
 See the actual files for complete configuration examples.
 
@@ -552,7 +555,7 @@ class TestGitHubAuth(TestCase):
 
 When adding a new OAuth provider:
 
-1. **Update test settings** (`config/settings/test.py`):
+1. **Update pytest settings** (`config/settings/pytest.py`):
    ```python
    SOCIALACCOUNT_PROVIDERS = {
        # ... existing providers
@@ -951,7 +954,10 @@ platform.wafer.space/
 │
 └── config/settings/
     ├── base.py                        # Base settings (dev Client IDs with env var secrets)
-    └── production.py                  # Production settings (prod Client IDs override)
+    ├── dev.py                         # Development settings (localhost)
+    ├── pytest.py                      # Test settings (static test credentials)
+    ├── stage.py                       # Staging settings (test-platform.wafer.space)
+    └── prod.py                        # Production settings (platform.wafer.space)
 ```
 
 ### 🚨 CRITICAL: When Adding New Secrets
