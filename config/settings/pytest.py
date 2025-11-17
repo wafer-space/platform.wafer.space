@@ -4,20 +4,18 @@ from .base import *  # noqa: F403
 from .base import TEMPLATES
 from .base import env
 
+# CORE DJANGO SETTINGS
+# ------------------------------------------------------------------------------
+# DEBUG: uses base.py default (False)
 SECRET_KEY = env(
     "DJANGO_SECRET_KEY",
     default="8dIz5XazziQI0eksKFugR13QIZhCbVOy4YXoBjWsA0JH9fEqJnheGk3swaHmMDYI",
 )
 ALLOWED_HOSTS = ["testserver"]
+# SITE_URL: uses base.py default (http://localhost:8081)
 
-PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
-
-EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
-
-TEMPLATES[0]["OPTIONS"]["debug"] = True  # type: ignore[index]
-
-MEDIA_URL = "http://media.testserver/"
-
+# DATABASES
+# ------------------------------------------------------------------------------
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
@@ -26,9 +24,58 @@ DATABASES = {
     },
 }
 
-CELERY_TASK_ALWAYS_EAGER = True
-CELERY_TASK_EAGER_PROPAGATES = True
+# CACHES
+# ------------------------------------------------------------------------------
+# Uses base.py defaults
 
+# SECURITY
+# ------------------------------------------------------------------------------
+# Uses base.py defaults (no HTTPS in testing)
+
+# STATIC FILES / STORAGE
+# ------------------------------------------------------------------------------
+# Uses base.py defaults
+
+# EMAIL
+# ------------------------------------------------------------------------------
+EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+# DEFAULT_FROM_EMAIL: uses base.py defaults
+# SERVER_EMAIL: uses base.py defaults
+# EMAIL_SUBJECT_PREFIX: uses base.py defaults
+
+# ADMIN
+# ------------------------------------------------------------------------------
+# ADMIN_URL: uses base.py default (admin/)
+
+# INSTALLED APPS / MIDDLEWARE
+# ------------------------------------------------------------------------------
+# Uses base.py defaults
+
+# TEMPLATES
+# ------------------------------------------------------------------------------
+TEMPLATES[0]["OPTIONS"]["debug"] = True  # type: ignore[index]
+
+# AUTHENTICATION
+# ------------------------------------------------------------------------------
+PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
+
+# MEDIA
+# ------------------------------------------------------------------------------
+MEDIA_URL = "http://media.testserver/"
+
+# CELERY
+# ------------------------------------------------------------------------------
+CELERY_TASK_ALWAYS_EAGER = True  # Execute tasks synchronously for testing
+CELERY_TASK_EAGER_PROPAGATES = True
+# CELERY_BROKER_URL: uses base.py default (PostgreSQL via SQLAlchemy)
+# DOWNLOAD_RETRY_*: uses base.py defaults
+
+# LOGGING
+# ------------------------------------------------------------------------------
+# Uses base.py defaults
+
+# OAUTH PROVIDERS
+# ------------------------------------------------------------------------------
 SOCIALACCOUNT_PROVIDERS = {
     "github": {
         "APP": {
