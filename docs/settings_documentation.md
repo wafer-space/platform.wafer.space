@@ -167,8 +167,8 @@ export DJANGO_SETTINGS_MODULE=config.settings.prod
 **OAuth Secrets:** All environments load secrets from environment variables:
 - **dev**: Empty defaults (optional secrets in .env)
 - **pytest**: Hardcoded test secrets
-- **stage**: **Required from env** (loaded from `/home/django/.secrets-stage/`)
-- **prod**: **Required from env** (loaded from `/home/django/.secrets/`)
+- **stage**: **Required from env** (loaded from `/home/django/.secrets/` via test-platform repo)
+- **prod**: **Required from env** (loaded from `/home/django/.secrets/` via platform repo)
 
 **OAuth Scopes:** Consistent across all environments per provider:
 - GitHub: `["user:email"]`
@@ -244,36 +244,49 @@ export DJANGO_SETTINGS_MODULE=config.settings.prod
 
 ### Secrets Repository Structure
 
-**Production secrets:** `/home/django/.secrets/` (existing)
+**Both staging and production use the same directory path:** `/home/django/.secrets/`
+
+However, they clone from **different git repositories**:
+
+**Production secrets repository:**
+- Git URL: `git+ssh://github.com/mithro/platform.wafer.space-secrets.git`
+- Cloned to: `/home/django/.secrets/`
+- Contains production OAuth secrets and API keys
+
+**Staging secrets repository:**
+- Git URL: `git+ssh://github.com/mithro/test-platform.wafer.space-secrets.git`
+- Cloned to: `/home/django/.secrets/` (same path as production)
+- Contains staging OAuth secrets and API keys
+
+**Directory structure (same for both environments):**
 ```
 /home/django/.secrets/
-├── github-oauth          # GitHub Client Secret (prod)
-├── gitlab-oauth          # GitLab Client Secret (prod)
-├── google-auth.json      # Google OAuth credentials (prod)
-├── discord-oauth         # Discord Client Secret (prod)
-├── linkedin-oauth        # LinkedIn Client Secret (prod)
-└── mailgun               # Mailgun API key (prod)
+├── github-oauth          # GitHub Client Secret
+├── gitlab-oauth          # GitLab Client Secret
+├── google-auth.json      # Google OAuth credentials (JSON)
+├── discord-oauth         # Discord Client Secret
+├── linkedin-oauth        # LinkedIn Client Secret
+└── mailgun               # Mailgun API key
 ```
 
-**Staging secrets:** `/home/django/.secrets-stage/` (NEW)
-```
-/home/django/.secrets-stage/
-├── github-oauth          # GitHub Client Secret (stage)
-├── gitlab-oauth          # GitLab Client Secret (stage)
-├── google-auth.json      # Google OAuth credentials (stage)
-├── discord-oauth         # Discord Client Secret (stage)
-├── linkedin-oauth        # LinkedIn Client Secret (stage)
-└── mailgun               # Mailgun API key (stage)
-```
+**How it works:**
+1. Deployment script `02a-setup-secrets.sh` clones the appropriate repository
+2. Production server clones from `platform.wafer.space-secrets.git`
+3. Staging server clones from `test-platform.wafer.space-secrets.git`
+4. Both clone to the same path: `/home/django/.secrets/`
+5. Script `03a-update-env-secrets.sh` reads secrets and injects into `.env`
 
-### Deployment Script Updates
+### Deployment Script Behavior
+
+**Script:** `deployment/scripts/02a-setup-secrets.sh`
+- Detects environment (staging vs production)
+- Clones appropriate secrets repository to `/home/django/.secrets/`
+- Updates secrets from git repository on subsequent runs
 
 **Script:** `deployment/scripts/03a-update-env-secrets.sh`
-
-Must support both environments:
-- Accept environment parameter (stage/prod)
-- Read from appropriate secrets directory
-- Inject into appropriate .env file
+- Reads secrets from `/home/django/.secrets/`
+- Injects into `.env` file
+- Same behavior for both staging and production
 
 ## Key Differences Between Environments
 
@@ -292,8 +305,8 @@ Must support both environments:
 **OAuth:**
 - dev: Dev OAuth apps, empty secret defaults
 - pytest: Hardcoded test credentials (mock authentication)
-- stage: Stage OAuth apps, secrets from `/home/django/.secrets-stage/`
-- prod: Prod OAuth apps, secrets from `/home/django/.secrets/`
+- stage: Stage OAuth apps, secrets from `/home/django/.secrets/` (cloned from test-platform repo)
+- prod: Prod OAuth apps, secrets from `/home/django/.secrets/` (cloned from platform repo)
 
 **Email:**
 - dev: Console backend (prints to terminal)
@@ -414,9 +427,10 @@ When deploying staging environment:
 
 - [ ] Create separate OAuth apps for all 5 providers (GitHub, GitLab, Google, LinkedIn, Discord)
 - [ ] Configure callback URLs for test-platform.wafer.space on all OAuth apps
-- [ ] Create `/home/django/.secrets-stage/` directory on staging server
-- [ ] Generate and store all staging secrets in secrets repository
-- [ ] Update `deployment/scripts/03a-update-env-secrets.sh` to support staging
+- [ ] Create staging secrets repository at `git+ssh://github.com/mithro/test-platform.wafer.space-secrets.git`
+- [ ] Generate and store all staging secrets in the staging secrets repository
+- [ ] Clone staging secrets repository to `/home/django/.secrets/` on staging server
+- [ ] Ensure `deployment/scripts/02a-setup-secrets.sh` clones correct repository for staging
 - [ ] Create `.env` file on staging server with all required variables
 - [ ] Configure systemd services to use `config.settings.stage`
 - [ ] Test OAuth login flows for all 5 providers

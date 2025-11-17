@@ -1,4 +1,16 @@
 # ruff: noqa: E501
+"""
+Production environment settings for platform.wafer.space deployment.
+
+This configuration is used for the production server with full security hardening,
+PostgreSQL database, HTTPS enforcement, and real email sending via Mailgun.
+
+Secrets Repository:
+- Git URL: git+ssh://github.com/mithro/platform.wafer.space-secrets.git
+- Cloned to: /home/django/.secrets/ (same path as staging, different repo)
+- Deployment script (02a-setup-secrets.sh) handles cloning the correct repository
+"""
+
 from .base import *  # noqa: F403
 from .base import DATABASES
 from .base import INSTALLED_APPS

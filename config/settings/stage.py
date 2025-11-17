@@ -5,6 +5,11 @@ Staging environment settings for test-platform.wafer.space deployment.
 This configuration is used for the staging server to test features before
 production deployment. It uses production-like settings (PostgreSQL, HTTPS,
 Mailgun) but with separate OAuth apps and secrets.
+
+Secrets Repository:
+- Git URL: git+ssh://github.com/mithro/test-platform.wafer.space-secrets.git
+- Cloned to: /home/django/.secrets/ (same path as production, different repo)
+- Deployment script (02a-setup-secrets.sh) handles cloning the correct repository
 """
 
 from .base import *  # noqa: F403
@@ -165,22 +170,22 @@ SOCIALACCOUNT_PROVIDERS = SOCIALACCOUNT_PROVIDERS.copy()  # Copy from base setti
 
 # GitHub staging Client ID - REQUIRED from environment
 SOCIALACCOUNT_PROVIDERS["github"]["APP"]["client_id"] = env("GITHUB_CLIENT_ID")
-# GitHub secret loaded from /home/django/.secrets-stage/github-oauth
+# GitHub secret loaded from /home/django/.secrets/github-oauth
 SOCIALACCOUNT_PROVIDERS["github"]["APP"]["secret"] = env("GITHUB_CLIENT_SECRET")
 
 # GitLab staging Client ID - REQUIRED from environment
 SOCIALACCOUNT_PROVIDERS["gitlab"]["APP"]["client_id"] = env("GITLAB_CLIENT_ID")
-# GitLab secret loaded from /home/django/.secrets-stage/gitlab-oauth
+# GitLab secret loaded from /home/django/.secrets/gitlab-oauth
 SOCIALACCOUNT_PROVIDERS["gitlab"]["APP"]["secret"] = env("GITLAB_CLIENT_SECRET")
 
 # Google staging Client ID - REQUIRED from environment
 SOCIALACCOUNT_PROVIDERS["google"]["APP"]["client_id"] = env("GOOGLE_CLIENT_ID")
-# Google secret loaded from /home/django/.secrets-stage/google-auth.json
+# Google secret loaded from /home/django/.secrets/google-auth.json
 SOCIALACCOUNT_PROVIDERS["google"]["APP"]["secret"] = env("GOOGLE_CLIENT_SECRET")
 
 # Discord staging Client ID - REQUIRED from environment
 SOCIALACCOUNT_PROVIDERS["discord"]["APP"]["client_id"] = env("DISCORD_CLIENT_ID")
-# Discord secret loaded from /home/django/.secrets-stage/discord-oauth
+# Discord secret loaded from /home/django/.secrets/discord-oauth
 SOCIALACCOUNT_PROVIDERS["discord"]["APP"]["secret"] = env("DISCORD_CLIENT_SECRET")
 
 # LinkedIn staging Client ID (using OpenID Connect) - REQUIRED from environment
@@ -188,7 +193,7 @@ SOCIALACCOUNT_PROVIDERS["discord"]["APP"]["secret"] = env("DISCORD_CLIENT_SECRET
 for app in SOCIALACCOUNT_PROVIDERS["openid_connect"]["APPS"]:
     if app["provider_id"] == "linkedin":
         app["client_id"] = env("LINKEDIN_CLIENT_ID")
-        # LinkedIn secret loaded from /home/django/.secrets-stage/linkedin-oauth
+        # LinkedIn secret loaded from /home/django/.secrets/linkedin-oauth
         app["secret"] = env("LINKEDIN_CLIENT_SECRET")
 
 # Your stuff...
