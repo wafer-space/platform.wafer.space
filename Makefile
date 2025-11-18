@@ -302,9 +302,20 @@ shell-plus: ## Open Django shell_plus (requires django-extensions)
 # ==================== Celery ====================
 
 .PHONY: celery
-celery: ## Start Celery worker
-	@echo "$(BLUE)Starting Celery worker...$(NC)"
-	@$(CELERY) -A config worker --loglevel=info
+celery: ## Start Celery worker (all queues: celery, manufacturability, referrals)
+	@echo "$(BLUE)Starting Celery worker (all queues)...$(NC)"
+	@$(CELERY) -A config worker -Q celery,manufacturability,referrals --loglevel=info --concurrency=1 --pool=solo
+
+.PHONY: celery-manufacturability
+celery-manufacturability: ## Start Celery worker for manufacturability queue only
+	@echo "$(BLUE)Starting Celery worker (manufacturability queue only)...$(NC)"
+	@echo "$(YELLOW)Note: This requires Docker access to run precheck containers$(NC)"
+	@$(CELERY) -A config worker -Q manufacturability --loglevel=info --concurrency=1 --pool=solo
+
+.PHONY: celery-referrals
+celery-referrals: ## Start Celery worker for referrals queue only
+	@echo "$(BLUE)Starting Celery worker (referrals queue only)...$(NC)"
+	@$(CELERY) -A config worker -Q referrals --loglevel=info --concurrency=1 --pool=solo
 
 .PHONY: celery-purge
 celery-purge: ## Purge all Celery tasks
