@@ -93,6 +93,13 @@ echo "Expanding certificate to include all domains..."
 CERTBOT_CMD="certbot certonly --webroot -w /var/www/certbot --expand"
 CERTBOT_CMD="$CERTBOT_CMD -d $MAIN_DOMAIN"
 
+# Add staging subdomains if in staging environment
+if [ "$ENV_NAME" = "stage" ]; then
+    echo "Adding staging subdomains to certificate..."
+    CERTBOT_CMD="$CERTBOT_CMD -d doc.$MAIN_DOMAIN"
+    CERTBOT_CMD="$CERTBOT_CMD -d buddy.$MAIN_DOMAIN"
+fi
+
 # Add all Thousand Parsec domains
 for domain in "${THOUSANDPARSEC_DOMAINS[@]}"; do
     CERTBOT_CMD="$CERTBOT_CMD -d $domain"
