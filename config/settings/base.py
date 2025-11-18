@@ -40,7 +40,8 @@ LANGUAGE_CODE = "en-us"
 SITE_ID = 1
 
 # Site URL for email templates and absolute URLs
-SITE_URL = "http://localhost:8081"
+# Must be set in each environment (dev, pytest, stage, prod)
+SITE_URL: str | None = None
 
 # https://docs.djangoproject.com/en/dev/ref/settings/#use-i18n
 USE_I18N = True

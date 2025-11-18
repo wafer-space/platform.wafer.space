@@ -12,7 +12,7 @@ SECRET_KEY = env(
     default="8dIz5XazziQI0eksKFugR13QIZhCbVOy4YXoBjWsA0JH9fEqJnheGk3swaHmMDYI",
 )
 ALLOWED_HOSTS = ["testserver"]
-# SITE_URL: uses base.py default (http://localhost:8081)
+SITE_URL = "http://testserver"
 
 # DATABASES
 # ------------------------------------------------------------------------------
