@@ -55,7 +55,7 @@ STORAGES = {
 EMAIL_BACKEND = "anymail.backends.mailgun.EmailBackend"
 DEFAULT_FROM_EMAIL = "wafer.space Online Platform <noreply@test-platform.wafer.space>"
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
-EMAIL_SUBJECT_PREFIX = "[wafer.space Staging] "
+EMAIL_SUBJECT_PREFIX = "[wafer.space] "
 ACCOUNT_EMAIL_SUBJECT_PREFIX = EMAIL_SUBJECT_PREFIX
 
 ANYMAIL = {
@@ -132,7 +132,7 @@ LOGGING = {
 # OAUTH PROVIDERS
 # ------------------------------------------------------------------------------
 SOCIALACCOUNT_PROVIDERS = SOCIALACCOUNT_PROVIDERS.copy()
-SOCIALACCOUNT_PROVIDERS["github"]["APP"]["client_id"] = "Ov23linEhI33aev2uGSU"
+SOCIALACCOUNT_PROVIDERS["github"]["APP"]["client_id"] = "Ov23lisQ91kx0M3Dhqwd"
 SOCIALACCOUNT_PROVIDERS["github"]["APP"]["secret"] = env("GITHUB_CLIENT_SECRET")
 SOCIALACCOUNT_PROVIDERS["gitlab"]["APP"]["client_id"] = (
     "f0fde384db4cd0fe11041488a6b87e9d3d20223385b78d1ba1ed4045fbea6c16"
