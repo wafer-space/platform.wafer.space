@@ -79,7 +79,7 @@ export DJANGO_SETTINGS_MODULE=config.settings.prod
 
 | Setting | dev | pytest | stage | prod | Notes |
 |---------|-----|--------|-------|------|-------|
-| `DEBUG` | `True` | Inherits base (`None`) | `False` | Inherits base (`None`) | Set to None in base, must be set in each environment |
+| `DEBUG` | `True` | Inherits base (`None`) | `False` | `False` | Set to None in base, dev/stage/prod override explicitly |
 | `SECRET_KEY` | **Required from env** | **Required from env** | **Required from env** | **Required from env** | Different keys per environment |
 | `ALLOWED_HOSTS` | `["localhost", "0.0.0.0", "127.0.0.1", "platform.wafer.space", "test-platform.wafer.space"]` | `["testserver"]` | `["test-platform.wafer.space", "buddy.test-platform.wafer.space", "doc.test-platform.wafer.space"]` | `["platform.wafer.space"]` | Dev includes prod domains for local testing |
 | `SITE_URL` | Inherits base (`http://localhost:8081`) | Inherits base (`http://localhost:8081`) | `https://test-platform.wafer.space` | `https://platform.wafer.space` | Dev uses HTTP for simplicity, deployed envs use HTTPS |
