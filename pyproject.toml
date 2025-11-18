@@ -154,6 +154,7 @@ dev = [
     "pytest-selenium==4.1.0",
     "pytest-sugar==1.1.1",
     "pytest-xdist==3.6.1",
+    "responses>=0.25.8",
     "ruff==0.13.1",
     "selenium==4.27.1",
     "sphinx==8.2.3",
