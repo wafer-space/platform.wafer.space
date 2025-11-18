@@ -123,7 +123,7 @@ export DJANGO_SETTINGS_MODULE=config.settings.prod
 | `CSRF_COOKIE_SECURE` | `False` | `False` | `True` | `True` | HTTPS enforcement for deployed |
 | `CSRF_COOKIE_NAME` | Default | Default | `__Secure-csrftoken` | `__Secure-csrftoken` | Secure prefix for deployed |
 | `X_FRAME_OPTIONS` | `DENY` | `DENY` | `DENY` | `DENY` | Universal security |
-| `SECURE_PROXY_SSL_HEADER` | Not set | Not set | `("HTTP_X_FORWARDED_PROTO", "https")` | Same | For nginx reverse proxy |
+| `SECURE_PROXY_SSL_HEADER` | Not set | Not set | `("HTTP_X_FORWARDED_PROTO", "https")` | `("HTTP_X_FORWARDED_PROTO", "https")` | For nginx reverse proxy |
 | `SECURE_SSL_REDIRECT` | Not set | Not set | `True` | `True` | HTTPS enforcement |
 | `SECURE_HSTS_SECONDS` | Not set | Not set | `3600` (1 hour) | `31536000` (1 year) | Production: 1 year required for preload list |
 | `SECURE_HSTS_INCLUDE_SUBDOMAINS` | Not set | Not set | `True` | `True` | Comprehensive HTTPS |
@@ -145,15 +145,15 @@ export DJANGO_SETTINGS_MODULE=config.settings.prod
 | `DEFAULT_FROM_EMAIL` | Inherits base | Inherits base | Inherits base | Inherits base | Universal: `wafer.space Platform <noreply@platform.wafer.space>` |
 | `SERVER_EMAIL` | Inherits base | Inherits base | Inherits base | Inherits base | Universal: Same as DEFAULT_FROM_EMAIL |
 | `EMAIL_SUBJECT_PREFIX` | Inherits base | Inherits base | Inherits base | Inherits base | Universal: `[wafer.space] ` |
-| `ANYMAIL` | Not set | Not set | Mailgun config: domain `mg.wafer.space`, API key from env | Same as stage | Mailgun credentials per environment |
+| `ANYMAIL` | Not set | Not set | Mailgun config: domain `mg.wafer.space`, API key from env | Mailgun config: domain `mg.wafer.space`, API key from env | Mailgun credentials per environment |
 
 ### 7. STATIC & MEDIA FILES
 
 | Setting | dev | pytest | stage | prod | Notes |
 |---------|-----|--------|-------|------|-------|
-| `STATIC_ROOT` | `BASE_DIR/staticfiles` | Same | Same | Same | Universal |
+| `STATIC_ROOT` | `BASE_DIR/staticfiles` | `BASE_DIR/staticfiles` | `BASE_DIR/staticfiles` | `BASE_DIR/staticfiles` | Universal |
 | `STATIC_URL` | `/static/` | `/static/` | `/static/` | `/static/` | Universal |
-| `MEDIA_ROOT` | `APPS_DIR/media` | Same | Same | Same | Universal |
+| `MEDIA_ROOT` | `APPS_DIR/media` | `APPS_DIR/media` | `APPS_DIR/media` | `APPS_DIR/media` | Universal |
 | `MEDIA_URL` | `/media/` | `http://media.testserver/` | `/media/` | `/media/` | Testserver URL for pytest |
 | `STORAGES['staticfiles']` | Default | Default | `CompressedManifestStaticFilesStorage` | `CompressedManifestStaticFilesStorage` | WhiteNoise compression for deployed |
 
@@ -162,15 +162,15 @@ export DJANGO_SETTINGS_MODULE=config.settings.prod
 | Setting | dev | pytest | stage | prod | Notes |
 |---------|-----|--------|-------|------|-------|
 | `ADMIN_URL` | `admin/` | `admin/` | Inherits base (`admin/`) | Inherits base (`admin/`) | Universal: Default admin URL |
-| `ADMINS` | Tim Ansell | Same | Same | Same | Universal |
-| `MANAGERS` | Same as ADMINS | Same | Same | Same | Universal |
+| `ADMINS` | Tim Ansell | Tim Ansell | Tim Ansell | Tim Ansell | Universal |
+| `MANAGERS` | Tim Ansell | Tim Ansell | Tim Ansell | Tim Ansell | Universal: Same as ADMINS |
 | `DJANGO_ADMIN_FORCE_ALLAUTH` | `False` (env) | `False` (env) | `False` (env) | `False` (env) | Configurable |
 
 ### 9. LOGGING
 
 | Setting | dev | pytest | stage | prod | Notes |
 |---------|-----|--------|-------|------|-------|
-| `LOGGING` | Base config (console, INFO) | Same | Enhanced: console + mail_admins on ERROR | Same as stage | Email admins on errors in deployed |
+| `LOGGING` | Base config (console, INFO) | Base config (console, INFO) | Enhanced: console + mail_admins on ERROR | Enhanced: console + mail_admins on ERROR | Email admins on errors in deployed |
 
 ### 10. OAUTH PROVIDERS (django-allauth)
 
@@ -210,21 +210,21 @@ export DJANGO_SETTINGS_MODULE=config.settings.prod
 | Setting | dev | pytest | stage | prod | Notes |
 |---------|-----|--------|-------|------|-------|
 | `CELERY_BROKER_URL` | `sqla+sqlite:///db.sqlite3` | Inherits base (PostgreSQL format) | `sqla+postgresql://...` | `sqla+postgresql://...` | SQLite for dev, PostgreSQL for deployed |
-| `CELERY_RESULT_BACKEND` | `django-db` | Same | Same | Same | Universal: Django database |
-| `CELERY_CACHE_BACKEND` | `django-cache` | Same | Same | Same | Universal: Django cache |
+| `CELERY_RESULT_BACKEND` | `django-db` | `django-db` | `django-db` | `django-db` | Universal: Django database |
+| `CELERY_CACHE_BACKEND` | `django-cache` | `django-cache` | `django-cache` | `django-cache` | Universal: Django cache |
 | `CELERY_TASK_ALWAYS_EAGER` | `False` | `True` | `False` | `False` | Synchronous for tests only |
 | `CELERY_TASK_EAGER_PROPAGATES` | `True` | `True` | `True` | `True` | Universal |
-| `CELERY_TASK_ROUTES` | projects→manufacturability, referrals→referrals | Same | Same | Same | Universal queue routing |
-| `CELERY_RESULT_EXPIRES` | `3600` (1 hour) | Same | Same | Same | Universal |
-| `CELERY_TASK_TIME_LIMIT` | `1800` (30 min) | Same | Same | Same | Universal hard limit |
-| `CELERY_TASK_SOFT_TIME_LIMIT` | `1500` (25 min) | Same | Same | Same | Universal soft limit |
+| `CELERY_TASK_ROUTES` | projects→manufacturability, referrals→referrals | projects→manufacturability, referrals→referrals | projects→manufacturability, referrals→referrals | projects→manufacturability, referrals→referrals | Universal queue routing |
+| `CELERY_RESULT_EXPIRES` | `3600` (1 hour) | `3600` (1 hour) | `3600` (1 hour) | `3600` (1 hour) | Universal |
+| `CELERY_TASK_TIME_LIMIT` | `1800` (30 min) | `1800` (30 min) | `1800` (30 min) | `1800` (30 min) | Universal hard limit |
+| `CELERY_TASK_SOFT_TIME_LIMIT` | `1500` (25 min) | `1500` (25 min) | `1500` (25 min) | `1500` (25 min) | Universal soft limit |
 
 ### 12. APPLICATION-SPECIFIC SETTINGS
 
 | Setting | dev | pytest | stage | prod | Notes |
 |---------|-----|--------|-------|------|-------|
 | `DOWNLOAD_RETRY_BASE_DELAY_MINUTES` | `0.5` (30 sec) | `5` (5 min) | `0.5` (30 sec) | `5` (5 min) | Faster retries for dev and stage |
-| `DOWNLOAD_RETRY_BACKOFF_MULTIPLIER` | `3` | Same | Same | Same | Universal |
+| `DOWNLOAD_RETRY_BACKOFF_MULTIPLIER` | `3` | `3` | `3` | `3` | Universal |
 | `DOWNLOAD_RETRY_CHECK_INTERVAL_SECONDS` | `30` | `300` | `30` | `300` | Faster checks for dev and stage |
 | `DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS` | `30` | `60` | `30` | `60` | Faster checks for dev and stage |
 | `CELERY_BEAT_SCHEDULE` | Dev intervals (30s) | Base intervals | Stage intervals (30s) | Base intervals | Faster schedule for dev and stage |
