@@ -42,6 +42,9 @@ DATABASES = {
 # EMAIL
 # ------------------------------------------------------------------------------
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+# DEFAULT_FROM_EMAIL: uses base.py defaults
+# SERVER_EMAIL: uses base.py defaults
+# EMAIL_SUBJECT_PREFIX: uses base.py defaults
 
 # INSTALLED APPS / MIDDLEWARE
 # ------------------------------------------------------------------------------

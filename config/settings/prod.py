@@ -62,6 +62,10 @@ ANYMAIL = {
     "MAILGUN_API_URL": "https://api.mailgun.net/v3",
 }
 
+# DEFAULT_FROM_EMAIL: uses base.py defaults (noreply@platform.wafer.space)
+# SERVER_EMAIL: uses base.py defaults
+# EMAIL_SUBJECT_PREFIX: uses base.py defaults
+
 # INSTALLED APPS / MIDDLEWARE
 # ------------------------------------------------------------------------------
 INSTALLED_APPS += [

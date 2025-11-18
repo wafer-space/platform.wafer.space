@@ -64,6 +64,11 @@ ANYMAIL = {
     "MAILGUN_API_URL": "https://api.mailgun.net/v3",
 }
 
+DEFAULT_FROM_EMAIL = "wafer.space Platform <noreply@test-platform.wafer.space>"
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
+EMAIL_SUBJECT_PREFIX = "[wafer.space] "
+ACCOUNT_EMAIL_SUBJECT_PREFIX = EMAIL_SUBJECT_PREFIX
+
 # INSTALLED APPS / MIDDLEWARE
 # ------------------------------------------------------------------------------
 INSTALLED_APPS += [
