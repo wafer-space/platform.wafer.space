@@ -64,30 +64,34 @@ class ProjectFileURLSubmitForm(forms.Form):
 
     expected_hash_md5 = forms.CharField(
         label="MD5 Hash",
-        max_length=32,
+        max_length=64,  # Increased to allow for prefix like "sha256:"
         required=False,
         widget=forms.TextInput(
             attrs={
                 "class": "form-control",
-                "placeholder": "abc123def456...",
-                "pattern": "[a-fA-F0-9]{32}",
+                "placeholder": "abc123def456... or md5:abc123def456...",
             },
         ),
-        help_text="MD5 checksum for file integrity verification (32 hex characters)",
+        help_text=(
+            "MD5 checksum for file integrity verification (32 hex characters). "
+            "Optional prefix like 'md5:' will be stripped."
+        ),
     )
 
     expected_hash_sha1 = forms.CharField(
         label="SHA1 Hash",
-        max_length=40,
+        max_length=64,  # Increased to allow for prefix like "sha256:"
         required=False,
         widget=forms.TextInput(
             attrs={
                 "class": "form-control",
-                "placeholder": "abc123def456...",
-                "pattern": "[a-fA-F0-9]{40}",
+                "placeholder": "abc123def456... or sha1:abc123def456...",
             },
         ),
-        help_text="SHA1 checksum for file integrity verification (40 hex characters)",
+        help_text=(
+            "SHA1 checksum for file integrity verification (40 hex characters). "
+            "Optional prefix like 'sha1:' will be stripped."
+        ),
     )
 
     def clean_url(self):
@@ -108,11 +112,20 @@ class ProjectFileURLSubmitForm(forms.Form):
         return url
 
     def clean_expected_hash_md5(self):
-        """Validate MD5 hash format."""
+        """Validate MD5 hash format.
+
+        Supports hash values with or without type prefix.
+        Examples: "md5:abc123..." or "abc123..."
+        """
         md5_hash = self.cleaned_data.get("expected_hash_md5", "").strip()
 
         if not md5_hash:
             return ""
+
+        # Strip hash type prefix if present (e.g., "md5:", "sha256:", etc.)
+        if ":" in md5_hash:
+            # Take the part after the first colon
+            md5_hash = md5_hash.split(":", 1)[1].strip()
 
         # Remove any whitespace or dashes
         md5_hash = md5_hash.replace(" ", "").replace("-", "")
@@ -132,11 +145,20 @@ class ProjectFileURLSubmitForm(forms.Form):
         return md5_hash.lower()
 
     def clean_expected_hash_sha1(self):
-        """Validate SHA1 hash format."""
+        """Validate SHA1 hash format.
+
+        Supports hash values with or without type prefix.
+        Examples: "sha1:abc123..." or "abc123..."
+        """
         sha1_hash = self.cleaned_data.get("expected_hash_sha1", "").strip()
 
         if not sha1_hash:
             return ""
+
+        # Strip hash type prefix if present (e.g., "sha1:", "sha256:", etc.)
+        if ":" in sha1_hash:
+            # Take the part after the first colon
+            sha1_hash = sha1_hash.split(":", 1)[1].strip()
 
         # Remove any whitespace or dashes
         sha1_hash = sha1_hash.replace(" ", "").replace("-", "")
