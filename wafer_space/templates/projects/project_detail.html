@@ -48,31 +48,6 @@
                 <strong>Submitted:</strong> {{ project.submitted_at|date:"F d, Y, g:i a" }}
               </p>
             {% endif %}
-            {# Compliance Certification Status #}
-            <hr class="my-3" />
-            <p>
-              <strong>Export Compliance:</strong>
-              {% if compliance_certification %}
-                <span class="badge bg-success">
-                  <i class="bi bi-check-circle"></i> Certified
-                </span>
-              {% else %}
-                <span class="badge bg-warning">
-                  <i class="bi bi-exclamation-triangle"></i> Not Certified
-                </span>
-              {% endif %}
-            </p>
-            {% if compliance_certification %}
-              <p class="small text-muted mb-0">
-                Certified on {{ compliance_certification.created_at|date:"F d, Y, g:i a" }}
-                from IP {{ compliance_certification.ip_address }}
-              </p>
-            {% else %}
-              <p class="small text-muted">
-                Export compliance certification is required before shuttle slot assignment.
-                <a href="{% url 'projects:compliance_certification' pk=project.pk %}">Complete certification now</a>
-              </p>
-            {% endif %}
           </div>
         </div>
         {# Error Display Section #}
