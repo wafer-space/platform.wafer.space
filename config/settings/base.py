@@ -18,12 +18,14 @@ if READ_DOT_ENV_FILE and (BASE_DIR / ".env").exists():
 # GENERAL
 # ------------------------------------------------------------------------------
 # https://docs.djangoproject.com/en/dev/ref/settings/#debug
-DEBUG = env.bool("DJANGO_DEBUG", False)
+DEBUG = None
+
 # Local time zone. Choices are
 # http://en.wikipedia.org/wiki/List_of_tz_zones_by_name
 # though not all of them may be available with every OS.
 # In Windows, this must be set to your system time zone.
 TIME_ZONE = "UTC"
+
 # https://docs.djangoproject.com/en/dev/ref/settings/#language-code
 LANGUAGE_CODE = "en-us"
 # https://docs.djangoproject.com/en/dev/ref/settings/#languages
@@ -33,14 +35,20 @@ LANGUAGE_CODE = "en-us"
 #     ('fr-fr', _('French')),
 #     ('pt-br', _('Portuguese')),
 # ]
+
 # https://docs.djangoproject.com/en/dev/ref/settings/#site-id
 SITE_ID = 1
+
 # Site URL for email templates and absolute URLs
-SITE_URL = env("SITE_URL", default="http://localhost:8081")
+# Must be set in each environment (dev, pytest, stage, prod)
+SITE_URL: str | None = None
+
 # https://docs.djangoproject.com/en/dev/ref/settings/#use-i18n
 USE_I18N = True
+
 # https://docs.djangoproject.com/en/dev/ref/settings/#use-tz
 USE_TZ = True
+
 # https://docs.djangoproject.com/en/dev/ref/settings/#locale-paths
 LOCALE_PATHS = [str(BASE_DIR / "locale")]
 
@@ -57,6 +65,16 @@ DATABASES = {
 DATABASES["default"]["ATOMIC_REQUESTS"] = True
 # https://docs.djangoproject.com/en/stable/ref/settings/#std:setting-DEFAULT_AUTO_FIELD
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+# CACHES
+# ------------------------------------------------------------------------------
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "wafer-space-cache",
+    },
+}
 
 # URLS
 # ------------------------------------------------------------------------------
@@ -103,7 +121,6 @@ LOCAL_APPS = [
     "wafer_space.projects",
     "wafer_space.shuttles",
     "wafer_space.coupons",
-    # Your stuff: custom apps go here
 ]
 # https://docs.djangoproject.com/en/dev/ref/settings/#installed-apps
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -237,12 +254,14 @@ X_FRAME_OPTIONS = "DENY"
 # EMAIL
 # ------------------------------------------------------------------------------
 # https://docs.djangoproject.com/en/dev/ref/settings/#email-backend
-EMAIL_BACKEND = env(
-    "DJANGO_EMAIL_BACKEND",
-    default="django.core.mail.backends.smtp.EmailBackend",
-)
+EMAIL_BACKEND: str | None = None
 # https://docs.djangoproject.com/en/dev/ref/settings/#email-timeout
 EMAIL_TIMEOUT = 5
+
+DEFAULT_FROM_EMAIL = "wafer.space Platform <noreply@platform.wafer.space>"
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
+EMAIL_SUBJECT_PREFIX = "[wafer.space] "
+ACCOUNT_EMAIL_SUBJECT_PREFIX = EMAIL_SUBJECT_PREFIX
 
 # ADMIN
 # ------------------------------------------------------------------------------
@@ -302,8 +321,8 @@ SOCIALACCOUNT_FORMS = {"signup": "wafer_space.users.forms.UserSocialSignupForm"}
 SOCIALACCOUNT_PROVIDERS = {
     "github": {
         "APP": {
-            "client_id": env("GITHUB_CLIENT_ID", default="Ov23liLB7RRJUzku13dU"),
-            "secret": env("GITHUB_CLIENT_SECRET", default=""),
+            "client_id": None,
+            "secret": None,
         },
         "SCOPE": [
             "user:email",
@@ -312,11 +331,8 @@ SOCIALACCOUNT_PROVIDERS = {
     },
     "gitlab": {
         "APP": {
-            "client_id": env(
-                "GITLAB_CLIENT_ID",
-                default="2a29dee626b3c8b544f6f2c3a8042f912130bd040f4d3c60ef0e5864a4962aaa",
-            ),
-            "secret": env("GITLAB_CLIENT_SECRET", default=""),
+            "client_id": None,
+            "secret": None,
         },
         "SCOPE": [
             "read_user",
@@ -326,11 +342,8 @@ SOCIALACCOUNT_PROVIDERS = {
     },
     "google": {
         "APP": {
-            "client_id": env(
-                "GOOGLE_CLIENT_ID",
-                default="62545893239-jiesk1vfk22j87cth4ukq4alluc3nqhc.apps.googleusercontent.com",
-            ),
-            "secret": env("GOOGLE_CLIENT_SECRET", default=""),
+            "client_id": None,
+            "secret": None,
         },
         "SCOPE": [
             "profile",
@@ -346,8 +359,8 @@ SOCIALACCOUNT_PROVIDERS = {
             {
                 "provider_id": "linkedin",
                 "name": "LinkedIn",
-                "client_id": env("LINKEDIN_CLIENT_ID", default="86j973nx41hlk7"),
-                "secret": env("LINKEDIN_CLIENT_SECRET", default=""),
+                "client_id": None,
+                "secret": None,
                 "settings": {
                     "server_url": "https://www.linkedin.com/oauth",
                 },
@@ -358,8 +371,8 @@ SOCIALACCOUNT_PROVIDERS = {
     },
     "discord": {
         "APP": {
-            "client_id": env("DISCORD_CLIENT_ID", default="1426055950221054052"),
-            "secret": env("DISCORD_CLIENT_SECRET", default=""),
+            "client_id": None,
+            "secret": None,
         },
         "SCOPE": [
             "identify",
@@ -437,7 +450,3 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS,
     },
 }
-
-
-# Your stuff...
-# ------------------------------------------------------------------------------

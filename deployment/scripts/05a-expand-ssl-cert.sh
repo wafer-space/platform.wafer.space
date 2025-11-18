@@ -1,58 +1,16 @@
 #!/bin/bash
-# Expand existing SSL certificate to include Thousand Parsec domains
+# Expand existing SSL certificate to include additional domains
 # Run as: sudo ./05a-expand-ssl-cert.sh
 
 set -e
 
-MAIN_DOMAIN="platform.wafer.space"
+# Auto-detect environment
+source "$(dirname "$0")/detect-environment.sh"
+
 EMAIL="bot@wafer.space"
 
-# All domains to include in certificate
-THOUSANDPARSEC_DOMAINS=(
-    "thousandparsec.com"
-    "www.thousandparsec.com"
-    "thousandparsec.net"
-    "www.thousandparsec.net"
-    "thousandparsec.org"
-    "www.thousandparsec.org"
-    "old.thousandparsec.com"
-    "old.thousandparsec.net"
-    "old.thousandparsec.org"
-    "git.thousandparsec.com"
-    "git.thousandparsec.net"
-    "git.thousandparsec.org"
-    "mail.thousandparsec.com"
-    "mail.thousandparsec.net"
-    "mail.thousandparsec.org"
-    "code.thousandparsec.com"
-    "code.thousandparsec.net"
-    "code.thousandparsec.org"
-    "darcs.thousandparsec.com"
-    "darcs.thousandparsec.net"
-    "darcs.thousandparsec.org"
-    "forums.thousandparsec.com"
-    "forums.thousandparsec.net"
-    "forums.thousandparsec.org"
-    "metaserver.thousandparsec.com"
-    "metaserver.thousandparsec.net"
-    "metaserver.thousandparsec.org"
-    "packages.thousandparsec.com"
-    "packages.thousandparsec.net"
-    "packages.thousandparsec.org"
-    "schemepy.thousandparsec.com"
-    "schemepy.thousandparsec.net"
-    "schemepy.thousandparsec.org"
-    "svn.thousandparsec.com"
-    "svn.thousandparsec.net"
-    "svn.thousandparsec.org"
-    "test.thousandparsec.com"
-    "test.thousandparsec.net"
-    "test.thousandparsec.org"
-)
-
-echo "=== Expanding SSL certificate to include all domains ==="
+echo "=== Expanding SSL certificate to include additional domains ==="
 echo "Main domain: $MAIN_DOMAIN"
-echo "Additional domains: ${THOUSANDPARSEC_DOMAINS[*]}"
 echo "Email: $EMAIL"
 echo ""
 
@@ -91,10 +49,12 @@ echo "Expanding certificate to include all domains..."
 CERTBOT_CMD="certbot certonly --webroot -w /var/www/certbot --expand"
 CERTBOT_CMD="$CERTBOT_CMD -d $MAIN_DOMAIN"
 
-# Add all Thousand Parsec domains
-for domain in "${THOUSANDPARSEC_DOMAINS[@]}"; do
-    CERTBOT_CMD="$CERTBOT_CMD -d $domain"
-done
+# Add staging subdomains if in staging environment
+if [ "$ENV_NAME" = "stage" ]; then
+    echo "Adding staging subdomains to certificate..."
+    CERTBOT_CMD="$CERTBOT_CMD -d doc.$MAIN_DOMAIN"
+    CERTBOT_CMD="$CERTBOT_CMD -d buddy.$MAIN_DOMAIN"
+fi
 
 CERTBOT_CMD="$CERTBOT_CMD --email $EMAIL --agree-tos --no-eff-email --non-interactive"
 

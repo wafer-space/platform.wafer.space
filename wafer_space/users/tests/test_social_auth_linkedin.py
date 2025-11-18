@@ -3,6 +3,7 @@
 from typing import Any
 
 import pytest
+import responses
 from allauth.socialaccount.models import SocialAccount
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -49,8 +50,23 @@ class TestLinkedInAuthenticationFlow(TestCase):
         # Check for LinkedIn provider in context or content
         assert b"LinkedIn" in response.content or b"linkedin" in response.content
 
+    @responses.activate
     def test_linkedin_login_url_exists(self):
         """Test that LinkedIn login URL is accessible and handled by django-allauth."""
+        # Mock the OpenID Connect configuration endpoint to avoid rate limiting
+        responses.add(
+            responses.GET,
+            "https://www.linkedin.com/oauth/.well-known/openid-configuration",
+            json={
+                "issuer": "https://www.linkedin.com/oauth",
+                "authorization_endpoint": "https://www.linkedin.com/oauth/v2/authorization",
+                "token_endpoint": "https://www.linkedin.com/oauth/v2/accessToken",
+                "userinfo_endpoint": "https://www.linkedin.com/oauth/v2/userinfo",
+                "jwks_uri": "https://www.linkedin.com/oauth/discovery/keys",
+            },
+            status=HTTP_OK,
+        )
+
         response = self.client.get(self.linkedin_login_url)
         # The response should either be a redirect to LinkedIn OAuth (302)
         # or a 200 response from allauth handling the request
@@ -60,8 +76,23 @@ class TestLinkedInAuthenticationFlow(TestCase):
             redirect_url = getattr(response, "url", "")
             assert "linkedin.com" in redirect_url
 
+    @responses.activate
     def test_linkedin_oauth_redirect_contains_correct_params(self):
         """Test LinkedIn OAuth redirect parameters when redirect occurs."""
+        # Mock the OpenID Connect configuration endpoint to avoid rate limiting
+        responses.add(
+            responses.GET,
+            "https://www.linkedin.com/oauth/.well-known/openid-configuration",
+            json={
+                "issuer": "https://www.linkedin.com/oauth",
+                "authorization_endpoint": "https://www.linkedin.com/oauth/v2/authorization",
+                "token_endpoint": "https://www.linkedin.com/oauth/v2/accessToken",
+                "userinfo_endpoint": "https://www.linkedin.com/oauth/v2/userinfo",
+                "jwks_uri": "https://www.linkedin.com/oauth/discovery/keys",
+            },
+            status=HTTP_OK,
+        )
+
         response = self.client.get(self.linkedin_login_url)
         # Only test redirect parameters if we actually get a redirect
         if response.status_code == HTTP_REDIRECT:
@@ -163,8 +194,23 @@ class TestLinkedInAuthenticationSecurity(TestCase):
         """Clean up test environment."""
         # No cleanup needed - using configuration-based apps
 
+    @responses.activate
     def test_linkedin_oauth_uses_state_parameter(self):
         """Test that LinkedIn OAuth uses state parameter for CSRF protection."""
+        # Mock the OpenID Connect configuration endpoint to avoid rate limiting
+        responses.add(
+            responses.GET,
+            "https://www.linkedin.com/oauth/.well-known/openid-configuration",
+            json={
+                "issuer": "https://www.linkedin.com/oauth",
+                "authorization_endpoint": "https://www.linkedin.com/oauth/v2/authorization",
+                "token_endpoint": "https://www.linkedin.com/oauth/v2/accessToken",
+                "userinfo_endpoint": "https://www.linkedin.com/oauth/v2/userinfo",
+                "jwks_uri": "https://www.linkedin.com/oauth/discovery/keys",
+            },
+            status=HTTP_OK,
+        )
+
         linkedin_login_url = reverse(
             "openid_connect_login",
             kwargs={"provider_id": "linkedin"},

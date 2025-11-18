@@ -4,12 +4,12 @@
 
 set -e
 
-DB_NAME="platform_wafer_space"
-DB_USER="platform_wafer_space"
-APP_DIR="/home/django/platform.wafer.space"
+# Auto-detect environment
+source "$(dirname "$0")/detect-environment.sh"
+
 ENV_FILE="$APP_DIR/.env"
 
-echo "=== Setting up PostgreSQL database ==="
+echo "=== Setting up PostgreSQL database ($ENV_NAME environment) ==="
 
 # Verify application directory exists
 if [ ! -d "$APP_DIR" ]; then
@@ -42,7 +42,7 @@ if [ "$DB_EXISTS" = "1" ] && [ "$USER_EXISTS" = "1" ]; then
         echo ""
         echo "1. Reset the database password:"
         echo "   sudo -u postgres psql -c \"ALTER USER $DB_USER WITH PASSWORD 'new_password';\""
-        echo "   Then manually create .env from .env.production.template and set DATABASE_URL"
+        echo "   Then manually create .env from .env.prod.template and set DATABASE_URL"
         echo ""
         echo "2. Drop and recreate the database (WARNING: destroys all data):"
         echo "   # Stop services first to release database connections"
@@ -137,10 +137,10 @@ if [ ! -f "$ENV_FILE" ]; then
     echo "Creating .env file from template..."
 
     # Copy template file
-    TEMPLATE_FILE="$APP_DIR/.env.production.template"
+    TEMPLATE_FILE="$APP_DIR/$ENV_TEMPLATE"
     if [ -f "$TEMPLATE_FILE" ]; then
         cp "$TEMPLATE_FILE" "$ENV_FILE"
-        echo "✓ Copied .env.production.template to .env"
+        echo "✓ Copied $ENV_TEMPLATE to .env"
     else
         echo "⚠️  Template file not found, creating minimal .env"
         touch "$ENV_FILE"

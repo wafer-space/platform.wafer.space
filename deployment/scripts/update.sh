@@ -8,7 +8,7 @@ SECRETS_DIR="/home/django/.secrets"
 LOG_FILE="/var/log/platform.wafer.space/update.log"
 
 # Use production settings
-export DJANGO_SETTINGS_MODULE=config.settings.production
+export DJANGO_SETTINGS_MODULE=config.settings.prod
 
 echo "$(date): Starting update..." | tee -a "$LOG_FILE"
 

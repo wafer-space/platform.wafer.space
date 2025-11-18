@@ -50,6 +50,8 @@ jobs:
     env:
       # postgres://user:password@host:port/database
       DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/postgres'
+      # Use pytest settings module for CI (has test credentials, no env vars required)
+      DJANGO_SETTINGS_MODULE: 'config.settings.pytest'
 
     steps:
       - name: Checkout Code Repository

@@ -67,7 +67,7 @@ source $HOME/.cargo/env
 make venv
 
 # Configure environment settings
-echo 'export DJANGO_SETTINGS_MODULE=config.settings.production' >> ~/.bashrc
+echo 'export DJANGO_SETTINGS_MODULE=config.settings.prod' >> ~/.bashrc
 source ~/.bashrc
 exit
 
@@ -85,7 +85,7 @@ sudo ./scripts/03-setup-database.sh
 # 9. Run Django setup (as django user)
 sudo -u django -i
 cd /home/django/platform.wafer.space
-export DJANGO_SETTINGS_MODULE=config.settings.production
+export DJANGO_SETTINGS_MODULE=config.settings.prod
 make migrate
 make createsuperuser
 make collectstatic
@@ -161,7 +161,7 @@ Sets up PostgreSQL database and creates `.env` file automatically:
 3. Creates `platform_wafer_space` database
 4. Creates `platform_wafer_space` user with generated password
 5. Configures PostgreSQL user settings (encoding, timezone, etc.)
-6. Creates `.env` from `.env.production.template` (if .env doesn't exist)
+6. Creates `.env` from `.env.prod.template` (if .env doesn't exist)
 7. Adds/updates `DATABASE_URL` in `.env` file with generated password
 8. Generates 50-character Django secret key
 9. Calls `03a-update-env-secrets.sh` to populate API secrets
@@ -215,7 +215,7 @@ Automates SSL certificate setup:
 
 ## Environment Configuration
 
-The `.env` file is automatically created by the database setup script (`03-setup-database.sh`) from the `.env.production.template`. It includes all necessary configuration variables with helpful comments.
+The `.env` file is automatically created by the database setup script (`03-setup-database.sh`) from the `.env.prod.template`. It includes all necessary configuration variables with helpful comments.
 
 **Automatically configured:**
 - `DATABASE_URL` - Generated with secure random password
@@ -256,7 +256,7 @@ The template includes all required variables with comments. All values are autom
   - `GOOGLE_CLIENT_ID` - Pre-configured for wafer-space project
   - `DISCORD_CLIENT_ID` - Pre-configured for wafer-space organization
   - `LINKEDIN_CLIENT_ID` - Pre-configured for wafer-space organization
-- `DJANGO_SETTINGS_MODULE` - Set to `config.settings.production`
+- `DJANGO_SETTINGS_MODULE` - Set to `config.settings.prod`
 - `DJANGO_ALLOWED_HOSTS` - Set to `platform.wafer.space`
 - Security settings - All HTTPS/HSTS settings configured
 
@@ -264,7 +264,7 @@ The template includes all required variables with comments. All values are autom
 
 ### Template File
 
-The template file `.env.production.template` in the repository root contains all configuration variables with helpful comments explaining each one. The database setup script copies this to `.env` and adds the DATABASE_URL automatically.
+The template file `.env.prod.template` in the repository root contains all configuration variables with helpful comments explaining each one. The database setup script copies this to `.env` and adds the DATABASE_URL automatically.
 
 ## Systemd Services
 
@@ -523,7 +523,7 @@ ls -la /run/platform.wafer.space/gunicorn.sock
 # Recollect static files
 sudo -u django -i
 cd /home/django/platform.wafer.space
-export DJANGO_SETTINGS_MODULE=config.settings.production
+export DJANGO_SETTINGS_MODULE=config.settings.prod
 make collectstatic
 exit
 
@@ -544,7 +544,7 @@ sudo -u django cat /home/django/platform.wafer.space/.env | grep DATABASE_URL
 # Test connection
 sudo -u django -i
 cd /home/django/platform.wafer.space
-export DJANGO_SETTINGS_MODULE=config.settings.production
+export DJANGO_SETTINGS_MODULE=config.settings.prod
 make shell
 # In shell: from django.db import connection; connection.ensure_connection()
 ```

@@ -7,19 +7,62 @@ This guide walks through setting up OAuth applications for social authentication
 | | **GitHub** | **Google** | **GitLab** | **Discord** | **LinkedIn** |
 |---|---|---|---|---|---|
 | **Development Client ID** | `Ov23liLB7RRJUzku13dU` | `62545893239-jiesk1vfk22j87cth4ukq4alluc3nqhc.apps.googleusercontent.com` | `2a29dee626b3c8b544f6f2c3a8042f912130bd040f4d3c60ef0e5864a4962aaa` | `1426055950221054052` | `86j973nx41hlk7` |
+| **Staging Client ID** | `Ov23lisQ91kx0M3Dhqwd` | `62545893239-00nmudn3he0nb8bipsbuhdk2ou3jo0ca.apps.googleusercontent.com` | `6b111b2573f18fbe2f4cdb2f9dcdbc9ee0318b7e546bf9a029b9b361b06cf708` | `1440161777756405851` | `86r16sb9k5fkwt` |
 | **Production Client ID** | `Ov23linEhI33aev2uGSU` | `62545893239-pgg1lcg28u9suivjh4nso9t8mev5qua2.apps.googleusercontent.com` | `f0fde384db4cd0fe11041488a6b87e9d3d20223385b78d1ba1ed4045fbea6c16` | `1426065281138167841` | `86q1gs3uqhpqt1` |
-| **Client Secrets** | Env var required | Env var required | Env var required | ✅ Pre-configured | ✅ Pre-configured |
+| **Client Secrets** | Env var required | Env var required | Env var required | Env var required | Env var required |
 | **Management URL** | [github.com/wafer-space](https://github.com/wafer-space) | [console.cloud.google.com](https://console.cloud.google.com/apis/credentials) | [gitlab.com/groups/wafer-space](https://gitlab.com/groups/wafer-space/-/settings/applications) | [discord.com/developers](https://discord.com/developers/applications) | [linkedin.com/developers](https://www.linkedin.com/developers/apps) |
 
 ### Configuration Notes
 
 - ✅ **Client IDs** are configured in Django settings for all providers (safe to commit)
-- 🔐 **Client Secrets** are managed via environment variables or pre-configured defaults
-- 🌍 Both development and production environments are fully configured out of the box
+- 🔐 **Client Secrets** are managed via environment variables (required for all environments)
+- 🌍 All four environments (dev, pytest, staging, production) are fully configured out of the box
 - 📱 All OAuth apps are configured as "Confidential" for secure server-side web applications
-- ⚡ **Zero-Setup Development**: Discord and LinkedIn include pre-configured secrets for instant testing
-- 🔑 **GitHub, Google, GitLab**: Require environment variable for client secret only (Client IDs pre-configured)
-- 🚀 **Quick Start**: Most developers can begin testing OAuth immediately with minimal configuration
+- 🔑 **All providers** require environment variable for client secret (Client IDs are hardcoded per environment)
+- 🚀 **Quick Start**: Set environment variable for client secret and OAuth works immediately
+
+### Settings Architecture
+
+**CRITICAL: This project uses a unified settings architecture designed for fail-fast OAuth configuration.**
+
+Each Django settings file follows this pattern:
+
+1. **`config/settings/base.py`**: Sets ALL OAuth credentials to `None`
+   - Forces each environment to explicitly configure OAuth
+   - Prevents accidental use of wrong credentials
+   - Makes missing configuration immediately obvious
+
+2. **Environment-specific settings** override with actual values:
+   - **`dev.py`**: Development OAuth apps (localhost:8081 callbacks)
+   - **`pytest.py`**: Test credentials (hardcoded for CI/testing)
+   - **`stage.py`**: Staging OAuth apps (test-platform.wafer.space callbacks)
+   - **`prod.py`**: Production OAuth apps (platform.wafer.space callbacks)
+
+**Why this matters:**
+- ✅ **Fail-fast**: Missing OAuth config causes immediate error, not silent failure
+- ✅ **Environment isolation**: Each environment has distinct OAuth apps
+- ✅ **No defaults in base.py**: Prevents accidental credential leakage between environments
+- ✅ **Explicit configuration**: Every environment must consciously set credentials
+
+**Pattern for each environment:**
+```python
+# base.py - Forces explicit configuration
+SOCIALACCOUNT_PROVIDERS = {
+    "github": {
+        "APP": {
+            "client_id": None,  # Must be set in environment file
+            "secret": None,     # Must be set in environment file
+        },
+    },
+}
+
+# dev.py - Override with dev credentials
+SOCIALACCOUNT_PROVIDERS = SOCIALACCOUNT_PROVIDERS.copy()
+SOCIALACCOUNT_PROVIDERS["github"]["APP"]["client_id"] = "Ov23liLB7RRJUzku13dU"
+SOCIALACCOUNT_PROVIDERS["github"]["APP"]["secret"] = env("GITHUB_CLIENT_SECRET")
+```
+
+See [docs/settings.md](settings.md) for complete unified settings documentation.
 
 ## Table of Contents
 - [GitHub OAuth Setup](#github-oauth-setup)
@@ -54,7 +97,7 @@ This guide walks through setting up OAuth applications for social authentication
      - Development: `http://localhost:8081/accounts/github/login/callback/` (note: port 8081)
      - Production: `https://platform.wafer.space/accounts/github/login/callback/`
 
-   **Production Setup**: Create separate OAuth apps for development and production environments with different callback URLs.
+   **Multi-Environment Setup**: Create separate OAuth apps for development, staging, and production environments with different callback URLs.
 
 3. **Configure Additional Settings**
    - **Enable Device Flow**: **Leave UNCHECKED** (not needed for web authentication)
@@ -79,13 +122,16 @@ This guide walks through setting up OAuth applications for social authentication
 
 ### Environment Variables
 
-GitHub OAuth Client IDs are pre-configured in Django settings:
+GitHub OAuth Client IDs are hardcoded per environment in Django settings:
 
 ```bash
 # GitHub OAuth credentials for wafer-space organization
 # Client IDs are configured in Django settings:
-# - Development: Ov23liLB7RRJUzku13dU (settings/base.py)
-# - Production: Ov23linEhI33aev2uGSU (settings/production.py)
+# - base.py: None (forces explicit configuration)
+# - dev.py: Ov23liLB7RRJUzku13dU
+# - stage.py: Ov23lisQ91kx0M3Dhqwd
+# - prod.py: Ov23linEhI33aev2uGSU
+# - pytest.py: Test credentials (hardcoded)
 #
 # You only need to set the secret in your .env file:
 GITHUB_CLIENT_SECRET=your_github_client_secret_here
@@ -140,6 +186,7 @@ The GitHub provider is configured to request the following scope:
 ### Callback URL Reference
 
 - **Development**: `http://localhost:8081/accounts/github/login/callback/`
+- **Staging**: `https://test-platform.wafer.space/accounts/github/login/callback/`
 - **Production**: `https://platform.wafer.space/accounts/github/login/callback/`
 
 **Pattern**: `/accounts/github/login/callback/`
@@ -206,13 +253,16 @@ The GitHub provider is configured to request the following scope:
 
 ### Environment Variables
 
-Google OAuth Client IDs are pre-configured in Django settings:
+Google OAuth Client IDs are hardcoded per environment in Django settings:
 
 ```bash
 # Google OAuth credentials for wafer-space project
 # Client IDs are configured in Django settings:
-# - Development: 62545893239-jiesk1vfk22j87cth4ukq4alluc3nqhc.apps.googleusercontent.com (settings/base.py)
-# - Production: 62545893239-pgg1lcg28u9suivjh4nso9t8mev5qua2.apps.googleusercontent.com (settings/production.py)
+# - base.py: None (forces explicit configuration)
+# - dev.py: 62545893239-jiesk1vfk22j87cth4ukq4alluc3nqhc.apps.googleusercontent.com
+# - stage.py: 62545893239-00nmudn3he0nb8bipsbuhdk2ou3jo0ca.apps.googleusercontent.com
+# - prod.py: 62545893239-pgg1lcg28u9suivjh4nso9t8mev5qua2.apps.googleusercontent.com
+# - pytest.py: Test credentials (hardcoded)
 #
 # You only need to set the secret in your .env file:
 GOOGLE_CLIENT_SECRET=your_google_client_secret_here
@@ -230,6 +280,7 @@ The Google provider is configured to request the following scopes:
 ### Callback URL Reference
 
 - **Development**: `http://localhost:8081/accounts/google/login/callback/`
+- **Staging**: `https://test-platform.wafer.space/accounts/google/login/callback/`
 - **Production**: `https://platform.wafer.space/accounts/google/login/callback/`
 
 **Pattern**: `/accounts/google/login/callback/`
@@ -273,7 +324,7 @@ The Google provider is configured to request the following scopes:
        - ✅ `read_user` - Read access to user profile information
        - ✅ `email` - Read access to user email addresses
 
-   **Production Setup**: Create separate applications for development and production environments with different redirect URIs.
+   **Multi-Environment Setup**: Create separate applications for development, staging, and production environments with different redirect URIs.
 
 3. **Save the Application**
    - Click **"Save application"**
@@ -321,13 +372,16 @@ When using a Group-owned GitLab OAuth application:
 
 ### Environment Variables
 
-GitLab OAuth Client IDs are pre-configured in Django settings:
+GitLab OAuth Client IDs are hardcoded per environment in Django settings:
 
 ```bash
 # GitLab OAuth credentials for wafer-space group (ID: 116401955)
 # Client IDs are configured in Django settings:
-# - Development: 2a29dee626b3c8b544f6f2c3a8042f912130bd040f4d3c60ef0e5864a4962aaa (settings/base.py)
-# - Production: f0fde384db4cd0fe11041488a6b87e9d3d20223385b78d1ba1ed4045fbea6c16 (settings/production.py)
+# - base.py: None (forces explicit configuration)
+# - dev.py: 2a29dee626b3c8b544f6f2c3a8042f912130bd040f4d3c60ef0e5864a4962aaa
+# - stage.py: 6b111b2573f18fbe2f4cdb2f9dcdbc9ee0318b7e546bf9a029b9b361b06cf708
+# - prod.py: f0fde384db4cd0fe11041488a6b87e9d3d20223385b78d1ba1ed4045fbea6c16
+# - pytest.py: Test credentials (hardcoded)
 #
 # You only need to set the secret in your .env file:
 GITLAB_CLIENT_SECRET=your_gitlab_application_secret_here
@@ -345,6 +399,7 @@ The GitLab provider is configured to request the following scopes:
 ### Callback URL Reference
 
 - **Development**: `http://localhost:8081/accounts/gitlab/login/callback/`
+- **Staging**: `https://test-platform.wafer.space/accounts/gitlab/login/callback/`
 - **Production**: `https://platform.wafer.space/accounts/gitlab/login/callback/`
 
 **Pattern**: `/accounts/gitlab/login/callback/`
@@ -415,18 +470,22 @@ The GitLab provider is configured to request the following scopes:
 
 ### Environment Variables
 
-LinkedIn OAuth credentials are fully pre-configured in Django settings:
+LinkedIn OAuth Client IDs are hardcoded per environment in Django settings:
 
 ```bash
 # LinkedIn OAuth credentials for wafer-space apps
-# Client IDs and Secrets are configured in Django settings:
-# - Development: 86j973nx41hlk7 (settings/base.py) with included secret
-# - Production: 86q1gs3uqhpqt1 (settings/production.py) with included secret
-# - Works out of the box in both environments - no .env configuration needed!
+# Client IDs are configured in Django settings:
+# - base.py: None (forces explicit configuration)
+# - dev.py: 86j973nx41hlk7
+# - stage.py: 86r16sb9k5fkwt
+# - prod.py: 86q1gs3uqhpqt1
+# - pytest.py: Test credentials (hardcoded)
 #
-# Optionally override if using a different app:
+# You only need to set the secret in your .env file:
+LINKEDIN_CLIENT_SECRET=your_linkedin_client_secret_here
+
+# Optionally override the Client ID if using a different app:
 # LINKEDIN_CLIENT_ID=your_custom_client_id_here
-# LINKEDIN_CLIENT_SECRET=your_custom_client_secret_here
 ```
 
 ### Scopes
@@ -443,6 +502,7 @@ The LinkedIn provider is configured to request the following OpenID Connect scop
 ### Callback URL Reference
 
 - **Development**: `http://localhost:8081/accounts/oidc/linkedin/login/callback/`
+- **Staging**: `https://test-platform.wafer.space/accounts/oidc/linkedin/login/callback/`
 - **Production**: `https://platform.wafer.space/accounts/oidc/linkedin/login/callback/`
 
 **Pattern**: `/accounts/oidc/linkedin/login/callback/`
@@ -459,7 +519,6 @@ The LinkedIn provider is configured to request the following OpenID Connect scop
 - **Scope Migration**: LinkedIn is transitioning from v2 API to OpenID Connect - new apps should use "Sign In with LinkedIn using OpenID Connect" product for future compatibility
 - **Testing**: During development, you can test with your own LinkedIn account - once verified and approved, any LinkedIn user can authenticate
 - **Port Configuration**: Development uses port 8081 (not 8000) to match the project's `make runserver` configuration
-- **Zero Setup**: LinkedIn credentials are pre-configured in both development and production for instant testing
 
 ## Discord OAuth Setup
 
@@ -497,16 +556,21 @@ The LinkedIn provider is configured to request the following OpenID Connect scop
 
 ### Environment Variables
 
-Discord OAuth credentials are fully pre-configured in Django settings:
+Discord OAuth Client IDs are hardcoded per environment in Django settings:
 
 ```bash
 # Discord OAuth credentials for wafer-space apps
-# Client IDs and Secrets are configured in Django settings:
-# - Development: 1426055950221054052 (settings/base.py) with included secret
-# - Production: 1426065281138167841 (settings/production.py) with included secret
-# - Works out of the box in both environments - no .env configuration needed!
+# Client IDs are configured in Django settings:
+# - base.py: None (forces explicit configuration)
+# - dev.py: 1426055950221054052
+# - stage.py: 1440161777756405851
+# - prod.py: 1426065281138167841
+# - pytest.py: Test credentials (hardcoded)
 #
-# Optionally override if using a different app:
+# You only need to set the secret in your .env file:
+DISCORD_CLIENT_SECRET=your_discord_client_secret_here
+
+# Optionally override the Client ID if using a different app:
 # DISCORD_CLIENT_ID=your_custom_client_id_here
 # DISCORD_CLIENT_SECRET=your_custom_client_secret_here
 ```
@@ -520,6 +584,7 @@ The Discord provider is configured to request the following scopes:
 ### Callback URL Reference
 
 - **Development**: `http://localhost:8081/accounts/discord/login/callback/`
+- **Staging**: `https://test-platform.wafer.space/accounts/discord/login/callback/`
 - **Production**: `https://platform.wafer.space/accounts/discord/login/callback/`
 
 **Pattern**: `/accounts/discord/login/callback/`
@@ -531,7 +596,6 @@ The Discord provider is configured to request the following scopes:
 - **Client Secret Security**: The client secret is only shown once when generated - if lost, reset it in the Discord Developer Portal and update your environment variables
 - **Email Verification**: Users must have a verified email on Discord - the `VERIFIED_EMAIL: True` setting ensures only verified Discord accounts can authenticate
 - **Port Configuration**: Development uses port 8081 (not 8000) to match the project's `make runserver` configuration
-- **Zero Setup**: Discord credentials are pre-configured in both development and production for instant testing
 
 ## Environment Configuration
 
