@@ -29,6 +29,31 @@ config/settings/
 └── prod.py           # Production deployment at platform.wafer.space
 ```
 
+## Unified Settings Structure
+
+All environment files (`dev.py`, `pytest.py`, `stage.py`, `prod.py`) follow the same section order for easy comparison and diffing:
+
+1. Core Django (DEBUG, SECRET_KEY, ALLOWED_HOSTS, SITE_URL)
+2. Databases
+3. Caches
+4. Security (SECURE_*, cookies)
+5. Static files/Storage
+6. Email
+7. Admin
+8. Installed Apps / Middleware
+9. Templates
+10. Authentication
+11. Media
+12. Celery
+13. Logging
+14. OAuth Providers
+15. Development tools (dev only)
+
+**Benefits:**
+- Identical section headers make differences obvious when diffing
+- Comments indicate when settings use base.py defaults
+- Easy to spot missing configurations across environments
+
 ## Environment Selection
 
 ```bash
@@ -54,10 +79,10 @@ export DJANGO_SETTINGS_MODULE=config.settings.prod
 
 | Setting | dev | pytest | stage | prod | Notes |
 |---------|-----|--------|-------|------|-------|
-| `DEBUG` | `True` | `False` | `False` | `False` | Debug only in local dev |
-| `SECRET_KEY` | Hardcoded dev key | Hardcoded test key | **Required from env** | **Required from env** | Different keys per environment |
-| `ALLOWED_HOSTS` | `["localhost", "0.0.0.0", "127.0.0.1"]` | `["testserver"]` | `["test-platform.wafer.space"]` | `["platform.wafer.space", "5.9.182.54"]` | Environment-specific |
-| `SITE_URL` | `http://localhost:8081` | Inherits base | `https://test-platform.wafer.space` | Inherits base | Used in emails and absolute URLs |
+| `DEBUG` | `True` | Inherits base (`None`) | `False` | Inherits base (`None`) | Set to None in base, must be set in each environment |
+| `SECRET_KEY` | **Required from env** | **Required from env** | **Required from env** | **Required from env** | Different keys per environment |
+| `ALLOWED_HOSTS` | `["localhost", "0.0.0.0", "127.0.0.1", "platform.wafer.space", "test-platform.wafer.space"]` | `["testserver"]` | `["test-platform.wafer.space", "buddy.test-platform.wafer.space", "doc.test-platform.wafer.space"]` | `["platform.wafer.space"]` | Dev includes prod domains for local testing |
+| `SITE_URL` | `https://localhost:8081` | Inherits base (`http://localhost:8081`) | `https://test-platform.wafer.space` | `https://platform.wafer.space` | Dev overrides to HTTPS for local testing |
 | `TIME_ZONE` | `UTC` | `UTC` | `UTC` | `UTC` | Universal |
 | `USE_I18N` | `True` | `True` | `True` | `True` | Universal |
 | `USE_TZ` | `True` | `True` | `True` | `True` | Universal |
@@ -84,8 +109,8 @@ export DJANGO_SETTINGS_MODULE=config.settings.prod
 
 | Setting | dev | pytest | stage | prod | Notes |
 |---------|-----|--------|-------|------|-------|
-| `BACKEND` | `LocMemCache` | Inherits base | `LocMemCache` | `LocMemCache` | In-memory sufficient for current scale |
-| `LOCATION` | `""` | Inherits base | `"wafer-space-cache"` | `"wafer-space-cache"` | Named cache for deployed environments |
+| `BACKEND` | `LocMemCache` | `LocMemCache` | `LocMemCache` | `LocMemCache` | Universal: In-memory sufficient for current scale |
+| `LOCATION` | `"wafer-space-cache"` | `"wafer-space-cache"` | `"wafer-space-cache"` | `"wafer-space-cache"` | Universal: Defined in base.py |
 
 ### 4. SECURITY SETTINGS
 
@@ -99,11 +124,11 @@ export DJANGO_SETTINGS_MODULE=config.settings.prod
 | `CSRF_COOKIE_NAME` | Default | Default | `__Secure-csrftoken` | `__Secure-csrftoken` | Secure prefix for deployed |
 | `X_FRAME_OPTIONS` | `DENY` | `DENY` | `DENY` | `DENY` | Universal security |
 | `SECURE_PROXY_SSL_HEADER` | Not set | Not set | `("HTTP_X_FORWARDED_PROTO", "https")` | Same | For nginx reverse proxy |
-| `SECURE_SSL_REDIRECT` | Not set | Not set | `True` (env) | `True` (env) | HTTPS enforcement |
-| `SECURE_HSTS_SECONDS` | Not set | Not set | `60` (env) | `60` (env) | HSTS header (increase after verification) |
-| `SECURE_HSTS_INCLUDE_SUBDOMAINS` | Not set | Not set | `True` (env) | `True` (env) | Comprehensive HTTPS |
-| `SECURE_HSTS_PRELOAD` | Not set | Not set | `True` (env) | `True` (env) | Maximum HTTPS enforcement |
-| `SECURE_CONTENT_TYPE_NOSNIFF` | Not set | Not set | `True` (env) | `True` (env) | Prevent security vulnerabilities |
+| `SECURE_SSL_REDIRECT` | Not set | Not set | `True` | `True` | HTTPS enforcement |
+| `SECURE_HSTS_SECONDS` | Not set | Not set | `3600` (1 hour) | `31536000` (1 year) | Production: 1 year required for preload list |
+| `SECURE_HSTS_INCLUDE_SUBDOMAINS` | Not set | Not set | `True` | `True` | Comprehensive HTTPS |
+| `SECURE_HSTS_PRELOAD` | Not set | Not set | `False` | `True` | Staging: preload disabled (testing), Production: enabled |
+| `SECURE_CONTENT_TYPE_NOSNIFF` | Not set | Not set | `True` | `True` | Prevent security vulnerabilities |
 
 ### 5. PASSWORD HASHING
 
@@ -115,12 +140,12 @@ export DJANGO_SETTINGS_MODULE=config.settings.prod
 
 | Setting | dev | pytest | stage | prod | Notes |
 |---------|-----|--------|-------|------|-------|
-| `EMAIL_BACKEND` | `console.EmailBackend` | `locmem.EmailBackend` | `anymail.backends.mailgun.EmailBackend` | `anymail.backends.mailgun.EmailBackend` | Console/memory for dev/test, Mailgun for deployed |
+| `EMAIL_BACKEND` | `console.EmailBackend` | `locmem.EmailBackend` | `anymail.backends.mailgun.EmailBackend` | `anymail.backends.mailgun.EmailBackend` | Set to None in base, must be set in each environment |
 | `EMAIL_TIMEOUT` | `5` | `5` | `5` | `5` | Universal |
-| `DEFAULT_FROM_EMAIL` | Base default | Base default | `wafer.space Online Platform <noreply@test-platform.wafer.space>` | `wafer.space Online Platform <noreply@platform.wafer.space>` | Environment-specific sender |
-| `SERVER_EMAIL` | Base default | Base default | Matches DEFAULT_FROM_EMAIL | Matches DEFAULT_FROM_EMAIL | For error reports |
-| `EMAIL_SUBJECT_PREFIX` | Base default | Base default | `[wafer.space Online Platform] ` | `[wafer.space Online Platform] ` | Consistent branding |
-| `ANYMAIL` | Not set | Not set | Mailgun config from env | Mailgun config from env | Mailgun credentials |
+| `DEFAULT_FROM_EMAIL` | Inherits base | Inherits base | Inherits base | Inherits base | Universal: `wafer.space Platform <noreply@platform.wafer.space>` |
+| `SERVER_EMAIL` | Inherits base | Inherits base | Inherits base | Inherits base | Universal: Same as DEFAULT_FROM_EMAIL |
+| `EMAIL_SUBJECT_PREFIX` | Inherits base | Inherits base | Inherits base | Inherits base | Universal: `[wafer.space] ` |
+| `ANYMAIL` | Not set | Not set | Mailgun config: domain `mg.wafer.space`, API key from env | Same as stage | Mailgun credentials per environment |
 
 ### 7. STATIC & MEDIA FILES
 
@@ -136,7 +161,7 @@ export DJANGO_SETTINGS_MODULE=config.settings.prod
 
 | Setting | dev | pytest | stage | prod | Notes |
 |---------|-----|--------|-------|------|-------|
-| `ADMIN_URL` | `admin/` | `admin/` | **Required from env** | **Required from env** | Security through obscurity for deployed |
+| `ADMIN_URL` | `admin/` | `admin/` | Inherits base (`admin/`) | Inherits base (`admin/`) | Universal: Default admin URL |
 | `ADMINS` | Tim Ansell | Same | Same | Same | Universal |
 | `MANAGERS` | Same as ADMINS | Same | Same | Same | Universal |
 | `DJANGO_ADMIN_FORCE_ALLAUTH` | `False` (env) | `False` (env) | `False` (env) | `False` (env) | Configurable |
@@ -156,19 +181,22 @@ export DJANGO_SETTINGS_MODULE=config.settings.prod
 - **Stage apps**: test-platform.wafer.space callback URLs
 - **Prod apps**: platform.wafer.space callback URLs
 
+**Important:** All OAuth client IDs and secrets are set to `None` in `base.py`. Each environment MUST override these values.
+
 | Provider | dev Client ID | pytest Client ID | stage Client ID | prod Client ID | Notes |
 |----------|---------------|------------------|-----------------|----------------|-------|
-| **GitHub** | `Ov23liLB7RRJUzku13dU` (base.py) | `test_github_client_id` | **Required from env** | `Ov23linEhI33aev2uGSU` (prod.py) | Separate apps per environment |
-| **GitLab** | `2a29dee626...a4962aaa` (base.py) | `test_gitlab_client_id` | **Required from env** | `f0fde384db...fbea6c16` (prod.py) | Separate apps per environment |
-| **Google** | `62545893239-jiesk...nqhc` (base.py) | `test_google_client_id` | **Required from env** | `62545893239-pgg1l...qua2` (prod.py) | Separate apps per environment |
-| **LinkedIn** | `86j973nx41hlk7` (base.py) | `test_linkedin_client_id` | **Required from env** | `86q1gs3uqhpqt1` (prod.py) | OpenID Connect, separate apps |
-| **Discord** | `1426055950221054052` (base.py) | `test_discord_client_id` | **Required from env** | `1426065281138167841` (prod.py) | Separate apps per environment |
+| **GitHub** | `Ov23liLB7RRJUzku13dU` (dev.py) | `test_github_client_id` | `Ov23lisQ91kx0M3Dhqwd` (stage.py) | `Ov23linEhI33aev2uGSU` (prod.py) | Separate apps per environment |
+| **GitLab** | `2a29dee626...a4962aaa` (dev.py) | `test_gitlab_client_id` | `6b111b2573...b06cf708` (stage.py) | `f0fde384db...fbea6c16` (prod.py) | Separate apps per environment |
+| **Google** | `62545893239-jiesk...nqhc` (dev.py) | `test_google_client_id` | `62545893239-00nmu...jo0ca` (stage.py) | `62545893239-pgg1l...qua2` (prod.py) | Separate apps per environment |
+| **LinkedIn** | `86j973nx41hlk7` (dev.py) | `test_linkedin_client_id` | `86r16sb9k5fkwt` (stage.py) | `86q1gs3uqhpqt1` (prod.py) | OpenID Connect, separate apps |
+| **Discord** | `1426055950221054052` (dev.py) | `test_discord_client_id` | `1440161777756405851` (stage.py) | `1426065281138167841` (prod.py) | Separate apps per environment |
 
 **OAuth Secrets:** All environments load secrets from environment variables:
-- **dev**: Empty defaults (optional secrets in .env)
-- **pytest**: Hardcoded test secrets
-- **stage**: **Required from env** (loaded from `/home/django/.secrets/` via test-platform repo)
-- **prod**: **Required from env** (loaded from `/home/django/.secrets/` via platform repo)
+- **base.py**: All client IDs and secrets set to `None` (must be overridden)
+- **dev**: Client IDs hardcoded in dev.py, secrets **required from env**
+- **pytest**: Client IDs and secrets hardcoded in pytest.py
+- **stage**: Client IDs hardcoded in stage.py, secrets **required from env** (loaded from `/home/django/.secrets/`)
+- **prod**: Client IDs hardcoded in prod.py, secrets **required from env** (loaded from `/home/django/.secrets/`)
 
 **OAuth Scopes:** Consistent across all environments per provider:
 - GitHub: `["user:email"]`
@@ -195,11 +223,11 @@ export DJANGO_SETTINGS_MODULE=config.settings.prod
 
 | Setting | dev | pytest | stage | prod | Notes |
 |---------|-----|--------|-------|------|-------|
-| `DOWNLOAD_RETRY_BASE_DELAY_MINUTES` | `0.5` (30 sec) | `5` (5 min) | `5` (5 min) | `5` (5 min) | Faster retries for dev |
+| `DOWNLOAD_RETRY_BASE_DELAY_MINUTES` | `0.5` (30 sec) | `5` (5 min) | `0.5` (30 sec) | `5` (5 min) | Faster retries for dev and stage |
 | `DOWNLOAD_RETRY_BACKOFF_MULTIPLIER` | `3` | Same | Same | Same | Universal |
-| `DOWNLOAD_RETRY_CHECK_INTERVAL_SECONDS` | `30` | `300` | `300` | `300` | Faster checks for dev |
-| `DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS` | `30` | `60` | `60` | `60` | Faster checks for dev |
-| `CELERY_BEAT_SCHEDULE` | Dev intervals (30s) | Base intervals | Base intervals | Base intervals | Faster schedule for dev |
+| `DOWNLOAD_RETRY_CHECK_INTERVAL_SECONDS` | `30` | `300` | `30` | `300` | Faster checks for dev and stage |
+| `DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS` | `30` | `60` | `30` | `60` | Faster checks for dev and stage |
+| `CELERY_BEAT_SCHEDULE` | Dev intervals (30s) | Base intervals | Stage intervals (30s) | Base intervals | Faster schedule for dev and stage |
 
 ### 13. MIDDLEWARE
 
@@ -220,25 +248,15 @@ export DJANGO_SETTINGS_MODULE=config.settings.prod
 
 | Variable | dev (.env) | pytest | stage (.env) | prod (.env) | Notes |
 |----------|-----------|---------|--------------|-------------|-------|
-| `DJANGO_DEBUG` | Optional (default True) | Not needed | `False` | `False` | Explicit for deployed |
-| `DJANGO_SECRET_KEY` | Optional (has default) | Optional (has default) | **Required** | **Required** | Generated keys for deployed |
+| `DJANGO_SECRET_KEY` | **Required** | **Required** | **Required** | **Required** | Different keys per environment |
 | `DJANGO_SETTINGS_MODULE` | `config.settings.dev` | `config.settings.pytest` | `config.settings.stage` | `config.settings.prod` | Environment selection |
-| `DJANGO_ALLOWED_HOSTS` | Optional | Not needed | Optional | Optional | Can override default |
 | `DATABASE_URL` | Optional (uses SQLite) | Not needed | **Required** | **Required** | PostgreSQL connection string |
-| `SITE_URL` | Optional | Not needed | `https://test-platform.wafer.space` | Optional | Staging-specific |
-| `DJANGO_ADMIN_URL` | Not needed | Not needed | **Required** | **Required** | Security through obscurity |
 | `MAILGUN_API_KEY` | Not needed | Not needed | **Required** | **Required** | From secrets repo |
-| `MAILGUN_DOMAIN` | Not needed | Not needed | **Required** | **Required** | Email sending domain |
-| `GITHUB_CLIENT_ID` | Optional | Not needed | **Required** | Optional (has default) | Stage override needed |
-| `GITHUB_CLIENT_SECRET` | Optional | Not needed | **Required** | **Required** | From secrets repo |
-| `GITLAB_CLIENT_ID` | Optional | Not needed | **Required** | Optional (has default) | Stage override needed |
-| `GITLAB_CLIENT_SECRET` | Optional | Not needed | **Required** | **Required** | From secrets repo |
-| `GOOGLE_CLIENT_ID` | Optional | Not needed | **Required** | Optional (has default) | Stage override needed |
-| `GOOGLE_CLIENT_SECRET` | Optional | Not needed | **Required** | **Required** | From secrets repo |
-| `LINKEDIN_CLIENT_ID` | Optional | Not needed | **Required** | Optional (has default) | Stage override needed |
-| `LINKEDIN_CLIENT_SECRET` | Optional | Not needed | **Required** | **Required** | From secrets repo |
-| `DISCORD_CLIENT_ID` | Optional | Not needed | **Required** | Optional (has default) | Stage override needed |
-| `DISCORD_CLIENT_SECRET` | Optional | Not needed | **Required** | **Required** | From secrets repo |
+| `GITHUB_CLIENT_SECRET` | **Required** | Not needed | **Required** | **Required** | From secrets repo |
+| `GITLAB_CLIENT_SECRET` | **Required** | Not needed | **Required** | **Required** | From secrets repo |
+| `GOOGLE_CLIENT_SECRET` | **Required** | Not needed | **Required** | **Required** | From secrets repo |
+| `LINKEDIN_CLIENT_SECRET` | **Required** | Not needed | **Required** | **Required** | From secrets repo |
+| `DISCORD_CLIENT_SECRET` | **Required** | Not needed | **Required** | **Required** | From secrets repo |
 
 ## Secrets Management
 
@@ -353,9 +371,11 @@ The staging environment serves several critical functions:
 
 ### Why staging differs from prod
 
+- Lower HSTS max-age: 1 hour vs 1 year (safer for testing)
+- HSTS preload disabled (not submitted to browser preload list)
+- Fast retry intervals like dev (30 seconds vs 5 minutes)
+- Subdomain support (buddy, doc subdomains for testing)
 - Can have relaxed error reporting for debugging
-- Can use lower HSTS max-age (safer rollback)
-- Can have different rate limits (for load testing)
 - Isolated failures don't affect production
 - Safe environment for experimentation
 
@@ -364,25 +384,30 @@ The staging environment serves several critical functions:
 These settings should stay in `base.py` and NOT be overridden:
 
 - `TIME_ZONE`, `LANGUAGE_CODE`, `USE_I18N`, `USE_TZ`
+- `SITE_URL` (default: `http://localhost:8081`, can be overridden)
+- `CACHES` (default: LocMemCache with location `wafer-space-cache`)
+- `DEFAULT_FROM_EMAIL`, `SERVER_EMAIL`, `EMAIL_SUBJECT_PREFIX`
 - `TEMPLATES` configuration (except `OPTIONS.debug`)
 - `MIDDLEWARE` (except debug toolbar in dev)
 - `INSTALLED_APPS` (except environment-specific apps)
 - `AUTHENTICATION_BACKENDS`
 - `PASSWORD_HASHERS` (except pytest fast hashing)
-- All django-allauth configuration (except env vars)
+- All django-allauth configuration (except OAuth credentials)
 - Celery task routing, time limits, serialization
 - Application business logic settings
 
 ## Settings That Must Differ Per Environment
 
-These MUST be environment-specific:
+These MUST be environment-specific (set to None in base.py):
 
-- `DEBUG`, `SECRET_KEY`, `ALLOWED_HOSTS`
+- `DEBUG` - Set to None in base, must be explicitly set in each environment
+- `EMAIL_BACKEND` - Set to None in base, must be explicitly set in each environment
+- OAuth client IDs and secrets - All set to None in base, must be set in each environment
+- `SECRET_KEY` - Different per environment for security
+- `ALLOWED_HOSTS` - Environment-specific domains
 - `DATABASES` (SQLite vs PostgreSQL)
 - Security settings (cookies, HSTS, SSL redirect)
-- Email backend and credentials
-- OAuth credentials (client IDs and secrets)
-- `ADMIN_URL` (security through obscurity)
+- Email credentials (ANYMAIL configuration)
 - Static files storage backend
 - Logging configuration
 - Celery broker URL and eager mode
@@ -412,14 +437,16 @@ These MUST be environment-specific:
 
 ## Common Pitfalls to Avoid
 
-1. **❌ Hardcoding secrets** - Always use `env("SECRET", default="")` never `"actual_value"`
-2. **❌ Committing secrets** - Use `.gitignore`, pre-commit hooks, empty defaults
-3. **❌ Using database-based OAuth** - This project uses settings-based configuration
-4. **❌ Forgetting deployment script updates** - Must update `03a-update-env-secrets.sh` for staging
-5. **❌ Inconsistent naming** - Settings: `PROVIDER_CLIENT_SECRET`, File: `provider-oauth`
-6. **❌ Sharing secrets between environments** - Each environment has separate secrets
-7. **❌ Using same OAuth apps** - Each environment needs separate OAuth applications
-8. **❌ Forgetting to update callback URLs** - OAuth apps must have correct callback URLs configured
+1. **❌ Hardcoding secrets** - OAuth secrets must always use `env("SECRET")`, never hardcode values
+2. **❌ Setting OAuth to empty defaults** - `env("SECRET", default="")` breaks tests; use required env vars
+3. **❌ Committing secrets** - Use `.gitignore`, pre-commit hooks, secrets repository
+4. **❌ Using database-based OAuth** - This project uses settings-based configuration only
+5. **❌ Forgetting to set None-values** - DEBUG, EMAIL_BACKEND, OAuth credentials set to None in base.py must be overridden
+6. **❌ Inconsistent section ordering** - Follow the 15-section structure in all environment files
+7. **❌ Sharing secrets between environments** - Each environment has separate secrets
+8. **❌ Using same OAuth apps** - Each environment needs separate OAuth applications with correct callback URLs
+9. **❌ Forgetting HSTS differences** - Stage: 3600 (1 hour), Prod: 31536000 (1 year)
+10. **❌ Not updating staging client IDs** - All staging OAuth apps have separate client IDs hardcoded in stage.py
 
 ## Migration Checklist
 
