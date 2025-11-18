@@ -62,16 +62,11 @@ ANYMAIL = {
     "MAILGUN_API_URL": "https://api.mailgun.net/v3",
 }
 
-# ADMIN
-# ------------------------------------------------------------------------------
-# ADMIN_URL: uses base.py default (admin/)
-
 # INSTALLED APPS / MIDDLEWARE
 # ------------------------------------------------------------------------------
 INSTALLED_APPS += [
     "anymail",
 ]
-# MIDDLEWARE: uses base.py defaults
 
 # TEMPLATES
 # ------------------------------------------------------------------------------
@@ -134,9 +129,7 @@ LOGGING = {
 SOCIALACCOUNT_PROVIDERS = SOCIALACCOUNT_PROVIDERS.copy()
 
 # GitHub
-SOCIALACCOUNT_PROVIDERS["github"]["APP"]["client_id"] = (
-    "Ov23linEhI33aev2uGSU"
-)
+SOCIALACCOUNT_PROVIDERS["github"]["APP"]["client_id"] = "Ov23linEhI33aev2uGSU"
 SOCIALACCOUNT_PROVIDERS["github"]["APP"]["secret"] = env("GITHUB_CLIENT_SECRET")
 
 # GitLab
@@ -152,9 +145,7 @@ SOCIALACCOUNT_PROVIDERS["google"]["APP"]["client_id"] = (
 SOCIALACCOUNT_PROVIDERS["google"]["APP"]["secret"] = env("GOOGLE_CLIENT_SECRET")
 
 # Discord
-SOCIALACCOUNT_PROVIDERS["discord"]["APP"]["client_id"] = (
-    "1426065281138167841"
-)
+SOCIALACCOUNT_PROVIDERS["discord"]["APP"]["client_id"] = "1426065281138167841"
 SOCIALACCOUNT_PROVIDERS["discord"]["APP"]["secret"] = env("DISCORD_CLIENT_SECRET")
 
 # LinkedIn

@@ -17,7 +17,7 @@ ALLOWED_HOSTS = [
     "platform.wafer.space",
     "test-platform.wafer.space",
 ]
-# SITE_URL: uses base.py default (http://localhost:8081)
+SITE_URL = "https://localhost:8081"
 
 # DATABASES
 # ------------------------------------------------------------------------------
@@ -28,15 +28,6 @@ DATABASES = {
         "NAME": BASE_DIR / "db.sqlite3",
         "timeout": 30,
         "OPTIONS": {"init_command": "PRAGMA journal_mode=WAL;"},
-    },
-}
-
-# CACHES
-# ------------------------------------------------------------------------------
-CACHES = {
-    "default": {
-        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
-        "LOCATION": "wafer-space-cache",
     },
 }
 
@@ -99,9 +90,7 @@ CELERY_BEAT_SCHEDULE = {
 SOCIALACCOUNT_PROVIDERS = SOCIALACCOUNT_PROVIDERS.copy()
 
 # GitHub
-SOCIALACCOUNT_PROVIDERS["github"]["APP"]["client_id"] = (
-    "Ov23liLB7RRJUzku13dU"
-)
+SOCIALACCOUNT_PROVIDERS["github"]["APP"]["client_id"] = "Ov23liLB7RRJUzku13dU"
 SOCIALACCOUNT_PROVIDERS["github"]["APP"]["secret"] = env("GITHUB_CLIENT_SECRET")
 
 # GitLab
@@ -117,9 +106,7 @@ SOCIALACCOUNT_PROVIDERS["google"]["APP"]["client_id"] = (
 SOCIALACCOUNT_PROVIDERS["google"]["APP"]["secret"] = env("GOOGLE_CLIENT_SECRET")
 
 # Discord
-SOCIALACCOUNT_PROVIDERS["discord"]["APP"]["client_id"] = (
-    "1426055950221054052"
-)
+SOCIALACCOUNT_PROVIDERS["discord"]["APP"]["client_id"] = "1426055950221054052"
 SOCIALACCOUNT_PROVIDERS["discord"]["APP"]["secret"] = env("DISCORD_CLIENT_SECRET")
 
 # LinkedIn

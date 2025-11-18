@@ -132,9 +132,7 @@ LOGGING = {
 SOCIALACCOUNT_PROVIDERS = SOCIALACCOUNT_PROVIDERS.copy()
 
 # GitHub
-SOCIALACCOUNT_PROVIDERS["github"]["APP"]["client_id"] = (
-    "Ov23lisQ91kx0M3Dhqwd"
-)
+SOCIALACCOUNT_PROVIDERS["github"]["APP"]["client_id"] = "Ov23lisQ91kx0M3Dhqwd"
 SOCIALACCOUNT_PROVIDERS["github"]["APP"]["secret"] = env("GITHUB_CLIENT_SECRET")
 
 # GitLab
@@ -150,9 +148,7 @@ SOCIALACCOUNT_PROVIDERS["google"]["APP"]["client_id"] = (
 SOCIALACCOUNT_PROVIDERS["google"]["APP"]["secret"] = env("GOOGLE_CLIENT_SECRET")
 
 # Discord
-SOCIALACCOUNT_PROVIDERS["discord"]["APP"]["client_id"] = (
-    "1440161777756405851"
-)
+SOCIALACCOUNT_PROVIDERS["discord"]["APP"]["client_id"] = "1440161777756405851"
 SOCIALACCOUNT_PROVIDERS["discord"]["APP"]["secret"] = env("DISCORD_CLIENT_SECRET")
 
 # LinkedIn

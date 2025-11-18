@@ -40,7 +40,7 @@ LANGUAGE_CODE = "en-us"
 SITE_ID = 1
 
 # Site URL for email templates and absolute URLs
-SITE_URL = env("SITE_URL", default="http://localhost:8081")
+SITE_URL = "http://localhost:8081"
 
 # https://docs.djangoproject.com/en/dev/ref/settings/#use-i18n
 USE_I18N = True
@@ -64,6 +64,16 @@ DATABASES = {
 DATABASES["default"]["ATOMIC_REQUESTS"] = True
 # https://docs.djangoproject.com/en/stable/ref/settings/#std:setting-DEFAULT_AUTO_FIELD
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+# CACHES
+# ------------------------------------------------------------------------------
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "wafer-space-cache",
+    },
+}
 
 # URLS
 # ------------------------------------------------------------------------------
