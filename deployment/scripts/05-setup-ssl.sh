@@ -4,7 +4,9 @@
 
 set -e
 
-MAIN_DOMAIN="platform.wafer.space"
+# Auto-detect environment
+source "$(dirname "$0")/detect-environment.sh"
+
 EMAIL="bot@wafer.space"
 
 # All domains to include in certificate

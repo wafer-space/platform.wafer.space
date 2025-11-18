@@ -4,11 +4,11 @@
 
 set -e
 
-SECRETS_REPO="git@github.com:mithro/platform.wafer.space-secrets.git"
-SECRETS_DIR="/home/django/.secrets"
-DJANGO_USER="django"
+# Auto-detect environment
+source "$(dirname "$0")/detect-environment.sh"
 
-echo "=== Setting up secrets repository ==="
+echo "=== Setting up secrets repository ($ENV_NAME environment) ==="
+echo "Repository: $SECRETS_REPO"
 
 # Clone or update secrets repository
 if [ -d "$SECRETS_DIR/.git" ]; then

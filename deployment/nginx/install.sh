@@ -4,9 +4,14 @@
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Auto-detect environment
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../scripts/detect-environment.sh"
 
-echo "=== Installing nginx configuration ==="
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NGINX_CONF="$MAIN_DOMAIN.conf"
+
+echo "=== Installing nginx configuration ($ENV_NAME environment) ==="
+echo "Configuration: $NGINX_CONF"
 
 # Create certbot directory
 echo "Creating certbot directory..."
@@ -23,9 +28,9 @@ fi
 
 # Check for other configs with default_server that might conflict
 echo "Checking for conflicting default_server configurations..."
-if grep -r "listen.*default_server" /etc/nginx/sites-enabled/* 2>/dev/null | grep -v platform.wafer.space; then
+if grep -r "listen.*default_server" /etc/nginx/sites-enabled/* 2>/dev/null | grep -v "$MAIN_DOMAIN"; then
     echo "⚠ WARNING: Found other configs with default_server:"
-    grep -r "listen.*default_server" /etc/nginx/sites-enabled/* 2>/dev/null | grep -v platform.wafer.space || true
+    grep -r "listen.*default_server" /etc/nginx/sites-enabled/* 2>/dev/null | grep -v "$MAIN_DOMAIN" || true
     echo ""
     echo "These may conflict with our configuration."
     echo "Press Ctrl+C to abort, or Enter to continue..."
@@ -36,15 +41,15 @@ fi
 
 # Copy nginx config
 echo "Copying nginx configuration..."
-cp "$SCRIPT_DIR/platform.wafer.space.conf" /etc/nginx/sites-available/platform.wafer.space
+cp "$SCRIPT_DIR/$NGINX_CONF" "/etc/nginx/sites-available/$MAIN_DOMAIN"
 echo "✓ Configuration copied"
 
 # Enable site
-if [ -L /etc/nginx/sites-enabled/platform.wafer.space ]; then
+if [ -L "/etc/nginx/sites-enabled/$MAIN_DOMAIN" ]; then
     echo "✓ Site already enabled"
 else
     echo "Enabling site..."
-    ln -s /etc/nginx/sites-available/platform.wafer.space /etc/nginx/sites-enabled/
+    ln -s "/etc/nginx/sites-available/$MAIN_DOMAIN" /etc/nginx/sites-enabled/
     echo "✓ Site enabled"
 fi
 

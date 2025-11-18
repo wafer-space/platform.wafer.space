@@ -8,7 +8,7 @@ Type=simple
 User=www-data
 Group=www-data
 WorkingDirectory=/home/django/platform.wafer.space
-Environment="DJANGO_SETTINGS_MODULE=config.settings.prod"
+# DJANGO_SETTINGS_MODULE is set in .env file (auto-detected: stage or prod)
 EnvironmentFile=/home/django/platform.wafer.space/.env
 
 ExecStart=/home/django/platform.wafer.space/.venv/bin/celery \

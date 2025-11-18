@@ -4,12 +4,12 @@
 
 set -e
 
-DB_NAME="platform_wafer_space"
-DB_USER="platform_wafer_space"
-APP_DIR="/home/django/platform.wafer.space"
+# Auto-detect environment
+source "$(dirname "$0")/detect-environment.sh"
+
 ENV_FILE="$APP_DIR/.env"
 
-echo "=== Setting up PostgreSQL database ==="
+echo "=== Setting up PostgreSQL database ($ENV_NAME environment) ==="
 
 # Verify application directory exists
 if [ ! -d "$APP_DIR" ]; then
@@ -137,10 +137,10 @@ if [ ! -f "$ENV_FILE" ]; then
     echo "Creating .env file from template..."
 
     # Copy template file
-    TEMPLATE_FILE="$APP_DIR/.env.prod.template"
+    TEMPLATE_FILE="$APP_DIR/$ENV_TEMPLATE"
     if [ -f "$TEMPLATE_FILE" ]; then
         cp "$TEMPLATE_FILE" "$ENV_FILE"
-        echo "✓ Copied .env.prod.template to .env"
+        echo "✓ Copied $ENV_TEMPLATE to .env"
     else
         echo "⚠️  Template file not found, creating minimal .env"
         touch "$ENV_FILE"
