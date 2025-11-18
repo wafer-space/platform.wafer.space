@@ -429,7 +429,7 @@ This is a Django 5.2+ application for wafer.space low cost silicon manufacturing
 
 ### Core Components
 
-- **Django Configuration**: Settings split into `config/settings/` with base, local, production, and test configurations. Uses django-environ for environment variables.
+- **Django Configuration**: Settings split into `config/settings/` with 4 environments (dev, pytest, stage, prod). All files follow unified 15-section structure for easy comparison. Uses django-environ for environment variables.
 
 - **Applications**: Main application code in `wafer_space/` with:
   - `users/`: User authentication and management with django-allauth
@@ -460,6 +460,40 @@ This is a Django 5.2+ application for wafer.space low cost silicon manufacturing
 - `config/settings/prod.py`: Production settings for platform.wafer.space
 - `config/urls.py`: Main URL configuration
 - Never delete a test or reduce test functionality without an explicit request from the user.
+
+### Unified Settings Structure
+
+**CRITICAL: All environment files follow the same 15-section structure for easy comparison and diffing.**
+
+All settings files (`dev.py`, `pytest.py`, `stage.py`, `prod.py`) use identical section headers in this order:
+
+1. **Core Django** - DEBUG, SECRET_KEY, ALLOWED_HOSTS, SITE_URL
+2. **Databases** - Database configuration and connections
+3. **Caches** - Cache backend configuration (inherited from base.py)
+4. **Security** - SECURE_*, cookies, HSTS, SSL settings
+5. **Static files/Storage** - STORAGES, static file handling
+6. **Email** - EMAIL_BACKEND, ANYMAIL configuration
+7. **Admin** - ADMIN_URL configuration
+8. **Installed Apps / Middleware** - Environment-specific apps
+9. **Templates** - Template configuration overrides
+10. **Authentication** - PASSWORD_HASHERS (pytest only)
+11. **Media** - Media file configuration
+12. **Celery** - Broker, task settings, beat schedule
+13. **Logging** - Logging configuration (stage/prod only)
+14. **OAuth Providers** - SOCIALACCOUNT_PROVIDERS overrides
+15. **Development tools** - Debug toolbar, etc. (dev only)
+
+**Benefits:**
+- Identical section headers make differences obvious when diffing files
+- Comments indicate when settings use `base.py` defaults
+- Easy to spot missing configurations across environments
+- Consistent structure prevents settings from being lost or misplaced
+
+**When modifying settings:**
+- Add new settings to the appropriate section in ALL environment files
+- Use comments like `# Uses base.py defaults` when not overriding
+- Maintain consistent ordering within each section
+- Never remove section headers, even if section is empty
 
 ### OAuth Configuration Architecture
 
@@ -498,10 +532,13 @@ We switched from database-based to settings-based OAuth configuration because:
 #### Configuration Structure
 
 **Settings-based configuration** uses the `SOCIALACCOUNT_PROVIDERS` dictionary in Django settings:
-- **Base settings** (`config/settings/base.py`): Dev client IDs with environment variable secrets
-- **pytest environment** (`config/settings/pytest.py`): Static test credentials for testing
-- **Staging overrides** (`config/settings/stage.py`): Staging client IDs (required from env)
-- **Production overrides** (`config/settings/prod.py`): Production client IDs
+- **Base settings** (`config/settings/base.py`): **All client IDs and secrets set to `None`** (must be overridden in each environment)
+- **Dev environment** (`config/settings/dev.py`): Dev client IDs hardcoded, secrets **required from env**
+- **pytest environment** (`config/settings/pytest.py`): Static test credentials hardcoded for testing
+- **Staging environment** (`config/settings/stage.py`): Staging client IDs hardcoded, secrets **required from env**
+- **Production environment** (`config/settings/prod.py`): Production client IDs hardcoded, secrets **required from env**
+
+**Critical:** Each environment file MUST copy `SOCIALACCOUNT_PROVIDERS` from base and override ALL provider credentials. Setting credentials to `None` in base.py ensures environments fail fast if they forget to configure OAuth.
 
 See the actual files for complete configuration examples.
 
@@ -555,7 +592,29 @@ class TestGitHubAuth(TestCase):
 
 When adding a new OAuth provider:
 
-1. **Update pytest settings** (`config/settings/pytest.py`):
+1. **Update base settings** (`config/settings/base.py`) - Set to None:
+   ```python
+   SOCIALACCOUNT_PROVIDERS = {
+       # ... existing providers
+       "new_provider": {
+           "APP": {
+               "client_id": None,  # Must be set in each environment
+               "secret": None,     # Must be set in each environment
+           },
+           "SCOPE": ["email", "profile"],
+           "VERIFIED_EMAIL": True,
+       },
+   }
+   ```
+
+2. **Update dev settings** (`config/settings/dev.py`):
+   ```python
+   SOCIALACCOUNT_PROVIDERS = SOCIALACCOUNT_PROVIDERS.copy()
+   SOCIALACCOUNT_PROVIDERS["new_provider"]["APP"]["client_id"] = "dev_client_id"
+   SOCIALACCOUNT_PROVIDERS["new_provider"]["APP"]["secret"] = env("NEW_PROVIDER_CLIENT_SECRET")
+   ```
+
+3. **Update pytest settings** (`config/settings/pytest.py`):
    ```python
    SOCIALACCOUNT_PROVIDERS = {
        # ... existing providers
@@ -570,22 +629,21 @@ When adding a new OAuth provider:
    }
    ```
 
-2. **Update base settings** (`config/settings/base.py`):
+4. **Update stage settings** (`config/settings/stage.py`):
    ```python
-   SOCIALACCOUNT_PROVIDERS = {
-       # ... existing providers
-       "new_provider": {
-           "APP": {
-               "client_id": env("PROVIDER_CLIENT_ID", default="dev_client_id"),
-               "secret": env("PROVIDER_CLIENT_SECRET", default=""),
-           },
-           "SCOPE": ["email", "profile"],
-           "VERIFIED_EMAIL": True,
-       },
-   }
+   SOCIALACCOUNT_PROVIDERS = SOCIALACCOUNT_PROVIDERS.copy()
+   SOCIALACCOUNT_PROVIDERS["new_provider"]["APP"]["client_id"] = "stage_client_id"
+   SOCIALACCOUNT_PROVIDERS["new_provider"]["APP"]["secret"] = env("NEW_PROVIDER_CLIENT_SECRET")
    ```
 
-3. **Add provider to INSTALLED_APPS**:
+5. **Update prod settings** (`config/settings/prod.py`):
+   ```python
+   SOCIALACCOUNT_PROVIDERS = SOCIALACCOUNT_PROVIDERS.copy()
+   SOCIALACCOUNT_PROVIDERS["new_provider"]["APP"]["client_id"] = "prod_client_id"
+   SOCIALACCOUNT_PROVIDERS["new_provider"]["APP"]["secret"] = env("NEW_PROVIDER_CLIENT_SECRET")
+   ```
+
+6. **Add provider to INSTALLED_APPS** in `base.py`:
    ```python
    INSTALLED_APPS = [
        # ... other apps
@@ -593,9 +651,9 @@ When adding a new OAuth provider:
    ]
    ```
 
-4. **NO database migrations needed** - settings-based config doesn't use database
+7. **NO database migrations needed** - settings-based config doesn't use database
 
-5. **Update secrets management** - See "Production Deployment and Secrets Management" section
+8. **Update secrets management** - See "Production Deployment and Secrets Management" section
 
 #### Migration Note
 
@@ -953,7 +1011,7 @@ platform.wafer.space/
 │   └── README.md                      # Deployment documentation
 │
 └── config/settings/
-    ├── base.py                        # Base settings (dev Client IDs with env var secrets)
+    ├── base.py                        # Base settings (OAuth credentials set to None)
     ├── dev.py                         # Development settings (localhost)
     ├── pytest.py                      # Test settings (static test credentials)
     ├── stage.py                       # Staging settings (test-platform.wafer.space)
@@ -964,13 +1022,14 @@ platform.wafer.space/
 
 **MANDATORY CHECKLIST** - Complete ALL steps when adding new secrets or OAuth providers:
 
-1. **Add secret file** to secrets repository (`secrets/provider-oauth`)
-2. **Update Django settings** in `config/settings/base.py` to use `env("SECRET_NAME", default="")`
-3. **⚠️ CRITICAL: Update deployment script** `deployment/scripts/03a-update-env-secrets.sh` (often forgotten!)
+1. **Set to None in base.py** - Add provider to `SOCIALACCOUNT_PROVIDERS` with `client_id: None` and `secret: None`
+2. **Add credentials to each environment** - Override in `dev.py`, `pytest.py`, `stage.py`, `prod.py` following existing pattern
+3. **Add secret file** to secrets repository (`secrets/provider-oauth`)
+4. **⚠️ CRITICAL: Update deployment script** `deployment/scripts/03a-update-env-secrets.sh` (often forgotten!)
    - Add bash code to read secret file and inject into `.env`
    - Follow existing pattern in the script
-4. **Update documentation**: `docs/oauth_setup.md`, `.env.example`
-5. **Test locally**: Verify secret loads with `settings.SECRET_NAME` in Django shell
+5. **Update documentation**: `docs/oauth_setup.md`, `.env.example`
+6. **Test locally**: Verify secret loads with `settings.SECRET_NAME` in Django shell
 
 See `deployment/scripts/03a-update-env-secrets.sh` for the exact bash pattern to follow.
 
@@ -984,7 +1043,7 @@ See `deployment/scripts/03a-update-env-secrets.sh` for the exact bash pattern to
 - **MUST be updated when adding new secret types**
 - Handles: Mailgun, GitHub, GitLab, Google, Discord, LinkedIn OAuth secrets
 
-**CRITICAL**: All OAuth secrets MUST use `env()` with empty defaults. Never hardcode secrets in settings files.
+**CRITICAL**: All OAuth secrets MUST use `env()` **without defaults** (will fail if missing). OAuth client IDs are hardcoded per environment. Never hardcode secrets in settings files.
 
 ### Secret Rotation
 
@@ -997,8 +1056,10 @@ See `deployment/scripts/03a-update-env-secrets.sh` for the exact bash pattern to
 ### Common Pitfalls
 
 ❌ **Forgetting deployment script update** - Most common! See checklist above.
-❌ **Hardcoding secrets** - Always use `env("SECRET", default="")` never `"actual_value"`
-❌ **Committing secrets** - Use `.gitignore`, pre-commit hooks (issue #28), empty defaults
+❌ **Forgetting to set None in base.py** - All OAuth credentials must be None in base.py, overridden in each environment
+❌ **Using empty defaults for secrets** - Use `env("SECRET")` not `env("SECRET", default="")` - fail fast if missing
+❌ **Hardcoding secrets** - Client IDs are public (hardcoded), secrets use `env()` without defaults
+❌ **Committing secrets** - Use `.gitignore`, pre-commit hooks (issue #28), secrets repository
 ❌ **Inconsistent naming** - Use: `PROVIDER_CLIENT_SECRET` (settings), `provider-oauth` (file)
 
 ### Key Principles
