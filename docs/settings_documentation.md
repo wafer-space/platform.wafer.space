@@ -82,7 +82,7 @@ export DJANGO_SETTINGS_MODULE=config.settings.prod
 | `DEBUG` | `True` | Inherits base (`None`) | `False` | Inherits base (`None`) | Set to None in base, must be set in each environment |
 | `SECRET_KEY` | **Required from env** | **Required from env** | **Required from env** | **Required from env** | Different keys per environment |
 | `ALLOWED_HOSTS` | `["localhost", "0.0.0.0", "127.0.0.1", "platform.wafer.space", "test-platform.wafer.space"]` | `["testserver"]` | `["test-platform.wafer.space", "buddy.test-platform.wafer.space", "doc.test-platform.wafer.space"]` | `["platform.wafer.space"]` | Dev includes prod domains for local testing |
-| `SITE_URL` | `https://localhost:8081` | Inherits base (`http://localhost:8081`) | `https://test-platform.wafer.space` | `https://platform.wafer.space` | Dev overrides to HTTPS for local testing |
+| `SITE_URL` | Inherits base (`http://localhost:8081`) | Inherits base (`http://localhost:8081`) | `https://test-platform.wafer.space` | `https://platform.wafer.space` | Dev uses HTTP for simplicity, deployed envs use HTTPS |
 | `TIME_ZONE` | `UTC` | `UTC` | `UTC` | `UTC` | Universal |
 | `USE_I18N` | `True` | `True` | `True` | `True` | Universal |
 | `USE_TZ` | `True` | `True` | `True` | `True` | Universal |

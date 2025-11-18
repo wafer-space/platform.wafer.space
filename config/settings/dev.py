@@ -17,7 +17,7 @@ ALLOWED_HOSTS = [
     "platform.wafer.space",
     "test-platform.wafer.space",
 ]
-SITE_URL = "https://localhost:8081"
+SITE_URL = "http://localhost:8081"
 
 # DATABASES
 # ------------------------------------------------------------------------------
