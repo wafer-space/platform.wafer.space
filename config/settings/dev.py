@@ -1,23 +1,27 @@
-"""Development settings for local environment."""
+"""Development settings for local platform.wafer.space."""
 
 from .base import *  # noqa: F403
 from .base import BASE_DIR
 from .base import INSTALLED_APPS
 from .base import MIDDLEWARE
+from .base import SOCIALACCOUNT_PROVIDERS
 from .base import env
 
 # CORE DJANGO SETTINGS
 # ------------------------------------------------------------------------------
-DEBUG = True
-SECRET_KEY = env(
-    "DJANGO_SECRET_KEY",
-    default="x6qF1ip5OCnSpNimKy5euQyAVL8VargqvQnqxknuOyy5aMJePgKviTT7iYXQaxjO",
-)
-ALLOWED_HOSTS = ["localhost", "0.0.0.0", "127.0.0.1"]  # noqa: S104
+SECRET_KEY = env("DJANGO_SECRET_KEY")
+ALLOWED_HOSTS = [
+    "localhost",
+    "0.0.0.0",  # noqa: S104
+    "127.0.0.1",
+    "platform.wafer.space",
+    "test-platform.wafer.space",
+]
 # SITE_URL: uses base.py default (http://localhost:8081)
 
 # DATABASES
 # ------------------------------------------------------------------------------
+# Local sqlite database
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
@@ -32,7 +36,7 @@ DATABASES = {
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
-        "LOCATION": "",
+        "LOCATION": "wafer-space-cache",
     },
 }
 
@@ -46,23 +50,14 @@ CACHES = {
 
 # EMAIL
 # ------------------------------------------------------------------------------
-EMAIL_BACKEND = env(
-    "DJANGO_EMAIL_BACKEND",
-    default="django.core.mail.backends.console.EmailBackend",
-)
-# DEFAULT_FROM_EMAIL: uses base.py defaults
-# SERVER_EMAIL: uses base.py defaults
-# EMAIL_SUBJECT_PREFIX: uses base.py defaults
-
-# ADMIN
-# ------------------------------------------------------------------------------
-# ADMIN_URL: uses base.py default (admin/)
+EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
 # INSTALLED APPS / MIDDLEWARE
 # ------------------------------------------------------------------------------
-INSTALLED_APPS = ["whitenoise.runserver_nostatic", *INSTALLED_APPS]
-INSTALLED_APPS += ["debug_toolbar", "django_extensions"]
-MIDDLEWARE += ["debug_toolbar.middleware.DebugToolbarMiddleware"]
+INSTALLED_APPS = [
+    "whitenoise.runserver_nostatic",
+    *INSTALLED_APPS,
+]
 
 # TEMPLATES
 # ------------------------------------------------------------------------------
@@ -79,6 +74,7 @@ MIDDLEWARE += ["debug_toolbar.middleware.DebugToolbarMiddleware"]
 # CELERY
 # ------------------------------------------------------------------------------
 CELERY_BROKER_URL = f"sqla+sqlite:///{BASE_DIR / 'db.sqlite3'}"
+# Fast retries
 DOWNLOAD_RETRY_BASE_DELAY_MINUTES = 30 / 60  # 30 seconds for development
 DOWNLOAD_RETRY_CHECK_INTERVAL_SECONDS = 30.0
 DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS = 30.0
@@ -100,10 +96,48 @@ CELERY_BEAT_SCHEDULE = {
 
 # OAUTH PROVIDERS
 # ------------------------------------------------------------------------------
-# SOCIALACCOUNT_PROVIDERS: uses base.py (dev OAuth client IDs)
+SOCIALACCOUNT_PROVIDERS = SOCIALACCOUNT_PROVIDERS.copy()
+
+# GitHub
+SOCIALACCOUNT_PROVIDERS["github"]["APP"]["client_id"] = (
+    "Ov23liLB7RRJUzku13dU"
+)
+SOCIALACCOUNT_PROVIDERS["github"]["APP"]["secret"] = env("GITHUB_CLIENT_SECRET")
+
+# GitLab
+SOCIALACCOUNT_PROVIDERS["gitlab"]["APP"]["client_id"] = (
+    "2a29dee626b3c8b544f6f2c3a8042f912130bd040f4d3c60ef0e5864a4962aaa"
+)
+SOCIALACCOUNT_PROVIDERS["gitlab"]["APP"]["secret"] = env("GITLAB_CLIENT_SECRET")
+
+# Google
+SOCIALACCOUNT_PROVIDERS["google"]["APP"]["client_id"] = (
+    "62545893239-jiesk1vfk22j87cth4ukq4alluc3nqhc.apps.googleusercontent.com"
+)
+SOCIALACCOUNT_PROVIDERS["google"]["APP"]["secret"] = env("GOOGLE_CLIENT_SECRET")
+
+# Discord
+SOCIALACCOUNT_PROVIDERS["discord"]["APP"]["client_id"] = (
+    "1426055950221054052"
+)
+SOCIALACCOUNT_PROVIDERS["discord"]["APP"]["secret"] = env("DISCORD_CLIENT_SECRET")
+
+# LinkedIn
+for app in SOCIALACCOUNT_PROVIDERS["openid_connect"]["APPS"]:
+    if app["provider_id"] == "linkedin":
+        app["client_id"] = "86j973nx41hlk7"
+        app["secret"] = env("LINKEDIN_CLIENT_SECRET")
 
 # DEVELOPMENT TOOLS
 # ------------------------------------------------------------------------------
+DEBUG = True
+INSTALLED_APPS += [
+    "debug_toolbar",
+    "django_extensions",
+]
+MIDDLEWARE += [
+    "debug_toolbar.middleware.DebugToolbarMiddleware",
+]
 DEBUG_TOOLBAR_CONFIG = {
     "DISABLE_PANELS": [
         "debug_toolbar.panels.redirects.RedirectsPanel",
@@ -111,4 +145,6 @@ DEBUG_TOOLBAR_CONFIG = {
     ],
     "SHOW_TEMPLATE_CONTEXT": True,
 }
-INTERNAL_IPS = ["127.0.0.1", "10.0.2.2"]
+INTERNAL_IPS = [
+    "127.0.0.1",
+]

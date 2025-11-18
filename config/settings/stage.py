@@ -8,13 +8,17 @@ from .base import env
 
 # CORE DJANGO SETTINGS
 # ------------------------------------------------------------------------------
-# DEBUG: uses base.py default (False)
 SECRET_KEY = env("DJANGO_SECRET_KEY")
-ALLOWED_HOSTS = ["test-platform.wafer.space"]
+ALLOWED_HOSTS = [
+    "test-platform.wafer.space",
+    "buddy.test-platform.wafer.space",
+    "doc.test-platform.wafer.space",
+]
 SITE_URL = "https://test-platform.wafer.space"
 
 # DATABASES
 # ------------------------------------------------------------------------------
+# Production postgres database
 DATABASES["default"]["CONN_MAX_AGE"] = 60  # Keep connections alive for 60 seconds
 
 # CACHES
@@ -22,7 +26,7 @@ DATABASES["default"]["CONN_MAX_AGE"] = 60  # Keep connections alive for 60 secon
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
-        "LOCATION": "wafer-space-cache-stage",
+        "LOCATION": "wafer-space-cache",
     },
 }
 
@@ -53,25 +57,18 @@ STORAGES = {
 # EMAIL
 # ------------------------------------------------------------------------------
 EMAIL_BACKEND = "anymail.backends.mailgun.EmailBackend"
-DEFAULT_FROM_EMAIL = "wafer.space Online Platform <noreply@test-platform.wafer.space>"
-SERVER_EMAIL = DEFAULT_FROM_EMAIL
-EMAIL_SUBJECT_PREFIX = "[wafer.space] "
-ACCOUNT_EMAIL_SUBJECT_PREFIX = EMAIL_SUBJECT_PREFIX
 
 ANYMAIL = {
     "MAILGUN_API_KEY": env("MAILGUN_API_KEY"),
-    "MAILGUN_SENDER_DOMAIN": env("MAILGUN_DOMAIN"),
+    "MAILGUN_SENDER_DOMAIN": "mg.wafer.space",
     "MAILGUN_API_URL": "https://api.mailgun.net/v3",
 }
 
-# ADMIN
-# ------------------------------------------------------------------------------
-ADMIN_URL = env("DJANGO_ADMIN_URL")
-
 # INSTALLED APPS / MIDDLEWARE
 # ------------------------------------------------------------------------------
-INSTALLED_APPS += ["anymail"]
-# MIDDLEWARE: uses base.py defaults
+INSTALLED_APPS += [
+    "anymail",
+]
 
 # TEMPLATES
 # ------------------------------------------------------------------------------
@@ -87,9 +84,10 @@ INSTALLED_APPS += ["anymail"]
 
 # CELERY
 # ------------------------------------------------------------------------------
-# CELERY_BROKER_URL: uses base.py default (PostgreSQL via SQLAlchemy)
-# CELERY_TASK_ALWAYS_EAGER: uses base.py default (False)
-# DOWNLOAD_RETRY_*: uses base.py defaults
+# Fast retries
+DOWNLOAD_RETRY_BASE_DELAY_MINUTES = 30 / 60  # 30 seconds for development
+DOWNLOAD_RETRY_CHECK_INTERVAL_SECONDS = 30.0
+DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS = 30.0
 
 # LOGGING
 # ------------------------------------------------------------------------------
@@ -132,19 +130,37 @@ LOGGING = {
 # OAUTH PROVIDERS
 # ------------------------------------------------------------------------------
 SOCIALACCOUNT_PROVIDERS = SOCIALACCOUNT_PROVIDERS.copy()
-SOCIALACCOUNT_PROVIDERS["github"]["APP"]["client_id"] = "Ov23lisQ91kx0M3Dhqwd"
+
+# GitHub
+SOCIALACCOUNT_PROVIDERS["github"]["APP"]["client_id"] = (
+    "Ov23lisQ91kx0M3Dhqwd"
+)
 SOCIALACCOUNT_PROVIDERS["github"]["APP"]["secret"] = env("GITHUB_CLIENT_SECRET")
+
+# GitLab
 SOCIALACCOUNT_PROVIDERS["gitlab"]["APP"]["client_id"] = (
-    "f0fde384db4cd0fe11041488a6b87e9d3d20223385b78d1ba1ed4045fbea6c16"
+    "6b111b2573f18fbe2f4cdb2f9dcdbc9ee0318b7e546bf9a029b9b361b06cf708"
 )
 SOCIALACCOUNT_PROVIDERS["gitlab"]["APP"]["secret"] = env("GITLAB_CLIENT_SECRET")
+
+# Google
 SOCIALACCOUNT_PROVIDERS["google"]["APP"]["client_id"] = (
-    "62545893239-pgg1lcg28u9suivjh4nso9t8mev5qua2.apps.googleusercontent.com"
+    "62545893239-00nmudn3he0nb8bipsbuhdk2ou3jo0ca.apps.googleusercontent.com"
 )
 SOCIALACCOUNT_PROVIDERS["google"]["APP"]["secret"] = env("GOOGLE_CLIENT_SECRET")
-SOCIALACCOUNT_PROVIDERS["discord"]["APP"]["client_id"] = "1426065281138167841"
+
+# Discord
+SOCIALACCOUNT_PROVIDERS["discord"]["APP"]["client_id"] = (
+    "1440161777756405851"
+)
 SOCIALACCOUNT_PROVIDERS["discord"]["APP"]["secret"] = env("DISCORD_CLIENT_SECRET")
+
+# LinkedIn
 for app in SOCIALACCOUNT_PROVIDERS["openid_connect"]["APPS"]:
     if app["provider_id"] == "linkedin":
-        app["client_id"] = "86q1gs3uqhpqt1"
+        app["client_id"] = "86r16sb9k5fkwt"
         app["secret"] = env("LINKEDIN_CLIENT_SECRET")
+
+# DEVELOPMENT TOOLS
+# ------------------------------------------------------------------------------
+DEBUG = False
