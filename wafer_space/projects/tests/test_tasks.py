@@ -7,6 +7,8 @@ Security-Critical Tests:
 """
 
 import logging
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 from unittest.mock import Mock
 from unittest.mock import patch
 
@@ -17,7 +19,9 @@ from django.test import TestCase
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
+from wafer_space.projects.tasks import _download_file_content
 from wafer_space.projects.tasks import _log_download_start
+from wafer_space.projects.tasks import _process_and_save_content
 from wafer_space.projects.tasks import _safe_urlopen
 from wafer_space.projects.tasks import check_project_manufacturability
 
@@ -473,3 +477,166 @@ class TestDownloadLogging(TestCase):
         # Verify user information is in the log output
         log_output = "\n".join(log_context.output)
         assert "testuser" in log_output or "test@example.com" in log_output
+
+
+@pytest.mark.django_db
+class TestContentPipelineIntegration(TestCase):
+    """Integration tests for content pipeline with download task."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test Description",
+        )
+
+    @patch("wafer_space.projects.tasks._download_with_progress")
+    @patch("wafer_space.projects.tasks._apply_content_pipeline")
+    def test_download_with_zip_extraction(
+        self,
+        mock_pipeline,
+        mock_download,
+    ):
+        """Test download with ZIP extraction through pipeline."""
+        # Create project file
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_filename="design.zip",
+            source_url="https://example.com/design.zip",
+            is_active=True,
+        )
+
+        # Mock download returns ZIP content
+        mock_download.return_value = ("abc123", "def456")
+
+        # Mock pipeline extracts and returns GDS
+        mock_pipeline.return_value = (
+            b"\x00\x06\x00\x02test_gds_content",
+            "extracted_md5",
+            "extracted_sha1",
+        )
+
+        # Process content
+        with NamedTemporaryFile(delete=False) as temp_file:
+            temp_path = Path(temp_file.name)
+            try:
+                _process_and_save_content(
+                    project_file,
+                    b"fake_zip_content",
+                    temp_path,
+                    "abc123",
+                    "def456",
+                )
+
+                # Verify pipeline was called
+                assert mock_pipeline.called
+            finally:
+                temp_path.unlink(missing_ok=True)
+
+    @patch("wafer_space.projects.tasks._download_github_artifact")
+    def test_download_with_github_artifact(self, mock_github_download):
+        """Test GitHub artifact download with mocked API."""
+        # Create project file with GitHub artifact metadata
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_filename="artifact.zip",
+            source_url="https://github.com/owner/repo/actions/runs/123456",
+            is_active=True,
+            handler_metadata={
+                "handler": "GitHubArtifactHandler",
+                "owner": "owner",
+                "repo": "repo",
+                "run_id": "123456",
+                "requires_github_auth": True,
+            },
+        )
+
+        # Mock GitHub API response
+        mock_github_download.return_value = b"artifact_zip_content"
+
+        # Download content
+        content = _download_file_content(project_file)
+
+        # Verify GitHub download was called with correct parameters
+        mock_github_download.assert_called_once_with(
+            owner="owner",
+            repo="repo",
+            run_id="123456",
+            github_token="",  # Default from settings
+        )
+        assert content == b"artifact_zip_content"
+
+    @patch("wafer_space.projects.tasks._apply_content_pipeline")
+    def test_download_with_nested_compression(self, mock_pipeline):
+        """Test download with nested compression (e.g., design.gds.gz inside .zip)."""
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_filename="design.tar.gz",
+            source_url="https://example.com/design.tar.gz",
+            is_active=True,
+        )
+
+        # Mock pipeline handles nested compression
+        mock_pipeline.return_value = (
+            b"\x00\x06\x00\x02gds_content",
+            "final_md5",
+            "final_sha1",
+        )
+
+        with NamedTemporaryFile(delete=False) as temp_file:
+            temp_path = Path(temp_file.name)
+            try:
+                _process_and_save_content(
+                    project_file,
+                    b"fake_compressed_content",
+                    temp_path,
+                    "orig_md5",
+                    "orig_sha1",
+                )
+
+                # Verify pipeline was called
+                assert mock_pipeline.called
+
+                # Verify hashes were updated
+                call_args = mock_pipeline.call_args
+                assert call_args is not None
+            finally:
+                temp_path.unlink(missing_ok=True)
+
+    @patch("wafer_space.projects.tasks._apply_content_pipeline")
+    def test_download_with_format_validation(self, mock_pipeline):
+        """Test that format validation is enforced after extraction."""
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_filename="invalid.zip",
+            source_url="https://example.com/invalid.zip",
+            is_active=True,
+        )
+
+        # Mock pipeline raises ValueError for invalid format
+        mock_pipeline.side_effect = ValueError("File is not a valid GDS or OASIS file")
+
+        with NamedTemporaryFile(delete=False) as temp_file:
+            temp_path = Path(temp_file.name)
+            try:
+                with pytest.raises(ValueError, match="not a valid GDS or OASIS"):
+                    _process_and_save_content(
+                        project_file,
+                        b"fake_invalid_content",
+                        temp_path,
+                        "md5",
+                        "sha1",
+                    )
+
+                # Verify file was marked as failed
+                project_file.refresh_from_db()
+                assert project_file.download_status == ProjectFile.DownloadStatus.FAILED
+                assert "not a valid GDS or OASIS" in project_file.download_error
+            finally:
+                temp_path.unlink(missing_ok=True)
