@@ -315,7 +315,7 @@ def _download_github_artifact(
     owner: str,
     repo: str,
     run_id: str,
-    github_token: str,
+    github_token: str | None,
 ) -> bytes:
     """Download GitHub Actions artifact ZIP file.
 
@@ -324,6 +324,7 @@ def _download_github_artifact(
         repo: Repository name
         run_id: GitHub Actions run ID
         github_token: GitHub Personal Access Token with 'actions:read' scope
+            (None if not configured)
 
     Returns:
         bytes: Downloaded artifact ZIP content

@@ -300,11 +300,3 @@ class XzDecompressor(ContentProcessor):
     def get_priority(self) -> int:
         """Return priority (100 for decompressors)."""
         return DECOMPRESSOR_PRIORITY
-
-
-# Register all decompressors with global registry
-from wafer_space.projects.content_processors import _processor_registry  # noqa: E402
-
-_processor_registry.register(GzipDecompressor())
-_processor_registry.register(Bzip2Decompressor())
-_processor_registry.register(XzDecompressor())

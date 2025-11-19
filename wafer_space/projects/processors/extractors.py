@@ -443,10 +443,3 @@ class TarExtractor(ContentProcessor):
     def get_priority(self) -> int:
         """Return priority (50 for extractors)."""
         return EXTRACTOR_PRIORITY
-
-
-# Register all extractors with global registry
-from wafer_space.projects.content_processors import _processor_registry  # noqa: E402
-
-_processor_registry.register(ZipExtractor())
-_processor_registry.register(TarExtractor())

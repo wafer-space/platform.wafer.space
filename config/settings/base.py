@@ -461,7 +461,8 @@ MAX_EXTRACTED_SIZE = 10 * 1024 * 1024 * 1024  # 10GB after extraction/decompress
 # ------------------------------------------------------------------------------
 # GitHub Personal Access Token for Actions artifact downloads
 # Requires 'actions:read' permission scope
-GITHUB_TOKEN = env("GITHUB_TOKEN", default="")
+# Must be set via environment variable when downloading GitHub artifacts
+GITHUB_TOKEN = env("GITHUB_TOKEN", default=None)
 
 # Your stuff...
 # ------------------------------------------------------------------------------
