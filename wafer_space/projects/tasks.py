@@ -30,6 +30,7 @@ from .models import ManufacturabilityCheck
 from .models import Project
 from .models import ProjectFile
 from .models import ProjectFileChunk
+from .url_handlers import GitHubArtifactHandler
 from .url_handlers import GoogleSourceHandler
 from .url_handlers import URLHandlerRegistry
 from .verification import is_task_actively_running
@@ -49,6 +50,7 @@ BYTES_PER_KILOBYTE = 1024
 # Initialize URL handler registry for post-download processing
 _url_handler_registry = URLHandlerRegistry()
 _url_handler_registry.register(GoogleSourceHandler())
+_url_handler_registry.register(GitHubArtifactHandler())
 
 
 # Helper functions for file download
@@ -894,6 +896,81 @@ def _apply_post_download_processing(
     return content
 
 
+def _apply_content_pipeline(
+    project_file: ProjectFile,
+    content: bytes,
+    temp_path: Path,
+) -> tuple[bytes, str, str]:
+    """Apply content extraction pipeline to process compressed/archived files.
+
+    Args:
+        project_file: The project file being processed
+        content: The content to process
+        temp_path: Temporary file path for intermediate processing
+
+    Returns:
+        tuple: (processed_content, md5_hash, sha1_hash)
+
+    Raises:
+        ValueError: If pipeline processing fails or format validation fails
+    """
+    logger = logging.getLogger(__name__)
+    from django.conf import settings  # noqa: PLC0415
+
+    from .content_pipeline import ContentPipeline  # noqa: PLC0415
+    from .content_pipeline import cleanup_temp_dir  # noqa: PLC0415
+    from .content_pipeline import get_temp_dir_for_file  # noqa: PLC0415
+    from .content_processors import _processor_registry  # noqa: PLC0415
+    from .format_validators import validate_output_format  # noqa: PLC0415
+
+    # Write content to temp file for pipeline
+    temp_path.write_bytes(content)
+
+    # Get temp directory for this file
+    pipeline_temp_dir = get_temp_dir_for_file(project_file.id)
+
+    try:
+        # Run pipeline
+        pipeline = ContentPipeline(_processor_registry)
+        result = pipeline.process_file(
+            input_path=temp_path,
+            filename=project_file.original_filename,
+            temp_dir=pipeline_temp_dir,
+            max_size=settings.MAX_EXTRACTED_SIZE,
+        )
+
+        # Validate format
+        format_name = validate_output_format(result.output_path)
+        logger.info("  ✓ Format validated: %s", format_name)
+
+        # Read processed content
+        processed_content = result.output_path.read_bytes()
+
+        # Recalculate hashes after pipeline processing
+        logger.info("  Recalculating hashes after pipeline processing...")
+        final_md5, final_sha1 = _calculate_file_hashes(processed_content)
+        logger.info("  ✓ MD5: %s", final_md5)
+        logger.info("  ✓ SHA1: %s", final_sha1)
+
+        # Update filename if changed
+        if result.filename != project_file.original_filename:
+            logger.info(
+                "  ✓ Filename updated: %s → %s",
+                project_file.original_filename,
+                result.filename,
+            )
+            project_file.original_filename = result.filename
+
+        logger.info("  ✓ Pipeline processing complete")
+        logger.info("  ✓ Output size: %s", _format_bytes(result.size_bytes))
+
+        return processed_content, final_md5, final_sha1
+
+    finally:
+        # Always cleanup temp directory
+        cleanup_temp_dir(pipeline_temp_dir)
+
+
 def _process_and_save_content(
     project_file: ProjectFile,
     downloaded_content: bytes,
@@ -931,6 +1008,21 @@ def _process_and_save_content(
         temp_path.write_bytes(processed_content)
     else:
         logger.info("  ✓ No transformation needed - using original content")
+
+    # Apply content extraction pipeline
+    logger.info("Step 6.5: Running content extraction pipeline...")
+    try:
+        processed_content, final_md5, final_sha1 = _apply_content_pipeline(
+            project_file,
+            processed_content,
+            temp_path,
+        )
+    except ValueError as e:
+        logger.exception("Pipeline processing failed")
+        project_file.download_status = ProjectFile.DownloadStatus.FAILED
+        project_file.download_error = str(e)
+        project_file.save(update_fields=["download_status", "download_error"])
+        raise
 
     # Save to Django file field
     logger.info("Step 7: Saving file to Django storage...")

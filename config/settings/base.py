@@ -450,3 +450,18 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS,
     },
 }
+
+# File Download and Processing Configuration
+# ------------------------------------------------------------------------------
+# Maximum file size limits for downloads and content extraction
+MAX_DOWNLOAD_SIZE = 100 * 1024 * 1024 * 1024  # 100GB raw download
+MAX_EXTRACTED_SIZE = 10 * 1024 * 1024 * 1024  # 10GB after extraction/decompression
+
+# GitHub API Configuration
+# ------------------------------------------------------------------------------
+# GitHub Personal Access Token for Actions artifact downloads
+# Requires 'actions:read' permission scope
+GITHUB_TOKEN = env("GITHUB_TOKEN", default="")
+
+# Your stuff...
+# ------------------------------------------------------------------------------
