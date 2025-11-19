@@ -62,3 +62,31 @@ class ContentProcessor(ABC):
         Returns:
             Priority value (100 for decompressors, 50 for extractors)
         """
+
+
+class ContentProcessorRegistry:
+    """Registry for content processors."""
+
+    def __init__(self) -> None:
+        """Initialize empty registry."""
+        self._processors: list[ContentProcessor] = []
+
+    def register(self, processor: ContentProcessor) -> None:
+        """Register a processor.
+
+        Args:
+            processor: Processor to register
+        """
+        self._processors.append(processor)
+
+    def get_processors(self) -> list[ContentProcessor]:
+        """Get all processors sorted by priority (high to low).
+
+        Returns:
+            List of processors sorted by priority
+        """
+        return sorted(self._processors, key=lambda p: p.get_priority(), reverse=True)
+
+
+# Global registry instance
+_processor_registry = ContentProcessorRegistry()
