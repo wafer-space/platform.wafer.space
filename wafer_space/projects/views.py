@@ -271,6 +271,9 @@ class ProjectFileSubmitURLView(LoginRequiredMixin, UserPassesTestMixin, View):
                     url=form.cleaned_data["url"],
                     expected_hash_md5=form.cleaned_data.get("expected_hash_md5", ""),
                     expected_hash_sha1=form.cleaned_data.get("expected_hash_sha1", ""),
+                    expected_hash_sha256=form.cleaned_data.get(
+                        "expected_hash_sha256", ""
+                    ),
                 )
 
                 # Build success message

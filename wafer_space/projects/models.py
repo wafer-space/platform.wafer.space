@@ -227,10 +227,16 @@ class ProjectFile(models.Model):
         blank=True,
         help_text="SHA1 hash provided by user for verification",
     )
+    expected_hash_sha256 = models.CharField(
+        max_length=64,
+        blank=True,
+        help_text="SHA256 hash provided by user for verification",
+    )
 
     # File verification (calculated) - keep original field names from migration
     hash_md5 = models.CharField(max_length=32, blank=True)
     hash_sha1 = models.CharField(max_length=40, blank=True)
+    hash_sha256 = models.CharField(max_length=64, blank=True)
     hash_verified = models.BooleanField(default=False)
 
     # URL handler metadata
@@ -289,7 +295,7 @@ class ProjectFile(models.Model):
         return f"{self.project.name} - {self.original_filename}"
 
     def calculate_hashes(self):
-        """Calculate MD5 and SHA1 hashes for the downloaded file."""
+        """Calculate MD5, SHA1, and SHA256 hashes for the downloaded file."""
         if not self.file:
             return False
 
@@ -299,6 +305,7 @@ class ProjectFile(models.Model):
 
             self.hash_md5 = hashlib.md5(content, usedforsecurity=False).hexdigest()
             self.hash_sha1 = hashlib.sha1(content, usedforsecurity=False).hexdigest()
+            self.hash_sha256 = hashlib.sha256(content).hexdigest()
             self.file_size = len(content)
 
             self.file.seek(0)  # Reset file pointer
@@ -310,7 +317,14 @@ class ProjectFile(models.Model):
 
     def verify_hash(self):
         """Verify downloaded file hash against user-provided expected values."""
-        if not self.hash_md5 or not self.hash_sha1:
+        # Calculate missing hashes if needed for verification
+        needs_calculation = (
+            (self.expected_hash_md5 and not self.hash_md5)
+            or (self.expected_hash_sha1 and not self.hash_sha1)
+            or (self.expected_hash_sha256 and not self.hash_sha256)
+        )
+
+        if needs_calculation:
             if not self.calculate_hashes():
                 return False, "Could not calculate file hashes"
 
@@ -331,6 +345,14 @@ class ProjectFile(models.Model):
                 errors.append(
                     f"SHA1 mismatch: expected {self.expected_hash_sha1}, "
                     f"got {self.hash_sha1}",
+                )
+
+        if self.expected_hash_sha256:
+            if self.hash_sha256.lower() != self.expected_hash_sha256.lower():
+                verified = False
+                errors.append(
+                    f"SHA256 mismatch: expected {self.expected_hash_sha256}, "
+                    f"got {self.hash_sha256}",
                 )
 
         self.hash_verified = verified

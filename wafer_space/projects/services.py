@@ -227,6 +227,7 @@ class FileCreationData:
     source_url: str
     expected_hash_md5: str
     expected_hash_sha1: str
+    expected_hash_sha256: str
     file_size: int
     content_type: str
 
@@ -242,6 +243,7 @@ class ProjectFileService:
         *,
         expected_hash_md5: str = "",
         expected_hash_sha1: str = "",
+        expected_hash_sha256: str = "",
     ) -> tuple[ProjectFile, dict[str, bool | str | int | None]]:
         """Submit a file URL for download with validation and rewriting.
 
@@ -259,6 +261,7 @@ class ProjectFileService:
             url: The URL submitted by the user
             expected_hash_md5: Optional MD5 hash for verification
             expected_hash_sha1: Optional SHA1 hash for verification
+            expected_hash_sha256: Optional SHA256 hash for verification
 
         Returns:
             tuple: (ProjectFile instance, metadata dict)
@@ -350,6 +353,7 @@ class ProjectFileService:
             source_url=rewritten_url,
             expected_hash_md5=expected_hash_md5,
             expected_hash_sha1=expected_hash_sha1,
+            expected_hash_sha256=expected_hash_sha256,
             file_size=file_size,
             content_type=content_type,
         )
@@ -423,6 +427,7 @@ class ProjectFileService:
             source_url=file_data.source_url,
             expected_hash_md5=file_data.expected_hash_md5.strip().lower(),
             expected_hash_sha1=file_data.expected_hash_sha1.strip().lower(),
+            expected_hash_sha256=file_data.expected_hash_sha256.strip().lower(),
             file_size=file_data.file_size,
             content_type=file_data.content_type,
             original_filename=filename,
