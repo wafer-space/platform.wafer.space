@@ -372,15 +372,11 @@ class TarExtractor(ContentProcessor):
         ):
             return False
 
-        # Check tar magic bytes: "ustar" at offset 257
+        # Use tarfile.is_tarfile() for robust detection (handles compressed files)
         try:
-            with file_path.open("rb") as f:
-                f.seek(257)
-                magic = f.read(5)
+            return tarfile.is_tarfile(file_path)
         except OSError:
             return False
-        else:
-            return magic == b"ustar"
 
     def process(
         self, input_path: Path, output_path: Path, *, max_size: int
