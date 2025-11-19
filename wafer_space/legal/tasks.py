@@ -12,6 +12,22 @@ from django.utils.html import strip_tags
 logger = logging.getLogger(__name__)
 
 
+def _validate_site_url() -> str:
+    """Validate that SITE_URL is configured.
+
+    Returns:
+        str: The configured SITE_URL
+
+    Raises:
+        ValueError: If SITE_URL is not configured
+
+    """
+    if settings.SITE_URL is None:
+        msg = "SITE_URL must be configured in settings"
+        raise ValueError(msg)
+    return settings.SITE_URL
+
+
 @shared_task(bind=True, max_retries=3, default_retry_delay=300)
 def send_tos_update_email(self, notification_id: int) -> dict[str, str]:
     """Send TOS update notification email to a user.
@@ -39,12 +55,15 @@ def send_tos_update_email(self, notification_id: int) -> dict[str, str]:
                 "message": "Notification already sent",
             }
 
+        # Ensure SITE_URL is configured
+        site_url = _validate_site_url()
+
         # Prepare email context
         context = {
             "user": notification.user,
             "tos_version": notification.tos_version,
-            "tos_url": settings.SITE_URL + reverse("legal:tos_display"),
-            "accept_url": settings.SITE_URL + reverse("legal:tos_accept"),
+            "tos_url": site_url + reverse("legal:tos_display"),
+            "accept_url": site_url + reverse("legal:tos_accept"),
             "site_name": "wafer.space",
         }
 
