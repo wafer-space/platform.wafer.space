@@ -5,6 +5,7 @@ from __future__ import annotations
 import bz2
 import gzip
 import logging
+import lzma
 from typing import TYPE_CHECKING
 
 from wafer_space.projects.content_processors import ContentProcessor
@@ -193,6 +194,97 @@ class Bzip2Decompressor(ContentProcessor):
                 size_bytes=bytes_written,
                 metadata={
                     "processor": "Bzip2Decompressor",
+                    "compressed_size": input_path.stat().st_size,
+                    "decompressed_size": bytes_written,
+                },
+            )
+        except ValueError:
+            if output_path.exists():
+                output_path.unlink()
+            raise
+
+    def get_priority(self) -> int:
+        """Return priority (100 for decompressors)."""
+        return 100
+
+
+class XzDecompressor(ContentProcessor):
+    """Decompressor for xz (.xz) files."""
+
+    def can_process(self, filename: str, file_path: Path) -> bool:
+        """Check if file is xz compressed.
+
+        Args:
+            filename: Original filename
+            file_path: Path to file
+
+        Returns:
+            True if filename ends with .xz and file has xz magic bytes
+        """
+        if not filename.endswith(".xz"):
+            return False
+
+        # Check xz magic bytes: fd 37 7a 58 5a 00
+        try:
+            with file_path.open("rb") as f:
+                magic = f.read(6)
+        except OSError:
+            return False
+        else:
+            return magic == b"\xfd7zXZ\x00"
+
+    def process(
+        self, input_path: Path, output_path: Path, *, max_size: int
+    ) -> ProcessorResult:
+        """Decompress xz file.
+
+        Args:
+            input_path: Path to .xz file
+            output_path: Path for decompressed output
+            max_size: Maximum allowed output size
+
+        Returns:
+            ProcessorResult with decompressed file details
+
+        Raises:
+            ValueError: If decompressed size exceeds max_size
+        """
+        bytes_written = 0
+
+        def _raise_size_error() -> None:
+            msg = (
+                f"Decompressed file exceeds maximum size: {bytes_written} > {max_size}"
+            )
+            raise ValueError(msg)
+
+        try:
+            with lzma.open(input_path, "rb") as f_in, output_path.open("wb") as f_out:
+                while True:
+                    chunk = f_in.read(CHUNK_SIZE)
+                    if not chunk:
+                        break
+
+                    bytes_written += len(chunk)
+                    if bytes_written > max_size:
+                        _raise_size_error()
+
+                    f_out.write(chunk)
+
+            new_filename = input_path.name.removesuffix(".xz")
+
+            logger.info(
+                "Decompressed %s: %d bytes → %d bytes",
+                input_path.name,
+                input_path.stat().st_size,
+                bytes_written,
+            )
+
+            return ProcessorResult(
+                output_path=output_path,
+                filename=new_filename,
+                size_bytes=bytes_written,
+                metadata={
+                    "processor": "XzDecompressor",
                     "compressed_size": input_path.stat().st_size,
                     "decompressed_size": bytes_written,
                 },

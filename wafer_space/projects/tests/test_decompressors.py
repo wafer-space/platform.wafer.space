@@ -1,10 +1,12 @@
 import bz2
 import gzip
+import lzma
 
 import pytest
 
 from wafer_space.projects.processors.decompressors import Bzip2Decompressor
 from wafer_space.projects.processors.decompressors import GzipDecompressor
+from wafer_space.projects.processors.decompressors import XzDecompressor
 
 DECOMPRESSOR_PRIORITY = 100  # Expected priority for decompressor processors
 
@@ -110,3 +112,36 @@ def test_bzip2_decompress_success(temp_dir):
 def test_bzip2_priority():
     """Test Bzip2Decompressor has correct priority."""
     assert Bzip2Decompressor().get_priority() == DECOMPRESSOR_PRIORITY
+
+
+def test_xz_can_process_xz_file(temp_dir):
+    """Test XzDecompressor recognizes .xz files."""
+    processor = XzDecompressor()
+    xz_file = temp_dir / "test.gds.xz"
+
+    with lzma.open(xz_file, "wb") as f:
+        f.write(b"test")
+
+    assert processor.can_process("test.gds.xz", xz_file) is True
+
+
+def test_xz_decompress_success(temp_dir):
+    """Test XzDecompressor decompresses file."""
+    processor = XzDecompressor()
+    input_file = temp_dir / "design.oas.xz"
+    output_file = temp_dir / "output.oas"
+
+    original_content = b"Design data" * 100
+    with lzma.open(input_file, "wb") as f:
+        f.write(original_content)
+
+    result = processor.process(input_file, output_file, max_size=10_000)
+
+    assert result.output_path == output_file
+    assert result.filename == "design.oas"
+    assert output_file.read_bytes() == original_content
+
+
+def test_xz_priority():
+    """Test XzDecompressor has correct priority."""
+    assert XzDecompressor().get_priority() == DECOMPRESSOR_PRIORITY
