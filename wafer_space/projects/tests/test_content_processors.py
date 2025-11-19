@@ -1,3 +1,6 @@
+import pytest
+
+from wafer_space.projects.content_processors import ContentProcessor
 from wafer_space.projects.content_processors import ProcessorResult
 
 # Test constants
@@ -19,3 +22,19 @@ def test_processor_result_creation(tmp_path):
     assert result.filename == "design.gds"
     assert result.size_bytes == TEST_SIZE_BYTES
     assert result.metadata == {"stage": "decompression"}
+
+
+def test_content_processor_abstract():
+    """Test ContentProcessor cannot be instantiated directly."""
+    with pytest.raises(TypeError, match="Can't instantiate abstract class"):
+        ContentProcessor()  # type: ignore[abstract]
+
+
+def test_content_processor_subclass_requires_methods():
+    """Test ContentProcessor subclass must implement all abstract methods."""
+
+    class IncompleteProcessor(ContentProcessor):
+        pass
+
+    with pytest.raises(TypeError, match="Can't instantiate abstract class"):
+        IncompleteProcessor()  # type: ignore[abstract]
