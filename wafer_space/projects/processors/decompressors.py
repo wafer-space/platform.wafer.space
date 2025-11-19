@@ -300,7 +300,7 @@ class XzDecompressor(ContentProcessor):
 
 
 # Register all decompressors with global registry
-from wafer_space.projects.content_processors import _processor_registry  # noqa: E402
+from wafer_space.projects.content_processors import _processor_registry
 
 _processor_registry.register(GzipDecompressor())
 _processor_registry.register(Bzip2Decompressor())

@@ -180,7 +180,7 @@ def _validate_filename_format(filename: str) -> None:
     last_suffix = suffixes[-1]
     if last_suffix in VALID_COMPRESSION_FORMATS:
         # Compressed file - check if there's a base format before compression
-        if len(suffixes) < 2:  # noqa: PLR2004
+        if len(suffixes) < 2:
             msg = (
                 f"Invalid file format: '{filename}'. "
                 f"Compressed files must have a GDS/OASIS extension before compression. "

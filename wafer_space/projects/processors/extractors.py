@@ -436,7 +436,7 @@ class TarExtractor(ContentProcessor):
 
 
 # Register all extractors with global registry
-from wafer_space.projects.content_processors import _processor_registry  # noqa: E402
+from wafer_space.projects.content_processors import _processor_registry
 
 _processor_registry.register(ZipExtractor())
 _processor_registry.register(TarExtractor())

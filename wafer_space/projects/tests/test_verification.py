@@ -13,7 +13,7 @@ from wafer_space.projects.verification import is_task_actively_running
 from wafer_space.projects.verification import is_task_queued
 
 User = get_user_model()
-TEST_PASSWORD = "testpass123"  # noqa: S105
+TEST_PASSWORD = "testpass123"
 
 
 @pytest.mark.django_db

@@ -125,7 +125,7 @@ def _verify_file_hashes(
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def check_project_manufacturability(self, check_id):  # noqa: PLR0915
+def check_project_manufacturability(self, check_id):
     """Background task to check project manufacturability.
 
     This task performs manufacturability analysis on a project's design files.
@@ -156,7 +156,7 @@ def check_project_manufacturability(self, check_id):  # noqa: PLR0915
 
         # TODO: Replace with real GDS/OASIS analysis
         # Simulate processing time (2-5 seconds)
-        processing_time = random.uniform(  # noqa: S311
+        processing_time = random.uniform(
             MOCK_PROCESSING_TIME_MIN,
             MOCK_PROCESSING_TIME_MAX,
         )
@@ -164,7 +164,7 @@ def check_project_manufacturability(self, check_id):  # noqa: PLR0915
         time.sleep(processing_time)
 
         # Mock implementation: 80% success rate for testing
-        is_manufacturable = random.random() < MOCK_SUCCESS_RATE  # noqa: S311
+        is_manufacturable = random.random() < MOCK_SUCCESS_RATE
 
         if is_manufacturable:
             # Success case - add sample warning
@@ -297,7 +297,7 @@ def _safe_urlopen(url: str, headers: dict | None = None) -> tuple[bytes, dict]:
         msg = f"Unsupported URL scheme: {parsed_url.scheme.lower()}"
         raise ValueError(msg)
 
-    request = Request(url)  # noqa: S310 - URL scheme validated above to only allow http/https
+    request = Request(url)
 
     # Add default user agent
     request.add_header("User-Agent", "wafer.space/1.0")
@@ -307,7 +307,7 @@ def _safe_urlopen(url: str, headers: dict | None = None) -> tuple[bytes, dict]:
         for key, value in headers.items():
             request.add_header(key, value)
 
-    with urlopen(request) as response:  # noqa: S310 - URL scheme validated above to only allow http/https
+    with urlopen(request) as response:
         return response.read(), dict(response.headers)
 
 
@@ -386,7 +386,7 @@ def _download_file_content(project_file) -> bytes:
     if project_file.handler_metadata and project_file.handler_metadata.get(
         "requires_github_auth"
     ):
-        from django.conf import settings  # noqa: PLC0415
+        from django.conf import settings
 
         metadata = project_file.handler_metadata
         return _download_github_artifact(
@@ -999,13 +999,13 @@ def _apply_content_pipeline(
         ValueError: If pipeline processing fails or format validation fails
     """
     logger = logging.getLogger(__name__)
-    from django.conf import settings  # noqa: PLC0415
+    from django.conf import settings
 
-    from .content_pipeline import ContentPipeline  # noqa: PLC0415
-    from .content_pipeline import cleanup_temp_dir  # noqa: PLC0415
-    from .content_pipeline import get_temp_dir_for_file  # noqa: PLC0415
-    from .content_processors import _processor_registry  # noqa: PLC0415
-    from .format_validators import validate_output_format  # noqa: PLC0415
+    from .content_pipeline import ContentPipeline
+    from .content_pipeline import cleanup_temp_dir
+    from .content_pipeline import get_temp_dir_for_file
+    from .content_processors import _processor_registry
+    from .format_validators import validate_output_format
 
     # Write content to temp file for pipeline
     temp_path.write_bytes(content)
@@ -1182,7 +1182,7 @@ def _verify_and_notify(
         logger.info("  ✓ Checksum verified notification created")
 
         # Queue manufacturability check now that hash is verified
-        from .services import ManufacturabilityService  # noqa: PLC0415
+        from .services import ManufacturabilityService
 
         logger.info("Step 10: Queueing manufacturability check...")
         ManufacturabilityService.queue_check(project_file.project)
@@ -1258,7 +1258,7 @@ def _log_download_completion(
 
 
 @shared_task(bind=True, max_retries=5, default_retry_delay=60)
-def download_project_file(self, project_id):  # noqa: PLR0915
+def download_project_file(self, project_id):
     """Background task to download a project file from a URL.
 
     Supports:
@@ -1313,7 +1313,7 @@ def download_project_file(self, project_id):  # noqa: PLR0915
         temp_path = _setup_download_temp_path(project_file)
 
         # Download with progress tracking
-        logger.info("Step 4: Starting chunked download from URL...")
+        logger.info("Step 4: Starting download from URL...")
         max_url_len = 100
         url_display = (
             project_file.source_url[:max_url_len] + "..."
@@ -1327,11 +1327,28 @@ def download_project_file(self, project_id):  # noqa: PLR0915
             else "unknown"
         )
         logger.info("  Expected file size: %s", expected_size)
-        md5_hash, sha1_hash = _download_with_progress(
-            self,
-            project_file,
-            temp_path,
-        )
+
+        # Check if handler requires special download logic (e.g., GitHub artifacts)
+        if project_file.handler_metadata and project_file.handler_metadata.get(
+            "requires_github_auth"
+        ):
+            logger.info("  Using special handler download (GitHub artifact)...")
+            downloaded_content = _download_file_content(project_file)
+
+            # Write to temp file for hash calculation
+            temp_path.write_bytes(downloaded_content)
+
+            # Calculate hashes
+            md5_hash, sha1_hash = _calculate_file_hashes(downloaded_content)
+        else:
+            # Standard chunked download with progress tracking
+            logger.info("  Using standard chunked download...")
+            md5_hash, sha1_hash = _download_with_progress(
+                self,
+                project_file,
+                temp_path,
+            )
+
         logger.info("  ✓ Download completed successfully!")
         logger.info("  ✓ MD5: %s", md5_hash)
         logger.info("  ✓ SHA1: %s", sha1_hash)
@@ -1345,7 +1362,7 @@ def download_project_file(self, project_id):  # noqa: PLR0915
 
         # Detect file type from actual content
         logger.info("Step 6: Detecting file type from content...")
-        from .services import detect_file_type_from_data  # noqa: PLC0415
+        from .services import detect_file_type_from_data
 
         # Use first 1MB for MIME detection (or entire file if smaller)
         detection_data = downloaded_content[: 1024 * 1024]

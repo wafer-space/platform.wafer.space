@@ -14,7 +14,7 @@ from wafer_space.projects.tasks import check_download_states
 from wafer_space.projects.tasks import download_project_file
 
 User = get_user_model()
-TEST_PASSWORD = "testpass123"  # noqa: S105
+TEST_PASSWORD = "testpass123"
 TEST_WORKER_PID = 12345
 TEST_WORKER_HOSTNAME = "worker-01"
 

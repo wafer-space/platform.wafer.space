@@ -76,7 +76,7 @@ class Project(models.Model):
     def __str__(self):
         return f"{self.name} ({self.user.username})"
 
-    def can_submit(self) -> tuple[bool, str]:  # noqa: PLR0911
+    def can_submit(self) -> tuple[bool, str]:
         """Check if project can be submitted.
 
         Returns:
