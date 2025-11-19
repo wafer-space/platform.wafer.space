@@ -26,6 +26,10 @@ KillMode=mixed
 TimeoutStopSec=5
 PrivateTmp=true
 
+# Runtime directory (automatically created on boot)
+RuntimeDirectory=platform.wafer.space
+RuntimeDirectoryMode=0755
+
 # Security hardening
 NoNewPrivileges=true
 PrivateDevices=true

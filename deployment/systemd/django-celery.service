@@ -27,6 +27,10 @@ ExecReload=/bin/kill -s HUP $MAINPID
 # Startup timeout - give celery time to write PID file
 TimeoutStartSec=30s
 
+# Runtime directory (automatically created on boot)
+RuntimeDirectory=platform.wafer.space
+RuntimeDirectoryMode=0755
+
 # Security hardening
 NoNewPrivileges=true
 PrivateDevices=true

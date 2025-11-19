@@ -19,6 +19,10 @@ ExecStart=/home/django/platform.wafer.space/.venv/bin/celery \
     --pidfile=/run/platform.wafer.space/celery-beat.pid \
     --schedule=/run/platform.wafer.space/celerybeat-schedule
 
+# Runtime directory (automatically created on boot)
+RuntimeDirectory=platform.wafer.space
+RuntimeDirectoryMode=0755
+
 # Security hardening
 NoNewPrivileges=true
 PrivateDevices=true
