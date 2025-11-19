@@ -1,7 +1,7 @@
 """Constants for project tests."""
 
 # Test user credentials
-TEST_PASSWORD = "testpass123"
+TEST_PASSWORD = "testpass123"  # noqa: S105 - Test password constant
 
 # HTTP status codes
 HTTP_OK = 200

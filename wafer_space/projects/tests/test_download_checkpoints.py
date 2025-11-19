@@ -28,7 +28,7 @@ from wafer_space.projects.tasks import _should_log_progress
 from wafer_space.projects.tasks import _should_update_database
 
 User = get_user_model()
-TEST_PASSWORD = "testpass123"
+TEST_PASSWORD = "testpass123"  # noqa: S105 - Test password constant
 
 # Test constants
 MB = 1024 * 1024

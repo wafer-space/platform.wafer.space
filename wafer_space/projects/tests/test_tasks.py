@@ -26,7 +26,7 @@ from wafer_space.projects.tasks import _safe_urlopen
 from wafer_space.projects.tasks import check_project_manufacturability
 
 User = get_user_model()
-TEST_PASSWORD = "testpass123"
+TEST_PASSWORD = "testpass123"  # noqa: S105 - Test password constant
 
 
 class URLValidationSecurityTests(TestCase):

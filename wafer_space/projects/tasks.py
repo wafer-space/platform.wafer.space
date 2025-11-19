@@ -125,7 +125,7 @@ def _verify_file_hashes(
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def check_project_manufacturability(self, check_id):
+def check_project_manufacturability(self, check_id):  # noqa: PLR0915
     """Background task to check project manufacturability.
 
     This task performs manufacturability analysis on a project's design files.
@@ -156,7 +156,7 @@ def check_project_manufacturability(self, check_id):
 
         # TODO: Replace with real GDS/OASIS analysis
         # Simulate processing time (2-5 seconds)
-        processing_time = random.uniform(
+        processing_time = random.uniform(  # noqa: S311
             MOCK_PROCESSING_TIME_MIN,
             MOCK_PROCESSING_TIME_MAX,
         )
@@ -164,7 +164,7 @@ def check_project_manufacturability(self, check_id):
         time.sleep(processing_time)
 
         # Mock implementation: 80% success rate for testing
-        is_manufacturable = random.random() < MOCK_SUCCESS_RATE
+        is_manufacturable = random.random() < MOCK_SUCCESS_RATE  # noqa: S311
 
         if is_manufacturable:
             # Success case - add sample warning
@@ -297,7 +297,7 @@ def _safe_urlopen(url: str, headers: dict | None = None) -> tuple[bytes, dict]:
         msg = f"Unsupported URL scheme: {parsed_url.scheme.lower()}"
         raise ValueError(msg)
 
-    request = Request(url)
+    request = Request(url)  # noqa: S310 - URL scheme validated above to only allow http/https
 
     # Add default user agent
     request.add_header("User-Agent", "wafer.space/1.0")
@@ -307,7 +307,7 @@ def _safe_urlopen(url: str, headers: dict | None = None) -> tuple[bytes, dict]:
         for key, value in headers.items():
             request.add_header(key, value)
 
-    with urlopen(request) as response:
+    with urlopen(request) as response:  # noqa: S310 - URL scheme validated above to only allow http/https
         return response.read(), dict(response.headers)
 
 
@@ -1258,7 +1258,7 @@ def _log_download_completion(
 
 
 @shared_task(bind=True, max_retries=5, default_retry_delay=60)
-def download_project_file(self, project_id):
+def download_project_file(self, project_id):  # noqa: PLR0915
     """Background task to download a project file from a URL.
 
     Supports:

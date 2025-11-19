@@ -98,18 +98,18 @@ class Project(models.Model):
         if not active_file.hash_verified:
             return False, "File hash has not been verified"
 
-        # Check manufacturability
-        if self.is_manufacturable is None:
-            return False, "Manufacturability check has not been completed"
-
-        if not self.is_manufacturable:
-            return False, "File did not pass manufacturability checks"
-
         # Check project status
         if self.status != self.Status.DRAFT:
             return False, "Project has already been submitted (status must be DRAFT)"
 
-        return True, ""
+        # Check manufacturability (combined None and False check to reduce returns)
+        if self.is_manufacturable is None:
+            return False, "Manufacturability check has not been completed"
+        return (
+            (True, "")
+            if self.is_manufacturable
+            else (False, "File did not pass manufacturability checks")
+        )
 
     def submit(self):
         """Mark project as submitted and queue manufacturability check.
