@@ -539,6 +539,7 @@ class TestContentPipelineIntegration(TestCase):
             finally:
                 temp_path.unlink(missing_ok=True)
 
+    @patch("django.conf.settings.GITHUB_TOKEN", None)
     @patch("wafer_space.projects.tasks._download_github_artifact")
     def test_download_with_github_artifact(self, mock_github_download):
         """Test GitHub artifact download with mocked API."""
@@ -568,7 +569,7 @@ class TestContentPipelineIntegration(TestCase):
             owner="owner",
             repo="repo",
             run_id="123456",
-            github_token="",  # Default from settings
+            github_token=None,  # Default from settings (None means not configured)
         )
         assert content == b"artifact_zip_content"
 
