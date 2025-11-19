@@ -177,11 +177,11 @@ def _validate_filename_format(filename: str) -> None:
         raise ValueError(msg)
 
     # Check if last suffix is compression
-    MIN_SUFFIXES_FOR_COMPRESSED_FILE = 2  # e.g., .gds.gz needs both suffixes
+    min_suffixes_for_compressed_file = 2  # e.g., .gds.gz needs both suffixes
     last_suffix = suffixes[-1]
     if last_suffix in VALID_COMPRESSION_FORMATS:
         # Compressed file - check if there's a base format before compression
-        if len(suffixes) < MIN_SUFFIXES_FOR_COMPRESSED_FILE:
+        if len(suffixes) < min_suffixes_for_compressed_file:
             msg = (
                 f"Invalid file format: '{filename}'. "
                 f"Compressed files must have a GDS/OASIS extension before compression. "
