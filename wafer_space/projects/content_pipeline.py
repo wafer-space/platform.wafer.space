@@ -60,7 +60,8 @@ class ContentPipeline:
             ValueError: If no valid GDS/OASIS file found or size exceeded
         """
         current_path = input_path
-        current_filename = filename
+        # Sanitize filename to prevent path traversal attacks
+        current_filename = Path(filename).name
         stage_number = 0
 
         # Get all processors sorted by priority (high to low)
@@ -76,7 +77,9 @@ class ContentPipeline:
 
                     # Create output path for this stage
                     # Use current filename so processors can derive new filename from it
-                    output_path = temp_dir / f"stage_{stage_number}_{current_filename}"
+                    # Sanitize to prevent path traversal
+                    safe_filename = Path(current_filename).name
+                    output_path = temp_dir / f"stage_{stage_number}_{safe_filename}"
 
                     logger.info(
                         "Pipeline stage %d: Processing %s with %s",
@@ -92,13 +95,15 @@ class ContentPipeline:
 
                     # Rename output file to match the result filename
                     # This ensures next stage can correctly determine file type
-                    final_output_path = result.output_path.parent / result.filename
+                    # Sanitize filename to prevent path traversal
+                    safe_result_filename = Path(result.filename).name
+                    final_output_path = result.output_path.parent / safe_result_filename
                     if result.output_path != final_output_path:
                         result.output_path.rename(final_output_path)
 
                     # Update current path and filename for next stage
                     current_path = final_output_path
-                    current_filename = result.filename
+                    current_filename = safe_result_filename
 
                     processor_used = processor
                     break

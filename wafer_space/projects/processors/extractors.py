@@ -243,6 +243,11 @@ class TarExtractor(ContentProcessor):
             if member.isdir():
                 continue
 
+            # Skip symlinks and hardlinks for security
+            if member.issym() or member.islnk():
+                logger.warning("Skipping symlink/hardlink in archive: %s", member.name)
+                continue
+
             # Check if file has valid extension
             name_lower = member.name.lower()
             if any(name_lower.endswith(ext) for ext in VALID_EXTENSIONS):

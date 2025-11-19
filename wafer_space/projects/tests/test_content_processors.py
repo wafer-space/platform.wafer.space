@@ -50,11 +50,11 @@ def test_content_processor_subclass_requires_methods():
 class MockProcessor(ContentProcessor):
     """Mock processor for testing."""
 
-    def can_process(self, filename: str, file_path: Path) -> bool:
+    def can_process(self, filename: str, file_path: Path) -> bool:  # noqa: ARG002
         return filename.endswith(".mock")
 
     def process(
-        self, input_path: Path, output_path: Path, *, max_size: int
+        self, input_path: Path, output_path: Path, *, max_size: int  # noqa: ARG002
     ) -> ProcessorResult:
         return ProcessorResult(output_path, "test.txt", 0, {})
 
