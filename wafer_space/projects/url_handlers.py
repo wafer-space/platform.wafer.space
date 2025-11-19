@@ -218,7 +218,7 @@ class GitHubArtifactHandler(URLHandler):
             },
         }
 
-    def post_download(self, content: bytes, metadata: dict[str, Any]) -> bytes:  # noqa: ARG002
+    def post_download(self, content: bytes, metadata: dict[str, Any]) -> bytes:
         """Pass through artifact ZIP content without transformation.
 
         GitHub artifacts are downloaded as ZIP files and don't need
