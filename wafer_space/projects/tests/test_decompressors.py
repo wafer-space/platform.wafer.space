@@ -1,7 +1,9 @@
+import bz2
 import gzip
 
 import pytest
 
+from wafer_space.projects.processors.decompressors import Bzip2Decompressor
 from wafer_space.projects.processors.decompressors import GzipDecompressor
 
 DECOMPRESSOR_PRIORITY = 100  # Expected priority for decompressor processors
@@ -75,3 +77,36 @@ def test_gzip_priority():
     """Test GzipDecompressor has correct priority."""
     processor = GzipDecompressor()
     assert processor.get_priority() == DECOMPRESSOR_PRIORITY
+
+
+def test_bzip2_can_process_bz2_file(temp_dir):
+    """Test Bzip2Decompressor recognizes .bz2 files."""
+    processor = Bzip2Decompressor()
+    bz2_file = temp_dir / "test.gds.bz2"
+
+    with bz2.open(bz2_file, "wb") as f:
+        f.write(b"test")
+
+    assert processor.can_process("test.gds.bz2", bz2_file) is True
+
+
+def test_bzip2_decompress_success(temp_dir):
+    """Test Bzip2Decompressor decompresses file."""
+    processor = Bzip2Decompressor()
+    input_file = temp_dir / "test.oas.bz2"
+    output_file = temp_dir / "output.oas"
+
+    original_content = b"OASIS content" * 100
+    with bz2.open(input_file, "wb") as f:
+        f.write(original_content)
+
+    result = processor.process(input_file, output_file, max_size=10_000)
+
+    assert result.output_path == output_file
+    assert result.filename == "test.oas"
+    assert output_file.read_bytes() == original_content
+
+
+def test_bzip2_priority():
+    """Test Bzip2Decompressor has correct priority."""
+    assert Bzip2Decompressor().get_priority() == DECOMPRESSOR_PRIORITY
