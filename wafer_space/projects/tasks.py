@@ -311,8 +311,92 @@ def _safe_urlopen(url: str, headers: dict | None = None) -> tuple[bytes, dict]:
         return response.read(), dict(response.headers)
 
 
+def _download_github_artifact(
+    owner: str,
+    repo: str,
+    run_id: str,
+    github_token: str,
+) -> bytes:
+    """Download GitHub Actions artifact ZIP file.
+
+    Args:
+        owner: Repository owner (user or org)
+        repo: Repository name
+        run_id: GitHub Actions run ID
+        github_token: GitHub Personal Access Token with 'actions:read' scope
+
+    Returns:
+        bytes: Downloaded artifact ZIP content
+
+    Raises:
+        ValueError: If no artifacts found or API error
+        requests.RequestException: If download fails
+    """
+    logger = logging.getLogger(__name__)
+
+    if not github_token:
+        msg = "GitHub token not configured - cannot download artifacts"
+        raise ValueError(msg)
+
+    # List artifacts for the run
+    list_url = (
+        f"https://api.github.com/repos/{owner}/{repo}/actions/runs/{run_id}/artifacts"
+    )
+    headers = {
+        "Authorization": f"Bearer {github_token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    logger.info("  Fetching artifact list from: %s", list_url)
+    list_response = requests.get(list_url, headers=headers, timeout=30)
+    list_response.raise_for_status()
+
+    artifacts_data = list_response.json()
+    artifacts = artifacts_data.get("artifacts", [])
+
+    if not artifacts:
+        msg = f"No artifacts found for run {run_id}"
+        raise ValueError(msg)
+
+    # Use first artifact (or could be made configurable)
+    artifact = artifacts[0]
+    artifact_id = artifact["id"]
+    artifact_name = artifact["name"]
+
+    logger.info("  Downloading artifact: %s (ID: %s)", artifact_name, artifact_id)
+
+    # Download artifact
+    download_url = (
+        f"https://api.github.com/repos/{owner}/{repo}/"
+        f"actions/artifacts/{artifact_id}/zip"
+    )
+    download_response = requests.get(download_url, headers=headers, timeout=30)
+    download_response.raise_for_status()
+
+    content_size = len(download_response.content)
+    logger.info("  ✓ Downloaded artifact ZIP (%s bytes)", content_size)
+
+    return download_response.content
+
+
 def _download_file_content(project_file) -> bytes:
     """Download file content from URL using secure URL validation."""
+    # Check if this is a GitHub artifact download requiring special handling
+    if project_file.handler_metadata and project_file.handler_metadata.get(
+        "requires_github_auth"
+    ):
+        from django.conf import settings  # noqa: PLC0415
+
+        metadata = project_file.handler_metadata
+        return _download_github_artifact(
+            owner=metadata["owner"],
+            repo=metadata["repo"],
+            run_id=metadata["run_id"],
+            github_token=settings.GITHUB_TOKEN,
+        )
+
+    # Standard HTTP(S) download
     content, headers = _safe_urlopen(project_file.source_url)
 
     # Set content type if available
