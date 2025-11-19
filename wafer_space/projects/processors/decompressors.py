@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 CHUNK_SIZE = 65536  # 64KB chunks for streaming
+DECOMPRESSOR_PRIORITY = 100  # Priority for decompressors (higher than extractors)
 
 
 class GzipDecompressor(ContentProcessor):
@@ -102,8 +103,8 @@ class GzipDecompressor(ContentProcessor):
                     "decompressed_size": bytes_written,
                 },
             )
-        except ValueError:
-            # Size limit exceeded - cleanup and re-raise
+        except Exception:
+            # Cleanup partial file on any error
             if output_path.exists():
                 output_path.unlink()
             raise
@@ -112,9 +113,9 @@ class GzipDecompressor(ContentProcessor):
         """Return priority (100 for decompressors).
 
         Returns:
-            Priority value 100
+            Priority value DECOMPRESSOR_PRIORITY
         """
-        return 100
+        return DECOMPRESSOR_PRIORITY
 
 
 class Bzip2Decompressor(ContentProcessor):
@@ -198,14 +199,15 @@ class Bzip2Decompressor(ContentProcessor):
                     "decompressed_size": bytes_written,
                 },
             )
-        except ValueError:
+        except Exception:
+            # Cleanup partial file on any error
             if output_path.exists():
                 output_path.unlink()
             raise
 
     def get_priority(self) -> int:
         """Return priority (100 for decompressors)."""
-        return 100
+        return DECOMPRESSOR_PRIORITY
 
 
 class XzDecompressor(ContentProcessor):
@@ -289,18 +291,19 @@ class XzDecompressor(ContentProcessor):
                     "decompressed_size": bytes_written,
                 },
             )
-        except ValueError:
+        except Exception:
+            # Cleanup partial file on any error
             if output_path.exists():
                 output_path.unlink()
             raise
 
     def get_priority(self) -> int:
         """Return priority (100 for decompressors)."""
-        return 100
+        return DECOMPRESSOR_PRIORITY
 
 
 # Register all decompressors with global registry
-from wafer_space.projects.content_processors import _processor_registry
+from wafer_space.projects.content_processors import _processor_registry  # noqa: E402
 
 _processor_registry.register(GzipDecompressor())
 _processor_registry.register(Bzip2Decompressor())

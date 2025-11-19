@@ -386,7 +386,7 @@ def _download_file_content(project_file) -> bytes:
     if project_file.handler_metadata and project_file.handler_metadata.get(
         "requires_github_auth"
     ):
-        from django.conf import settings
+        from django.conf import settings  # noqa: PLC0415
 
         metadata = project_file.handler_metadata
         return _download_github_artifact(
@@ -999,13 +999,13 @@ def _apply_content_pipeline(
         ValueError: If pipeline processing fails or format validation fails
     """
     logger = logging.getLogger(__name__)
-    from django.conf import settings
+    from django.conf import settings  # noqa: PLC0415
 
-    from .content_pipeline import ContentPipeline
-    from .content_pipeline import cleanup_temp_dir
-    from .content_pipeline import get_temp_dir_for_file
-    from .content_processors import _processor_registry
-    from .format_validators import validate_output_format
+    from .content_pipeline import ContentPipeline  # noqa: PLC0415
+    from .content_pipeline import cleanup_temp_dir  # noqa: PLC0415
+    from .content_pipeline import get_temp_dir_for_file  # noqa: PLC0415
+    from .content_processors import _processor_registry  # noqa: PLC0415
+    from .format_validators import validate_output_format  # noqa: PLC0415
 
     # Write content to temp file for pipeline
     temp_path.write_bytes(content)
@@ -1182,7 +1182,7 @@ def _verify_and_notify(
         logger.info("  ✓ Checksum verified notification created")
 
         # Queue manufacturability check now that hash is verified
-        from .services import ManufacturabilityService
+        from .services import ManufacturabilityService  # noqa: PLC0415
 
         logger.info("Step 10: Queueing manufacturability check...")
         ManufacturabilityService.queue_check(project_file.project)
@@ -1362,7 +1362,7 @@ def download_project_file(self, project_id):
 
         # Detect file type from actual content
         logger.info("Step 6: Detecting file type from content...")
-        from .services import detect_file_type_from_data
+        from .services import detect_file_type_from_data  # noqa: PLC0415
 
         # Use first 1MB for MIME detection (or entire file if smaller)
         detection_data = downloaded_content[: 1024 * 1024]

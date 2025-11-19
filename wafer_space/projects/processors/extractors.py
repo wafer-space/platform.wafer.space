@@ -13,6 +13,9 @@ from wafer_space.projects.content_processors import ProcessorResult
 
 logger = logging.getLogger(__name__)
 
+# Chunk size for streaming extraction
+CHUNK_SIZE = 65536  # 64KB chunks
+
 # Valid GDS/OASIS extensions (including compressed versions)
 VALID_EXTENSIONS = {
     ".gds",
@@ -74,8 +77,8 @@ class ZipExtractor(ContentProcessor):
             msg = (
                 "Archive contains no GDS or OASIS files.\n"
                 f"Found: {', '.join(all_files)}\n"
-                "Expected: exactly one .gds, .oas, .gds.gz, .gds.bz2, "
-                "or .gds.xz file"
+                "Expected: exactly one .gds, .oas, .gds.gz, .gds.bz2, .gds.xz, "
+                ".oas.gz, .oas.bz2, or .oas.xz file"
             )
             raise ValueError(msg)
 
@@ -128,14 +131,15 @@ class ZipExtractor(ContentProcessor):
         try:
             with zf.open(target_file) as f_in, output_path.open("wb") as f_out:
                 while True:
-                    chunk = f_in.read(65536)
+                    chunk = f_in.read(CHUNK_SIZE)
                     if not chunk:
                         break
 
                     bytes_written += len(chunk)
                     self._check_size_limit(bytes_written, max_size)
                     f_out.write(chunk)
-        except ValueError:
+        except Exception:
+            # Cleanup partial file on any error
             if output_path.exists():
                 output_path.unlink()
             raise
@@ -263,8 +267,8 @@ class TarExtractor(ContentProcessor):
             msg = (
                 "Archive contains no GDS or OASIS files.\n"
                 f"Found: {', '.join(all_files)}\n"
-                "Expected: exactly one .gds, .oas, .gds.gz, .gds.bz2, "
-                "or .gds.xz file"
+                "Expected: exactly one .gds, .oas, .gds.gz, .gds.bz2, .gds.xz, "
+                ".oas.gz, .oas.bz2, or .oas.xz file"
             )
             raise ValueError(msg)
 
@@ -340,14 +344,15 @@ class TarExtractor(ContentProcessor):
 
             with f_in, output_path.open("wb") as f_out:
                 while True:
-                    chunk = f_in.read(65536)
+                    chunk = f_in.read(CHUNK_SIZE)
                     if not chunk:
                         break
 
                     bytes_written += len(chunk)
                     self._check_size_limit(bytes_written, max_size)
                     f_out.write(chunk)
-        except ValueError:
+        except Exception:
+            # Cleanup partial file on any error
             if output_path.exists():
                 output_path.unlink()
             raise
@@ -436,7 +441,7 @@ class TarExtractor(ContentProcessor):
 
 
 # Register all extractors with global registry
-from wafer_space.projects.content_processors import _processor_registry
+from wafer_space.projects.content_processors import _processor_registry  # noqa: E402
 
 _processor_registry.register(ZipExtractor())
 _processor_registry.register(TarExtractor())
