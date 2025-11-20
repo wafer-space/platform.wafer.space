@@ -589,6 +589,133 @@ class FileProcessingError(models.Model):
         return f"{self.get_error_type_display()}: {self.error_message[:50]}"
 
 
+class DownloadAttempt(models.Model):
+    """Track a single download attempt for a ProjectFile.
+
+    Created at the start of each download task execution. Tracks the full
+    lifecycle of that execution including progress, checkpoints, and errors.
+
+    Each ProjectFile can have multiple attempts (retries). Each attempt has
+    its own set of checkpoints and errors, preventing duplicates.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        DOWNLOADING = "downloading", "Downloading"
+        COMPLETED = "completed", "Completed"
+        FAILED = "failed", "Failed"
+
+    # Foreign Keys
+    project_file = models.ForeignKey(
+        ProjectFile,
+        on_delete=models.CASCADE,
+        related_name="download_attempts",
+        help_text="The file this download attempt belongs to",
+    )
+
+    # Attempt tracking
+    attempt_number = models.IntegerField(
+        help_text="Sequential attempt number (1, 2, 3...)",
+    )
+    started_at = models.DateTimeField(
+        auto_now_add=True,
+        help_text="When this attempt was created",
+    )
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When this attempt finished (success or failure)",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+        help_text="Current status of this download attempt",
+    )
+
+    # Download details (moved from ProjectFile)
+    download_started_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When download actually started (after task setup)",
+    )
+    download_completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When download finished (success or failure)",
+    )
+    download_error = models.TextField(
+        blank=True,
+        help_text="Error message if download failed",
+    )
+    download_duration_seconds = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Total download duration in seconds",
+    )
+    bytes_downloaded = models.BigIntegerField(
+        default=0,
+        help_text="Total bytes downloaded in this attempt",
+    )
+
+    # Metadata
+    last_activity = models.DateTimeField(
+        auto_now=True,
+        help_text="Last update to this attempt (for staleness detection)",
+    )
+
+    class Meta:
+        ordering = ["-attempt_number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["project_file", "attempt_number"],
+                name="unique_attempt_per_file",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["project_file", "-attempt_number"]),
+            models.Index(fields=["status"]),
+            models.Index(fields=["last_activity"]),
+        ]
+
+    def __str__(self):
+        status = self.get_status_display()
+        filename = self.project_file.original_filename
+        return f"{filename} - Attempt #{self.attempt_number} ({status})"
+
+    @property
+    def download_progress(self) -> int:
+        """Calculate download progress percentage.
+
+        Returns:
+            int: Progress percentage (0-100)
+        """
+        if not self.project_file.file_size or self.project_file.file_size == 0:
+            return 0
+        progress = (self.bytes_downloaded / self.project_file.file_size) * 100
+        return min(int(progress), 100)
+
+    @property
+    def download_speed_formatted(self) -> str:
+        """Get formatted download speed.
+
+        Returns:
+            str: Speed like "1.2 MB/s" or empty string
+        """
+        if not self.download_duration_seconds or self.download_duration_seconds <= 0:
+            return ""
+
+        speed_bytes_per_sec = self.bytes_downloaded / self.download_duration_seconds
+
+        # Format speed
+        bytes_per_unit = 1024
+        for unit in ["B/s", "KB/s", "MB/s", "GB/s"]:
+            if speed_bytes_per_sec < bytes_per_unit:
+                return f"{speed_bytes_per_sec:.1f} {unit}"
+            speed_bytes_per_sec /= bytes_per_unit
+        return f"{speed_bytes_per_sec:.1f} TB/s"
+
+
 class ProjectFileChunk(models.Model):
     """Track individual chunk downloads for performance analysis and resume capability.
 
