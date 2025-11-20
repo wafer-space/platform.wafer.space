@@ -355,28 +355,60 @@ def _download_github_artifact(
 
     artifacts_data = list_response.json()
     artifacts = artifacts_data.get("artifacts", [])
+    total_count = artifacts_data.get("total_count", 0)
+
+    logger.info("  ✓ Found %d artifact(s) for run %s", total_count, run_id)
 
     if not artifacts:
         msg = f"No artifacts found for run {run_id}"
         raise ValueError(msg)
 
+    # Log all available artifacts
+    logger.info("  Available artifacts:")
+    for idx, art in enumerate(artifacts, 1):
+        art_name = art.get("name", "unknown")
+        art_id = art.get("id", "unknown")
+        art_size = art.get("size_in_bytes", 0)
+        # Format size in human-readable format
+        if art_size < BYTES_PER_KILOBYTE:
+            size_str = f"{art_size} B"
+        elif art_size < BYTES_PER_KILOBYTE * BYTES_PER_KILOBYTE:
+            size_str = f"{art_size / BYTES_PER_KILOBYTE:.1f} KB"
+        elif art_size < BYTES_PER_KILOBYTE * BYTES_PER_KILOBYTE * BYTES_PER_KILOBYTE:
+            size_str = f"{art_size / (BYTES_PER_KILOBYTE * BYTES_PER_KILOBYTE):.1f} MB"
+        else:
+            size_str = f"{art_size / (BYTES_PER_KILOBYTE * BYTES_PER_KILOBYTE * BYTES_PER_KILOBYTE):.2f} GB"
+        logger.info(
+            "    %d. %s (ID: %s, Size: %s)",
+            idx,
+            art_name,
+            art_id,
+            size_str,
+        )
+
     # Use first artifact (or could be made configurable)
     artifact = artifacts[0]
     artifact_id = artifact["id"]
     artifact_name = artifact["name"]
+    artifact_size = artifact.get("size_in_bytes", 0)
 
-    logger.info("  Downloading artifact: %s (ID: %s)", artifact_name, artifact_id)
+    logger.info("  → Selecting artifact #1: %s (ID: %s)", artifact_name, artifact_id)
 
     # Download artifact
     download_url = (
         f"https://api.github.com/repos/{owner}/{repo}/"
         f"actions/artifacts/{artifact_id}/zip"
     )
+    logger.info("  Downloading from: %s", download_url)
     download_response = requests.get(download_url, headers=headers, timeout=30)
     download_response.raise_for_status()
 
     content_size = len(download_response.content)
-    logger.info("  ✓ Downloaded artifact ZIP (%s bytes)", content_size)
+    logger.info(
+        "  ✓ Downloaded artifact ZIP: %s bytes (expected: %s bytes)",
+        content_size,
+        artifact_size,
+    )
 
     return download_response.content
 
