@@ -22,6 +22,7 @@ from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.tasks import _download_file_content
 from wafer_space.projects.tasks import _download_github_artifact
 from wafer_space.projects.tasks import _log_download_start
+from wafer_space.projects.tasks import _prepare_download_request
 from wafer_space.projects.tasks import _process_and_save_content
 from wafer_space.projects.tasks import _safe_urlopen
 from wafer_space.projects.tasks import check_project_manufacturability
@@ -698,3 +699,51 @@ class DownloadTaskTests(TestCase):
             "actions/artifacts/123456/zip"
         )
         assert result["headers"]["Authorization"] == "Bearer test_token"
+
+    def test_prepare_download_request_with_github_artifact(self):
+        """Test that GitHub artifacts get authenticated URL and headers."""
+        project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+        )
+
+        project_file = ProjectFile.objects.create(
+            project=project,
+            source_url="https://github.com/owner/repo/actions/runs/123/artifacts/456",
+            original_filename="design.zip",
+            handler_metadata={
+                "handler": "GitHubArtifactHandler",
+                "owner": "owner",
+                "repo": "repo",
+                "run_id": "123",
+                "requires_github_auth": True,
+            },
+        )
+
+        with NamedTemporaryFile(delete=False) as temp_file:
+            temp_path = Path(temp_file.name)
+
+        try:
+            mock_func = "wafer_space.projects.tasks._download_github_artifact"
+            with patch(mock_func) as mock_gh:
+                mock_gh.return_value = {
+                    "url": "https://api.github.com/repos/owner/repo/actions/artifacts/789/zip",
+                    "headers": {"Authorization": "Bearer test_token"},
+                    "artifact_name": "design-files",
+                    "artifact_size": 1024000,
+                }
+
+                url, headers, resume_pos = _prepare_download_request(
+                    project_file=project_file,
+                    temp_path=temp_path,
+                )
+
+                # Should return authenticated URL and headers
+                assert (
+                    url
+                    == "https://api.github.com/repos/owner/repo/actions/artifacts/789/zip"
+                )
+                assert headers["Authorization"] == "Bearer test_token"
+                assert resume_pos == 0
+        finally:
+            temp_path.unlink(missing_ok=True)

@@ -472,15 +472,54 @@ def _save_file_to_django(project_file, file_content: bytes, temp_dir: Path) -> N
 
 
 def _prepare_download_request(
-    url: str,
+    project_file: ProjectFile,
     temp_path: Path,
-) -> tuple[dict[str, str], int]:
-    """Prepare download request with resume support.
+) -> tuple[str, dict[str, str], int]:
+    """Prepare download request with resume support and GitHub authentication.
+
+    For GitHub artifacts, obtains authenticated download URL (valid 60 seconds).
+    For standard URLs, uses URL as-is with User-Agent header.
+
+    Args:
+        project_file: ProjectFile with source_url and handler_metadata
+        temp_path: Path to temporary download file
 
     Returns:
-        tuple: (headers dict, resume byte position)
+        tuple: (download_url, headers dict, resume byte position)
     """
     logger = logging.getLogger(__name__)
+
+    # Check if this is a GitHub artifact requiring authentication
+    if project_file.handler_metadata and project_file.handler_metadata.get(
+        "requires_github_auth"
+    ):
+        logger.info("  GitHub artifact detected - obtaining authenticated URL...")
+
+        from django.conf import settings  # noqa: PLC0415
+
+        metadata = project_file.handler_metadata
+        auth_data = _download_github_artifact(
+            owner=metadata["owner"],
+            repo=metadata["repo"],
+            run_id=metadata["run_id"],
+            github_token=settings.GITHUB_TOKEN,
+        )
+
+        url = auth_data["url"]
+        headers = auth_data["headers"].copy()  # Copy to avoid mutating original
+
+        # Add User-Agent (GitHub requires it)
+        headers["User-Agent"] = "wafer.space/1.0"
+
+        logger.info("  ✓ Authenticated URL obtained (valid for 60 seconds)")
+
+        # GitHub artifact downloads don't support resume (they're dynamic URLs)
+        resume_byte_pos = 0
+
+        return url, headers, resume_byte_pos
+
+    # Standard HTTP(S) download
+    url = project_file.source_url
     headers = {"User-Agent": "wafer.space/1.0"}
     resume_byte_pos = 0
 
@@ -490,7 +529,7 @@ def _prepare_download_request(
         formatted_size = _format_bytes(resume_byte_pos)
         logger.info("  Resume: Found partial download (%s)", formatted_size)
 
-    return headers, resume_byte_pos
+    return url, headers, resume_byte_pos
 
 
 def _get_download_response(
@@ -500,6 +539,12 @@ def _get_download_response(
     resume_byte_pos: int,
 ) -> tuple[requests.Response, int]:
     """Get HTTP response for download, handling resume failures.
+
+    Args:
+        url: Download URL
+        headers: HTTP headers (may include Range, Authorization, etc.)
+        temp_path: Path to temp file
+        resume_byte_pos: Byte position to resume from
 
     Returns:
         tuple: (response object, adjusted resume byte position)
@@ -514,7 +559,9 @@ def _get_download_response(
         logger.info("  Server doesn't support resume - restarting from beginning")
         resume_byte_pos = 0
         temp_path.unlink(missing_ok=True)
-        response = requests.get(url, headers=headers, stream=True, timeout=30)
+        # Remove Range header for fresh start
+        headers_no_range = {k: v for k, v in headers.items() if k != "Range"}
+        response = requests.get(url, headers=headers_no_range, stream=True, timeout=30)
 
     response.raise_for_status()
     return response, resume_byte_pos
@@ -813,12 +860,15 @@ def _download_chunks(state: _ChunkDownloadState) -> int:
 
 def _download_with_progress(
     task,
-    project_file,
+    project_file: ProjectFile,
     temp_path: Path,
     *,
     chunk_size: int = 1024 * 1024,  # 1MB chunks
 ) -> tuple[str, str]:
     """Download file with progress tracking and resume capability.
+
+    Handles both standard HTTP(S) downloads and GitHub artifact downloads
+    through a common chunked download pathway with progress logging.
 
     Args:
         task: The Celery task instance (for progress updates)
@@ -829,10 +879,8 @@ def _download_with_progress(
     Returns:
         tuple: (md5_hash, sha1_hash) of downloaded content
     """
-    url = project_file.source_url
-
-    # Prepare request with resume support
-    headers, resume_byte_pos = _prepare_download_request(url, temp_path)
+    # Prepare request (gets authenticated URL for GitHub artifacts)
+    url, headers, resume_byte_pos = _prepare_download_request(project_file, temp_path)
 
     # Get HTTP response
     response, resume_byte_pos = _get_download_response(
