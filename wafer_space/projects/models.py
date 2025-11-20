@@ -550,6 +550,44 @@ class ProjectFile(models.Model):
             speed /= bytes_per_kb
         return f"{speed:.2f} PB/s"
 
+    @property
+    def latest_attempt(self) -> "DownloadAttempt | None":
+        """Get the most recent download attempt.
+
+        Returns None if no attempts exist yet.
+        """
+        return self.download_attempts.first()  # Already ordered by -attempt_number
+
+    @property
+    def current_status(self) -> str:
+        """Get current download status from latest attempt.
+
+        Returns 'pending' if no attempts exist.
+        """
+        attempt = self.latest_attempt
+        if not attempt:
+            return "pending"
+        return attempt.status
+
+    @property
+    def attempt_count(self) -> int:
+        """Get number of download attempts.
+
+        Includes all attempts (successful and failed).
+        """
+        return self.download_attempts.count()
+
+    @property
+    def download_progress(self) -> int:
+        """Get download progress percentage from latest attempt.
+
+        Returns 0 if no attempts exist or file size unknown.
+        """
+        attempt = self.latest_attempt
+        if not attempt:
+            return 0
+        return attempt.download_progress
+
 
 class FileProcessingError(models.Model):
     """Log of errors that occurred during file processing.
