@@ -592,46 +592,18 @@ def _log_file_size(
     return total_size
 
 
-def _initialize_hash_calculators(
-    temp_path: Path,
-    resume_byte_pos: int,
-):
-    """Initialize hash calculators, updating with existing content if resuming.
-
-    Returns:
-        tuple: (md5_hasher, sha1_hasher)
-    """
-    logger = logging.getLogger(__name__)
-    logger.info("  Initializing hash calculators (MD5, SHA1)...")
-
-    md5_hasher = hashlib.md5(usedforsecurity=False)
-    sha1_hasher = hashlib.sha1(usedforsecurity=False)
-
-    if resume_byte_pos > 0:
-        logger.info("  Reading existing partial download for hash calculation...")
-        with temp_path.open("rb") as existing_file:
-            existing_content = existing_file.read()
-            md5_hasher.update(existing_content)
-            sha1_hasher.update(existing_content)
-        logger.info("  ✓ Hashes updated with %s", _format_bytes(resume_byte_pos))
-
-    return md5_hasher, sha1_hasher
-
-
 @dataclass
 class _ChunkDownloadState:
-    """State for chunk-based file download."""
+    """State for chunk download operation."""
 
     response: requests.Response
     temp_path: Path
-    task: "shared_task"  # Celery task instance (use string to avoid circular import)
+    task: Any  # Celery task instance
     project_file: ProjectFile
     total_size: int
     resume_byte_pos: int
-    md5_hasher: "hashlib._Hash"  # hashlib hash object
-    sha1_hasher: "hashlib._Hash"  # hashlib hash object
     chunk_size: int
-    start_time: float  # Unix timestamp when download started
+    start_time: float
 
 
 def _should_log_progress(
@@ -728,13 +700,18 @@ def _should_update_database(
     return False, last_db_update_progress, last_db_update_bytes
 
 
-def _download_chunks(state: _ChunkDownloadState) -> int:
-    """Download file chunks with progress tracking.
+def _download_chunks(state: _ChunkDownloadState) -> None:
+    """Download file in chunks with progress tracking.
 
-    Returns:
-        int: Number of chunks downloaded
+    Updates:
+    - Writes chunks to temp file
+    - Updates database progress every N chunks
+    - Logs progress to console
+
+    Does NOT calculate hashes - that happens after extraction.
     """
     logger = logging.getLogger(__name__)
+
     downloaded = state.resume_byte_pos
     last_db_update_progress = 0
     last_log_progress = 0
@@ -761,10 +738,8 @@ def _download_chunks(state: _ChunkDownloadState) -> int:
             if not chunk:  # filter out keep-alive chunks
                 continue
 
-            # Write chunk and update hashes
+            # Write chunk
             temp_file.write(chunk)
-            state.md5_hasher.update(chunk)
-            state.sha1_hasher.update(chunk)
             downloaded += len(chunk)
             chunk_count += 1
 
@@ -855,7 +830,6 @@ def _download_chunks(state: _ChunkDownloadState) -> int:
         chunk_count,
         _format_bytes(int(speed_bytes_per_sec)),
     )
-    return chunk_count
 
 
 def _download_with_progress(
@@ -864,11 +838,11 @@ def _download_with_progress(
     temp_path: Path,
     *,
     chunk_size: int = 1024 * 1024,  # 1MB chunks
-) -> tuple[str, str]:
+) -> None:
     """Download file with progress tracking and resume capability.
 
-    Handles both standard HTTP(S) downloads and GitHub artifact downloads
-    through a common chunked download pathway with progress logging.
+    Downloads file in chunks, tracking progress to database.
+    Hash calculation is performed separately after extraction pipeline.
 
     Args:
         task: The Celery task instance (for progress updates)
@@ -877,7 +851,7 @@ def _download_with_progress(
         chunk_size: Size of download chunks in bytes
 
     Returns:
-        tuple: (md5_hash, sha1_hash) of downloaded content
+        None - file downloaded to temp_path
     """
     # Prepare request (gets authenticated URL for GitHub artifacts)
     url, headers, resume_byte_pos = _prepare_download_request(project_file, temp_path)
@@ -890,9 +864,6 @@ def _download_with_progress(
     # Log file size information
     total_size = _log_file_size(response, project_file, resume_byte_pos)
 
-    # Initialize hash calculators
-    md5_hasher, sha1_hasher = _initialize_hash_calculators(temp_path, resume_byte_pos)
-
     # Download chunks with progress tracking
     download_state = _ChunkDownloadState(
         response=response,
@@ -901,14 +872,10 @@ def _download_with_progress(
         project_file=project_file,
         total_size=total_size,
         resume_byte_pos=resume_byte_pos,
-        md5_hasher=md5_hasher,
-        sha1_hasher=sha1_hasher,
         chunk_size=chunk_size,
         start_time=time.time(),
     )
     _download_chunks(download_state)
-
-    return md5_hasher.hexdigest(), sha1_hasher.hexdigest()
 
 
 def _get_project_file_for_download(
@@ -1423,23 +1390,18 @@ def download_project_file(self, project_id):  # noqa: PLR0915
             logger.info("  Using special handler download (GitHub artifact)...")
             downloaded_content = _download_file_content(project_file)
 
-            # Write to temp file for hash calculation
+            # Write to temp file
             temp_path.write_bytes(downloaded_content)
-
-            # Calculate hashes
-            md5_hash, sha1_hash = _calculate_file_hashes(downloaded_content)
         else:
             # Standard chunked download with progress tracking
             logger.info("  Using standard chunked download...")
-            md5_hash, sha1_hash = _download_with_progress(
+            _download_with_progress(
                 self,
                 project_file,
                 temp_path,
             )
 
         logger.info("  ✓ Download completed successfully!")
-        logger.info("  ✓ MD5: %s", md5_hash)
-        logger.info("  ✓ SHA1: %s", sha1_hash)
 
         # Read downloaded content
         logger.info("Step 5: Reading downloaded content...")
@@ -1447,6 +1409,12 @@ def download_project_file(self, project_id):  # noqa: PLR0915
             downloaded_content = temp_file.read()
         formatted_size = _format_bytes(len(downloaded_content))
         logger.info("  ✓ Read %s from temp file", formatted_size)
+
+        # Calculate hashes from downloaded content
+        logger.info("  Calculating hashes from downloaded content...")
+        md5_hash, sha1_hash = _calculate_file_hashes(downloaded_content)
+        logger.info("  ✓ MD5: %s", md5_hash)
+        logger.info("  ✓ SHA1: %s", sha1_hash)
 
         # Detect file type from actual content
         logger.info("Step 6: Detecting file type from content...")

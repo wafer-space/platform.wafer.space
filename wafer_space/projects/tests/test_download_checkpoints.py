@@ -362,17 +362,15 @@ class DownloadChunksIntegrationTests(TestCase):
                 project_file=self.project_file,
                 total_size=0,  # Unknown size
                 resume_byte_pos=0,
-                md5_hasher=Mock(update=Mock()),
-                sha1_hasher=Mock(update=Mock()),
                 chunk_size=CHUNK_SIZE,
                 start_time=0.0,
             )
 
             # Run download
-            chunk_count = _download_chunks(state)
+            _download_chunks(state)
 
-            # Verify chunks downloaded (25 chunks of 1MB each)
-            assert chunk_count == DOWNLOAD_CHUNKS_25MB
+            # Verify file was downloaded (25 chunks of 1MB each = 25MB)
+            assert temp_path.stat().st_size == 25 * MB
 
             # Verify database checkpoints created
             checkpoints = ProjectFileChunk.objects.filter(
@@ -423,17 +421,15 @@ class DownloadChunksIntegrationTests(TestCase):
                 project_file=self.project_file,
                 total_size=0,  # Unknown size
                 resume_byte_pos=resume_pos,
-                md5_hasher=Mock(update=Mock()),
-                sha1_hasher=Mock(update=Mock()),
                 chunk_size=CHUNK_SIZE,
                 start_time=0.0,
             )
 
             # Run download
-            chunk_count = _download_chunks(state)
+            _download_chunks(state)
 
-            # Verify chunks downloaded
-            assert chunk_count == DOWNLOAD_CHUNKS_18MB
+            # Verify file was downloaded to expected size (60MB total)
+            assert temp_path.stat().st_size == 60 * MB
 
             # Verify database checkpoints align to clean boundaries
             checkpoints = ProjectFileChunk.objects.filter(
@@ -478,8 +474,6 @@ class DownloadChunksIntegrationTests(TestCase):
                 project_file=self.project_file,
                 total_size=0,
                 resume_byte_pos=0,
-                md5_hasher=Mock(update=Mock()),
-                sha1_hasher=Mock(update=Mock()),
                 chunk_size=CHUNK_SIZE,
                 start_time=0.0,
             )
@@ -562,8 +556,6 @@ class KnownSizeCheckpointTests(TestCase):
                 project_file=self.project_file,
                 total_size=total_size,  # KNOWN SIZE - triggers the buggy code path
                 resume_byte_pos=0,
-                md5_hasher=Mock(update=Mock()),
-                sha1_hasher=Mock(update=Mock()),
                 chunk_size=CHUNK_SIZE,
                 start_time=0.0,
             )
@@ -658,8 +650,6 @@ class ProgressLoggingIntegrationTests(TestCase):
                 project_file=self.project_file,
                 total_size=0,  # Unknown size
                 resume_byte_pos=0,
-                md5_hasher=Mock(update=Mock()),
-                sha1_hasher=Mock(update=Mock()),
                 chunk_size=CHUNK_SIZE,
                 start_time=0.0,
             )

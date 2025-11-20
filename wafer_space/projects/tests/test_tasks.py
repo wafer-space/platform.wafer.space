@@ -21,6 +21,7 @@ from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.tasks import _download_file_content
 from wafer_space.projects.tasks import _download_github_artifact
+from wafer_space.projects.tasks import _download_with_progress
 from wafer_space.projects.tasks import _log_download_start
 from wafer_space.projects.tasks import _prepare_download_request
 from wafer_space.projects.tasks import _process_and_save_content
@@ -745,5 +746,45 @@ class DownloadTaskTests(TestCase):
                 )
                 assert headers["Authorization"] == "Bearer test_token"
                 assert resume_pos == 0
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+    @patch("wafer_space.projects.tasks.requests.get")
+    def test_download_with_progress_no_hash_return(self, mock_get):
+        """Test that _download_with_progress only downloads, doesn't return hashes."""
+        expected_file_size = 1024  # Expected download size in bytes
+
+        project = Project.objects.create(user=self.user, name="Test")
+        project_file = ProjectFile.objects.create(
+            project=project,
+            source_url="http://example.com/file.zip",
+            original_filename="file.zip",
+        )
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.headers = {"Content-Length": str(expected_file_size)}
+        mock_response.iter_content = lambda chunk_size: [b"test" * 256]
+        mock_response.raise_for_status = Mock()
+        mock_get.return_value = mock_response
+
+        with NamedTemporaryFile(delete=False) as temp_file:
+            temp_path = Path(temp_file.name)
+
+        try:
+            # Mock task
+            mock_task = Mock()
+            mock_task.update_state = Mock()
+
+            # Should return None (no hashes)
+            _download_with_progress(
+                mock_task,
+                project_file,
+                temp_path,
+            )
+
+            # Function returns None implicitly, verify file downloaded
+            assert temp_path.exists()
+            assert temp_path.stat().st_size == expected_file_size
         finally:
             temp_path.unlink(missing_ok=True)
