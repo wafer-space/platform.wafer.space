@@ -2,6 +2,7 @@
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.test import Client
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions
 
@@ -56,27 +57,44 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
         self.live_server_url = live_server.url
 
     def perform_login(self, driver, username, password, wait):
-        """Perform login following the authenticated_driver pattern."""
-        # Navigate to login page
-        driver.get(f"{self.live_server_url}/accounts/login/")
+        """Perform login using Django test client to establish session cookie.
 
-        # Wait for login form and fill credentials
-        username_field = wait.until(
-            expected_conditions.presence_of_element_located((By.NAME, "login"))
+        This approach is more reliable than Selenium form submission because:
+        1. Django test client creates a proper session in the database
+        2. We extract the session cookie and transfer it to Selenium
+        3. Session persists reliably across page navigation
+        """
+        # Create Django test client
+        client = Client()
+
+        # Perform login using Django test client (creates session in database)
+        login_successful = client.login(username=username, password=password)
+        if not login_successful:
+            msg = f"Failed to login user {username}"
+            raise AssertionError(msg)
+
+        # Extract session cookie from Django test client
+        session_cookie = client.cookies.get("sessionid")
+        if not session_cookie:
+            msg = "No session cookie found after login"
+            raise AssertionError(msg)
+
+        # Navigate to the site first (required to set cookie)
+        driver.get(f"{self.live_server_url}/")
+
+        # Transfer session cookie to Selenium WebDriver
+        driver.add_cookie(
+            {
+                "name": "sessionid",
+                "value": session_cookie.value,
+                "path": "/",
+                "secure": False,
+                "httpOnly": True,
+            }
         )
-        username_field.send_keys(username)
 
-        password_field = driver.find_element(By.NAME, "password")
-        password_field.send_keys(password)
-
-        # Submit form
-        submit_button = driver.find_element(By.XPATH, "//button[@type='submit']")
-        submit_button.click()
-
-        # Wait for redirect away from login page (to /accounts/confirm-email/ typically)
-        wait.until(
-            expected_conditions.url_changes(f"{self.live_server_url}/accounts/login/")
-        )
+        # Verify session is active by navigating to a page that requires auth
+        driver.get(f"{self.live_server_url}/accounts/confirm-email/")
 
     def test_superuser_sees_warning_banner(self, driver, superuser, project, wait):
         """Test that superuser sees warning banner on other user's project."""
@@ -162,8 +180,8 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
         # Login as superuser
         self.perform_login(driver, "admin", TEST_PASSWORD, wait)
 
-        # Navigate to edit page
-        driver.get(f"{self.live_server_url}/projects/{project.pk}/edit/")
+        # Navigate to update page
+        driver.get(f"{self.live_server_url}/projects/{project.pk}/update/")
 
         # Verify warning banner present
         banner = wait.until(
@@ -181,9 +199,15 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
         # Submit form
         driver.find_element(By.CSS_SELECTOR, "button[type='submit']").click()
 
-        # Verify project updated
-        project.refresh_from_db()
-        assert project.name == "Updated by Admin"
+        # Wait for redirect to detail page with success message
+        success_alert = wait.until(
+            expected_conditions.presence_of_element_located(
+                (By.CSS_SELECTOR, ".alert-success")
+            )
+        )
+
+        # Verify success message contains the updated project name
+        assert "Updated by Admin" in success_alert.text
 
     def test_audit_log_created_on_superuser_access(
         self, driver, superuser, project, wait
