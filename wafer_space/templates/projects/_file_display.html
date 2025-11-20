@@ -205,7 +205,7 @@
         {% for error in file.errors.all %}
           <div class="mb-3">
             <strong>{{ error.get_error_type_display }}:</strong>
-            <p class="mb-1">{{ error.error_message }}</p>
+            <p class="mb-1">{{ error.error_message|linebreaksbr }}</p>
             <small class="text-muted">
               <i class="bi bi-clock"></i>
               {{ error.occurred_at|date:"F d, Y g:i a" }}
