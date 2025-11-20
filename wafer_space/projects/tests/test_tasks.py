@@ -22,7 +22,6 @@ from django.test import TestCase
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
-from wafer_space.projects.tasks import _download_file_content
 from wafer_space.projects.tasks import _download_github_artifact
 from wafer_space.projects.tasks import _download_with_progress
 from wafer_space.projects.tasks import _log_download_start
@@ -544,40 +543,6 @@ class TestContentPipelineIntegration(TestCase):
                 assert mock_pipeline.called
             finally:
                 temp_path.unlink(missing_ok=True)
-
-    @patch("django.conf.settings.GITHUB_TOKEN", None)
-    @patch("wafer_space.projects.tasks._download_github_artifact")
-    def test_download_with_github_artifact(self, mock_github_download):
-        """Test GitHub artifact download with mocked API."""
-        # Create project file with GitHub artifact metadata
-        project_file = ProjectFile.objects.create(
-            project=self.project,
-            original_filename="artifact.zip",
-            source_url="https://github.com/owner/repo/actions/runs/123456",
-            is_active=True,
-            handler_metadata={
-                "handler": "GitHubArtifactHandler",
-                "owner": "owner",
-                "repo": "repo",
-                "run_id": "123456",
-                "requires_github_auth": True,
-            },
-        )
-
-        # Mock GitHub API response
-        mock_github_download.return_value = b"artifact_zip_content"
-
-        # Download content
-        content = _download_file_content(project_file)
-
-        # Verify GitHub download was called with correct parameters
-        mock_github_download.assert_called_once_with(
-            owner="owner",
-            repo="repo",
-            run_id="123456",
-            github_token=None,  # Default from settings (None means not configured)
-        )
-        assert content == b"artifact_zip_content"
 
     @patch("wafer_space.projects.tasks._apply_content_pipeline")
     def test_download_with_nested_compression(self, mock_pipeline):

@@ -419,34 +419,6 @@ def _download_github_artifact(
     }
 
 
-def _download_file_content(project_file) -> bytes:
-    """Download file content from URL using secure URL validation."""
-    # Check if this is a GitHub artifact download requiring special handling
-    if project_file.handler_metadata and project_file.handler_metadata.get(
-        "requires_github_auth"
-    ):
-        from django.conf import settings  # noqa: PLC0415
-
-        metadata = project_file.handler_metadata
-        # TODO: Remove this caller in Task 2 - function now returns dict not bytes
-        return _download_github_artifact(  # type: ignore[return-value]
-            owner=metadata["owner"],
-            repo=metadata["repo"],
-            run_id=metadata["run_id"],
-            github_token=settings.GITHUB_TOKEN,
-        )
-
-    # Standard HTTP(S) download
-    content, headers = _safe_urlopen(project_file.source_url)
-
-    # Set content type if available
-    content_type = headers.get("Content-Type", "")
-    if content_type:
-        project_file.content_type = content_type
-
-    return content
-
-
 def _save_file_to_django(project_file, file_content: bytes, temp_dir: Path) -> None:
     """Save downloaded content to Django file field."""
     # Create temporary file to store content
@@ -1378,24 +1350,13 @@ def download_project_file(self, project_id):  # noqa: PLR0915
         )
         logger.info("  Expected file size: %s", expected_size)
 
-        # Check if handler requires special download logic (e.g., GitHub artifacts)
-        if project_file.handler_metadata and project_file.handler_metadata.get(
-            "requires_github_auth"
-        ):
-            logger.info("  Using special handler download (GitHub artifact)...")
-            downloaded_content = _download_file_content(project_file)
-
-            # Write to temp file
-            temp_path.write_bytes(downloaded_content)
-        else:
-            # Standard chunked download with progress tracking
-            logger.info("  Using standard chunked download...")
-            _download_with_progress(
-                self,
-                project_file,
-                temp_path,
-            )
-
+        # Download file (all downloads now use progress tracking)
+        logger.info("  Starting chunked download with progress tracking...")
+        _download_with_progress(
+            self,
+            project_file,
+            temp_path,
+        )
         logger.info("  ✓ Download completed successfully!")
 
         # Read downloaded content
