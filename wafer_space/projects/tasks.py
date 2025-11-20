@@ -28,6 +28,7 @@ from django_celery_results.models import TaskResult
 
 from wafer_space.notifications.services import NotificationService
 
+from .models import DownloadAttempt
 from .models import FileProcessingError
 from .models import ManufacturabilityCheck
 from .models import Project
@@ -574,6 +575,7 @@ class _ChunkDownloadState:
     temp_path: Path
     task: Any  # Celery task instance
     project_file: ProjectFile
+    attempt: DownloadAttempt
     total_size: int
     resume_byte_pos: int
     chunk_size: int
@@ -783,13 +785,13 @@ def _download_chunks(state: _ChunkDownloadState) -> None:
             )
             if should_update_db:
                 # Update last activity timestamp
-                state.project_file.last_activity = timezone.now()
-                state.project_file.save(update_fields=["last_activity"])
+                state.attempt.last_activity = timezone.now()
+                state.attempt.save(update_fields=["last_activity"])
 
                 # Record chunk checkpoint for performance analysis
                 # Use rounded checkpoint values at exact 5MB boundaries
                 ProjectFileChunk.objects.create(
-                    project_file=state.project_file,
+                    download_attempt=state.attempt,
                     bytes_downloaded=last_db_update_bytes,
                     chunk_number=chunk_count,
                 )
@@ -809,6 +811,7 @@ def _download_chunks(state: _ChunkDownloadState) -> None:
 def _download_with_progress(
     task,
     project_file: ProjectFile,
+    attempt: DownloadAttempt,
     temp_path: Path,
     *,
     chunk_size: int = 1024 * 1024,  # 1MB chunks
@@ -821,6 +824,7 @@ def _download_with_progress(
     Args:
         task: The Celery task instance (for progress updates)
         project_file: The ProjectFile instance
+        attempt: The DownloadAttempt instance for tracking
         temp_path: Path to temporary file for download
         chunk_size: Size of download chunks in bytes
 
@@ -844,6 +848,7 @@ def _download_with_progress(
         temp_path=temp_path,
         task=task,
         project_file=project_file,
+        attempt=attempt,
         total_size=total_size,
         resume_byte_pos=resume_byte_pos,
         chunk_size=chunk_size,
@@ -940,6 +945,7 @@ def _handle_download_failure(
     project_id: str,
     exc: Exception,
     temp_path: Path | None,
+    attempt: DownloadAttempt | None = None,
 ) -> dict[str, str | int]:
     """Handle final download failure after max retries.
 
@@ -947,6 +953,7 @@ def _handle_download_failure(
         project_id: UUID of the project
         exc: The exception that caused the failure
         temp_path: Path to temp file to clean up
+        attempt: The download attempt that failed (if available)
 
     Returns:
         dict: Failure status information
@@ -954,9 +961,21 @@ def _handle_download_failure(
     try:
         _project, project_file = _get_project_file_for_download(project_id)
         if project_file:
+            # Get or create attempt if not provided
+            if not attempt:
+                # Try to get the most recent attempt
+                attempt = project_file.download_attempts.first()
+                if not attempt:
+                    # Create a new attempt if none exists
+                    attempt = DownloadAttempt.objects.create(
+                        project_file=project_file,
+                        attempt_number=project_file.download_attempts.count() + 1,
+                        status=DownloadAttempt.Status.FAILED,
+                    )
+
             # Create structured error log
             FileProcessingError.objects.create(
-                project_file=project_file,
+                download_attempt=attempt,
                 error_type=FileProcessingError.ErrorType.DOWNLOAD,
                 error_message=f"Download failed: {exc}",
                 error_detail={
@@ -965,6 +984,15 @@ def _handle_download_failure(
                     "traceback": traceback.format_exc(),
                 },
             )
+
+            # Mark attempt as failed
+            attempt.status = DownloadAttempt.Status.FAILED
+            attempt.completed_at = timezone.now()
+            if attempt.download_started_at:
+                attempt.download_duration_seconds = (
+                    attempt.completed_at - attempt.download_started_at
+                ).total_seconds()
+            attempt.save()
 
             error_msg = f"Max retries reached: {exc!s}"
             project_file.mark_download_failed(error_msg)
@@ -1105,10 +1133,17 @@ def _apply_content_pipeline(
 
 def _process_and_save_content(
     project_file: ProjectFile,
+    attempt: DownloadAttempt,
     downloaded_content: bytes,
     temp_path: Path,
 ) -> tuple[bytes, str, str]:
     """Process downloaded content and save to Django storage.
+
+    Args:
+        project_file: The ProjectFile being processed
+        attempt: The DownloadAttempt for error tracking
+        downloaded_content: The raw downloaded content
+        temp_path: Path to temporary file
 
     Returns:
         tuple: (processed_content, final_md5_hash, final_sha1_hash)
@@ -1147,7 +1182,7 @@ def _process_and_save_content(
 
         # Create structured error log
         FileProcessingError.objects.create(
-            project_file=project_file,
+            download_attempt=attempt,
             error_type=FileProcessingError.ErrorType.PIPELINE,
             error_message=str(e),
             error_detail={
@@ -1162,6 +1197,15 @@ def _process_and_save_content(
                 ),
             },
         )
+
+        # Mark attempt as failed
+        attempt.status = DownloadAttempt.Status.FAILED
+        attempt.completed_at = timezone.now()
+        if attempt.download_started_at:
+            attempt.download_duration_seconds = (
+                attempt.completed_at - attempt.download_started_at
+            ).total_seconds()
+        attempt.save()
 
         project_file.download_status = ProjectFile.DownloadStatus.FAILED
         project_file.download_error = f"Pipeline error: {e}"
@@ -1327,7 +1371,7 @@ def _log_download_completion(
 
 
 @shared_task(bind=True, max_retries=5, default_retry_delay=60)
-def download_project_file(self, project_id):  # noqa: PLR0915
+def download_project_file(self, project_id):  # noqa: PLR0915, C901
     """Background task to download a project file from a URL.
 
     Supports:
@@ -1345,6 +1389,7 @@ def download_project_file(self, project_id):  # noqa: PLR0915
     """
     logger = logging.getLogger(__name__)
     temp_path = None
+    attempt = None  # Track attempt for error handling
 
     try:
         # Get and validate project file
@@ -1378,6 +1423,16 @@ def download_project_file(self, project_id):  # noqa: PLR0915
             self.request.id,
         )
 
+        # Create download attempt
+        logger.info("Step 2.5: Creating download attempt record...")
+        attempt = DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=project_file.download_attempts.count() + 1,
+            status=DownloadAttempt.Status.DOWNLOADING,
+            download_started_at=timezone.now(),
+        )
+        logger.info("  ✓ Created attempt #%d", attempt.attempt_number)
+
         # Set up temporary directory
         temp_path = _setup_download_temp_path(project_file)
 
@@ -1402,6 +1457,7 @@ def download_project_file(self, project_id):  # noqa: PLR0915
         _download_with_progress(
             self,
             project_file,
+            attempt,
             temp_path,
         )
         logger.info("  ✓ Download completed successfully!")
@@ -1436,7 +1492,7 @@ def download_project_file(self, project_id):  # noqa: PLR0915
 
             # Create structured error log
             FileProcessingError.objects.create(
-                project_file=project_file,
+                download_attempt=attempt,
                 error_type=FileProcessingError.ErrorType.VALIDATION,
                 error_message=str(e),
                 error_detail={
@@ -1445,6 +1501,15 @@ def download_project_file(self, project_id):  # noqa: PLR0915
                     "original_filename": project_file.original_filename,
                 },
             )
+
+            # Mark attempt as failed
+            attempt.status = DownloadAttempt.Status.FAILED
+            attempt.completed_at = timezone.now()
+            if attempt.download_started_at:
+                attempt.download_duration_seconds = (
+                    attempt.completed_at - attempt.download_started_at
+                ).total_seconds()
+            attempt.save()
 
             # Mark download as failed
             project_file.download_status = ProjectFile.DownloadStatus.FAILED
@@ -1456,6 +1521,7 @@ def download_project_file(self, project_id):  # noqa: PLR0915
         logger.info("Step 7: Processing and saving content...")
         _processed_content, final_md5, final_sha1 = _process_and_save_content(
             project_file,
+            attempt,
             downloaded_content,
             temp_path,
         )
@@ -1467,6 +1533,21 @@ def download_project_file(self, project_id):  # noqa: PLR0915
             final_md5,
             final_sha1,
         )
+
+        # Mark attempt as completed
+        logger.info("Step 8.5: Marking download attempt as completed...")
+        attempt.status = DownloadAttempt.Status.COMPLETED
+        attempt.completed_at = timezone.now()
+        attempt.download_completed_at = timezone.now()
+        if attempt.download_started_at:
+            attempt.download_duration_seconds = (
+                attempt.completed_at - attempt.download_started_at
+            ).total_seconds()
+        # Update bytes_downloaded from final file size
+        if project_file.file_size:
+            attempt.bytes_downloaded = project_file.file_size
+        attempt.save()
+        logger.info("  ✓ Attempt #%d marked as COMPLETED", attempt.attempt_number)
 
         # Clean up temp file
         logger.info("Step 9: Cleaning up temporary files...")
@@ -1507,12 +1588,21 @@ def download_project_file(self, project_id):  # noqa: PLR0915
                 self.max_retries,
                 retry_delay,
             )
+            # Mark attempt as failed if it exists
+            if attempt:
+                attempt.status = DownloadAttempt.Status.FAILED
+                attempt.completed_at = timezone.now()
+                if attempt.download_started_at:
+                    attempt.download_duration_seconds = (
+                        attempt.completed_at - attempt.download_started_at
+                    ).total_seconds()
+                attempt.save()
             _handle_download_retry(self, project_id, exc)
         else:
             logger.exception(
                 "DOWNLOAD TASK FAILED - Max retries reached for project %s", project_id
             )
-            return _handle_download_failure(project_id, exc, temp_path)
+            return _handle_download_failure(project_id, exc, temp_path, attempt)
 
 
 @shared_task

@@ -19,6 +19,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
+from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
@@ -529,12 +530,20 @@ class TestContentPipelineIntegration(TestCase):
             "extracted_sha1",
         )
 
+        # Create a download attempt for the test
+        attempt = DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
+        )
+
         # Process content
         with NamedTemporaryFile(delete=False) as temp_file:
             temp_path = Path(temp_file.name)
             try:
                 _process_and_save_content(
                     project_file,
+                    attempt,
                     b"fake_zip_content",
                     temp_path,
                 )
@@ -561,11 +570,19 @@ class TestContentPipelineIntegration(TestCase):
             "final_sha1",
         )
 
+        # Create a download attempt for the test
+        attempt = DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
+        )
+
         with NamedTemporaryFile(delete=False) as temp_file:
             temp_path = Path(temp_file.name)
             try:
                 _process_and_save_content(
                     project_file,
+                    attempt,
                     b"fake_compressed_content",
                     temp_path,
                 )
@@ -592,12 +609,20 @@ class TestContentPipelineIntegration(TestCase):
         # Mock pipeline raises ValueError for invalid format
         mock_pipeline.side_effect = ValueError("File is not a valid GDS or OASIS file")
 
+        # Create a download attempt for the test
+        attempt = DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
+        )
+
         with NamedTemporaryFile(delete=False) as temp_file:
             temp_path = Path(temp_file.name)
             try:
                 with pytest.raises(ValueError, match="not a valid GDS or OASIS"):
                     _process_and_save_content(
                         project_file,
+                        attempt,
                         b"fake_invalid_content",
                         temp_path,
                     )
@@ -731,6 +756,13 @@ class DownloadTaskTests(TestCase):
         mock_response.raise_for_status = Mock()
         mock_get.return_value = mock_response
 
+        # Create a download attempt for the test
+        attempt = DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
+        )
+
         with NamedTemporaryFile(delete=False) as temp_file:
             temp_path = Path(temp_file.name)
 
@@ -743,6 +775,7 @@ class DownloadTaskTests(TestCase):
             _download_with_progress(
                 mock_task,
                 project_file,
+                attempt,
                 temp_path,
             )
 
