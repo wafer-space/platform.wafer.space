@@ -31,7 +31,7 @@
 {# Status Badges #}
 <p class="mb-3">
   <strong>Download Status:</strong>
-  <span class="badge {% if file.download_status == 'completed' %}bg-success{% elif file.download_status == 'failed' %}bg-danger{% elif file.download_status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
+  <span id="status-badge" class="badge {% if file.download_status == 'completed' %}bg-success{% elif file.download_status == 'failed' %}bg-danger{% elif file.download_status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
     {% if file.download_status == 'completed' %}
       <i class="bi bi-check-circle"></i>
     {% elif file.download_status == 'failed' %}
@@ -43,7 +43,7 @@
     {% else %}
       <i class="bi bi-clock"></i>
     {% endif %}
-    {{ file.get_download_status_display }}
+    <span id="status-text">{{ file.get_download_status_display }}</span>
   </span>
   {% if file.hash_verified %}
     <span class="badge bg-success">

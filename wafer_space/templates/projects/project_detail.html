@@ -354,19 +354,34 @@
 
               // Update status badge
               if (statusBadge && statusText && data.status) {
-                statusText.textContent = data.message || data.status;
-
-                // Update badge color based on status
+                // Update badge color and icon based on status
                 statusBadge.className = 'badge';
+                let iconHtml = '';
+
                 if (data.status === 'completed') {
                   statusBadge.classList.add('bg-success');
+                  iconHtml = '<i class="bi bi-check-circle"></i> ';
+                  statusText.textContent = 'Download Completed';
                 } else if (data.status === 'failed') {
                   statusBadge.classList.add('bg-danger');
+                  iconHtml = '<i class="bi bi-exclamation-triangle"></i> ';
+                  statusText.textContent = 'Download Failed';
                 } else if (data.status === 'downloading') {
                   statusBadge.classList.add('bg-primary');
+                  iconHtml = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> ';
+                  statusText.textContent = 'Downloading';
+                } else if (data.status === 'queued') {
+                  statusBadge.classList.add('bg-info');
+                  iconHtml = '<i class="bi bi-clock"></i> ';
+                  statusText.textContent = 'Queued';
                 } else {
                   statusBadge.classList.add('bg-secondary');
+                  iconHtml = '<i class="bi bi-clock"></i> ';
+                  statusText.textContent = data.status;
                 }
+
+                // Update the badge content with icon + text
+                statusBadge.innerHTML = iconHtml + '<span id="status-text">' + statusText.textContent + '</span>';
               }
 
               // Stop polling and reload if completed or failed
