@@ -20,6 +20,7 @@ from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.tasks import _download_file_content
+from wafer_space.projects.tasks import _download_github_artifact
 from wafer_space.projects.tasks import _log_download_start
 from wafer_space.projects.tasks import _process_and_save_content
 from wafer_space.projects.tasks import _safe_urlopen
@@ -27,6 +28,7 @@ from wafer_space.projects.tasks import check_project_manufacturability
 
 User = get_user_model()
 TEST_PASSWORD = "testpass123"  # noqa: S105 - Test password constant
+TEST_GITHUB_TOKEN = "test_token"  # noqa: S105 - Test token constant
 
 
 class URLValidationSecurityTests(TestCase):
@@ -641,3 +643,58 @@ class TestContentPipelineIntegration(TestCase):
                 assert "not a valid GDS or OASIS" in project_file.download_error
             finally:
                 temp_path.unlink(missing_ok=True)
+
+
+class DownloadTaskTests(TestCase):
+    """Tests for download-related task functions."""
+
+    def setUp(self):
+        """Set up test user and project."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+        )
+
+    @patch("wafer_space.projects.tasks.requests.get")
+    @patch("django.conf.settings.GITHUB_TOKEN", TEST_GITHUB_TOKEN)
+    def test_download_github_artifact_returns_url(self, mock_get):
+        """Test that _download_github_artifact returns authenticated URL."""
+        # Mock artifact list response
+        mock_list_response = Mock()
+        mock_list_response.json.return_value = {
+            "total_count": 1,
+            "artifacts": [
+                {
+                    "id": 123456,
+                    "name": "design-files",
+                    "size_in_bytes": 1024000,
+                }
+            ],
+        }
+        mock_list_response.raise_for_status = Mock()
+
+        # Set mock to return list response
+        mock_get.return_value = mock_list_response
+
+        # Call function
+        result = _download_github_artifact(
+            owner="test-owner",
+            repo="test-repo",
+            run_id="789",
+            github_token=TEST_GITHUB_TOKEN,
+        )
+
+        # Should return dict with URL and headers
+        assert isinstance(result, dict)
+        assert "url" in result
+        assert "headers" in result
+        assert result["url"] == (
+            "https://api.github.com/repos/test-owner/test-repo/"
+            "actions/artifacts/123456/zip"
+        )
+        assert result["headers"]["Authorization"] == "Bearer test_token"

@@ -13,6 +13,7 @@ import time
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 from urllib.request import Request
 from urllib.request import urlopen
@@ -316,38 +317,46 @@ def _download_github_artifact(
     repo: str,
     run_id: str,
     github_token: str | None,
-) -> bytes:
-    """Download GitHub Actions artifact ZIP file.
+) -> dict[str, Any]:
+    """Get authenticated download URL for GitHub Actions artifact.
+
+    GitHub artifact download URLs are authenticated and expire after 60 seconds.
+    This function fetches the artifact list, selects the first artifact, and
+    returns the authenticated download URL with required headers.
 
     Args:
-        owner: Repository owner (user or org)
-        repo: Repository name
+        owner: GitHub repository owner
+        repo: GitHub repository name
         run_id: GitHub Actions run ID
-        github_token: GitHub Personal Access Token with 'actions:read' scope
-            (None if not configured)
+        github_token: GitHub personal access token (requires actions:read scope)
 
     Returns:
-        bytes: Downloaded artifact ZIP content
+        dict with keys:
+            - url: Authenticated download URL (valid for 60 seconds)
+            - headers: HTTP headers required for download (Authorization, etc.)
+            - artifact_name: Name of the selected artifact
+            - artifact_size: Size in bytes
 
     Raises:
-        ValueError: If no artifacts found or API error
-        requests.RequestException: If download fails
+        ValueError: If no artifacts found or GitHub token not provided
     """
     logger = logging.getLogger(__name__)
 
     if not github_token:
-        msg = "GitHub token not configured - cannot download artifacts"
+        msg = "GitHub token required for artifact download"
         raise ValueError(msg)
 
-    # List artifacts for the run
-    list_url = (
-        f"https://api.github.com/repos/{owner}/{repo}/actions/runs/{run_id}/artifacts"
-    )
+    # GitHub API requires specific headers
     headers = {
         "Authorization": f"Bearer {github_token}",
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
     }
+
+    # List artifacts for the run
+    list_url = (
+        f"https://api.github.com/repos/{owner}/{repo}/actions/runs/{run_id}/artifacts"
+    )
 
     logger.info("  Fetching artifact list from: %s", list_url)
     list_response = requests.get(list_url, headers=headers, timeout=30)
@@ -377,7 +386,8 @@ def _download_github_artifact(
         elif art_size < BYTES_PER_KILOBYTE * BYTES_PER_KILOBYTE * BYTES_PER_KILOBYTE:
             size_str = f"{art_size / (BYTES_PER_KILOBYTE * BYTES_PER_KILOBYTE):.1f} MB"
         else:
-            size_str = f"{art_size / (BYTES_PER_KILOBYTE * BYTES_PER_KILOBYTE * BYTES_PER_KILOBYTE):.2f} GB"
+            gb_divisor = BYTES_PER_KILOBYTE * BYTES_PER_KILOBYTE * BYTES_PER_KILOBYTE
+            size_str = f"{art_size / gb_divisor:.2f} GB"
         logger.info(
             "    %d. %s (ID: %s, Size: %s)",
             idx,
@@ -394,23 +404,19 @@ def _download_github_artifact(
 
     logger.info("  → Selecting artifact #1: %s (ID: %s)", artifact_name, artifact_id)
 
-    # Download artifact
+    # Construct authenticated download URL
     download_url = (
         f"https://api.github.com/repos/{owner}/{repo}/"
         f"actions/artifacts/{artifact_id}/zip"
     )
-    logger.info("  Downloading from: %s", download_url)
-    download_response = requests.get(download_url, headers=headers, timeout=30)
-    download_response.raise_for_status()
+    logger.info("  ✓ Generated authenticated download URL (valid for 60 seconds)")
 
-    content_size = len(download_response.content)
-    logger.info(
-        "  ✓ Downloaded artifact ZIP: %s bytes (expected: %s bytes)",
-        content_size,
-        artifact_size,
-    )
-
-    return download_response.content
+    return {
+        "url": download_url,
+        "headers": headers,
+        "artifact_name": artifact_name,
+        "artifact_size": artifact_size,
+    }
 
 
 def _download_file_content(project_file) -> bytes:
@@ -422,7 +428,8 @@ def _download_file_content(project_file) -> bytes:
         from django.conf import settings  # noqa: PLC0415
 
         metadata = project_file.handler_metadata
-        return _download_github_artifact(
+        # TODO: Remove this caller in Task 2 - function now returns dict not bytes
+        return _download_github_artifact(  # type: ignore[return-value]
             owner=metadata["owner"],
             repo=metadata["repo"],
             run_id=metadata["run_id"],
