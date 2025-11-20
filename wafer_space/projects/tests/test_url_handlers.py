@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from wafer_space.projects.models import Project
+from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.services import ProjectFileService
 from wafer_space.projects.url_handlers import GitHubArtifactHandler
 from wafer_space.projects.url_handlers import GoogleSourceHandler
@@ -599,3 +600,59 @@ class TestServiceIntegrationWithHandlers:
 
         # Verify handler metadata is empty
         assert project_file.handler_metadata == {}
+
+    def test_submit_github_artifact_url_skips_validation(self, user):
+        """Test that GitHub artifact URLs skip validation and store auth metadata.
+
+        This is a regression test for the issue where GitHub artifact URLs
+        failed validation with 404 errors because they require authentication.
+
+        Real-world example URL from TinyTapeout:
+        https://github.com/TinyTapeout/tinytapeout-gf-0p2/actions/runs/19443235082/artifacts/4593571166
+        """
+        project = Project.objects.create(
+            user=user,
+            name="Test Project",
+            description="Test project for GitHub artifact",
+        )
+
+        # Use the actual TinyTapeout URL from the bug report
+        github_artifact_url = (
+            "https://github.com/TinyTapeout/tinytapeout-gf-0p2/"
+            "actions/runs/19443235082/artifacts/4593571166"
+        )
+
+        # Mock only the Celery task (URLValidator.validate_url should NOT be called)
+        with patch(
+            "wafer_space.projects.services.download_project_file.delay"
+        ) as mock_task:
+            mock_task.return_value = MagicMock(id="test-task-id")
+
+            project_file, metadata = ProjectFileService.submit_file_from_url(
+                project=project,
+                url=github_artifact_url,
+                expected_hash_md5="abc123def456",
+                expected_hash_sha1="7df059597099bb7dcf25d2a9aedfaf4465f72d8d",
+            )
+
+        # Verify handler was used
+        assert metadata["handler_used"] == "GitHubArtifactHandler"
+
+        # Verify handler metadata was stored with correct values
+        assert project_file.handler_metadata["handler"] == "GitHubArtifactHandler"
+        assert project_file.handler_metadata["owner"] == "TinyTapeout"
+        assert project_file.handler_metadata["repo"] == "tinytapeout-gf-0p2"
+        assert project_file.handler_metadata["run_id"] == "19443235082"
+        assert project_file.handler_metadata["requires_github_auth"] is True
+
+        # Verify file was created and marked for download
+        assert project_file.download_status == ProjectFile.DownloadStatus.PENDING
+        assert project_file.is_active is True
+
+        # Verify download task was started
+        mock_task.assert_called_once_with(str(project.id))
+
+        # Verify expected hashes were stored
+        assert project_file.expected_hash_md5 == "abc123def456"
+        expected_sha1 = "7df059597099bb7dcf25d2a9aedfaf4465f72d8d"
+        assert project_file.expected_hash_sha1 == expected_sha1

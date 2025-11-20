@@ -24,6 +24,7 @@ from .security import SecurityValidationError
 from .security import URLValidator
 from .tasks import check_project_manufacturability
 from .tasks import download_project_file
+from .url_handlers import GitHubArtifactHandler
 from .url_handlers import GoogleSourceHandler
 from .url_handlers import URLHandlerRegistry
 from .url_rewriters import URLRewriter
@@ -38,6 +39,7 @@ VALID_ALL_FORMATS = VALID_BASE_FORMATS | VALID_COMPRESSION_FORMATS
 # Initialize URL handler registry with known handlers
 _url_handler_registry = URLHandlerRegistry()
 _url_handler_registry.register(GoogleSourceHandler())
+_url_handler_registry.register(GitHubArtifactHandler())
 
 
 def _extract_filename_from_content_disposition(content_disposition: str) -> str | None:
