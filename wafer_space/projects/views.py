@@ -24,6 +24,7 @@ from django.views.generic import View
 
 from .forms import ProjectFileURLSubmitForm
 from .forms import ProjectForm
+from .mixins import ProjectOwnerOrSuperuserMixin
 from .models import DownloadAttempt
 from .models import Project
 from .models import ProjectFile
@@ -52,22 +53,23 @@ class ProjectListView(LoginRequiredMixin, ListView):
         return Project.objects.filter(user=user).order_by("-created_at")
 
 
-class ProjectDetailView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
+class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin, DetailView):
     """View a single project with its files."""
 
     model = Project
     template_name = "projects/project_detail.html"
     context_object_name = "project"
 
-    def test_func(self):
-        """Only allow the owner to view the project."""
-        project = self.get_object()
-        return project.user == self.request.user
-
     def get_context_data(self, **kwargs):
         """Add project files and status to context."""
         context = super().get_context_data(**kwargs)
         project = self.get_object()
+        user = self.request.user
+
+        # Flag if superuser is viewing another user's project
+        context["viewing_as_admin"] = (
+            user.is_authenticated and user.is_superuser and project.user != user
+        )
 
         # Get submitted file (file that was submitted for manufacturing)
         submitted_file = project.submitted_file

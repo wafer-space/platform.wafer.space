@@ -165,6 +165,60 @@ class TestProjectDetailView(TestCase):
         # Active file is provided as in_progress_file in the context
         assert response.context["in_progress_file"] == active_file
 
+    def test_project_detail_owner_access(self):
+        """Test that project owner can access detail view."""
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse("projects:detail", kwargs={"pk": self.project.pk}),
+        )
+        assert response.status_code == HTTP_OK
+        assert response.context["project"] == self.project
+
+    def test_project_detail_other_user_denied(self):
+        """Test that non-owner is denied access to detail view."""
+        other_user = User.objects.create_user(
+            username="other",
+            email="other@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.client.force_login(other_user)
+
+        response = self.client.get(
+            reverse("projects:detail", kwargs={"pk": self.project.pk}),
+        )
+        assert response.status_code == HTTP_FORBIDDEN
+
+    def test_project_detail_superuser_access(self):
+        """Test that superuser can access any project detail view."""
+        superuser = User.objects.create_superuser(
+            username="admin",
+            email="admin@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.client.force_login(superuser)
+
+        response = self.client.get(
+            reverse("projects:detail", kwargs={"pk": self.project.pk}),
+        )
+        assert response.status_code == HTTP_OK
+        assert response.context["project"] == self.project
+        assert response.context["viewing_as_admin"] is True
+
+    def test_project_detail_staff_without_superuser_denied(self):
+        """Test that staff user without superuser is denied access."""
+        staff_user = User.objects.create_user(
+            username="staff",
+            email="staff@example.com",
+            password=TEST_PASSWORD,
+            is_staff=True,
+        )
+        self.client.force_login(staff_user)
+
+        response = self.client.get(
+            reverse("projects:detail", kwargs={"pk": self.project.pk}),
+        )
+        assert response.status_code == HTTP_FORBIDDEN
+
 
 @pytest.mark.django_db
 class TestProjectCreateView(TestCase):
