@@ -721,12 +721,16 @@ class ProjectFileChunk(models.Model):
 
     Records are created periodically during download (e.g., every 5MB) rather than
     for every single chunk, to balance granularity with database overhead.
+
+    Each chunk belongs to a specific DownloadAttempt, not directly to ProjectFile.
+    This prevents duplicate checkpoints when downloads are retried.
     """
 
-    project_file = models.ForeignKey(
-        ProjectFile,
+    download_attempt = models.ForeignKey(
+        "DownloadAttempt",  # Use string to avoid ordering issues
         on_delete=models.CASCADE,
         related_name="chunks",
+        help_text="The download attempt this checkpoint belongs to",
     )
     timestamp = models.DateTimeField(
         auto_now_add=True,
@@ -742,13 +746,14 @@ class ProjectFileChunk(models.Model):
     class Meta:
         ordering = ["chunk_number"]
         indexes = [
-            models.Index(fields=["project_file", "chunk_number"]),
-            models.Index(fields=["project_file", "timestamp"]),
+            models.Index(fields=["download_attempt", "chunk_number"]),
+            models.Index(fields=["download_attempt", "timestamp"]),
         ]
 
     def __str__(self):
         return (
-            f"{self.project_file.original_filename} - "
+            f"{self.download_attempt.project_file.original_filename} - "
+            f"Attempt #{self.download_attempt.attempt_number} - "
             f"Chunk {self.chunk_number} ({self.bytes_downloaded:,} bytes)"
         )
 
@@ -759,10 +764,10 @@ class ProjectFileChunk(models.Model):
         Returns:
             float: Speed in bytes/sec, or None if this is the first chunk
         """
-        # Get previous chunk
+        # Get previous chunk FOR THIS ATTEMPT
         previous = (
             ProjectFileChunk.objects.filter(
-                project_file=self.project_file,
+                download_attempt=self.download_attempt,
                 chunk_number__lt=self.chunk_number,
             )
             .order_by("-chunk_number")
@@ -771,10 +776,10 @@ class ProjectFileChunk(models.Model):
 
         if not previous:
             # This is the first chunk, calculate from download start
-            if not self.project_file.download_started_at:
+            if not self.download_attempt.download_started_at:
                 return None
 
-            time_diff = self.timestamp - self.project_file.download_started_at
+            time_diff = self.timestamp - self.download_attempt.download_started_at
             duration = time_diff.total_seconds()
             if duration <= 0:
                 return None
@@ -782,12 +787,13 @@ class ProjectFileChunk(models.Model):
             return self.bytes_downloaded / duration
 
         # Calculate speed since previous chunk
-        duration = (self.timestamp - previous.timestamp).total_seconds()
+        time_diff = self.timestamp - previous.timestamp
+        duration = time_diff.total_seconds()
         if duration <= 0:
             return None
 
-        bytes_since_previous = self.bytes_downloaded - previous.bytes_downloaded
-        return bytes_since_previous / duration
+        bytes_diff = self.bytes_downloaded - previous.bytes_downloaded
+        return bytes_diff / duration
 
 
 class ManufacturabilityCheck(models.Model):
