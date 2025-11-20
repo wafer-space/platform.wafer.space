@@ -292,7 +292,15 @@ class ProjectFile(models.Model):
 
     # Metadata
     file_size = models.BigIntegerField(null=True, blank=True)
-    original_filename = models.CharField(max_length=255)
+    original_filename = models.CharField(
+        max_length=255,
+        help_text="Original filename when downloaded (immutable)",
+    )
+    processed_filename = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Final filename after extraction/decompression pipeline",
+    )
     content_type = models.CharField(max_length=100, blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
@@ -541,6 +549,44 @@ class ProjectFile(models.Model):
                 return f"{speed:.2f} {unit}"
             speed /= bytes_per_kb
         return f"{speed:.2f} PB/s"
+
+
+class FileProcessingError(models.Model):
+    """Log of errors that occurred during file processing.
+
+    Stores structured error information for all processing stages:
+    download, extraction, validation, and pipeline processing.
+    """
+
+    class ErrorType(models.TextChoices):
+        DOWNLOAD = "download", "Download Error"
+        EXTRACTION = "extraction", "Extraction Error"
+        VALIDATION = "validation", "Validation Error"
+        PIPELINE = "pipeline", "Pipeline Error"
+
+    project_file = models.ForeignKey(
+        ProjectFile,
+        on_delete=models.CASCADE,
+        related_name="errors",
+    )
+    error_type = models.CharField(max_length=20, choices=ErrorType.choices)
+    error_message = models.TextField(help_text="User-friendly error message")
+    error_detail = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Technical details: stack trace, context, etc. (superuser only)",
+    )
+    occurred_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-occurred_at"]
+        indexes = [
+            models.Index(fields=["project_file", "-occurred_at"]),
+            models.Index(fields=["error_type", "-occurred_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.get_error_type_display()}: {self.error_message[:50]}"
 
 
 class ProjectFileChunk(models.Model):
