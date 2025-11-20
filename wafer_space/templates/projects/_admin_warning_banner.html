@@ -1,0 +1,12 @@
+{% if viewing_as_admin %}
+  <div class="alert alert-warning border-warning mb-4" role="alert">
+    <div class="d-flex align-items-center">
+      <i class="bi bi-exclamation-triangle-fill me-2 fs-4"></i>
+      <div>
+        <strong>Admin Mode:</strong>
+        You are viewing <strong>{{ project.user.username }}</strong>'s project.
+        All actions will be logged for audit purposes.
+      </div>
+    </div>
+  </div>
+{% endif %}
