@@ -135,7 +135,7 @@
                   <p id="progress-message" class="mt-2 text-muted">{{ progress.message }}</p>
                 </div>
               {% endif %}
-              {% include "projects/_file_display.html" with file=in_progress_file %}
+              {% include "projects/_file_display.html" with file=in_progress_file show_details=True %}
               {# Manufacturability Check (shown only for in-progress files) #}
               {% if check_status %}
                 <hr class="my-4" />

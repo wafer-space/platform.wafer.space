@@ -1,7 +1,9 @@
 {% load static %}
 
 {# Reusable file display partial - used for both submitted and in-progress files #}
-{# Parameters: file, show_submit_button #}
+{# Parameters: #}
+{#   - file: ProjectFile instance to display #}
+{#   - show_details: (optional, default=False) Show errors and checkpoints #}
 
 {# Show filename with transformation if applicable #}
 {% if file.processed_filename and file.processed_filename != file.original_filename %}
@@ -118,7 +120,8 @@
         {% endif %}
       </p>
     {% endif %}
-    {% if file.chunks.exists %}
+    {# Download Performance - Only shown for active/in-progress files #}
+    {% if show_details|default:False and file.chunks.exists %}
       <hr />
       <h6>Download Performance</h6>
       <p class="mb-2">
@@ -194,8 +197,8 @@
         </p>
       {% endif %}
     {% endif %}
-    {# Error Log Display #}
-    {% if file.errors.exists %}
+    {# Error Log Display - Only shown for active/in-progress files #}
+    {% if show_details|default:False and file.errors.exists %}
       <hr class="my-3" />
       <div class="alert alert-danger" role="alert">
         <h6 class="alert-heading">
