@@ -24,6 +24,7 @@ from django.views.generic import View
 
 from .forms import ProjectFileURLSubmitForm
 from .forms import ProjectForm
+from .models import DownloadAttempt
 from .models import Project
 from .models import ProjectFile
 from .security import SecurityValidationError
@@ -89,21 +90,25 @@ class ProjectDetailView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
         context["in_progress_file"] = in_progress_file
 
         # If there's an in-progress file with a download in progress, add progress info
-        if in_progress_file and in_progress_file.download_status in [
-            ProjectFile.DownloadStatus.PENDING,
-            ProjectFile.DownloadStatus.DOWNLOADING,
-        ]:
-            context["show_progress"] = True
-            progress = ProjectFileService.get_download_progress(in_progress_file)
-            context["progress"] = progress
+        if in_progress_file:
+            latest_attempt = in_progress_file.latest_attempt
+            context["latest_attempt"] = latest_attempt
 
-        # Add error information if download failed
-        if (
-            in_progress_file
-            and in_progress_file.download_status == ProjectFile.DownloadStatus.FAILED
-        ):
-            context["show_error"] = True
-            context["error_message"] = in_progress_file.download_error
+            if latest_attempt and latest_attempt.status in [
+                DownloadAttempt.Status.PENDING,
+                DownloadAttempt.Status.DOWNLOADING,
+            ]:
+                context["show_progress"] = True
+                progress = ProjectFileService.get_download_progress(in_progress_file)
+                context["progress"] = progress
+
+            # Add error information if download failed
+            if (
+                latest_attempt
+                and latest_attempt.status == DownloadAttempt.Status.FAILED
+            ):
+                context["show_error"] = True
+                context["error_message"] = latest_attempt.download_error
 
         # Get file history (non-active files, newest first)
         # Exclude both submitted and in-progress files from history
@@ -316,12 +321,17 @@ class ProjectFileProgressView(LoginRequiredMixin, UserPassesTestMixin, View):
         if not active_file:
             return JsonResponse({"error": "No active file found"}, status=404)
 
+        # Get latest download attempt
+        latest_attempt = active_file.latest_attempt
+        if not latest_attempt:
+            return JsonResponse({"error": "No active download"}, status=404)
+
         # Get progress from service layer
         progress = ProjectFileService.get_download_progress(active_file)
 
         # Add error information if download failed
-        if active_file.download_status == ProjectFile.DownloadStatus.FAILED:
-            progress["error"] = active_file.download_error or "Download failed"
+        if latest_attempt.status == DownloadAttempt.Status.FAILED:
+            progress["error"] = latest_attempt.download_error or "Download failed"
 
         return JsonResponse(progress)
 
