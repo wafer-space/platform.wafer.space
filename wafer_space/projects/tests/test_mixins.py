@@ -149,6 +149,7 @@ class ProjectOwnerOrSuperuserMixinTestCase(TestCase):
         assert logs.count() == 1
 
         log = logs.first()
+        assert log is not None
         assert log.action == ProjectAccessLog.Action.VIEW
         assert log.ip_address == "127.0.0.1"
         assert log.user_agent == "Mozilla/5.0"
