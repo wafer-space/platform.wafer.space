@@ -10,6 +10,7 @@ import random
 import socket
 import tempfile
 import time
+import traceback
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -27,6 +28,7 @@ from django_celery_results.models import TaskResult
 
 from wafer_space.notifications.services import NotificationService
 
+from .models import FileProcessingError
 from .models import ManufacturabilityCheck
 from .models import Project
 from .models import ProjectFile
@@ -952,6 +954,18 @@ def _handle_download_failure(
     try:
         _project, project_file = _get_project_file_for_download(project_id)
         if project_file:
+            # Create structured error log
+            FileProcessingError.objects.create(
+                project_file=project_file,
+                error_type=FileProcessingError.ErrorType.DOWNLOAD,
+                error_message=f"Download failed: {exc}",
+                error_detail={
+                    "url": project_file.original_url,
+                    "error_type": exc.__class__.__name__,
+                    "traceback": traceback.format_exc(),
+                },
+            )
+
             error_msg = f"Max retries reached: {exc!s}"
             project_file.mark_download_failed(error_msg)
 
@@ -1063,14 +1077,21 @@ def _apply_content_pipeline(
         logger.info("  ✓ MD5: %s", final_md5)
         logger.info("  ✓ SHA1: %s", final_sha1)
 
-        # Update filename if changed
+        # Always set processed_filename (even if unchanged from original)
+        # This indicates processing completed successfully
+        project_file.processed_filename = result.filename
+
         if result.filename != project_file.original_filename:
             logger.info(
-                "  ✓ Filename updated: %s → %s",
+                "  ✓ Pipeline transformed: %s → %s",
                 project_file.original_filename,
                 result.filename,
             )
-            project_file.original_filename = result.filename
+        else:
+            logger.info(
+                "  ✓ No transformation needed: %s",
+                result.filename,
+            )
 
         logger.info("  ✓ Pipeline processing complete")
         logger.info("  ✓ Output size: %s", _format_bytes(result.size_bytes))
@@ -1123,17 +1144,43 @@ def _process_and_save_content(
         )
     except ValueError as e:
         logger.exception("Pipeline processing failed")
+
+        # Create structured error log
+        FileProcessingError.objects.create(
+            project_file=project_file,
+            error_type=FileProcessingError.ErrorType.PIPELINE,
+            error_message=str(e),
+            error_detail={
+                "stage": "content_extraction",
+                "traceback": traceback.format_exc(),
+                "original_filename": project_file.original_filename,
+                "file_size": (
+                    processed_content.stat().st_size
+                    if isinstance(processed_content, Path)
+                    and processed_content.exists()
+                    else None
+                ),
+            },
+        )
+
         project_file.download_status = ProjectFile.DownloadStatus.FAILED
-        project_file.download_error = str(e)
+        project_file.download_error = f"Pipeline error: {e}"
         project_file.save(update_fields=["download_status", "download_error"])
         raise
 
-    # Save to Django file field
+    # Save to Django file field using processed filename
     logger.info("Step 7: Saving file to Django storage...")
+    # Use processed_filename (set by pipeline) for the final file
+    # This is the extracted/decompressed filename, not the original download name
+    final_filename = (
+        project_file.processed_filename
+        if project_file.processed_filename
+        else project_file.original_filename
+    )
     django_file = ContentFile(processed_content)
-    django_file.name = project_file.original_filename
+    django_file.name = final_filename
     project_file.file.save(
-        project_file.original_filename,
+        final_filename,
         django_file,
         save=False,
     )
@@ -1377,20 +1424,31 @@ def download_project_file(self, project_id):  # noqa: PLR0915
             logger.info("  ✓ Detected MIME type: %s", mime_type)
             logger.info("  ✓ Detected extension: %s", detected_extension)
 
-            # Update filename based on detected type
-            base_name = project_file.original_filename.rsplit(".", 1)[0]
-            if base_name == "download" or not base_name:
-                base_name = "file"
-            new_filename = f"{base_name}{detected_extension}"
-            old_name = project_file.original_filename
-            logger.info("  ✓ Updated filename: %s → %s", old_name, new_filename)
-            project_file.original_filename = new_filename
-            project_file.save(update_fields=["original_filename"])
+            # Log detected file type
+            # Note: original_filename stays unchanged - it's what was downloaded
+            logger.info(
+                "  ✓ Detected file type: %s (extension: %s)",
+                project_file.original_filename,
+                detected_extension,
+            )
         except ValueError as e:
             logger.exception("  ✗ File type detection failed")
+
+            # Create structured error log
+            FileProcessingError.objects.create(
+                project_file=project_file,
+                error_type=FileProcessingError.ErrorType.VALIDATION,
+                error_message=str(e),
+                error_detail={
+                    "stage": "file_type_detection",
+                    "traceback": traceback.format_exc(),
+                    "original_filename": project_file.original_filename,
+                },
+            )
+
             # Mark download as failed
             project_file.download_status = ProjectFile.DownloadStatus.FAILED
-            project_file.download_error = str(e)
+            project_file.download_error = f"Validation error: {e}"
             project_file.save(update_fields=["download_status", "download_error"])
             raise
 
