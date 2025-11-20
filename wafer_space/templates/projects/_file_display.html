@@ -2,7 +2,32 @@
 
 {# Reusable file display partial - used for both submitted and in-progress files #}
 {# Parameters: file, show_submit_button #}
-<h6>{{ file.original_filename }}</h6>
+
+{# Show filename with transformation if applicable #}
+{% if file.processed_filename and file.processed_filename != file.original_filename %}
+  <h6>
+    {{ file.original_filename }}
+    <i class="bi bi-arrow-right text-muted mx-2"></i>
+    <span class="text-primary">{{ file.processed_filename }}</span>
+  </h6>
+  <p class="text-muted small mb-2">
+    <i class="bi bi-info-circle"></i>
+    Downloaded as <code>{{ file.original_filename }}</code>,
+    extracted to <code>{{ file.processed_filename }}</code>
+  </p>
+{% elif file.processed_filename %}
+  <h6>{{ file.processed_filename }}</h6>
+  <p class="text-muted small mb-2">
+    <i class="bi bi-file-earmark"></i>
+    Filename: <code>{{ file.processed_filename }}</code>
+  </p>
+{% else %}
+  <h6>{{ file.original_filename }}</h6>
+  <p class="text-muted small mb-2">
+    <i class="bi bi-hourglass"></i>
+    Processing: <code>{{ file.original_filename }}</code>
+  </p>
+{% endif %}
 {# Status Badges #}
 <p class="mb-3">
   <strong>Download Status:</strong>
@@ -168,6 +193,52 @@
           {% endif %}
         </p>
       {% endif %}
+    {% endif %}
+    {# Error Log Display #}
+    {% if file.errors.exists %}
+      <hr class="my-3" />
+      <div class="alert alert-danger" role="alert">
+        <h6 class="alert-heading">
+          <i class="bi bi-exclamation-triangle-fill"></i>
+          Processing Errors ({{ file.errors.count }})
+        </h6>
+        {% for error in file.errors.all %}
+          <div class="mb-3">
+            <strong>{{ error.get_error_type_display }}:</strong>
+            <p class="mb-1">{{ error.error_message }}</p>
+            <small class="text-muted">
+              <i class="bi bi-clock"></i>
+              {{ error.occurred_at|date:"F d, Y g:i a" }}
+            </small>
+          </div>
+          {% if not forloop.last %}<hr class="my-2" />{% endif %}
+        {% endfor %}
+        {# Technical details only for superusers #}
+        {% if user.is_superuser and file.errors.exists %}
+          <hr class="my-3" />
+          <details class="mt-2">
+            <summary class="text-muted" style="cursor: pointer;">
+              <i class="bi bi-shield-lock"></i>
+              <strong>Technical Details (Superuser Only)</strong>
+            </summary>
+            <div class="mt-3">
+              {% for error in file.errors.all %}
+                <div class="card bg-light mb-2">
+                  <div class="card-header">
+                    <small>
+                      <strong>{{ error.get_error_type_display }}</strong> -
+                      {{ error.occurred_at|date:"Y-m-d H:i:s" }}
+                    </small>
+                  </div>
+                  <div class="card-body">
+                    <pre class="mb-0 small"><code>{{ error.error_detail|pprint }}</code></pre>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          </details>
+        {% endif %}
+      </div>
     {% endif %}
   </div>
 </div>

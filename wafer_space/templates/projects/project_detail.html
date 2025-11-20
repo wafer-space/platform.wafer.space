@@ -255,7 +255,15 @@
                       <tr>
                         <td>
                           <i class="bi bi-file-earmark"></i>
-                          {{ file.original_filename }}
+                          {% if file.processed_filename and file.processed_filename != file.original_filename %}
+                            {{ file.original_filename }}
+                            <i class="bi bi-arrow-right text-muted small"></i>
+                            <span class="text-primary">{{ file.processed_filename }}</span>
+                          {% elif file.processed_filename %}
+                            {{ file.processed_filename }}
+                          {% else %}
+                            {{ file.original_filename }}
+                          {% endif %}
                         </td>
                         <td>{{ file.uploaded_at|date:"Y-m-d H:i:s" }}</td>
                         <td>
