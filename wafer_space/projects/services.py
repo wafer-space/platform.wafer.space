@@ -292,18 +292,31 @@ class ProjectFileService:
             handler_name = handler_metadata.get("handler")
 
         # Step 3: Validate URL security and get metadata
-        # For URLs with handlers (like Google Source), allow missing Content-Length
-        # because the handler transforms the content (e.g., base64 decode)
-        allow_missing_length = handler is not None
-        try:
-            validation_result = URLValidator.validate_url(
-                rewritten_url,
-                allow_missing_content_length=allow_missing_length,
-            )
-        except SecurityValidationError as e:
-            # Re-raise with better context
-            msg = f"URL validation failed: {e}"
-            raise SecurityValidationError(msg) from e
+        # Skip validation for URLs requiring authentication (e.g., GitHub artifacts)
+        # These will be validated during actual download with credentials
+        if handler_metadata.get("requires_github_auth"):
+            # GitHub artifacts require authentication - cannot validate without token
+            # Validation will happen during download task with proper credentials
+            validation_result: dict[str, int | str | None] = {
+                "file_size": 0,  # Unknown until download
+                "content_type": None,
+                "content_disposition": None,
+                "etag": None,
+                "supports_range": False,
+            }
+        else:
+            # For URLs with handlers (like Google Source), allow missing Content-Length
+            # because the handler transforms the content (e.g., base64 decode)
+            allow_missing_length = handler is not None
+            try:
+                validation_result = URLValidator.validate_url(
+                    rewritten_url,
+                    allow_missing_content_length=allow_missing_length,
+                )
+            except SecurityValidationError as e:
+                # Re-raise with better context
+                msg = f"URL validation failed: {e}"
+                raise SecurityValidationError(msg) from e
 
         # Step 4: Extract filename (validated from file content later)
         content_disposition = validation_result.get("content_disposition")
