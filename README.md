@@ -195,6 +195,18 @@ make pre-commit
 - **staticfiles/** - Collected static files
 - **templates/** - Django templates
 
+## Features
+
+### Admin Project Access
+
+Django superusers can view and manage any user's project with comprehensive audit logging:
+- Full access to view, edit, delete, and submit any project
+- Visual warning banners indicate admin mode
+- All access automatically logged with IP, timestamp, and action
+- Read-only audit logs viewable in Django admin
+
+See [docs/admin_project_access.md](docs/admin_project_access.md) for details.
+
 ## Settings
 
 Moved to [settings](https://cookiecutter-django.readthedocs.io/en/latest/1-getting-started/settings.html).
