@@ -8,7 +8,6 @@ from typing import cast
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.contrib.auth.mixins import UserPassesTestMixin
 from django.core.exceptions import ValidationError
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
@@ -47,9 +46,19 @@ class ProjectListView(LoginRequiredMixin, ListView):
     paginate_by = 20
 
     def get_queryset(self):
-        """Return only projects owned by the current user."""
+        """Return projects accessible to current user.
+
+        - Regular users: only their own projects
+        - Superusers: all projects from all users
+        """
         # Cast user since LoginRequiredMixin ensures authentication
         user = cast("User", self.request.user)
+
+        if user.is_superuser:
+            # Superusers see all projects
+            return Project.objects.all().select_related("user").order_by("-created_at")
+
+        # Regular users see only their own projects
         return Project.objects.filter(user=user).order_by("-created_at")
 
 
@@ -179,17 +188,24 @@ class ProjectCreateView(LoginRequiredMixin, CreateView):
         return reverse_lazy("projects:detail", kwargs={"pk": self.object.pk})
 
 
-class ProjectUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
+class ProjectUpdateView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin, UpdateView):
     """Update an existing project."""
 
     model = Project
     form_class = ProjectForm
     template_name = "projects/project_form.html"
 
-    def test_func(self):
-        """Only allow the owner to update the project."""
+    def get_context_data(self, **kwargs):
+        """Add viewing_as_admin flag to context."""
+        context = super().get_context_data(**kwargs)
         project = self.get_object()
-        return project.user == self.request.user
+        user = self.request.user
+
+        context["viewing_as_admin"] = (
+            user.is_authenticated and user.is_superuser and project.user != user
+        )
+
+        return context
 
     def form_valid(self, form):
         """Show success message."""
@@ -206,17 +222,24 @@ class ProjectUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
         return reverse_lazy("projects:detail", kwargs={"pk": self.object.pk})
 
 
-class ProjectDeleteView(LoginRequiredMixin, UserPassesTestMixin, DeleteView):
+class ProjectDeleteView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin, DeleteView):
     """Delete a project."""
 
     model = Project
     template_name = "projects/project_confirm_delete.html"
     success_url = reverse_lazy("projects:list")
 
-    def test_func(self):
-        """Only allow the owner to delete the project."""
+    def get_context_data(self, **kwargs):
+        """Add viewing_as_admin flag to context."""
+        context = super().get_context_data(**kwargs)
         project = self.get_object()
-        return project.user == self.request.user
+        user = self.request.user
+
+        context["viewing_as_admin"] = (
+            user.is_authenticated and user.is_superuser and project.user != user
+        )
+
+        return context
 
     def form_valid(self, form):
         """Show success message."""
@@ -228,40 +251,39 @@ class ProjectDeleteView(LoginRequiredMixin, UserPassesTestMixin, DeleteView):
         return super().form_valid(form)
 
 
-class ProjectFileSubmitURLView(LoginRequiredMixin, UserPassesTestMixin, View):
+class ProjectFileSubmitURLView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin, View):
     """Submit a file URL for background download."""
 
-    def test_func(self):
-        """Only allow the owner to submit files."""
-        project = get_object_or_404(Project, pk=self.kwargs["pk"])
-        return project.user == self.request.user
+    def get_object(self):
+        """Get the project object for permission checking."""
+        return get_object_or_404(Project, pk=self.kwargs["pk"])
 
     def get(self, request, pk):
         """Show the URL submission form."""
         project = get_object_or_404(Project, pk=pk)
-
-        # Check if user owns the project
-        if project.user != request.user:
-            messages.error(
-                request,
-                "You don't have permission to add files to this project.",
-            )
-            return redirect("projects:detail", pk=pk)
+        user = request.user
 
         form = ProjectFileURLSubmitForm()
-        return self.render_form(request, project, form)
+
+        # Add viewing_as_admin flag for template
+        viewing_as_admin = (
+            user.is_authenticated and user.is_superuser and project.user != user
+        )
+
+        return render(
+            request,
+            "projects/project_file_submit_url.html",
+            {
+                "project": project,
+                "form": form,
+                "viewing_as_admin": viewing_as_admin,
+            },
+        )
 
     def post(self, request, pk):
         """Process the URL submission."""
         project = get_object_or_404(Project, pk=pk)
-
-        # Check if user owns the project
-        if project.user != request.user:
-            messages.error(
-                request,
-                "You don't have permission to add files to this project.",
-            )
-            return redirect("projects:detail", pk=pk)
+        user = request.user
 
         form = ProjectFileURLSubmitForm(request.POST)
 
@@ -285,38 +307,36 @@ class ProjectFileSubmitURLView(LoginRequiredMixin, UserPassesTestMixin, View):
 
             except SecurityValidationError as e:
                 messages.error(request, f"Security validation failed: {e}")
-                return self.render_form(request, project, form)
 
             except ValueError as e:
                 messages.error(request, f"Invalid input: {e}")
-                return self.render_form(request, project, form)
 
             except OSError as e:
                 # Catch file and network-related errors
                 messages.error(request, f"An error occurred: {e}")
-                return self.render_form(request, project, form)
 
-        return self.render_form(request, project, form)
+        # Add viewing_as_admin flag for template
+        viewing_as_admin = (
+            user.is_authenticated and user.is_superuser and project.user != user
+        )
 
-    def render_form(self, request, project, form):
-        """Render the form template."""
         return render(
             request,
             "projects/project_file_submit_url.html",
             {
                 "project": project,
                 "form": form,
+                "viewing_as_admin": viewing_as_admin,
             },
         )
 
 
-class ProjectFileProgressView(LoginRequiredMixin, UserPassesTestMixin, View):
+class ProjectFileProgressView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin, View):
     """Get download progress for a project file (AJAX endpoint)."""
 
-    def test_func(self):
-        """Only allow the owner to view progress."""
-        project = get_object_or_404(Project, pk=self.kwargs["pk"])
-        return project.user == self.request.user
+    def get_object(self):
+        """Get the project object for permission checking."""
+        return get_object_or_404(Project, pk=self.kwargs["pk"])
 
     def get(self, request, pk):
         """Return progress as JSON with comprehensive status information.
@@ -331,10 +351,6 @@ class ProjectFileProgressView(LoginRequiredMixin, UserPassesTestMixin, View):
                 - error: Error message if failed (optional)
         """
         project = get_object_or_404(Project, pk=pk)
-
-        # Check if user owns the project
-        if project.user != request.user:
-            return JsonResponse({"error": "Permission denied"}, status=403)
 
         # Get active file
         active_file = ProjectFile.objects.filter(
@@ -363,25 +379,16 @@ class ProjectFileProgressView(LoginRequiredMixin, UserPassesTestMixin, View):
         return JsonResponse(progress)
 
 
-class ProjectSubmitView(LoginRequiredMixin, UserPassesTestMixin, View):
+class ProjectSubmitView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin, View):
     """Submit a project for manufacturing (POST-only)."""
 
-    def test_func(self):
-        """Only allow the owner to submit the project."""
-        project = get_object_or_404(Project, pk=self.kwargs["pk"])
-        return project.user == self.request.user
+    def get_object(self):
+        """Get the project object for permission checking."""
+        return get_object_or_404(Project, pk=self.kwargs["pk"])
 
     def post(self, request, pk):
         """Handle project submission."""
         project = get_object_or_404(Project, pk=pk)
-
-        # Verify ownership (redundant with test_func but explicit)
-        if project.user != request.user:
-            messages.error(
-                request,
-                "You don't have permission to submit this project.",
-            )
-            return redirect("projects:detail", pk=pk)
 
         try:
             # Attempt to submit the project
