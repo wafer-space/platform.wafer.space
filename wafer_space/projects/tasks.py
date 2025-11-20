@@ -1114,17 +1114,16 @@ def _process_and_save_content(
     project_file: ProjectFile,
     downloaded_content: bytes,
     temp_path: Path,
-    md5_hash: str,
-    sha1_hash: str,
 ) -> tuple[bytes, str, str]:
     """Process downloaded content and save to Django storage.
 
     Returns:
         tuple: (processed_content, final_md5_hash, final_sha1_hash)
+              Hashes are for the FINAL extracted GDS/OASIS file
     """
     logger = logging.getLogger(__name__)
 
-    # Apply URL handler post-download processing
+    # Apply URL handler post-download processing (e.g., base64 decode)
     logger.info("Step 6: Checking for post-download processing...")
     if project_file.handler_metadata:
         logger.info("  Handler metadata found: %s", project_file.handler_metadata)
@@ -1133,22 +1132,16 @@ def _process_and_save_content(
         downloaded_content,
     )
 
-    # Recalculate hashes if content was transformed
-    final_md5 = md5_hash
-    final_sha1 = sha1_hash
-
     if processed_content != downloaded_content:
-        logger.info("  Content was transformed by handler - recalculating hashes...")
+        logger.info("  Content was transformed by handler")
         logger.info("  Original size: %s", _format_bytes(len(downloaded_content)))
         logger.info("  Processed size: %s", _format_bytes(len(processed_content)))
-        final_md5, final_sha1 = _calculate_file_hashes(processed_content)
-        logger.info("  ✓ Recalculated MD5: %s", final_md5)
-        logger.info("  ✓ Recalculated SHA1: %s", final_sha1)
         temp_path.write_bytes(processed_content)
     else:
         logger.info("  ✓ No transformation needed - using original content")
 
     # Apply content extraction pipeline
+    # This extracts GDS/OASIS from archives and calculates hashes on final file
     logger.info("Step 6.5: Running content extraction pipeline...")
     try:
         processed_content, final_md5, final_sha1 = _apply_content_pipeline(
@@ -1174,11 +1167,13 @@ def _process_and_save_content(
     )
     logger.info("  ✓ File saved to Django storage")
 
-    # Set file size and hashes
+    # Set file size and hashes (for FINAL extracted file)
     project_file.file_size = len(processed_content)
     project_file.hash_md5 = final_md5
     project_file.hash_sha1 = final_sha1
     logger.info("  ✓ File size: %s", _format_bytes(project_file.file_size))
+    logger.info("  ✓ MD5 hash: %s", final_md5)
+    logger.info("  ✓ SHA1 hash: %s", final_sha1)
 
     return processed_content, final_md5, final_sha1
 
@@ -1410,12 +1405,6 @@ def download_project_file(self, project_id):  # noqa: PLR0915
         formatted_size = _format_bytes(len(downloaded_content))
         logger.info("  ✓ Read %s from temp file", formatted_size)
 
-        # Calculate hashes from downloaded content
-        logger.info("  Calculating hashes from downloaded content...")
-        md5_hash, sha1_hash = _calculate_file_hashes(downloaded_content)
-        logger.info("  ✓ MD5: %s", md5_hash)
-        logger.info("  ✓ SHA1: %s", sha1_hash)
-
         # Detect file type from actual content
         logger.info("Step 6: Detecting file type from content...")
         from .services import detect_file_type_from_data  # noqa: PLC0415
@@ -1444,14 +1433,12 @@ def download_project_file(self, project_id):  # noqa: PLR0915
             project_file.save(update_fields=["download_status", "download_error"])
             raise
 
-        # Process and save content
+        # Process and save content (extracts GDS/OASIS and calculates hashes)
         logger.info("Step 7: Processing and saving content...")
         _processed_content, final_md5, final_sha1 = _process_and_save_content(
             project_file,
             downloaded_content,
             temp_path,
-            md5_hash,
-            sha1_hash,
         )
 
         # Verify hashes and create notifications

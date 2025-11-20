@@ -6,7 +6,10 @@ Security-Critical Tests:
 - Only http:// and https:// schemes are allowed for file downloads
 """
 
+import hashlib
+import io
 import logging
+import zipfile
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from unittest.mock import Mock
@@ -27,6 +30,7 @@ from wafer_space.projects.tasks import _prepare_download_request
 from wafer_space.projects.tasks import _process_and_save_content
 from wafer_space.projects.tasks import _safe_urlopen
 from wafer_space.projects.tasks import check_project_manufacturability
+from wafer_space.projects.tasks import download_project_file
 
 User = get_user_model()
 TEST_PASSWORD = "testpass123"  # noqa: S105 - Test password constant
@@ -534,8 +538,6 @@ class TestContentPipelineIntegration(TestCase):
                     project_file,
                     b"fake_zip_content",
                     temp_path,
-                    "abc123",
-                    "def456",
                 )
 
                 # Verify pipeline was called
@@ -601,8 +603,6 @@ class TestContentPipelineIntegration(TestCase):
                     project_file,
                     b"fake_compressed_content",
                     temp_path,
-                    "orig_md5",
-                    "orig_sha1",
                 )
 
                 # Verify pipeline was called
@@ -635,8 +635,6 @@ class TestContentPipelineIntegration(TestCase):
                         project_file,
                         b"fake_invalid_content",
                         temp_path,
-                        "md5",
-                        "sha1",
                     )
 
                 # Verify file was marked as failed
@@ -788,3 +786,53 @@ class DownloadTaskTests(TestCase):
             assert temp_path.stat().st_size == expected_file_size
         finally:
             temp_path.unlink(missing_ok=True)
+
+    @patch("wafer_space.projects.tasks._apply_content_pipeline")
+    @patch("wafer_space.projects.services.detect_file_type_from_data")
+    @patch("wafer_space.projects.tasks._download_with_progress")
+    def test_hash_calculated_on_extracted_file_not_zip(
+        self,
+        mock_download,
+        mock_detect,
+        mock_pipeline,
+    ):
+        """Test that hashes are calculated on extracted GDS, not downloaded ZIP."""
+        project = Project.objects.create(user=self.user, name="Test")
+
+        # Create a ZIP containing a GDS file
+        gds_content = b"GDS_FILE_CONTENT_HERE"
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w") as zf:
+            zf.writestr("design.gds", gds_content)
+        zip_bytes = zip_buffer.getvalue()
+
+        project_file = ProjectFile.objects.create(
+            project=project,
+            source_url="http://example.com/design.zip",
+            original_filename="design.zip",
+            is_active=True,
+        )
+
+        # Expected hashes for the GDS content (not the ZIP)
+        expected_md5 = hashlib.md5(gds_content, usedforsecurity=False).hexdigest()
+        expected_sha1 = hashlib.sha1(gds_content, usedforsecurity=False).hexdigest()
+
+        # Mock download to write ZIP content
+        def write_zip(task, pf, temp_path):
+            temp_path.write_bytes(zip_bytes)
+
+        mock_download.side_effect = write_zip
+
+        # Mock file type detection
+        mock_detect.return_value = ("application/zip", ".zip")
+
+        # Mock the pipeline to extract GDS and return hashes
+        mock_pipeline.return_value = (gds_content, expected_md5, expected_sha1)
+
+        # Run download task
+        download_project_file(str(project.id))
+
+        # Verify hashes are for GDS content, not ZIP
+        project_file.refresh_from_db()
+        assert project_file.hash_md5 == expected_md5
+        assert project_file.hash_sha1 == expected_sha1
