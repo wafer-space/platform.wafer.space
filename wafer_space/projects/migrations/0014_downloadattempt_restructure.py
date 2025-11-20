@@ -13,12 +13,13 @@ class Migration(migrations.Migration):
     operations = [
         # CLEAN SLATE STRATEGY: Drop old tables to eliminate legacy data
         # This is acceptable during active development (no production data)
+        # Note: CASCADE removed for SQLite compatibility (SQLite handles deps via FK constraints)
         migrations.RunSQL(
-            sql="DROP TABLE IF EXISTS projects_projectfilechunk CASCADE;",
+            sql="DROP TABLE IF EXISTS projects_projectfilechunk;",
             reverse_sql=migrations.RunSQL.noop,
         ),
         migrations.RunSQL(
-            sql="DROP TABLE IF EXISTS projects_fileprocessingerror CASCADE;",
+            sql="DROP TABLE IF EXISTS projects_fileprocessingerror;",
             reverse_sql=migrations.RunSQL.noop,
         ),
         # Create new DownloadAttempt model
