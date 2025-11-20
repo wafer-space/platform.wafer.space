@@ -277,6 +277,9 @@ tmp/
 # Celery
 celerybeat-schedule
 celerybeat-schedule.db
+celerybeat-schedule.sqlite3
+celerybeat-schedule.sqlite3-shm
+celerybeat-schedule.sqlite3-wal
 celerybeat-schedule-shm
 celerybeat-schedule-wal
 celerybeat.pid
