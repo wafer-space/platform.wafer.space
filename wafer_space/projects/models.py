@@ -554,8 +554,8 @@ class ProjectFile(models.Model):
 class FileProcessingError(models.Model):
     """Log of errors that occurred during file processing.
 
-    Stores structured error information for all processing stages:
-    download, extraction, validation, and pipeline processing.
+    Each error belongs to a specific DownloadAttempt, not directly to ProjectFile.
+    This allows tracking which errors occurred in which retry attempt.
     """
 
     class ErrorType(models.TextChoices):
@@ -564,10 +564,11 @@ class FileProcessingError(models.Model):
         VALIDATION = "validation", "Validation Error"
         PIPELINE = "pipeline", "Pipeline Error"
 
-    project_file = models.ForeignKey(
-        ProjectFile,
+    download_attempt = models.ForeignKey(
+        "DownloadAttempt",  # Use string to avoid ordering issues
         on_delete=models.CASCADE,
         related_name="errors",
+        help_text="The download attempt this error belongs to",
     )
     error_type = models.CharField(max_length=20, choices=ErrorType.choices)
     error_message = models.TextField(help_text="User-friendly error message")
@@ -581,12 +582,15 @@ class FileProcessingError(models.Model):
     class Meta:
         ordering = ["-occurred_at"]
         indexes = [
-            models.Index(fields=["project_file", "-occurred_at"]),
+            models.Index(fields=["download_attempt", "-occurred_at"]),
             models.Index(fields=["error_type", "-occurred_at"]),
         ]
 
     def __str__(self):
-        return f"{self.get_error_type_display()}: {self.error_message[:50]}"
+        attempt_num = self.download_attempt.attempt_number
+        error_type = self.get_error_type_display()
+        message_preview = self.error_message[:50]
+        return f"Attempt #{attempt_num} - {error_type}: {message_preview}"
 
 
 class DownloadAttempt(models.Model):
