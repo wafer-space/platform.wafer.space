@@ -56,11 +56,11 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
         self.live_server_url = live_server.url
 
     def perform_login(self, driver, username, password, wait):
-        """Perform login and wait for redirect."""
+        """Perform login following the authenticated_driver pattern."""
         # Navigate to login page
         driver.get(f"{self.live_server_url}/accounts/login/")
 
-        # Fill in credentials
+        # Wait for login form and fill credentials
         username_field = wait.until(
             expected_conditions.presence_of_element_located((By.NAME, "login"))
         )
@@ -73,7 +73,7 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
         submit_button = driver.find_element(By.XPATH, "//button[@type='submit']")
         submit_button.click()
 
-        # Wait for redirect after successful login
+        # Wait for redirect away from login page (to /accounts/confirm-email/ typically)
         wait.until(
             expected_conditions.url_changes(f"{self.live_server_url}/accounts/login/")
         )
