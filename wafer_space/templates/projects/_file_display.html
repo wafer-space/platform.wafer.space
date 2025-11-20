@@ -3,6 +3,7 @@
 {# Reusable file display partial - used for both submitted and in-progress files #}
 {# Parameters: #}
 {#   - file: ProjectFile instance to display #}
+{#   - latest_attempt: (optional) DownloadAttempt instance for this file #}
 {#   - show_details: (optional, default=False) Show errors and checkpoints #}
 
 {# Show filename with transformation if applicable #}
@@ -33,27 +34,34 @@
 {# Status Badges #}
 <p class="mb-3">
   <strong>Download Status:</strong>
-  <span id="status-badge" class="badge {% if file.download_status == 'completed' %}bg-success{% elif file.download_status == 'failed' %}bg-danger{% elif file.download_status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
-    {% if file.download_status == 'completed' %}
-      <i class="bi bi-check-circle"></i>
-    {% elif file.download_status == 'failed' %}
-      <i class="bi bi-exclamation-triangle"></i>
-    {% elif file.download_status == 'downloading' %}
-      <span class="spinner-border spinner-border-sm"
-            role="status"
-            aria-hidden="true"></span>
-    {% else %}
-      <i class="bi bi-clock"></i>
-    {% endif %}
-    <span id="status-text">{{ file.get_download_status_display }}</span>
-  </span>
-  {% if file.hash_verified %}
-    <span class="badge bg-success">
-      <i class="bi bi-check-circle"></i> Hash Verified
+  {% if latest_attempt %}
+    <span id="status-badge" class="badge {% if latest_attempt.status == 'completed' %}bg-success{% elif latest_attempt.status == 'failed' %}bg-danger{% elif latest_attempt.status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
+      {% if latest_attempt.status == 'completed' %}
+        <i class="bi bi-check-circle"></i>
+      {% elif latest_attempt.status == 'failed' %}
+        <i class="bi bi-exclamation-triangle"></i>
+      {% elif latest_attempt.status == 'downloading' %}
+        <span class="spinner-border spinner-border-sm"
+              role="status"
+              aria-hidden="true"></span>
+      {% else %}
+        <i class="bi bi-clock"></i>
+      {% endif %}
+      <span id="status-text">{{ latest_attempt.get_status_display }}</span>
     </span>
-  {% elif file.download_status == 'completed' %}
-    <span class="badge bg-warning text-dark">
-      <i class="bi bi-exclamation-triangle"></i> Hash Not Verified
+    {% if file.hash_verified %}
+      <span class="badge bg-success">
+        <i class="bi bi-check-circle"></i> Hash Verified
+      </span>
+    {% elif latest_attempt.status == 'completed' %}
+      <span class="badge bg-warning text-dark">
+        <i class="bi bi-exclamation-triangle"></i> Hash Not Verified
+      </span>
+    {% endif %}
+  {% else %}
+    <span id="status-badge" class="badge bg-secondary">
+      <i class="bi bi-clock"></i>
+      <span id="status-text">Pending</span>
     </span>
   {% endif %}
 </p>
@@ -77,55 +85,57 @@
         <strong>File Size:</strong> {{ file.file_size|filesizeformat }}
       </p>
     {% endif %}
-    {% if file.download_started_at %}
-      <p class="mb-2">
-        <strong>Download Started:</strong> {{ file.download_started_at|date:"Y-m-d H:i:s" }}
-      </p>
-    {% endif %}
-    {% if file.download_completed_at and file.download_status == 'completed' %}
-      <p class="mb-2">
-        <strong>Download Completed:</strong> {{ file.download_completed_at|date:"Y-m-d H:i:s" }}
-      </p>
-    {% endif %}
-    {% if file.download_duration_seconds %}
-      <p class="mb-2">
-        <strong>Download Duration:</strong> {{ file.download_duration_seconds|floatformat:1 }} seconds
-      </p>
-    {% endif %}
-    {% if file.download_speed_formatted %}
-      <p class="mb-2">
-        <strong>Average Download Speed:</strong> {{ file.download_speed_formatted }}
-      </p>
-    {% endif %}
-    {% if file.retry_count > 0 %}
-      <p class="mb-2">
-        <strong>Auto-Retry Attempts:</strong> {{ file.retry_count }}/{{ file.max_retries }}
-      </p>
-    {% endif %}
-    {% if file.download_status == 'failed' and file.auto_retry_enabled %}
-      <p class="mb-2">
-        <strong>Auto-Retry:</strong>
-        {% if file.retry_count >= file.max_retries %}
-          <span class="badge bg-danger">
-            <i class="bi bi-x-circle"></i> Max retries reached
-          </span>
-        {% elif file.next_retry_at %}
-          <span class="badge bg-warning text-dark">
-            <i class="bi bi-clock"></i> Next retry at {{ file.next_retry_at|date:"g:i a" }}
-          </span>
-        {% else %}
-          <span class="badge bg-info text-dark">
-            <i class="bi bi-arrow-repeat"></i> Retry pending
-          </span>
-        {% endif %}
-      </p>
+    {% if latest_attempt %}
+      {% if latest_attempt.download_started_at %}
+        <p class="mb-2">
+          <strong>Download Started:</strong> {{ latest_attempt.download_started_at|date:"Y-m-d H:i:s" }}
+        </p>
+      {% endif %}
+      {% if latest_attempt.download_completed_at and latest_attempt.status == 'completed' %}
+        <p class="mb-2">
+          <strong>Download Completed:</strong> {{ latest_attempt.download_completed_at|date:"Y-m-d H:i:s" }}
+        </p>
+      {% endif %}
+      {% if latest_attempt.download_duration_seconds %}
+        <p class="mb-2">
+          <strong>Download Duration:</strong> {{ latest_attempt.download_duration_seconds|floatformat:1 }} seconds
+        </p>
+      {% endif %}
+      {% if latest_attempt.download_speed_formatted %}
+        <p class="mb-2">
+          <strong>Average Download Speed:</strong> {{ latest_attempt.download_speed_formatted }}
+        </p>
+      {% endif %}
+      {% if latest_attempt.retry_count > 0 %}
+        <p class="mb-2">
+          <strong>Auto-Retry Attempts:</strong> {{ latest_attempt.retry_count }}/{{ latest_attempt.max_retries }}
+        </p>
+      {% endif %}
+      {% if latest_attempt.status == 'failed' and latest_attempt.auto_retry_enabled %}
+        <p class="mb-2">
+          <strong>Auto-Retry:</strong>
+          {% if latest_attempt.retry_count >= latest_attempt.max_retries %}
+            <span class="badge bg-danger">
+              <i class="bi bi-x-circle"></i> Max retries reached
+            </span>
+          {% elif latest_attempt.next_retry_at %}
+            <span class="badge bg-warning text-dark">
+              <i class="bi bi-clock"></i> Next retry at {{ latest_attempt.next_retry_at|date:"g:i a" }}
+            </span>
+          {% else %}
+            <span class="badge bg-info text-dark">
+              <i class="bi bi-arrow-repeat"></i> Retry pending
+            </span>
+          {% endif %}
+        </p>
+      {% endif %}
     {% endif %}
     {# Download Performance - Only shown for active/in-progress files #}
-    {% if show_details|default:False and file.chunks.exists %}
+    {% if show_details|default:False and latest_attempt and latest_attempt.chunks.exists %}
       <hr />
       <h6>Download Performance</h6>
       <p class="mb-2">
-        <strong>Checkpoints Tracked:</strong> {{ file.chunks.count }}
+        <strong>Checkpoints Tracked:</strong> {{ latest_attempt.chunks.count }}
       </p>
       <details>
         <summary class="text-primary" style="cursor: pointer;">
@@ -142,7 +152,7 @@
               </tr>
             </thead>
             <tbody>
-              {% for chunk in file.chunks.all|dictsortreversed:"chunk_number" %}
+              {% for chunk in latest_attempt.chunks.all|dictsortreversed:"chunk_number" %}
                 <tr>
                   <td>#{{ chunk.chunk_number }}</td>
                   <td>{{ chunk.bytes_downloaded|filesizeformat }}</td>
@@ -198,14 +208,14 @@
       {% endif %}
     {% endif %}
     {# Error Log Display - Only shown for active/in-progress files #}
-    {% if show_details|default:False and file.errors.exists %}
+    {% if show_details|default:False and latest_attempt and latest_attempt.errors.exists %}
       <hr class="my-3" />
       <div class="alert alert-danger" role="alert">
         <h6 class="alert-heading">
           <i class="bi bi-exclamation-triangle-fill"></i>
-          Processing Errors ({{ file.errors.count }})
+          Processing Errors ({{ latest_attempt.errors.count }})
         </h6>
-        {% for error in file.errors.all %}
+        {% for error in latest_attempt.errors.all %}
           <div class="mb-3">
             <strong>{{ error.get_error_type_display }}:</strong>
             <p class="mb-1">{{ error.error_message|linebreaksbr }}</p>
@@ -217,7 +227,7 @@
           {% if not forloop.last %}<hr class="my-2" />{% endif %}
         {% endfor %}
         {# Technical details only for superusers #}
-        {% if user.is_superuser and file.errors.exists %}
+        {% if user.is_superuser and latest_attempt.errors.exists %}
           <hr class="my-3" />
           <details class="mt-2">
             <summary class="text-muted" style="cursor: pointer;">
@@ -225,7 +235,7 @@
               <strong>Technical Details (Superuser Only)</strong>
             </summary>
             <div class="mt-3">
-              {% for error in file.errors.all %}
+              {% for error in latest_attempt.errors.all %}
                 <div class="card bg-light mb-2">
                   <div class="card-header">
                     <small>

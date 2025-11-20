@@ -84,7 +84,7 @@
                 <i class="bi bi-check-circle-fill"></i> Submitted for Manufacturing
               </h5>
             </div>
-            <div class="card-body">{% include "projects/_file_display.html" with file=submitted_file %}</div>
+            <div class="card-body">{% include "projects/_file_display.html" with file=submitted_file latest_attempt=submitted_file.latest_attempt %}</div>
           </div>
         {% endif %}
         {# In-Progress File Section #}
@@ -135,7 +135,7 @@
                   <p id="progress-message" class="mt-2 text-muted">{{ progress.message }}</p>
                 </div>
               {% endif %}
-              {% include "projects/_file_display.html" with file=in_progress_file show_details=True %}
+              {% include "projects/_file_display.html" with file=in_progress_file latest_attempt=latest_attempt show_details=True %}
               {# Manufacturability Check (shown only for in-progress files) #}
               {% if check_status %}
                 <hr class="my-4" />
@@ -274,14 +274,22 @@
                           {% endif %}
                         </td>
                         <td>
-                          <span class="badge {% if file.download_status == 'completed' %}bg-success{% elif file.download_status == 'failed' %}bg-danger{% elif file.download_status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
-                            {{ file.get_download_status_display }}
-                          </span>
-                          {% if file.hash_verified %}
-                            <span class="badge bg-success">
-                              <i class="bi bi-check-circle"></i> Verified
-                            </span>
-                          {% endif %}
+                          {% with file_attempt=file.latest_attempt %}
+                            {% if file_attempt %}
+                              <span class="badge {% if file_attempt.status == 'completed' %}bg-success{% elif file_attempt.status == 'failed' %}bg-danger{% elif file_attempt.status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
+                                {{ file_attempt.get_status_display }}
+                              </span>
+                              {% if file.hash_verified %}
+                                <span class="badge bg-success">
+                                  <i class="bi bi-check-circle"></i> Verified
+                                </span>
+                              {% endif %}
+                            {% else %}
+                              <span class="badge bg-secondary">
+                                Pending
+                              </span>
+                            {% endif %}
+                          {% endwith %}
                         </td>
                         <td>
                           {% if file.is_active %}
