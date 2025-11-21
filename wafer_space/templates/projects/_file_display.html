@@ -168,9 +168,7 @@
                 <div class="d-flex justify-content-between align-items-center">
                   <strong>
                     Attempt #{{ attempt.attempt_number }}
-                    {% if attempt == latest_attempt %}
-                      <span class="badge bg-primary">Latest</span>
-                    {% endif %}
+                    {% if attempt == latest_attempt %}<span class="badge bg-primary">Latest</span>{% endif %}
                   </strong>
                   <span class="badge {% if attempt.status == 'completed' %}bg-success{% elif attempt.status == 'failed' %}bg-danger{% elif attempt.status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
                     {{ attempt.get_status_display }}
