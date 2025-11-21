@@ -427,8 +427,12 @@ class TestProjectSubmissionIntegration(TestCase):
             source_url="https://example.com/test.gds",
             file_size=1024,
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=True,
+        )
+        DownloadAttempt.objects.create(
+            project_file=self.project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
     def test_submit_updates_project_status(self):
