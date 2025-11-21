@@ -1682,6 +1682,15 @@ def ensure_download_tasks_queued():
         else:
             error_msg = "Task not found in Celery queue (worker may be down)"
             logger.warning("Orphaned queued file %s", project_file.id)
+
+            # Create FAILED attempt (no attempt exists for QUEUED files)
+            DownloadAttempt.objects.create(
+                project_file=project_file,
+                attempt_number=1,
+                status=DownloadAttempt.Status.FAILED,
+                download_error=error_msg,
+                completed_at=timezone.now(),
+            )
             project_file.mark_download_failed(error_msg)
             orphaned_count += 1
 
@@ -1703,6 +1712,13 @@ def ensure_download_tasks_queued():
             else:
                 error_msg = "Task not running (worker crashed or task failed)"
                 logger.warning("Orphaned downloading file %s", project_file.id)
+
+                # Update attempt to FAILED
+                latest.status = DownloadAttempt.Status.FAILED
+                latest.download_error = error_msg
+                latest.completed_at = timezone.now()
+                latest.save(update_fields=["status", "download_error", "completed_at"])
+
                 project_file.mark_download_failed(error_msg)
                 orphaned_count += 1
 

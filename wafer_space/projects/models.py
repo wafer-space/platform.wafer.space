@@ -347,11 +347,23 @@ class ProjectFile(models.Model):
         self.save(update_fields=["download_completed_at"])
 
     def mark_download_failed(self, error_message):
-        """Mark download as failed.
+        """Mark download as failed - records error on ProjectFile only.
 
-        NOTE: Actual status is derived from DownloadAttempt.
-        This method only records error message and completion timestamp.
-        Auto-retry system has been removed - retries are handled by Celery.
+        Note:
+            This method only updates ProjectFile fields. The caller is responsible
+            for updating the DownloadAttempt status to FAILED. This separation
+            avoids circular dependencies between ProjectFile and DownloadAttempt.
+
+            Typical usage from tasks.py:
+                # Update attempt status first
+                attempt.status = DownloadAttempt.Status.FAILED
+                attempt.error_message = error_msg
+                attempt.save()
+                # Then record on ProjectFile
+                project_file.mark_download_failed(error_msg)
+
+        Args:
+            error_message: Error description to record
         """
         self.download_error = error_message
         self.download_completed_at = timezone.now()

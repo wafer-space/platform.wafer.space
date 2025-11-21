@@ -8,10 +8,11 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
+from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
-from wafer_space.projects.tasks import check_download_states
 from wafer_space.projects.tasks import download_project_file
+from wafer_space.projects.tasks import ensure_download_tasks_queued
 
 User = get_user_model()
 TEST_PASSWORD = "testpass123"  # noqa: S105 - Test password constant
@@ -21,7 +22,7 @@ TEST_WORKER_HOSTNAME = "worker-01"
 
 @pytest.mark.django_db
 class DownloadStateVerificationTests(TestCase):
-    """Tests for check_download_states() task."""
+    """Tests for ensure_download_tasks_queued() task."""
 
     def setUp(self):
         """Set up test fixtures."""
@@ -43,11 +44,10 @@ class DownloadStateVerificationTests(TestCase):
         self, mock_delay, mock_is_queued, mock_is_running
     ):
         """Test PENDING file gets task created and transitions to QUEUED."""
-        # Create PENDING file with no task
+        # Create PENDING file with no task (status = PENDING automatically)
         project_file = ProjectFile.objects.create(
             project=self.project,
             source_url="http://example.com/test.gds",
-            download_status=ProjectFile.DownloadStatus.PENDING,
             is_active=True,
         )
 
@@ -61,7 +61,7 @@ class DownloadStateVerificationTests(TestCase):
         mock_is_running.return_value = True
 
         # Run state check
-        result = check_download_states()
+        result = ensure_download_tasks_queued()
 
         # Verify task created
         mock_delay.assert_called_once_with(self.project.id)
@@ -76,10 +76,10 @@ class DownloadStateVerificationTests(TestCase):
     @patch("wafer_space.projects.tasks.is_task_queued")
     def test_queued_file_verified(self, mock_is_queued, mock_is_running):
         """Test QUEUED file is verified and counted."""
+        # Create file with task_id (status = QUEUED automatically)
         project_file = ProjectFile.objects.create(
             project=self.project,
             source_url="http://example.com/test.gds",
-            download_status=ProjectFile.DownloadStatus.QUEUED,
             download_task_id="task-123",
             is_active=True,
         )
@@ -88,7 +88,7 @@ class DownloadStateVerificationTests(TestCase):
         mock_is_queued.return_value = True
         mock_is_running.return_value = True
 
-        result = check_download_states()
+        result = ensure_download_tasks_queued()
 
         assert result["verified"] == 1
         assert result["orphaned"] == 0
@@ -101,10 +101,10 @@ class DownloadStateVerificationTests(TestCase):
     @patch("wafer_space.projects.tasks.is_task_queued")
     def test_queued_file_orphaned(self, mock_is_queued, mock_is_running):
         """Test QUEUED file not in queue is marked orphaned."""
+        # Create file with task_id (status = QUEUED automatically)
         project_file = ProjectFile.objects.create(
             project=self.project,
             source_url="http://example.com/test.gds",
-            download_status=ProjectFile.DownloadStatus.QUEUED,
             download_task_id="task-456",
             is_active=True,
         )
@@ -113,7 +113,7 @@ class DownloadStateVerificationTests(TestCase):
         mock_is_queued.return_value = False
         mock_is_running.return_value = True
 
-        result = check_download_states()
+        result = ensure_download_tasks_queued()
 
         assert result["verified"] == 0
         assert result["orphaned"] == 1
@@ -127,19 +127,24 @@ class DownloadStateVerificationTests(TestCase):
     @patch("wafer_space.projects.tasks.is_task_actively_running")
     def test_downloading_file_verified(self, mock_is_running, mock_is_queued):
         """Test DOWNLOADING file is verified and counted."""
+        # Create file with task_id and DOWNLOADING attempt
         project_file = ProjectFile.objects.create(
             project=self.project,
             source_url="http://example.com/test.gds",
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
             download_task_id="task-789",
             is_active=True,
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
         )
 
         # Mock verification returns True
         mock_is_running.return_value = True
         mock_is_queued.return_value = True
 
-        result = check_download_states()
+        result = ensure_download_tasks_queued()
 
         assert result["verified"] == 1
         assert result["orphaned"] == 0
@@ -152,19 +157,24 @@ class DownloadStateVerificationTests(TestCase):
     @patch("wafer_space.projects.tasks.is_task_actively_running")
     def test_downloading_file_orphaned(self, mock_is_running, mock_is_queued):
         """Test DOWNLOADING file not running is marked orphaned."""
+        # Create file with task_id and DOWNLOADING attempt
         project_file = ProjectFile.objects.create(
             project=self.project,
             source_url="http://example.com/test.gds",
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
             download_task_id="task-999",
             is_active=True,
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
         )
 
         # Mock verification returns False
         mock_is_running.return_value = False
         mock_is_queued.return_value = True
 
-        result = check_download_states()
+        result = ensure_download_tasks_queued()
 
         assert result["verified"] == 0
         assert result["orphaned"] == 1
@@ -177,11 +187,10 @@ class DownloadStateVerificationTests(TestCase):
     @patch("wafer_space.projects.tasks.socket")
     @patch("wafer_space.projects.tasks.os")
     def test_download_task_captures_worker_info(self, mock_os, mock_socket):
-        """Test that download task captures PID and hostname."""
+        """Test that download task captures PID and hostname in DownloadAttempt."""
         project_file = ProjectFile.objects.create(
             project=self.project,
             source_url="http://example.com/small.txt",
-            download_status=ProjectFile.DownloadStatus.QUEUED,
             download_task_id="task-123",
             is_active=True,
         )
@@ -194,8 +203,10 @@ class DownloadStateVerificationTests(TestCase):
         with contextlib.suppress(Exception):
             download_project_file(self.project.id)
 
-        # Verify worker info was captured
+        # Verify worker info was captured in DownloadAttempt
         project_file.refresh_from_db()
-        assert project_file.worker_pid == TEST_WORKER_PID
-        assert project_file.worker_hostname == TEST_WORKER_HOSTNAME
-        assert project_file.task_started_at is not None
+        latest_attempt = project_file.latest_attempt
+        assert latest_attempt is not None
+        assert latest_attempt.worker_pid == TEST_WORKER_PID
+        assert latest_attempt.worker_hostname == TEST_WORKER_HOSTNAME
+        assert latest_attempt.task_started_at is not None
