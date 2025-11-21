@@ -17,6 +17,7 @@ from wafer_space.legal.models import TermsOfService
 from wafer_space.legal.models import TermsOfServiceAcceptance
 from wafer_space.notifications.models import Notification
 from wafer_space.notifications.services import NotificationService
+from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.security import SecurityValidationError
@@ -241,7 +242,7 @@ class TestProjectFileDownload(BaseBrowserTest):
         self.login()
 
         # Create a downloading file
-        ProjectFile.objects.create(
+        project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
@@ -250,6 +251,13 @@ class TestProjectFileDownload(BaseBrowserTest):
             download_status=ProjectFile.DownloadStatus.DOWNLOADING,
             download_task_id="task-123",
             is_active=True,
+        )
+
+        # Create download attempt
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
         )
 
         # Mock progress response
@@ -291,7 +299,7 @@ class TestProjectFileDownload(BaseBrowserTest):
         self.login()
 
         # Create a completed file
-        ProjectFile.objects.create(
+        project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
@@ -300,6 +308,13 @@ class TestProjectFileDownload(BaseBrowserTest):
             download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=True,
             is_active=True,
+        )
+
+        # Create download attempt
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Navigate to project detail page
@@ -319,7 +334,7 @@ class TestProjectFileDownload(BaseBrowserTest):
 
         # Create a failed file
         error_message = "Connection timeout after 3 retries"
-        ProjectFile.objects.create(
+        project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
@@ -328,6 +343,14 @@ class TestProjectFileDownload(BaseBrowserTest):
             download_status=ProjectFile.DownloadStatus.FAILED,
             download_error=error_message,
             is_active=True,
+        )
+
+        # Create download attempt
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.FAILED,
+            download_error=error_message,
         )
 
         # Navigate to project detail page

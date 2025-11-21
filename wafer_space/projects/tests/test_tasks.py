@@ -816,7 +816,7 @@ class DownloadTaskTests(TestCase):
         expected_sha1 = hashlib.sha1(gds_content, usedforsecurity=False).hexdigest()
 
         # Mock download to write ZIP content
-        def write_zip(task, pf, temp_path):
+        def write_zip(task, pf, attempt, temp_path):
             temp_path.write_bytes(zip_bytes)
 
         mock_download.side_effect = write_zip

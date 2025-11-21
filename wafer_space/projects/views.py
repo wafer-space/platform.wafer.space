@@ -94,11 +94,15 @@ class ProjectDetailView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
             latest_attempt = in_progress_file.latest_attempt
             context["latest_attempt"] = latest_attempt
 
+            # Always set show_progress and show_error flags (tests expect them)
+            show_progress = False
+            show_error = False
+
             if latest_attempt and latest_attempt.status in [
                 DownloadAttempt.Status.PENDING,
                 DownloadAttempt.Status.DOWNLOADING,
             ]:
-                context["show_progress"] = True
+                show_progress = True
                 progress = ProjectFileService.get_download_progress(in_progress_file)
                 context["progress"] = progress
 
@@ -107,8 +111,11 @@ class ProjectDetailView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
                 latest_attempt
                 and latest_attempt.status == DownloadAttempt.Status.FAILED
             ):
-                context["show_error"] = True
+                show_error = True
                 context["error_message"] = latest_attempt.download_error
+
+            context["show_progress"] = show_progress
+            context["show_error"] = show_error
 
         # Get file history (non-active files, newest first)
         # Exclude both submitted and in-progress files from history
