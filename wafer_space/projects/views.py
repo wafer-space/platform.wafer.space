@@ -98,10 +98,19 @@ class ProjectDetailView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
             show_progress = False
             show_error = False
 
+            # Show progress if:
+            # 1. There's an attempt in PENDING/DOWNLOADING status, OR
+            # 2. There's a download_task_id (task queued but attempt not created yet)
             if latest_attempt and latest_attempt.status in [
                 DownloadAttempt.Status.PENDING,
                 DownloadAttempt.Status.DOWNLOADING,
             ]:
+                show_progress = True
+                progress = ProjectFileService.get_download_progress(in_progress_file)
+                context["progress"] = progress
+            elif in_progress_file.download_task_id and not latest_attempt:
+                # Task is queued but DownloadAttempt not created yet
+                # This happens immediately after URL submission
                 show_progress = True
                 progress = ProjectFileService.get_download_progress(in_progress_file)
                 context["progress"] = progress
