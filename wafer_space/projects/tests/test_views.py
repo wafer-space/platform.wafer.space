@@ -871,6 +871,38 @@ class TestEnhancedProgressDashboard(TestCase):
         assert response.context["show_progress"] is True
         assert "progress" in response.context
 
+    def test_detail_view_shows_progress_when_task_queued_no_attempt_yet(self):
+        """Test show_progress is True when task queued but DownloadAttempt not created.
+
+        This reproduces the bug where polling didn't start after URL submission:
+        - User submits URL → ProjectFile created with download_task_id
+        - User redirected to detail page
+        - DownloadAttempt doesn't exist yet (created inside Celery task)
+        - Before fix: show_progress was False → no polling JavaScript
+        - After fix: show_progress is True → polling starts immediately
+        """
+        ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+            download_status=ProjectFile.DownloadStatus.PENDING,
+            download_task_id="celery-task-123",  # Task queued
+        )
+        # Intentionally NOT creating DownloadAttempt to simulate race condition
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        # This assertion would FAIL before the fix
+        assert response.context["show_progress"] is True
+        assert "progress" in response.context
+        # Verify polling JavaScript is included in the response
+        assert b"Progress Polling" in response.content
+
     def test_detail_view_shows_error_flag_when_failed(self):
         """Test that detail view sets show_error flag when download failed."""
         project_file = ProjectFile.objects.create(
