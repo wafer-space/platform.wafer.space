@@ -327,22 +327,30 @@
       </div>
     </div>
   </div>
+  <script>
+    // Debug logging for polling state
+    console.log('[Progress Polling] show_progress={{ show_progress }}, has active file={{ in_progress_file|yesno:"yes,no" }}');
+  </script>
   {% if show_progress %}
     <script>
       // Real-time progress polling
       (function() {
+        console.log('[Progress Polling] Initializing polling for project {{ project.pk }}');
         let pollInterval;
         const progressUrl = '{% url "projects:progress" pk=project.pk %}';
 
         function updateProgress() {
+          console.log('[Progress Polling] Fetching progress from:', progressUrl);
           fetch(progressUrl)
             .then(response => {
               if (!response.ok) {
+                console.error('[Progress Polling] Request failed with status:', response.status);
                 throw new Error('Progress request failed');
               }
               return response.json();
             })
             .then(data => {
+              console.log('[Progress Polling] Received data:', data);
               // Update progress bar
               const progressBar = document.getElementById('progress-bar');
               const progressText = document.getElementById('progress-text');
@@ -362,6 +370,7 @@
 
               // Update status badge
               if (statusBadge && statusText && data.status) {
+                console.log('[Progress Polling] Updating status badge to:', data.status);
                 // Update badge color and icon based on status
                 statusBadge.className = 'badge';
                 let iconHtml = '';
@@ -394,6 +403,7 @@
 
               // Stop polling and reload if completed or failed
               if (data.status === 'completed' || data.status === 'failed') {
+                console.log('[Progress Polling] Download finished. Stopping polling and reloading page.');
                 clearInterval(pollInterval);
                 setTimeout(() => {
                   location.reload();
@@ -401,15 +411,17 @@
               }
             })
             .catch(error => {
-              console.error('Error fetching progress:', error);
+              console.error('[Progress Polling] Error fetching progress:', error);
               // Continue polling even on error
             });
         }
 
         // Start polling every 3 seconds
+        console.log('[Progress Polling] Starting poll interval (every 3 seconds)');
         pollInterval = setInterval(updateProgress, 3000);
 
         // Initial update
+        console.log('[Progress Polling] Running initial update');
         updateProgress();
 
         // Clean up on page unload

@@ -316,7 +316,7 @@ class TestProjectFileDownload(BaseBrowserTest):
         )
 
         # Create download attempt with PENDING status
-        download_attempt = DownloadAttempt.objects.create(
+        DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
             status=DownloadAttempt.Status.PENDING,
@@ -353,7 +353,7 @@ class TestProjectFileDownload(BaseBrowserTest):
         expected_msg = "Status should update from pending to downloading without reload"
         assert "downloading" in updated_status.text.lower(), expected_msg
 
-        # Verify the badge color changed from secondary (pending) to primary (downloading)
+        # Verify badge color changed from secondary to primary
         status_badge = self.driver.find_element(By.ID, "status-badge")
         assert "bg-primary" in status_badge.get_attribute("class")
 
