@@ -78,7 +78,6 @@ class DatabaseCheckpointFrequencyTests(TestCase):
             project=self.project,
             source_url="http://example.com/test.gds",
             original_filename="test.gds",
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
             is_active=True,
         )
 
@@ -328,7 +327,6 @@ class DownloadChunksIntegrationTests(TestCase):
             project=self.project,
             source_url="http://example.com/test.gds",
             original_filename="test.gds",
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
             is_active=True,
         )
 
@@ -544,7 +542,6 @@ class KnownSizeCheckpointTests(TestCase):
             project=self.project,
             source_url="http://example.com/test.gds",
             original_filename="test.gds",
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
             is_active=True,
         )
 
@@ -653,7 +650,6 @@ class ProgressLoggingIntegrationTests(TestCase):
             project=self.project,
             source_url="http://example.com/test.gds",
             original_filename="test.gds",
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
             is_active=True,
         )
 
