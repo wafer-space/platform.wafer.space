@@ -102,13 +102,18 @@ class TestProjectCanSubmit(TestCase):
 
     def test_cannot_submit_with_unverified_hash(self):
         """Test that project cannot be submitted with unverified hash."""
-        ProjectFile.objects.create(
+        project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
             hash_verified=False,
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         can_submit, reason = self.project.can_submit()
@@ -199,13 +204,18 @@ class TestProjectSubmit(TestCase):
 
     def test_submit_fails_with_unverified_file(self):
         """Test that submit() raises ValidationError with unverified file."""
-        ProjectFile.objects.create(
+        project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
             hash_verified=False,
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         with pytest.raises(ValidationError) as exc_info:
@@ -218,7 +228,6 @@ class TestProjectSubmit(TestCase):
         """Test that submit() sets status to SUBMITTED."""
         mock_task.return_value = Mock(id="task-123")
 
-
         _pf = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
@@ -229,13 +238,9 @@ class TestProjectSubmit(TestCase):
         )
 
         DownloadAttempt.objects.create(
-
             project_file=_pf,
-
             attempt_number=1,
-
             status=DownloadAttempt.Status.COMPLETED,
-
         )
 
         # Mark as manufacturable
@@ -320,7 +325,6 @@ class TestProjectSubmit(TestCase):
         """Test that submit() does not create duplicate manufacturability check."""
         mock_task.return_value = Mock(id="task-123")
 
-
         _pf = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
@@ -331,13 +335,9 @@ class TestProjectSubmit(TestCase):
         )
 
         DownloadAttempt.objects.create(
-
             project_file=_pf,
-
             attempt_number=1,
-
             status=DownloadAttempt.Status.COMPLETED,
-
         )
 
         # Mark as manufacturable
@@ -422,6 +422,11 @@ class TestProjectFileProgressMethods(TestCase):
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
         )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
+        )
 
         assert project_file.get_progress_percentage() == PROGRESS_COMPLETE
 
@@ -466,6 +471,11 @@ class TestProjectFileProgressMethods(TestCase):
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         message = project_file.get_progress_message()
