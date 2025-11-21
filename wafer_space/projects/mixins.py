@@ -107,6 +107,6 @@ class ProjectOwnerOrSuperuserMixin(UserPassesTestMixin):
             admin_user=admin_user,
             action=action,
             ip_address=ip_address,
-            user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            user_agent=request.headers.get("user-agent", ""),
             view_name=self.__class__.__name__,
         )
