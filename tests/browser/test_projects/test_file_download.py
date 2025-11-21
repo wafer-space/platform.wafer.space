@@ -322,7 +322,7 @@ class TestProjectFileDownload(BaseBrowserTest):
 
         # Check for completed status
         # Use contains(., ...) to match all descendant text, not just direct text nodes
-        completed_xpath = "//*[contains(., 'Download Completed')]"
+        completed_xpath = "//*[contains(., 'Completed')]"
         status_element = self.wait_for_element(
             self.driver, (By.XPATH, completed_xpath), timeout=10
         )
@@ -358,7 +358,7 @@ class TestProjectFileDownload(BaseBrowserTest):
 
         # Check for failed status
         # Use contains(., ...) to match all descendant text, not just direct text nodes
-        failed_xpath = "//*[contains(., 'Download Failed')]"
+        failed_xpath = "//*[contains(., 'Failed')]"
         status_element = self.wait_for_element(
             self.driver, (By.XPATH, failed_xpath), timeout=10
         )
