@@ -178,14 +178,47 @@ class ProjectOwnerOrSuperuserMixinTestCase(TestCase):
         logs = ProjectAccessLog.objects.filter(project=self.project)
         assert logs.count() == 0
 
-    def test_denied_access_no_audit_log(self):
-        """Test that denied access does NOT create audit log."""
+    def test_denied_access_creates_audit_log(self):
+        """Test that denied access creates audit log with ACCESS_DENIED action."""
         request = self.factory.get(f"/projects/{self.project.pk}/")
         request.user = self.other_user
         request.META = {
             "REMOTE_ADDR": "127.0.0.1",
-            "HTTP_USER_AGENT": "Mozilla/5.0",
         }
+
+        view = DummyProjectView()
+        view.request = request
+        view.kwargs = {"pk": self.project.pk}
+
+        # Verify access denied
+        assert view.test_func() is False
+
+        # Attempt dispatch (will fail permission check and log the attempt)
+        with contextlib.suppress(PermissionDenied):
+            view.dispatch(request, pk=self.project.pk)
+
+        # Verify audit log created with ACCESS_DENIED action
+        logs = ProjectAccessLog.objects.filter(
+            project=self.project,
+            admin_user=self.other_user,
+        )
+        assert logs.count() == 1
+
+        log = logs.first()
+        assert log is not None
+        assert log.action == ProjectAccessLog.Action.ACCESS_DENIED
+        assert log.ip_address == "127.0.0.1"
+        assert log.view_name == "DummyProjectView"
+
+    def test_unauthenticated_denied_access_no_log(self):
+        """Test that unauthenticated denied access does NOT create audit log."""
+        request = self.factory.get(f"/projects/{self.project.pk}/")
+        request.user = AnonymousUser()
+        request.META.update({
+            "REMOTE_ADDR": "127.0.0.1",
+            "SERVER_NAME": "testserver",
+            "SERVER_PORT": "80",
+        })
 
         view = DummyProjectView()
         view.request = request
@@ -198,6 +231,6 @@ class ProjectOwnerOrSuperuserMixinTestCase(TestCase):
         with contextlib.suppress(PermissionDenied):
             view.dispatch(request, pk=self.project.pk)
 
-        # Verify NO audit log created
+        # Verify NO audit log created (unauthenticated users not logged)
         logs = ProjectAccessLog.objects.filter(project=self.project)
         assert logs.count() == 0

@@ -232,3 +232,32 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
         log = logs.first()
         assert log.action == ProjectAccessLog.Action.VIEW
         assert log.view_name == "ProjectDetailView"
+
+    def test_regular_user_denied_access_logged(self, driver, owner, project, wait):
+        """Test that regular user denied access is logged."""
+        # Create another regular user
+        other_user = User.objects.create_user(
+            username="otheruser",
+            email="otheruser@example.com",
+            password=TEST_PASSWORD,
+        )
+
+        # Verify no logs initially
+        assert ProjectAccessLog.objects.count() == 0
+
+        # Login as other user (not owner)
+        self.perform_login(driver, "otheruser", TEST_PASSWORD, wait)
+
+        # Attempt to navigate to owner's project (will be denied with 403)
+        driver.get(f"{self.live_server_url}/projects/{project.pk}/")
+
+        # Verify denied access log created
+        logs = ProjectAccessLog.objects.filter(
+            project=project,
+            admin_user=other_user,
+        )
+        assert logs.count() == 1
+
+        log = logs.first()
+        assert log.action == ProjectAccessLog.Action.ACCESS_DENIED
+        assert log.view_name == "ProjectDetailView"

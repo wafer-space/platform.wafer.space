@@ -51,6 +51,9 @@ class ProjectOwnerOrSuperuserMixin(UserPassesTestMixin):
         project = self.get_object()  # type: ignore[attr-defined]
         user = self.request.user  # type: ignore[attr-defined]
 
+        # Store project reference for use in handle_no_permission
+        self._accessed_project = project
+
         # Owner always has access
         if project.user == user:
             return True
@@ -75,6 +78,24 @@ class ProjectOwnerOrSuperuserMixin(UserPassesTestMixin):
                 self._create_audit_log(project, user, request)
 
         return response
+
+    def handle_no_permission(self):
+        """Handle denied access and log the attempt.
+
+        This method is called by UserPassesTestMixin when test_func returns False.
+        We log unauthorized access attempts for security auditing before returning
+        the standard 403 Forbidden response.
+        """
+        user = self.request.user  # type: ignore[attr-defined]
+        project = getattr(self, "_accessed_project", None)
+
+        # Only log if we have both user and project information
+        # Log for authenticated users who were denied (not owners, not superusers)
+        if user.is_authenticated and project is not None:
+            self._create_denied_access_log(project, user, self.request)  # type: ignore[attr-defined]
+
+        # Return standard 403 response
+        return super().handle_no_permission()
 
     def _create_audit_log(self, project, admin_user, request):
         """Create audit log entry for admin access.
@@ -106,6 +127,31 @@ class ProjectOwnerOrSuperuserMixin(UserPassesTestMixin):
             project=project,
             admin_user=admin_user,
             action=action,
+            ip_address=ip_address,
+            user_agent=request.headers.get("user-agent", ""),
+            view_name=self.__class__.__name__,
+        )
+
+    def _create_denied_access_log(self, project, user, request):
+        """Create audit log entry for denied access attempt.
+
+        Args:
+            project: Project that user attempted to access
+            user: User who was denied access
+            request: HTTP request object
+        """
+        # Get client IP address
+        x_forwarded_for = request.headers.get("x-forwarded-for")
+        if x_forwarded_for:
+            ip_address = x_forwarded_for.split(",")[0].strip()
+        else:
+            ip_address = request.META.get("REMOTE_ADDR")
+
+        # Create log entry with ACCESS_DENIED action
+        ProjectAccessLog.objects.create(
+            project=project,
+            admin_user=user,
+            action=ProjectAccessLog.Action.ACCESS_DENIED,
             ip_address=ip_address,
             user_agent=request.headers.get("user-agent", ""),
             view_name=self.__class__.__name__,
