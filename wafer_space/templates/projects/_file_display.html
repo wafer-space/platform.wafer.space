@@ -5,7 +5,6 @@
 {#   - file: ProjectFile instance to display #}
 {#   - latest_attempt: (optional) DownloadAttempt instance for this file #}
 {#   - show_details: (optional, default=False) Show errors and checkpoints #}
-
 {# Show filename with transformation if applicable #}
 {% if file.processed_filename and file.processed_filename != file.original_filename %}
   <h6>
@@ -35,7 +34,8 @@
 <p class="mb-3">
   <strong>Download Status:</strong>
   {% if latest_attempt %}
-    <span id="status-badge" class="badge {% if latest_attempt.status == 'completed' %}bg-success{% elif latest_attempt.status == 'failed' %}bg-danger{% elif latest_attempt.status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
+    <span id="status-badge"
+          class="badge {% if latest_attempt.status == 'completed' %}bg-success{% elif latest_attempt.status == 'failed' %}bg-danger{% elif latest_attempt.status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
       {% if latest_attempt.status == 'completed' %}
         <i class="bi bi-check-circle"></i>
       {% elif latest_attempt.status == 'failed' %}

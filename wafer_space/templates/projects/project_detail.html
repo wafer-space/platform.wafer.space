@@ -84,7 +84,9 @@
                 <i class="bi bi-check-circle-fill"></i> Submitted for Manufacturing
               </h5>
             </div>
-            <div class="card-body">{% include "projects/_file_display.html" with file=submitted_file latest_attempt=submitted_file.latest_attempt %}</div>
+            <div class="card-body">
+              {% include "projects/_file_display.html" with file=submitted_file latest_attempt=submitted_file.latest_attempt %}
+            </div>
           </div>
         {% endif %}
         {# In-Progress File Section #}
@@ -285,9 +287,7 @@
                                 </span>
                               {% endif %}
                             {% else %}
-                              <span class="badge bg-secondary">
-                                Pending
-                              </span>
+                              <span class="badge bg-secondary">Pending</span>
                             {% endif %}
                           {% endwith %}
                         </td>
