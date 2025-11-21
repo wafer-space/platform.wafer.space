@@ -106,29 +106,6 @@
           <strong>Average Download Speed:</strong> {{ latest_attempt.download_speed_formatted }}
         </p>
       {% endif %}
-      {% if latest_attempt.retry_count > 0 %}
-        <p class="mb-2">
-          <strong>Auto-Retry Attempts:</strong> {{ latest_attempt.retry_count }}/{{ latest_attempt.max_retries }}
-        </p>
-      {% endif %}
-      {% if latest_attempt.status == 'failed' and latest_attempt.auto_retry_enabled %}
-        <p class="mb-2">
-          <strong>Auto-Retry:</strong>
-          {% if latest_attempt.retry_count >= latest_attempt.max_retries %}
-            <span class="badge bg-danger">
-              <i class="bi bi-x-circle"></i> Max retries reached
-            </span>
-          {% elif latest_attempt.next_retry_at %}
-            <span class="badge bg-warning text-dark">
-              <i class="bi bi-clock"></i> Next retry at {{ latest_attempt.next_retry_at|date:"g:i a" }}
-            </span>
-          {% else %}
-            <span class="badge bg-info text-dark">
-              <i class="bi bi-arrow-repeat"></i> Retry pending
-            </span>
-          {% endif %}
-        </p>
-      {% endif %}
     {% endif %}
     {# Download Performance - Only shown for active/in-progress files #}
     {% if show_details|default:False and latest_attempt and latest_attempt.chunks.exists %}
