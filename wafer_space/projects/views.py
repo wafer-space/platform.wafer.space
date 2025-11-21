@@ -94,7 +94,7 @@ class ProjectDetailView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
             latest_attempt = in_progress_file.latest_attempt
             context["latest_attempt"] = latest_attempt
 
-            # Get full download attempt history (all attempts for this file, newest first)
+            # Get full download attempt history (all attempts, newest first)
             download_attempts = DownloadAttempt.objects.filter(
                 project_file=in_progress_file,
             ).order_by("-started_at")
