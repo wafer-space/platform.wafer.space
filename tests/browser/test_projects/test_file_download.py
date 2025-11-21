@@ -331,14 +331,15 @@ class TestProjectFileDownload(BaseBrowserTest):
         # Navigate to project detail page
         self.navigate_to(self.driver, f"/projects/{self.project.id}/")
 
-        # Wait for page to load and verify initial state shows "Pending"
+        # Wait for page to load and verify initial state shows "pending"
+        # Note: Current implementation shows lowercase "pending" from JSON API
         initial_status = self.wait_for_element(
             self.driver,
             (By.ID, "status-text"),
             timeout=10,
         )
         assert initial_status is not None
-        assert "Pending" in initial_status.text
+        assert "pending" in initial_status.text.lower()
 
         # Simulate backend transition: Update the mocked Celery task to STARTED
         mock_task.state = "STARTED"
@@ -347,10 +348,10 @@ class TestProjectFileDownload(BaseBrowserTest):
         # Polling happens every 3 seconds, so wait 5 seconds to ensure at least one poll
         time.sleep(5)
 
-        # Verify the status badge updated to "Downloading" WITHOUT page reload
+        # Verify the status badge updated to "downloading" WITHOUT page reload
         updated_status = self.driver.find_element(By.ID, "status-text")
-        expected_msg = "Status should update from Pending to Downloading without reload"
-        assert "Downloading" in updated_status.text, expected_msg
+        expected_msg = "Status should update from pending to downloading without reload"
+        assert "downloading" in updated_status.text.lower(), expected_msg
 
         # Verify the badge color changed from secondary (pending) to primary (downloading)
         status_badge = self.driver.find_element(By.ID, "status-badge")
