@@ -89,10 +89,14 @@ INSTALLED_APPS += [
 
 # CELERY
 # ------------------------------------------------------------------------------
-# Fast retries
-DOWNLOAD_RETRY_BASE_DELAY_MINUTES = 30 / 60  # 30 seconds for development
-DOWNLOAD_RETRY_CHECK_INTERVAL_SECONDS = 30.0
-DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS = 30.0
+# Download task configuration overrides (faster for staging)
+DOWNLOAD_TASK_MAX_RETRIES = 2  # Same as production
+DOWNLOAD_TASK_RETRY_BASE_DELAY_SECONDS = 30  # 30s for staging (faster feedback)
+DOWNLOAD_TASK_RETRY_BACKOFF_MULTIPLIER = 2  # 30s, 60s
+
+# Download state verification (faster for staging)
+DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS = 30.0  # Check every 30s in staging
+# CELERY_BEAT_SCHEDULE: uses base.py default (ensure-download-tasks-queued)
 
 # LOGGING
 # ------------------------------------------------------------------------------

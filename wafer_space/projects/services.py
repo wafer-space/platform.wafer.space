@@ -414,6 +414,7 @@ class ProjectFileService:
             ProjectFile: The created file record
         """
         # Create the file record
+        # Note: download_status will be PENDING (no task_id, no attempts)
         return ProjectFile.objects.create(
             project=project,
             original_url=file_data.original_url,
@@ -424,7 +425,6 @@ class ProjectFileService:
             content_type=file_data.content_type,
             original_filename=filename,
             handler_metadata=handler_metadata or {},
-            download_status=ProjectFile.DownloadStatus.PENDING,
             is_active=True,  # New file is active
             file_type=ProjectFile.FileType.DESIGN,
         )
@@ -442,10 +442,9 @@ class ProjectFileService:
         # Start the download task
         task = download_project_file.delay(str(project_file.project.id))
 
-        # Store task ID
+        # Store task ID (status will become QUEUED automatically)
         project_file.download_task_id = task.id
-        project_file.download_status = ProjectFile.DownloadStatus.PENDING
-        project_file.save(update_fields=["download_task_id", "download_status"])
+        project_file.save(update_fields=["download_task_id"])
 
         return task.id
 

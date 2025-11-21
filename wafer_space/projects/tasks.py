@@ -21,6 +21,7 @@ from urllib.request import urlopen
 
 import requests
 from celery import shared_task
+from django.conf import settings
 from django.core.files.base import ContentFile
 from django.db import models
 from django.utils import timezone
@@ -877,24 +878,20 @@ def _get_project_file_for_download(
 
 
 def _initialize_download(project_file: ProjectFile) -> None:
-    """Mark file download as started and set initial metadata.
+    """Initialize file download metadata.
 
     Args:
         project_file: The file to initialize
+
+    Note:
+        download_status is now derived from DownloadAttempt.
+        Worker tracking moved to DownloadAttempt creation.
     """
-    # Transition QUEUED → DOWNLOADING and capture worker info
-    project_file.download_status = ProjectFile.DownloadStatus.DOWNLOADING
-    project_file.worker_pid = os.getpid()
-    project_file.worker_hostname = socket.gethostname()
-    project_file.task_started_at = timezone.now()
+    # Update timestamps and activity
     project_file.download_started_at = timezone.now()
     project_file.last_activity = timezone.now()
     project_file.save(
         update_fields=[
-            "download_status",
-            "worker_pid",
-            "worker_hostname",
-            "task_started_at",
             "download_started_at",
             "last_activity",
         ],
@@ -921,7 +918,9 @@ def _handle_download_retry(
     Raises:
         Retry: To retry the task
     """
-    retry_delay = 60 * (2**task_self.request.retries)
+    retry_delay = settings.DOWNLOAD_TASK_RETRY_BASE_DELAY_SECONDS * (
+        settings.DOWNLOAD_TASK_RETRY_BACKOFF_MULTIPLIER**task_self.request.retries
+    )
 
     try:
         _project, project_file = _get_project_file_for_download(project_id)
@@ -1207,9 +1206,9 @@ def _process_and_save_content(
             ).total_seconds()
         attempt.save()
 
-        project_file.download_status = ProjectFile.DownloadStatus.FAILED
+        # Note: download_status is now derived from attempt status
         project_file.download_error = f"Pipeline error: {e}"
-        project_file.save(update_fields=["download_status", "download_error"])
+        project_file.save(update_fields=["download_error"])
         raise
 
     # Save to Django file field using processed filename
@@ -1370,7 +1369,11 @@ def _log_download_completion(
     logger.info("=" * 80)
 
 
-@shared_task(bind=True, max_retries=5, default_retry_delay=60)
+@shared_task(
+    bind=True,
+    max_retries=settings.DOWNLOAD_TASK_MAX_RETRIES,
+    default_retry_delay=settings.DOWNLOAD_TASK_RETRY_BASE_DELAY_SECONDS,
+)
 def download_project_file(self, project_id):  # noqa: PLR0915, C901
     """Background task to download a project file from a URL.
 
@@ -1416,10 +1419,8 @@ def download_project_file(self, project_id):  # noqa: PLR0915, C901
         logger.info("Step 2: Initializing download (marking as DOWNLOADING)...")
         _initialize_download(project_file)
         logger.info(
-            "  ✓ Download started: file=%s, PID=%s, host=%s, task_id=%s",
+            "  ✓ Download started: file=%s, task_id=%s",
             project_file.id,
-            project_file.worker_pid,
-            project_file.worker_hostname,
             self.request.id,
         )
 
@@ -1430,8 +1431,16 @@ def download_project_file(self, project_id):  # noqa: PLR0915, C901
             attempt_number=project_file.download_attempts.count() + 1,
             status=DownloadAttempt.Status.DOWNLOADING,
             download_started_at=timezone.now(),
+            worker_pid=os.getpid(),
+            worker_hostname=socket.gethostname(),
+            task_started_at=timezone.now(),
         )
-        logger.info("  ✓ Created attempt #%d", attempt.attempt_number)
+        logger.info(
+            "  ✓ Created attempt #%d (PID=%s, host=%s)",
+            attempt.attempt_number,
+            attempt.worker_pid,
+            attempt.worker_hostname,
+        )
 
         # Set up temporary directory
         temp_path = _setup_download_temp_path(project_file)
@@ -1512,9 +1521,9 @@ def download_project_file(self, project_id):  # noqa: PLR0915, C901
             attempt.save()
 
             # Mark download as failed
-            project_file.download_status = ProjectFile.DownloadStatus.FAILED
+            # Note: download_status is now derived from attempt status
             project_file.download_error = f"Validation error: {e}"
-            project_file.save(update_fields=["download_status", "download_error"])
+            project_file.save(update_fields=["download_error"])
             raise
 
         # Process and save content (extracts GDS/OASIS and calculates hashes)
@@ -1581,7 +1590,9 @@ def download_project_file(self, project_id):  # noqa: PLR0915, C901
         logger.exception("DOWNLOAD TASK ERROR")
         if self.request.retries < self.max_retries:
             retry_num = self.request.retries + 1
-            retry_delay = 60 * (2**self.request.retries)
+            retry_delay = settings.DOWNLOAD_TASK_RETRY_BASE_DELAY_SECONDS * (
+                settings.DOWNLOAD_TASK_RETRY_BACKOFF_MULTIPLIER**self.request.retries
+            )
             logger.info(
                 "Retry %d/%d - Will retry in %d seconds",
                 retry_num,
@@ -1605,90 +1616,22 @@ def download_project_file(self, project_id):  # noqa: PLR0915, C901
             return _handle_download_failure(project_id, exc, temp_path, attempt)
 
 
-@shared_task
-def retry_failed_downloads():
-    """Periodic task to automatically retry failed downloads.
-
-    This task runs every 5 minutes and:
-    1. Finds all failed downloads that are eligible for retry
-    2. Checks exponential backoff timing
-    3. Re-queues the download task
-    4. Updates retry counters
-
-    Returns:
-        dict: Statistics about retries attempted
-    """
-    logger = logging.getLogger(__name__)
-
-    # Find all failed downloads eligible for retry
-    failed_files = ProjectFile.objects.filter(
-        download_status=ProjectFile.DownloadStatus.FAILED,
-        is_active=True,
-        auto_retry_enabled=True,
-        retry_count__lt=models.F("max_retries"),
-    ).filter(
-        models.Q(next_retry_at__isnull=True)
-        | models.Q(next_retry_at__lte=timezone.now())
-    )
-
-    retried_count = 0
-    skipped_count = 0
-
-    for project_file in failed_files:
-        # Double-check should_auto_retry (belt and suspenders)
-        if not project_file.should_auto_retry():
-            skipped_count += 1
-            continue
-
-        logger.info(
-            "Auto-retrying failed download for file %s (retry %d/%d)",
-            project_file.id,
-            project_file.retry_count + 1,
-            project_file.max_retries,
-        )
-
-        # Update retry tracking
-        project_file.retry_count += 1
-        project_file.last_retry_at = timezone.now()
-        project_file.download_status = ProjectFile.DownloadStatus.PENDING
-        project_file.download_error = ""  # Clear previous error
-        project_file.next_retry_at = None  # Clear next retry time
-
-        # Queue the download task and store task ID
-        task = download_project_file.delay(str(project_file.project.id))
-        project_file.download_task_id = task.id
-
-        project_file.save(
-            update_fields=[
-                "retry_count",
-                "last_retry_at",
-                "download_status",
-                "download_error",
-                "next_retry_at",
-                "download_task_id",
-            ]
-        )
-
-        retried_count += 1
-
-    logger.info(
-        "Auto-retry task completed: %d retried, %d skipped",
-        retried_count,
-        skipped_count,
-    )
-
-    return {
-        "status": "completed",
-        "retried": retried_count,
-        "skipped": skipped_count,
-    }
+# AUTO-RETRY SYSTEM REMOVED
+# Retries are now handled by Celery's built-in retry mechanism.
+# See download_project_file task decorator for max_retries setting.
+# This eliminates duplicate retry logic (18 attempts → 3 attempts).
 
 
 @shared_task
-def check_download_states():
-    """Verify all downloading files are in correct state.
+def ensure_download_tasks_queued():
+    """Ensure all active files have download tasks queued (fallback recovery).
 
-    Runs frequently (every 30s) - no timeout needed.
+    This is NOT a retry system - it's a fallback to recover from queue loss.
+    Retries are handled by Celery's built-in retry mechanism.
+
+    Runs periodically (every 60s) to detect and recover from:
+    - Tasks lost from Celery queue (worker crash, broker restart)
+    - Tasks stuck in invalid states (orphaned downloads)
 
     Returns:
         dict: Status with counts of created_tasks, orphaned, verified
@@ -1699,31 +1642,39 @@ def check_download_states():
     orphaned_count = 0
     verified_count = 0
 
-    # PENDING: Create tasks if missing
+    # Find PENDING files: no task_id AND is_active
+    # (download_status property returns PENDING when no task_id and no attempts)
     pending_files = ProjectFile.objects.filter(
-        download_status=ProjectFile.DownloadStatus.PENDING,
         is_active=True,
+    ).filter(
+        models.Q(download_task_id="") | models.Q(download_task_id__isnull=True),
     )
 
     for project_file in pending_files:
-        if not project_file.download_task_id:
-            # Create task and transition to QUEUED
-            task = download_project_file.delay(project_file.project.id)
-            project_file.download_task_id = task.id
-            project_file.download_status = ProjectFile.DownloadStatus.QUEUED
-            project_file.save(update_fields=["download_task_id", "download_status"])
-            created_tasks += 1
-            logger.info("Created task for pending file %s", project_file.id)
-        else:
-            # Has task - should be QUEUED
-            project_file.download_status = ProjectFile.DownloadStatus.QUEUED
-            project_file.save(update_fields=["download_status"])
+        # Create task for active file with no task queued
+        task = download_project_file.delay(project_file.project.id)
+        project_file.download_task_id = task.id
+        project_file.save(update_fields=["download_task_id"])
+        created_tasks += 1
+        logger.info("Created task for pending file %s", project_file.id)
 
-    # QUEUED: Verify task in Celery queue
-    queued_files = ProjectFile.objects.filter(
-        download_status=ProjectFile.DownloadStatus.QUEUED,
-        is_active=True,
-    ).exclude(download_task_id="")
+    # Find QUEUED files: has task_id but latest_attempt is None or PENDING
+    # Need to check if task still exists in Celery queue
+    queued_files = (
+        ProjectFile.objects.filter(
+            is_active=True,
+        )
+        .exclude(
+            models.Q(download_task_id="") | models.Q(download_task_id__isnull=True),
+        )
+        .exclude(
+            download_attempts__status__in=[
+                DownloadAttempt.Status.DOWNLOADING,
+                DownloadAttempt.Status.COMPLETED,
+                DownloadAttempt.Status.FAILED,
+            ],
+        )
+    )
 
     for project_file in queued_files:
         if is_task_queued(project_file):
@@ -1734,23 +1685,29 @@ def check_download_states():
             project_file.mark_download_failed(error_msg)
             orphaned_count += 1
 
-    # DOWNLOADING: Verify task executing AND PID exists
+    # Find DOWNLOADING files: latest_attempt.status == DOWNLOADING
+    # Need to verify task is actually running with valid PID
     downloading_files = ProjectFile.objects.filter(
-        download_status=ProjectFile.DownloadStatus.DOWNLOADING,
         is_active=True,
-    ).exclude(download_task_id="")
+        download_attempts__status=DownloadAttempt.Status.DOWNLOADING,
+    ).exclude(
+        models.Q(download_task_id="") | models.Q(download_task_id__isnull=True),
+    )
 
     for project_file in downloading_files:
-        if is_task_actively_running(project_file):
-            verified_count += 1
-        else:
-            error_msg = "Task not running (worker crashed or task failed)"
-            logger.warning("Orphaned downloading file %s", project_file.id)
-            project_file.mark_download_failed(error_msg)
-            orphaned_count += 1
+        # Only check if this is the latest attempt
+        latest = project_file.latest_attempt
+        if latest and latest.status == DownloadAttempt.Status.DOWNLOADING:
+            if is_task_actively_running(project_file):
+                verified_count += 1
+            else:
+                error_msg = "Task not running (worker crashed or task failed)"
+                logger.warning("Orphaned downloading file %s", project_file.id)
+                project_file.mark_download_failed(error_msg)
+                orphaned_count += 1
 
     logger.info(
-        "State check: %d created, %d orphaned, %d verified",
+        "Fallback check: %d created, %d orphaned, %d verified",
         created_tasks,
         orphaned_count,
         verified_count,

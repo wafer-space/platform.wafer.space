@@ -1,7 +1,5 @@
 import hashlib
 import uuid
-from datetime import datetime
-from datetime import timedelta
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -204,11 +202,7 @@ class ProjectFile(models.Model):
         blank=True,
         help_text="Actual URL to download from (after URL rewriting if applicable)",
     )
-    download_status = models.CharField(
-        max_length=20,
-        choices=DownloadStatus.choices,
-        default=DownloadStatus.PENDING,
-    )
+    # Download status is derived from latest DownloadAttempt (see @property below)
     download_started_at = models.DateTimeField(null=True, blank=True)
     download_completed_at = models.DateTimeField(null=True, blank=True)
     download_error = models.TextField(blank=True)
@@ -217,50 +211,6 @@ class ProjectFile(models.Model):
         null=True,
         blank=True,
         help_text="Last activity timestamp for download progress tracking",
-    )
-
-    # Automatic retry configuration
-    auto_retry_enabled = models.BooleanField(
-        default=True,
-        help_text="Enable automatic retry for failed downloads",
-    )
-    retry_count = models.IntegerField(
-        default=0,
-        help_text="Number of automatic retries attempted",
-    )
-    max_retries = models.IntegerField(
-        default=3,
-        help_text="Maximum number of automatic retries before giving up",
-    )
-    last_retry_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="When the last automatic retry was attempted",
-    )
-    next_retry_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text=(
-            "When the next automatic retry should be attempted (exponential backoff)"
-        ),
-    )
-
-    # Worker tracking for verification
-    worker_pid = models.IntegerField(
-        null=True,
-        blank=True,
-        help_text="Process ID of Celery worker executing download",
-    )
-    worker_hostname = models.CharField(
-        max_length=255,
-        blank=True,
-        default="",
-        help_text="Hostname of worker machine",
-    )
-    task_started_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="When download task actually began execution",
     )
 
     # File verification (provided by user)
@@ -388,72 +338,24 @@ class ProjectFile(models.Model):
         return False, "; ".join(errors)
 
     def mark_download_complete(self):
-        """Mark download as completed successfully."""
-        self.download_status = self.DownloadStatus.COMPLETED
+        """Mark download as completed successfully.
+
+        NOTE: Actual status is derived from DownloadAttempt.
+        This method only updates completion timestamp.
+        """
         self.download_completed_at = timezone.now()
-        self.save()
+        self.save(update_fields=["download_completed_at"])
 
     def mark_download_failed(self, error_message):
-        """Mark download as failed and schedule retry if applicable."""
-        self.download_status = self.DownloadStatus.FAILED
+        """Mark download as failed.
+
+        NOTE: Actual status is derived from DownloadAttempt.
+        This method only records error message and completion timestamp.
+        Auto-retry system has been removed - retries are handled by Celery.
+        """
         self.download_error = error_message
         self.download_completed_at = timezone.now()
-
-        # Save the failed status first
-        self.save(
-            update_fields=["download_status", "download_error", "download_completed_at"]
-        )
-
-        # Schedule automatic retry if enabled and under max retries
-        if self.auto_retry_enabled and self.retry_count < self.max_retries:
-            self.schedule_retry()
-
-    def calculate_next_retry_time(self) -> datetime:
-        """Calculate when the next retry should happen using exponential backoff.
-
-        Returns:
-            datetime: When the next retry should be attempted
-
-        Backoff strategy (production):
-            - Retry 1: 5 minutes
-            - Retry 2: 15 minutes (5 * 3)
-            - Retry 3: 45 minutes (15 * 3)
-
-        Backoff strategy (development):
-            - Retry 1: 30 seconds
-            - Retry 2: 90 seconds (30 * 3)
-            - Retry 3: 270 seconds (90 * 3)
-        """
-        base_delay = settings.DOWNLOAD_RETRY_BASE_DELAY_MINUTES
-        backoff_multiplier = settings.DOWNLOAD_RETRY_BACKOFF_MULTIPLIER
-        delay_minutes = base_delay * (backoff_multiplier**self.retry_count)
-        return timezone.now() + timedelta(minutes=delay_minutes)
-
-    def should_auto_retry(self) -> bool:
-        """Check if this file should be automatically retried.
-
-        Returns:
-            bool: True if should retry, False otherwise
-        """
-        # Must be failed status
-        if self.download_status != self.DownloadStatus.FAILED:
-            return False
-
-        # Auto-retry must be enabled
-        if not self.auto_retry_enabled:
-            return False
-
-        # Must not have exceeded max retries
-        if self.retry_count >= self.max_retries:
-            return False
-
-        # If next_retry_at is set, must be past that time
-        return not (self.next_retry_at and timezone.now() < self.next_retry_at)
-
-    def schedule_retry(self) -> None:
-        """Schedule the next automatic retry attempt."""
-        self.next_retry_at = self.calculate_next_retry_time()
-        self.save(update_fields=["next_retry_at"])
+        self.save(update_fields=["download_error", "download_completed_at"])
 
     def get_progress_percentage(self) -> int:
         """Calculate download progress percentage.
@@ -559,9 +461,50 @@ class ProjectFile(models.Model):
         return self.download_attempts.first()  # Already ordered by -attempt_number
 
     @property
+    def download_status(self) -> str:
+        """Derive download status from latest DownloadAttempt.
+
+        State mapping:
+        - No attempts + no task_id → PENDING
+        - No attempts + task_id exists → QUEUED
+        - Latest attempt PENDING + task_id → QUEUED
+        - Latest attempt DOWNLOADING/COMPLETED/FAILED → same
+
+        Returns:
+            str: One of DownloadStatus enum values
+        """
+        latest = self.latest_attempt
+        if not latest:
+            # No attempts yet - check if task queued
+            if self.download_task_id:
+                return self.DownloadStatus.QUEUED
+            return self.DownloadStatus.PENDING
+
+        # Map DownloadAttempt.PENDING + task exists → ProjectFile.QUEUED
+        if latest.status == "pending" and self.download_task_id:
+            return self.DownloadStatus.QUEUED
+
+        # Direct mapping for other states
+        return latest.status
+
+    def get_download_status_display(self) -> str:
+        """Get human-readable display name for download_status.
+
+        Since download_status is a property, Django doesn't auto-generate this.
+        We implement it manually to maintain compatibility with code that
+        expects get_FIELD_display() methods.
+
+        Returns:
+            str: Human-readable status like "Pending", "Completed", etc.
+        """
+        status_value = self.download_status
+        return dict(self.DownloadStatus.choices).get(status_value, status_value)
+
+    @property
     def current_status(self) -> str:
         """Get current download status from latest attempt.
 
+        DEPRECATED: Use download_status property instead.
         Returns 'pending' if no attempts exist.
         """
         attempt = self.latest_attempt
@@ -698,6 +641,23 @@ class DownloadAttempt(models.Model):
     bytes_downloaded = models.BigIntegerField(
         default=0,
         help_text="Total bytes downloaded in this attempt",
+    )
+
+    # Worker tracking (moved from ProjectFile)
+    worker_pid = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Process ID of worker executing this attempt",
+    )
+    worker_hostname = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Hostname of worker executing this attempt",
+    )
+    task_started_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When Celery task started executing",
     )
 
     # Metadata
