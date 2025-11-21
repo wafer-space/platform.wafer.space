@@ -294,6 +294,68 @@ class TestProjectFileDownload(BaseBrowserTest):
             )
             assert status_element is not None
 
+    @patch("wafer_space.projects.services.AsyncResult")
+    def test_status_updates_dynamically_without_reload(self, mock_async_result):
+        """Test that status updates from pending to downloading without page reload.
+
+        This test verifies the JavaScript polling system correctly updates the UI
+        when the download status transitions from PENDING to DOWNLOADING.
+        """
+        self.login()
+
+        # Create a file with PENDING status
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            file_size=1048576,
+            download_status=ProjectFile.DownloadStatus.PENDING,
+            download_task_id="task-pending-123",
+            is_active=True,
+        )
+
+        # Create download attempt with PENDING status
+        download_attempt = DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.PENDING,
+        )
+
+        # Mock Celery task - initially PENDING
+        mock_task = Mock()
+        mock_task.state = "PENDING"
+        mock_task.info = None
+        mock_async_result.return_value = mock_task
+
+        # Navigate to project detail page
+        self.navigate_to(self.driver, f"/projects/{self.project.id}/")
+
+        # Wait for page to load and verify initial state shows "Pending"
+        initial_status = self.wait_for_element(
+            self.driver,
+            (By.ID, "status-text"),
+            timeout=10,
+        )
+        assert initial_status is not None
+        assert "Pending" in initial_status.text
+
+        # Simulate backend transition: Update the mocked Celery task to STARTED
+        mock_task.state = "STARTED"
+
+        # Wait for JavaScript polling to fetch the new status
+        # Polling happens every 3 seconds, so wait 5 seconds to ensure at least one poll
+        time.sleep(5)
+
+        # Verify the status badge updated to "Downloading" WITHOUT page reload
+        updated_status = self.driver.find_element(By.ID, "status-text")
+        expected_msg = "Status should update from Pending to Downloading without reload"
+        assert "Downloading" in updated_status.text, expected_msg
+
+        # Verify the badge color changed from secondary (pending) to primary (downloading)
+        status_badge = self.driver.find_element(By.ID, "status-badge")
+        assert "bg-primary" in status_badge.get_attribute("class")
+
     def test_completed_download_shows_status(self):
         """Test that completed downloads show correct status."""
         self.login()
