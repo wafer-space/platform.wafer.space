@@ -214,11 +214,13 @@ class ProjectOwnerOrSuperuserMixinTestCase(TestCase):
         """Test that unauthenticated denied access does NOT create audit log."""
         request = self.factory.get(f"/projects/{self.project.pk}/")
         request.user = AnonymousUser()
-        request.META.update({
-            "REMOTE_ADDR": "127.0.0.1",
-            "SERVER_NAME": "testserver",
-            "SERVER_PORT": "80",
-        })
+        request.META.update(
+            {
+                "REMOTE_ADDR": "127.0.0.1",
+                "SERVER_NAME": "testserver",
+                "SERVER_PORT": "80",
+            }
+        )
 
         view = DummyProjectView()
         view.request = request
