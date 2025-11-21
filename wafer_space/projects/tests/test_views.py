@@ -880,6 +880,9 @@ class TestEnhancedProgressDashboard(TestCase):
         - DownloadAttempt doesn't exist yet (created inside Celery task)
         - Before fix: show_progress was False → no polling JavaScript
         - After fix: show_progress is True → polling starts immediately
+
+        VERIFIED: This test FAILS without the fix (show_progress is False)
+                  and PASSES with the fix (show_progress is True)
         """
         ProjectFile.objects.create(
             project=self.project,
