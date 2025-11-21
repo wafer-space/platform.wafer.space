@@ -6,6 +6,7 @@ from unittest.mock import patch
 import pytest
 from django.test import TestCase
 
+from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
@@ -88,7 +89,8 @@ class TestProjectFileService(TestCase):
         assert project_file.file_size == ONE_MB
         assert project_file.content_type == "application/octet-stream"
         assert project_file.is_active is True
-        assert project_file.download_status == ProjectFile.DownloadStatus.PENDING
+        # Status is QUEUED because download task is started
+        assert project_file.download_status == ProjectFile.DownloadStatus.QUEUED
 
         # Verify metadata
         assert metadata["url_rewritten"] is True
@@ -346,7 +348,6 @@ class TestProjectFileService(TestCase):
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             file_size=ONE_MB,
-            download_status=ProjectFile.DownloadStatus.PENDING,
         )
 
         progress = ProjectFileService.get_download_progress(project_file)
@@ -370,7 +371,6 @@ class TestProjectFileService(TestCase):
             original_filename="file.gds",
             file_size=ONE_MB,
             download_task_id="task-123",
-            download_status=ProjectFile.DownloadStatus.PENDING,
         )
 
         # Mock task state
@@ -394,7 +394,11 @@ class TestProjectFileService(TestCase):
             original_filename="file.gds",
             file_size=TEN_MB,
             download_task_id="task-123",
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
         )
 
         # Mock task state with progress
@@ -429,7 +433,11 @@ class TestProjectFileService(TestCase):
             original_filename="file.gds",
             file_size=ONE_MB,
             download_task_id="task-123",
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Mock task state
@@ -458,7 +466,11 @@ class TestProjectFileService(TestCase):
             original_filename="file.gds",
             file_size=ONE_MB,
             download_task_id="task-123",
-            download_status=ProjectFile.DownloadStatus.FAILED,
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.FAILED,
         )
 
         # Mock task state with error
