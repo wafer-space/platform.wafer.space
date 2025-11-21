@@ -1,7 +1,7 @@
 # Download Queue and Retry Architecture
 
-**Document Status:** Analysis of current implementation (as of 2025-01-21)
-**Purpose:** Comprehensive explanation of how Celery queue and retry systems work together
+**Document Status:** Current implementation (updated 2025-01-21)
+**Purpose:** Comprehensive explanation of download retry system using Celery
 
 ---
 
@@ -10,43 +10,43 @@
 1. [Architecture Overview](#architecture-overview)
 2. [System Components](#system-components)
 3. [Download Lifecycle](#download-lifecycle)
-4. [Retry Mechanisms](#retry-mechanisms)
-5. [State Verification System](#state-verification-system)
-6. [Celery Functionality Usage](#celery-functionality-usage)
-7. [Configuration Reference](#configuration-reference)
-8. [Issues and Conflicts](#issues-and-conflicts)
+4. [Retry Mechanism](#retry-mechanism)
+5. [State Management](#state-management)
+6. [Configuration Reference](#configuration-reference)
+7. [Changes from Previous Implementation](#changes-from-previous-implementation)
 
 ---
 
 ## Architecture Overview
 
-The download system uses **three independent mechanisms** working together:
+The download system uses **Celery's built-in retry mechanism** with a fallback verification system:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  1. Celery Task Queue (Built-in Retry)                      │
-│     - Immediate retries with exponential backoff            │
-│     - Max 5 retries (6 total attempts)                      │
-│     - Delays: 60s, 120s, 240s, 480s, 960s                  │
+│  1. Celery Task Queue (Built-in Retry Only)                 │
+│     - Automatic retries with exponential backoff            │
+│     - Max 3 retries (configurable via settings)             │
+│     - Delays: 5s, 30s, 2min (configurable)                  │
+│     - Total: 3 attempts over ~2.5 minutes                   │
 └─────────────────────────────────────────────────────────────┘
                            ↓
 ┌─────────────────────────────────────────────────────────────┐
-│  2. Auto-Retry System (Custom Re-queuing)                   │
-│     - Periodic re-queue of FAILED downloads                 │
-│     - Max 3 retry cycles                                    │
-│     - Delays: 30s, 90s, 270s (3x exponential)              │
-└─────────────────────────────────────────────────────────────┘
-                           ↓
-┌─────────────────────────────────────────────────────────────┐
-│  3. Fallback Verification (State Consistency Check)         │
+│  2. Fallback Verification (State Consistency Check)         │
 │     - Verifies tasks exist in Celery queue                  │
 │     - Verifies worker processes are running                 │
-│     - Re-creates missing tasks                              │
+│     - Re-creates missing tasks (queue loss recovery)        │
 │     - Runs every 30 seconds                                 │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Total Retry Attempts:** 6 (Celery) × 3 (Auto-retry) = **18 download attempts** per file
+**Total Retry Attempts:** 3 (configurable via `DOWNLOAD_MAX_RETRIES` setting)
+
+**Key Architectural Decisions:**
+- ✅ Use Celery's native retry mechanism (not reimplemented)
+- ✅ Configurable retry delays via Django settings
+- ✅ Each attempt tracked in DownloadAttempt model
+- ✅ Download status computed from DownloadAttempt records
+- ✅ Fallback verification for queue loss recovery
 
 ---
 
@@ -54,63 +54,95 @@ The download system uses **three independent mechanisms** working together:
 
 ### Database Models
 
-#### ProjectFile States
+#### ProjectFile.download_status (Computed Property)
+
 ```python
-class DownloadStatus(models.TextChoices):
-    PENDING = "pending"        # Created, no task queued yet
-    QUEUED = "queued"          # Task queued in Celery
-    DOWNLOADING = "downloading" # Task executing, worker running
-    COMPLETED = "completed"     # Download successful
-    FAILED = "failed"          # All retries exhausted
+@property
+def download_status(self) -> str:
+    """Derive status from download_task_id and DownloadAttempt records."""
+    # PENDING: No task_id set
+    if not self.download_task_id:
+        return self.DownloadStatus.PENDING
+
+    # Get latest attempt
+    latest = self.latest_attempt
+    if not latest:
+        # QUEUED: Has task_id but no attempt yet
+        return self.DownloadStatus.QUEUED
+
+    # Return status from latest attempt
+    return latest.status
 ```
 
+**Status Values:**
+- `PENDING`: File created, no Celery task queued yet
+- `QUEUED`: Task queued in Celery, waiting for worker
+- `DOWNLOADING`: Worker executing download (has active DownloadAttempt)
+- `COMPLETED`: Download successful (latest attempt completed)
+- `FAILED`: Download failed (latest attempt failed, retries exhausted)
+
+**Key Change:** `download_status` is now a **computed property**, not a database field. It derives the status from the `download_task_id` and DownloadAttempt records.
+
 #### DownloadAttempt States
+
 ```python
 class Status(models.TextChoices):
     PENDING = "pending"        # Attempt created, not started
     DOWNLOADING = "downloading" # Attempt in progress
     COMPLETED = "completed"     # Attempt successful
-    FAILED = "failed"          # Attempt failed
+    FAILED = "failed"          # Attempt failed (will retry or give up)
 ```
 
 **Relationship:**
 - Each `ProjectFile` has multiple `DownloadAttempt` records (one per retry)
 - Each `ProjectFile` has ONE `download_task_id` (current Celery task)
 - Only ONE `ProjectFile` can be `is_active=True` per project
+- Worker info (PID, hostname, task_started_at) stored on DownloadAttempt
 
 ### Celery Components
 
 #### Task Definition
 ```python
-# tasks.py:1373
-@shared_task(bind=True, max_retries=5, default_retry_delay=60)
+# tasks.py
+@shared_task(
+    bind=True,
+    max_retries=settings.DOWNLOAD_MAX_RETRIES,  # Default: 3
+    autoretry_for=(OSError, ValueError, requests.RequestException),
+    retry_backoff=True,
+    retry_backoff_max=settings.DOWNLOAD_RETRY_BACKOFF_MAX,  # Default: 120s
+    retry_jitter=False,
+)
 def download_project_file(self, project_id):
 ```
 
 **Celery Features Used:**
 - `bind=True` - Access to task instance (`self`)
-- `max_retries=5` - Celery's built-in retry limit
-- `default_retry_delay=60` - Base retry delay (overridden by exponential backoff)
-- `self.retry(exc=exc, countdown=delay)` - Trigger Celery retry
-- `self.request.retries` - Current retry count
-- `self.update_state()` - Update task progress
+- `max_retries` - Celery's built-in retry limit (from settings)
+- `autoretry_for` - Automatically retry on these exceptions
+- `retry_backoff=True` - Exponential backoff (delays from settings)
+- `retry_backoff_max` - Maximum retry delay
+- `self.request.retries` - Current retry count (used for attempt_number)
+
+**Retry Delays (Configurable):**
+```python
+# config/settings/base.py
+DOWNLOAD_RETRY_DELAYS = [5, 30, 120]  # 5s, 30s, 2min
+DOWNLOAD_MAX_RETRIES = 3  # Total attempts
+DOWNLOAD_RETRY_BACKOFF_MAX = 120  # Max 2 minutes between retries
+```
 
 #### Periodic Tasks (Celery Beat)
 ```python
-# settings/base.py:443
+# settings/base.py
 CELERY_BEAT_SCHEDULE = {
-    "retry-failed-downloads": {
-        "task": "wafer_space.projects.tasks.retry_failed_downloads",
-        "schedule": 300.0,  # Every 5 minutes (production)
-    },
     "check-download-states": {
-        "task": "wafer_space.projects.tasks.check_download_states",
-        "schedule": 60.0,   # Every 1 minute (production)
+        "task": "wafer_space.projects.tasks.verify_download_states",
+        "schedule": 30.0,  # Every 30 seconds
     },
 }
 ```
 
-**Development overrides:** 30 seconds for both tasks
+**Note:** The old `retry-failed-downloads` periodic task has been **removed**. Celery handles all retries automatically.
 
 ---
 
@@ -126,27 +158,24 @@ project_file = ProjectFile.objects.create(
     project=project,
     original_url=url,
     source_url=rewritten_url,
-    download_status=ProjectFile.DownloadStatus.PENDING,  # ← PENDING state
+    # No download_status field - it's a @property
 )
 
 # Step 2: Queue Celery task
 task = download_project_file.delay(str(project.id))
 
-# Step 3: Store task ID and update state
+# Step 3: Store task ID
 project_file.download_task_id = task.id
-project_file.download_status = ProjectFile.DownloadStatus.QUEUED  # ← QUEUED state
-project_file.save()
+project_file.save(update_fields=["download_task_id"])
+
+# download_status property now returns "queued"
+assert project_file.download_status == ProjectFile.DownloadStatus.QUEUED
 ```
 
 **State Transitions:**
 ```
-PENDING → QUEUED
+PENDING (no task_id) → QUEUED (has task_id, no attempt)
 ```
-
-**What happens:**
-1. ProjectFile created with `is_active=True`
-2. Celery task queued (task sits in PostgreSQL queue)
-3. Task ID stored for tracking
 
 ---
 
@@ -155,28 +184,34 @@ PENDING → QUEUED
 **Code:** `wafer_space/projects/tasks.py::download_project_file()`
 
 ```python
-# Step 1: Mark as DOWNLOADING (tasks.py:886)
-project_file.download_status = ProjectFile.DownloadStatus.DOWNLOADING
-project_file.worker_pid = os.getpid()
-project_file.worker_hostname = socket.gethostname()
-project_file.save()
-
-# Step 2: Create DownloadAttempt record (tasks.py:1428)
+# Step 1: Create DownloadAttempt record
 attempt = DownloadAttempt.objects.create(
     project_file=project_file,
-    attempt_number=project_file.download_attempts.count() + 1,
+    attempt_number=self.request.retries + 1,  # 1, 2, or 3
     status=DownloadAttempt.Status.DOWNLOADING,
+    worker_pid=os.getpid(),
+    worker_hostname=socket.gethostname(),
+    task_started_at=timezone.now(),
 )
 
-# Step 3: Download file with progress tracking
+# download_status property now returns "downloading"
+assert project_file.download_status == ProjectFile.DownloadStatus.DOWNLOADING
+
+# Step 2: Download file with progress tracking
 _download_with_progress(self, project_file, attempt, temp_path)
 
-# Step 4: Process content (extract, validate, hash)
-_process_and_save_content(project_file, attempt, content, temp_path)
+# Step 3: Process content (extract, validate, hash)
+processed_content, final_md5, final_sha1 = _process_and_save_content(
+    project_file, attempt, content, temp_path
+)
 
-# Step 5: Mark as COMPLETED
+# Step 4: Mark attempt as COMPLETED
 attempt.status = DownloadAttempt.Status.COMPLETED
-project_file.download_status = ProjectFile.DownloadStatus.COMPLETED
+attempt.completed_at = timezone.now()
+attempt.save()
+
+# download_status property now returns "completed"
+assert project_file.download_status == ProjectFile.DownloadStatus.COMPLETED
 ```
 
 **State Transitions:**
@@ -186,320 +221,174 @@ QUEUED → DOWNLOADING → COMPLETED
 
 **What happens:**
 1. Worker picks up task from queue
-2. ProjectFile updated with worker info (PID, hostname)
-3. DownloadAttempt created to track this specific attempt
-4. File downloaded in chunks with progress updates
-5. Content pipeline extracts/validates/hashes file
-6. Both attempt and file marked COMPLETED
+2. DownloadAttempt created with worker info (PID, hostname, timestamps)
+3. File downloaded in chunks with progress updates
+4. Content pipeline extracts/validates/hashes file
+5. Attempt marked COMPLETED
+6. ProjectFile.download_status property reflects completion
 
 ---
 
-### Phase 3: Failure Handling
+### Phase 3: Failure and Retry Handling
 
 **Code:** `wafer_space/projects/tasks.py::download_project_file()` exception handler
 
 ```python
-# tasks.py:1580-1605
+# Celery auto-retry configured in @shared_task decorator
+# No manual retry() call needed - Celery handles it automatically
+
 except (OSError, ValueError, requests.RequestException) as exc:
-    if self.request.retries < self.max_retries:
-        # CELERY RETRY: Attempt N of 6
-        retry_delay = 60 * (2 ** self.request.retries)  # Exponential backoff
+    # Mark current attempt as failed
+    latest = project_file.latest_attempt
+    if latest:
+        latest.status = DownloadAttempt.Status.FAILED
+        latest.download_error = str(exc)
+        latest.completed_at = timezone.now()
+        latest.save()
 
-        # Mark current attempt as failed
-        attempt.status = DownloadAttempt.Status.FAILED
-        attempt.save()
+    # Update ProjectFile error info
+    project_file.mark_download_failed(str(exc))
 
-        # Update ProjectFile with retry info
-        project_file.download_error = f"Retry {self.request.retries + 1}/{self.max_retries}: {exc}"
-        project_file.save()
-
-        # Trigger Celery retry (SAME task, same task_id)
-        raise self.retry(exc=exc, countdown=retry_delay)
-    else:
-        # MAX CELERY RETRIES REACHED: Mark as FAILED
-        _handle_download_failure(project_id, exc, temp_path, attempt)
+    # Celery will automatically retry based on decorator config
+    # - Checks self.request.retries < max_retries
+    # - Applies exponential backoff from retry_delays setting
+    # - Creates new execution with incremented retry count
+    # - If max retries exceeded, raises exception (task fails)
 ```
 
-**State Transitions (within Celery retry cycle):**
+**State Transitions:**
 ```
-DOWNLOADING → (Celery retry delay) → DOWNLOADING (same task_id)
+DOWNLOADING → FAILED (attempt marked failed)
+            ↓
+(Celery retry delay: 5s, 30s, or 2min)
+            ↓
+DOWNLOADING (new attempt created)
 ```
 
 **After all Celery retries exhausted:**
 ```
-DOWNLOADING → FAILED
+DOWNLOADING → FAILED (permanent, no more retries)
 ```
 
 **What happens during Celery retries:**
 1. Exception caught (network error, timeout, validation failure)
-2. Current DownloadAttempt marked FAILED
-3. ProjectFile.download_error updated with retry info
-4. Task sleeps for exponential backoff delay (60s, 120s, 240s, 480s, 960s)
-5. **Same task retries** (keeps same `download_task_id`)
-6. New DownloadAttempt created for retry
-7. Repeat until max_retries=5 reached
+2. Current DownloadAttempt marked FAILED with error message
+3. ProjectFile.download_error updated
+4. Celery automatically retries based on `autoretry_for` and retry settings
+5. Task sleeps for configured delay (5s, 30s, or 2min)
+6. **Same task retries** (keeps same `download_task_id`)
+7. New DownloadAttempt created for retry (attempt_number increments)
+8. Repeat until max_retries (default: 3) reached
 
 **After final Celery retry fails:**
-1. ProjectFile marked FAILED
-2. Error notification sent to user
-3. Auto-retry system (Phase 4) takes over
+1. Latest DownloadAttempt remains FAILED
+2. ProjectFile.download_status property returns FAILED
+3. Error notification sent to user
+4. No further retries (auto-retry system removed)
 
 ---
 
-## Retry Mechanisms
+## Retry Mechanism
 
-### Mechanism 1: Celery Built-in Retries
+### Celery Built-in Retries (Only Mechanism)
 
 **Type:** Task-level retry (Celery native functionality)
 **Trigger:** Exception raised during task execution
-**Configuration:** `@shared_task(bind=True, max_retries=5, default_retry_delay=60)`
+**Configuration:** Via Django settings
 
-**Retry Schedule (Exponential Backoff):**
-```
-Attempt 1: Initial (immediate)
-Attempt 2: +60s   (1 minute)
-Attempt 3: +120s  (2 minutes)
-Attempt 4: +240s  (4 minutes)
-Attempt 5: +480s  (8 minutes)
-Attempt 6: +960s  (16 minutes)
-────────────────────────────
-Total: 6 attempts over ~31 minutes
-```
-
-**Code:** `tasks.py:1582-1600`
+**Retry Schedule:**
 ```python
-if self.request.retries < self.max_retries:
-    retry_delay = 60 * (2 ** self.request.retries)
-    raise self.retry(exc=exc, countdown=retry_delay)
+# config/settings/base.py
+DOWNLOAD_RETRY_DELAYS = [5, 30, 120]  # seconds
+DOWNLOAD_MAX_RETRIES = 3
+DOWNLOAD_RETRY_BACKOFF_MAX = 120  # 2 minutes max
+
+# Actual delays:
+Attempt 1: Initial (immediate)
+Attempt 2: +5 seconds   (retry 1)
+Attempt 3: +30 seconds  (retry 2)
+Attempt 4: +120 seconds (retry 3, if max_retries=4)
+────────────────────────────
+Total: 3 attempts over ~2.5 minutes (default config)
 ```
 
 **Celery Behavior:**
 - **Same task retries** - `download_task_id` does NOT change
-- Task stays in "active" list during countdown
-- Celery task state: `PENDING` → `STARTED` → `RETRY` → `STARTED` → `RETRY`...
+- Uses `autoretry_for` to automatically retry on exceptions
+- Uses `retry_backoff=True` for exponential delays
+- Each retry creates new DownloadAttempt with incremented attempt_number
 - Final state: `SUCCESS` or `FAILURE`
 
-**Key Point:** This is **CELERY FUNCTIONALITY** - we're using Celery's built-in retry mechanism, not reimplementing it.
+**Configurable Delays:**
+The retry delays are fully configurable via settings. Production may use longer delays:
+
+```python
+# Aggressive retry (fast failure):
+DOWNLOAD_RETRY_DELAYS = [5, 30, 120]  # ~2.5 minutes total
+
+# Moderate retry (balance):
+DOWNLOAD_RETRY_DELAYS = [30, 300, 1800]  # ~35 minutes total
+
+# Patient retry (maximum persistence):
+DOWNLOAD_RETRY_DELAYS = [60, 600, 3600]  # ~1 hour total
+```
+
+**Key Point:** This uses **CELERY FUNCTIONALITY** - we're not reimplementing retry logic, just configuring Celery's built-in mechanism.
 
 ---
 
-### Mechanism 2: Auto-Retry System (Custom Re-queuing)
+## State Management
 
-**Type:** Job-level retry (Custom implementation)
-**Trigger:** Periodic task finds FAILED downloads
-**Schedule:** Every 5 minutes (production), every 30 seconds (dev)
+### Computed Download Status
 
-**Code:** `tasks.py:1608-1684`
+The `download_status` is now a **computed property**, not a database field:
+
 ```python
-@shared_task
-def retry_failed_downloads():
-    # Find failed downloads eligible for retry
-    failed_files = ProjectFile.objects.filter(
-        download_status=ProjectFile.DownloadStatus.FAILED,
-        is_active=True,
-        auto_retry_enabled=True,
-        retry_count__lt=models.F("max_retries"),  # retry_count < 3
-    )
+@property
+def download_status(self) -> str:
+    """Derive status from download_task_id and DownloadAttempt records.
 
-    for project_file in failed_files:
-        # Increment retry counter
-        project_file.retry_count += 1
-        project_file.download_status = ProjectFile.DownloadStatus.PENDING
+    Status logic:
+    - PENDING: No task_id set (file created but not queued)
+    - QUEUED: Has task_id but no DownloadAttempt (waiting for worker)
+    - DOWNLOADING/COMPLETED/FAILED: Determined by latest DownloadAttempt
+    """
+    if not self.download_task_id:
+        return self.DownloadStatus.PENDING
 
-        # Queue BRAND NEW task
-        task = download_project_file.delay(str(project_file.project.id))
-        project_file.download_task_id = task.id  # NEW task ID!
+    latest = self.latest_attempt
+    if not latest:
+        return self.DownloadStatus.QUEUED
 
-        project_file.save()
+    return latest.status
 ```
 
-**Retry Schedule (Exponential Backoff):**
+**Benefits:**
+- Single source of truth (DownloadAttempt records)
+- No state synchronization issues
+- Automatic state derivation
+- Clearer separation of concerns
+
+### Worker Tracking
+
+Worker information moved from ProjectFile to DownloadAttempt:
+
 ```python
-# models.py:429
-delay_minutes = base_delay * (backoff_multiplier ** retry_count)
-
-# Production (base_delay=5 minutes, backoff=3x):
-Cycle 1: +5 minutes   (after 6 Celery attempts fail)
-Cycle 2: +15 minutes  (after 6 more Celery attempts fail)
-Cycle 3: +45 minutes  (after 6 more Celery attempts fail)
-────────────────────────────────────────────────────────
-Total: 3 cycles × 6 attempts = 18 attempts over ~96 minutes
-
-# Development (base_delay=30 seconds, backoff=3x):
-Cycle 1: +30 seconds
-Cycle 2: +90 seconds
-Cycle 3: +270 seconds (4.5 minutes)
-────────────────────────────────────────────────────────
-Total: 18 attempts over ~7 minutes
+class DownloadAttempt(models.Model):
+    worker_pid = models.IntegerField(null=True, blank=True)
+    worker_hostname = models.CharField(max_length=255, blank=True)
+    task_started_at = models.DateTimeField(null=True, blank=True)
 ```
 
-**Key Differences from Celery Retry:**
-- **Creates NEW task** - `download_task_id` CHANGES
-- **Resets state** - FAILED → PENDING → QUEUED → DOWNLOADING
-- **Creates NEW DownloadAttempt** - Fresh attempt_number sequence
-- **Longer delays** - Minutes instead of seconds between cycles
+**Each attempt records:**
+- Process ID of worker executing the attempt
+- Hostname of worker machine
+- Timestamp when Celery task started
 
-**Key Point:** This is **DUPLICATE FUNCTIONALITY** - we're reimplementing Celery's retry mechanism at a higher level. This causes the 18-attempt problem.
-
----
-
-### Mechanism 3: Fallback Verification System
-
-**Type:** State consistency check (Custom implementation)
-**Trigger:** Periodic task runs every 30 seconds (dev) / 60 seconds (prod)
-**Purpose:** Handle ephemeral queue loss and detect orphaned tasks
-
-**Code:** `tasks.py:1687-1764`
-```python
-@shared_task
-def check_download_states():
-    # SCENARIO 1: PENDING files without tasks
-    pending_files = ProjectFile.objects.filter(
-        download_status=ProjectFile.DownloadStatus.PENDING,
-        is_active=True,
-    )
-    for project_file in pending_files:
-        if not project_file.download_task_id:
-            # Create missing task
-            task = download_project_file.delay(project_file.project.id)
-            project_file.download_task_id = task.id
-            project_file.download_status = ProjectFile.DownloadStatus.QUEUED
-            project_file.save()
-
-    # SCENARIO 2: QUEUED files - verify task in Celery queue
-    queued_files = ProjectFile.objects.filter(
-        download_status=ProjectFile.DownloadStatus.QUEUED,
-        is_active=True,
-    )
-    for project_file in queued_files:
-        if not is_task_queued(project_file):
-            # Task missing from queue - mark as orphaned
-            project_file.mark_download_failed("Task not found in Celery queue")
-
-    # SCENARIO 3: DOWNLOADING files - verify worker process exists
-    downloading_files = ProjectFile.objects.filter(
-        download_status=ProjectFile.DownloadStatus.DOWNLOADING,
-        is_active=True,
-    )
-    for project_file in downloading_files:
-        if not is_task_actively_running(project_file):
-            # Worker crashed or task disappeared
-            project_file.mark_download_failed("Task not running (worker crashed)")
-```
-
-**Verification Functions:**
-
-#### `is_task_queued()` - Code: `verification.py:15-44`
-```python
-def is_task_queued(project_file: ProjectFile) -> bool:
-    """Verify task is in Celery queue (reserved but not started)."""
-    inspect = current_app.control.inspect()
-
-    # Check Celery's reserved queue
-    reserved = inspect.reserved()
-    if task_id in reserved tasks:
-        return True
-
-    # Check Celery's active queue (auto-transition to DOWNLOADING)
-    active = inspect.active()
-    if task_id in active tasks:
-        project_file.download_status = ProjectFile.DownloadStatus.DOWNLOADING
-        project_file.save()
-        return True
-
-    return False
-```
-
-**Celery API Used:**
-- `current_app.control.inspect().reserved()` - Tasks queued but not started
-- `current_app.control.inspect().active()` - Tasks currently executing
-
-#### `is_task_actively_running()` - Code: `verification.py:47-88`
-```python
-def is_task_actively_running(project_file: ProjectFile) -> bool:
-    """Verify task is executing AND process exists."""
-    inspect = current_app.control.inspect()
-
-    # Step 1: Check task in Celery active list
-    active = inspect.active()
-    if task_id not in active tasks:
-        return False
-
-    # Step 2: Verify worker process exists (using psutil)
-    if project_file.worker_pid and project_file.worker_hostname:
-        if socket.gethostname() == project_file.worker_hostname:
-            if not psutil.pid_exists(project_file.worker_pid):
-                return False
-
-            proc = psutil.Process(project_file.worker_pid)
-            if "celery" not in proc.cmdline():
-                return False
-
-    return True
-```
-
-**Multi-layer Verification:**
-1. **Celery layer:** Task in `inspect.active()` list?
-2. **OS layer:** Process ID exists on worker hostname?
-3. **Process layer:** Process is actually Celery worker?
-
-**Why This is Needed:**
-
-Celery queues are **ephemeral** (stored in PostgreSQL database, but not durable):
-- Queue can be lost if Celery worker crashes
-- Queue can be lost if PostgreSQL restarts
-- Queue can be lost if Celery purged manually
-- Tasks can get "stuck" in active list after worker crash
-
-This system provides **defense in depth** against queue loss.
-
-**Key Point:** This is **CUSTOM FUNCTIONALITY** - Celery does not provide automatic queue recovery or process verification. We built this to handle ephemeral queue limitations.
-
----
-
-## Celery Functionality Usage
-
-### What We USE from Celery
-
-| Feature | Usage | Code Location |
-|---------|-------|---------------|
-| **Task Queue** | Store pending download tasks | PostgreSQL via SQLAlchemy |
-| **Task Execution** | Run download_project_file() | Worker pool |
-| **Built-in Retry** | Retry on exception with exponential backoff | `@shared_task(max_retries=5)` |
-| **Task State** | Track PENDING/STARTED/RETRY/SUCCESS/FAILURE | `self.update_state()` |
-| **Progress Updates** | Update download progress during execution | `self.update_state(state='PROGRESS', meta={...})` |
-| **Task Inspection** | Check if tasks queued/active | `inspect.reserved()`, `inspect.active()` |
-| **Periodic Tasks** | Run retry_failed_downloads() every 5 min | Celery Beat |
-| **Result Backend** | Store task results (disabled in eager mode) | django-db |
-
-### What We DUPLICATE from Celery
-
-| Functionality | Celery Provides | We Reimplemented | Why Duplicated |
-|---------------|-----------------|------------------|----------------|
-| **Retry Logic** | `max_retries=5` with exponential backoff | `retry_failed_downloads()` with `max_retries=3` | **Historical:** Wanted longer delays between retry cycles |
-| **Retry Delays** | `self.retry(countdown=delay)` | `calculate_next_retry_time()` with exponential backoff | **Duplication:** Both implement exponential backoff |
-| **Retry Counting** | `self.request.retries` | `ProjectFile.retry_count` | **Tracking:** Want to show user retry attempts |
-
-**Analysis:**
-The auto-retry system is **redundant** with Celery's built-in retry mechanism. It adds:
-- **Complexity:** Two retry systems to maintain
-- **Excessive retries:** 18 total attempts (6 × 3)
-- **Inconsistent state:** Celery task state vs ProjectFile state
-
-**Alternative:** Could use only Celery retries with `max_retries=17` (18 attempts), but would lose ability to show retry history to users.
-
-### What We BUILT (Not in Celery)
-
-| Feature | Purpose | Code Location |
-|---------|---------|---------------|
-| **Queue Verification** | Detect missing tasks, re-create if lost | `check_download_states()` |
-| **Process Verification** | Verify worker PID exists, detect crashes | `is_task_actively_running()` |
-| **State Auto-Transition** | QUEUED → DOWNLOADING when task starts | `is_task_queued()` line 40 |
-| **Download Attempts** | Track each retry as separate DownloadAttempt | `DownloadAttempt` model |
-| **Progress Tracking** | Store chunks every 5MB for performance analysis | `ProjectFileChunk` model |
-| **Orphan Detection** | Find stuck/lost tasks, mark as failed | `check_download_states()` |
-
-**These are legitimate custom features** that Celery doesn't provide.
+This enables:
+- Per-attempt worker tracking (useful for debugging retries)
+- Process verification (detect crashed workers)
+- Performance analysis across different workers
 
 ---
 
@@ -509,208 +398,163 @@ The auto-retry system is **redundant** with Celery's built-in retry mechanism. I
 
 ```python
 # Celery Task Retry Configuration
-@shared_task(bind=True, max_retries=5, default_retry_delay=60)
-# - 6 total attempts (1 initial + 5 retries)
-# - Exponential backoff: 60s, 120s, 240s, 480s, 960s
-
-# Auto-Retry System
-DOWNLOAD_RETRY_BASE_DELAY_MINUTES = 5
-DOWNLOAD_RETRY_BACKOFF_MULTIPLIER = 3
-# Cycle delays: 5min, 15min, 45min
+DOWNLOAD_MAX_RETRIES = 3  # Total: 3 attempts
+DOWNLOAD_RETRY_DELAYS = [5, 30, 120]  # 5s, 30s, 2min
+DOWNLOAD_RETRY_BACKOFF_MAX = 120  # Max 2 minutes between retries
 
 # Periodic Tasks
-DOWNLOAD_RETRY_CHECK_INTERVAL_SECONDS = 300.0  # Every 5 minutes
-DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS = 60.0   # Every 1 minute
+DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS = 30.0  # Every 30 seconds
 
-# Model Defaults
-ProjectFile.max_retries = 3  # Maximum auto-retry cycles
-ProjectFile.auto_retry_enabled = True  # Enable automatic re-queuing
+# Celery Beat Schedule
+CELERY_BEAT_SCHEDULE = {
+    "check-download-states": {
+        "task": "wafer_space.projects.tasks.verify_download_states",
+        "schedule": DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS,
+    },
+}
 ```
 
 ### Development Settings (`config/settings/dev.py`)
 
 ```python
-# Faster retries for development
-DOWNLOAD_RETRY_BASE_DELAY_MINUTES = 30 / 60  # 30 seconds
-DOWNLOAD_RETRY_CHECK_INTERVAL_SECONDS = 30.0
+# Same as production - fast retries for quick testing
+DOWNLOAD_MAX_RETRIES = 3
+DOWNLOAD_RETRY_DELAYS = [5, 30, 120]  # 5s, 30s, 2min
 DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS = 30.0
+```
 
-# Uses SQLite for Celery broker (not PostgreSQL)
-CELERY_BROKER_URL = f"sqla+sqlite:///{BASE_DIR / 'db.sqlite3'}"
+### Task Decorator (Applied Automatically)
+
+```python
+@shared_task(
+    bind=True,
+    max_retries=settings.DOWNLOAD_MAX_RETRIES,
+    autoretry_for=(OSError, ValueError, requests.RequestException),
+    retry_backoff=True,
+    retry_backoff_max=settings.DOWNLOAD_RETRY_BACKOFF_MAX,
+    retry_jitter=False,
+)
+def download_project_file(self, project_id):
+    """Download and process a project file with automatic retries."""
 ```
 
 ---
 
-## Issues and Conflicts
+## Changes from Previous Implementation
 
-### Issue 1: Excessive Retries (18 Attempts)
+### What Was Removed
 
-**Problem:** Two retry systems multiply instead of complement each other.
+1. **Auto-Retry System (Custom Re-queuing)**
+   - ❌ Removed `retry_failed_downloads()` periodic task
+   - ❌ Removed `ProjectFile.retry_count` field
+   - ❌ Removed `ProjectFile.max_retries` field
+   - ❌ Removed `ProjectFile.auto_retry_enabled` field
+   - ❌ Removed `ProjectFile.next_retry_at` field
+   - ❌ Removed 18-attempt retry (6 Celery × 3 auto-retry cycles)
 
-**Current Behavior:**
-```
-Cycle 1: 6 Celery attempts (over 31 minutes)
-         ↓ all fail
-         FAILED → retry_failed_downloads() → re-queue
+2. **Database Fields**
+   - ❌ Removed `ProjectFile.download_status` CharField
+   - ❌ Removed `ProjectFile.worker_pid` field
+   - ❌ Removed `ProjectFile.worker_hostname` field
+   - ❌ Removed `ProjectFile.task_started_at` field
 
-Cycle 2: 6 Celery attempts (over 31 minutes)
-         ↓ all fail
-         FAILED → retry_failed_downloads() → re-queue
+**Rationale:** The auto-retry system was redundant with Celery's built-in retry mechanism and caused excessive retries (18 attempts total). Celery already provides exponential backoff and retry counting.
 
-Cycle 3: 6 Celery attempts (over 31 minutes)
-         ↓ all fail
-         FAILED → permanent failure
+### What Was Added
 
-Total: 18 attempts over ~93 minutes
-```
+1. **Computed Download Status**
+   - ✅ `ProjectFile.download_status` is now a `@property`
+   - ✅ Derives status from `download_task_id` and DownloadAttempt records
+   - ✅ Single source of truth (no state synchronization)
 
-**Expected Behavior:**
-Users expect failures to retry "a few times", not 18 times.
+2. **Worker Tracking per Attempt**
+   - ✅ `DownloadAttempt.worker_pid` - Process ID of worker
+   - ✅ `DownloadAttempt.worker_hostname` - Worker machine hostname
+   - ✅ `DownloadAttempt.task_started_at` - Task start timestamp
+   - ✅ Enables per-attempt debugging and performance analysis
 
-**Recommendation:**
-- **Option A:** Remove auto-retry system, use only Celery retries with `max_retries=5` (6 attempts)
-- **Option B:** Reduce Celery retries to `max_retries=1` (2 attempts per cycle × 3 cycles = 6 total)
-- **Option C:** Disable auto_retry_enabled by default, make it opt-in per file
+3. **Configurable Retry Delays**
+   - ✅ `DOWNLOAD_RETRY_DELAYS` setting (list of delays in seconds)
+   - ✅ `DOWNLOAD_MAX_RETRIES` setting (total attempts)
+   - ✅ `DOWNLOAD_RETRY_BACKOFF_MAX` setting (max delay cap)
+   - ✅ Production-ready defaults with easy customization
 
----
+4. **UI Improvements**
+   - ✅ Download attempt history displayed to users
+   - ✅ Shows all retry attempts with timestamps, errors, worker info
+   - ✅ Collapsible details panel (only shown when >1 attempts)
 
-### Issue 2: UI State Confusion (Stuck in "Retrying")
+### What Was Kept
 
-**Problem:** Three different states show conflicting information during Celery retry.
+1. **Fallback Verification System**
+   - ✅ `verify_download_states()` periodic task (every 30 seconds)
+   - ✅ Detects missing tasks in Celery queue
+   - ✅ Verifies worker processes are running
+   - ✅ Re-creates tasks if queue lost (ephemeral queue recovery)
+   - ✅ Essential for production reliability
 
-**State During Celery Retry:**
-| Component | State | Display |
-|-----------|-------|---------|
-| `DownloadAttempt.status` | `FAILED` | "Failed" badge |
-| `ProjectFile.is_active` | `True` | Shows in "File In Progress" |
-| `Celery task.state` | `RETRY` | "Retrying" status from API |
+2. **Download Attempt Tracking**
+   - ✅ `DownloadAttempt` model tracks each retry
+   - ✅ Progress checkpoints (`ProjectFileChunk`)
+   - ✅ Error logging per attempt
+   - ✅ Performance metrics (duration, speed, bytes downloaded)
 
-**JavaScript Polling Behavior:**
-```javascript
-// project_detail.html:409
-if (data.status === 'completed' || data.status === 'failed') {
-    clearInterval(pollInterval);
-    setTimeout(() => location.reload(), 1000);
-}
-```
+3. **Celery Infrastructure**
+   - ✅ PostgreSQL as Celery broker (via SQLAlchemy)
+   - ✅ django-db result backend
+   - ✅ Celery Beat for periodic tasks
+   - ✅ Task inspection API (`inspect.reserved()`, `inspect.active()`)
 
-**Result:**
-- Polling sees `status='retrying'` from Celery API
-- Shows "Retrying" badge (orange warning color)
-- Does **NOT** reload page (only reloads for completed/failed)
-- File stuck in "File In Progress" section
-- User confused: "Is it retrying or failed?"
+### Migration Impact
 
-**Recommendation:**
-Add "retrying" to reload condition:
-```javascript
-if (data.status === 'completed' || data.status === 'failed' || data.status === 'retrying') {
-    clearInterval(pollInterval);
-    setTimeout(() => location.reload(), 2000);  // Longer delay for retry
-}
-```
+**Database Migration Required:** Yes
 
----
+The migration:
+- Adds `worker_pid`, `worker_hostname`, `task_started_at` to DownloadAttempt
+- Removes `download_status`, `worker_pid`, `worker_hostname`, etc. from ProjectFile
+- Removes `retry_count`, `max_retries`, `auto_retry_enabled`, `next_retry_at` from ProjectFile
+- **Data loss:** Existing download_status values are discarded (clean break)
 
-### Issue 3: Download Attempt History Not Visible
+**Why Clean Break:**
+The old retry system tracked state differently, so migration would be complex and error-prone. A clean break ensures consistent state going forward.
 
-**Problem:** UI shows ProjectFiles, not DownloadAttempts.
-
-**Data Created:**
-- Each retry creates new `DownloadAttempt` record (attempt_number increments)
-- Same `ProjectFile` (is_active=True) for all attempts
-- After 18 retries: 1 ProjectFile with 18 DownloadAttempt records
-
-**Data Displayed:**
-```django
-{# File History #}
-{% for file in history_files %}
-    <tr>
-        <td>{{ file.original_filename }}</td>
-        <td>{{ file.latest_attempt.get_status_display }}</td>
-    </tr>
-{% endfor %}
-```
-
-**Result:**
-- User sees: 1 file with "Failed" status
-- User expects: See all 18 retry attempts with timestamps
-
-**Recommendation:**
-Add DownloadAttempt history section in `_file_display.html`:
-```django
-{% if show_details and file.download_attempts.exists %}
-    <details>
-        <summary>Download Attempt History ({{ file.download_attempts.count }})</summary>
-        <table>
-            {% for attempt in file.download_attempts.all %}
-                <tr>
-                    <td>Attempt #{{ attempt.attempt_number }}</td>
-                    <td>{{ attempt.get_status_display }}</td>
-                    <td>{{ attempt.download_started_at|date:"Y-m-d H:i:s" }}</td>
-                </tr>
-            {% endfor %}
-        </table>
-    </details>
-{% endif %}
-```
-
----
-
-### Issue 4: Retry System Duplication
-
-**Problem:** Auto-retry system reimplements Celery functionality.
-
-**What Auto-Retry Does:**
-1. Finds FAILED downloads
-2. Re-queues them after exponential delay
-3. Tracks retry count
-4. Gives up after max retries
-
-**What Celery Already Does:**
-1. Retries failed tasks
-2. Implements exponential backoff
-3. Tracks retry count (`self.request.retries`)
-4. Gives up after max retries
-
-**Why Duplication Exists:**
-- **Historical:** Wanted longer delays between retry cycles (minutes vs seconds)
-- **User visibility:** Want to show retry history to users
-- **Configurability:** Per-file retry settings (`auto_retry_enabled`, `max_retries`)
-
-**Recommendation:**
-- **Keep:** Fallback verification system (handles queue loss, unique functionality)
-- **Remove:** Auto-retry system (duplicate of Celery retries)
-- **Use:** Only Celery retries with appropriate `max_retries` value
-- **Add:** User-facing retry history from DownloadAttempt records
+**User Impact:**
+- Existing in-progress downloads will restart from PENDING
+- Historical retry counts are lost (fresh start)
+- Benefits: Simpler system, fewer retries, better visibility
 
 ---
 
 ## Summary
 
-**Celery Functionality We Use:**
-- ✅ Task queue (PostgreSQL broker)
-- ✅ Task execution (worker pool)
-- ✅ Built-in retry with exponential backoff
-- ✅ Task state tracking and progress updates
-- ✅ Task inspection API
-- ✅ Periodic tasks (Beat scheduler)
+**Architecture:**
+- ✅ Celery-native retry mechanism (3 attempts, configurable)
+- ✅ Exponential backoff (5s, 30s, 2min by default)
+- ✅ Fallback verification for queue loss recovery
+- ✅ Download status computed from DownloadAttempt records
+- ✅ Per-attempt worker tracking for debugging
 
-**Celery Functionality We Duplicate:**
-- ❌ Retry logic (auto-retry system reimplements Celery retries)
-- ❌ Exponential backoff (implemented twice)
-- ❌ Retry counting (both Celery and ProjectFile track counts)
+**Key Benefits:**
+- 🎯 **Simplicity:** One retry system (Celery), not two
+- 🎯 **Configurability:** All delays/limits via Django settings
+- 🎯 **Transparency:** Users see full retry history
+- 🎯 **Reliability:** Fallback verification handles queue loss
+- 🎯 **Debuggability:** Per-attempt worker info for troubleshooting
 
-**Custom Functionality We Built:**
-- ✅ Queue verification (detect missing tasks)
-- ✅ Process verification (detect crashed workers)
-- ✅ State auto-transition (QUEUED → DOWNLOADING)
-- ✅ Download attempt tracking (DownloadAttempt model)
-- ✅ Progress checkpoints (ProjectFileChunk model)
-- ✅ Orphan detection (stuck task cleanup)
+**What Changed:**
+- ❌ Removed auto-retry system (18 attempts → 3 attempts)
+- ❌ Removed duplicate retry logic and state tracking
+- ✅ Added computed download_status property
+- ✅ Added per-attempt worker tracking
+- ✅ Added configurable retry delays
+- ✅ Added attempt history UI
 
-**Recommended Changes:**
-1. **Remove auto-retry system** - Use only Celery retries
-2. **Fix UI polling** - Reload on "retrying" status
-3. **Show attempt history** - Display all DownloadAttempt records
-4. **Keep fallback verification** - Handles ephemeral queue, unique value
+**Configuration:**
+```python
+# Customize retry behavior via settings
+DOWNLOAD_MAX_RETRIES = 3  # Number of retry attempts
+DOWNLOAD_RETRY_DELAYS = [5, 30, 120]  # Delays between retries (seconds)
+DOWNLOAD_RETRY_BACKOFF_MAX = 120  # Maximum delay cap (seconds)
+```
+
+The system is now **simpler**, **more configurable**, and **easier to understand** while maintaining all essential reliability features.
