@@ -450,6 +450,99 @@ class ProjectFileService:
         return task.id
 
     @classmethod
+    def _handle_pending_started_state(
+        cls,
+        task: AsyncResult,
+        project_file: ProjectFile,
+    ) -> dict[str, str | int | float]:
+        """Handle PENDING or STARTED task state."""
+        status = "pending" if task.state == "PENDING" else "downloading"
+        message = "Download pending" if task.state == "PENDING" else "Download starting"
+        return {
+            "status": status,
+            "progress": 0,
+            "current": 0,
+            "total": project_file.file_size or 0,
+            "message": message,
+        }
+
+    @classmethod
+    def _handle_progress_state(
+        cls,
+        task: AsyncResult,
+        project_file: ProjectFile,
+    ) -> dict[str, str | int | float]:
+        """Handle PROGRESS task state."""
+        meta = task.info or {}
+        return {
+            "status": "downloading",
+            "progress": meta.get("progress", 0),
+            "current": meta.get("current", 0),
+            "total": meta.get("total", project_file.file_size or 0),
+            "message": meta.get("message", "Downloading"),
+        }
+
+    @classmethod
+    def _handle_success_state(
+        cls,
+        task: AsyncResult,
+        project_file: ProjectFile,
+    ) -> dict[str, str | int | float]:
+        """Handle SUCCESS task state."""
+        return {
+            "status": "completed",
+            "progress": 100,
+            "current": project_file.file_size or 0,
+            "total": project_file.file_size or 0,
+            "message": "Download completed",
+        }
+
+    @classmethod
+    def _handle_failure_state(
+        cls,
+        task: AsyncResult,
+        project_file: ProjectFile,
+    ) -> dict[str, str | int | float]:
+        """Handle FAILURE task state."""
+        return {
+            "status": "failed",
+            "progress": 0,
+            "current": 0,
+            "total": project_file.file_size or 0,
+            "message": str(task.info) if task.info else "Download failed",
+        }
+
+    @classmethod
+    def _handle_retry_state(
+        cls,
+        task: AsyncResult,
+        project_file: ProjectFile,
+    ) -> dict[str, str | int | float]:
+        """Handle RETRY task state."""
+        return {
+            "status": "retrying",
+            "progress": 0,
+            "current": 0,
+            "total": project_file.file_size or 0,
+            "message": "Download retrying after error...",
+        }
+
+    @classmethod
+    def _handle_unknown_state(
+        cls,
+        task: AsyncResult,
+        project_file: ProjectFile,
+    ) -> dict[str, str | int | float]:
+        """Handle unknown task state."""
+        return {
+            "status": "unknown",
+            "progress": 0,
+            "current": 0,
+            "total": project_file.file_size or 0,
+            "message": f"Unknown state: {task.state}",
+        }
+
+    @classmethod
     def get_download_progress(
         cls,
         project_file: ProjectFile,
@@ -478,54 +571,18 @@ class ProjectFileService:
 
         task = AsyncResult(project_file.download_task_id)
 
-        # Map task states to status and message
-        if task.state in ("PENDING", "STARTED"):
-            status = "pending" if task.state == "PENDING" else "downloading"
-            message = (
-                "Download pending" if task.state == "PENDING" else "Download starting"
-            )
-            return {
-                "status": status,
-                "progress": 0,
-                "current": 0,
-                "total": project_file.file_size or 0,
-                "message": message,
-            }
-        if task.state == "PROGRESS":
-            # Get progress from task meta
-            meta = task.info or {}
-            return {
-                "status": "downloading",
-                "progress": meta.get("progress", 0),
-                "current": meta.get("current", 0),
-                "total": meta.get("total", project_file.file_size or 0),
-                "message": meta.get("message", "Downloading"),
-            }
-        if task.state == "SUCCESS":
-            return {
-                "status": "completed",
-                "progress": 100,
-                "current": project_file.file_size or 0,
-                "total": project_file.file_size or 0,
-                "message": "Download completed",
-            }
-        if task.state == "FAILURE":
-            return {
-                "status": "failed",
-                "progress": 0,
-                "current": 0,
-                "total": project_file.file_size or 0,
-                "message": str(task.info) if task.info else "Download failed",
-            }
-
-        # Unknown state
-        return {
-            "status": "unknown",
-            "progress": 0,
-            "current": 0,
-            "total": project_file.file_size or 0,
-            "message": f"Unknown state: {task.state}",
+        # Dispatch to appropriate handler based on task state
+        state_handlers = {
+            "PENDING": cls._handle_pending_started_state,
+            "STARTED": cls._handle_pending_started_state,
+            "PROGRESS": cls._handle_progress_state,
+            "SUCCESS": cls._handle_success_state,
+            "FAILURE": cls._handle_failure_state,
+            "RETRY": cls._handle_retry_state,
         }
+
+        handler = state_handlers.get(task.state, cls._handle_unknown_state)
+        return handler(task, project_file)
 
 
 class ManufacturabilityService:

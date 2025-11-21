@@ -391,6 +391,10 @@
                   statusBadge.classList.add('bg-info');
                   iconHtml = '<i class="bi bi-clock"></i> ';
                   statusText.textContent = 'Queued';
+                } else if (data.status === 'retrying') {
+                  statusBadge.classList.add('bg-warning');
+                  iconHtml = '<i class="bi bi-arrow-clockwise"></i> ';
+                  statusText.textContent = 'Retrying';
                 } else {
                   statusBadge.classList.add('bg-secondary');
                   iconHtml = '<i class="bi bi-clock"></i> ';
