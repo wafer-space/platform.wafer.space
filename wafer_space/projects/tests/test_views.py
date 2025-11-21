@@ -144,12 +144,17 @@ class TestProjectDetailView(TestCase):
     def test_includes_active_file_in_context(self):
         """Test that active file is included in context."""
         # Create active file
-        active_file = ProjectFile.objects.create(
+        active_file = project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -505,7 +510,6 @@ class TestProjectFileProgressView(TestCase):
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
         )
 
         # Create download attempt
@@ -585,14 +589,18 @@ class TestProjectSubmitView(TestCase):
         mock_task.return_value = Mock(id="task-123")
 
         # Create completed and verified file
-        ProjectFile.objects.create(
+        project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=True,
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Mark as manufacturable
@@ -646,7 +654,6 @@ class TestProjectSubmitView(TestCase):
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.PENDING,
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -669,13 +676,18 @@ class TestProjectSubmitView(TestCase):
 
     def test_submission_fails_with_failed_download(self):
         """Test that submission fails with failed download."""
-        ProjectFile.objects.create(
+        project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.FAILED,
+            download_error="Download failed",
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.FAILED,
             download_error="Download failed",
         )
 
@@ -697,14 +709,18 @@ class TestProjectSubmitView(TestCase):
 
     def test_submission_fails_with_unverified_hash(self):
         """Test that submission fails with unverified hash."""
-        ProjectFile.objects.create(
+        project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=False,
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -726,14 +742,18 @@ class TestProjectSubmitView(TestCase):
     def test_submission_fails_if_already_submitted(self):
         """Test that submission fails if already submitted."""
         # Create completed file
-        ProjectFile.objects.create(
+        project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=True,
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Mark as manufacturable
@@ -767,14 +787,18 @@ class TestProjectSubmitView(TestCase):
         mock_task.return_value = Mock(id="task-123")
 
         # Create completed file
-        ProjectFile.objects.create(
+        project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=True,
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Mark as manufacturable
@@ -827,7 +851,6 @@ class TestEnhancedProgressDashboard(TestCase):
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
         )
 
         # Create download attempt
@@ -853,7 +876,6 @@ class TestEnhancedProgressDashboard(TestCase):
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.PENDING,
         )
 
         # Create download attempt
@@ -890,7 +912,6 @@ class TestEnhancedProgressDashboard(TestCase):
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.PENDING,
             download_task_id="celery-task-123",  # Task queued
         )
         # Intentionally NOT creating DownloadAttempt to simulate race condition
@@ -914,7 +935,6 @@ class TestEnhancedProgressDashboard(TestCase):
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.FAILED,
             download_error="Connection timeout",
         )
 
@@ -942,7 +962,6 @@ class TestEnhancedProgressDashboard(TestCase):
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -962,7 +981,6 @@ class TestEnhancedProgressDashboard(TestCase):
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.FAILED,
             download_error="Network error occurred",
         )
 
@@ -1001,7 +1019,6 @@ class TestEnhancedProgressDashboard(TestCase):
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.PENDING,
         )
 
         # Create download attempt
@@ -1038,7 +1055,6 @@ class TestEnhancedProgressDashboard(TestCase):
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             file_size=TEN_MB,
         )
 
