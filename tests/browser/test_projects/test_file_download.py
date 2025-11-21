@@ -248,7 +248,6 @@ class TestProjectFileDownload(BaseBrowserTest):
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             file_size=10485760,  # 10MB
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
             download_task_id="task-123",
             is_active=True,
         )
@@ -310,7 +309,6 @@ class TestProjectFileDownload(BaseBrowserTest):
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             file_size=1048576,
-            download_status=ProjectFile.DownloadStatus.PENDING,
             download_task_id="task-pending-123",
             is_active=True,
         )
@@ -368,7 +366,6 @@ class TestProjectFileDownload(BaseBrowserTest):
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             file_size=1048576,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=True,
             is_active=True,
         )
@@ -403,8 +400,6 @@ class TestProjectFileDownload(BaseBrowserTest):
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             file_size=1048576,
-            download_status=ProjectFile.DownloadStatus.FAILED,
-            download_error=error_message,
             is_active=True,
         )
 
@@ -438,8 +433,14 @@ class TestProjectFileDownload(BaseBrowserTest):
             source_url="https://example.com/old.gds",
             original_filename="old.gds",
             file_size=1048576,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             is_active=True,
+        )
+
+        # Create download attempt for old file
+        DownloadAttempt.objects.create(
+            project_file=old_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Verify old file is active
@@ -457,7 +458,6 @@ class TestProjectFileDownload(BaseBrowserTest):
             source_url="https://example.com/new.gds",
             original_filename="new.gds",
             file_size=2097152,
-            download_status=ProjectFile.DownloadStatus.PENDING,
             is_active=True,
         )
 
@@ -559,9 +559,15 @@ class TestProjectFileNotifications(BaseBrowserTest):
             source_url="https://example.com/file.gds",
             original_filename="test.gds",
             file_size=1048576,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=True,
             is_active=True,
+        )
+
+        # Create download attempt
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Create notification (simulating task completion)
@@ -586,9 +592,15 @@ class TestProjectFileNotifications(BaseBrowserTest):
             source_url="https://example.com/file.gds",
             original_filename="test.gds",
             file_size=1048576,
-            download_status=ProjectFile.DownloadStatus.FAILED,
-            download_error="Connection timeout",
             is_active=True,
+        )
+
+        # Create download attempt
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.FAILED,
+            download_error="Connection timeout",
         )
 
         # Create notification
@@ -614,11 +626,17 @@ class TestProjectFileNotifications(BaseBrowserTest):
             source_url="https://example.com/file.gds",
             original_filename="test.gds",
             file_size=1048576,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=True,
             expected_hash_md5="abc123",
             hash_md5="abc123",
             is_active=True,
+        )
+
+        # Create download attempt
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Create notification
@@ -641,11 +659,17 @@ class TestProjectFileNotifications(BaseBrowserTest):
             source_url="https://example.com/file.gds",
             original_filename="test.gds",
             file_size=1048576,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=False,
             expected_hash_md5="abc123",
             hash_md5="def456",
             is_active=True,
+        )
+
+        # Create download attempt
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Create notification
