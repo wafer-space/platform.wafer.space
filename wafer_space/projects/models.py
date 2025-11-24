@@ -544,6 +544,31 @@ class ProjectFile(models.Model):
             return 0
         return attempt.download_progress
 
+    @property
+    def has_hash_mismatch(self) -> bool:
+        """Check if there's a hash mismatch between expected and actual hashes.
+
+        Returns True if any expected hash was provided AND doesn't match actual.
+        Returns False if no expected hashes provided (nothing to compare).
+        Returns False if expected hashes match actual hashes.
+        """
+        # Check MD5 mismatch
+        if self.expected_hash_md5 and self.hash_md5:
+            if self.expected_hash_md5.lower() != self.hash_md5.lower():
+                return True
+
+        # Check SHA1 mismatch
+        if self.expected_hash_sha1 and self.hash_sha1:
+            if self.expected_hash_sha1.lower() != self.hash_sha1.lower():
+                return True
+
+        return False
+
+    @property
+    def has_expected_hash(self) -> bool:
+        """Check if user provided any expected hash for verification."""
+        return bool(self.expected_hash_md5 or self.expected_hash_sha1)
+
 
 class FileProcessingError(models.Model):
     """Log of errors that occurred during file processing.

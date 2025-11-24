@@ -1448,6 +1448,7 @@ def _verify_and_notify(
             logger.warning("    - %s", error)
 
     project_file.hash_verified = hash_verified
+    project_file.save(update_fields=["hash_verified"])
     project_file.mark_download_complete()
     logger.info("  ✓ Download marked as COMPLETE")
 

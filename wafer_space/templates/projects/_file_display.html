@@ -51,10 +51,13 @@
           {% endif %}
         {% endif %}
       </div>
-      {# Status Badge #}
+      {# Status Badge - show Hash Mismatch as failure state #}
       <span id="status-badge"
-            class="badge {% if status == 'completed' %}bg-success{% elif status == 'failed' %}bg-danger{% elif status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
-        {% if status == 'completed' %}
+            class="badge {% if status == 'completed' and file.has_hash_mismatch %}bg-danger{% elif status == 'completed' %}bg-success{% elif status == 'failed' %}bg-danger{% elif status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
+        {% if status == 'completed' and file.has_hash_mismatch %}
+          <i class="bi bi-exclamation-triangle"></i>
+          <span id="status-text">Hash Mismatch</span>
+        {% elif status == 'completed' %}
           <i class="bi bi-check-circle"></i>
           <span id="status-text">Completed</span>
         {% elif status == 'failed' %}
@@ -76,7 +79,13 @@
           <i class="bi bi-shield-check"></i> Hash Verified
         </span>
       </p>
-    {% elif status == 'completed' and not file.hash_verified %}
+    {% elif status == 'completed' and file.has_hash_mismatch %}
+      <p class="mb-2">
+        <span class="badge bg-danger">
+          <i class="bi bi-shield-x"></i> Hash Mismatch
+        </span>
+      </p>
+    {% elif status == 'completed' and file.has_expected_hash and not file.hash_verified %}
       <p class="mb-2">
         <span class="badge bg-warning text-dark">
           <i class="bi bi-shield-exclamation"></i> Hash Not Verified
