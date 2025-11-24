@@ -251,14 +251,14 @@ check-all: lint type-check test ## Run all checks (lint, type-check, tests)
 # ==================== Development Server ====================
 
 .PHONY: runserver
-runserver: ## Run Django development server with Celery worker (via Honcho)
+runserver: stopserver ## Run Django development server with Celery worker (via Honcho)
 	@echo "$(BLUE)Starting development server and Celery worker...$(NC)"
 	@echo "$(BLUE)Cleaning Celery Beat schedule database...$(NC)"
 	@rm -f celerybeat-schedule celerybeat-schedule.db celerybeat-schedule.sqlite3 celerybeat-schedule.sqlite3-shm celerybeat-schedule.sqlite3-wal
 	@$(UV) run honcho start
 
-.PHONY: stop
-stop: ## Stop all running dev servers (honcho, celery, django runserver)
+.PHONY: stopserver
+stopserver: ## Stop all running dev servers (honcho, celery, django runserver)
 	@echo "$(BLUE)Stopping development servers...$(NC)"
 	@if pgrep -f "[h]oncho start" >/dev/null 2>&1; then \
 		pgrep -f "[h]oncho start" | xargs kill -9 2>/dev/null; \
@@ -285,6 +285,9 @@ stop: ## Stop all running dev servers (honcho, celery, django runserver)
 		echo "  $(YELLOW)○ No django runserver found$(NC)"; \
 	fi
 	@echo "$(GREEN)✓ Cleanup complete$(NC)"
+
+.PHONY: kill
+kill: stopserver ## Alias for stopserver
 
 .PHONY: shell
 shell: ## Open Django shell
