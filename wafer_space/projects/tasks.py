@@ -395,7 +395,7 @@ def _build_github_artifact_filename(
     Format: {owner}.{repo}.r{run_id}-a{artifact_id}.{artifact_name}.{extracted_filename}
 
     Args:
-        metadata: Handler metadata containing owner, repo, run_id, artifact_id, artifact_name
+        metadata: Handler metadata with owner, repo, run_id, artifact_id, artifact_name
         extracted_filename: Filename after extraction (e.g., design.gds)
 
     Returns:
