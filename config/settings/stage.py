@@ -13,6 +13,8 @@ ALLOWED_HOSTS = [
     "test-platform.wafer.space",
     "buddy.test-platform.wafer.space",
     "doc.test-platform.wafer.space",
+    "test-platform.buddy.mithis.com",
+    "test-platform.doc.mithis.com",
 ]
 SITE_URL = "https://test-platform.wafer.space"
 
