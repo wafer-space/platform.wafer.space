@@ -42,7 +42,9 @@
         </div>
         <form method="post">
           {% csrf_token %}
-          {# Checksum Explanation Box #}
+          {# URL Field #}
+          {{ form.url|as_crispy_field }}
+          {# Checksum Explanation Box - between URL and hash fields #}
           <div class="alert alert-primary" role="alert">
             <h5 class="alert-heading">
               <i class="bi bi-shield-check"></i> Checksum Verification
@@ -59,7 +61,9 @@
               (the system verifies downloads separately).
             </p>
           </div>
-          {{ form|crispy }}
+          {# Hash Fields #}
+          {{ form.expected_hash_md5|as_crispy_field }}
+          {{ form.expected_hash_sha1|as_crispy_field }}
           {# Collapsible Help Section for Generating Checksums #}
           <div class="accordion mb-3" id="checksumHelp">
             <div class="accordion-item">
