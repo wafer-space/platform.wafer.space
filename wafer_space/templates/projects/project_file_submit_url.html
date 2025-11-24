@@ -17,14 +17,10 @@
               <i class="bi bi-folder-fill text-primary"></i>
               Submitting file for: <strong>{{ project.name }}</strong>
             </h4>
-            {% if project.description %}
-              <p class="text-muted mb-0 mt-2">{{ project.description|truncatewords:30 }}</p>
-            {% endif %}
+            {% if project.description %}<p class="text-muted mb-0 mt-2">{{ project.description|truncatewords:30 }}</p>{% endif %}
           </div>
         </div>
-
         <h2>Submit Design File URL</h2>
-
         {# Main Information Box #}
         <div class="alert alert-info" role="alert">
           <h5 class="alert-heading">
@@ -44,18 +40,14 @@
             and will automatically rewrite URLs when needed (e.g., GitHub blob to raw URLs).
           </p>
         </div>
-
         <form method="post">
           {% csrf_token %}
-
           {# Checksum Explanation Box #}
           <div class="alert alert-primary" role="alert">
             <h5 class="alert-heading">
               <i class="bi bi-shield-check"></i> Checksum Verification
             </h5>
-            <p>
-              You must provide at least one checksum (MD5 or SHA1) to verify your file.
-            </p>
+            <p>You must provide at least one checksum (MD5 or SHA1) to verify your file.</p>
             <p>
               <strong>Important:</strong> The checksums you provide should be for the
               <em>uncompressed</em> GDS or OASIS file that will be used for manufacturing,
@@ -67,9 +59,7 @@
               (the system verifies downloads separately).
             </p>
           </div>
-
           {{ form|crispy }}
-
           {# Collapsible Help Section for Generating Checksums #}
           <div class="accordion mb-3" id="checksumHelp">
             <div class="accordion-item">
@@ -92,7 +82,6 @@
                     Generate checksums for your <strong>uncompressed</strong> GDS or OASIS file
                     (before compressing it for upload).
                   </p>
-
                   <h6>Linux / macOS</h6>
                   <pre class="bg-dark text-light p-3 rounded"><code># Generate MD5 checksum
 md5sum your_design.gds
@@ -103,21 +92,18 @@ md5 your_design.gds
 sha1sum your_design.gds
 # or on macOS:
 shasum your_design.gds</code></pre>
-
                   <h6>Windows (PowerShell)</h6>
                   <pre class="bg-dark text-light p-3 rounded"><code># Generate MD5 checksum
 Get-FileHash -Algorithm MD5 your_design.gds
 
 # Generate SHA1 checksum
 Get-FileHash -Algorithm SHA1 your_design.gds</code></pre>
-
                   <h6>Windows (Command Prompt)</h6>
                   <pre class="bg-dark text-light p-3 rounded"><code># Generate MD5 checksum
 certutil -hashfile your_design.gds MD5
 
 # Generate SHA1 checksum
 certutil -hashfile your_design.gds SHA1</code></pre>
-
                   <div class="alert alert-warning mt-3 mb-0">
                     <i class="bi bi-exclamation-triangle"></i>
                     <strong>Remember:</strong> Generate the checksum from the original uncompressed file,
@@ -127,7 +113,6 @@ certutil -hashfile your_design.gds SHA1</code></pre>
               </div>
             </div>
           </div>
-
           {# Important Notes #}
           <div class="alert alert-warning" role="alert">
             <h5 class="alert-heading">
@@ -148,7 +133,6 @@ certutil -hashfile your_design.gds SHA1</code></pre>
               </li>
             </ul>
           </div>
-
           <div class="d-flex gap-2 mt-3">
             <button type="submit" class="btn btn-primary">
               <i class="bi bi-download"></i> Submit for Download
