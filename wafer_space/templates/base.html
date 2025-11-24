@@ -15,6 +15,10 @@
     <meta name="description"
           content="Platform for wafer.space low cost silicon manufacturing." />
     <meta name="author" content="Tim 'mithro' Ansell" />
+    {% if GIT_COMMIT_HASH %}
+      <meta name="version" content="{{ GIT_DESCRIBE|default:GIT_COMMIT_SHORT }}" />
+      <meta name="revision" content="{{ GIT_COMMIT_HASH }}" />
+    {% endif %}
     <!-- Favicons -->
     <link rel="icon"
           href="{% static 'images/favicons/favicon.ico' %}"
@@ -150,6 +154,14 @@
     <!-- /container -->
     {% block modal %}
     {% endblock modal %}
+    {% if GIT_COMMIT_URL %}
+      <footer class="text-center text-muted py-2" style="font-size: 0.7rem;">
+        <a href="{{ GIT_COMMIT_URL }}"
+           target="_blank"
+           rel="noopener noreferrer"
+           class="text-muted text-decoration-none">{{ GIT_DESCRIBE|default:GIT_COMMIT_SHORT }}</a>
+      </footer>
+    {% endif %}
     {% block inline_javascript %}
       {% comment %}
     Script tags with only code, no src (defer by default). To run
