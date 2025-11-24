@@ -877,6 +877,61 @@ def _get_project_file_for_download(
     return project, project_file
 
 
+def _get_or_create_download_attempt(project_file: ProjectFile) -> DownloadAttempt:
+    """Get existing PENDING attempt or create new DOWNLOADING attempt.
+
+    When a retry is scheduled, a PENDING attempt is created immediately.
+    When the retry starts, we reuse that attempt instead of creating a new one.
+    This ensures the UI shows "Pending" during retry delay instead of "Failed".
+
+    Args:
+        project_file: The file to create/update attempt for
+
+    Returns:
+        DownloadAttempt in DOWNLOADING status
+    """
+    logger = logging.getLogger(__name__)
+
+    # Check for existing PENDING attempt (created when retry was scheduled)
+    pending_attempt = project_file.download_attempts.filter(
+        status=DownloadAttempt.Status.PENDING
+    ).first()
+
+    if pending_attempt:
+        # Reuse existing PENDING attempt
+        pending_attempt.status = DownloadAttempt.Status.DOWNLOADING
+        pending_attempt.download_started_at = timezone.now()
+        pending_attempt.worker_pid = os.getpid()
+        pending_attempt.worker_hostname = socket.gethostname()
+        pending_attempt.task_started_at = timezone.now()
+        pending_attempt.save()
+        logger.info(
+            "Updated pending attempt #%d to DOWNLOADING (PID=%s, host=%s)",
+            pending_attempt.attempt_number,
+            pending_attempt.worker_pid,
+            pending_attempt.worker_hostname,
+        )
+        return pending_attempt
+
+    # Create new attempt (first download or no pending attempt)
+    attempt = DownloadAttempt.objects.create(
+        project_file=project_file,
+        attempt_number=project_file.download_attempts.count() + 1,
+        status=DownloadAttempt.Status.DOWNLOADING,
+        download_started_at=timezone.now(),
+        worker_pid=os.getpid(),
+        worker_hostname=socket.gethostname(),
+        task_started_at=timezone.now(),
+    )
+    logger.info(
+        "Created attempt #%d (PID=%s, host=%s)",
+        attempt.attempt_number,
+        attempt.worker_pid,
+        attempt.worker_hostname,
+    )
+    return attempt
+
+
 def _initialize_download(project_file: ProjectFile) -> None:
     """Initialize file download metadata.
 
@@ -1426,23 +1481,11 @@ def download_project_file(self, project_id):  # noqa: PLR0915, C901
             self.request.id,
         )
 
-        # Create download attempt
-        logger.info("Step 2.5: Creating download attempt record...")
-        attempt = DownloadAttempt.objects.create(
-            project_file=project_file,
-            attempt_number=project_file.download_attempts.count() + 1,
-            status=DownloadAttempt.Status.DOWNLOADING,
-            download_started_at=timezone.now(),
-            worker_pid=os.getpid(),
-            worker_hostname=socket.gethostname(),
-            task_started_at=timezone.now(),
-        )
-        logger.info(
-            "  ✓ Created attempt #%d (PID=%s, host=%s)",
-            attempt.attempt_number,
-            attempt.worker_pid,
-            attempt.worker_hostname,
-        )
+        # Create or reuse download attempt
+        # If a PENDING attempt exists (created when retry was scheduled), reuse it
+        # Otherwise create a new one
+        logger.info("Step 2.5: Creating/updating download attempt record...")
+        attempt = _get_or_create_download_attempt(project_file)
 
         # Set up temporary directory
         temp_path = _setup_download_temp_path(project_file)
@@ -1611,6 +1654,14 @@ def download_project_file(self, project_id):  # noqa: PLR0915, C901
                         attempt.completed_at - attempt.download_started_at
                     ).total_seconds()
                 attempt.save()
+
+                # Create a PENDING attempt for the upcoming retry
+                # This ensures UI shows "Pending" instead of "Failed" during retry delay
+                DownloadAttempt.objects.create(
+                    project_file=attempt.project_file,
+                    attempt_number=attempt.project_file.download_attempts.count() + 1,
+                    status=DownloadAttempt.Status.PENDING,
+                )
             _handle_download_retry(self, project_id, exc)
         else:
             logger.exception(
