@@ -85,7 +85,7 @@
               </h5>
             </div>
             <div class="card-body">
-              {% include "projects/_file_display.html" with file=submitted_file latest_attempt=submitted_file.latest_attempt %}
+              {% include "projects/_file_display.html" with file=submitted_file download_attempts=submitted_file.download_attempts.all show_attempts=True first_open=True %}
             </div>
           </div>
         {% endif %}
@@ -137,7 +137,7 @@
                   <p id="progress-message" class="mt-2 text-muted">{{ progress.message }}</p>
                 </div>
               {% endif %}
-              {% include "projects/_file_display.html" with file=in_progress_file latest_attempt=latest_attempt show_details=True %}
+              {% include "projects/_file_display.html" with file=in_progress_file download_attempts=download_attempts show_attempts=True first_open=True %}
               {# Manufacturability Check (shown only for in-progress files) #}
               {% if check_status %}
                 <hr class="my-4" />
@@ -237,72 +237,56 @@
           <div class="card mb-3">
             <div class="card-header">
               <h5 class="mb-0">
-                <i class="bi bi-clock-history"></i> File History
+                <i class="bi bi-clock-history"></i> File History ({{ history_files.count }} file{{ history_files.count|pluralize }})
               </h5>
             </div>
             <div class="card-body">
-              <div class="table-responsive">
-                <table class="table table-sm table-hover">
-                  <thead>
-                    <tr>
-                      <th>Filename</th>
-                      <th>Uploaded</th>
-                      <th>Size</th>
-                      <th>Status</th>
-                      <th>Active</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for file in history_files %}
-                      <tr>
-                        <td>
-                          <i class="bi bi-file-earmark"></i>
-                          {% if file.processed_filename and file.processed_filename != file.original_filename %}
-                            {{ file.original_filename }}
-                            <i class="bi bi-arrow-right text-muted small"></i>
-                            <span class="text-primary">{{ file.processed_filename }}</span>
-                          {% elif file.processed_filename %}
-                            {{ file.processed_filename }}
-                          {% else %}
-                            {{ file.original_filename }}
-                          {% endif %}
-                        </td>
-                        <td>{{ file.uploaded_at|date:"Y-m-d H:i:s" }}</td>
-                        <td>
-                          {% if file.file_size %}
-                            {{ file.file_size|filesizeformat }}
-                          {% else %}
-                            <span class="text-muted">Unknown</span>
-                          {% endif %}
-                        </td>
-                        <td>
-                          {% with file_attempt=file.latest_attempt %}
-                            {% if file_attempt %}
-                              <span class="badge {% if file_attempt.status == 'completed' %}bg-success{% elif file_attempt.status == 'failed' %}bg-danger{% elif file_attempt.status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
-                                {{ file_attempt.get_status_display }}
-                              </span>
-                              {% if file.hash_verified %}
-                                <span class="badge bg-success">
-                                  <i class="bi bi-check-circle"></i> Verified
-                                </span>
-                              {% endif %}
-                            {% else %}
-                              <span class="badge bg-secondary">Pending</span>
-                            {% endif %}
-                          {% endwith %}
-                        </td>
-                        <td>
-                          {% if file.is_active %}
-                            <span class="badge bg-info">
-                              <i class="bi bi-star-fill"></i> Active
+              <p class="text-muted small mb-3">
+                Previous file uploads for this project. Expand each file to see download attempts and details.
+              </p>
+              {% for file in history_files %}
+                <details class="mb-3">
+                  <summary class="d-flex justify-content-between align-items-center p-2 bg-light rounded" style="cursor: pointer;">
+                    <span>
+                      <i class="bi bi-file-earmark"></i>
+                      {% if file.processed_filename and file.processed_filename != file.original_filename %}
+                        {{ file.original_filename }}
+                        <i class="bi bi-arrow-right text-muted small"></i>
+                        <span class="text-primary">{{ file.processed_filename }}</span>
+                      {% elif file.processed_filename %}
+                        {{ file.processed_filename }}
+                      {% else %}
+                        {{ file.original_filename }}
+                      {% endif %}
+                      <small class="text-muted ms-2">{{ file.uploaded_at|date:"Y-m-d H:i:s" }}</small>
+                    </span>
+                    <span>
+                      {% with file_attempt=file.latest_attempt %}
+                        {% if file_attempt %}
+                          <span class="badge {% if file_attempt.status == 'completed' %}bg-success{% elif file_attempt.status == 'failed' %}bg-danger{% elif file_attempt.status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
+                            {{ file_attempt.get_status_display }}
+                          </span>
+                          {% if file.hash_verified %}
+                            <span class="badge bg-success">
+                              <i class="bi bi-check-circle"></i> Verified
                             </span>
                           {% endif %}
-                        </td>
-                      </tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-              </div>
+                        {% else %}
+                          <span class="badge bg-secondary">Pending</span>
+                        {% endif %}
+                      {% endwith %}
+                      {% if file.is_active %}
+                        <span class="badge bg-info">
+                          <i class="bi bi-star-fill"></i> Active
+                        </span>
+                      {% endif %}
+                    </span>
+                  </summary>
+                  <div class="mt-2 ps-3">
+                    {% include "projects/_file_display.html" with file=file download_attempts=file.download_attempts.all show_attempts=True first_open=False %}
+                  </div>
+                </details>
+              {% endfor %}
             </div>
           </div>
         {% endif %}

@@ -1655,6 +1655,21 @@ def download_project_file(self, project_id):  # noqa: PLR0915, C901
                     ).total_seconds()
                 attempt.save()
 
+                # Create structured error log for this failed attempt
+                error_msg = f"Download failed (retry {retry_num} scheduled): {exc}"
+                FileProcessingError.objects.create(
+                    download_attempt=attempt,
+                    error_type=FileProcessingError.ErrorType.DOWNLOAD,
+                    error_message=error_msg,
+                    error_detail={
+                        "url": attempt.project_file.original_url,
+                        "error_type": exc.__class__.__name__,
+                        "traceback": traceback.format_exc(),
+                        "retry_number": retry_num,
+                        "retry_delay": retry_delay,
+                    },
+                )
+
                 # Create a PENDING attempt for the upcoming retry
                 # This ensures UI shows "Pending" instead of "Failed" during retry delay
                 DownloadAttempt.objects.create(
