@@ -47,18 +47,15 @@
           {# Checksum Explanation Box - between URL and hash fields #}
           <div class="alert alert-primary" role="alert">
             <h5 class="alert-heading">
-              <i class="bi bi-shield-check"></i> Checksum Verification
+              <i class="bi bi-shield-check"></i> Verify Your Design File
             </h5>
-            <p>You must provide at least one checksum (MD5 or SHA1) to verify your file.</p>
             <p>
-              <strong>Important:</strong> The checksums you provide should be for the
-              <em>uncompressed</em> GDS or OASIS file that will be used for manufacturing,
-              <strong>not</strong> for the compressed archive you're downloading.
+              Provide at least one checksum so we can confirm we received the exact file you intended to submit for manufacturing.
             </p>
             <p class="mb-0">
-              This verification ensures you have submitted the correct design file
-              for manufacturing. It is <em>not</em> about download integrity
-              (the system verifies downloads separately).
+              <strong>Use the checksum of your original, uncompressed GDS or OASIS file</strong>&mdash;not
+              the compressed archive. If you uploaded <code>design.gds.gz</code>, enter the checksum for
+              <code>design.gds</code>.
             </p>
           </div>
           {# Hash Fields #}
