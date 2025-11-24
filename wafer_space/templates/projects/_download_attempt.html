@@ -6,10 +6,11 @@
 {#   - show_checkpoints: (optional, default=True) Show download checkpoints #}
 {#   - show_errors: (optional, default=True) Show errors #}
 {#   - show_technical_details: (optional, default=False) Show technical error details #}
-
 <div class="card mb-2 {% if is_latest %}border-primary{% endif %}">
   <details {% if start_open %}open{% endif %}>
-    <summary class="card-header py-2 {% if is_latest %}bg-primary bg-opacity-10{% endif %}" style="cursor: pointer; list-style: none;">
+    <summary class="card-header py-2 {% if is_latest %}bg-primary bg-opacity-10{% endif %}"
+             style="cursor: pointer;
+                    list-style: none">
       <div class="d-flex justify-content-between align-items-center">
         <strong>
           Attempt #{{ attempt.attempt_number }}
@@ -21,7 +22,9 @@
           {% elif attempt.status == 'failed' %}
             <i class="bi bi-exclamation-triangle"></i>
           {% elif attempt.status == 'downloading' %}
-            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+            <span class="spinner-border spinner-border-sm"
+                  role="status"
+                  aria-hidden="true"></span>
           {% else %}
             <i class="bi bi-clock"></i>
           {% endif %}
@@ -29,7 +32,6 @@
         </span>
       </div>
     </summary>
-
     <div class="card-body py-2">
       {# Basic attempt information #}
       <div class="row g-2 small">
@@ -63,7 +65,6 @@
           </div>
         {% endif %}
       </div>
-
       {# Errors section #}
       {% if show_errors|default:True and attempt.status == 'failed' %}
         {% if attempt.errors.exists %}
@@ -82,7 +83,6 @@
                 </small>
               </div>
             {% endfor %}
-
             {# Technical details for superusers #}
             {% if show_technical_details|default:False and user.is_superuser %}
               <details class="mt-2">
@@ -117,7 +117,6 @@
           </div>
         {% endif %}
       {% endif %}
-
       {# Download checkpoints/timeline #}
       {% if show_checkpoints|default:True and attempt.chunks.exists %}
         <div class="mt-3">

@@ -203,10 +203,15 @@ class DownloadStateVerificationTests(TestCase):
         with contextlib.suppress(Exception):
             download_project_file(self.project.id)
 
-        # Verify worker info was captured in DownloadAttempt
+        # Verify worker info was captured in the first (executed) DownloadAttempt
+        # Note: When a retry is scheduled, a new PENDING attempt is created.
+        # The latest_attempt would be this pending retry, not the executed one.
         project_file.refresh_from_db()
-        latest_attempt = project_file.latest_attempt
-        assert latest_attempt is not None
-        assert latest_attempt.worker_pid == TEST_WORKER_PID
-        assert latest_attempt.worker_hostname == TEST_WORKER_HOSTNAME
-        assert latest_attempt.task_started_at is not None
+
+        # Get the first attempt (the one that actually executed)
+        attempts = project_file.download_attempts.order_by("attempt_number")
+        first_attempt = attempts.first()
+        assert first_attempt is not None
+        assert first_attempt.worker_pid == TEST_WORKER_PID
+        assert first_attempt.worker_hostname == TEST_WORKER_HOSTNAME
+        assert first_attempt.task_started_at is not None

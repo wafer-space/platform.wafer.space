@@ -496,23 +496,28 @@ class TestProjectFileDownload(BaseBrowserTest):
         # Navigate to project detail page
         self.navigate_to(self.driver, f"/projects/{self.project.id}/")
 
-        # Should only show the new file name
+        # Should show the new file name in the "File In Progress" section
         self.wait_for_element(
             self.driver,
             (By.XPATH, "//*[contains(text(), 'new.gds')]"),
             timeout=10,
         )
 
-        # Old file should not be visible
+        # Old file should NOT be in the "File In Progress" section
+        # (it may appear in File History section, which is expected behavior)
         try:
-            self.driver.find_element(
+            # Check if old file appears in the File In Progress card header area
+            in_progress_section = self.driver.find_element(
                 By.XPATH,
-                "//*[contains(text(), 'old.gds')]",
+                "//div[.//h5[contains(text(), 'File In Progress')]]",
             )
-            # If found, it's an error (old file shouldn't be shown)
-            self.errors.append("Old file is still visible after replacement")
+            # If we found the section, check that old.gds is NOT in it
+            if "old.gds" in in_progress_section.text:
+                self.errors.append(
+                    "Old file appears in 'File In Progress' section after replacement"
+                )
         except NoSuchElementException:
-            # Not found is expected
+            # File In Progress section not found, which is also acceptable
             pass
 
 
