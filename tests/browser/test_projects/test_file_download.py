@@ -166,12 +166,12 @@ class TestProjectFileDownload(BaseBrowserTest):
         # Capture current URL before submitting
         current_url = self.driver.current_url
 
-        # Submit form
+        # Submit form - use JavaScript click to avoid element interception issues
         submit_button = self.driver.find_element(
             By.CSS_SELECTOR,
             'button[type="submit"]',
         )
-        submit_button.click()
+        self.driver.execute_script("arguments[0].click();", submit_button)
 
         # Wait for URL to change (redirect on success) or stay same (error)
         # Use explicit wait with longer timeout for potential network validation
@@ -221,12 +221,12 @@ class TestProjectFileDownload(BaseBrowserTest):
         url_input = self.wait_for_element(self.driver, (By.NAME, "url"))
         url_input.send_keys("http://localhost/file.gds")
 
-        # Submit form
+        # Submit form - use JavaScript click to avoid element interception issues
         submit_button = self.driver.find_element(
             By.CSS_SELECTOR,
             'button[type="submit"]',
         )
-        submit_button.click()
+        self.driver.execute_script("arguments[0].click();", submit_button)
 
         # Wait for page to process (form reloads on error)
         time.sleep(2)  # Give form time to process and show errors
