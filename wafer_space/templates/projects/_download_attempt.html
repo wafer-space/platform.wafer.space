@@ -2,13 +2,13 @@
 {# Parameters: #}
 {#   - attempt: DownloadAttempt instance to display #}
 {#   - is_latest: (optional) Boolean indicating if this is the latest attempt #}
-{#   - show_header: (optional, default=True) Show card header with attempt number #}
+{#   - hide_header: (optional, default=False) Hide card header (use inverted logic since default filter treats False as falsy) #}
 {#   - show_checkpoints: (optional, default=True) Show download checkpoints #}
 {#   - show_errors: (optional, default=True) Show errors #}
 {#   - show_technical_details: (optional, default=False) Show technical error details #}
 
-<div class="{% if show_header|default:True %}card mb-2{% endif %} {% if is_latest and show_header|default:True %}border-primary{% endif %}">
-  {% if show_header|default:True %}
+<div class="{% if not hide_header %}card mb-2{% endif %} {% if is_latest and not hide_header %}border-primary{% endif %}">
+  {% if not hide_header %}
   <div class="card-header py-2 {% if is_latest %}bg-primary bg-opacity-10{% endif %}">
     <div class="d-flex justify-content-between align-items-center">
       <strong>
@@ -30,7 +30,7 @@
     </div>
   </div>
   {% endif %}
-  <div class="{% if show_header|default:True %}card-body py-2{% endif %}">
+  <div class="{% if not hide_header %}card-body py-2{% endif %}">
     {# Basic attempt information #}
     <div class="row g-2 small">
       <div class="col-md-6">
