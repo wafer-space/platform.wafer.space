@@ -32,6 +32,7 @@ def get_git_describe() -> str | None:
     and abbreviated commit hash. Returns None if unavailable.
     Result is cached for the lifetime of the process.
     """
+    base_dir = getattr(settings, "BASE_DIR", None)
     try:
         result = subprocess.run(
             ["git", "describe", "--tags", "--always"],  # noqa: S607
@@ -39,6 +40,7 @@ def get_git_describe() -> str | None:
             text=True,
             check=True,
             timeout=5,
+            cwd=str(base_dir) if base_dir else None,
         )
         return result.stdout.strip()
     except (subprocess.SubprocessError, FileNotFoundError, OSError) as exc:
@@ -83,6 +85,7 @@ def get_git_commit_hash() -> str | None:
             text=True,
             check=True,
             timeout=5,
+            cwd=str(base_dir) if base_dir else None,
         )
         return result.stdout.strip()
     except (subprocess.SubprocessError, FileNotFoundError, OSError) as exc:
@@ -90,7 +93,7 @@ def get_git_commit_hash() -> str | None:
         return None
 
 
-def git_info(request: HttpRequest) -> dict[str, str | None]:
+def git_info(_request: HttpRequest) -> dict[str, str | None]:
     """Context processor that provides git commit information.
 
     Adds to template context:
@@ -100,19 +103,19 @@ def git_info(request: HttpRequest) -> dict[str, str | None]:
         - GIT_COMMIT_URL: URL to view the commit on GitHub
     """
     commit_hash = get_git_commit_hash()
-    git_describe = get_git_describe()
-
-    if commit_hash:
+    if not commit_hash:
         return {
-            "GIT_DESCRIBE": git_describe,
-            "GIT_COMMIT_HASH": commit_hash,
-            "GIT_COMMIT_SHORT": commit_hash[:7],
-            "GIT_COMMIT_URL": f"{GITHUB_REPO_URL}/commit/{commit_hash}",
+            "GIT_DESCRIBE": None,
+            "GIT_COMMIT_HASH": None,
+            "GIT_COMMIT_SHORT": None,
+            "GIT_COMMIT_URL": None,
         }
 
+    # Only call get_git_describe() if we have a commit hash
+    git_describe_val = get_git_describe()
     return {
-        "GIT_DESCRIBE": None,
-        "GIT_COMMIT_HASH": None,
-        "GIT_COMMIT_SHORT": None,
-        "GIT_COMMIT_URL": None,
+        "GIT_DESCRIBE": git_describe_val,
+        "GIT_COMMIT_HASH": commit_hash,
+        "GIT_COMMIT_SHORT": commit_hash[:7],
+        "GIT_COMMIT_URL": f"{GITHUB_REPO_URL}/commit/{commit_hash}",
     }

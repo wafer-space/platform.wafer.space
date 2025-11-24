@@ -16,7 +16,7 @@
           content="Platform for wafer.space low cost silicon manufacturing." />
     <meta name="author" content="Tim 'mithro' Ansell" />
     {% if GIT_COMMIT_HASH %}
-      <meta name="version" content="{{ GIT_DESCRIBE }}" />
+      <meta name="version" content="{{ GIT_DESCRIBE|default:GIT_COMMIT_SHORT }}" />
       <meta name="revision" content="{{ GIT_COMMIT_HASH }}" />
     {% endif %}
     <!-- Favicons -->
@@ -159,7 +159,7 @@
         <a href="{{ GIT_COMMIT_URL }}"
            target="_blank"
            rel="noopener noreferrer"
-           class="text-muted text-decoration-none">{{ GIT_DESCRIBE }}</a>
+           class="text-muted text-decoration-none">{{ GIT_DESCRIBE|default:GIT_COMMIT_SHORT }}</a>
       </footer>
     {% endif %}
     {% block inline_javascript %}
