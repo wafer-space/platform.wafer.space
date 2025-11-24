@@ -31,6 +31,15 @@ class Migration(migrations.Migration):
             field=models.DateTimeField(blank=True, help_text="When Celery task started executing", null=True),
         ),
         # Step 2: Delete all existing DownloadAttempt records (clean break)
+        # First delete records from tables that have FK to DownloadAttempt
+        migrations.RunSQL(
+            sql="DELETE FROM projects_projectfilechunk;",
+            reverse_sql=migrations.RunSQL.noop,
+        ),
+        migrations.RunSQL(
+            sql="DELETE FROM projects_fileprocessingerror;",
+            reverse_sql=migrations.RunSQL.noop,
+        ),
         migrations.RunSQL(
             sql="DELETE FROM projects_downloadattempt;",
             reverse_sql=migrations.RunSQL.noop,
