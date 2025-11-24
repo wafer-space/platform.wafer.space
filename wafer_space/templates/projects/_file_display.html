@@ -160,7 +160,7 @@
           </span>
         </summary>
         <div class="mt-2">
-          {% include "projects/_download_attempt.html" with attempt=attempt is_latest=forloop.first show_checkpoints=True show_errors=True show_technical_details=True %}
+          {% include "projects/_download_attempt.html" with attempt=attempt is_latest=forloop.first show_header=False show_checkpoints=True show_errors=True show_technical_details=True %}
         </div>
       </details>
     {% endfor %}
