@@ -165,6 +165,7 @@ class ProjectFile(models.Model):
     # File storage (optional - only after download completes)
     file = models.FileField(
         upload_to=project_file_upload_path,
+        max_length=512,
         blank=True,
         null=True,
         validators=[
