@@ -76,7 +76,7 @@
             {% for error in attempt.errors.all %}
               <div class="alert alert-danger py-2 px-3 mb-2">
                 <strong>{{ error.get_error_type_display }}:</strong>
-                <p class="mb-1 small">{{ error.error_message }}</p>
+                <p class="mb-1 small">{{ error.error_message|linebreaksbr }}</p>
                 <small class="text-muted">
                   <i class="bi bi-clock"></i>
                   {{ error.occurred_at|date:"Y-m-d H:i:s" }}
