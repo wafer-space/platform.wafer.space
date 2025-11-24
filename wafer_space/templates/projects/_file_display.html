@@ -7,68 +7,83 @@
 {#   - show_attempts: (optional, default=False) Show download attempts in foldable sections #}
 {#   - first_open: (optional, default=True) Keep first attempt section open #}
 
-{# Filename display with transformation if applicable #}
-{% if file.processed_filename and file.processed_filename != file.original_filename %}
-  <h6>
-    {{ file.original_filename }}
-    <i class="bi bi-arrow-right text-muted mx-2"></i>
-    <span class="text-primary">{{ file.processed_filename }}</span>
-  </h6>
-  <p class="text-muted small mb-2">
-    <i class="bi bi-info-circle"></i>
-    Downloaded as <code>{{ file.original_filename }}</code>,
-    extracted to <code>{{ file.processed_filename }}</code>
+{# Status and Filename Header #}
+{% with latest_attempt=file.latest_attempt %}
+{% with status=latest_attempt.status|default:"pending" %}
+
+{# Status Badge - shown prominently #}
+<div class="d-flex justify-content-between align-items-start mb-2">
+  <div>
+    {# Filename display #}
+    {% if file.processed_filename %}
+      <h6 class="mb-1">
+        <i class="bi bi-file-earmark-check text-success"></i>
+        {{ file.processed_filename }}
+      </h6>
+      {% if file.processed_filename != file.original_filename %}
+        <p class="text-muted small mb-0">
+          Extracted from <code>{{ file.original_filename }}</code>
+        </p>
+      {% endif %}
+    {% else %}
+      <h6 class="mb-1">
+        {% if status == 'downloading' %}
+          <span class="spinner-border spinner-border-sm text-primary" role="status"></span>
+        {% elif status == 'failed' %}
+          <i class="bi bi-file-earmark-x text-danger"></i>
+        {% else %}
+          <i class="bi bi-file-earmark text-muted"></i>
+        {% endif %}
+        {% if file.original_filename == 'download' and file.original_url %}
+          GitHub Artifact
+        {% else %}
+          {{ file.original_filename }}
+        {% endif %}
+      </h6>
+      {% if status == 'downloading' or status == 'pending' %}
+        <p class="text-muted small mb-0">
+          <i class="bi bi-hourglass-split"></i>
+          Processing <code>{{ file.original_filename }}</code>...
+        </p>
+      {% elif status == 'failed' %}
+        <p class="text-danger small mb-0">
+          <i class="bi bi-exclamation-circle"></i>
+          Download failed
+        </p>
+      {% endif %}
+    {% endif %}
+  </div>
+
+  {# Status Badge #}
+  <span class="badge {% if status == 'completed' %}bg-success{% elif status == 'failed' %}bg-danger{% elif status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
+    {% if status == 'completed' %}
+      <i class="bi bi-check-circle"></i> Completed
+    {% elif status == 'failed' %}
+      <i class="bi bi-exclamation-triangle"></i> Failed
+    {% elif status == 'downloading' %}
+      <span class="spinner-border spinner-border-sm" role="status"></span> Downloading
+    {% else %}
+      <i class="bi bi-clock"></i> Pending
+    {% endif %}
+  </span>
+</div>
+
+{# Hash verification badge if applicable #}
+{% if file.hash_verified %}
+  <p class="mb-2">
+    <span class="badge bg-success">
+      <i class="bi bi-shield-check"></i> Hash Verified
+    </span>
   </p>
-{% elif file.processed_filename %}
-  <h6>{{ file.processed_filename }}</h6>
-  <p class="text-muted small mb-2">
-    <i class="bi bi-file-earmark"></i>
-    Filename: <code>{{ file.processed_filename }}</code>
-  </p>
-{% else %}
-  <h6>{{ file.original_filename }}</h6>
-  <p class="text-muted small mb-2">
-    <i class="bi bi-hourglass"></i>
-    Processing: <code>{{ file.original_filename }}</code>
+{% elif status == 'completed' and not file.hash_verified %}
+  <p class="mb-2">
+    <span class="badge bg-warning text-dark">
+      <i class="bi bi-shield-exclamation"></i> Hash Not Verified
+    </span>
   </p>
 {% endif %}
 
-{# Status Badges #}
-{% with latest_attempt=file.latest_attempt %}
-<p class="mb-3">
-  <strong>Download Status:</strong>
-  {% if latest_attempt %}
-    <span id="status-badge"
-          class="badge {% if latest_attempt.status == 'completed' %}bg-success{% elif latest_attempt.status == 'failed' %}bg-danger{% elif latest_attempt.status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
-      {% if latest_attempt.status == 'completed' %}
-        <i class="bi bi-check-circle"></i>
-      {% elif latest_attempt.status == 'failed' %}
-        <i class="bi bi-exclamation-triangle"></i>
-      {% elif latest_attempt.status == 'downloading' %}
-        <span class="spinner-border spinner-border-sm"
-              role="status"
-              aria-hidden="true"></span>
-      {% else %}
-        <i class="bi bi-clock"></i>
-      {% endif %}
-      <span id="status-text">{{ latest_attempt.get_status_display }}</span>
-    </span>
-    {% if file.hash_verified %}
-      <span class="badge bg-success">
-        <i class="bi bi-check-circle"></i> Hash Verified
-      </span>
-    {% elif latest_attempt.status == 'completed' %}
-      <span class="badge bg-warning text-dark">
-        <i class="bi bi-exclamation-triangle"></i> Hash Not Verified
-      </span>
-    {% endif %}
-  {% else %}
-    <span id="status-badge" class="badge bg-secondary">
-      <i class="bi bi-clock"></i>
-      <span id="status-text">Pending</span>
-    </span>
-  {% endif %}
-</p>
+{% endwith %}
 {% endwith %}
 
 {# File Information Card #}
