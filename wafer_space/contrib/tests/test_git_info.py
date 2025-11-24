@@ -10,6 +10,7 @@ import pytest
 
 from wafer_space.contrib.git_info import GITHUB_REPO_URL
 from wafer_space.contrib.git_info import get_git_commit_hash
+from wafer_space.contrib.git_info import get_git_describe
 from wafer_space.contrib.git_info import git_info
 
 if TYPE_CHECKING:
@@ -18,6 +19,34 @@ if TYPE_CHECKING:
 # Git SHA hash lengths
 GIT_HASH_FULL_LENGTH = 40
 GIT_HASH_SHORT_LENGTH = 7
+
+
+class TestGetGitDescribe:
+    """Tests for get_git_describe function."""
+
+    def setup_method(self) -> None:
+        """Clear the LRU cache before each test."""
+        get_git_describe.cache_clear()
+
+    def test_returns_describe_string(self) -> None:
+        """Test that get_git_describe returns a valid describe string."""
+        result = get_git_describe()
+
+        # Should return a string (in a git repo with v0.0 tag)
+        assert result is not None
+        assert isinstance(result, str)
+        # Should start with 'v' for version tag
+        assert result.startswith("v")
+
+    def test_result_is_cached(self) -> None:
+        """Test that the result is cached between calls."""
+        result1 = get_git_describe()
+        result2 = get_git_describe()
+
+        assert result1 == result2
+        # Check cache info to verify caching
+        cache_info = get_git_describe.cache_info()
+        assert cache_info.hits >= 1
 
 
 class TestGetGitCommitHash:
@@ -53,8 +82,9 @@ class TestGitInfoContextProcessor:
     """Tests for git_info context processor."""
 
     def setup_method(self) -> None:
-        """Clear the LRU cache before each test."""
+        """Clear the LRU caches before each test."""
         get_git_commit_hash.cache_clear()
+        get_git_describe.cache_clear()
 
     def test_provides_git_info_in_context(self) -> None:
         """Test that context processor provides git commit information."""
@@ -62,15 +92,19 @@ class TestGitInfoContextProcessor:
 
         result = git_info(request)
 
+        assert "GIT_DESCRIBE" in result
         assert "GIT_COMMIT_HASH" in result
         assert "GIT_COMMIT_SHORT" in result
         assert "GIT_COMMIT_URL" in result
 
         # Verify values are set (we're in a git repo)
+        git_describe = result["GIT_DESCRIBE"]
         commit_hash = result["GIT_COMMIT_HASH"]
         short_hash = result["GIT_COMMIT_SHORT"]
         commit_url = result["GIT_COMMIT_URL"]
 
+        assert git_describe is not None
+        assert git_describe.startswith("v")
         assert commit_hash is not None
         assert short_hash is not None
         assert commit_url is not None
@@ -114,6 +148,7 @@ class TestGitInfoContextProcessor:
 
         result = git_info(request)
 
+        assert result["GIT_DESCRIBE"] is None
         assert result["GIT_COMMIT_HASH"] is None
         assert result["GIT_COMMIT_SHORT"] is None
         assert result["GIT_COMMIT_URL"] is None
@@ -124,8 +159,9 @@ class TestGitInfoIntegration:
     """Integration tests for git info in templates."""
 
     def setup_method(self) -> None:
-        """Clear the LRU cache before each test."""
+        """Clear the LRU caches before each test."""
         get_git_commit_hash.cache_clear()
+        get_git_describe.cache_clear()
 
     def test_git_info_available_in_template_context(
         self,
@@ -138,6 +174,9 @@ class TestGitInfoIntegration:
         content = response.content.decode()
         assert 'name="version"' in content
         assert 'name="revision"' in content
+
+        # Check version contains git describe format (e.g., v0.0-123-gabcdef)
+        assert "v0.0-" in content
 
         # Check footer link is present
         assert GITHUB_REPO_URL in content
