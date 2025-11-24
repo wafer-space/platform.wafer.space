@@ -1405,3 +1405,34 @@ class TestProjectDeleteViewSuperuser(TestCase):
         )
         assert response.status_code == HTTP_OK
         assert response.context["viewing_as_admin"] is True
+
+    def test_superuser_can_actually_delete_project(self):
+        """Test that superuser can POST to delete another user's project.
+
+        This tests the fix for the FK constraint issue where audit logging
+        would fail after the project was deleted (orphaned FK reference).
+
+        Note: DELETE operations are intentionally NOT logged because:
+        1. The project is deleted, so logging after fails (FK constraint)
+        2. Creating log before delete causes orphaned FK (CASCADE timing)
+        3. A proper fix requires making project FK nullable (SET_NULL)
+        """
+        superuser = User.objects.create_superuser(
+            username="admin_delete",
+            email="admin_delete@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.client.force_login(superuser)
+
+        project_pk = self.project.pk
+
+        # POST to actually delete the project
+        response = self.client.post(
+            reverse("projects:delete", kwargs={"pk": project_pk})
+        )
+
+        # Should redirect on successful delete
+        assert response.status_code == HTTP_FOUND
+
+        # Verify project is actually deleted
+        assert not Project.objects.filter(pk=project_pk).exists()
