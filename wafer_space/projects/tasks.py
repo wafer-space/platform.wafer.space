@@ -316,23 +316,96 @@ def _safe_urlopen(url: str, headers: dict | None = None) -> tuple[bytes, dict]:
         return response.read(), dict(response.headers)
 
 
+def _log_github_artifacts(artifacts: list[dict[str, Any]], run_id: str) -> None:
+    """Log available GitHub artifacts with formatted size information."""
+    logger = logging.getLogger(__name__)
+    logger.info("  Available artifacts:")
+    for idx, art in enumerate(artifacts, 1):
+        art_name = art.get("name", "unknown")
+        art_id = art.get("id", "unknown")
+        art_size = art.get("size_in_bytes", 0)
+        # Format size in human-readable format
+        if art_size < BYTES_PER_KILOBYTE:
+            size_str = f"{art_size} B"
+        elif art_size < BYTES_PER_KILOBYTE * BYTES_PER_KILOBYTE:
+            size_str = f"{art_size / BYTES_PER_KILOBYTE:.1f} KB"
+        elif art_size < BYTES_PER_KILOBYTE * BYTES_PER_KILOBYTE * BYTES_PER_KILOBYTE:
+            size_str = f"{art_size / (BYTES_PER_KILOBYTE * BYTES_PER_KILOBYTE):.1f} MB"
+        else:
+            gb_divisor = BYTES_PER_KILOBYTE * BYTES_PER_KILOBYTE * BYTES_PER_KILOBYTE
+            size_str = f"{art_size / gb_divisor:.2f} GB"
+        logger.info("    %d. %s (ID: %s, Size: %s)", idx, art_name, art_id, size_str)
+
+
+def _select_github_artifact(
+    artifacts: list[dict[str, Any]],
+    artifact_id: str | None,
+    run_id: str,
+) -> dict[str, Any]:
+    """Select a GitHub artifact by ID or return the first one.
+
+    Args:
+        artifacts: List of artifact dicts from GitHub API
+        artifact_id: Optional specific artifact ID to find
+        run_id: Run ID for error messages
+
+    Returns:
+        The selected artifact dict
+
+    Raises:
+        ValueError: If artifact_id is provided but not found
+    """
+    logger = logging.getLogger(__name__)
+
+    if artifact_id:
+        # Find the specific artifact by ID
+        target_artifact_id = int(artifact_id)
+        for art in artifacts:
+            if art.get("id") == target_artifact_id:
+                logger.info(
+                    "  → Using specified artifact: %s (ID: %s)",
+                    art.get("name"),
+                    art.get("id"),
+                )
+                return art
+
+        available_ids = [str(art.get("id")) for art in artifacts]
+        msg = (
+            f"Artifact ID {artifact_id} not found in run {run_id}. "
+            f"Available artifact IDs: {', '.join(available_ids)}"
+        )
+        raise ValueError(msg)
+
+    # Use first artifact
+    artifact = artifacts[0]
+    logger.info(
+        "  → Selecting first artifact: %s (ID: %s)",
+        artifact.get("name"),
+        artifact.get("id"),
+    )
+    return artifact
+
+
 def _download_github_artifact(
     owner: str,
     repo: str,
     run_id: str,
     github_token: str | None,
+    artifact_id: str | None = None,
 ) -> dict[str, Any]:
     """Get authenticated download URL for GitHub Actions artifact.
 
     GitHub artifact download URLs are authenticated and expire after 60 seconds.
-    This function fetches the artifact list, selects the first artifact, and
-    returns the authenticated download URL with required headers.
+    This function fetches the artifact list, selects the specified artifact
+    (or first if not specified), and returns the authenticated download URL.
 
     Args:
         owner: GitHub repository owner
         repo: GitHub repository name
         run_id: GitHub Actions run ID
         github_token: GitHub personal access token (requires actions:read scope)
+        artifact_id: Optional specific artifact ID to download. If not provided,
+                     downloads the first artifact from the run.
 
     Returns:
         dict with keys:
@@ -342,7 +415,7 @@ def _download_github_artifact(
             - artifact_size: Size in bytes
 
     Raises:
-        ValueError: If no artifacts found or GitHub token not provided
+        ValueError: If no artifacts found, artifact_id not found, or no token
     """
     logger = logging.getLogger(__name__)
 
@@ -377,41 +450,17 @@ def _download_github_artifact(
         raise ValueError(msg)
 
     # Log all available artifacts
-    logger.info("  Available artifacts:")
-    for idx, art in enumerate(artifacts, 1):
-        art_name = art.get("name", "unknown")
-        art_id = art.get("id", "unknown")
-        art_size = art.get("size_in_bytes", 0)
-        # Format size in human-readable format
-        if art_size < BYTES_PER_KILOBYTE:
-            size_str = f"{art_size} B"
-        elif art_size < BYTES_PER_KILOBYTE * BYTES_PER_KILOBYTE:
-            size_str = f"{art_size / BYTES_PER_KILOBYTE:.1f} KB"
-        elif art_size < BYTES_PER_KILOBYTE * BYTES_PER_KILOBYTE * BYTES_PER_KILOBYTE:
-            size_str = f"{art_size / (BYTES_PER_KILOBYTE * BYTES_PER_KILOBYTE):.1f} MB"
-        else:
-            gb_divisor = BYTES_PER_KILOBYTE * BYTES_PER_KILOBYTE * BYTES_PER_KILOBYTE
-            size_str = f"{art_size / gb_divisor:.2f} GB"
-        logger.info(
-            "    %d. %s (ID: %s, Size: %s)",
-            idx,
-            art_name,
-            art_id,
-            size_str,
-        )
+    _log_github_artifacts(artifacts, run_id)
 
-    # Use first artifact (or could be made configurable)
-    artifact = artifacts[0]
-    artifact_id = artifact["id"]
+    # Select artifact: use specific ID if provided, otherwise use first
+    artifact = _select_github_artifact(artifacts, artifact_id, run_id)
     artifact_name = artifact["name"]
     artifact_size = artifact.get("size_in_bytes", 0)
-
-    logger.info("  → Selecting artifact #1: %s (ID: %s)", artifact_name, artifact_id)
 
     # Construct authenticated download URL
     download_url = (
         f"https://api.github.com/repos/{owner}/{repo}/"
-        f"actions/artifacts/{artifact_id}/zip"
+        f"actions/artifacts/{artifact['id']}/zip"
     )
     logger.info("  ✓ Generated authenticated download URL (valid for 60 seconds)")
 
@@ -479,6 +528,7 @@ def _prepare_download_request(
             repo=metadata["repo"],
             run_id=metadata["run_id"],
             github_token=settings.GITHUB_TOKEN,
+            artifact_id=metadata.get("artifact_id"),
         )
 
         url = auth_data["url"]

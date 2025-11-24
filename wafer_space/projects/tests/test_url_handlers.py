@@ -259,6 +259,42 @@ class TestGitHubArtifactHandler:
         assert metadata["owner"] == "owner"
         assert metadata["repo"] == "repo"
 
+    def test_process_url_with_artifact_id(self):
+        """GitHubArtifactHandler extracts artifact_id from URL when present."""
+        handler = GitHubArtifactHandler()
+
+        # URL with specific artifact ID
+        url = "https://github.com/TinyTapeout/tinytapeout-gf-0p2/actions/runs/19443235082/artifacts/4593573393"
+        result = handler.process_url(url)
+
+        metadata = result["metadata"]
+        assert metadata["handler"] == "GitHubArtifactHandler"
+        assert metadata["owner"] == "TinyTapeout"
+        assert metadata["repo"] == "tinytapeout-gf-0p2"
+        assert metadata["run_id"] == "19443235082"
+        assert metadata["artifact_id"] == "4593573393"
+        assert metadata["requires_github_auth"] is True
+
+    def test_process_url_without_artifact_id(self):
+        """GitHubArtifactHandler does not include artifact_id when not in URL."""
+        handler = GitHubArtifactHandler()
+
+        # URL without artifact ID
+        url = "https://github.com/owner/repo/actions/runs/12345678"
+        result = handler.process_url(url)
+
+        metadata = result["metadata"]
+        assert metadata["run_id"] == "12345678"
+        assert "artifact_id" not in metadata
+
+    def test_can_handle_artifact_url(self):
+        """GitHubArtifactHandler recognizes URLs with artifact path."""
+        handler = GitHubArtifactHandler()
+
+        # Should match URL with artifact ID
+        url = "https://github.com/org/repo/actions/runs/123/artifacts/456"
+        assert handler.can_handle(url) is True
+
     def test_process_url_raises_on_invalid_format(self):
         """GitHubArtifactHandler raises ValueError for invalid URLs."""
         handler = GitHubArtifactHandler()
