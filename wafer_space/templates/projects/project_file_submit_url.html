@@ -10,27 +10,125 @@
   <div class="container">
     <div class="row">
       <div class="col-sm-12">
-        <h2>Submit File URL</h2>
-        <p class="lead">Project: {{ project.name }}</p>
+        {# Project Context - Make it clear which project this is for #}
+        <div class="card bg-light mb-4">
+          <div class="card-body">
+            <h4 class="card-title mb-0">
+              <i class="bi bi-folder-fill text-primary"></i>
+              Submitting file for: <strong>{{ project.name }}</strong>
+            </h4>
+            {% if project.description %}
+              <p class="text-muted mb-0 mt-2">{{ project.description|truncatewords:30 }}</p>
+            {% endif %}
+          </div>
+        </div>
+
+        <h2>Submit Design File URL</h2>
+
+        {# Main Information Box #}
         <div class="alert alert-info" role="alert">
           <h5 class="alert-heading">
-            <i class="bi bi-info-circle"></i> Submit Your GDS/OASIS Design File
+            <i class="bi bi-info-circle"></i> Supported File Formats
           </h5>
           <p>
-            Provide a direct download URL to your design file. The system supports common hosting platforms
-            and will automatically rewrite URLs when needed (e.g., GitHub blob → raw URLs).
+            This system accepts design files in <strong>GDS (GDSII)</strong> and <strong>OASIS</strong> formats.
+            These are standard IC layout file formats used in semiconductor manufacturing.
+          </p>
+          <p>
+            <strong>Compressed files are supported:</strong> You can upload compressed archives
+            (<code>.zip</code>, <code>.gz</code>, <code>.tar.gz</code>, <code>.bz2</code>, <code>.xz</code>, etc.)
+            and the system will automatically extract the GDS or OASIS file contained within.
           </p>
           <p class="mb-0">
-            <strong>Accepted formats:</strong> .gds, .gdsii, .gds2, .oas, .oasis (optionally compressed with .gz, .zip, .bz2, .xz)
+            Provide a direct download URL to your file. The system supports common hosting platforms
+            and will automatically rewrite URLs when needed (e.g., GitHub blob to raw URLs).
           </p>
         </div>
+
         <form method="post">
           {% csrf_token %}
+
+          {# Checksum Explanation Box #}
           <div class="alert alert-primary" role="alert">
-            <strong><i class="bi bi-shield-check"></i> File Integrity Verification Required:</strong>
-            You must provide at least one checksum (MD5 or SHA1) to verify file integrity during download.
+            <h5 class="alert-heading">
+              <i class="bi bi-shield-check"></i> Checksum Verification
+            </h5>
+            <p>
+              You must provide at least one checksum (MD5 or SHA1) to verify your file.
+            </p>
+            <p>
+              <strong>Important:</strong> The checksums you provide should be for the
+              <em>uncompressed</em> GDS or OASIS file that will be used for manufacturing,
+              <strong>not</strong> for the compressed archive you're downloading.
+            </p>
+            <p class="mb-0">
+              This verification ensures you have submitted the correct design file
+              for manufacturing. It is <em>not</em> about download integrity
+              (the system verifies downloads separately).
+            </p>
           </div>
+
           {{ form|crispy }}
+
+          {# Collapsible Help Section for Generating Checksums #}
+          <div class="accordion mb-3" id="checksumHelp">
+            <div class="accordion-item">
+              <h2 class="accordion-header" id="checksumHelpHeading">
+                <button class="accordion-button collapsed"
+                        type="button"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#checksumHelpContent"
+                        aria-expanded="false"
+                        aria-controls="checksumHelpContent">
+                  <i class="bi bi-question-circle me-2"></i>
+                  How to generate checksums for your file
+                </button>
+              </h2>
+              <div id="checksumHelpContent"
+                   class="accordion-collapse collapse"
+                   aria-labelledby="checksumHelpHeading">
+                <div class="accordion-body">
+                  <p>
+                    Generate checksums for your <strong>uncompressed</strong> GDS or OASIS file
+                    (before compressing it for upload).
+                  </p>
+
+                  <h6>Linux / macOS</h6>
+                  <pre class="bg-dark text-light p-3 rounded"><code># Generate MD5 checksum
+md5sum your_design.gds
+# or on macOS:
+md5 your_design.gds
+
+# Generate SHA1 checksum
+sha1sum your_design.gds
+# or on macOS:
+shasum your_design.gds</code></pre>
+
+                  <h6>Windows (PowerShell)</h6>
+                  <pre class="bg-dark text-light p-3 rounded"><code># Generate MD5 checksum
+Get-FileHash -Algorithm MD5 your_design.gds
+
+# Generate SHA1 checksum
+Get-FileHash -Algorithm SHA1 your_design.gds</code></pre>
+
+                  <h6>Windows (Command Prompt)</h6>
+                  <pre class="bg-dark text-light p-3 rounded"><code># Generate MD5 checksum
+certutil -hashfile your_design.gds MD5
+
+# Generate SHA1 checksum
+certutil -hashfile your_design.gds SHA1</code></pre>
+
+                  <div class="alert alert-warning mt-3 mb-0">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <strong>Remember:</strong> Generate the checksum from the original uncompressed file,
+                    not from any compressed version (like <code>.gds.gz</code> or <code>.zip</code>).
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {# Important Notes #}
           <div class="alert alert-warning" role="alert">
             <h5 class="alert-heading">
               <i class="bi bi-exclamation-triangle"></i> Important Notes
@@ -45,8 +143,12 @@
               <li>
                 <strong>Progress tracking:</strong> Monitor download status on the project detail page
               </li>
+              <li>
+                <strong>Extraction:</strong> Compressed files will be automatically extracted to find the GDS/OASIS file
+              </li>
             </ul>
           </div>
+
           <div class="d-flex gap-2 mt-3">
             <button type="submit" class="btn btn-primary">
               <i class="bi bi-download"></i> Submit for Download
