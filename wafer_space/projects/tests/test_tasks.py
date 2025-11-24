@@ -23,6 +23,7 @@ from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
+from wafer_space.projects.tasks import _build_github_artifact_filename
 from wafer_space.projects.tasks import _download_github_artifact
 from wafer_space.projects.tasks import _download_with_progress
 from wafer_space.projects.tasks import _log_download_start
@@ -723,6 +724,7 @@ class DownloadTaskTests(TestCase):
                     "url": "https://api.github.com/repos/owner/repo/actions/artifacts/789/zip",
                     "headers": {"Authorization": "Bearer test_token"},
                     "artifact_name": "design-files",
+                    "artifact_id": "789",
                     "artifact_size": 1024000,
                 }
 
@@ -740,6 +742,48 @@ class DownloadTaskTests(TestCase):
                 assert resume_pos == 0
         finally:
             temp_path.unlink(missing_ok=True)
+
+    def test_build_github_artifact_filename(self):
+        """Test that GitHub artifact filename is built correctly."""
+        metadata = {
+            "handler": "GitHubArtifactHandler",
+            "owner": "TinyTapeout",
+            "repo": "tinytapeout-gf-0p2",
+            "run_id": "19443235082",
+            "artifact_id": "4593573393",
+            "artifact_name": "chipfoundry_submission",
+            "requires_github_auth": True,
+        }
+
+        result = _build_github_artifact_filename(
+            metadata,
+            "tt-gf_wrapper.gds",
+        )
+
+        expected = (
+            "TinyTapeout.tinytapeout-gf-0p2."
+            "r19443235082-a4593573393.chipfoundry_submission.tt-gf_wrapper.gds"
+        )
+        assert result == expected
+
+    def test_build_github_artifact_filename_with_missing_fields(self):
+        """Test that filename builder handles missing metadata fields."""
+        # Minimal metadata with only required fields
+        metadata = {
+            "handler": "GitHubArtifactHandler",
+            "owner": "owner",
+            "repo": "repo",
+            "run_id": "123",
+        }
+
+        result = _build_github_artifact_filename(
+            metadata,
+            "design.gds",
+        )
+
+        # Should use defaults for missing fields
+        expected = "owner.repo.r123-a0.artifact.design.gds"
+        assert result == expected
 
     @patch("wafer_space.projects.tasks.requests.get")
     def test_download_with_progress_no_hash_return(self, mock_get):

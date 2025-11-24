@@ -386,6 +386,32 @@ def _select_github_artifact(
     return artifact
 
 
+def _build_github_artifact_filename(
+    metadata: dict[str, Any],
+    extracted_filename: str,
+) -> str:
+    """Build descriptive filename for GitHub artifact downloads.
+
+    Format: {owner}.{repo}.r{run_id}-a{artifact_id}.{artifact_name}.{extracted_filename}
+
+    Args:
+        metadata: Handler metadata containing owner, repo, run_id, artifact_id, artifact_name
+        extracted_filename: Filename after extraction (e.g., design.gds)
+
+    Returns:
+        Descriptive filename like:
+        TinyTapeout.tinytapeout-gf-0p2.r19443235082-a4593573393.chipfoundry.design.gds
+    """
+    owner = metadata.get("owner", "unknown")
+    repo = metadata.get("repo", "unknown")
+    run_id = metadata.get("run_id", "0")
+    artifact_id = metadata.get("artifact_id", "0")
+    artifact_name = metadata.get("artifact_name", "artifact")
+
+    prefix = f"{owner}.{repo}.r{run_id}-a{artifact_id}.{artifact_name}"
+    return f"{prefix}.{extracted_filename}"
+
+
 def _download_github_artifact(
     owner: str,
     repo: str,
@@ -412,6 +438,7 @@ def _download_github_artifact(
             - url: Authenticated download URL (valid for 60 seconds)
             - headers: HTTP headers required for download (Authorization, etc.)
             - artifact_name: Name of the selected artifact
+            - artifact_id: ID of the selected artifact (string)
             - artifact_size: Size in bytes
 
     Raises:
@@ -455,6 +482,7 @@ def _download_github_artifact(
     # Select artifact: use specific ID if provided, otherwise use first
     artifact = _select_github_artifact(artifacts, artifact_id, run_id)
     artifact_name = artifact["name"]
+    selected_artifact_id = str(artifact["id"])
     artifact_size = artifact.get("size_in_bytes", 0)
 
     # Construct authenticated download URL
@@ -468,6 +496,7 @@ def _download_github_artifact(
         "url": download_url,
         "headers": headers,
         "artifact_name": artifact_name,
+        "artifact_id": selected_artifact_id,
         "artifact_size": artifact_size,
     }
 
@@ -537,7 +566,18 @@ def _prepare_download_request(
         # Add User-Agent (GitHub requires it)
         headers["User-Agent"] = "wafer.space/1.0"
 
-        logger.info("  ✓ Authenticated URL obtained (valid for 60 seconds)")
+        # Store artifact info in metadata for filename generation after extraction
+        updated_metadata = metadata.copy()
+        updated_metadata["artifact_name"] = auth_data["artifact_name"]
+        updated_metadata["artifact_id"] = auth_data["artifact_id"]
+        project_file.handler_metadata = updated_metadata
+        project_file.save(update_fields=["handler_metadata"])
+
+        logger.info(
+            "  ✓ Authenticated URL obtained for artifact: %s (ID: %s)",
+            auth_data["artifact_name"],
+            auth_data["artifact_id"],
+        )
 
         # GitHub artifact downloads don't support resume (they're dynamic URLs)
         resume_byte_pos = 0
@@ -1211,20 +1251,36 @@ def _apply_content_pipeline(
         logger.info("  ✓ MD5: %s", final_md5)
         logger.info("  ✓ SHA1: %s", final_sha1)
 
+        # Build final filename
+        # For GitHub artifacts, include metadata prefix for better identification
+        final_filename = result.filename
+        if (
+            project_file.handler_metadata
+            and project_file.handler_metadata.get("handler") == "GitHubArtifactHandler"
+        ):
+            final_filename = _build_github_artifact_filename(
+                project_file.handler_metadata,
+                result.filename,
+            )
+            logger.info(
+                "  ✓ Built GitHub artifact filename: %s",
+                final_filename,
+            )
+
         # Always set processed_filename (even if unchanged from original)
         # This indicates processing completed successfully
-        project_file.processed_filename = result.filename
+        project_file.processed_filename = final_filename
 
-        if result.filename != project_file.original_filename:
+        if final_filename != project_file.original_filename:
             logger.info(
                 "  ✓ Pipeline transformed: %s → %s",
                 project_file.original_filename,
-                result.filename,
+                final_filename,
             )
         else:
             logger.info(
                 "  ✓ No transformation needed: %s",
-                result.filename,
+                final_filename,
             )
 
         logger.info("  ✓ Pipeline processing complete")
