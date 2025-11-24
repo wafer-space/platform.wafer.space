@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 from allauth.account.models import EmailAddress
 from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import StaleElementReferenceException
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions
@@ -331,29 +332,56 @@ class TestProjectFileDownload(BaseBrowserTest):
 
         # Wait for page to load and verify initial state shows "pending"
         # Note: Current implementation shows lowercase "pending" from JSON API
-        initial_status = self.wait_for_element(
+        # Use WebDriverWait with expected_conditions to handle DOM updates
+        wait = WebDriverWait(
             self.driver,
-            (By.ID, "status-text"),
             timeout=10,
+            ignored_exceptions=(StaleElementReferenceException,),
         )
-        assert initial_status is not None
-        assert "pending" in initial_status.text.lower()
+
+        # Wait for element with "pending" text (handles stale element references)
+        def element_contains_text(driver):
+            """Check if element contains 'pending' text, handling stale refs."""
+            try:
+                element = driver.find_element(By.ID, "status-text")
+                return "pending" in element.text.lower()
+            except StaleElementReferenceException:
+                return False
+
+        wait.until(element_contains_text)
 
         # Simulate backend transition: Update the mocked Celery task to STARTED
         mock_task.state = "STARTED"
 
-        # Wait for JavaScript polling to fetch the new status
-        # Polling happens every 3 seconds, so wait 5 seconds to ensure at least one poll
-        time.sleep(5)
+        # Wait for JavaScript polling to fetch the new status and update UI
+        # Use robust wait that handles stale element references
+        def status_changed_to_downloading(driver):
+            """Check if status text changed to 'downloading', handling stale refs."""
+            try:
+                element = driver.find_element(By.ID, "status-text")
+                return "downloading" in element.text.lower()
+            except StaleElementReferenceException:
+                return False
 
-        # Verify the status badge updated to "downloading" WITHOUT page reload
-        updated_status = self.driver.find_element(By.ID, "status-text")
+        wait_for_update = WebDriverWait(
+            self.driver,
+            timeout=10,
+            poll_frequency=0.5,
+            ignored_exceptions=(StaleElementReferenceException,),
+        )
         expected_msg = "Status should update from pending to downloading without reload"
-        assert "downloading" in updated_status.text.lower(), expected_msg
+        wait_for_update.until(status_changed_to_downloading, message=expected_msg)
 
         # Verify badge color changed from secondary to primary
-        status_badge = self.driver.find_element(By.ID, "status-badge")
-        assert "bg-primary" in status_badge.get_attribute("class")
+        def badge_has_primary_class(driver):
+            """Check if badge has bg-primary class, handling stale refs."""
+            try:
+                badge = driver.find_element(By.ID, "status-badge")
+                return "bg-primary" in badge.get_attribute("class")
+            except StaleElementReferenceException:
+                return False
+
+        wait_for_update.until(badge_has_primary_class)
 
     def test_completed_download_shows_status(self):
         """Test that completed downloads show correct status."""
