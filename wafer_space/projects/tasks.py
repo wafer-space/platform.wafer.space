@@ -571,7 +571,16 @@ def _prepare_download_request(
         updated_metadata["artifact_name"] = auth_data["artifact_name"]
         updated_metadata["artifact_id"] = auth_data["artifact_id"]
         project_file.handler_metadata = updated_metadata
-        project_file.save(update_fields=["handler_metadata"])
+
+        # Update original_filename to show descriptive name in UI during download
+        # Format: {owner}.{repo}.r{run_id}-a{artifact_id}.{artifact_name}.zip
+        download_filename = _build_github_artifact_filename(
+            updated_metadata,
+            "artifact.zip",  # Placeholder - will be updated after extraction
+        )
+        project_file.original_filename = download_filename
+
+        project_file.save(update_fields=["handler_metadata", "original_filename"])
 
         logger.info(
             "  ✓ Authenticated URL obtained for artifact: %s (ID: %s)",
