@@ -785,9 +785,10 @@ def _download_chunks(state: _ChunkDownloadState) -> None:
                 last_db_update_bytes=last_db_update_bytes,
             )
             if should_update_db:
-                # Update last activity timestamp
+                # Update attempt with current progress
                 state.attempt.last_activity = timezone.now()
-                state.attempt.save(update_fields=["last_activity"])
+                state.attempt.bytes_downloaded = last_db_update_bytes
+                state.attempt.save(update_fields=["last_activity", "bytes_downloaded"])
 
                 # Record chunk checkpoint for performance analysis
                 # Use rounded checkpoint values at exact 5MB boundaries
