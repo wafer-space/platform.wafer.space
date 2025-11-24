@@ -32,11 +32,12 @@ class TestGetGitDescribe:
         """Test that get_git_describe returns a valid describe string."""
         result = get_git_describe()
 
-        # Should return a string (in a git repo with v0.0 tag)
+        # Should return a string (in a git repo)
         assert result is not None
         assert isinstance(result, str)
-        # Should start with 'v' for version tag
-        assert result.startswith("v")
+        assert len(result) > 0
+        # With tags: "v0.0-123-gabcdef", without tags (CI): just "abcdef1"
+        # Either format is valid - just verify it's a non-empty string
 
     def test_result_is_cached(self) -> None:
         """Test that the result is cached between calls."""
@@ -98,13 +99,13 @@ class TestGitInfoContextProcessor:
         assert "GIT_COMMIT_URL" in result
 
         # Verify values are set (we're in a git repo)
-        git_describe = result["GIT_DESCRIBE"]
+        git_describe_val = result["GIT_DESCRIBE"]
         commit_hash = result["GIT_COMMIT_HASH"]
         short_hash = result["GIT_COMMIT_SHORT"]
         commit_url = result["GIT_COMMIT_URL"]
 
-        assert git_describe is not None
-        assert git_describe.startswith("v")
+        assert git_describe_val is not None
+        assert len(git_describe_val) > 0  # Non-empty (format varies with/without tags)
         assert commit_hash is not None
         assert short_hash is not None
         assert commit_url is not None
@@ -175,8 +176,5 @@ class TestGitInfoIntegration:
         assert 'name="version"' in content
         assert 'name="revision"' in content
 
-        # Check version contains git describe format (e.g., v0.0-123-gabcdef)
-        assert "v0.0-" in content
-
-        # Check footer link is present
+        # Check footer link is present (links to GitHub commit)
         assert GITHUB_REPO_URL in content
