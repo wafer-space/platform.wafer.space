@@ -2,35 +2,32 @@
 {# Parameters: #}
 {#   - attempt: DownloadAttempt instance to display #}
 {#   - is_latest: (optional) Boolean indicating if this is the latest attempt #}
-{#   - hide_header: (optional, default=False) Hide card header (use inverted logic since default filter treats False as falsy) #}
+{#   - start_open: (optional) Start with details expanded #}
 {#   - show_checkpoints: (optional, default=True) Show download checkpoints #}
 {#   - show_errors: (optional, default=True) Show errors #}
 {#   - show_technical_details: (optional, default=False) Show technical error details #}
 
-<div class="{% if not hide_header %}card mb-2{% endif %} {% if is_latest and not hide_header %}border-primary{% endif %}">
-  {% if not hide_header %}
-  <div class="card-header py-2 {% if is_latest %}bg-primary bg-opacity-10{% endif %}">
-    <div class="d-flex justify-content-between align-items-center">
-      <strong>
-        Attempt #{{ attempt.attempt_number }}
-        {% if is_latest %}<span class="badge bg-primary ms-1">Latest</span>{% endif %}
-      </strong>
-      <span class="badge {% if attempt.status == 'completed' %}bg-success{% elif attempt.status == 'failed' %}bg-danger{% elif attempt.status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
-        {% if attempt.status == 'completed' %}
-          <i class="bi bi-check-circle"></i>
-        {% elif attempt.status == 'failed' %}
-          <i class="bi bi-exclamation-triangle"></i>
-        {% elif attempt.status == 'downloading' %}
-          <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-        {% else %}
-          <i class="bi bi-clock"></i>
-        {% endif %}
-        {{ attempt.get_status_display }}
-      </span>
-    </div>
-  </div>
-  {% endif %}
-  <div class="{% if not hide_header %}card-body py-2{% endif %}">
+<details {% if start_open %}open{% endif %} class="mb-2">
+  <summary class="d-flex justify-content-between align-items-center p-2 bg-light rounded" style="cursor: pointer;">
+    <span>
+      <strong>Attempt #{{ attempt.attempt_number }}</strong>
+      {% if is_latest %}<span class="badge bg-primary ms-1">Latest</span>{% endif %}
+    </span>
+    <span class="badge {% if attempt.status == 'completed' %}bg-success{% elif attempt.status == 'failed' %}bg-danger{% elif attempt.status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
+      {% if attempt.status == 'completed' %}
+        <i class="bi bi-check-circle"></i>
+      {% elif attempt.status == 'failed' %}
+        <i class="bi bi-exclamation-triangle"></i>
+      {% elif attempt.status == 'downloading' %}
+        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+      {% else %}
+        <i class="bi bi-clock"></i>
+      {% endif %}
+      {{ attempt.get_status_display }}
+    </span>
+  </summary>
+
+  <div class="mt-2 ps-2">
     {# Basic attempt information #}
     <div class="row g-2 small">
       <div class="col-md-6">
@@ -158,4 +155,4 @@
       </div>
     {% endif %}
   </div>
-</div>
+</details>
