@@ -351,6 +351,9 @@ class ProjectFileProgressView(LoginRequiredMixin, UserPassesTestMixin, View):
         # Get progress from service layer
         progress = ProjectFileService.get_download_progress(active_file)
 
+        # Add attempt count for UI to detect new attempts
+        progress["attempt_count"] = active_file.download_attempts.count()
+
         # Add error information if download failed
         if latest_attempt.status == DownloadAttempt.Status.FAILED:
             progress["error"] = latest_attempt.download_error or "Download failed"

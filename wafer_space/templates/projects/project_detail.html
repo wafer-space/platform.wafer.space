@@ -317,12 +317,19 @@
     console.log('[Progress Polling] show_progress={{ show_progress }}, has active file={{ in_progress_file|yesno:"yes,no" }}');
   </script>
   {% if show_progress %}
+    {# Hidden element to pass server data to JavaScript without djlint reformatting issues #}
+    <div id="progress-config"
+         data-attempt-count="{{ download_attempts.count|default:0 }}"
+         style="display: none"></div>
     <script>
       // Real-time progress polling
       (function() {
         console.log('[Progress Polling] Initializing polling for project {{ project.pk }}');
         let pollInterval;
         const progressUrl = '{% url "projects:progress" pk=project.pk %}';
+        // Track attempt count to detect new attempts (retries)
+        const configEl = document.getElementById('progress-config');
+        let lastAttemptCount = parseInt(configEl.dataset.attemptCount, 10) || 0;
 
         function updateProgress() {
           console.log('[Progress Polling] Fetching progress from:', progressUrl);
@@ -336,6 +343,15 @@
             })
             .then(data => {
               console.log('[Progress Polling] Received data:', data);
+
+              // Check if new download attempts were created (e.g., retry)
+              if (data.attempt_count && data.attempt_count > lastAttemptCount) {
+                console.log('[Progress Polling] New attempt detected (was: ' + lastAttemptCount + ', now: ' + data.attempt_count + '). Reloading page.');
+                clearInterval(pollInterval);
+                location.reload();
+                return;
+              }
+
               // Update progress bar
               const progressBar = document.getElementById('progress-bar');
               const progressText = document.getElementById('progress-text');
