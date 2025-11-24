@@ -257,6 +257,35 @@ runserver: ## Run Django development server with Celery worker (via Honcho)
 	@rm -f celerybeat-schedule celerybeat-schedule.db celerybeat-schedule.sqlite3 celerybeat-schedule.sqlite3-shm celerybeat-schedule.sqlite3-wal
 	@$(UV) run honcho start
 
+.PHONY: stop
+stop: ## Stop all running dev servers (honcho, celery, django runserver)
+	@echo "$(BLUE)Stopping development servers...$(NC)"
+	@if pgrep -f "[h]oncho start" >/dev/null 2>&1; then \
+		pgrep -f "[h]oncho start" | xargs kill -9 2>/dev/null; \
+		echo "  $(GREEN)✓ Stopped honcho$(NC)"; \
+	else \
+		echo "  $(YELLOW)○ No honcho process found$(NC)"; \
+	fi
+	@if pgrep -f "[c]elery -A config worker" >/dev/null 2>&1; then \
+		pgrep -f "[c]elery -A config worker" | xargs kill -9 2>/dev/null; \
+		echo "  $(GREEN)✓ Stopped celery workers$(NC)"; \
+	else \
+		echo "  $(YELLOW)○ No celery workers found$(NC)"; \
+	fi
+	@if pgrep -f "[c]elery -A config beat" >/dev/null 2>&1; then \
+		pgrep -f "[c]elery -A config beat" | xargs kill -9 2>/dev/null; \
+		echo "  $(GREEN)✓ Stopped celery beat$(NC)"; \
+	else \
+		echo "  $(YELLOW)○ No celery beat found$(NC)"; \
+	fi
+	@if pgrep -f "[m]anage.py runserver" >/dev/null 2>&1; then \
+		pgrep -f "[m]anage.py runserver" | xargs kill -9 2>/dev/null; \
+		echo "  $(GREEN)✓ Stopped django runserver$(NC)"; \
+	else \
+		echo "  $(YELLOW)○ No django runserver found$(NC)"; \
+	fi
+	@echo "$(GREEN)✓ Cleanup complete$(NC)"
+
 .PHONY: shell
 shell: ## Open Django shell
 	@echo "$(BLUE)Opening Django shell...$(NC)"
