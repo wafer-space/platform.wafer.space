@@ -984,8 +984,9 @@ def _handle_download_failure(
                 },
             )
 
-            # Mark attempt as failed
+            # Mark attempt as failed with actual error message
             attempt.status = DownloadAttempt.Status.FAILED
+            attempt.download_error = str(exc)  # Store actual error message
             attempt.completed_at = timezone.now()
             if attempt.download_started_at:
                 attempt.download_duration_seconds = (
@@ -993,7 +994,7 @@ def _handle_download_failure(
                 ).total_seconds()
             attempt.save()
 
-            error_msg = f"Max retries reached: {exc!s}"
+            error_msg = str(exc)  # Use actual error message, not "Max retries reached"
             project_file.mark_download_failed(error_msg)
 
             # Create failure notification
@@ -1600,9 +1601,10 @@ def download_project_file(self, project_id):  # noqa: PLR0915, C901
                 self.max_retries,
                 retry_delay,
             )
-            # Mark attempt as failed if it exists
+            # Mark attempt as failed with error message if it exists
             if attempt:
                 attempt.status = DownloadAttempt.Status.FAILED
+                attempt.download_error = str(exc)  # Store actual error message
                 attempt.completed_at = timezone.now()
                 if attempt.download_started_at:
                     attempt.download_duration_seconds = (
@@ -1711,8 +1713,13 @@ def ensure_download_tasks_queued():
             if is_task_actively_running(project_file):
                 verified_count += 1
             else:
-                error_msg = "Task not running (worker crashed or task failed)"
                 logger.warning("Orphaned downloading file %s", project_file.id)
+
+                # Preserve existing error message if present
+                if latest.download_error:
+                    error_msg = latest.download_error
+                else:
+                    error_msg = "Task not running (worker crashed or task failed)"
 
                 # Update attempt to FAILED
                 latest.status = DownloadAttempt.Status.FAILED

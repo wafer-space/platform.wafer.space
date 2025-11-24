@@ -26,17 +26,18 @@ class GzipDecompressor(ContentProcessor):
     def can_process(self, filename: str, file_path: Path) -> bool:
         """Check if file is gzipped.
 
+        Uses magic bytes as primary detection since files downloaded from
+        services like GitHub may not have .gz extension.
+
         Args:
             filename: Original filename
             file_path: Path to file
 
         Returns:
-            True if filename ends with .gz and file has gzip magic bytes
+            True if file has gzip magic bytes
         """
-        if not filename.endswith(".gz"):
-            return False
-
         # Check gzip magic bytes: 1f 8b
+        # This is primary detection since filenames may not have .gz extension
         try:
             with file_path.open("rb") as f:
                 magic = f.read(2)
@@ -124,17 +125,18 @@ class Bzip2Decompressor(ContentProcessor):
     def can_process(self, filename: str, file_path: Path) -> bool:
         """Check if file is bzip2 compressed.
 
+        Uses magic bytes as primary detection since files downloaded from
+        services like GitHub may not have .bz2 extension.
+
         Args:
             filename: Original filename
             file_path: Path to file
 
         Returns:
-            True if filename ends with .bz2 and file has bzip2 magic bytes
+            True if file has bzip2 magic bytes
         """
-        if not filename.endswith(".bz2"):
-            return False
-
         # Check bzip2 magic bytes: 42 5a 68 (BZh)
+        # This is primary detection since filenames may not have .bz2 extension
         try:
             with file_path.open("rb") as f:
                 magic = f.read(3)
@@ -216,17 +218,18 @@ class XzDecompressor(ContentProcessor):
     def can_process(self, filename: str, file_path: Path) -> bool:
         """Check if file is xz compressed.
 
+        Uses magic bytes as primary detection since files downloaded from
+        services like GitHub may not have .xz extension.
+
         Args:
             filename: Original filename
             file_path: Path to file
 
         Returns:
-            True if filename ends with .xz and file has xz magic bytes
+            True if file has xz magic bytes
         """
-        if not filename.endswith(".xz"):
-            return False
-
         # Check xz magic bytes: fd 37 7a 58 5a 00
+        # This is primary detection since filenames may not have .xz extension
         try:
             with file_path.open("rb") as f:
                 magic = f.read(6)

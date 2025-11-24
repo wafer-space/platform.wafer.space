@@ -149,6 +149,9 @@ class ZipExtractor(ContentProcessor):
     def can_process(self, filename: str, file_path: Path) -> bool:
         """Check if file is a ZIP archive.
 
+        Uses magic bytes as primary detection since files downloaded from
+        services like GitHub may not have .zip extension.
+
         Args:
             filename: Original filename
             file_path: Path to file
@@ -156,10 +159,8 @@ class ZipExtractor(ContentProcessor):
         Returns:
             True if file is a ZIP archive
         """
-        if not filename.endswith(".zip"):
-            return False
-
         # Check ZIP magic bytes: 50 4b 03 04 or 50 4b 05 06 (empty zip)
+        # This is primary detection since filenames may not have .zip extension
         try:
             with file_path.open("rb") as f:
                 magic = f.read(4)
@@ -367,6 +368,9 @@ class TarExtractor(ContentProcessor):
     def can_process(self, filename: str, file_path: Path) -> bool:
         """Check if file is a tar archive.
 
+        Uses tarfile.is_tarfile() as primary detection since files downloaded
+        from services like GitHub may not have .tar extension.
+
         Args:
             filename: Original filename
             file_path: Path to file
@@ -374,15 +378,8 @@ class TarExtractor(ContentProcessor):
         Returns:
             True if file is a tar archive
         """
-        # Check for tar extensions
-        filename_lower = filename.lower()
-        if not any(
-            filename_lower.endswith(ext)
-            for ext in (".tar", ".tar.gz", ".tar.bz2", ".tar.xz")
-        ):
-            return False
-
         # Use tarfile.is_tarfile() for robust detection (handles compressed files)
+        # This is primary detection since filenames may not have .tar extension
         try:
             return tarfile.is_tarfile(file_path)
         except OSError:
