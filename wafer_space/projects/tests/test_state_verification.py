@@ -153,10 +153,13 @@ class DownloadStateVerificationTests(TestCase):
         project_file.refresh_from_db()
         assert project_file.download_status == ProjectFile.DownloadStatus.DOWNLOADING
 
+    @patch("wafer_space.projects.tasks.download_project_file.delay")
     @patch("wafer_space.projects.tasks.is_task_queued")
     @patch("wafer_space.projects.tasks.is_task_actively_running")
-    def test_downloading_file_orphaned(self, mock_is_running, mock_is_queued):
-        """Test DOWNLOADING file not running is marked orphaned."""
+    def test_downloading_file_orphaned(
+        self, mock_is_running, mock_is_queued, mock_delay
+    ):
+        """Test DOWNLOADING file not running is marked orphaned and requeued."""
         # Create file with task_id and DOWNLOADING attempt
         project_file = ProjectFile.objects.create(
             project=self.project,
@@ -170,19 +173,73 @@ class DownloadStateVerificationTests(TestCase):
             status=DownloadAttempt.Status.DOWNLOADING,
         )
 
-        # Mock verification returns False
+        # Mock verification returns False (orphaned)
         mock_is_running.return_value = False
         mock_is_queued.return_value = True
+
+        # Mock the requeued task
+        mock_task = Mock()
+        mock_task.id = "requeued-task-123"
+        mock_delay.return_value = mock_task
 
         result = ensure_download_tasks_queued()
 
         assert result["verified"] == 0
         assert result["orphaned"] == 1
+        assert result["requeued"] == 1  # Orphan should be requeued
 
-        # File should be FAILED
+        # Verify new task was queued
+        mock_delay.assert_called_once_with(self.project.id)
+
+        # File should have new task_id from requeued task
         project_file.refresh_from_db()
-        assert project_file.download_status == ProjectFile.DownloadStatus.FAILED
-        assert "not running" in project_file.download_error
+        assert project_file.download_task_id == "requeued-task-123"
+
+        # First attempt should be marked FAILED
+        first_attempt = project_file.download_attempts.get(attempt_number=1)
+        assert first_attempt.status == DownloadAttempt.Status.FAILED
+        assert "not running" in first_attempt.download_error
+
+    @patch("wafer_space.projects.tasks.download_project_file.delay")
+    @patch("wafer_space.projects.tasks.is_task_queued")
+    @patch("wafer_space.projects.tasks.is_task_actively_running")
+    def test_downloading_file_orphaned_max_retries(
+        self, mock_is_running, mock_is_queued, mock_delay
+    ):
+        """Test DOWNLOADING file with max attempts is not requeued."""
+        # Create file with task_id and 3 FAILED attempts (max)
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            source_url="http://example.com/test.gds",
+            download_task_id="task-999",
+            is_active=True,
+        )
+        # Create 3 previous attempts (max_retries + 1)
+        # Two failed attempts and one currently "downloading" (orphaned)
+        max_attempts = 3
+        for attempt_num in range(1, max_attempts + 1):
+            is_latest = attempt_num == max_attempts
+            DownloadAttempt.objects.create(
+                project_file=project_file,
+                attempt_number=attempt_num,
+                status=(
+                    DownloadAttempt.Status.DOWNLOADING
+                    if is_latest
+                    else DownloadAttempt.Status.FAILED
+                ),
+            )
+
+        # Mock verification returns False (orphaned)
+        mock_is_running.return_value = False
+        mock_is_queued.return_value = True
+
+        result = ensure_download_tasks_queued()
+
+        assert result["orphaned"] == 1
+        assert result["requeued"] == 0  # Should NOT be requeued (max retries)
+
+        # Verify NO new task was queued
+        mock_delay.assert_not_called()
 
     @patch("wafer_space.projects.tasks.socket")
     @patch("wafer_space.projects.tasks.os")

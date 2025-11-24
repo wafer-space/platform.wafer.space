@@ -1823,6 +1823,9 @@ def ensure_download_tasks_queued():
         models.Q(download_task_id="") | models.Q(download_task_id__isnull=True),
     )
 
+    # Track tasks requeued after orphan detection
+    requeued_count = 0
+
     for project_file in downloading_files:
         # Only check if this is the latest attempt
         latest = project_file.latest_attempt
@@ -1847,10 +1850,36 @@ def ensure_download_tasks_queued():
                 project_file.mark_download_failed(error_msg)
                 orphaned_count += 1
 
+                # Queue a new download task if under retry limit
+                # max_retries=2 means 3 total attempts (initial + 2 retries)
+                max_attempts = settings.DOWNLOAD_TASK_MAX_RETRIES + 1
+                attempt_count = project_file.download_attempts.count()
+
+                if attempt_count < max_attempts:
+                    logger.info(
+                        "  Requeuing download for file %s (attempt %d/%d)",
+                        project_file.id,
+                        attempt_count + 1,
+                        max_attempts,
+                    )
+                    # Queue new download task
+                    task = download_project_file.delay(project_file.project.id)
+                    project_file.download_task_id = task.id
+                    project_file.save(update_fields=["download_task_id"])
+                    requeued_count += 1
+                else:
+                    logger.warning(
+                        "  File %s exceeded max attempts (%d/%d), not requeuing",
+                        project_file.id,
+                        attempt_count,
+                        max_attempts,
+                    )
+
     logger.info(
-        "Fallback check: %d created, %d orphaned, %d verified",
+        "Fallback check: %d created, %d orphaned, %d requeued, %d verified",
         created_tasks,
         orphaned_count,
+        requeued_count,
         verified_count,
     )
 
@@ -1858,6 +1887,7 @@ def ensure_download_tasks_queued():
         "status": "completed",
         "created_tasks": created_tasks,
         "orphaned": orphaned_count,
+        "requeued": requeued_count,
         "verified": verified_count,
     }
 
