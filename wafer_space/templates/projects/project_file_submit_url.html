@@ -71,17 +71,11 @@ sha1sum your_design.gds    # SHA1</code></pre>
                     <pre class="bg-dark text-light p-3 rounded"><code>md5 your_design.gds        # MD5
 shasum your_design.gds     # SHA1</code></pre>
                     <h6>Windows (PowerShell)</h6>
-                    <pre class="bg-dark text-light p-3 rounded"><code># Generate MD5 checksum
-Get-FileHash -Algorithm MD5 your_design.gds
-
-# Generate SHA1 checksum
-Get-FileHash -Algorithm SHA1 your_design.gds</code></pre>
+                    <pre class="bg-dark text-light p-3 rounded"><code>Get-FileHash -Algorithm MD5 your_design.gds   # MD5
+Get-FileHash -Algorithm SHA1 your_design.gds  # SHA1</code></pre>
                     <h6>Windows (Command Prompt)</h6>
-                    <pre class="bg-dark text-light p-3 rounded"><code># Generate MD5 checksum
-certutil -hashfile your_design.gds MD5
-
-# Generate SHA1 checksum
-certutil -hashfile your_design.gds SHA1</code></pre>
+                    <pre class="bg-dark text-light p-3 rounded"><code>certutil -hashfile your_design.gds MD5   # MD5
+certutil -hashfile your_design.gds SHA1  # SHA1</code></pre>
                     <div class="alert alert-warning mt-3 mb-0">
                       <i class="bi bi-exclamation-triangle"></i>
                       <strong>Remember:</strong> Generate the checksum from the original uncompressed file,
