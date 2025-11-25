@@ -156,10 +156,8 @@
                   <p id="progress-message" class="mt-2 text-muted">{{ progress.message }}</p>
                 </div>
               {% endif %}
-              {% include "projects/_file_display.html" with file=in_progress_file download_attempts=download_attempts show_attempts=True first_open=True %}
-              {# Manufacturability Check (shown only for in-progress files) #}
+              {# Manufacturability Check (shown above file details) #}
               {% if check_status %}
-                <hr class="my-4" />
                 <h6>
                   <i class="bi bi-check-circle"></i> Manufacturability Check
                 </h6>
@@ -222,13 +220,15 @@
                     {% endfor %}
                   </div>
                 {% endif %}
-              {% elif project.status == 'draft' and in_progress_file.hash_verified %}
                 <hr class="my-4" />
+              {% elif project.status == 'draft' and in_progress_file.hash_verified %}
                 <div class="alert alert-info" role="alert">
                   <i class="bi bi-info-circle"></i>
                   <strong>Ready for manufacturability check</strong> - Hash has been verified. The manufacturability check will run automatically once the file is fully downloaded and verified.
                 </div>
+                <hr class="my-4" />
               {% endif %}
+              {% include "projects/_file_display.html" with file=in_progress_file download_attempts=download_attempts show_attempts=True first_open=True %}
             </div>
           </div>
         {% endif %}
