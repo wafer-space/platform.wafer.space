@@ -271,18 +271,26 @@ class TestManufacturabilityCheckTask(TestCase):
 
     @patch("wafer_space.projects.tasks.time.sleep")
     @patch("wafer_space.projects.tasks.random.uniform")
-    @patch("wafer_space.projects.tasks.random.random")
     def test_check_task_completes_successfully(
         self,
-        mock_random,
         mock_uniform,
         mock_sleep,
     ):
         """Test that task completes check successfully."""
-        # Mock random to ensure manufacturable result
-        mock_random.return_value = 0.5  # Below 0.8 = manufacturable
         mock_uniform.return_value = 2.0
         mock_sleep.return_value = None
+
+        # Create an even number of files (2) to trigger manufacturable result
+        ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test1.gds",
+            is_active=False,
+        )
+        ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test2.gds",
+            is_active=True,
+        )
 
         # Create a check
         check = ManufacturabilityCheck.objects.create(
@@ -376,18 +384,26 @@ class TestManufacturabilityCheckTask(TestCase):
 
     @patch("wafer_space.projects.tasks.time.sleep")
     @patch("wafer_space.projects.tasks.random.uniform")
-    @patch("wafer_space.projects.tasks.random.random")
     def test_check_task_updates_project_status(
         self,
-        mock_random,
         mock_uniform,
         mock_sleep,
     ):
         """Test that task updates project status based on check result."""
-        # Mock for manufacturable result
-        mock_random.return_value = 0.5
         mock_uniform.return_value = 2.0
         mock_sleep.return_value = None
+
+        # Create an even number of files (2) to trigger manufacturable result
+        ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test1.gds",
+            is_active=False,
+        )
+        ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test2.gds",
+            is_active=True,
+        )
 
         # Set project to SUBMITTED status
         self.project.status = Project.Status.SUBMITTED

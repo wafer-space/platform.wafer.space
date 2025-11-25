@@ -169,10 +169,10 @@ def check_project_manufacturability(self, check_id):  # noqa: PLR0915
         time.sleep(processing_time)
 
         # Mock implementation: use file count to determine result
-        # Odd number of files -> not manufacturable, even -> manufacturable
+        # 0 files or odd number -> not manufacturable, even (non-zero) -> manufacturable
         file_count = project.files.count()
-        is_manufacturable = file_count % 2 == 0
-        logs += f"File count: {file_count} ({'even' if is_manufacturable else 'odd'})\n"
+        is_manufacturable = file_count > 0 and file_count % 2 == 0
+        logs += f"File count: {file_count}\n"
 
         if is_manufacturable:
             # Success case - add sample warning
