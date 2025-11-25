@@ -37,68 +37,43 @@
             <p>
               Provide at least one checksum so we can confirm we received the exact file you intended to submit for manufacturing.
             </p>
-            <p class="mb-0">
+            <p>
               <strong>Use the checksum of your original, uncompressed GDS or OASIS file</strong>, not
               the compressed archive. If you uploaded <code>design.gds.gz</code>, enter the checksum for
               <code>design.gds</code>.
             </p>
-          </div>
-          {# Hash Fields #}
-          {{ form.expected_hash_md5|as_crispy_field }}
-          {{ form.expected_hash_sha1|as_crispy_field }}
-          {# Collapsible Help Section for Generating Checksums #}
-          <div class="accordion mb-3" id="checksumHelp">
-            <div class="accordion-item">
-              <h2 class="accordion-header" id="checksumHelpHeading">
-                <button class="accordion-button collapsed"
-                        type="button"
-                        data-bs-toggle="collapse"
-                        data-bs-target="#checksumHelpContent"
-                        aria-expanded="false"
-                        aria-controls="checksumHelpContent">
-                  <i class="bi bi-question-circle me-2"></i>
-                  How to generate checksums for your file
-                </button>
-              </h2>
-              <div id="checksumHelpContent"
-                   class="accordion-collapse collapse"
-                   aria-labelledby="checksumHelpHeading">
-                <div class="accordion-body">
-                  <p>
-                    Generate checksums for your <strong>uncompressed</strong> GDS or OASIS file
-                    (before compressing it for upload).
-                  </p>
-                  <h6>Linux / macOS</h6>
-                  <pre class="bg-dark text-light p-3 rounded"><code># Generate MD5 checksum
-md5sum your_design.gds
-# or on macOS:
-md5 your_design.gds
-
-# Generate SHA1 checksum
-sha1sum your_design.gds
-# or on macOS:
-shasum your_design.gds</code></pre>
-                  <h6>Windows (PowerShell)</h6>
-                  <pre class="bg-dark text-light p-3 rounded"><code># Generate MD5 checksum
-Get-FileHash -Algorithm MD5 your_design.gds
-
-# Generate SHA1 checksum
+            {# Collapsible Help Section #}
+            <div class="accordion mb-0" id="checksumHelp">
+              <div class="accordion-item border-0 bg-transparent">
+                <h2 class="accordion-header" id="checksumHelpHeading">
+                  <button class="accordion-button collapsed bg-transparent p-0 shadow-none"
+                          type="button"
+                          data-bs-toggle="collapse"
+                          data-bs-target="#checksumHelpContent"
+                          aria-expanded="false"
+                          aria-controls="checksumHelpContent">
+                    <i class="bi bi-question-circle me-2"></i>
+                    <small>How do I generate a checksum?</small>
+                  </button>
+                </h2>
+                <div id="checksumHelpContent"
+                     class="accordion-collapse collapse"
+                     aria-labelledby="checksumHelpHeading">
+                  <div class="pt-3">
+                    <h6>Linux / macOS</h6>
+                    <pre class="bg-dark text-light p-3 rounded"><code>md5sum your_design.gds      # MD5
+sha1sum your_design.gds     # SHA1</code></pre>
+                    <h6>Windows (PowerShell)</h6>
+                    <pre class="bg-dark text-light p-3 rounded"><code>Get-FileHash -Algorithm MD5 your_design.gds
 Get-FileHash -Algorithm SHA1 your_design.gds</code></pre>
-                  <h6>Windows (Command Prompt)</h6>
-                  <pre class="bg-dark text-light p-3 rounded"><code># Generate MD5 checksum
-certutil -hashfile your_design.gds MD5
-
-# Generate SHA1 checksum
-certutil -hashfile your_design.gds SHA1</code></pre>
-                  <div class="alert alert-warning mt-3 mb-0">
-                    <i class="bi bi-exclamation-triangle"></i>
-                    <strong>Remember:</strong> Generate the checksum from the original uncompressed file,
-                    not from any compressed version (like <code>.gds.gz</code> or <code>.zip</code>).
                   </div>
                 </div>
               </div>
             </div>
           </div>
+          {# Hash Fields #}
+          {{ form.expected_hash_md5|as_crispy_field }}
+          {{ form.expected_hash_sha1|as_crispy_field }}
           {# Good to Know #}
           <div class="alert alert-secondary" role="alert">
             <h5 class="alert-heading">
