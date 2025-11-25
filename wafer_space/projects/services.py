@@ -588,21 +588,29 @@ class ManufacturabilityService:
     """Service for handling manufacturability check operations."""
 
     @classmethod
-    def queue_check(cls, project: Project) -> ManufacturabilityCheck:
-        """Queue a manufacturability check for a project.
+    def queue_check(
+        cls, project: Project, project_file: "ProjectFile | None" = None
+    ) -> ManufacturabilityCheck:
+        """Queue a manufacturability check for a project file.
 
-        Creates or gets an existing check, sets status to QUEUED,
+        Creates or gets an existing check for the file, sets status to QUEUED,
         and triggers the Celery task for processing.
 
         Args:
             project: The project to check
+            project_file: The specific file to check (optional for backwards compat)
 
         Returns:
             ManufacturabilityCheck: The queued check instance
         """
+        # Build filter for get_or_create
+        filter_kwargs: dict = {"project": project}
+        if project_file:
+            filter_kwargs["project_file"] = project_file
+
         # Get or create the check
         check, created = ManufacturabilityCheck.objects.get_or_create(
-            project=project,
+            **filter_kwargs,
             defaults={
                 "status": ManufacturabilityCheck.Status.QUEUED,
             },
@@ -634,24 +642,17 @@ class ManufacturabilityService:
         return check
 
     @classmethod
-    def get_check_status(cls, project: Project) -> dict | None:
-        """Get check status information for UI display.
+    def get_check_status_for_file(cls, project_file: "ProjectFile") -> dict | None:
+        """Get check status information for a specific file.
 
         Args:
-            project: The project to get check status for
+            project_file: The project file to get check status for
 
         Returns:
-            dict with check status information:
-                - status: Current check status
-                - is_manufacturable: Whether project is manufacturable (or None)
-                - errors: List of error messages
-                - warnings: List of warning messages
-                - started_at: When check started (or None)
-                - completed_at: When check completed (or None)
-            Returns None if no check exists.
+            dict with check status information, or None if no check exists.
         """
         try:
-            check = ManufacturabilityCheck.objects.get(project=project)
+            check = project_file.manufacturability_check
         except ManufacturabilityCheck.DoesNotExist:
             return None
         else:
@@ -663,3 +664,32 @@ class ManufacturabilityService:
                 "started_at": check.started_at,
                 "completed_at": check.completed_at,
             }
+
+    @classmethod
+    def get_check_status(cls, project: Project) -> dict | None:
+        """Get check status for the project's active file.
+
+        Args:
+            project: The project to get check status for
+
+        Returns:
+            dict with check status information, or None if no check exists.
+        """
+        # Get the active file and its check
+        active_file = project.files.filter(is_active=True).first()
+        if active_file:
+            return cls.get_check_status_for_file(active_file)
+
+        # Fallback: get most recent check for the project
+        check = project.manufacturability_checks.order_by("-started_at").first()
+        if not check:
+            return None
+
+        return {
+            "status": check.status,
+            "is_manufacturable": check.is_manufacturable,
+            "errors": check.errors,
+            "warnings": check.warnings,
+            "started_at": check.started_at,
+            "completed_at": check.completed_at,
+        }

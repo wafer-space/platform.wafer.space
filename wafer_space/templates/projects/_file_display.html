@@ -94,6 +94,75 @@
     {% endif %}
   {% endwith %}
 {% endwith %}
+{# Manufacturability Check Section #}
+{% with check=file.manufacturability_check %}
+  {% if check %}
+    <div class="card bg-light mb-3">
+      <div class="card-body">
+        <h6 class="card-title">
+          <i class="bi bi-check-circle"></i> Manufacturability Check
+        </h6>
+        <p class="mb-2">
+          <strong>Status:</strong>
+          {% if check.status == 'queued' %}
+            <span class="badge bg-secondary">
+              <i class="bi bi-clock"></i> Queued for checking
+            </span>
+          {% elif check.status == 'processing' %}
+            <span id="check-status-badge" class="badge bg-primary">
+              <span class="spinner-border spinner-border-sm"
+                    role="status"
+                    aria-hidden="true"></span>
+              <span id="check-status-text">Checking manufacturability...</span>
+            </span>
+          {% elif check.status == 'completed' %}
+            {% if check.is_manufacturable %}
+              <span class="badge bg-success">
+                <i class="bi bi-check-circle"></i> Manufacturable
+              </span>
+            {% else %}
+              <span class="badge bg-danger">
+                <i class="bi bi-x-circle"></i> Not Manufacturable
+              </span>
+            {% endif %}
+          {% elif check.status == 'failed' %}
+            <span class="badge bg-danger">
+              <i class="bi bi-exclamation-triangle"></i> Check Failed
+            </span>
+          {% endif %}
+        </p>
+        {% if check.started_at %}
+          <p class="mb-2">
+            <strong>Started:</strong> {{ check.started_at|date:"Y-m-d H:i:s" }}
+          </p>
+        {% endif %}
+        {% if check.completed_at %}
+          <p class="mb-2">
+            <strong>Completed:</strong> {{ check.completed_at|date:"Y-m-d H:i:s" }}
+          </p>
+        {% endif %}
+        {# Display errors if check completed with errors #}
+        {% if check.status == 'completed' and check.errors %}
+          <div class="mt-3">
+            <h6 class="text-danger">
+              <i class="bi bi-exclamation-triangle"></i> Errors
+            </h6>
+            {% for error in check.errors %}<div class="alert alert-danger mb-2" role="alert">{{ error }}</div>{% endfor %}
+          </div>
+        {% endif %}
+        {# Display warnings if any #}
+        {% if check.status == 'completed' and check.warnings %}
+          <div class="mt-3">
+            <h6 class="text-warning">
+              <i class="bi bi-exclamation-circle"></i> Warnings
+            </h6>
+            {% for warning in check.warnings %}<div class="alert alert-warning mb-2" role="alert">{{ warning }}</div>{% endfor %}
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+{% endwith %}
 {# File Information Card #}
 <div class="card bg-light">
   <div class="card-body">

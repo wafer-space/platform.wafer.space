@@ -1471,7 +1471,7 @@ def _verify_and_notify(
         from .services import ManufacturabilityService  # noqa: PLC0415
 
         logger.info("Step 10: Queueing manufacturability check...")
-        ManufacturabilityService.queue_check(project_file.project)
+        ManufacturabilityService.queue_check(project_file.project, project_file)
         logger.info("  ✓ Manufacturability check queued")
     elif verification_errors:
         NotificationService.create_checksum_mismatch_notification(

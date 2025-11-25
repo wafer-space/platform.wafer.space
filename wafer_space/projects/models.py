@@ -846,10 +846,17 @@ class ManufacturabilityCheck(models.Model):
         FAILED = "failed", "Failed"
         CANCELLED = "cancelled", "Cancelled"
 
-    project = models.OneToOneField(
+    project = models.ForeignKey(
         Project,
         on_delete=models.CASCADE,
+        related_name="manufacturability_checks",
+    )
+    project_file = models.OneToOneField(
+        "ProjectFile",
+        on_delete=models.CASCADE,
         related_name="manufacturability_check",
+        null=True,
+        blank=True,
     )
     status = models.CharField(
         max_length=20,
