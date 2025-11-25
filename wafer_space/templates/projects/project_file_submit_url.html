@@ -64,16 +64,12 @@
                       Generate checksums for your <strong>uncompressed</strong> GDS or OASIS file
                       (before compressing it for upload).
                     </p>
-                    <h6>Linux / macOS</h6>
-                    <pre class="bg-dark text-light p-3 rounded"><code># Generate MD5 checksum
-md5sum your_design.gds
-# or on macOS:
-md5 your_design.gds
-
-# Generate SHA1 checksum
-sha1sum your_design.gds
-# or on macOS:
-shasum your_design.gds</code></pre>
+                    <h6>Linux</h6>
+                    <pre class="bg-dark text-light p-3 rounded"><code>md5sum your_design.gds     # MD5
+sha1sum your_design.gds    # SHA1</code></pre>
+                    <h6>macOS</h6>
+                    <pre class="bg-dark text-light p-3 rounded"><code>md5 your_design.gds        # MD5
+shasum your_design.gds     # SHA1</code></pre>
                     <h6>Windows (PowerShell)</h6>
                     <pre class="bg-dark text-light p-3 rounded"><code># Generate MD5 checksum
 Get-FileHash -Algorithm MD5 your_design.gds
