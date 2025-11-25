@@ -168,8 +168,11 @@ def check_project_manufacturability(self, check_id):  # noqa: PLR0915
         logs += f"Processing design files (simulated {processing_time:.1f}s)...\n"
         time.sleep(processing_time)
 
-        # Mock implementation: 80% success rate for testing
-        is_manufacturable = random.random() < MOCK_SUCCESS_RATE  # noqa: S311
+        # Mock implementation: use file count to determine result
+        # Odd number of files -> not manufacturable, even -> manufacturable
+        file_count = project.files.count()
+        is_manufacturable = file_count % 2 == 0
+        logs += f"File count: {file_count} ({'even' if is_manufacturable else 'odd'})\n"
 
         if is_manufacturable:
             # Success case - add sample warning

@@ -310,18 +310,22 @@ class TestManufacturabilityCheckTask(TestCase):
 
     @patch("wafer_space.projects.tasks.time.sleep")
     @patch("wafer_space.projects.tasks.random.uniform")
-    @patch("wafer_space.projects.tasks.random.random")
     def test_check_task_detects_not_manufacturable(
         self,
-        mock_random,
         mock_uniform,
         mock_sleep,
     ):
         """Test that task can mark project as not manufacturable."""
-        # Mock random to ensure not manufacturable result
-        mock_random.return_value = 0.9  # Above 0.8 = not manufacturable
         mock_uniform.return_value = 2.0
         mock_sleep.return_value = None
+
+        # Create an odd number of files to trigger not manufacturable
+        # (odd file count = not manufacturable)
+        ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test.gds",
+            is_active=True,
+        )
 
         # Create a check
         check = ManufacturabilityCheck.objects.create(
