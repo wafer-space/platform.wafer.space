@@ -24,6 +24,7 @@ from celery import shared_task
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.db import models
+from django.db import transaction
 from django.utils import timezone
 from django_celery_results.models import TaskResult
 
@@ -961,6 +962,38 @@ def _download_with_progress(
     _download_chunks(download_state)
 
 
+def _create_download_attempt_atomic(
+    project_file_id: int,
+    status: str,
+    **extra_fields: Any,
+) -> DownloadAttempt:
+    """Create a DownloadAttempt with atomic attempt_number assignment.
+
+    Uses select_for_update() to prevent race conditions when multiple tasks
+    try to create attempts for the same file concurrently.
+
+    Args:
+        project_file_id: ID of the ProjectFile
+        status: Status for the new attempt
+        **extra_fields: Additional fields to set on the attempt (e.g.,
+            download_started_at, worker_pid, worker_hostname, task_started_at)
+
+    Returns:
+        Newly created DownloadAttempt with correct attempt_number
+    """
+    with transaction.atomic():
+        # Lock the project file row to serialize attempt creation
+        project_file = ProjectFile.objects.select_for_update().get(id=project_file_id)
+        attempt_number = project_file.download_attempts.count() + 1
+
+        return DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=attempt_number,
+            status=status,
+            **extra_fields,
+        )
+
+
 def _get_project_file_for_download(
     project_id: str,
 ) -> tuple[Project, ProjectFile | None]:
@@ -1016,11 +1049,10 @@ def _get_or_create_download_attempt(project_file: ProjectFile) -> DownloadAttemp
         )
         return pending_attempt
 
-    # Create new attempt (first download or no pending attempt)
-    attempt = DownloadAttempt.objects.create(
-        project_file=project_file,
-        attempt_number=project_file.download_attempts.count() + 1,
-        status=DownloadAttempt.Status.DOWNLOADING,
+    # Create new attempt atomically (first download or no pending attempt)
+    attempt = _create_download_attempt_atomic(
+        project_file.id,
+        DownloadAttempt.Status.DOWNLOADING,
         download_started_at=timezone.now(),
         worker_pid=os.getpid(),
         worker_hostname=socket.gethostname(),
@@ -1123,11 +1155,10 @@ def _handle_download_failure(
                 # Try to get the most recent attempt
                 attempt = project_file.download_attempts.first()
                 if not attempt:
-                    # Create a new attempt if none exists
-                    attempt = DownloadAttempt.objects.create(
-                        project_file=project_file,
-                        attempt_number=project_file.download_attempts.count() + 1,
-                        status=DownloadAttempt.Status.FAILED,
+                    # Create a new attempt atomically if none exists
+                    attempt = _create_download_attempt_atomic(
+                        project_file.id,
+                        DownloadAttempt.Status.FAILED,
                     )
 
             # Create structured error log
@@ -1790,12 +1821,11 @@ def download_project_file(self, project_id):  # noqa: PLR0915, C901
                     },
                 )
 
-                # Create a PENDING attempt for the upcoming retry
+                # Create a PENDING attempt atomically for the upcoming retry
                 # This ensures UI shows "Pending" instead of "Failed" during retry delay
-                DownloadAttempt.objects.create(
-                    project_file=attempt.project_file,
-                    attempt_number=attempt.project_file.download_attempts.count() + 1,
-                    status=DownloadAttempt.Status.PENDING,
+                _create_download_attempt_atomic(
+                    attempt.project_file.id,
+                    DownloadAttempt.Status.PENDING,
                 )
             _handle_download_retry(self, project_id, exc)
         else:
