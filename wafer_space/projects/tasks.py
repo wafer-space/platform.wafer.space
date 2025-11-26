@@ -194,9 +194,7 @@ def _pull_and_record_image(context: _CheckContext):
 
     # Get the pulled image
     image = context.client.images.get(image_name)
-    context.check.docker_image = (
-        image.tags[0] if image.tags else image_name
-    )
+    context.check.docker_image = image.tags[0] if image.tags else image_name
     context.check.docker_image_digest = image.id
     context.check.save(update_fields=["docker_image", "docker_image_digest"])
 

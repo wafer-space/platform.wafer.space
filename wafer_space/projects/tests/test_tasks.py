@@ -270,6 +270,8 @@ class TestManufacturabilityCheckTask(TestCase):
         mock_image.id = "sha256:abc123"
         mock_image.tags = ["ghcr.io/wafer-space/gf180mcu-precheck:latest"]
         mock_client.images.pull.return_value = mock_image
+        mock_client.images.get.return_value = mock_image
+        mock_client.api.pull.return_value = []  # Empty progress stream
 
         # Mock container with manufacturable result
         mock_container = MagicMock()
@@ -280,6 +282,7 @@ class TestManufacturabilityCheckTask(TestCase):
 
         # Mock docker.errors
         mock_docker.errors.DockerException = Exception
+        mock_docker.errors.ImageNotFound = Exception
 
         # Create a check
         check = ManufacturabilityCheck.objects.create(
@@ -330,6 +333,8 @@ class TestManufacturabilityCheckTask(TestCase):
         mock_image.id = "sha256:abc123"
         mock_image.tags = ["ghcr.io/wafer-space/gf180mcu-precheck:latest"]
         mock_client.images.pull.return_value = mock_image
+        mock_client.images.get.return_value = mock_image
+        mock_client.api.pull.return_value = []  # Empty progress stream
 
         # Mock container with manufacturable result and warnings
         mock_logs = b"""Precheck successfully completed.
@@ -344,6 +349,7 @@ INFO: Check completed
 
         # Mock docker.errors
         mock_docker.errors.DockerException = Exception
+        mock_docker.errors.ImageNotFound = Exception
 
         # Create a check
         check = ManufacturabilityCheck.objects.create(
@@ -402,6 +408,8 @@ INFO: Check completed
         mock_image.id = "sha256:abc123"
         mock_image.tags = ["ghcr.io/wafer-space/gf180mcu-precheck:latest"]
         mock_client.images.pull.return_value = mock_image
+        mock_client.images.get.return_value = mock_image
+        mock_client.api.pull.return_value = []  # Empty progress stream
 
         # Mock container with not manufacturable result (non-zero exit code)
         mock_logs = b"""ERROR: DRC violation at (100, 200)
@@ -416,6 +424,7 @@ FATAL: Design has critical errors
 
         # Mock docker.errors
         mock_docker.errors.DockerException = Exception
+        mock_docker.errors.ImageNotFound = Exception
 
         # Create a check
         check = ManufacturabilityCheck.objects.create(
@@ -526,6 +535,8 @@ FATAL: Design has critical errors
         mock_image.id = "sha256:abc123"
         mock_image.tags = ["ghcr.io/wafer-space/gf180mcu-precheck:latest"]
         mock_client.images.pull.return_value = mock_image
+        mock_client.images.get.return_value = mock_image
+        mock_client.api.pull.return_value = []  # Empty progress stream
 
         # Mock container with manufacturable result
         mock_container = MagicMock()
@@ -536,6 +547,7 @@ FATAL: Design has critical errors
 
         # Mock docker.errors
         mock_docker.errors.DockerException = Exception
+        mock_docker.errors.ImageNotFound = Exception
 
         # Set project to SUBMITTED status
         self.project.status = Project.Status.SUBMITTED
@@ -666,6 +678,8 @@ class TestDockerIntegration(TestCase):
         mock_image.id = "sha256:abc123"
         mock_image.tags = ["ghcr.io/wafer-space/gf180mcu-precheck:latest"]
         mock_client.images.pull.return_value = mock_image
+        mock_client.images.get.return_value = mock_image
+        mock_client.api.pull.return_value = []  # Empty progress stream
 
         # Mock container
         mock_container = MagicMock()
@@ -696,7 +710,7 @@ class TestDockerIntegration(TestCase):
 
         # Verify Docker operations
         mock_docker.from_env.assert_called_once()
-        mock_client.images.pull.assert_called_once()
+        mock_client.api.pull.assert_called_once()  # Now uses api.pull for progress
 
         # Verify metadata saved
         check.refresh_from_db()

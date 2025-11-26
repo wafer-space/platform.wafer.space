@@ -616,6 +616,7 @@ class ManufacturabilityService:
         Raises:
             ValidationError: If user already has a check running
         """
+        # Use transaction for database operations only
         with transaction.atomic():
             # Get or create the check FIRST (within transaction)
             # Each check is tied to a specific project_file
@@ -667,12 +668,14 @@ class ManufacturabilityService:
             check.retry_count = 0  # Reset retry count
             check.save()
 
-            # Queue task
-            task = check_project_manufacturability.delay(check.id)
-            check.task_id = task.id
-            check.save(update_fields=["task_id"])
+        # Queue task OUTSIDE transaction to avoid SQLite broker issues
+        # The check is now committed to the database, so the task can safely
+        # reference it by ID
+        task = check_project_manufacturability.delay(check.id)
+        check.task_id = task.id
+        check.save(update_fields=["task_id"])
 
-            return check
+        return check
 
     @classmethod
     def get_check_status_for_file(cls, project_file: "ProjectFile") -> dict | None:
