@@ -540,18 +540,6 @@ class ProjectFile(models.Model):
         return dict(self.DownloadStatus.choices).get(status_value, status_value)
 
     @property
-    def current_status(self) -> str:
-        """Get current download status from latest attempt.
-
-        DEPRECATED: Use download_status property instead.
-        Returns 'pending' if no attempts exist.
-        """
-        attempt = self.latest_attempt
-        if not attempt:
-            return "pending"
-        return attempt.status
-
-    @property
     def attempt_count(self) -> int:
         """Get number of download attempts.
 
@@ -1002,13 +990,7 @@ class ManufacturabilityCheck(models.Model):
 
     def get_reproduction_instructions(self) -> str:
         """Generate markdown instructions for reproducing check locally."""
-        project_file = (
-            self.project.submitted_file
-            or self.project.files.filter(is_active=True).first()
-        )
-
-        if not project_file:
-            return "No file available for reproduction instructions."
+        project_file = self.project_file
 
         return f"""# Reproducing Manufacturability Check Locally
 

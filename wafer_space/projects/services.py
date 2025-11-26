@@ -706,23 +706,11 @@ class ManufacturabilityService:
             project: The project to get check status for
 
         Returns:
-            dict with check status information, or None if no check exists.
+            dict with check status information, or None if no active file
+            or no check exists for the active file.
         """
-        # Get the active file and its check
         active_file = project.files.filter(is_active=True).first()
-        if active_file:
-            return cls.get_check_status_for_file(active_file)
-
-        # Fallback: get most recent check for the project
-        check = project.manufacturability_checks.order_by("-started_at").first()
-        if not check:
+        if not active_file:
             return None
 
-        return {
-            "status": check.status,
-            "is_manufacturable": check.is_manufacturable,
-            "errors": check.errors,
-            "warnings": check.warnings,
-            "started_at": check.started_at,
-            "completed_at": check.completed_at,
-        }
+        return cls.get_check_status_for_file(active_file)
