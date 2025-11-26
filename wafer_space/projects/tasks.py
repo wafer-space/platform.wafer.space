@@ -1167,7 +1167,8 @@ def _handle_download_failure(
                 error_type=FileProcessingError.ErrorType.DOWNLOAD,
                 error_message=f"Download failed: {exc}",
                 error_detail={
-                    "url": project_file.original_url,
+                    "original_url": project_file.original_url,
+                    "source_url": project_file.source_url,
                     "error_type": exc.__class__.__name__,
                     "traceback": traceback.format_exc(),
                 },
@@ -1815,7 +1816,8 @@ def download_project_file(self, project_id):  # noqa: PLR0915, C901
                     error_type=FileProcessingError.ErrorType.DOWNLOAD,
                     error_message=error_msg,
                     error_detail={
-                        "url": attempt.project_file.original_url,
+                        "original_url": attempt.project_file.original_url,
+                        "source_url": attempt.project_file.source_url,
                         "error_type": exc.__class__.__name__,
                         "traceback": traceback.format_exc(),
                         "retry_number": retry_num,
