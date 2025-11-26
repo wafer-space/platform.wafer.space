@@ -44,6 +44,9 @@ HTTP_PARTIAL_CONTENT = 206  # Server supports range requests
 # Byte conversion constants
 BYTES_PER_KILOBYTE = 1024
 
+# Progress logging interval (seconds)
+PROGRESS_LOG_INTERVAL_SECONDS = 30
+
 # Initialize URL handler registry for post-download processing
 _url_handler_registry = URLHandlerRegistry()
 _url_handler_registry.register(GoogleSourceHandler())
@@ -150,17 +153,60 @@ def _pull_and_record_image(context: _CheckContext):
     Returns:
         Docker image object
     """
-    context.logger.info("Pulling Docker image: %s", settings.PRECHECK_DOCKER_IMAGE)
-    image = context.client.images.pull(settings.PRECHECK_DOCKER_IMAGE)
+    image_name = settings.PRECHECK_DOCKER_IMAGE
+    context.logger.info("Step 3: Pulling Docker image: %s", image_name)
+
+    # Check if image already exists locally
+    try:
+        existing = context.client.images.get(image_name)
+        context.logger.info("  ✓ Image already exists locally: %s", existing.id[:12])
+        context.logger.info("  Checking for updates...")
+    except docker.errors.ImageNotFound:
+        context.logger.info("  Image not found locally, will download...")
+
+    # Pull with progress logging
+    context.logger.info("  Starting pull (this may take several minutes)...")
+    pull_start = timezone.now()
+    last_status = {}
+
+    # Use low-level API to get progress
+    for line in context.client.api.pull(image_name, stream=True, decode=True):
+        status = line.get("status", "")
+        progress = line.get("progress", "")
+        layer_id = line.get("id", "")
+
+        # Log layer progress changes
+        if layer_id and status:
+            key = f"{layer_id}:{status}"
+            if key not in last_status:
+                last_status[key] = True
+                layer_short = layer_id[:12]
+                if progress:
+                    context.logger.info("    [%s] %s %s", layer_short, status, progress)
+                elif status in ("Pull complete", "Already exists", "Download complete"):
+                    context.logger.info("    [%s] %s", layer_short, status)
+        elif status and not layer_id:
+            # Status without layer ID (e.g., "Digest:", "Status:")
+            context.logger.info("  %s", status)
+
+    pull_duration = (timezone.now() - pull_start).total_seconds()
+    context.logger.info("  Pull completed in %.1f seconds", pull_duration)
+
+    # Get the pulled image
+    image = context.client.images.get(image_name)
     context.check.docker_image = (
-        image.tags[0] if image.tags else settings.PRECHECK_DOCKER_IMAGE
+        image.tags[0] if image.tags else image_name
     )
     context.check.docker_image_digest = image.id
     context.check.save(update_fields=["docker_image", "docker_image_digest"])
+
+    # Log image details
+    image_size = image.attrs.get("Size", 0)
     context.logger.info(
-        "Image pulled: %s (digest: %s)",
+        "  ✓ Image ready: %s (digest: %s, size: %s)",
         context.check.docker_image,
-        context.check.docker_image_digest,
+        context.check.docker_image_digest[:12],
+        _format_bytes(image_size),
     )
     return image
 
@@ -174,7 +220,14 @@ def _run_container_and_stream_logs(context: _CheckContext):
     Returns:
         tuple: (logs string, exit_code int, container object)
     """
-    context.logger.info("Starting Docker container...")
+    context.logger.info("Step 4: Creating Docker container...")
+    context.logger.info("  Input file: %s", context.gds_path)
+    context.logger.info("  Project name: %s", context.project.name)
+    context.logger.info("  Project ID: %s", context.project.id)
+    context.logger.info("  Memory limit: 8GB")
+    context.logger.info("  CPU limit: 1 CPU")
+
+    container_start = timezone.now()
     container = context.client.containers.run(
         image=settings.PRECHECK_DOCKER_IMAGE,
         command=[
@@ -192,18 +245,41 @@ def _run_container_and_stream_logs(context: _CheckContext):
         mem_limit="8g",
         cpu_quota=100000,  # 1 CPU
     )
-    context.logger.info("Container started: %s", container.id)
+    context.logger.info("  ✓ Container started: %s", container.id[:12])
+
+    context.logger.info("Step 5: Running precheck analysis...")
+    context.logger.info("  Streaming container logs...")
 
     # Stream logs and update progress
     logs = ""
+    line_count = 0
+    last_progress_log = timezone.now()
+
     for line in container.logs(stream=True):
         line_text = line.decode("utf-8")
         logs += line_text
+        line_count += 1
+
+        # Log the actual container output
+        for log_line in line_text.strip().split("\n"):
+            if log_line:
+                context.logger.info("  [container] %s", log_line)
 
         # Update last activity and logs
         context.check.last_activity = timezone.now()
         context.check.processing_logs = logs
         context.check.save(update_fields=["last_activity", "processing_logs"])
+
+        # Periodic progress update
+        now = timezone.now()
+        if (now - last_progress_log).total_seconds() >= PROGRESS_LOG_INTERVAL_SECONDS:
+            elapsed = (now - container_start).total_seconds()
+            context.logger.info(
+                "  ... still running (%.0f seconds, %d log lines)",
+                elapsed,
+                line_count,
+            )
+            last_progress_log = now
 
         # Update Celery task state
         context.task_instance.update_state(
@@ -211,13 +287,23 @@ def _run_container_and_stream_logs(context: _CheckContext):
             meta={
                 "message": "Running precheck...",
                 "logs": logs[-1000:],  # Last 1000 chars
+                "line_count": line_count,
             },
         )
+
+    context.logger.info("Step 6: Waiting for container to complete...")
 
     # Wait for completion
     result = container.wait(timeout=settings.PRECHECK_TIMEOUT_SECONDS)
     exit_code = result["StatusCode"]
-    context.logger.info("Container completed with exit code: %d", exit_code)
+
+    container_duration = (timezone.now() - container_start).total_seconds()
+    context.logger.info(
+        "  ✓ Container completed in %.1f seconds (exit code: %d, %d log lines)",
+        container_duration,
+        exit_code,
+        line_count,
+    )
 
     return logs, exit_code, container
 
@@ -234,6 +320,8 @@ def _handle_check_result(check, logs, exit_code, logger):
     Returns:
         dict: Result data with status and details
     """
+    logger.info("Step 7: Parsing check results...")
+
     # Extract version information
     check.tool_versions = {
         "pdk": "gf180mcuD",  # Will extract from logs
@@ -243,9 +331,10 @@ def _handle_check_result(check, logs, exit_code, logger):
     check.save(update_fields=["tool_versions"])
 
     # Parse logs
+    logger.info("  Parsing %d bytes of logs...", len(logs))
     parsed = PrecheckLogParser.parse_logs(logs, exit_code)
     logger.info(
-        "Log parsing completed: success=%s, errors=%d, warnings=%d",
+        "  ✓ Parsing completed: success=%s, errors=%d, warnings=%d",
         parsed["success"],
         len(parsed["errors"]),
         len(parsed["warnings"]),
@@ -379,9 +468,52 @@ def _cleanup_container(container, logger):
     if container:
         try:
             container.remove()
-            logger.info("Container removed")
+            logger.info("  ✓ Container removed")
         except docker.errors.DockerException as exc:
-            logger.warning("Failed to remove container: %s", exc)
+            logger.warning("  ⚠ Failed to remove container: %s", exc)
+
+
+def _log_task_start(logger, check_id, task_id):
+    """Log task start banner."""
+    logger.info("=" * 60)
+    logger.info("MANUFACTURABILITY CHECK TASK STARTING")
+    logger.info("=" * 60)
+    logger.info("Check ID: %s", check_id)
+    logger.info("Task ID: %s", task_id)
+
+
+def _log_task_complete(logger, task_start, check):
+    """Log task completion summary."""
+    task_duration = (timezone.now() - task_start).total_seconds()
+    logger.info("=" * 60)
+    logger.info("MANUFACTURABILITY CHECK COMPLETED")
+    logger.info("  Duration: %.1f seconds", task_duration)
+    logger.info("  Result: %s", "PASS" if check.is_manufacturable else "FAIL")
+    logger.info("  Errors: %d", len(check.errors or []))
+    logger.info("  Warnings: %d", len(check.warnings or []))
+    logger.info("=" * 60)
+
+
+def _setup_docker_context(check, project_file, task_instance, logger):
+    """Set up Docker client and execution context.
+
+    Returns:
+        _CheckContext: Execution context for the check
+    """
+    logger.info("Step 2: Connecting to Docker daemon...")
+    client = docker.from_env()
+    docker_info = client.info()
+    logger.info("  ✓ Docker connected: %s", docker_info.get("Name", "unknown"))
+    logger.info("  ✓ Docker version: %s", docker_info.get("ServerVersion", "unknown"))
+
+    return _CheckContext(
+        check=check,
+        client=client,
+        project=check.project,
+        gds_path=project_file.file.path,
+        task_instance=task_instance,
+        logger=logger,
+    )
 
 
 @shared_task(
@@ -405,56 +537,50 @@ def check_project_manufacturability(self, check_id):
     """
     logger = logging.getLogger(__name__)
     container = None
+    task_start = timezone.now()
 
     try:
-        # 1. Get check and project
+        _log_task_start(logger, check_id, self.request.id)
+
+        # Step 1: Get check and project
+        logger.info("Step 1: Loading check and project data...")
         check = ManufacturabilityCheck.objects.get(id=check_id)
         check.task_id = self.request.id or "test-task"
         check.save(update_fields=["task_id"])
         check.start_processing()
 
-        project = check.project
         project_file = _validate_project_file(check)
+        logger.info("  ✓ Project: %s (ID: %s)", check.project.name, check.project.id)
+        logger.info("  ✓ File: %s", project_file.original_filename)
+        logger.info("  ✓ File size: %s", _format_bytes(project_file.file_size or 0))
 
-        logger.info(
-            "Starting manufacturability check for project %s with file %s",
-            project.id,
-            project_file.original_filename,
-        )
+        # Step 2: Connect to Docker (in helper)
+        context = _setup_docker_context(check, project_file, self, logger)
 
-        # 2. Create execution context
-        client = docker.from_env()
-        context = _CheckContext(
-            check=check,
-            client=client,
-            project=project,
-            gds_path=project_file.file.path,
-            task_instance=self,
-            logger=logger,
-        )
-
-        # 3. Pull image and run container
+        # Steps 3-6: Pull image and run container (in helpers)
         _pull_and_record_image(context)
-        logger.info("GDS file path: %s", context.gds_path)
-
         logs, exit_code, container = _run_container_and_stream_logs(context)
 
-        # 4. Handle results
+        # Step 7: Handle results (in helper)
         result = _handle_check_result(check, logs, exit_code, logger)
 
         # Handle system failures
         if isinstance(result, tuple) and result[0] == "system":
             _handle_retry(check, result[1], self, logger)
 
-        # 5. Cleanup
+        # Step 8: Cleanup
+        logger.info("Step 8: Cleaning up...")
         _cleanup_container(container, logger)
+
+        # Final summary
+        _log_task_complete(logger, task_start, check)
 
         return {
             "status": "completed",
             "is_manufacturable": check.is_manufacturable,
             "errors": check.errors,
             "warnings": check.warnings,
-            "project_id": str(project.id),
+            "project_id": str(check.project.id),
         }
 
     except ManufacturabilityCheck.DoesNotExist:
