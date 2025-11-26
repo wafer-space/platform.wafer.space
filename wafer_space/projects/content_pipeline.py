@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+import uuid
 from pathlib import Path
 
 from celery import current_task
@@ -141,8 +142,8 @@ def get_temp_dir_for_file(project_file_id: int) -> Path:
     Returns:
         Path to temp directory (created if doesn't exist)
     """
-    # Get celery task ID if available
-    task_id = "unknown"
+    # Get celery task ID if available, use UUID fallback to prevent collisions
+    task_id = f"unknown_{uuid.uuid4().hex[:8]}"
     if current_task and current_task.request and current_task.request.id:
         task_id = current_task.request.id
 
