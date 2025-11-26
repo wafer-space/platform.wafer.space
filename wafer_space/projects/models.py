@@ -9,6 +9,9 @@ from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.utils import timezone
 
+# Byte conversion constant
+_BYTES_PER_KB = 1024.0
+
 
 class Project(models.Model):
     """User-submitted design projects for manufacturing."""
@@ -1085,6 +1088,145 @@ Your GDS file should have:
         )
 
         return f"https://github.com/wafer-space/gf180mcu-precheck/issues/new?{params}"
+
+
+class ManufacturabilityCheckpoint(models.Model):
+    """Track resource usage during manufacturability check execution.
+
+    Similar to ProjectFileChunk for downloads, this records periodic snapshots
+    of Docker container stats during the precheck run for performance analysis.
+    """
+
+    manufacturability_check = models.ForeignKey(
+        ManufacturabilityCheck,
+        on_delete=models.CASCADE,
+        related_name="checkpoints",
+        help_text="The manufacturability check this checkpoint belongs to",
+    )
+
+    # Timing
+    timestamp = models.DateTimeField(
+        auto_now_add=True,
+        help_text="When this checkpoint was recorded",
+    )
+    checkpoint_number = models.IntegerField(
+        help_text="Sequential checkpoint number for ordering",
+    )
+    elapsed_seconds = models.FloatField(
+        help_text="Seconds since check started",
+    )
+
+    # CPU stats
+    cpu_percent = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="CPU usage percentage at this checkpoint",
+    )
+    cpu_total_usage = models.BigIntegerField(
+        null=True,
+        blank=True,
+        help_text="Total CPU usage in nanoseconds",
+    )
+    cpu_system_usage = models.BigIntegerField(
+        null=True,
+        blank=True,
+        help_text="System CPU usage in nanoseconds",
+    )
+    cpu_online_cpus = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Number of online CPUs",
+    )
+
+    # Memory stats
+    memory_usage_bytes = models.BigIntegerField(
+        null=True,
+        blank=True,
+        help_text="Memory usage in bytes",
+    )
+    memory_limit_bytes = models.BigIntegerField(
+        null=True,
+        blank=True,
+        help_text="Memory limit in bytes",
+    )
+    memory_percent = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Memory usage as percentage of limit",
+    )
+    memory_cache_bytes = models.BigIntegerField(
+        null=True,
+        blank=True,
+        help_text="Memory cache in bytes",
+    )
+
+    # I/O stats
+    block_read_bytes = models.BigIntegerField(
+        null=True,
+        blank=True,
+        help_text="Block device read bytes",
+    )
+    block_write_bytes = models.BigIntegerField(
+        null=True,
+        blank=True,
+        help_text="Block device write bytes",
+    )
+
+    # Network stats
+    network_rx_bytes = models.BigIntegerField(
+        null=True,
+        blank=True,
+        help_text="Network bytes received",
+    )
+    network_tx_bytes = models.BigIntegerField(
+        null=True,
+        blank=True,
+        help_text="Network bytes transmitted",
+    )
+
+    # Container state
+    container_state = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text="Container state (running, exited, etc.)",
+    )
+
+    class Meta:
+        ordering = ["checkpoint_number"]
+        indexes = [
+            models.Index(fields=["manufacturability_check", "checkpoint_number"]),
+            models.Index(fields=["manufacturability_check", "timestamp"]),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"Check {self.manufacturability_check_id} - "
+            f"Checkpoint {self.checkpoint_number} ({self.elapsed_seconds:.1f}s)"
+        )
+
+    @property
+    def memory_usage_formatted(self) -> str:
+        """Format memory usage for display."""
+        if not self.memory_usage_bytes:
+            return ""
+        return _format_bytes_static(self.memory_usage_bytes)
+
+    @property
+    def cpu_percent_formatted(self) -> str:
+        """Format CPU percentage for display."""
+        if self.cpu_percent is None:
+            return ""
+        return f"{self.cpu_percent:.1f}%"
+
+
+def _format_bytes_static(num_bytes: int) -> str:
+    """Format bytes as human-readable string."""
+    bytes_float = float(num_bytes)
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
+        if abs(bytes_float) < _BYTES_PER_KB:
+            return f"{bytes_float:.1f} {unit}"
+        bytes_float /= _BYTES_PER_KB
+    return f"{bytes_float:.1f} PB"
 
 
 class ProjectComplianceCertification(models.Model):

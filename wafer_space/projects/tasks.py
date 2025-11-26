@@ -33,6 +33,7 @@ from wafer_space.notifications.services import NotificationService
 from .models import DownloadAttempt
 from .models import FileProcessingError
 from .models import ManufacturabilityCheck
+from .models import ManufacturabilityCheckpoint
 from .models import Project
 from .models import ProjectFile
 from .models import ProjectFileChunk
@@ -76,6 +77,144 @@ def _format_bytes(num_bytes: int) -> str:
             return f"{bytes_float:.2f} {unit}"
         bytes_float /= BYTES_PER_KILOBYTE
     return f"{bytes_float:.2f} PB"
+
+
+# Checkpoint interval for manufacturability checks (seconds)
+CHECKPOINT_INTERVAL_SECONDS = 10
+
+
+def _calculate_cpu_percent(stats: dict[str, Any]) -> float | None:
+    """Calculate CPU percentage from Docker stats.
+
+    Args:
+        stats: Docker container stats dictionary
+
+    Returns:
+        CPU percentage or None if stats unavailable
+    """
+    try:
+        cpu_stats = stats.get("cpu_stats", {})
+        precpu_stats = stats.get("precpu_stats", {})
+
+        current_cpu = cpu_stats.get("cpu_usage", {}).get("total_usage", 0)
+        previous_cpu = precpu_stats.get("cpu_usage", {}).get("total_usage", 0)
+        cpu_delta = current_cpu - previous_cpu
+
+        system_delta = cpu_stats.get("system_cpu_usage", 0) - precpu_stats.get(
+            "system_cpu_usage", 0
+        )
+
+        online_cpus = cpu_stats.get("online_cpus") or len(
+            cpu_stats.get("cpu_usage", {}).get("percpu_usage", []) or [1]
+        )
+
+        if system_delta > 0 and cpu_delta > 0:
+            return (cpu_delta / system_delta) * online_cpus * 100.0
+    except (KeyError, TypeError, ZeroDivisionError):
+        pass
+    return None
+
+
+def _record_checkpoint(
+    check: "ManufacturabilityCheck",
+    container,
+    checkpoint_number: int,
+    elapsed_seconds: float,
+    logger: logging.Logger,
+) -> None:
+    """Record a checkpoint with Docker container stats.
+
+    Args:
+        check: ManufacturabilityCheck instance
+        container: Docker container object
+        checkpoint_number: Sequential checkpoint number
+        elapsed_seconds: Seconds since container start
+        logger: Logger instance
+    """
+    try:
+        # Get container stats (non-streaming, single snapshot)
+        stats = container.stats(stream=False)
+
+        # Validate stats is a dict (not a mock)
+        if not isinstance(stats, dict):
+            logger.debug(
+                "  Checkpoint %d: stats not available (mock)", checkpoint_number
+            )
+            return
+
+        # Extract CPU stats
+        cpu_stats = stats.get("cpu_stats", {})
+        cpu_usage = cpu_stats.get("cpu_usage", {})
+        cpu_percent = _calculate_cpu_percent(stats)
+
+        # Extract memory stats
+        memory_stats = stats.get("memory_stats", {})
+        memory_usage = memory_stats.get("usage")
+        memory_limit = memory_stats.get("limit")
+        memory_cache = memory_stats.get("stats", {}).get("cache")
+        memory_percent = None
+        if (
+            isinstance(memory_usage, int | float)
+            and isinstance(memory_limit, int | float)
+            and memory_limit > 0
+        ):
+            memory_percent = (memory_usage / memory_limit) * 100.0
+
+        # Extract block I/O stats
+        blkio_stats = stats.get("blkio_stats", {})
+        io_service_bytes = blkio_stats.get("io_service_bytes_recursive") or []
+        block_read = sum(
+            entry.get("value", 0)
+            for entry in io_service_bytes
+            if entry.get("op") == "Read"
+        )
+        block_write = sum(
+            entry.get("value", 0)
+            for entry in io_service_bytes
+            if entry.get("op") == "Write"
+        )
+
+        # Extract network stats
+        networks = stats.get("networks", {})
+        network_rx = sum(net.get("rx_bytes", 0) for net in networks.values())
+        network_tx = sum(net.get("tx_bytes", 0) for net in networks.values())
+
+        # Create checkpoint record
+        ManufacturabilityCheckpoint.objects.create(
+            manufacturability_check=check,
+            checkpoint_number=checkpoint_number,
+            elapsed_seconds=elapsed_seconds,
+            cpu_percent=cpu_percent,
+            cpu_total_usage=cpu_usage.get("total_usage"),
+            cpu_system_usage=cpu_stats.get("system_cpu_usage"),
+            cpu_online_cpus=cpu_stats.get("online_cpus"),
+            memory_usage_bytes=memory_usage if isinstance(memory_usage, int) else None,
+            memory_limit_bytes=memory_limit if isinstance(memory_limit, int) else None,
+            memory_percent=memory_percent,
+            memory_cache_bytes=memory_cache if isinstance(memory_cache, int) else None,
+            block_read_bytes=block_read if block_read else None,
+            block_write_bytes=block_write if block_write else None,
+            network_rx_bytes=network_rx if network_rx else None,
+            network_tx_bytes=network_tx if network_tx else None,
+            container_state=stats.get("State", ""),
+        )
+
+        mem_str = (
+            _format_bytes(memory_usage or 0) if isinstance(memory_usage, int) else "N/A"
+        )
+        logger.debug(
+            "  Checkpoint %d: CPU=%.1f%%, Mem=%.1f%% (%s)",
+            checkpoint_number,
+            cpu_percent or 0,
+            memory_percent or 0,
+            mem_str,
+        )
+
+    except (AttributeError, TypeError, KeyError) as e:
+        # Handle cases where container is a mock or stats are unavailable
+        logger.debug(
+            "  Could not get stats for checkpoint %d: %s", checkpoint_number, e
+        )
 
 
 def _setup_temp_directory() -> Path:
@@ -218,6 +357,74 @@ def _pull_and_record_image(context: _CheckContext):
     return image
 
 
+def _stream_logs_with_checkpoints(context: _CheckContext, container, container_start):
+    """Stream container logs and record checkpoints periodically.
+
+    Args:
+        context: Check execution context
+        container: Docker container object
+        container_start: Datetime when container started
+
+    Returns:
+        tuple: (logs string, line_count int, checkpoint_number int)
+    """
+    logs = ""
+    line_count = 0
+    last_progress_log = timezone.now()
+    last_checkpoint_time = timezone.now()
+    checkpoint_number = 0
+
+    # Record initial checkpoint
+    _record_checkpoint(context.check, container, checkpoint_number, 0.0, context.logger)
+    checkpoint_number += 1
+
+    for line in container.logs(stream=True):
+        line_text = line.decode("utf-8")
+        logs += line_text
+        line_count += 1
+
+        # Log the actual container output
+        for log_line in line_text.strip().split("\n"):
+            if log_line:
+                context.logger.info("  [container] %s", log_line)
+
+        # Update last activity and logs
+        context.check.last_activity = timezone.now()
+        context.check.processing_logs = logs
+        context.check.save(update_fields=["last_activity", "processing_logs"])
+
+        now = timezone.now()
+
+        # Record checkpoint periodically
+        if (now - last_checkpoint_time).total_seconds() >= CHECKPOINT_INTERVAL_SECONDS:
+            elapsed = (now - container_start).total_seconds()
+            _record_checkpoint(
+                context.check, container, checkpoint_number, elapsed, context.logger
+            )
+            checkpoint_number += 1
+            last_checkpoint_time = now
+
+        # Periodic progress update
+        if (now - last_progress_log).total_seconds() >= PROGRESS_LOG_INTERVAL_SECONDS:
+            elapsed = (now - container_start).total_seconds()
+            context.logger.info(
+                "  ... still running (%.0f seconds, %d log lines)", elapsed, line_count
+            )
+            last_progress_log = now
+
+        # Update Celery task state
+        context.task_instance.update_state(
+            state="PROGRESS",
+            meta={
+                "message": "Running precheck...",
+                "logs": logs[-1000:],
+                "line_count": line_count,
+            },
+        )
+
+    return logs, line_count, checkpoint_number
+
+
 def _run_container_and_stream_logs(context: _CheckContext):
     """Run Docker container and stream logs with progress updates.
 
@@ -237,8 +444,6 @@ def _run_container_and_stream_logs(context: _CheckContext):
     container_start = timezone.now()
 
     # Build the precheck command to run inside nix-shell
-    # The precheck.py script is in /workspace, and we run it via nix-shell
-    # to get access to Python and other Nix-provided dependencies
     if not context.project_file.top_cell:
         msg = "Cannot run manufacturability check: top_cell not extracted from file"
         raise ValueError(msg)
@@ -247,8 +452,6 @@ def _run_container_and_stream_logs(context: _CheckContext):
     context.logger.info("  Top cell: %s", top_cell)
 
     precheck_cmd = f'python3 precheck.py --input /input/design.gds --top "{top_cell}"'
-
-    # Log the full Docker command for debugging
     docker_command = ["nix-shell", "--run", precheck_cmd]
 
     # Log equivalent docker run command for easy reproduction
@@ -271,53 +474,17 @@ def _run_container_and_stream_logs(context: _CheckContext):
         working_dir="/workspace",
         detach=True,
         mem_limit="8g",
-        cpu_quota=100000,  # 1 CPU
+        cpu_quota=100000,
     )
     context.logger.info("  ✓ Container started: %s", container.id[:12])
 
     context.logger.info("Step 5: Running precheck analysis...")
     context.logger.info("  Streaming container logs...")
 
-    # Stream logs and update progress
-    logs = ""
-    line_count = 0
-    last_progress_log = timezone.now()
-
-    for line in container.logs(stream=True):
-        line_text = line.decode("utf-8")
-        logs += line_text
-        line_count += 1
-
-        # Log the actual container output
-        for log_line in line_text.strip().split("\n"):
-            if log_line:
-                context.logger.info("  [container] %s", log_line)
-
-        # Update last activity and logs
-        context.check.last_activity = timezone.now()
-        context.check.processing_logs = logs
-        context.check.save(update_fields=["last_activity", "processing_logs"])
-
-        # Periodic progress update
-        now = timezone.now()
-        if (now - last_progress_log).total_seconds() >= PROGRESS_LOG_INTERVAL_SECONDS:
-            elapsed = (now - container_start).total_seconds()
-            context.logger.info(
-                "  ... still running (%.0f seconds, %d log lines)",
-                elapsed,
-                line_count,
-            )
-            last_progress_log = now
-
-        # Update Celery task state
-        context.task_instance.update_state(
-            state="PROGRESS",
-            meta={
-                "message": "Running precheck...",
-                "logs": logs[-1000:],  # Last 1000 chars
-                "line_count": line_count,
-            },
-        )
+    # Stream logs and record checkpoints
+    logs, line_count, checkpoint_number = _stream_logs_with_checkpoints(
+        context, container, container_start
+    )
 
     context.logger.info("Step 6: Waiting for container to complete...")
 
@@ -326,11 +493,20 @@ def _run_container_and_stream_logs(context: _CheckContext):
     exit_code = result["StatusCode"]
 
     container_duration = (timezone.now() - container_start).total_seconds()
+
+    # Record final checkpoint
+    _record_checkpoint(
+        context.check, container, checkpoint_number, container_duration, context.logger
+    )
+    checkpoint_number += 1
+
     context.logger.info(
-        "  ✓ Container completed in %.1f seconds (exit code: %d, %d log lines)",
+        "  ✓ Container completed in %.1f seconds "
+        "(exit code: %d, %d log lines, %d checkpoints)",
         container_duration,
         exit_code,
         line_count,
+        checkpoint_number,
     )
 
     return logs, exit_code, container
