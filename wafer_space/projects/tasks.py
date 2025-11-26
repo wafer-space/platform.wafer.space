@@ -226,19 +226,20 @@ def _run_container_and_stream_logs(context: _CheckContext):
     context.logger.info("  CPU limit: 1 CPU")
 
     container_start = timezone.now()
+
+    # Build the precheck command to run inside nix-shell
+    # The precheck.py script is in /workspace, and we run it via nix-shell
+    # to get access to Python and other Nix-provided dependencies
+    precheck_cmd = (
+        f"python3 precheck.py --input /input/design.gds "
+        f'--top "{context.project.name}" --id "{context.project.id}"'
+    )
+
     container = context.client.containers.run(
         image=settings.PRECHECK_DOCKER_IMAGE,
-        command=[
-            "python3",
-            "/precheck/precheck.py",
-            "--input",
-            "/input/design.gds",
-            "--top",
-            context.project.name,
-            "--id",
-            str(context.project.id),
-        ],
+        command=["nix-shell", "--run", precheck_cmd],
         volumes={context.gds_path: {"bind": "/input/design.gds", "mode": "ro"}},
+        working_dir="/workspace",
         detach=True,
         mem_limit="8g",
         cpu_quota=100000,  # 1 CPU
