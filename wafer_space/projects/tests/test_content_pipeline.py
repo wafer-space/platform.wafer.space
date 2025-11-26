@@ -229,10 +229,15 @@ def test_temp_dir_creation_no_task(temp_dir):
         # Get temp directory
         result_dir = get_temp_dir_for_file(project_file_id=99)
 
-        # Verify directory uses "unknown" task ID
-        expected_path = temp_dir / "temp" / "task_unknown" / "file_99"
-        assert result_dir == expected_path
+        # Verify directory uses UUID-based fallback (unknown_<8-char-hex>)
+        # to prevent temp directory collisions when no task ID available
         assert result_dir.exists()
+        assert result_dir.parent.parent == temp_dir / "temp"
+        assert result_dir.name == "file_99"
+        # Task directory should be unknown_<uuid> pattern
+        task_dir_name = result_dir.parent.name
+        assert task_dir_name.startswith("task_unknown_")
+        assert len(task_dir_name) == len("task_unknown_") + 8  # 8 hex chars
 
 
 def test_temp_dir_cleanup(temp_dir):
