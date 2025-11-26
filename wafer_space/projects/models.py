@@ -858,6 +858,32 @@ class ProjectFileChunk(models.Model):
         return bytes_diff / duration
 
 
+def manufacturability_check_log_path(instance, filename):
+    """Generate upload path for manufacturability check logs.
+
+    Logs are stored next to the GDS file with a unique name per check run.
+    Format: projects/<project_id>/<gds_name>.<top_cell>.precheck.<timestamp>.log
+
+    Example: projects/abc123/design.gds.TOP_CELL.precheck.20251126_231820.log
+    """
+    timestamp = instance.started_at or timezone.now()
+    timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")
+
+    # Get GDS filename (without path)
+    gds_name = "design"
+    if instance.project_file and instance.project_file.processed_filename:
+        gds_name = instance.project_file.processed_filename
+
+    # Get top cell name
+    top_cell = "unknown"
+    if instance.project_file and instance.project_file.top_cell:
+        # Sanitize top cell name for filesystem (replace unsafe chars)
+        top_cell = instance.project_file.top_cell.replace("/", "_").replace("\\", "_")
+
+    filename = f"{gds_name}.{top_cell}.precheck.{timestamp_str}.log"
+    return f"projects/{instance.project.id}/{filename}"
+
+
 class ManufacturabilityCheck(models.Model):
     """Track manufacturability checking process for projects."""
 
@@ -894,6 +920,12 @@ class ManufacturabilityCheck(models.Model):
     errors = models.JSONField(default=list, blank=True)  # Manufacturing errors
     warnings = models.JSONField(default=list, blank=True)  # Manufacturing warnings
     processing_logs = models.TextField(blank=True)
+    log_file = models.FileField(
+        upload_to=manufacturability_check_log_path,
+        max_length=512,
+        blank=True,
+        help_text="Log file stored on filesystem (next to GDS file)",
+    )
 
     # System error tracking (distinct from manufacturing errors)
     error_message = models.TextField(

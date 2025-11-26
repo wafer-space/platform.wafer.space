@@ -217,6 +217,46 @@ def _record_checkpoint(
         )
 
 
+def _save_logs_to_file(
+    check: "ManufacturabilityCheck",
+    logs: str,
+    logger: logging.Logger,
+) -> None:
+    """Save container logs to filesystem next to the GDS file.
+
+    Creates a unique log file for each check run.
+    Format: <gds_name>.<top_cell>.precheck.<timestamp>.log
+
+    Args:
+        check: ManufacturabilityCheck instance
+        logs: Container logs string
+        logger: Logger instance
+    """
+    try:
+        timestamp = check.started_at or timezone.now()
+        timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")
+
+        # Get GDS filename
+        gds_name = "design"
+        if check.project_file and check.project_file.processed_filename:
+            gds_name = check.project_file.processed_filename
+
+        # Get top cell name (sanitized for filesystem)
+        top_cell = "unknown"
+        if check.project_file and check.project_file.top_cell:
+            top_cell = check.project_file.top_cell.replace("/", "_").replace("\\", "_")
+
+        filename = f"{gds_name}.{top_cell}.precheck.{timestamp_str}.log"
+
+        # Save logs using Django's file handling
+        content = ContentFile(logs.encode("utf-8"))
+        check.log_file.save(filename, content, save=True)
+
+        logger.info("  ✓ Logs saved to: %s", check.log_file.name)
+    except OSError as e:
+        logger.warning("  Could not save logs to file: %s", e)
+
+
 def _setup_temp_directory() -> Path:
     """Create and return temporary directory for downloads."""
     temp_dir = Path(tempfile.gettempdir()) / "wafer_space_downloads"
@@ -525,6 +565,9 @@ def _handle_check_result(check, logs, exit_code, logger):
         dict: Result data with status and details
     """
     logger.info("Step 7: Parsing check results...")
+
+    # Save logs to filesystem (before parsing, so we always have them)
+    _save_logs_to_file(check, logs, logger)
 
     # Extract version information
     check.tool_versions = {
