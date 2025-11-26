@@ -237,7 +237,12 @@
     </h6>
     <p class="mb-2 text-muted small">Celery automatically retries failed downloads with exponential backoff.</p>
     {% for attempt in download_attempts %}
-      {% include "projects/_download_attempt.html" with attempt=attempt is_latest=forloop.first start_open=forloop.first show_checkpoints=True show_errors=True show_technical_details=True %}
+      {# Honor first_open parameter: only open first attempt when first_open=True (default) #}
+      {% if first_open|default:True %}
+        {% include "projects/_download_attempt.html" with attempt=attempt is_latest=forloop.first start_open=forloop.first show_checkpoints=True show_errors=True show_technical_details=True %}
+      {% else %}
+        {% include "projects/_download_attempt.html" with attempt=attempt is_latest=forloop.first start_open=False show_checkpoints=True show_errors=True show_technical_details=True %}
+      {% endif %}
     {% endfor %}
   </div>
 {% endif %}
