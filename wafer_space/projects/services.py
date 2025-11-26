@@ -299,7 +299,7 @@ class ProjectFileService:
         if handler_metadata.get("requires_github_auth"):
             # GitHub artifacts require authentication - cannot validate without token
             # Validation will happen during download task with proper credentials
-            validation_result: dict[str, int | str | None] = {
+            validation_result: dict[str, int | str | bool | None] = {
                 "file_size": 0,  # Unknown until download
                 "content_type": None,
                 "content_disposition": None,
