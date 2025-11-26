@@ -260,6 +260,11 @@ class ProjectFile(models.Model):
         blank=True,
         help_text="Final filename after extraction/decompression pipeline",
     )
+    top_cell = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Top-level cell name extracted from GDS/OASIS file",
+    )
     content_type = models.CharField(max_length=100, blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 

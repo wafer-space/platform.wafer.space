@@ -33,6 +33,8 @@ from .models import ProjectFile
 from .models import ProjectFileChunk
 from .precheck_parser import PrecheckLogParser
 from .precheck_parser import classify_failure
+from .processors.top_cell_extractor import extract_top_cell
+from .url_handlers import GitHubArtifactHandler
 from .url_handlers import GoogleSourceHandler
 from .url_handlers import URLHandlerRegistry
 from .verification import is_task_actively_running
@@ -139,6 +141,7 @@ class _CheckContext:
     check: "ManufacturabilityCheck"
     client: "docker.DockerClient"
     project: "Project"
+    project_file: "ProjectFile"
     gds_path: str
     task_instance: "shared_task"
     logger: logging.Logger
@@ -230,9 +233,16 @@ def _run_container_and_stream_logs(context: _CheckContext):
     # Build the precheck command to run inside nix-shell
     # The precheck.py script is in /workspace, and we run it via nix-shell
     # to get access to Python and other Nix-provided dependencies
+    if not context.project_file.top_cell:
+        msg = "Cannot run manufacturability check: top_cell not extracted from file"
+        raise ValueError(msg)
+
+    top_cell = context.project_file.top_cell
+    context.logger.info("  Top cell: %s", top_cell)
+
     precheck_cmd = (
         f"python3 precheck.py --input /input/design.gds "
-        f'--top "{context.project.name}" --id "{context.project.id}"'
+        f'--top "{top_cell}" --id "{context.project.id}"'
     )
 
     # Log the full Docker command for debugging
@@ -525,6 +535,7 @@ def _setup_docker_context(check, project_file, task_instance, logger):
         check=check,
         client=client,
         project=check.project,
+        project_file=project_file,
         gds_path=project_file.file.path,
         task_instance=task_instance,
         logger=logger,
@@ -1415,6 +1426,22 @@ def _verify_and_notify(
     project_file.hash_verified = hash_verified
     project_file.mark_download_complete()
     logger.info("  ✓ Download marked as COMPLETE")
+
+    # Extract top cell from GDS/OASIS file (required for manufacturability check)
+    logger.info("Step 8.5: Extracting top cell from layout file...")
+    if not project_file.file:
+        msg = "No file available for top cell extraction"
+        raise ValueError(msg)
+
+    file_path = Path(project_file.file.path)
+    top_cell = extract_top_cell(file_path)
+    if not top_cell:
+        msg = f"Could not extract top cell from {project_file.processed_filename}"
+        raise ValueError(msg)
+
+    project_file.top_cell = top_cell
+    project_file.save(update_fields=["top_cell"])
+    logger.info("  ✓ Top cell identified: %s", top_cell)
 
     # Create notifications
     logger.info("Step 9: Creating notifications...")

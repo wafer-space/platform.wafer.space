@@ -189,8 +189,13 @@
         <strong>Created:</strong> {{ file.uploaded_at|date:"Y-m-d H:i:s" }}
       </p>
     {% endif %}
+    {% if file.top_cell %}
+      <p class="mb-2">
+        <strong>Top Cell:</strong> <code>{{ file.top_cell }}</code>
+      </p>
+    {% endif %}
     {# File Hashes #}
-    {% if file.hash_md5 or file.hash_sha1 %}
+    {% if file.hash_md5 or file.hash_sha1 or file.hash_sha256 %}
       <hr />
       <h6>File Hashes</h6>
       {% if file.hash_md5 %}
@@ -214,6 +219,22 @@
           <strong>SHA1:</strong> <code>{{ file.hash_sha1 }}</code>
           {% if file.expected_hash_sha1 %}
             {% if file.hash_sha1|lower == file.expected_hash_sha1|lower %}
+              <span class="badge bg-success">
+                <i class="bi bi-check-circle"></i> Verified
+              </span>
+            {% else %}
+              <span class="badge bg-danger">
+                <i class="bi bi-x-circle"></i> Mismatch
+              </span>
+            {% endif %}
+          {% endif %}
+        </p>
+      {% endif %}
+      {% if file.hash_sha256 %}
+        <p class="mb-1">
+          <strong>SHA256:</strong> <code>{{ file.hash_sha256 }}</code>
+          {% if file.expected_hash_sha256 %}
+            {% if file.hash_sha256|lower == file.expected_hash_sha256|lower %}
               <span class="badge bg-success">
                 <i class="bi bi-check-circle"></i> Verified
               </span>

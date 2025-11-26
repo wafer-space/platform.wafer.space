@@ -258,6 +258,7 @@ class TestManufacturabilityCheckTask(TestCase):
                 project=self.project,
                 original_filename="test.gds",
                 is_active=True,
+                top_cell="TestCell",
             )
             project_file.file.save("test.gds", ContentFile(f.read()), save=True)
             self.project.submitted_file = project_file
@@ -321,6 +322,7 @@ class TestManufacturabilityCheckTask(TestCase):
                 project=self.project,
                 original_filename="test.gds",
                 is_active=True,
+                top_cell="TestCell",
             )
             project_file.file.save("test.gds", ContentFile(f.read()), save=True)
             self.project.submitted_file = project_file
@@ -396,6 +398,7 @@ INFO: Check completed
                 project=self.project,
                 original_filename="test.gds",
                 is_active=True,
+                top_cell="TestCell",
             )
             project_file.file.save("test.gds", ContentFile(f.read()), save=True)
             self.project.submitted_file = project_file
@@ -523,6 +526,7 @@ FATAL: Design has critical errors
                 project=self.project,
                 original_filename="test.gds",
                 is_active=True,
+                top_cell="TestCell",
             )
             project_file.file.save("test.gds", ContentFile(f.read()), save=True)
             self.project.submitted_file = project_file
@@ -651,6 +655,7 @@ class TestDockerIntegration(TestCase):
             file_size=1024,
             is_active=True,
             hash_verified=True,
+            top_cell="TestCell",
         )
         # Create a completed download attempt to set download_status
         DownloadAttempt.objects.create(
@@ -1100,6 +1105,7 @@ class DownloadTaskTests(TestCase):
         finally:
             temp_path.unlink(missing_ok=True)
 
+    @patch("wafer_space.projects.tasks.extract_top_cell")
     @patch("wafer_space.projects.services.ManufacturabilityService.queue_check")
     @patch("wafer_space.projects.tasks._apply_content_pipeline")
     @patch("wafer_space.projects.services.detect_file_type_from_data")
@@ -1110,6 +1116,7 @@ class DownloadTaskTests(TestCase):
         mock_detect,
         mock_pipeline,
         mock_queue_check,
+        mock_extract_top_cell,
     ):
         """Test that hashes are calculated on extracted GDS, not downloaded ZIP."""
         project = Project.objects.create(user=self.user, name="Test")
@@ -1149,6 +1156,9 @@ class DownloadTaskTests(TestCase):
 
         # Mock the pipeline to extract GDS and return hashes
         mock_pipeline.return_value = (gds_content, expected_md5, expected_sha1)
+
+        # Mock top cell extraction
+        mock_extract_top_cell.return_value = "TestCell"
 
         # Run download task
         download_project_file(str(project.id))

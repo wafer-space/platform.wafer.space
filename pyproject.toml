@@ -201,4 +201,5 @@ dependencies = [
     "whitenoise==6.11.0",
     "python-magic>=0.4.27",
     "docker>=7.1.0",
+    "gdstk>=0.9.61",
 ]
