@@ -294,12 +294,19 @@ class TestProjectFileDownload(BaseBrowserTest):
             )
             assert status_element is not None
 
+    @pytest.mark.skip(
+        reason="Mock doesn't affect live server in browser tests. See #62"
+    )
     @patch("wafer_space.projects.services.AsyncResult")
     def test_status_updates_dynamically_without_reload(self, mock_async_result):
         """Test that status updates from pending to downloading without page reload.
 
         This test verifies the JavaScript polling system correctly updates the UI
         when the download status transitions from PENDING to DOWNLOADING.
+
+        NOTE: This test is skipped because mocks don't propagate to the live server
+        process. Needs refactoring to use database state changes instead.
+        See: https://github.com/wafer-space/platform.wafer.space/issues/62
         """
         self.login()
 
