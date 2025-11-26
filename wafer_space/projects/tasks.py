@@ -235,9 +235,16 @@ def _run_container_and_stream_logs(context: _CheckContext):
         f'--top "{context.project.name}" --id "{context.project.id}"'
     )
 
+    # Log the full Docker command for debugging
+    docker_command = ["nix-shell", "--run", precheck_cmd]
+    context.logger.info("  Docker image: %s", settings.PRECHECK_DOCKER_IMAGE)
+    context.logger.info("  Docker command: %s", docker_command)
+    context.logger.info("  Volume mount: %s -> /input/design.gds", context.gds_path)
+    context.logger.info("  Working dir: /workspace")
+
     container = context.client.containers.run(
         image=settings.PRECHECK_DOCKER_IMAGE,
-        command=["nix-shell", "--run", precheck_cmd],
+        command=docker_command,
         volumes={context.gds_path: {"bind": "/input/design.gds", "mode": "ro"}},
         working_dir="/workspace",
         detach=True,
