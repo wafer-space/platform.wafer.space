@@ -398,62 +398,62 @@ def _validate_project_file(check):
 
 
 def _handle_retry(check, error_summary, task_instance, logger):
-    """Handle retry logic for system failures.
+    """Handle system failure - mark as FAILED for periodic retry.
+
+    System failures (Docker errors, timeouts, etc.) are different from
+    manufacturing issues. System failures:
+    - Set status to FAILED
+    - Store error in error_message field
+    - Will be retried by the periodic scan task if retry_count < max_retries
+
+    We don't use Celery's built-in retry here because the periodic scan
+    provides better visibility and control over the retry queue.
 
     Args:
         check: ManufacturabilityCheck instance
         error_summary: Error message string
-        task_instance: Celery task instance
+        task_instance: Celery task instance (unused, kept for API compatibility)
         logger: Logger instance
-
-    Raises:
-        Retry: If retry count < max_retries
     """
-    check.retry_count += 1
-    check.processing_logs += (
-        f"\nSystem error detected - retry {check.retry_count}/"
-        f"{check.max_retries}: {error_summary}\n"
+    logger.error("System failure detected: %s", error_summary)
+    check.fail(error_summary)
+    logger.info(
+        "  Check marked as FAILED (retry %d/%d available)",
+        check.retry_count,
+        check.max_retries,
     )
-    check.save(update_fields=["retry_count", "processing_logs"])
-
-    if check.retry_count < check.max_retries:
-        logger.info(
-            "System failure - retrying (%d/%d)",
-            check.retry_count,
-            check.max_retries,
-        )
-        exc_msg = f"System failure: {error_summary}"
-        raise task_instance.retry(exc=Exception(exc_msg)) from None
-
-    logger.error("Max retries reached after system failure - marking as failed")
-    check.fail("Max retries reached - system error")
 
 
 def _handle_exception_retry(check_id, exc, task_instance, logger):
-    """Handle retry logic for exceptions.
+    """Handle exception - mark as FAILED for periodic retry.
+
+    System failures (Docker errors, timeouts, etc.) are different from
+    manufacturing issues. System failures:
+    - Set status to FAILED
+    - Store error in error_message field
+    - Will be retried by the periodic scan task if retry_count < max_retries
+
+    We don't use Celery's built-in retry here because the periodic scan
+    provides better visibility and control over the retry queue.
 
     Args:
         check_id: ManufacturabilityCheck ID
         exc: Exception instance
-        task_instance: Celery task instance
+        task_instance: Celery task instance (unused, kept for API compatibility)
         logger: Logger instance
-
-    Raises:
-        Retry: If retry count < max_retries
     """
     try:
         check = ManufacturabilityCheck.objects.get(id=check_id)
-        check.retry_count += 1
-        check.processing_logs += f"\nRetry {check.retry_count}: {exc!s}\n"
-        check.save(update_fields=["retry_count", "processing_logs"])
-
-        if check.retry_count < check.max_retries:
-            raise task_instance.retry(exc=exc) from exc
-
-        # Max retries reached, mark as failed
-        check.fail(f"Max retries reached: {exc!s}")
+        error_msg = str(exc)
+        logger.error("Exception during check: %s", error_msg)
+        check.fail(error_msg)
+        logger.info(
+            "  Check marked as FAILED (retry %d/%d available)",
+            check.retry_count,
+            check.max_retries,
+        )
     except ManufacturabilityCheck.DoesNotExist:
-        pass
+        logger.warning("Check %s not found when handling exception", check_id)
 
 
 def _cleanup_container(container, logger):
@@ -516,8 +516,6 @@ def _setup_docker_context(check, project_file, task_instance, logger):
 
 @shared_task(
     bind=True,
-    max_retries=3,
-    default_retry_delay=60,
     time_limit=settings.PRECHECK_TIMEOUT_SECONDS,
     soft_time_limit=settings.PRECHECK_TIMEOUT_SECONDS - 300,
 )
@@ -1415,13 +1413,9 @@ def _verify_and_notify(
             project_file=project_file,
         )
         logger.info("  ✓ Checksum verified notification created")
-
-        # Queue manufacturability check now that hash is verified
-        from .services import ManufacturabilityService  # noqa: PLC0415
-
-        logger.info("Step 10: Queueing manufacturability check...")
-        ManufacturabilityService.queue_check(project_file.project)
-        logger.info("  ✓ Manufacturability check queued")
+        logger.info("  ✓ File ready for manufacturability checking")
+        # Note: Manufacturability check is queued by a separate periodic task
+        # that scans for verified files without checks
     elif verification_errors:
         NotificationService.create_checksum_mismatch_notification(
             user=project_file.project.user,
@@ -1865,3 +1859,164 @@ def update_project_status(project_id, new_status):
             "status": "error",
             "message": f"Project with id {project_id} not found",
         }
+
+
+@shared_task
+def scan_and_queue_manufacturability_checks():
+    """Scan for files ready for manufacturability checking and queue checks.
+
+    This periodic task finds ProjectFiles that are:
+    - Download completed (has a COMPLETED download attempt)
+    - Hash verified (hash_verified=True)
+    - Either no ManufacturabilityCheck exists, OR check status is FAILED and retryable
+
+    Respects global concurrent limit (PRECHECK_CONCURRENT_LIMIT setting).
+
+    Returns:
+        dict: Status with counts of queued_checks, skipped (at limit), already_running
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("=" * 60)
+    logger.info("SCANNING FOR FILES READY FOR MANUFACTURABILITY CHECKING")
+    logger.info("=" * 60)
+
+    queued_checks = 0
+    skipped_at_limit = 0
+    already_running = 0
+
+    # Get concurrent limit from settings
+    concurrent_limit = getattr(settings, "PRECHECK_CONCURRENT_LIMIT", 4)
+
+    # Count currently active checks (QUEUED or PROCESSING)
+    active_count = ManufacturabilityCheck.objects.filter(
+        status__in=[
+            ManufacturabilityCheck.Status.QUEUED,
+            ManufacturabilityCheck.Status.PROCESSING,
+        ]
+    ).count()
+
+    logger.info("  Active checks: %d / %d (limit)", active_count, concurrent_limit)
+
+    if active_count >= concurrent_limit:
+        logger.info("  At concurrent limit, skipping scan")
+        return {
+            "status": "at_limit",
+            "active_count": active_count,
+            "concurrent_limit": concurrent_limit,
+            "queued_checks": 0,
+        }
+
+    # Find files ready for checking:
+    # 1. Download completed (has COMPLETED attempt)
+    # 2. Hash verified
+    # 3. Is active file
+    ready_files = ProjectFile.objects.filter(
+        is_active=True,
+        hash_verified=True,
+        download_attempts__status=DownloadAttempt.Status.COMPLETED,
+    ).distinct()
+
+    file_count = ready_files.count()
+    logger.info("  Found %d files with completed verified downloads", file_count)
+
+    for project_file in ready_files:
+        # Check if we've hit the concurrent limit
+        if active_count >= concurrent_limit:
+            skipped_at_limit += 1
+            continue
+
+        # Check if a check already exists for this file
+        try:
+            existing_check = project_file.manufacturability_check
+            # Check exists - see if it's running or completed
+            if existing_check.status in [
+                ManufacturabilityCheck.Status.QUEUED,
+                ManufacturabilityCheck.Status.PROCESSING,
+            ]:
+                already_running += 1
+                continue
+            if existing_check.status == ManufacturabilityCheck.Status.COMPLETED:
+                # Already completed (pass or fail on manufacturing issues)
+                continue
+            if existing_check.status == ManufacturabilityCheck.Status.FAILED:
+                # System failure - check if retryable
+                if not existing_check.can_retry():
+                    logger.info(
+                        "  File %s: check failed, max retries exceeded",
+                        project_file.id,
+                    )
+                    continue
+                # Retryable - will be re-queued below
+                logger.info(
+                    "  File %s: retrying failed check (attempt %d/%d)",
+                    project_file.id,
+                    existing_check.retry_count + 1,
+                    existing_check.max_retries,
+                )
+        except ManufacturabilityCheck.DoesNotExist:
+            # No check exists - this file needs one
+            pass
+
+        # Queue the check
+        try:
+            _queue_manufacturability_check(project_file, logger)
+            queued_checks += 1
+            active_count += 1
+        except Exception:
+            logger.exception("Failed to queue check for file %s", project_file.id)
+
+    logger.info("=" * 60)
+    logger.info("SCAN COMPLETE")
+    logger.info("  Queued: %d", queued_checks)
+    logger.info("  Already running: %d", already_running)
+    logger.info("  Skipped (at limit): %d", skipped_at_limit)
+    logger.info("=" * 60)
+
+    return {
+        "status": "completed",
+        "queued_checks": queued_checks,
+        "already_running": already_running,
+        "skipped_at_limit": skipped_at_limit,
+    }
+
+
+def _queue_manufacturability_check(project_file: ProjectFile, logger) -> None:
+    """Queue a manufacturability check for a file.
+
+    Creates or updates ManufacturabilityCheck and queues the Celery task.
+
+    Args:
+        project_file: The file to check
+        logger: Logger instance for output
+    """
+    # Get or create the check
+    check, created = ManufacturabilityCheck.objects.get_or_create(
+        project=project_file.project,
+        project_file=project_file,
+        defaults={"status": ManufacturabilityCheck.Status.QUEUED},
+    )
+
+    if not created:
+        # Existing check - reset for retry
+        check.status = ManufacturabilityCheck.Status.QUEUED
+        check.retry_count += 1
+        check.is_manufacturable = None
+        check.errors = []
+        check.warnings = []
+        check.error_message = ""
+        check.started_at = None
+        check.completed_at = None
+
+    check.save()
+
+    # Queue the task
+    task = check_project_manufacturability.delay(check.id)
+    check.task_id = task.id
+    check.save(update_fields=["task_id"])
+
+    logger.info(
+        "  Queued check %s for file %s (task: %s)",
+        check.id,
+        project_file.id,
+        task.id,
+    )

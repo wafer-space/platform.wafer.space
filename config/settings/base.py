@@ -441,14 +441,6 @@ DOWNLOAD_TASK_RETRY_BACKOFF_MULTIPLIER = 2  # Exponential backoff: 60s, 120s
 # Fallback system to detect orphaned tasks and recover from queue loss
 DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS = 60.0  # Check every 1 minute
 
-# Celery Beat periodic tasks
-CELERY_BEAT_SCHEDULE = {
-    "ensure-download-tasks-queued": {
-        "task": "wafer_space.projects.tasks.ensure_download_tasks_queued",
-        "schedule": DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS,
-    },
-}
-
 # Precheck (Manufacturability Checking) configuration
 # See: Design document for manufacturability checking implementation
 PRECHECK_DOCKER_IMAGE = env(
@@ -456,8 +448,20 @@ PRECHECK_DOCKER_IMAGE = env(
     default="ghcr.io/wafer-space/gf180mcu-precheck:latest",
 )
 PRECHECK_CONCURRENT_LIMIT = env.int("PRECHECK_CONCURRENT_LIMIT", default=4)
-PRECHECK_PER_USER_LIMIT = env.int("PRECHECK_PER_USER_LIMIT", default=1)
 PRECHECK_TIMEOUT_SECONDS = env.int("PRECHECK_TIMEOUT_SECONDS", default=10800)  # 3 hours
+PRECHECK_SCAN_INTERVAL_SECONDS = 30.0  # Scan for files ready to check every 30s
+
+# Celery Beat periodic tasks
+CELERY_BEAT_SCHEDULE = {
+    "ensure-download-tasks-queued": {
+        "task": "wafer_space.projects.tasks.ensure_download_tasks_queued",
+        "schedule": DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS,
+    },
+    "scan-and-queue-manufacturability-checks": {
+        "task": "wafer_space.projects.tasks.scan_and_queue_manufacturability_checks",
+        "schedule": PRECHECK_SCAN_INTERVAL_SECONDS,
+    },
+}
 
 # File Download and Processing Configuration
 # ------------------------------------------------------------------------------

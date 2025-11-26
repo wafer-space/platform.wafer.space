@@ -883,9 +883,16 @@ class ManufacturabilityCheck(models.Model):
 
     # Results
     is_manufacturable = models.BooleanField(null=True, blank=True)
-    errors = models.JSONField(default=list, blank=True)
-    warnings = models.JSONField(default=list, blank=True)
+    errors = models.JSONField(default=list, blank=True)  # Manufacturing errors
+    warnings = models.JSONField(default=list, blank=True)  # Manufacturing warnings
     processing_logs = models.TextField(blank=True)
+
+    # System error tracking (distinct from manufacturing errors)
+    error_message = models.TextField(
+        blank=True,
+        default="",
+        help_text="System error message if check failed to run (Docker, timeout, etc.)",
+    )
 
     # Retry handling
     retry_count = models.PositiveIntegerField(default=0)
@@ -977,11 +984,20 @@ class ManufacturabilityCheck(models.Model):
         self.project.check_completed_at = self.completed_at
         self.project.save()
 
-    def fail(self, error_message):
-        """Mark check as failed."""
+    def fail(self, error_msg: str) -> None:
+        """Mark check as failed due to system error.
+
+        System failures (Docker errors, timeouts, etc.) should be retried.
+        This is different from a check that ran successfully but found
+        manufacturing issues.
+
+        Args:
+            error_msg: Description of the system error
+        """
         self.status = self.Status.FAILED
         self.completed_at = timezone.now()
-        self.processing_logs += f"\nFAILED: {error_message}"
+        self.error_message = error_msg
+        self.processing_logs += f"\nFAILED: {error_msg}"
         self.save()
 
     def can_retry(self):

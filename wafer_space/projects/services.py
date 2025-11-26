@@ -596,25 +596,31 @@ class ManufacturabilityService:
 
     @classmethod
     def queue_check(
-        cls, project: Project, project_file: "ProjectFile"
+        cls,
+        project: Project,
+        project_file: "ProjectFile",
+        *,
+        force: bool = False,
     ) -> ManufacturabilityCheck:
         """Queue a manufacturability check for a specific project file.
 
-        Creates or gets an existing check for the file, sets status to QUEUED,
-        and triggers the Celery task for processing.
+        Note: Normally checks are queued automatically by the periodic
+        scan_and_queue_manufacturability_checks task. This method is for
+        manual queueing from admin or other code paths.
 
-        Thread-safe: Uses database transaction to ensure per-user
+        Thread-safe: Uses database transaction to ensure global
         concurrency limits are enforced atomically.
 
         Args:
             project: The project to check
             project_file: The specific file to check (required)
+            force: If True, skip concurrent limit check (for admin use)
 
         Returns:
             ManufacturabilityCheck instance
 
         Raises:
-            ValidationError: If user already has a check running
+            ValidationError: If global concurrent limit reached
         """
         # Use transaction for database operations only
         with transaction.atomic():
@@ -633,39 +639,41 @@ class ManufacturabilityService:
             ]:
                 return check
 
-            # NOW check per-user limit (excluding THIS project's check)
-            # Lock the user's OTHER active checks to prevent race conditions
-            active_checks_qs = ManufacturabilityCheck.objects.select_for_update()
-            active_user_checks = (
-                active_checks_qs.filter(
-                    project__user=project.user,
-                    status__in=[
-                        ManufacturabilityCheck.Status.QUEUED,
-                        ManufacturabilityCheck.Status.PROCESSING,
-                    ],
+            # Check global concurrent limit (unless forced)
+            if not force:
+                active_checks_qs = ManufacturabilityCheck.objects.select_for_update()
+                active_count = (
+                    active_checks_qs.filter(
+                        status__in=[
+                            ManufacturabilityCheck.Status.QUEUED,
+                            ManufacturabilityCheck.Status.PROCESSING,
+                        ],
+                    )
+                    .exclude(id=check.id)
+                    .count()
                 )
-                .exclude(id=check.id)
-                .count()
-            )  # Exclude THIS check
 
-            per_user_limit = getattr(settings, "PRECHECK_PER_USER_LIMIT", 1)
-            if active_user_checks >= per_user_limit:
-                # If we just created this check, delete it before raising
-                if created:
-                    check.delete()
-                msg = (
-                    f"You already have {active_user_checks} check(s) running. "
-                    "Please wait for them to complete before starting a new check."
-                )
-                raise ValidationError(msg)
+                concurrent_limit = getattr(settings, "PRECHECK_CONCURRENT_LIMIT", 4)
+                if active_count >= concurrent_limit:
+                    # If we just created this check, delete it before raising
+                    if created:
+                        check.delete()
+                    msg = (
+                        f"System is at capacity ({active_count} checks running). "
+                        "Please try again later."
+                    )
+                    raise ValidationError(msg)
 
             # Reset for new run (including ALL fields)
             check.status = ManufacturabilityCheck.Status.QUEUED
             check.is_manufacturable = None  # Reset manufacturability
             check.errors = []
             check.warnings = []
+            check.error_message = ""
             check.processing_logs = ""
             check.retry_count = 0  # Reset retry count
+            check.started_at = None
+            check.completed_at = None
             check.save()
 
         # Queue task OUTSIDE transaction to avoid SQLite broker issues

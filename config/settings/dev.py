@@ -77,10 +77,17 @@ DOWNLOAD_TASK_RETRY_BACKOFF_MULTIPLIER = 2  # 10s, 20s
 # Download state verification (faster for development)
 DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS = 30.0  # Check every 30s in dev
 
+# Manufacturability check scanning (faster for development)
+PRECHECK_SCAN_INTERVAL_SECONDS = 15.0  # Scan every 15s in dev
+
 CELERY_BEAT_SCHEDULE = {
     "ensure-download-tasks-queued": {
         "task": "wafer_space.projects.tasks.ensure_download_tasks_queued",
         "schedule": DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS,
+    },
+    "scan-and-queue-manufacturability-checks": {
+        "task": "wafer_space.projects.tasks.scan_and_queue_manufacturability_checks",
+        "schedule": PRECHECK_SCAN_INTERVAL_SECONDS,
     },
 }
 
