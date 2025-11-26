@@ -246,10 +246,7 @@ def _run_container_and_stream_logs(context: _CheckContext):
     top_cell = context.project_file.top_cell
     context.logger.info("  Top cell: %s", top_cell)
 
-    precheck_cmd = (
-        f"python3 precheck.py --input /input/design.gds "
-        f'--top "{top_cell}" --id "{context.project.id}"'
-    )
+    precheck_cmd = f'python3 precheck.py --input /input/design.gds --top "{top_cell}"'
 
     # Log the full Docker command for debugging
     docker_command = ["nix-shell", "--run", precheck_cmd]
