@@ -177,9 +177,10 @@ class GitHubArtifactHandler(URLHandler):
     """
 
     # Pattern: https://github.com/{owner}/{repo}/actions/runs/{run_id}[/artifacts/{artifact_id}]
+    # Also supports query strings like ?check_suite_focus=true
     GITHUB_ACTIONS_URL_PATTERN = re.compile(
         r"^https?://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/actions/runs/"
-        r"(?P<run_id>\d+)(?:/artifacts/(?P<artifact_id>\d+))?(?:/.*)?$"
+        r"(?P<run_id>\d+)(?:/artifacts/(?P<artifact_id>\d+))?(?:[/?].*)?$"
     )
 
     def can_handle(self, url: str) -> bool:

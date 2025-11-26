@@ -163,6 +163,13 @@ class TestGitHubArtifactHandler:
         )
         # Using HTTP protocol instead of HTTPS
         assert handler.can_handle("http://github.com/owner/repo/actions/runs/12345678")
+        # With query strings (e.g., ?check_suite_focus=true from GitHub UI)
+        assert handler.can_handle(
+            "https://github.com/owner/repo/actions/runs/12345678?check_suite_focus=true"
+        )
+        assert handler.can_handle(
+            "https://github.com/owner/repo/actions/runs/12345678?pr=123&foo=bar"
+        )
 
     def test_can_handle_rejects_invalid_urls(self):
         """GitHubArtifactHandler rejects non-Actions URLs."""
