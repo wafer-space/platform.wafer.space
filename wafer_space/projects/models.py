@@ -400,21 +400,22 @@ class ProjectFile(models.Model):
         Returns:
             str: Human-readable status message
         """
-        if self.download_status == self.DownloadStatus.COMPLETED:
-            return "Download completed successfully"
+        status_messages: dict[str, str] = {
+            self.DownloadStatus.COMPLETED.value: "Download completed successfully",
+            self.DownloadStatus.DOWNLOADING.value: "Downloading file...",
+            self.DownloadStatus.PENDING.value: "Download pending - waiting to start",
+            self.DownloadStatus.QUEUED.value: "Download queued - waiting for worker",
+        }
 
+        # Handle FAILED specially to include error message if present
         if self.download_status == self.DownloadStatus.FAILED:
             if self.download_error:
                 return f"Download failed: {self.download_error}"
             return "Download failed"
 
-        if self.download_status == self.DownloadStatus.DOWNLOADING:
-            return "Downloading file..."
-
-        if self.download_status == self.DownloadStatus.PENDING:
-            return "Download pending - waiting to start"
-
-        return f"Unknown status: {self.download_status}"
+        return status_messages.get(
+            self.download_status, f"Unknown status: {self.download_status}"
+        )
 
     @property
     def download_duration_seconds(self) -> float | None:
@@ -494,7 +495,8 @@ class ProjectFile(models.Model):
             return self.DownloadStatus.PENDING
 
         # Map DownloadAttempt.PENDING + task exists → ProjectFile.QUEUED
-        if latest.status == "pending" and self.download_task_id:
+        # Both enums share the same "pending" value
+        if latest.status == self.DownloadStatus.PENDING and self.download_task_id:
             return self.DownloadStatus.QUEUED
 
         # Direct mapping for other states
