@@ -596,9 +596,9 @@ class ManufacturabilityService:
 
     @classmethod
     def queue_check(
-        cls, project: Project, project_file: "ProjectFile | None" = None
+        cls, project: Project, project_file: "ProjectFile"
     ) -> ManufacturabilityCheck:
-        """Queue a manufacturability check for a project file.
+        """Queue a manufacturability check for a specific project file.
 
         Creates or gets an existing check for the file, sets status to QUEUED,
         and triggers the Celery task for processing.
@@ -608,7 +608,7 @@ class ManufacturabilityService:
 
         Args:
             project: The project to check
-            project_file: The specific file to check (optional for backwards compat)
+            project_file: The specific file to check (required)
 
         Returns:
             ManufacturabilityCheck instance
@@ -617,14 +617,11 @@ class ManufacturabilityService:
             ValidationError: If user already has a check running
         """
         with transaction.atomic():
-            # Build filter for get_or_create
-            filter_kwargs: dict = {"project": project}
-            if project_file:
-                filter_kwargs["project_file"] = project_file
-
             # Get or create the check FIRST (within transaction)
+            # Each check is tied to a specific project_file
             check, created = ManufacturabilityCheck.objects.get_or_create(
-                **filter_kwargs,
+                project=project,
+                project_file=project_file,
                 defaults={"status": ManufacturabilityCheck.Status.QUEUED},
             )
 

@@ -10,6 +10,7 @@ from django.urls import reverse
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectComplianceCertification
+from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.views_compliance import get_client_ip
 from wafer_space.users.models import User
 
@@ -125,8 +126,15 @@ class TestComplianceCertificationCreateView(TestCase):
             name="Test Project",
             description="Test project description",
         )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test.gds",
+            source_url="https://example.com/test.gds",
+            is_active=True,
+        )
         self.check = ManufacturabilityCheck.objects.create(
             project=self.project,
+            project_file=self.project_file,
             status=ManufacturabilityCheck.Status.COMPLETED,
             is_manufacturable=True,
         )

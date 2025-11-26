@@ -44,6 +44,7 @@ class TestManufacturabilityCheckReproducibility(TestCase):
         # Create a check with version tracking data
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
+            project_file=self.project_file,
             docker_image="ghcr.io/wafer-space/gf180mcu-precheck:v1.0.0",
             docker_image_digest="sha256:abc123def456",
             precheck_version="v1.0.0",
@@ -84,6 +85,7 @@ class TestManufacturabilityCheckReproducibility(TestCase):
         # Create a check with error data
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
+            project_file=self.project_file,
             docker_image="ghcr.io/wafer-space/gf180mcu-precheck:v1.0.0",
             docker_image_digest="sha256:abc123def456",
             precheck_version="v1.0.0",

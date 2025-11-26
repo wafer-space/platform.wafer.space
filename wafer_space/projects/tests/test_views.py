@@ -1101,12 +1101,19 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
             name="Test Project",
             description="Test Description",
         )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test.gds",
+            source_url="https://example.com/test.gds",
+            is_active=True,
+        )
 
     def test_detail_view_includes_check_status_when_check_exists(self):
         """Test that detail view includes check status in context."""
         # Create a manufacturability check
         ManufacturabilityCheck.objects.create(
             project=self.project,
+            project_file=self.project_file,
             status=ManufacturabilityCheck.Status.QUEUED,
         )
 
@@ -1139,6 +1146,7 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
         # Create a completed check
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
+            project_file=self.project_file,
             status=ManufacturabilityCheck.Status.QUEUED,
         )
         check.start_processing()

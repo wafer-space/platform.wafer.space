@@ -347,6 +347,7 @@ class TestProjectSubmit(TestCase):
         # Create existing check
         existing_check = ManufacturabilityCheck.objects.create(
             project=self.project,
+            project_file=_pf,
             status=ManufacturabilityCheck.Status.PROCESSING,
             task_id="existing-task-123",
         )
@@ -356,7 +357,7 @@ class TestProjectSubmit(TestCase):
         # Verify only one check exists
         assert ManufacturabilityCheck.objects.filter(project=self.project).count() == 1
         # Verify it's the original check (not replaced)
-        check = ManufacturabilityCheck.objects.get(project=self.project)
+        check = ManufacturabilityCheck.objects.get(project_file=_pf)
         assert check.id == existing_check.id
         assert check.status == ManufacturabilityCheck.Status.PROCESSING
 

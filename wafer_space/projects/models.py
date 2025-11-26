@@ -881,8 +881,6 @@ class ManufacturabilityCheck(models.Model):
         "ProjectFile",
         on_delete=models.CASCADE,
         related_name="manufacturability_check",
-        null=True,
-        blank=True,
     )
     status = models.CharField(
         max_length=20,

@@ -284,6 +284,7 @@ class TestManufacturabilityCheckTask(TestCase):
         # Create a check
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
+            project_file=project_file,
             status=ManufacturabilityCheck.Status.QUEUED,
             task_id="test-task-123",
         )
@@ -347,6 +348,7 @@ INFO: Check completed
         # Create a check
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
+            project_file=project_file,
             status=ManufacturabilityCheck.Status.QUEUED,
             task_id="test-task-123",
         )
@@ -418,6 +420,7 @@ FATAL: Design has critical errors
         # Create a check
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
+            project_file=project_file,
             status=ManufacturabilityCheck.Status.QUEUED,
             task_id="test-task-123",
         )
@@ -484,6 +487,7 @@ FATAL: Design has critical errors
         # Create a check with max retries set to 0 to avoid retry loop
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
+            project_file=project_file,
             status=ManufacturabilityCheck.Status.QUEUED,
             max_retries=0,
         )
@@ -540,6 +544,7 @@ FATAL: Design has critical errors
         # Create a check
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
+            project_file=project_file,
             status=ManufacturabilityCheck.Status.QUEUED,
             task_id="test-task-456",
         )
@@ -676,7 +681,10 @@ class TestDockerIntegration(TestCase):
         mock_docker.errors.APIError = Exception
 
         # Create check
-        check = ManufacturabilityCheck.objects.create(project=self.project)
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+        )
 
         # Bind the function to the mock task
         with mock_patch.object(

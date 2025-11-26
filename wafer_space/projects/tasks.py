@@ -287,11 +287,11 @@ def _handle_check_result(check, logs, exit_code, logger):
     return "design"
 
 
-def _validate_project_file(project):
-    """Validate that project has a valid GDS file.
+def _validate_project_file(check):
+    """Validate that check has a valid GDS file.
 
     Args:
-        project: Project instance
+        check: ManufacturabilityCheck instance (must have project_file set)
 
     Returns:
         ProjectFile instance
@@ -299,15 +299,15 @@ def _validate_project_file(project):
     Raises:
         ValueError: If no valid file available
     """
-    project_file = (
-        project.submitted_file or project.files.filter(is_active=True).first()
-    )
-
-    if not project_file or not project_file.file:
-        msg = "No GDS file available for checking"
+    if not check.project_file:
+        msg = "ManufacturabilityCheck must have a project_file"
         raise ValueError(msg)
 
-    return project_file
+    if not check.project_file.file:
+        msg = "ProjectFile has no uploaded file"
+        raise ValueError(msg)
+
+    return check.project_file
 
 
 def _handle_retry(check, error_summary, task_instance, logger):
@@ -414,7 +414,7 @@ def check_project_manufacturability(self, check_id):
         check.start_processing()
 
         project = check.project
-        project_file = _validate_project_file(project)
+        project_file = _validate_project_file(check)
 
         logger.info(
             "Starting manufacturability check for project %s with file %s",

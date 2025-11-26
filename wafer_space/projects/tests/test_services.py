@@ -630,6 +630,12 @@ class TestManufacturabilityService(TestCase):
             name="Test Project",
             description="Test project for manufacturability checks",
         )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test.gds",
+            source_url="https://example.com/test.gds",
+            is_active=True,
+        )
 
     @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
     def test_queue_check_creates_new_check(self, mock_task):
@@ -638,11 +644,12 @@ class TestManufacturabilityService(TestCase):
         mock_task.return_value = Mock(id="task-123")
 
         # Queue the check
-        check = ManufacturabilityService.queue_check(self.project)
+        check = ManufacturabilityService.queue_check(self.project, self.project_file)
 
         # Verify check was created
         assert check is not None
         assert check.project == self.project
+        assert check.project_file == self.project_file
         assert check.status == ManufacturabilityCheck.Status.QUEUED
         assert check.task_id == "task-123"
 
@@ -650,7 +657,10 @@ class TestManufacturabilityService(TestCase):
         mock_task.assert_called_once_with(check.id)
 
         # Verify check exists in database
-        assert ManufacturabilityCheck.objects.filter(project=self.project).count() == 1
+        check_count = ManufacturabilityCheck.objects.filter(
+            project_file=self.project_file
+        ).count()
+        assert check_count == 1
 
     @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
     def test_queue_check_resets_existing_check(self, mock_task):
@@ -658,6 +668,7 @@ class TestManufacturabilityService(TestCase):
         # Create an existing completed check
         existing_check = ManufacturabilityCheck.objects.create(
             project=self.project,
+            project_file=self.project_file,
             status=ManufacturabilityCheck.Status.COMPLETED,
             is_manufacturable=True,
             errors=["Old error"],
@@ -670,7 +681,7 @@ class TestManufacturabilityService(TestCase):
         mock_task.return_value = Mock(id="task-456")
 
         # Queue the check again
-        check = ManufacturabilityService.queue_check(self.project)
+        check = ManufacturabilityService.queue_check(self.project, self.project_file)
 
         # Verify it's the same check instance, but reset
         assert check.id == existing_check.id
@@ -686,7 +697,10 @@ class TestManufacturabilityService(TestCase):
         mock_task.assert_called_once_with(check.id)
 
         # Verify only one check exists
-        assert ManufacturabilityCheck.objects.filter(project=self.project).count() == 1
+        check_count = ManufacturabilityCheck.objects.filter(
+            project_file=self.project_file
+        ).count()
+        assert check_count == 1
 
     @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
     def test_queue_check_does_not_reset_queued_check(self, mock_task):
@@ -694,6 +708,7 @@ class TestManufacturabilityService(TestCase):
         # Create an existing queued check
         existing_check = ManufacturabilityCheck.objects.create(
             project=self.project,
+            project_file=self.project_file,
             status=ManufacturabilityCheck.Status.QUEUED,
             task_id="existing-task-id",
         )
@@ -702,7 +717,7 @@ class TestManufacturabilityService(TestCase):
         mock_task.return_value = Mock(id="task-789")
 
         # Queue the check again
-        check = ManufacturabilityService.queue_check(self.project)
+        check = ManufacturabilityService.queue_check(self.project, self.project_file)
 
         # Verify it's the same check instance and unchanged
         assert check.id == existing_check.id
@@ -719,6 +734,7 @@ class TestManufacturabilityService(TestCase):
         # Create a completed check
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
+            project_file=self.project_file,
             status=ManufacturabilityCheck.Status.COMPLETED,
             is_manufacturable=False,
             errors=["Error 1", "Error 2"],
@@ -756,6 +772,7 @@ class TestManufacturabilityService(TestCase):
         # Create a queued check
         ManufacturabilityCheck.objects.create(
             project=self.project,
+            project_file=self.project_file,
             status=ManufacturabilityCheck.Status.QUEUED,
         )
 
@@ -776,6 +793,7 @@ class TestManufacturabilityService(TestCase):
         # Create and start processing a check
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
+            project_file=self.project_file,
             status=ManufacturabilityCheck.Status.QUEUED,
         )
         check.start_processing()
@@ -795,6 +813,7 @@ class TestManufacturabilityService(TestCase):
         # Create a failed check
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
+            project_file=self.project_file,
             status=ManufacturabilityCheck.Status.QUEUED,
         )
         check.start_processing()

@@ -12,6 +12,7 @@ from django.db import connection
 
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
+from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.services import ManufacturabilityService
 
 from .constants import TEST_PASSWORD
@@ -28,8 +29,14 @@ class TestPerUserConcurrency:
         """Test that first check is allowed."""
         mock_delay.return_value.id = "test-task-id"
         project = Project.objects.create(user=user, name="project1")
+        project_file = ProjectFile.objects.create(
+            project=project,
+            original_filename="test.gds",
+            source_url="https://example.com/test.gds",
+            is_active=True,
+        )
 
-        check = ManufacturabilityService.queue_check(project)
+        check = ManufacturabilityService.queue_check(project, project_file)
 
         assert check.status == ManufacturabilityCheck.Status.QUEUED
 
@@ -38,14 +45,26 @@ class TestPerUserConcurrency:
         """Test that second check is blocked for same user."""
         mock_delay.return_value.id = "test-task-id"
         project1 = Project.objects.create(user=user, name="project1")
+        project_file1 = ProjectFile.objects.create(
+            project=project1,
+            original_filename="test1.gds",
+            source_url="https://example.com/test1.gds",
+            is_active=True,
+        )
         project2 = Project.objects.create(user=user, name="project2")
+        project_file2 = ProjectFile.objects.create(
+            project=project2,
+            original_filename="test2.gds",
+            source_url="https://example.com/test2.gds",
+            is_active=True,
+        )
 
         # Create first check
-        ManufacturabilityService.queue_check(project1)
+        ManufacturabilityService.queue_check(project1, project_file1)
 
         # Second check should fail
         with pytest.raises(ValidationError, match=r"already have.*check.*running"):
-            ManufacturabilityService.queue_check(project2)
+            ManufacturabilityService.queue_check(project2, project_file2)
 
     @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
     def test_allows_check_different_user(self, mock_delay):
@@ -55,11 +74,23 @@ class TestPerUserConcurrency:
         user2 = User.objects.create_user(username="user2", password=TEST_PASSWORD)
 
         project1 = Project.objects.create(user=user1, name="project1")
+        project_file1 = ProjectFile.objects.create(
+            project=project1,
+            original_filename="test1.gds",
+            source_url="https://example.com/test1.gds",
+            is_active=True,
+        )
         project2 = Project.objects.create(user=user2, name="project2")
+        project_file2 = ProjectFile.objects.create(
+            project=project2,
+            original_filename="test2.gds",
+            source_url="https://example.com/test2.gds",
+            is_active=True,
+        )
 
         # Both should succeed
-        check1 = ManufacturabilityService.queue_check(project1)
-        check2 = ManufacturabilityService.queue_check(project2)
+        check1 = ManufacturabilityService.queue_check(project1, project_file1)
+        check2 = ManufacturabilityService.queue_check(project2, project_file2)
 
         assert check1.status == ManufacturabilityCheck.Status.QUEUED
         assert check2.status == ManufacturabilityCheck.Status.QUEUED
@@ -69,15 +100,27 @@ class TestPerUserConcurrency:
         """Test that user can queue new check after completion."""
         mock_delay.return_value.id = "test-task-id"
         project1 = Project.objects.create(user=user, name="project1")
+        project_file1 = ProjectFile.objects.create(
+            project=project1,
+            original_filename="test1.gds",
+            source_url="https://example.com/test1.gds",
+            is_active=True,
+        )
         project2 = Project.objects.create(user=user, name="project2")
+        project_file2 = ProjectFile.objects.create(
+            project=project2,
+            original_filename="test2.gds",
+            source_url="https://example.com/test2.gds",
+            is_active=True,
+        )
 
         # Create and complete first check
-        check1 = ManufacturabilityService.queue_check(project1)
+        check1 = ManufacturabilityService.queue_check(project1, project_file1)
         check1.status = ManufacturabilityCheck.Status.COMPLETED
         check1.save()
 
         # Second check should succeed
-        check2 = ManufacturabilityService.queue_check(project2)
+        check2 = ManufacturabilityService.queue_check(project2, project_file2)
         assert check2.status == ManufacturabilityCheck.Status.QUEUED
 
     @pytest.mark.skipif(
@@ -97,15 +140,27 @@ class TestPerUserConcurrency:
         """
         mock_delay.return_value.id = "test-task-id"
         project1 = Project.objects.create(user=user, name="project1")
+        project_file1 = ProjectFile.objects.create(
+            project=project1,
+            original_filename="test1.gds",
+            source_url="https://example.com/test1.gds",
+            is_active=True,
+        )
         project2 = Project.objects.create(user=user, name="project2")
+        project_file2 = ProjectFile.objects.create(
+            project=project2,
+            original_filename="test2.gds",
+            source_url="https://example.com/test2.gds",
+            is_active=True,
+        )
 
         results: Queue = Queue()
 
-        def queue_check_thread(project):
+        def queue_check_thread(project, project_file):
             try:
                 # Close connection to get a fresh one for this thread
                 connection.close()
-                check = ManufacturabilityService.queue_check(project)
+                check = ManufacturabilityService.queue_check(project, project_file)
                 results.put(("success", check))
             except ValidationError as e:
                 results.put(("error", str(e)))
@@ -114,8 +169,12 @@ class TestPerUserConcurrency:
                 results.put(("error", str(e)))
 
         # Start two threads simultaneously
-        thread1 = threading.Thread(target=queue_check_thread, args=(project1,))
-        thread2 = threading.Thread(target=queue_check_thread, args=(project2,))
+        thread1 = threading.Thread(
+            target=queue_check_thread, args=(project1, project_file1)
+        )
+        thread2 = threading.Thread(
+            target=queue_check_thread, args=(project2, project_file2)
+        )
 
         thread1.start()
         thread2.start()
