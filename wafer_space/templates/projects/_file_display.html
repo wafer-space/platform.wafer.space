@@ -142,6 +142,16 @@
             <strong>Completed:</strong> {{ check.completed_at|date:"Y-m-d H:i:s" }}
           </p>
         {% endif %}
+        {# Log file download link #}
+        {% if check.log_file %}
+          <p class="mb-2">
+            <strong>Log File:</strong>
+            <a href="{{ check.log_file.url }}" class="btn btn-sm btn-outline-secondary" download>
+              <i class="bi bi-download"></i> Download Log
+            </a>
+            <small class="text-muted ms-2">({{ check.log_file.size|filesizeformat }})</small>
+          </p>
+        {% endif %}
         {# Display errors if check completed with errors #}
         {% if check.status == 'completed' and check.errors %}
           <div class="mt-3">
