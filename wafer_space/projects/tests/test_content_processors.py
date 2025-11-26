@@ -48,12 +48,18 @@ def test_content_processor_subclass_requires_methods():
 
 
 class MockProcessor(ContentProcessor):
-    """Mock processor for testing."""
+    """Mock processor for testing.
 
-    def can_process(self, filename: str, file_path: Path) -> bool:
+    Note: Unused parameters are intentional - mock must match abstract interface
+    signature but doesn't need to use all parameters.
+    """
+
+    def can_process(  # Mock: params match interface signature
+        self, filename: str, file_path: Path
+    ) -> bool:
         return filename.endswith(".mock")
 
-    def process(
+    def process(  # Mock: params match interface signature
         self, input_path: Path, output_path: Path, *, max_size: int
     ) -> ProcessorResult:
         return ProcessorResult(output_path, "test.txt", 0, {})
