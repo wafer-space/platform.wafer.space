@@ -1223,6 +1223,16 @@ def _process_and_save_content(
     project_file.hash_md5 = final_hashes.md5
     project_file.hash_sha1 = final_hashes.sha1
     project_file.hash_sha256 = final_hashes.sha256
+    project_file.save(
+        update_fields=[
+            "file",
+            "file_size",
+            "hash_md5",
+            "hash_sha1",
+            "hash_sha256",
+            "processed_filename",
+        ]
+    )
     logger.info("  ✓ File size: %s", _format_bytes(project_file.file_size))
 
     return processed_content, final_hashes
