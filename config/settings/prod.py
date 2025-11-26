@@ -11,6 +11,8 @@ from .base import env
 SECRET_KEY = env("DJANGO_SECRET_KEY")
 ALLOWED_HOSTS = [
     "platform.wafer.space",
+    "platform-wafer-space.buddy.mithis.com",
+    "platform-wafer-space.doc.mithis.com",
 ]
 SITE_URL = "https://platform.wafer.space"
 
