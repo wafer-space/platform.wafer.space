@@ -805,6 +805,7 @@ class TestContentPipelineIntegration(TestCase):
             b"\x00\x06\x00\x02test_gds_content",
             "extracted_md5",
             "extracted_sha1",
+            "extracted_sha256",
         )
 
         # Create a download attempt for the test
@@ -845,6 +846,7 @@ class TestContentPipelineIntegration(TestCase):
             b"\x00\x06\x00\x02gds_content",
             "final_md5",
             "final_sha1",
+            "final_sha256",
         )
 
         # Create a download attempt for the test
@@ -1138,6 +1140,7 @@ class DownloadTaskTests(TestCase):
         # Expected hashes for the GDS content (not the ZIP)
         expected_md5 = hashlib.md5(gds_content, usedforsecurity=False).hexdigest()
         expected_sha1 = hashlib.sha1(gds_content, usedforsecurity=False).hexdigest()
+        expected_sha256 = hashlib.sha256(gds_content, usedforsecurity=False).hexdigest()
 
         # Expected hashes for the ZIP content (download returns these)
         zip_md5 = hashlib.md5(zip_bytes, usedforsecurity=False).hexdigest()
@@ -1155,7 +1158,12 @@ class DownloadTaskTests(TestCase):
         mock_detect.return_value = ("application/zip", ".zip")
 
         # Mock the pipeline to extract GDS and return hashes
-        mock_pipeline.return_value = (gds_content, expected_md5, expected_sha1)
+        mock_pipeline.return_value = (
+            gds_content,
+            expected_md5,
+            expected_sha1,
+            expected_sha256,
+        )
 
         # Mock top cell extraction
         mock_extract_top_cell.return_value = "TestCell"
