@@ -10,41 +10,94 @@
   <div class="container">
     <div class="row">
       <div class="col-sm-12">
-        <h2>Submit File URL</h2>
-        <p class="lead">Project: {{ project.name }}</p>
+        <h2>Submit Design File URL</h2>
+        <p class="text-muted mb-4">
+          <i class="bi bi-folder-fill"></i> Project: <strong>{{ project.name }}</strong>
+        </p>
+        {# Main Information Box #}
         <div class="alert alert-info" role="alert">
           <h5 class="alert-heading">
-            <i class="bi bi-info-circle"></i> Submit Your GDS/OASIS Design File
+            <i class="bi bi-info-circle"></i> What You Can Submit
           </h5>
-          <p>
-            Provide a direct download URL to your design file. The system supports common hosting platforms
-            and will automatically rewrite URLs when needed (e.g., GitHub blob → raw URLs).
-          </p>
           <p class="mb-0">
-            <strong>Accepted formats:</strong> .gds, .gdsii, .gds2, .oas, .oasis (optionally compressed with .gz, .zip, .bz2, .xz)
+            We accept <strong>GDS</strong> and <strong>OASIS</strong> layout files, either as-is or inside
+            a compressed archive (<code>.zip</code>, <code>.gz</code>, <code>.tar.gz</code>, <code>.bz2</code>, <code>.xz</code>).
+            We'll automatically extract the design file.
           </p>
         </div>
         <form method="post">
           {% csrf_token %}
+          {# URL Field #}
+          {{ form.url|as_crispy_field }}
+          {# Checksum Explanation Box - between URL and hash fields #}
           <div class="alert alert-primary" role="alert">
-            <strong><i class="bi bi-shield-check"></i> File Integrity Verification Required:</strong>
-            You must provide at least one checksum (MD5 or SHA1) to verify file integrity during download.
-          </div>
-          {{ form|crispy }}
-          <div class="alert alert-warning" role="alert">
             <h5 class="alert-heading">
-              <i class="bi bi-exclamation-triangle"></i> Important Notes
+              <i class="bi bi-shield-check"></i> Verify Your Design File
+            </h5>
+            <p>
+              Provide at least one checksum so we can confirm we received the exact file you intended to submit for manufacturing.
+            </p>
+            <p>
+              <strong>Use the checksum of your original, uncompressed GDS or OASIS file</strong>, not
+              the compressed archive. If you uploaded <code>design.gds.gz</code>, enter the checksum for
+              <code>design.gds</code>.
+            </p>
+            {# Collapsible Help Section #}
+            <div class="accordion mb-0" id="checksumHelp">
+              <div class="accordion-item border-0 bg-transparent">
+                <h2 class="accordion-header" id="checksumHelpHeading">
+                  <button class="accordion-button collapsed bg-transparent p-0 shadow-none"
+                          type="button"
+                          data-bs-toggle="collapse"
+                          data-bs-target="#checksumHelpContent"
+                          aria-expanded="false"
+                          aria-controls="checksumHelpContent">
+                    <i class="bi bi-question-circle me-2"></i>
+                    <small>How to generate checksums for your file</small>
+                  </button>
+                </h2>
+                <div id="checksumHelpContent"
+                     class="accordion-collapse collapse"
+                     aria-labelledby="checksumHelpHeading">
+                  <div class="pt-3">
+                    <p>
+                      Generate checksums for your <strong>uncompressed</strong> GDS or OASIS file
+                      (before compressing it for upload).
+                    </p>
+                    <h6>Linux</h6>
+                    <pre class="bg-dark text-light p-3 rounded"><code>md5sum your_design.gds     # MD5
+sha1sum your_design.gds    # SHA1</code></pre>
+                    <h6>macOS</h6>
+                    <pre class="bg-dark text-light p-3 rounded"><code>md5 your_design.gds        # MD5
+shasum your_design.gds     # SHA1</code></pre>
+                    <h6>Windows (PowerShell)</h6>
+                    <pre class="bg-dark text-light p-3 rounded"><code>Get-FileHash -Algorithm MD5 your_design.gds   # MD5
+Get-FileHash -Algorithm SHA1 your_design.gds  # SHA1</code></pre>
+                    <h6>Windows (Command Prompt)</h6>
+                    <pre class="bg-dark text-light p-3 rounded"><code>certutil -hashfile your_design.gds MD5   # MD5
+certutil -hashfile your_design.gds SHA1  # SHA1</code></pre>
+                    <div class="alert alert-warning mt-3 mb-0">
+                      <i class="bi bi-exclamation-triangle"></i>
+                      <strong>Remember:</strong> Generate the checksum from the original uncompressed file,
+                      not from any compressed version (like <code>.gds.gz</code> or <code>.zip</code>).
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          {# Hash Fields #}
+          {{ form.expected_hash_md5|as_crispy_field }}
+          {{ form.expected_hash_sha1|as_crispy_field }}
+          {# Good to Know #}
+          <div class="alert alert-secondary" role="alert">
+            <h5 class="alert-heading">
+              <i class="bi bi-lightbulb"></i> Good to Know
             </h5>
             <ul class="mb-0">
-              <li>
-                <strong>File size limit:</strong> Up to 100GB supported
-              </li>
-              <li>
-                <strong>Background processing:</strong> File download happens asynchronously - you can leave this page
-              </li>
-              <li>
-                <strong>Progress tracking:</strong> Monitor download status on the project detail page
-              </li>
+              <li>Files up to 100GB are supported.</li>
+              <li>Downloads run in the background. You can close this page after submitting.</li>
+              <li>Check your project page for download progress and status.</li>
             </ul>
           </div>
           <div class="d-flex gap-2 mt-3">

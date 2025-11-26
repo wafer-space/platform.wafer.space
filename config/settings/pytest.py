@@ -68,7 +68,7 @@ MEDIA_URL = "http://media.testserver/"
 CELERY_TASK_ALWAYS_EAGER = True  # Execute tasks synchronously for testing
 CELERY_TASK_EAGER_PROPAGATES = True
 # CELERY_BROKER_URL: uses base.py default (PostgreSQL via SQLAlchemy)
-# DOWNLOAD_RETRY_*: uses base.py defaults
+# DOWNLOAD_TASK_*: uses base.py defaults (Celery retry configuration)
 
 # LOGGING
 # ------------------------------------------------------------------------------

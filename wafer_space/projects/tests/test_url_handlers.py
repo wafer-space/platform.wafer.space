@@ -7,7 +7,9 @@ from unittest.mock import patch
 import pytest
 
 from wafer_space.projects.models import Project
+from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.services import ProjectFileService
+from wafer_space.projects.url_handlers import GitHubArtifactHandler
 from wafer_space.projects.url_handlers import GoogleSourceHandler
 from wafer_space.projects.url_handlers import URLHandler
 from wafer_space.projects.url_handlers import URLHandlerRegistry
@@ -140,6 +142,219 @@ class TestGoogleSourceHandler:
         assert len(result) == 1024 * 1024
 
 
+class TestGitHubArtifactHandler:
+    """Test GitHubArtifactHandler implementation."""
+
+    def test_can_handle_github_actions_urls(self):
+        """GitHubArtifactHandler detects GitHub Actions run URLs."""
+        handler = GitHubArtifactHandler()
+
+        # Valid GitHub Actions URLs
+        assert handler.can_handle("https://github.com/owner/repo/actions/runs/12345678")
+        assert handler.can_handle(
+            "https://github.com/wafer-space/platform/actions/runs/987654321"
+        )
+        assert handler.can_handle(
+            "https://github.com/user-name/repo-name/actions/runs/1"
+        )
+        # With trailing path segments
+        assert handler.can_handle(
+            "https://github.com/owner/repo/actions/runs/12345678/attempts/1"
+        )
+        # Using HTTP protocol instead of HTTPS
+        assert handler.can_handle("http://github.com/owner/repo/actions/runs/12345678")
+        # With query strings (e.g., ?check_suite_focus=true from GitHub UI)
+        assert handler.can_handle(
+            "https://github.com/owner/repo/actions/runs/12345678?check_suite_focus=true"
+        )
+        assert handler.can_handle(
+            "https://github.com/owner/repo/actions/runs/12345678?pr=123&foo=bar"
+        )
+
+    def test_can_handle_rejects_invalid_urls(self):
+        """GitHubArtifactHandler rejects non-Actions URLs."""
+        handler = GitHubArtifactHandler()
+
+        # GitHub but not Actions runs
+        assert not handler.can_handle("https://github.com/owner/repo")
+        assert not handler.can_handle(
+            "https://github.com/owner/repo/blob/main/file.txt"
+        )
+        assert not handler.can_handle("https://github.com/owner/repo/issues/123")
+        assert not handler.can_handle("https://github.com/owner/repo/actions")
+        assert not handler.can_handle(
+            "https://github.com/owner/repo/actions/workflows/test.yml"
+        )
+
+        # Missing run_id
+        assert not handler.can_handle("https://github.com/owner/repo/actions/runs/")
+        assert not handler.can_handle("https://github.com/owner/repo/actions/runs/abc")
+
+        # Other platforms
+        assert not handler.can_handle(
+            "https://gitlab.com/owner/repo/-/jobs/12345678/artifacts"
+        )
+        assert not handler.can_handle(
+            "https://example.googlesource.com/repo/+/main/file.txt"
+        )
+        assert not handler.can_handle("https://example.com/file.zip")
+
+    def test_process_url_extracts_metadata(self):
+        """GitHubArtifactHandler extracts owner/repo/run_id from URL."""
+        handler = GitHubArtifactHandler()
+
+        url = "https://github.com/wafer-space/platform/actions/runs/12345678"
+        result = handler.process_url(url)
+
+        assert "url" in result
+        assert "metadata" in result
+
+        # URL should be unchanged (download task handles API calls)
+        assert result["url"] == url
+
+        # Metadata should contain extracted info
+        metadata = result["metadata"]
+        assert metadata["handler"] == "GitHubArtifactHandler"
+        assert metadata["owner"] == "wafer-space"
+        assert metadata["repo"] == "platform"
+        assert metadata["run_id"] == "12345678"
+        assert metadata["requires_github_auth"] is True
+
+    def test_process_url_with_different_owners_repos(self):
+        """GitHubArtifactHandler correctly parses various owner/repo combinations."""
+        handler = GitHubArtifactHandler()
+
+        test_cases = [
+            (
+                "https://github.com/single/simple/actions/runs/111",
+                "single",
+                "simple",
+                "111",
+            ),
+            (
+                "https://github.com/user-name/repo-name/actions/runs/222",
+                "user-name",
+                "repo-name",
+                "222",
+            ),
+            (
+                "https://github.com/org_name/repo.name/actions/runs/333",
+                "org_name",
+                "repo.name",
+                "333",
+            ),
+        ]
+
+        for url, expected_owner, expected_repo, expected_run_id in test_cases:
+            result = handler.process_url(url)
+            metadata = result["metadata"]
+            assert metadata["owner"] == expected_owner
+            assert metadata["repo"] == expected_repo
+            assert metadata["run_id"] == expected_run_id
+
+    def test_process_url_with_trailing_path(self):
+        """GitHubArtifactHandler handles URLs with trailing path segments."""
+        handler = GitHubArtifactHandler()
+
+        # URL with /attempts/1 suffix
+        url = "https://github.com/owner/repo/actions/runs/12345678/attempts/1"
+        result = handler.process_url(url)
+
+        # Should extract run_id correctly and ignore trailing segments
+        metadata = result["metadata"]
+        assert metadata["run_id"] == "12345678"
+        assert metadata["owner"] == "owner"
+        assert metadata["repo"] == "repo"
+
+    def test_process_url_with_artifact_id(self):
+        """GitHubArtifactHandler extracts artifact_id from URL when present."""
+        handler = GitHubArtifactHandler()
+
+        # URL with specific artifact ID
+        url = "https://github.com/TinyTapeout/tinytapeout-gf-0p2/actions/runs/19443235082/artifacts/4593573393"
+        result = handler.process_url(url)
+
+        metadata = result["metadata"]
+        assert metadata["handler"] == "GitHubArtifactHandler"
+        assert metadata["owner"] == "TinyTapeout"
+        assert metadata["repo"] == "tinytapeout-gf-0p2"
+        assert metadata["run_id"] == "19443235082"
+        assert metadata["artifact_id"] == "4593573393"
+        assert metadata["requires_github_auth"] is True
+
+    def test_process_url_without_artifact_id(self):
+        """GitHubArtifactHandler does not include artifact_id when not in URL."""
+        handler = GitHubArtifactHandler()
+
+        # URL without artifact ID
+        url = "https://github.com/owner/repo/actions/runs/12345678"
+        result = handler.process_url(url)
+
+        metadata = result["metadata"]
+        assert metadata["run_id"] == "12345678"
+        assert "artifact_id" not in metadata
+
+    def test_can_handle_artifact_url(self):
+        """GitHubArtifactHandler recognizes URLs with artifact path."""
+        handler = GitHubArtifactHandler()
+
+        # Should match URL with artifact ID
+        url = "https://github.com/org/repo/actions/runs/123/artifacts/456"
+        assert handler.can_handle(url) is True
+
+    def test_process_url_raises_on_invalid_format(self):
+        """GitHubArtifactHandler raises ValueError for invalid URLs."""
+        handler = GitHubArtifactHandler()
+
+        # URL that doesn't match pattern
+        invalid_url = "https://github.com/owner/repo/blob/main/file.txt"
+
+        with pytest.raises(ValueError, match="Invalid GitHub Actions URL format"):
+            handler.process_url(invalid_url)
+
+    def test_post_download_passes_through_content(self):
+        """GitHubArtifactHandler returns ZIP content unchanged."""
+        handler = GitHubArtifactHandler()
+
+        # Simulate ZIP file content
+        fake_zip_content = b"PK\x03\x04\x14\x00\x00\x00\x08\x00" + b"test ZIP content"
+
+        metadata = {
+            "handler": "GitHubArtifactHandler",
+            "owner": "owner",
+            "repo": "repo",
+            "run_id": "12345678",
+            "requires_github_auth": True,
+        }
+
+        result = handler.post_download(fake_zip_content, metadata)
+
+        # Content should be unchanged
+        assert result == fake_zip_content
+
+    def test_post_download_handles_empty_content(self):
+        """GitHubArtifactHandler handles empty ZIP files."""
+        handler = GitHubArtifactHandler()
+
+        metadata = {"handler": "GitHubArtifactHandler"}
+        result = handler.post_download(b"", metadata)
+
+        assert result == b""
+
+    def test_post_download_handles_large_content(self):
+        """GitHubArtifactHandler handles large artifact files."""
+        handler = GitHubArtifactHandler()
+
+        # Create 5MB of data
+        large_content = b"x" * (5 * 1024 * 1024)
+        metadata = {"handler": "GitHubArtifactHandler"}
+
+        result = handler.post_download(large_content, metadata)
+
+        assert result == large_content
+        assert len(result) == 5 * 1024 * 1024
+
+
 class TestURLHandlerRegistry:
     """Test URLHandlerRegistry functionality."""
 
@@ -183,14 +398,21 @@ class TestURLHandlerRegistry:
         """Registry can handle multiple registered handlers."""
         registry = URLHandlerRegistry()
 
-        # Register Google Source handler
+        # Register both handlers
         google_handler = GoogleSourceHandler()
+        github_handler = GitHubArtifactHandler()
         registry.register(google_handler)
+        registry.register(github_handler)
 
         # Test Google Source URL
         google_url = "https://example.googlesource.com/repo/+/main/file.oas"
         found = registry.get_handler(google_url)
         assert isinstance(found, GoogleSourceHandler)
+
+        # Test GitHub Actions URL
+        github_url = "https://github.com/owner/repo/actions/runs/12345678"
+        found = registry.get_handler(github_url)
+        assert isinstance(found, GitHubArtifactHandler)
 
         # Test non-matching URL
         other_url = "https://example.com/file.gds"
@@ -255,6 +477,81 @@ class TestGoogleSourceHandlerIntegration:
         encoded = base64.b64encode(original)
         decoded = handler.post_download(encoded, result["metadata"])
         assert decoded == original
+
+
+@pytest.mark.django_db
+class TestGitHubArtifactHandlerIntegration:
+    """Integration tests for GitHubArtifactHandler with real URL patterns."""
+
+    def test_full_github_artifact_url_workflow(self):
+        """Test complete workflow: URL detection, parsing, and pass-through."""
+        handler = GitHubArtifactHandler()
+
+        # Step 1: Check handler recognizes URL
+        original_url = "https://github.com/wafer-space/platform/actions/runs/987654321"
+        assert handler.can_handle(original_url)
+
+        # Step 2: Process URL to extract metadata
+        result = handler.process_url(original_url)
+        processed_url = result["url"]
+        metadata = result["metadata"]
+
+        # URL should be unchanged (download task will handle API calls)
+        assert processed_url == original_url
+        assert metadata["handler"] == "GitHubArtifactHandler"
+        assert metadata["owner"] == "wafer-space"
+        assert metadata["repo"] == "platform"
+        assert metadata["run_id"] == "987654321"
+        assert metadata["requires_github_auth"] is True
+
+        # Step 3: Simulate download and verify pass-through
+        # GitHub artifacts come as ZIP files
+        fake_artifact_zip = b"PK\x03\x04" + b"fake artifact content"
+        processed_content = handler.post_download(fake_artifact_zip, metadata)
+
+        # Content should be unchanged (no transformation like base64 decode)
+        assert processed_content == fake_artifact_zip
+
+    def test_registry_integration_with_github_artifacts(self):
+        """Test registry integration with GitHubArtifactHandler."""
+        registry = URLHandlerRegistry()
+        registry.register(GitHubArtifactHandler())
+
+        url = "https://github.com/owner/repo/actions/runs/12345678"
+
+        # Get handler from registry
+        handler = registry.get_handler(url)
+        assert handler is not None
+        assert isinstance(handler, GitHubArtifactHandler)
+
+        # Process URL
+        result = handler.process_url(url)
+        assert result["url"] == url  # Unchanged
+        assert result["metadata"]["owner"] == "owner"
+        assert result["metadata"]["repo"] == "repo"
+        assert result["metadata"]["run_id"] == "12345678"
+        assert result["metadata"]["requires_github_auth"] is True
+
+        # Pass through content
+        content = b"test artifact"
+        processed = handler.post_download(content, result["metadata"])
+        assert processed == content
+
+    def test_registry_distinguishes_handlers(self):
+        """Test registry can distinguish between different handler types."""
+        registry = URLHandlerRegistry()
+        registry.register(GoogleSourceHandler())
+        registry.register(GitHubArtifactHandler())
+
+        # GitHub URL should get GitHub handler
+        github_url = "https://github.com/owner/repo/actions/runs/12345678"
+        handler = registry.get_handler(github_url)
+        assert isinstance(handler, GitHubArtifactHandler)
+
+        # Google Source URL should get Google handler
+        google_url = "https://example.googlesource.com/repo/+/main/file.oas"
+        handler = registry.get_handler(google_url)
+        assert isinstance(handler, GoogleSourceHandler)
 
 
 @pytest.mark.django_db
@@ -346,3 +643,59 @@ class TestServiceIntegrationWithHandlers:
 
         # Verify handler metadata is empty
         assert project_file.handler_metadata == {}
+
+    def test_submit_github_artifact_url_skips_validation(self, user):
+        """Test that GitHub artifact URLs skip validation and store auth metadata.
+
+        This is a regression test for the issue where GitHub artifact URLs
+        failed validation with 404 errors because they require authentication.
+
+        Real-world example URL from TinyTapeout:
+        https://github.com/TinyTapeout/tinytapeout-gf-0p2/actions/runs/19443235082/artifacts/4593571166
+        """
+        project = Project.objects.create(
+            user=user,
+            name="Test Project",
+            description="Test project for GitHub artifact",
+        )
+
+        # Use the actual TinyTapeout URL from the bug report
+        github_artifact_url = (
+            "https://github.com/TinyTapeout/tinytapeout-gf-0p2/"
+            "actions/runs/19443235082/artifacts/4593571166"
+        )
+
+        # Mock only the Celery task (URLValidator.validate_url should NOT be called)
+        with patch(
+            "wafer_space.projects.services.download_project_file.delay"
+        ) as mock_task:
+            mock_task.return_value = MagicMock(id="test-task-id")
+
+            project_file, metadata = ProjectFileService.submit_file_from_url(
+                project=project,
+                url=github_artifact_url,
+                expected_hash_md5="abc123def456",
+                expected_hash_sha1="7df059597099bb7dcf25d2a9aedfaf4465f72d8d",
+            )
+
+        # Verify handler was used
+        assert metadata["handler_used"] == "GitHubArtifactHandler"
+
+        # Verify handler metadata was stored with correct values
+        assert project_file.handler_metadata["handler"] == "GitHubArtifactHandler"
+        assert project_file.handler_metadata["owner"] == "TinyTapeout"
+        assert project_file.handler_metadata["repo"] == "tinytapeout-gf-0p2"
+        assert project_file.handler_metadata["run_id"] == "19443235082"
+        assert project_file.handler_metadata["requires_github_auth"] is True
+
+        # Verify file was created and marked for download
+        assert project_file.download_status == ProjectFile.DownloadStatus.QUEUED
+        assert project_file.is_active is True
+
+        # Verify download task was started
+        mock_task.assert_called_once_with(str(project.id))
+
+        # Verify expected hashes were stored
+        assert project_file.expected_hash_md5 == "abc123def456"
+        expected_sha1 = "7df059597099bb7dcf25d2a9aedfaf4465f72d8d"
+        assert project_file.expected_hash_sha1 == expected_sha1

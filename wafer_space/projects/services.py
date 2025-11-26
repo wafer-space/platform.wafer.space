@@ -24,6 +24,7 @@ from .security import SecurityValidationError
 from .security import URLValidator
 from .tasks import check_project_manufacturability
 from .tasks import download_project_file
+from .url_handlers import GitHubArtifactHandler
 from .url_handlers import GoogleSourceHandler
 from .url_handlers import URLHandlerRegistry
 from .url_rewriters import URLRewriter
@@ -38,6 +39,7 @@ VALID_ALL_FORMATS = VALID_BASE_FORMATS | VALID_COMPRESSION_FORMATS
 # Initialize URL handler registry with known handlers
 _url_handler_registry = URLHandlerRegistry()
 _url_handler_registry.register(GoogleSourceHandler())
+_url_handler_registry.register(GitHubArtifactHandler())
 
 
 def _extract_filename_from_content_disposition(content_disposition: str) -> str | None:
@@ -177,10 +179,11 @@ def _validate_filename_format(filename: str) -> None:
         raise ValueError(msg)
 
     # Check if last suffix is compression
+    min_suffixes_for_compressed_file = 2  # e.g., .gds.gz needs both suffixes
     last_suffix = suffixes[-1]
     if last_suffix in VALID_COMPRESSION_FORMATS:
         # Compressed file - check if there's a base format before compression
-        if len(suffixes) < 2:  # noqa: PLR2004
+        if len(suffixes) < min_suffixes_for_compressed_file:
             msg = (
                 f"Invalid file format: '{filename}'. "
                 f"Compressed files must have a GDS/OASIS extension before compression. "
@@ -291,18 +294,31 @@ class ProjectFileService:
             handler_name = handler_metadata.get("handler")
 
         # Step 3: Validate URL security and get metadata
-        # For URLs with handlers (like Google Source), allow missing Content-Length
-        # because the handler transforms the content (e.g., base64 decode)
-        allow_missing_length = handler is not None
-        try:
-            validation_result = URLValidator.validate_url(
-                rewritten_url,
-                allow_missing_content_length=allow_missing_length,
-            )
-        except SecurityValidationError as e:
-            # Re-raise with better context
-            msg = f"URL validation failed: {e}"
-            raise SecurityValidationError(msg) from e
+        # Skip validation for URLs requiring authentication (e.g., GitHub artifacts)
+        # These will be validated during actual download with credentials
+        if handler_metadata.get("requires_github_auth"):
+            # GitHub artifacts require authentication - cannot validate without token
+            # Validation will happen during download task with proper credentials
+            validation_result: dict[str, int | str | bool | None] = {
+                "file_size": 0,  # Unknown until download
+                "content_type": None,
+                "content_disposition": None,
+                "etag": None,
+                "supports_range": False,
+            }
+        else:
+            # For URLs with handlers (like Google Source), allow missing Content-Length
+            # because the handler transforms the content (e.g., base64 decode)
+            allow_missing_length = handler is not None
+            try:
+                validation_result = URLValidator.validate_url(
+                    rewritten_url,
+                    allow_missing_content_length=allow_missing_length,
+                )
+            except SecurityValidationError as e:
+                # Re-raise with better context
+                msg = f"URL validation failed: {e}"
+                raise SecurityValidationError(msg) from e
 
         # Step 4: Extract filename (validated from file content later)
         content_disposition = validation_result.get("content_disposition")
@@ -398,6 +414,7 @@ class ProjectFileService:
             ProjectFile: The created file record
         """
         # Create the file record
+        # Note: download_status will be PENDING (no task_id, no attempts)
         return ProjectFile.objects.create(
             project=project,
             original_url=file_data.original_url,
@@ -408,7 +425,6 @@ class ProjectFileService:
             content_type=file_data.content_type,
             original_filename=filename,
             handler_metadata=handler_metadata or {},
-            download_status=ProjectFile.DownloadStatus.PENDING,
             is_active=True,  # New file is active
             file_type=ProjectFile.FileType.DESIGN,
         )
@@ -426,12 +442,104 @@ class ProjectFileService:
         # Start the download task
         task = download_project_file.delay(str(project_file.project.id))
 
-        # Store task ID
+        # Store task ID (status will become QUEUED automatically)
         project_file.download_task_id = task.id
-        project_file.download_status = ProjectFile.DownloadStatus.PENDING
-        project_file.save(update_fields=["download_task_id", "download_status"])
+        project_file.save(update_fields=["download_task_id"])
 
         return task.id
+
+    @classmethod
+    def _handle_pending_started_state(
+        cls,
+        task: AsyncResult,
+        project_file: ProjectFile,
+    ) -> dict[str, str | int | float]:
+        """Handle PENDING or STARTED task state."""
+        status = "pending" if task.state == "PENDING" else "downloading"
+        message = "Download pending" if task.state == "PENDING" else "Download starting"
+        return {
+            "status": status,
+            "progress": 0,
+            "current": 0,
+            "total": project_file.file_size or 0,
+            "message": message,
+        }
+
+    @classmethod
+    def _handle_progress_state(
+        cls,
+        task: AsyncResult,
+        project_file: ProjectFile,
+    ) -> dict[str, str | int | float]:
+        """Handle PROGRESS task state."""
+        meta = task.info or {}
+        return {
+            "status": "downloading",
+            "progress": meta.get("progress", 0),
+            "current": meta.get("current", 0),
+            "total": meta.get("total", project_file.file_size or 0),
+            "message": meta.get("message", "Downloading"),
+        }
+
+    @classmethod
+    def _handle_success_state(
+        cls,
+        task: AsyncResult,
+        project_file: ProjectFile,
+    ) -> dict[str, str | int | float]:
+        """Handle SUCCESS task state."""
+        return {
+            "status": "completed",
+            "progress": 100,
+            "current": project_file.file_size or 0,
+            "total": project_file.file_size or 0,
+            "message": "Download completed",
+        }
+
+    @classmethod
+    def _handle_failure_state(
+        cls,
+        task: AsyncResult,
+        project_file: ProjectFile,
+    ) -> dict[str, str | int | float]:
+        """Handle FAILURE task state."""
+        return {
+            "status": "failed",
+            "progress": 0,
+            "current": 0,
+            "total": project_file.file_size or 0,
+            "message": str(task.info) if task.info else "Download failed",
+        }
+
+    @classmethod
+    def _handle_retry_state(
+        cls,
+        task: AsyncResult,
+        project_file: ProjectFile,
+    ) -> dict[str, str | int | float]:
+        """Handle RETRY task state."""
+        return {
+            "status": "retrying",
+            "progress": 0,
+            "current": 0,
+            "total": project_file.file_size or 0,
+            "message": "Download retrying after error...",
+        }
+
+    @classmethod
+    def _handle_unknown_state(
+        cls,
+        task: AsyncResult,
+        project_file: ProjectFile,
+    ) -> dict[str, str | int | float]:
+        """Handle unknown task state."""
+        return {
+            "status": "unknown",
+            "progress": 0,
+            "current": 0,
+            "total": project_file.file_size or 0,
+            "message": f"Unknown state: {task.state}",
+        }
 
     @classmethod
     def get_download_progress(
@@ -462,75 +570,47 @@ class ProjectFileService:
 
         task = AsyncResult(project_file.download_task_id)
 
-        # Map task states to status and message
-        if task.state in ("PENDING", "STARTED"):
-            status = "pending" if task.state == "PENDING" else "downloading"
-            message = (
-                "Download pending" if task.state == "PENDING" else "Download starting"
-            )
-            return {
-                "status": status,
-                "progress": 0,
-                "current": 0,
-                "total": project_file.file_size or 0,
-                "message": message,
-            }
-        if task.state == "PROGRESS":
-            # Get progress from task meta
-            meta = task.info or {}
-            return {
-                "status": "downloading",
-                "progress": meta.get("progress", 0),
-                "current": meta.get("current", 0),
-                "total": meta.get("total", project_file.file_size or 0),
-                "message": meta.get("message", "Downloading"),
-            }
-        if task.state == "SUCCESS":
-            return {
-                "status": "completed",
-                "progress": 100,
-                "current": project_file.file_size or 0,
-                "total": project_file.file_size or 0,
-                "message": "Download completed",
-            }
-        if task.state == "FAILURE":
-            return {
-                "status": "failed",
-                "progress": 0,
-                "current": 0,
-                "total": project_file.file_size or 0,
-                "message": str(task.info) if task.info else "Download failed",
-            }
-
-        # Unknown state
-        return {
-            "status": "unknown",
-            "progress": 0,
-            "current": 0,
-            "total": project_file.file_size or 0,
-            "message": f"Unknown state: {task.state}",
+        # Dispatch to appropriate handler based on task state
+        state_handlers = {
+            "PENDING": cls._handle_pending_started_state,
+            "STARTED": cls._handle_pending_started_state,
+            "PROGRESS": cls._handle_progress_state,
+            "SUCCESS": cls._handle_success_state,
+            "FAILURE": cls._handle_failure_state,
+            "RETRY": cls._handle_retry_state,
         }
+
+        handler = state_handlers.get(task.state, cls._handle_unknown_state)
+        return handler(task, project_file)
 
 
 class ManufacturabilityService:
     """Service for handling manufacturability check operations."""
 
     @classmethod
-    def queue_check(cls, project: Project) -> ManufacturabilityCheck:
-        """Queue a manufacturability check for a project.
+    def queue_check(
+        cls, project: Project, project_file: "ProjectFile | None" = None
+    ) -> ManufacturabilityCheck:
+        """Queue a manufacturability check for a project file.
 
-        Creates or gets an existing check, sets status to QUEUED,
+        Creates or gets an existing check for the file, sets status to QUEUED,
         and triggers the Celery task for processing.
 
         Args:
             project: The project to check
+            project_file: The specific file to check (optional for backwards compat)
 
         Returns:
             ManufacturabilityCheck: The queued check instance
         """
+        # Build filter for get_or_create
+        filter_kwargs: dict = {"project": project}
+        if project_file:
+            filter_kwargs["project_file"] = project_file
+
         # Get or create the check
         check, created = ManufacturabilityCheck.objects.get_or_create(
-            project=project,
+            **filter_kwargs,
             defaults={
                 "status": ManufacturabilityCheck.Status.QUEUED,
             },
@@ -562,24 +642,17 @@ class ManufacturabilityService:
         return check
 
     @classmethod
-    def get_check_status(cls, project: Project) -> dict | None:
-        """Get check status information for UI display.
+    def get_check_status_for_file(cls, project_file: "ProjectFile") -> dict | None:
+        """Get check status information for a specific file.
 
         Args:
-            project: The project to get check status for
+            project_file: The project file to get check status for
 
         Returns:
-            dict with check status information:
-                - status: Current check status
-                - is_manufacturable: Whether project is manufacturable (or None)
-                - errors: List of error messages
-                - warnings: List of warning messages
-                - started_at: When check started (or None)
-                - completed_at: When check completed (or None)
-            Returns None if no check exists.
+            dict with check status information, or None if no check exists.
         """
         try:
-            check = ManufacturabilityCheck.objects.get(project=project)
+            check = project_file.manufacturability_check
         except ManufacturabilityCheck.DoesNotExist:
             return None
         else:
@@ -591,3 +664,32 @@ class ManufacturabilityService:
                 "started_at": check.started_at,
                 "completed_at": check.completed_at,
             }
+
+    @classmethod
+    def get_check_status(cls, project: Project) -> dict | None:
+        """Get check status for the project's active file.
+
+        Args:
+            project: The project to get check status for
+
+        Returns:
+            dict with check status information, or None if no check exists.
+        """
+        # Get the active file and its check
+        active_file = project.files.filter(is_active=True).first()
+        if active_file:
+            return cls.get_check_status_for_file(active_file)
+
+        # Fallback: get most recent check for the project
+        check = project.manufacturability_checks.order_by("-started_at").first()
+        if not check:
+            return None
+
+        return {
+            "status": check.status,
+            "is_manufacturable": check.is_manufacturable,
+            "errors": check.errors,
+            "warnings": check.warnings,
+            "started_at": check.started_at,
+            "completed_at": check.completed_at,
+        }

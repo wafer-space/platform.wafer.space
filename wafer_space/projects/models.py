@@ -1,7 +1,5 @@
 import hashlib
 import uuid
-from datetime import datetime
-from datetime import timedelta
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -76,7 +74,7 @@ class Project(models.Model):
     def __str__(self):
         return f"{self.name} ({self.user.username})"
 
-    def can_submit(self) -> tuple[bool, str]:  # noqa: PLR0911
+    def can_submit(self) -> tuple[bool, str]:
         """Check if project can be submitted.
 
         Returns:
@@ -98,18 +96,18 @@ class Project(models.Model):
         if not active_file.hash_verified:
             return False, "File hash has not been verified"
 
-        # Check manufacturability
-        if self.is_manufacturable is None:
-            return False, "Manufacturability check has not been completed"
-
-        if not self.is_manufacturable:
-            return False, "File did not pass manufacturability checks"
-
         # Check project status
         if self.status != self.Status.DRAFT:
             return False, "Project has already been submitted (status must be DRAFT)"
 
-        return True, ""
+        # Check manufacturability (combined None and False check to reduce returns)
+        if self.is_manufacturable is None:
+            return False, "Manufacturability check has not been completed"
+        return (
+            (True, "")
+            if self.is_manufacturable
+            else (False, "File did not pass manufacturability checks")
+        )
 
     def submit(self):
         """Mark project as submitted and queue manufacturability check.
@@ -167,6 +165,7 @@ class ProjectFile(models.Model):
     # File storage (optional - only after download completes)
     file = models.FileField(
         upload_to=project_file_upload_path,
+        max_length=512,
         blank=True,
         null=True,
         validators=[
@@ -204,11 +203,7 @@ class ProjectFile(models.Model):
         blank=True,
         help_text="Actual URL to download from (after URL rewriting if applicable)",
     )
-    download_status = models.CharField(
-        max_length=20,
-        choices=DownloadStatus.choices,
-        default=DownloadStatus.PENDING,
-    )
+    # Download status is derived from latest DownloadAttempt (see @property below)
     download_started_at = models.DateTimeField(null=True, blank=True)
     download_completed_at = models.DateTimeField(null=True, blank=True)
     download_error = models.TextField(blank=True)
@@ -217,50 +212,6 @@ class ProjectFile(models.Model):
         null=True,
         blank=True,
         help_text="Last activity timestamp for download progress tracking",
-    )
-
-    # Automatic retry configuration
-    auto_retry_enabled = models.BooleanField(
-        default=True,
-        help_text="Enable automatic retry for failed downloads",
-    )
-    retry_count = models.IntegerField(
-        default=0,
-        help_text="Number of automatic retries attempted",
-    )
-    max_retries = models.IntegerField(
-        default=3,
-        help_text="Maximum number of automatic retries before giving up",
-    )
-    last_retry_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="When the last automatic retry was attempted",
-    )
-    next_retry_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text=(
-            "When the next automatic retry should be attempted (exponential backoff)"
-        ),
-    )
-
-    # Worker tracking for verification
-    worker_pid = models.IntegerField(
-        null=True,
-        blank=True,
-        help_text="Process ID of Celery worker executing download",
-    )
-    worker_hostname = models.CharField(
-        max_length=255,
-        blank=True,
-        default="",
-        help_text="Hostname of worker machine",
-    )
-    task_started_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="When download task actually began execution",
     )
 
     # File verification (provided by user)
@@ -292,7 +243,15 @@ class ProjectFile(models.Model):
 
     # Metadata
     file_size = models.BigIntegerField(null=True, blank=True)
-    original_filename = models.CharField(max_length=255)
+    original_filename = models.CharField(
+        max_length=255,
+        help_text="Original filename when downloaded (immutable)",
+    )
+    processed_filename = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Final filename after extraction/decompression pipeline",
+    )
     content_type = models.CharField(max_length=100, blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
@@ -380,72 +339,36 @@ class ProjectFile(models.Model):
         return False, "; ".join(errors)
 
     def mark_download_complete(self):
-        """Mark download as completed successfully."""
-        self.download_status = self.DownloadStatus.COMPLETED
+        """Mark download as completed successfully.
+
+        NOTE: Actual status is derived from DownloadAttempt.
+        This method only updates completion timestamp.
+        """
         self.download_completed_at = timezone.now()
-        self.save()
+        self.save(update_fields=["download_completed_at"])
 
     def mark_download_failed(self, error_message):
-        """Mark download as failed and schedule retry if applicable."""
-        self.download_status = self.DownloadStatus.FAILED
+        """Mark download as failed - records error on ProjectFile only.
+
+        Note:
+            This method only updates ProjectFile fields. The caller is responsible
+            for updating the DownloadAttempt status to FAILED. This separation
+            avoids circular dependencies between ProjectFile and DownloadAttempt.
+
+            Typical usage from tasks.py:
+                # Update attempt status first
+                attempt.status = DownloadAttempt.Status.FAILED
+                attempt.error_message = error_msg
+                attempt.save()
+                # Then record on ProjectFile
+                project_file.mark_download_failed(error_msg)
+
+        Args:
+            error_message: Error description to record
+        """
         self.download_error = error_message
         self.download_completed_at = timezone.now()
-
-        # Save the failed status first
-        self.save(
-            update_fields=["download_status", "download_error", "download_completed_at"]
-        )
-
-        # Schedule automatic retry if enabled and under max retries
-        if self.auto_retry_enabled and self.retry_count < self.max_retries:
-            self.schedule_retry()
-
-    def calculate_next_retry_time(self) -> datetime:
-        """Calculate when the next retry should happen using exponential backoff.
-
-        Returns:
-            datetime: When the next retry should be attempted
-
-        Backoff strategy (production):
-            - Retry 1: 5 minutes
-            - Retry 2: 15 minutes (5 * 3)
-            - Retry 3: 45 minutes (15 * 3)
-
-        Backoff strategy (development):
-            - Retry 1: 30 seconds
-            - Retry 2: 90 seconds (30 * 3)
-            - Retry 3: 270 seconds (90 * 3)
-        """
-        base_delay = settings.DOWNLOAD_RETRY_BASE_DELAY_MINUTES
-        backoff_multiplier = settings.DOWNLOAD_RETRY_BACKOFF_MULTIPLIER
-        delay_minutes = base_delay * (backoff_multiplier**self.retry_count)
-        return timezone.now() + timedelta(minutes=delay_minutes)
-
-    def should_auto_retry(self) -> bool:
-        """Check if this file should be automatically retried.
-
-        Returns:
-            bool: True if should retry, False otherwise
-        """
-        # Must be failed status
-        if self.download_status != self.DownloadStatus.FAILED:
-            return False
-
-        # Auto-retry must be enabled
-        if not self.auto_retry_enabled:
-            return False
-
-        # Must not have exceeded max retries
-        if self.retry_count >= self.max_retries:
-            return False
-
-        # If next_retry_at is set, must be past that time
-        return not (self.next_retry_at and timezone.now() < self.next_retry_at)
-
-    def schedule_retry(self) -> None:
-        """Schedule the next automatic retry attempt."""
-        self.next_retry_at = self.calculate_next_retry_time()
-        self.save(update_fields=["next_retry_at"])
+        self.save(update_fields=["download_error", "download_completed_at"])
 
     def get_progress_percentage(self) -> int:
         """Calculate download progress percentage.
@@ -477,21 +400,22 @@ class ProjectFile(models.Model):
         Returns:
             str: Human-readable status message
         """
-        if self.download_status == self.DownloadStatus.COMPLETED:
-            return "Download completed successfully"
+        status_messages: dict[str, str] = {
+            self.DownloadStatus.COMPLETED.value: "Download completed successfully",
+            self.DownloadStatus.DOWNLOADING.value: "Downloading file...",
+            self.DownloadStatus.PENDING.value: "Download pending - waiting to start",
+            self.DownloadStatus.QUEUED.value: "Download queued - waiting for worker",
+        }
 
+        # Handle FAILED specially to include error message if present
         if self.download_status == self.DownloadStatus.FAILED:
             if self.download_error:
                 return f"Download failed: {self.download_error}"
             return "Download failed"
 
-        if self.download_status == self.DownloadStatus.DOWNLOADING:
-            return "Downloading file..."
-
-        if self.download_status == self.DownloadStatus.PENDING:
-            return "Download pending - waiting to start"
-
-        return f"Unknown status: {self.download_status}"
+        return status_messages.get(
+            self.download_status, f"Unknown status: {self.download_status}"
+        )
 
     @property
     def download_duration_seconds(self) -> float | None:
@@ -542,18 +466,313 @@ class ProjectFile(models.Model):
             speed /= bytes_per_kb
         return f"{speed:.2f} PB/s"
 
+    @property
+    def latest_attempt(self) -> "DownloadAttempt | None":
+        """Get the most recent download attempt.
+
+        Returns None if no attempts exist yet.
+        """
+        return self.download_attempts.first()  # Already ordered by -attempt_number
+
+    @property
+    def download_status(self) -> str:
+        """Derive download status from latest DownloadAttempt.
+
+        State mapping:
+        - No attempts + no task_id → PENDING
+        - No attempts + task_id exists → QUEUED
+        - Latest attempt PENDING + task_id → QUEUED
+        - Latest attempt DOWNLOADING/COMPLETED/FAILED → same
+
+        Returns:
+            str: One of DownloadStatus enum values
+        """
+        latest = self.latest_attempt
+        if not latest:
+            # No attempts yet - check if task queued
+            if self.download_task_id:
+                return self.DownloadStatus.QUEUED
+            return self.DownloadStatus.PENDING
+
+        # Map DownloadAttempt.PENDING + task exists → ProjectFile.QUEUED
+        # Both enums share the same "pending" value
+        if latest.status == self.DownloadStatus.PENDING and self.download_task_id:
+            return self.DownloadStatus.QUEUED
+
+        # Direct mapping for other states
+        return latest.status
+
+    def get_download_status_display(self) -> str:
+        """Get human-readable display name for download_status.
+
+        Since download_status is a property, Django doesn't auto-generate this.
+        We implement it manually to maintain compatibility with code that
+        expects get_FIELD_display() methods.
+
+        Returns:
+            str: Human-readable status like "Pending", "Completed", etc.
+        """
+        status_value = self.download_status
+        return dict(self.DownloadStatus.choices).get(status_value, status_value)
+
+    @property
+    def current_status(self) -> str:
+        """Get current download status from latest attempt.
+
+        DEPRECATED: Use download_status property instead.
+        Returns 'pending' if no attempts exist.
+        """
+        attempt = self.latest_attempt
+        if not attempt:
+            return "pending"
+        return attempt.status
+
+    @property
+    def attempt_count(self) -> int:
+        """Get number of download attempts.
+
+        Includes all attempts (successful and failed).
+        """
+        return self.download_attempts.count()
+
+    @property
+    def download_progress(self) -> int:
+        """Get download progress percentage from latest attempt.
+
+        Returns 0 if no attempts exist or file size unknown.
+        """
+        attempt = self.latest_attempt
+        if not attempt:
+            return 0
+        return attempt.download_progress
+
+    @property
+    def has_hash_mismatch(self) -> bool:
+        """Check if there's a hash mismatch between expected and actual hashes.
+
+        Returns True if any expected hash was provided AND doesn't match actual.
+        Returns False if no expected hashes provided (nothing to compare).
+        Returns False if expected hashes match actual hashes.
+        """
+        # Check MD5 mismatch
+        if self.expected_hash_md5 and self.hash_md5:
+            if self.expected_hash_md5.lower() != self.hash_md5.lower():
+                return True
+
+        # Check SHA1 mismatch
+        if self.expected_hash_sha1 and self.hash_sha1:
+            if self.expected_hash_sha1.lower() != self.hash_sha1.lower():
+                return True
+
+        return False
+
+    @property
+    def has_expected_hash(self) -> bool:
+        """Check if user provided any expected hash for verification."""
+        return bool(self.expected_hash_md5 or self.expected_hash_sha1)
+
+
+class FileProcessingError(models.Model):
+    """Log of errors that occurred during file processing.
+
+    Each error belongs to a specific DownloadAttempt, not directly to ProjectFile.
+    This allows tracking which errors occurred in which retry attempt.
+    """
+
+    class ErrorType(models.TextChoices):
+        DOWNLOAD = "download", "Download Error"
+        EXTRACTION = "extraction", "Extraction Error"
+        VALIDATION = "validation", "Validation Error"
+        PIPELINE = "pipeline", "Pipeline Error"
+
+    download_attempt = models.ForeignKey(
+        "DownloadAttempt",  # Use string to avoid ordering issues
+        on_delete=models.CASCADE,
+        related_name="errors",
+        help_text="The download attempt this error belongs to",
+    )
+    error_type = models.CharField(max_length=20, choices=ErrorType.choices)
+    error_message = models.TextField(help_text="User-friendly error message")
+    error_detail = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Technical details: stack trace, context, etc. (superuser only)",
+    )
+    occurred_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-occurred_at"]
+        indexes = [
+            models.Index(fields=["download_attempt", "-occurred_at"]),
+            models.Index(fields=["error_type", "-occurred_at"]),
+        ]
+
+    def __str__(self):
+        attempt_num = self.download_attempt.attempt_number
+        error_type = self.get_error_type_display()
+        message_preview = self.error_message[:50]
+        return f"Attempt #{attempt_num} - {error_type}: {message_preview}"
+
+
+class DownloadAttempt(models.Model):
+    """Track a single download attempt for a ProjectFile.
+
+    Created at the start of each download task execution. Tracks the full
+    lifecycle of that execution including progress, checkpoints, and errors.
+
+    Each ProjectFile can have multiple attempts (retries). Each attempt has
+    its own set of checkpoints and errors, preventing duplicates.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        DOWNLOADING = "downloading", "Downloading"
+        COMPLETED = "completed", "Completed"
+        FAILED = "failed", "Failed"
+
+    # Foreign Keys
+    project_file = models.ForeignKey(
+        ProjectFile,
+        on_delete=models.CASCADE,
+        related_name="download_attempts",
+        help_text="The file this download attempt belongs to",
+    )
+
+    # Attempt tracking
+    attempt_number = models.IntegerField(
+        help_text="Sequential attempt number (1, 2, 3...)",
+    )
+    started_at = models.DateTimeField(
+        auto_now_add=True,
+        help_text="When this attempt was created",
+    )
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When this attempt finished (success or failure)",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+        help_text="Current status of this download attempt",
+    )
+
+    # Download details (moved from ProjectFile)
+    download_started_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When download actually started (after task setup)",
+    )
+    download_completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When download finished (success or failure)",
+    )
+    download_error = models.TextField(
+        blank=True,
+        help_text="Error message if download failed",
+    )
+    download_duration_seconds = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Total download duration in seconds",
+    )
+    bytes_downloaded = models.BigIntegerField(
+        default=0,
+        help_text="Total bytes downloaded in this attempt",
+    )
+
+    # Worker tracking (moved from ProjectFile)
+    worker_pid = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Process ID of worker executing this attempt",
+    )
+    worker_hostname = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Hostname of worker executing this attempt",
+    )
+    task_started_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When Celery task started executing",
+    )
+
+    # Metadata
+    last_activity = models.DateTimeField(
+        auto_now=True,
+        help_text="Last update to this attempt (for staleness detection)",
+    )
+
+    class Meta:
+        ordering = ["-attempt_number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["project_file", "attempt_number"],
+                name="unique_attempt_per_file",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["project_file", "-attempt_number"]),
+            models.Index(fields=["status"]),
+            models.Index(fields=["last_activity"]),
+        ]
+
+    def __str__(self):
+        status = self.get_status_display()
+        filename = self.project_file.original_filename
+        return f"{filename} - Attempt #{self.attempt_number} ({status})"
+
+    @property
+    def download_progress(self) -> int:
+        """Calculate download progress percentage.
+
+        Returns:
+            int: Progress percentage (0-100)
+        """
+        if not self.project_file.file_size or self.project_file.file_size == 0:
+            return 0
+        progress = (self.bytes_downloaded / self.project_file.file_size) * 100
+        return min(int(progress), 100)
+
+    @property
+    def download_speed_formatted(self) -> str:
+        """Get formatted download speed.
+
+        Returns:
+            str: Speed like "1.2 MB/s" or empty string
+        """
+        if not self.download_duration_seconds or self.download_duration_seconds <= 0:
+            return ""
+
+        speed_bytes_per_sec = self.bytes_downloaded / self.download_duration_seconds
+
+        # Format speed
+        bytes_per_unit = 1024
+        for unit in ["B/s", "KB/s", "MB/s", "GB/s"]:
+            if speed_bytes_per_sec < bytes_per_unit:
+                return f"{speed_bytes_per_sec:.1f} {unit}"
+            speed_bytes_per_sec /= bytes_per_unit
+        return f"{speed_bytes_per_sec:.1f} TB/s"
+
 
 class ProjectFileChunk(models.Model):
     """Track individual chunk downloads for performance analysis and resume capability.
 
     Records are created periodically during download (e.g., every 5MB) rather than
     for every single chunk, to balance granularity with database overhead.
+
+    Each chunk belongs to a specific DownloadAttempt, not directly to ProjectFile.
+    This prevents duplicate checkpoints when downloads are retried.
     """
 
-    project_file = models.ForeignKey(
-        ProjectFile,
+    download_attempt = models.ForeignKey(
+        "DownloadAttempt",  # Use string to avoid ordering issues
         on_delete=models.CASCADE,
         related_name="chunks",
+        help_text="The download attempt this checkpoint belongs to",
     )
     timestamp = models.DateTimeField(
         auto_now_add=True,
@@ -569,13 +788,14 @@ class ProjectFileChunk(models.Model):
     class Meta:
         ordering = ["chunk_number"]
         indexes = [
-            models.Index(fields=["project_file", "chunk_number"]),
-            models.Index(fields=["project_file", "timestamp"]),
+            models.Index(fields=["download_attempt", "chunk_number"]),
+            models.Index(fields=["download_attempt", "timestamp"]),
         ]
 
     def __str__(self):
         return (
-            f"{self.project_file.original_filename} - "
+            f"{self.download_attempt.project_file.original_filename} - "
+            f"Attempt #{self.download_attempt.attempt_number} - "
             f"Chunk {self.chunk_number} ({self.bytes_downloaded:,} bytes)"
         )
 
@@ -586,10 +806,10 @@ class ProjectFileChunk(models.Model):
         Returns:
             float: Speed in bytes/sec, or None if this is the first chunk
         """
-        # Get previous chunk
+        # Get previous chunk FOR THIS ATTEMPT
         previous = (
             ProjectFileChunk.objects.filter(
-                project_file=self.project_file,
+                download_attempt=self.download_attempt,
                 chunk_number__lt=self.chunk_number,
             )
             .order_by("-chunk_number")
@@ -598,10 +818,10 @@ class ProjectFileChunk(models.Model):
 
         if not previous:
             # This is the first chunk, calculate from download start
-            if not self.project_file.download_started_at:
+            if not self.download_attempt.download_started_at:
                 return None
 
-            time_diff = self.timestamp - self.project_file.download_started_at
+            time_diff = self.timestamp - self.download_attempt.download_started_at
             duration = time_diff.total_seconds()
             if duration <= 0:
                 return None
@@ -609,12 +829,13 @@ class ProjectFileChunk(models.Model):
             return self.bytes_downloaded / duration
 
         # Calculate speed since previous chunk
-        duration = (self.timestamp - previous.timestamp).total_seconds()
+        time_diff = self.timestamp - previous.timestamp
+        duration = time_diff.total_seconds()
         if duration <= 0:
             return None
 
-        bytes_since_previous = self.bytes_downloaded - previous.bytes_downloaded
-        return bytes_since_previous / duration
+        bytes_diff = self.bytes_downloaded - previous.bytes_downloaded
+        return bytes_diff / duration
 
 
 class ManufacturabilityCheck(models.Model):
@@ -627,10 +848,17 @@ class ManufacturabilityCheck(models.Model):
         FAILED = "failed", "Failed"
         CANCELLED = "cancelled", "Cancelled"
 
-    project = models.OneToOneField(
+    project = models.ForeignKey(
         Project,
         on_delete=models.CASCADE,
+        related_name="manufacturability_checks",
+    )
+    project_file = models.OneToOneField(
+        "ProjectFile",
+        on_delete=models.CASCADE,
         related_name="manufacturability_check",
+        null=True,
+        blank=True,
     )
     status = models.CharField(
         max_length=20,

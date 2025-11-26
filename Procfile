@@ -13,5 +13,6 @@ worker: celery -A config worker -Q celery,manufacturability,referrals --loglevel
 
 # Celery Beat scheduler for periodic tasks (auto-retry failed downloads)
 # --loglevel=info: Show scheduling logs
+# --schedule: SQLite database file for beat schedule (uses .sqlite3 extension for consistency)
 # Runs periodic tasks defined in CELERY_BEAT_SCHEDULE (e.g., retry_failed_downloads every 5 minutes)
-beat: celery -A config beat --loglevel=info
+beat: celery -A config beat --loglevel=info --schedule=celerybeat-schedule.sqlite3

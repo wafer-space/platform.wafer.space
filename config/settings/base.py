@@ -431,23 +431,36 @@ CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes hard time limit
 CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes soft time limit
 
-# Download retry configuration
-# Base delay is in minutes for production, seconds for development
-DOWNLOAD_RETRY_BASE_DELAY_MINUTES = 5
-DOWNLOAD_RETRY_BACKOFF_MULTIPLIER = 3
-DOWNLOAD_RETRY_CHECK_INTERVAL_SECONDS = 300.0  # Check every 5 minutes
+# Download task configuration
+# Celery retry settings for download tasks (built-in retry mechanism)
+DOWNLOAD_TASK_MAX_RETRIES = 2  # Total of 3 attempts (initial + 2 retries)
+DOWNLOAD_TASK_RETRY_BASE_DELAY_SECONDS = 60  # 1 minute base delay
+DOWNLOAD_TASK_RETRY_BACKOFF_MULTIPLIER = 2  # Exponential backoff: 60s, 120s
 
-# Download state verification configuration (production)
+# Download state verification configuration
+# Fallback system to detect orphaned tasks and recover from queue loss
 DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS = 60.0  # Check every 1 minute
 
 # Celery Beat periodic tasks
 CELERY_BEAT_SCHEDULE = {
-    "retry-failed-downloads": {
-        "task": "wafer_space.projects.tasks.retry_failed_downloads",
-        "schedule": DOWNLOAD_RETRY_CHECK_INTERVAL_SECONDS,
-    },
-    "check-download-states": {
-        "task": "wafer_space.projects.tasks.check_download_states",
+    "ensure-download-tasks-queued": {
+        "task": "wafer_space.projects.tasks.ensure_download_tasks_queued",
         "schedule": DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS,
     },
 }
+
+# File Download and Processing Configuration
+# ------------------------------------------------------------------------------
+# Maximum file size limits for downloads and content extraction
+MAX_DOWNLOAD_SIZE = 100 * 1024 * 1024 * 1024  # 100GB raw download
+MAX_EXTRACTED_SIZE = 10 * 1024 * 1024 * 1024  # 10GB after extraction/decompression
+
+# GitHub API Configuration
+# ------------------------------------------------------------------------------
+# GitHub Personal Access Token for Actions artifact downloads
+# Requires 'actions:read' permission scope
+# Must be set via environment variable when downloading GitHub artifacts
+GITHUB_TOKEN = env("GITHUB_TOKEN", default=None)
+
+# Your stuff...
+# ------------------------------------------------------------------------------

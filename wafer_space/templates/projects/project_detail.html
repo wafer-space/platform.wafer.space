@@ -84,9 +84,30 @@
                 <i class="bi bi-check-circle-fill"></i> Submitted for Manufacturing
               </h5>
             </div>
-            <div class="card-body">{% include "projects/_file_display.html" with file=submitted_file %}</div>
+            <div class="card-body">
+              {% include "projects/_file_display.html" with file=submitted_file download_attempts=submitted_file.download_attempts.all show_attempts=True first_open=True %}
+            </div>
           </div>
         {% endif %}
+        {# Submit New File Button - placed above File In Progress #}
+        <div class="card mb-3">
+          <div class="card-body text-center">
+            <p class="mb-3">
+              {% if in_progress_file %}
+                <i class="bi bi-info-circle text-primary"></i>
+                Submitting a new file will replace the current file in progress.
+              {% else %}
+                <i class="bi bi-info-circle text-primary"></i>
+                Upload a design file to get started.
+              {% endif %}
+            </p>
+            <a class="btn btn-primary btn-lg"
+               href="{% url 'projects:submit_url' pk=project.pk %}"
+               role="button">
+              <i class="bi bi-link"></i> Submit New File URL
+            </a>
+          </div>
+        </div>
         {# In-Progress File Section #}
         {% if in_progress_file %}
           <div class="card mb-3">
@@ -135,158 +156,74 @@
                   <p id="progress-message" class="mt-2 text-muted">{{ progress.message }}</p>
                 </div>
               {% endif %}
-              {% include "projects/_file_display.html" with file=in_progress_file %}
-              {# Manufacturability Check (shown only for in-progress files) #}
-              {% if check_status %}
-                <hr class="my-4" />
-                <h6>
-                  <i class="bi bi-check-circle"></i> Manufacturability Check
-                </h6>
-                <p class="mb-2">
-                  <strong>Status:</strong>
-                  {% if check_status.status == 'queued' %}
-                    <span class="badge bg-secondary">
-                      <i class="bi bi-clock"></i> Queued for checking
-                    </span>
-                  {% elif check_status.status == 'processing' %}
-                    <span id="check-status-badge" class="badge bg-primary">
-                      <span class="spinner-border spinner-border-sm"
-                            role="status"
-                            aria-hidden="true"></span>
-                      <span id="check-status-text">Checking manufacturability...</span>
-                    </span>
-                  {% elif check_status.status == 'completed' %}
-                    {% if check_status.is_manufacturable %}
-                      <span class="badge bg-success">
-                        <i class="bi bi-check-circle"></i> Manufacturable
-                      </span>
-                    {% else %}
-                      <span class="badge bg-danger">
-                        <i class="bi bi-x-circle"></i> Not Manufacturable
-                      </span>
-                    {% endif %}
-                  {% elif check_status.status == 'failed' %}
-                    <span class="badge bg-danger">
-                      <i class="bi bi-exclamation-triangle"></i> Check Failed
-                    </span>
-                  {% endif %}
-                </p>
-                {% if check_status.started_at %}
-                  <p class="mb-2">
-                    <strong>Started:</strong> {{ check_status.started_at|date:"Y-m-d H:i:s" }}
-                  </p>
-                {% endif %}
-                {% if check_status.completed_at %}
-                  <p class="mb-2">
-                    <strong>Completed:</strong> {{ check_status.completed_at|date:"Y-m-d H:i:s" }}
-                  </p>
-                {% endif %}
-                {# Display errors if check completed with errors #}
-                {% if check_status.status == 'completed' and check_status.errors %}
-                  <div class="mt-3">
-                    <h6 class="text-danger">
-                      <i class="bi bi-exclamation-triangle"></i> Errors
-                    </h6>
-                    {% for error in check_status.errors %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endfor %}
-                  </div>
-                {% endif %}
-                {# Display warnings if any #}
-                {% if check_status.status == 'completed' and check_status.warnings %}
-                  <div class="mt-3">
-                    <h6 class="text-warning">
-                      <i class="bi bi-exclamation-circle"></i> Warnings
-                    </h6>
-                    {% for warning in check_status.warnings %}
-                      <div class="alert alert-warning" role="alert">{{ warning }}</div>
-                    {% endfor %}
-                  </div>
-                {% endif %}
-              {% elif project.status == 'draft' and in_progress_file.hash_verified %}
-                <hr class="my-4" />
-                <div class="alert alert-info" role="alert">
-                  <i class="bi bi-info-circle"></i>
-                  <strong>Ready for manufacturability check</strong> - Hash has been verified. The manufacturability check will run automatically once the file is fully downloaded and verified.
-                </div>
-              {% endif %}
+              {% include "projects/_file_display.html" with file=in_progress_file download_attempts=download_attempts show_attempts=True first_open=True %}
             </div>
           </div>
         {% endif %}
-        {# Submit New File Button #}
-        <div class="card mb-3">
-          <div class="card-body text-center">
-            <p class="mb-3">
-              {% if in_progress_file %}
-                <i class="bi bi-info-circle text-primary"></i>
-                Submitting a new file will replace the current file in progress.
-              {% else %}
-                <i class="bi bi-info-circle text-primary"></i>
-                Upload a design file to get started.
-              {% endif %}
-            </p>
-            <a class="btn btn-primary btn-lg"
-               href="{% url 'projects:submit_url' pk=project.pk %}"
-               role="button">
-              <i class="bi bi-link"></i> Submit New File URL
-            </a>
-          </div>
-        </div>
         {# File History Section #}
         {% if history_files %}
           <div class="card mb-3">
             <div class="card-header">
               <h5 class="mb-0">
-                <i class="bi bi-clock-history"></i> File History
+                <i class="bi bi-clock-history"></i> File History ({{ history_files.count }} file{{ history_files.count|pluralize }})
               </h5>
             </div>
             <div class="card-body">
-              <div class="table-responsive">
-                <table class="table table-sm table-hover">
-                  <thead>
-                    <tr>
-                      <th>Filename</th>
-                      <th>Uploaded</th>
-                      <th>Size</th>
-                      <th>Status</th>
-                      <th>Active</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for file in history_files %}
-                      <tr>
-                        <td>
-                          <i class="bi bi-file-earmark"></i>
-                          {{ file.original_filename }}
-                        </td>
-                        <td>{{ file.uploaded_at|date:"Y-m-d H:i:s" }}</td>
-                        <td>
-                          {% if file.file_size %}
-                            {{ file.file_size|filesizeformat }}
-                          {% else %}
-                            <span class="text-muted">Unknown</span>
-                          {% endif %}
-                        </td>
-                        <td>
-                          <span class="badge {% if file.download_status == 'completed' %}bg-success{% elif file.download_status == 'failed' %}bg-danger{% elif file.download_status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
-                            {{ file.get_download_status_display }}
+              <p class="text-muted small mb-3">
+                Previous file uploads for this project. Expand each file to see download attempts and details.
+              </p>
+              {% for file in history_files %}
+                <details class="mb-3">
+                  <summary class="d-flex justify-content-between align-items-center p-2 bg-light rounded"
+                           style="cursor: pointer">
+                    <span>
+                      <i class="bi bi-file-earmark"></i>
+                      {% if file.processed_filename and file.processed_filename != file.original_filename %}
+                        {{ file.original_filename }}
+                        <i class="bi bi-arrow-right text-muted small"></i>
+                        <span class="text-primary">{{ file.processed_filename }}</span>
+                      {% elif file.processed_filename %}
+                        {{ file.processed_filename }}
+                      {% else %}
+                        {{ file.original_filename }}
+                      {% endif %}
+                      <small class="text-muted ms-2">{{ file.uploaded_at|date:"Y-m-d H:i:s" }}</small>
+                    </span>
+                    <span>
+                      {% with file_attempt=file.latest_attempt %}
+                        {% if file_attempt %}
+                          <span class="badge {% if file_attempt.status == 'completed' and file.has_hash_mismatch %}bg-danger{% elif file_attempt.status == 'completed' %}bg-success{% elif file_attempt.status == 'failed' %}bg-danger{% elif file_attempt.status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
+                            {% if file_attempt.status == 'completed' and file.has_hash_mismatch %}
+                              Hash Mismatch
+                            {% else %}
+                              {{ file_attempt.get_status_display }}
+                            {% endif %}
                           </span>
                           {% if file.hash_verified %}
                             <span class="badge bg-success">
                               <i class="bi bi-check-circle"></i> Verified
                             </span>
-                          {% endif %}
-                        </td>
-                        <td>
-                          {% if file.is_active %}
-                            <span class="badge bg-info">
-                              <i class="bi bi-star-fill"></i> Active
+                          {% elif file.has_hash_mismatch %}
+                            <span class="badge bg-danger">
+                              <i class="bi bi-x-circle"></i> Mismatch
                             </span>
                           {% endif %}
-                        </td>
-                      </tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-              </div>
+                        {% else %}
+                          <span class="badge bg-secondary">Pending</span>
+                        {% endif %}
+                      {% endwith %}
+                      {% if file.is_active %}
+                        <span class="badge bg-info">
+                          <i class="bi bi-star-fill"></i> Active
+                        </span>
+                      {% endif %}
+                    </span>
+                  </summary>
+                  <div class="mt-2 ps-3">
+                    {% include "projects/_file_display.html" with file=file download_attempts=file.download_attempts.all show_attempts=True first_open=False %}
+                  </div>
+                </details>
+              {% endfor %}
             </div>
           </div>
         {% endif %}
@@ -311,22 +248,46 @@
       </div>
     </div>
   </div>
+  <script>
+    // Debug logging for polling state
+    console.log('[Progress Polling] show_progress={{ show_progress }}, has active file={{ in_progress_file|yesno:"yes,no" }}');
+  </script>
   {% if show_progress %}
+    {# Hidden element to pass server data to JavaScript without djlint reformatting issues #}
+    <div id="progress-config"
+         data-attempt-count="{{ download_attempts.count|default:0 }}"
+         style="display: none"></div>
     <script>
       // Real-time progress polling
       (function() {
+        console.log('[Progress Polling] Initializing polling for project {{ project.pk }}');
         let pollInterval;
         const progressUrl = '{% url "projects:progress" pk=project.pk %}';
+        // Track attempt count to detect new attempts (retries)
+        const configEl = document.getElementById('progress-config');
+        let lastAttemptCount = parseInt(configEl.dataset.attemptCount, 10) || 0;
 
         function updateProgress() {
+          console.log('[Progress Polling] Fetching progress from:', progressUrl);
           fetch(progressUrl)
             .then(response => {
               if (!response.ok) {
+                console.error('[Progress Polling] Request failed with status:', response.status);
                 throw new Error('Progress request failed');
               }
               return response.json();
             })
             .then(data => {
+              console.log('[Progress Polling] Received data:', data);
+
+              // Check if new download attempts were created (e.g., retry)
+              if (data.attempt_count && data.attempt_count > lastAttemptCount) {
+                console.log('[Progress Polling] New attempt detected (was: ' + lastAttemptCount + ', now: ' + data.attempt_count + '). Reloading page.');
+                clearInterval(pollInterval);
+                location.reload();
+                return;
+              }
+
               // Update progress bar
               const progressBar = document.getElementById('progress-bar');
               const progressText = document.getElementById('progress-text');
@@ -346,23 +307,44 @@
 
               // Update status badge
               if (statusBadge && statusText && data.status) {
-                statusText.textContent = data.message || data.status;
-
-                // Update badge color based on status
+                console.log('[Progress Polling] Updating status badge to:', data.status);
+                // Update badge color and icon based on status
                 statusBadge.className = 'badge';
+                let iconHtml = '';
+
                 if (data.status === 'completed') {
                   statusBadge.classList.add('bg-success');
+                  iconHtml = '<i class="bi bi-check-circle"></i> ';
+                  statusText.textContent = 'Download Completed';
                 } else if (data.status === 'failed') {
                   statusBadge.classList.add('bg-danger');
+                  iconHtml = '<i class="bi bi-exclamation-triangle"></i> ';
+                  statusText.textContent = 'Download Failed';
                 } else if (data.status === 'downloading') {
                   statusBadge.classList.add('bg-primary');
+                  iconHtml = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> ';
+                  statusText.textContent = 'Downloading';
+                } else if (data.status === 'queued') {
+                  statusBadge.classList.add('bg-info');
+                  iconHtml = '<i class="bi bi-clock"></i> ';
+                  statusText.textContent = 'Queued';
+                } else if (data.status === 'retrying') {
+                  statusBadge.classList.add('bg-warning');
+                  iconHtml = '<i class="bi bi-arrow-clockwise"></i> ';
+                  statusText.textContent = 'Retrying';
                 } else {
                   statusBadge.classList.add('bg-secondary');
+                  iconHtml = '<i class="bi bi-clock"></i> ';
+                  statusText.textContent = data.status;
                 }
+
+                // Update the badge content with icon + text
+                statusBadge.innerHTML = iconHtml + '<span id="status-text">' + statusText.textContent + '</span>';
               }
 
               // Stop polling and reload if completed or failed
               if (data.status === 'completed' || data.status === 'failed') {
+                console.log('[Progress Polling] Download finished. Stopping polling and reloading page.');
                 clearInterval(pollInterval);
                 setTimeout(() => {
                   location.reload();
@@ -370,15 +352,17 @@
               }
             })
             .catch(error => {
-              console.error('Error fetching progress:', error);
+              console.error('[Progress Polling] Error fetching progress:', error);
               // Continue polling even on error
             });
         }
 
         // Start polling every 3 seconds
+        console.log('[Progress Polling] Starting poll interval (every 3 seconds)');
         pollInterval = setInterval(updateProgress, 3000);
 
         // Initial update
+        console.log('[Progress Polling] Running initial update');
         updateProgress();
 
         // Clean up on page unload

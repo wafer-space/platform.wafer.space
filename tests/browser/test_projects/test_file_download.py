@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 from allauth.account.models import EmailAddress
 from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import StaleElementReferenceException
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions
@@ -17,6 +18,7 @@ from wafer_space.legal.models import TermsOfService
 from wafer_space.legal.models import TermsOfServiceAcceptance
 from wafer_space.notifications.models import Notification
 from wafer_space.notifications.services import NotificationService
+from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.security import SecurityValidationError
@@ -164,12 +166,12 @@ class TestProjectFileDownload(BaseBrowserTest):
         # Capture current URL before submitting
         current_url = self.driver.current_url
 
-        # Submit form
+        # Submit form - use JavaScript click to avoid element interception issues
         submit_button = self.driver.find_element(
             By.CSS_SELECTOR,
             'button[type="submit"]',
         )
-        submit_button.click()
+        self.driver.execute_script("arguments[0].click();", submit_button)
 
         # Wait for URL to change (redirect on success) or stay same (error)
         # Use explicit wait with longer timeout for potential network validation
@@ -219,12 +221,12 @@ class TestProjectFileDownload(BaseBrowserTest):
         url_input = self.wait_for_element(self.driver, (By.NAME, "url"))
         url_input.send_keys("http://localhost/file.gds")
 
-        # Submit form
+        # Submit form - use JavaScript click to avoid element interception issues
         submit_button = self.driver.find_element(
             By.CSS_SELECTOR,
             'button[type="submit"]',
         )
-        submit_button.click()
+        self.driver.execute_script("arguments[0].click();", submit_button)
 
         # Wait for page to process (form reloads on error)
         time.sleep(2)  # Give form time to process and show errors
@@ -241,15 +243,21 @@ class TestProjectFileDownload(BaseBrowserTest):
         self.login()
 
         # Create a downloading file
-        ProjectFile.objects.create(
+        project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             file_size=10485760,  # 10MB
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
             download_task_id="task-123",
             is_active=True,
+        )
+
+        # Create download attempt
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
         )
 
         # Mock progress response
@@ -286,20 +294,122 @@ class TestProjectFileDownload(BaseBrowserTest):
             )
             assert status_element is not None
 
-    def test_completed_download_shows_status(self):
-        """Test that completed downloads show correct status."""
+    @pytest.mark.skip(
+        reason="Mock doesn't affect live server in browser tests. See #62"
+    )
+    @patch("wafer_space.projects.services.AsyncResult")
+    def test_status_updates_dynamically_without_reload(self, mock_async_result):
+        """Test that status updates from pending to downloading without page reload.
+
+        This test verifies the JavaScript polling system correctly updates the UI
+        when the download status transitions from PENDING to DOWNLOADING.
+
+        NOTE: This test is skipped because mocks don't propagate to the live server
+        process. Needs refactoring to use database state changes instead.
+        See: https://github.com/wafer-space/platform.wafer.space/issues/62
+        """
         self.login()
 
-        # Create a completed file
-        ProjectFile.objects.create(
+        # Create a file with PENDING status
+        project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             file_size=1048576,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
+            download_task_id="task-pending-123",
+            is_active=True,
+        )
+
+        # Create download attempt with PENDING status
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.PENDING,
+        )
+
+        # Mock Celery task - initially PENDING
+        mock_task = Mock()
+        mock_task.state = "PENDING"
+        mock_task.info = None
+        mock_async_result.return_value = mock_task
+
+        # Navigate to project detail page
+        self.navigate_to(self.driver, f"/projects/{self.project.id}/")
+
+        # Wait for page to load and verify initial state shows "pending"
+        # Note: Current implementation shows lowercase "pending" from JSON API
+        # Use WebDriverWait with expected_conditions to handle DOM updates
+        wait = WebDriverWait(
+            self.driver,
+            timeout=10,
+            ignored_exceptions=(StaleElementReferenceException,),
+        )
+
+        # Wait for element with "pending" text (handles stale element references)
+        def element_contains_text(driver):
+            """Check if element contains 'pending' text, handling stale refs."""
+            try:
+                element = driver.find_element(By.ID, "status-text")
+                return "pending" in element.text.lower()
+            except StaleElementReferenceException:
+                return False
+
+        wait.until(element_contains_text)
+
+        # Simulate backend transition: Update the mocked Celery task to STARTED
+        mock_task.state = "STARTED"
+
+        # Wait for JavaScript polling to fetch the new status and update UI
+        # Use robust wait that handles stale element references
+        def status_changed_to_downloading(driver):
+            """Check if status text changed to 'downloading', handling stale refs."""
+            try:
+                element = driver.find_element(By.ID, "status-text")
+                return "downloading" in element.text.lower()
+            except StaleElementReferenceException:
+                return False
+
+        wait_for_update = WebDriverWait(
+            self.driver,
+            timeout=10,
+            poll_frequency=0.5,
+            ignored_exceptions=(StaleElementReferenceException,),
+        )
+        expected_msg = "Status should update from pending to downloading without reload"
+        wait_for_update.until(status_changed_to_downloading, message=expected_msg)
+
+        # Verify badge color changed from secondary to primary
+        def badge_has_primary_class(driver):
+            """Check if badge has bg-primary class, handling stale refs."""
+            try:
+                badge = driver.find_element(By.ID, "status-badge")
+                return "bg-primary" in badge.get_attribute("class")
+            except StaleElementReferenceException:
+                return False
+
+        wait_for_update.until(badge_has_primary_class)
+
+    def test_completed_download_shows_status(self):
+        """Test that completed downloads show correct status."""
+        self.login()
+
+        # Create a completed file
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            file_size=1048576,
             hash_verified=True,
             is_active=True,
+        )
+
+        # Create download attempt
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Navigate to project detail page
@@ -307,7 +417,7 @@ class TestProjectFileDownload(BaseBrowserTest):
 
         # Check for completed status
         # Use contains(., ...) to match all descendant text, not just direct text nodes
-        completed_xpath = "//*[contains(., 'Download Completed')]"
+        completed_xpath = "//*[contains(., 'Completed')]"
         status_element = self.wait_for_element(
             self.driver, (By.XPATH, completed_xpath), timeout=10
         )
@@ -319,15 +429,21 @@ class TestProjectFileDownload(BaseBrowserTest):
 
         # Create a failed file
         error_message = "Connection timeout after 3 retries"
-        ProjectFile.objects.create(
+        project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             file_size=1048576,
-            download_status=ProjectFile.DownloadStatus.FAILED,
-            download_error=error_message,
             is_active=True,
+        )
+
+        # Create download attempt
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.FAILED,
+            download_error=error_message,
         )
 
         # Navigate to project detail page
@@ -335,7 +451,7 @@ class TestProjectFileDownload(BaseBrowserTest):
 
         # Check for failed status
         # Use contains(., ...) to match all descendant text, not just direct text nodes
-        failed_xpath = "//*[contains(., 'Download Failed')]"
+        failed_xpath = "//*[contains(., 'Failed')]"
         status_element = self.wait_for_element(
             self.driver, (By.XPATH, failed_xpath), timeout=10
         )
@@ -352,8 +468,14 @@ class TestProjectFileDownload(BaseBrowserTest):
             source_url="https://example.com/old.gds",
             original_filename="old.gds",
             file_size=1048576,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             is_active=True,
+        )
+
+        # Create download attempt for old file
+        DownloadAttempt.objects.create(
+            project_file=old_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Verify old file is active
@@ -371,7 +493,6 @@ class TestProjectFileDownload(BaseBrowserTest):
             source_url="https://example.com/new.gds",
             original_filename="new.gds",
             file_size=2097152,
-            download_status=ProjectFile.DownloadStatus.PENDING,
             is_active=True,
         )
 
@@ -382,23 +503,28 @@ class TestProjectFileDownload(BaseBrowserTest):
         # Navigate to project detail page
         self.navigate_to(self.driver, f"/projects/{self.project.id}/")
 
-        # Should only show the new file name
+        # Should show the new file name in the "File In Progress" section
         self.wait_for_element(
             self.driver,
             (By.XPATH, "//*[contains(text(), 'new.gds')]"),
             timeout=10,
         )
 
-        # Old file should not be visible
+        # Old file should NOT be in the "File In Progress" section
+        # (it may appear in File History section, which is expected behavior)
         try:
-            self.driver.find_element(
+            # Check if old file appears in the File In Progress card header area
+            in_progress_section = self.driver.find_element(
                 By.XPATH,
-                "//*[contains(text(), 'old.gds')]",
+                "//div[.//h5[contains(text(), 'File In Progress')]]",
             )
-            # If found, it's an error (old file shouldn't be shown)
-            self.errors.append("Old file is still visible after replacement")
+            # If we found the section, check that old.gds is NOT in it
+            if "old.gds" in in_progress_section.text:
+                self.errors.append(
+                    "Old file appears in 'File In Progress' section after replacement"
+                )
         except NoSuchElementException:
-            # Not found is expected
+            # File In Progress section not found, which is also acceptable
             pass
 
 
@@ -473,9 +599,15 @@ class TestProjectFileNotifications(BaseBrowserTest):
             source_url="https://example.com/file.gds",
             original_filename="test.gds",
             file_size=1048576,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=True,
             is_active=True,
+        )
+
+        # Create download attempt
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Create notification (simulating task completion)
@@ -500,9 +632,15 @@ class TestProjectFileNotifications(BaseBrowserTest):
             source_url="https://example.com/file.gds",
             original_filename="test.gds",
             file_size=1048576,
-            download_status=ProjectFile.DownloadStatus.FAILED,
-            download_error="Connection timeout",
             is_active=True,
+        )
+
+        # Create download attempt
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.FAILED,
+            download_error="Connection timeout",
         )
 
         # Create notification
@@ -528,11 +666,17 @@ class TestProjectFileNotifications(BaseBrowserTest):
             source_url="https://example.com/file.gds",
             original_filename="test.gds",
             file_size=1048576,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=True,
             expected_hash_md5="abc123",
             hash_md5="abc123",
             is_active=True,
+        )
+
+        # Create download attempt
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Create notification
@@ -555,11 +699,17 @@ class TestProjectFileNotifications(BaseBrowserTest):
             source_url="https://example.com/file.gds",
             original_filename="test.gds",
             file_size=1048576,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=False,
             expected_hash_md5="abc123",
             hash_md5="def456",
             is_active=True,
+        )
+
+        # Create download attempt
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Create notification

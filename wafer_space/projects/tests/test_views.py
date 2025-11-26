@@ -9,6 +9,7 @@ from django.test import Client
 from django.test import TestCase
 from django.urls import reverse
 
+from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
@@ -143,12 +144,17 @@ class TestProjectDetailView(TestCase):
     def test_includes_active_file_in_context(self):
         """Test that active file is included in context."""
         # Create active file
-        active_file = ProjectFile.objects.create(
+        active_file = project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -498,13 +504,19 @@ class TestProjectFileProgressView(TestCase):
     def test_returns_progress_json(self, mock_progress):
         """Test that view returns progress as JSON."""
         # Create active file
-        ProjectFile.objects.create(
+        project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
+        )
+
+        # Create download attempt
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
         )
 
         # Mock progress
@@ -577,14 +589,18 @@ class TestProjectSubmitView(TestCase):
         mock_task.return_value = Mock(id="task-123")
 
         # Create completed and verified file
-        ProjectFile.objects.create(
+        project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=True,
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Mark as manufacturable
@@ -638,7 +654,6 @@ class TestProjectSubmitView(TestCase):
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.PENDING,
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -661,13 +676,18 @@ class TestProjectSubmitView(TestCase):
 
     def test_submission_fails_with_failed_download(self):
         """Test that submission fails with failed download."""
-        ProjectFile.objects.create(
+        project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.FAILED,
+            download_error="Download failed",
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.FAILED,
             download_error="Download failed",
         )
 
@@ -689,14 +709,18 @@ class TestProjectSubmitView(TestCase):
 
     def test_submission_fails_with_unverified_hash(self):
         """Test that submission fails with unverified hash."""
-        ProjectFile.objects.create(
+        project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=False,
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -718,14 +742,18 @@ class TestProjectSubmitView(TestCase):
     def test_submission_fails_if_already_submitted(self):
         """Test that submission fails if already submitted."""
         # Create completed file
-        ProjectFile.objects.create(
+        project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=True,
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Mark as manufacturable
@@ -759,14 +787,18 @@ class TestProjectSubmitView(TestCase):
         mock_task.return_value = Mock(id="task-123")
 
         # Create completed file
-        ProjectFile.objects.create(
+        project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=True,
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Mark as manufacturable
@@ -813,13 +845,19 @@ class TestEnhancedProgressDashboard(TestCase):
 
     def test_detail_view_shows_progress_flag_when_downloading(self):
         """Test that detail view sets show_progress flag when downloading."""
-        ProjectFile.objects.create(
+        project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
+        )
+
+        # Create download attempt
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -832,13 +870,19 @@ class TestEnhancedProgressDashboard(TestCase):
 
     def test_detail_view_shows_progress_flag_when_pending(self):
         """Test that detail view sets show_progress flag when pending."""
-        ProjectFile.objects.create(
+        project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.PENDING,
+        )
+
+        # Create download attempt
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.PENDING,
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -849,15 +893,56 @@ class TestEnhancedProgressDashboard(TestCase):
         assert response.context["show_progress"] is True
         assert "progress" in response.context
 
-    def test_detail_view_shows_error_flag_when_failed(self):
-        """Test that detail view sets show_error flag when download failed."""
+    def test_detail_view_shows_progress_when_task_queued_no_attempt_yet(self):
+        """Test show_progress is True when task queued but DownloadAttempt not created.
+
+        This reproduces the bug where polling didn't start after URL submission:
+        - User submits URL → ProjectFile created with download_task_id
+        - User redirected to detail page
+        - DownloadAttempt doesn't exist yet (created inside Celery task)
+        - Before fix: show_progress was False → no polling JavaScript
+        - After fix: show_progress is True → polling starts immediately
+
+        VERIFIED: This test FAILS without the fix (show_progress is False)
+                  and PASSES with the fix (show_progress is True)
+        """
         ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.FAILED,
+            download_task_id="celery-task-123",  # Task queued
+        )
+        # Intentionally NOT creating DownloadAttempt to simulate race condition
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        # This assertion would FAIL before the fix
+        assert response.context["show_progress"] is True
+        assert "progress" in response.context
+        # Verify polling JavaScript is included in the response
+        assert b"Progress Polling" in response.content
+
+    def test_detail_view_shows_error_flag_when_failed(self):
+        """Test that detail view sets show_error flag when download failed."""
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+            download_error="Connection timeout",
+        )
+
+        # Create download attempt
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.FAILED,
             download_error="Connection timeout",
         )
 
@@ -877,7 +962,6 @@ class TestEnhancedProgressDashboard(TestCase):
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -891,13 +975,20 @@ class TestEnhancedProgressDashboard(TestCase):
     @patch("wafer_space.projects.views.ProjectFileService.get_download_progress")
     def test_progress_view_returns_error_field_when_failed(self, mock_progress):
         """Test that progress view includes error field when download failed."""
-        ProjectFile.objects.create(
+        project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.FAILED,
+            download_error="Network error occurred",
+        )
+
+        # Create download attempt
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.FAILED,
             download_error="Network error occurred",
         )
 
@@ -922,13 +1013,19 @@ class TestEnhancedProgressDashboard(TestCase):
     @patch("wafer_space.projects.views.ProjectFileService.get_download_progress")
     def test_progress_view_with_pending_status(self, mock_progress):
         """Test progress view with pending download status."""
-        ProjectFile.objects.create(
+        project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.PENDING,
+        )
+
+        # Create download attempt
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.PENDING,
         )
 
         mock_progress.return_value = {
@@ -952,14 +1049,20 @@ class TestEnhancedProgressDashboard(TestCase):
     @patch("wafer_space.projects.views.ProjectFileService.get_download_progress")
     def test_progress_view_with_completed_status(self, mock_progress):
         """Test progress view with completed download status."""
-        ProjectFile.objects.create(
+        project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             file_size=TEN_MB,
+        )
+
+        # Create download attempt
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         mock_progress.return_value = {

@@ -68,18 +68,18 @@ INSTALLED_APPS = [
 # CELERY
 # ------------------------------------------------------------------------------
 CELERY_BROKER_URL = f"sqla+sqlite:///{BASE_DIR / 'db.sqlite3'}"
-# Fast retries
-DOWNLOAD_RETRY_BASE_DELAY_MINUTES = 30 / 60  # 30 seconds for development
-DOWNLOAD_RETRY_CHECK_INTERVAL_SECONDS = 30.0
-DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS = 30.0
+
+# Download task configuration overrides (faster for development)
+DOWNLOAD_TASK_MAX_RETRIES = 2  # Same as production
+DOWNLOAD_TASK_RETRY_BASE_DELAY_SECONDS = 10  # 10s for dev (faster feedback)
+DOWNLOAD_TASK_RETRY_BACKOFF_MULTIPLIER = 2  # 10s, 20s
+
+# Download state verification (faster for development)
+DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS = 30.0  # Check every 30s in dev
 
 CELERY_BEAT_SCHEDULE = {
-    "retry-failed-downloads": {
-        "task": "wafer_space.projects.tasks.retry_failed_downloads",
-        "schedule": DOWNLOAD_RETRY_CHECK_INTERVAL_SECONDS,
-    },
-    "check-download-states": {
-        "task": "wafer_space.projects.tasks.check_download_states",
+    "ensure-download-tasks-queued": {
+        "task": "wafer_space.projects.tasks.ensure_download_tasks_queued",
         "schedule": DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS,
     },
 }

@@ -7,13 +7,14 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
+from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.verification import is_task_actively_running
 from wafer_space.projects.verification import is_task_queued
 
 User = get_user_model()
-TEST_PASSWORD = "testpass123"  # noqa: S105
+TEST_PASSWORD = "testpass123"  # noqa: S105 - Test password constant
 
 
 @pytest.mark.django_db
@@ -23,14 +24,10 @@ class TaskQueuedVerificationTests(TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            description="Test Description",
+            user=self.user, name="Test Project", description="Test Description"
         )
 
     @patch("wafer_space.projects.verification.current_app")
@@ -39,7 +36,6 @@ class TaskQueuedVerificationTests(TestCase):
         project_file = ProjectFile.objects.create(
             project=self.project,
             source_url="http://example.com/test.gds",
-            download_status=ProjectFile.DownloadStatus.QUEUED,
             download_task_id="task-123",
             is_active=False,
         )
@@ -62,13 +58,13 @@ class TaskQueuedVerificationTests(TestCase):
 
     @patch("wafer_space.projects.verification.current_app")
     def test_task_in_active_auto_transitions(self, mock_app):
-        """Test that task in active list auto-transitions to DOWNLOADING."""
+        """Test that task in active list returns True (still queued)."""
         project_file = ProjectFile.objects.create(
             project=self.project,
             source_url="http://example.com/test.gds",
-            download_status=ProjectFile.DownloadStatus.QUEUED,
             download_task_id="task-456",
             is_active=False,
+            original_filename="test.gds",
         )
 
         # Mock Celery inspect to return task in active
@@ -85,8 +81,8 @@ class TaskQueuedVerificationTests(TestCase):
 
         assert result is True
         project_file.refresh_from_db()
-        # Should auto-transition to DOWNLOADING
-        assert project_file.download_status == ProjectFile.DownloadStatus.DOWNLOADING
+        # Status is QUEUED (has task_id but no DownloadAttempt)
+        assert project_file.download_status == ProjectFile.DownloadStatus.QUEUED
 
     @patch("wafer_space.projects.verification.current_app")
     def test_task_not_found_returns_false(self, mock_app):
@@ -94,7 +90,6 @@ class TaskQueuedVerificationTests(TestCase):
         project_file = ProjectFile.objects.create(
             project=self.project,
             source_url="http://example.com/test.gds",
-            download_status=ProjectFile.DownloadStatus.QUEUED,
             download_task_id="task-789",
             is_active=False,
         )
@@ -117,14 +112,10 @@ class TaskActivelyRunningTests(TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            description="Test Description",
+            user=self.user, name="Test Project", description="Test Description"
         )
 
     @patch("wafer_space.projects.verification.psutil")
@@ -135,11 +126,16 @@ class TaskActivelyRunningTests(TestCase):
         project_file = ProjectFile.objects.create(
             project=self.project,
             source_url="http://example.com/test.gds",
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
             download_task_id="task-123",
+            is_active=False,
+            original_filename="test.gds",
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
             worker_pid=12345,
             worker_hostname="worker-01",
-            is_active=False,
         )
 
         # Mock Celery inspect
@@ -170,11 +166,16 @@ class TaskActivelyRunningTests(TestCase):
         project_file = ProjectFile.objects.create(
             project=self.project,
             source_url="http://example.com/test.gds",
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
             download_task_id="task-456",
+            is_active=False,
+            original_filename="test.gds",
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
             worker_pid=99999,
             worker_hostname="worker-01",
-            is_active=False,
         )
 
         # Mock Celery inspect (task shows as active)
@@ -200,9 +201,13 @@ class TaskActivelyRunningTests(TestCase):
         project_file = ProjectFile.objects.create(
             project=self.project,
             source_url="http://example.com/test.gds",
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
             download_task_id="task-789",
             is_active=False,
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
         )
 
         # Mock Celery inspect (empty)

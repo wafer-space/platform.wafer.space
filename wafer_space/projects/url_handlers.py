@@ -19,6 +19,7 @@ Example:
 """
 
 import base64
+import re
 from abc import ABC
 from abc import abstractmethod
 from typing import Any
@@ -142,6 +143,110 @@ class GoogleSourceHandler(URLHandler):
             bytes: Decoded file content
         """
         return base64.b64decode(content)
+
+
+class GitHubArtifactHandler(URLHandler):
+    """Handler for GitHub Actions artifact URLs.
+
+    GitHub Actions artifacts require authentication and URL transformation:
+
+    1. Input URL formats:
+       - Run URL (selects first artifact):
+         https://github.com/{owner}/{repo}/actions/runs/{run_id}
+       - Specific artifact URL:
+         https://github.com/{owner}/{repo}/actions/runs/{run_id}/artifacts/{artifact_id}
+
+    2. API URLs:
+       - List artifacts: GET https://api.github.com/repos/{owner}/{repo}/actions/runs/{run_id}/artifacts
+       - Download: GET https://api.github.com/repos/{owner}/{repo}/actions/artifacts/{artifact_id}/zip
+
+    3. Authentication:
+       - Requires GitHub PAT with 'actions:read' permission
+       - Header: Authorization: Bearer {token}
+
+    The handler:
+    - Detects GitHub Actions URLs
+    - Extracts owner/repo/run_id and optionally artifact_id from URL
+    - Stores this metadata for download task to use
+    - Download task will call GitHub API to get artifact list
+    - If artifact_id provided, downloads that specific artifact
+    - Otherwise downloads the first artifact from the run
+
+    Note: Artifact download URLs redirect to temporary signed URLs that
+    expire after 60 seconds, so we don't pre-fetch them here.
+    """
+
+    # Pattern: https://github.com/{owner}/{repo}/actions/runs/{run_id}[/artifacts/{artifact_id}]
+    # Also supports query strings like ?check_suite_focus=true
+    GITHUB_ACTIONS_URL_PATTERN = re.compile(
+        r"^https?://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/actions/runs/"
+        r"(?P<run_id>\d+)(?:/artifacts/(?P<artifact_id>\d+))?(?:[/?].*)?$"
+    )
+
+    def can_handle(self, url: str) -> bool:
+        """Check if URL is a GitHub Actions run URL.
+
+        Args:
+            url: URL to check
+
+        Returns:
+            bool: True if URL matches GitHub Actions runs pattern
+        """
+        return bool(self.GITHUB_ACTIONS_URL_PATTERN.match(url))
+
+    def process_url(self, url: str) -> dict[str, Any]:
+        """Extract owner/repo/run_id and optional artifact_id from GitHub Actions URL.
+
+        The URL is not transformed here because:
+        - Artifact download requires API call with authentication
+        - Download task will handle the GitHub API calls
+        - If artifact_id is provided, it downloads that specific artifact
+        - Otherwise it lists artifacts and downloads the first one
+
+        Args:
+            url: Original GitHub Actions run URL (optionally with artifact ID)
+
+        Returns:
+            dict: Contains original URL and metadata with owner/repo/run_id
+                  and optionally artifact_id
+        """
+        match = self.GITHUB_ACTIONS_URL_PATTERN.match(url)
+        if not match:
+            msg = f"Invalid GitHub Actions URL format: {url}"
+            raise ValueError(msg)
+
+        metadata = {
+            "handler": "GitHubArtifactHandler",
+            "owner": match.group("owner"),
+            "repo": match.group("repo"),
+            "run_id": match.group("run_id"),
+            "requires_github_auth": True,
+        }
+
+        # Include artifact_id if specified in URL
+        artifact_id = match.group("artifact_id")
+        if artifact_id:
+            metadata["artifact_id"] = artifact_id
+
+        return {
+            "url": url,  # Keep original URL, download task will use API
+            "metadata": metadata,
+        }
+
+    def post_download(self, content: bytes, metadata: dict[str, Any]) -> bytes:
+        """Pass through artifact ZIP content without transformation.
+
+        GitHub artifacts are downloaded as ZIP files and don't need
+        any post-processing (unlike Google Source which needs base64 decode).
+
+        Args:
+            content: Downloaded artifact ZIP content
+            metadata: Metadata from process_url (unused but required by interface)
+
+        Returns:
+            bytes: Unmodified ZIP content
+        """
+        return content
 
 
 class URLHandlerRegistry:

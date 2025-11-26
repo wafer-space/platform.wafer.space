@@ -8,6 +8,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
 
+from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
@@ -51,7 +52,6 @@ class TestProjectCanSubmit(TestCase):
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.PENDING,
         )
 
         can_submit, reason = self.project.can_submit()
@@ -68,7 +68,6 @@ class TestProjectCanSubmit(TestCase):
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
         )
 
         can_submit, reason = self.project.can_submit()
@@ -79,13 +78,19 @@ class TestProjectCanSubmit(TestCase):
 
     def test_cannot_submit_with_failed_download(self):
         """Test that project cannot be submitted with failed download."""
-        ProjectFile.objects.create(
+
+        _pf = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.FAILED,
+            download_error="Download failed",
+        )
+        DownloadAttempt.objects.create(
+            project_file=_pf,
+            attempt_number=1,
+            status=DownloadAttempt.Status.FAILED,
             download_error="Download failed",
         )
 
@@ -97,14 +102,18 @@ class TestProjectCanSubmit(TestCase):
 
     def test_cannot_submit_with_unverified_hash(self):
         """Test that project cannot be submitted with unverified hash."""
-        ProjectFile.objects.create(
+        project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=False,
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         can_submit, reason = self.project.can_submit()
@@ -116,14 +125,19 @@ class TestProjectCanSubmit(TestCase):
     def test_cannot_submit_if_already_submitted(self):
         """Test that project cannot be submitted if already submitted."""
         # Create completed file
-        ProjectFile.objects.create(
+
+        _pf = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=True,
+        )
+        DownloadAttempt.objects.create(
+            project_file=_pf,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Mark as manufacturable and submitted
@@ -139,14 +153,19 @@ class TestProjectCanSubmit(TestCase):
 
     def test_can_submit_with_completed_verified_file(self):
         """Test that project can be submitted with completed and verified file."""
-        ProjectFile.objects.create(
+
+        _pf = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=True,
+        )
+        DownloadAttempt.objects.create(
+            project_file=_pf,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
         # Mark as manufacturable
         self.project.is_manufacturable = True
@@ -185,14 +204,18 @@ class TestProjectSubmit(TestCase):
 
     def test_submit_fails_with_unverified_file(self):
         """Test that submit() raises ValidationError with unverified file."""
-        ProjectFile.objects.create(
+        project_file = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=False,
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         with pytest.raises(ValidationError) as exc_info:
@@ -205,14 +228,19 @@ class TestProjectSubmit(TestCase):
         """Test that submit() sets status to SUBMITTED."""
         mock_task.return_value = Mock(id="task-123")
 
-        ProjectFile.objects.create(
+        _pf = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=True,
+        )
+
+        DownloadAttempt.objects.create(
+            project_file=_pf,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Mark as manufacturable
@@ -226,14 +254,19 @@ class TestProjectSubmit(TestCase):
 
     def test_submit_sets_submitted_at_timestamp(self):
         """Test that submit() sets submitted_at timestamp."""
-        ProjectFile.objects.create(
+
+        _pf = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=True,
+        )
+        DownloadAttempt.objects.create(
+            project_file=_pf,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Mark as manufacturable
@@ -255,14 +288,19 @@ class TestProjectSubmit(TestCase):
         (when hash is verified), not during submission.
         This test verifies submit() doesn't create duplicate checks.
         """
-        ProjectFile.objects.create(
+
+        _pf = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=True,
+        )
+        DownloadAttempt.objects.create(
+            project_file=_pf,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Mark as manufacturable (simulating completed check from earlier workflow)
@@ -287,14 +325,19 @@ class TestProjectSubmit(TestCase):
         """Test that submit() does not create duplicate manufacturability check."""
         mock_task.return_value = Mock(id="task-123")
 
-        ProjectFile.objects.create(
+        _pf = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=True,
+        )
+
+        DownloadAttempt.objects.create(
+            project_file=_pf,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Mark as manufacturable
@@ -319,14 +362,19 @@ class TestProjectSubmit(TestCase):
 
     def test_submit_prevents_double_submission(self):
         """Test that submit() prevents double submission."""
-        ProjectFile.objects.create(
+
+        _pf = ProjectFile.objects.create(
             project=self.project,
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_verified=True,
+        )
+        DownloadAttempt.objects.create(
+            project_file=_pf,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Mark as manufacturable
@@ -373,7 +421,11 @@ class TestProjectFileProgressMethods(TestCase):
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         assert project_file.get_progress_percentage() == PROGRESS_COMPLETE
@@ -385,7 +437,6 @@ class TestProjectFileProgressMethods(TestCase):
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
-            download_status=ProjectFile.DownloadStatus.FAILED,
         )
 
         assert project_file.get_progress_percentage() == 0
@@ -397,7 +448,6 @@ class TestProjectFileProgressMethods(TestCase):
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
             file_size=None,
         )
 
@@ -410,7 +460,6 @@ class TestProjectFileProgressMethods(TestCase):
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
-            download_status=ProjectFile.DownloadStatus.PENDING,
         )
 
         assert project_file.get_progress_percentage() == 0
@@ -422,7 +471,11 @@ class TestProjectFileProgressMethods(TestCase):
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         message = project_file.get_progress_message()
@@ -436,8 +489,13 @@ class TestProjectFileProgressMethods(TestCase):
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
-            download_status=ProjectFile.DownloadStatus.FAILED,
             download_error="Connection timeout",
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.FAILED,
+            download_error="Download failed",
         )
 
         message = project_file.get_progress_message()
@@ -451,8 +509,13 @@ class TestProjectFileProgressMethods(TestCase):
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
-            download_status=ProjectFile.DownloadStatus.FAILED,
             download_error="",
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.FAILED,
+            download_error="Download failed",
         )
 
         message = project_file.get_progress_message()
@@ -465,7 +528,11 @@ class TestProjectFileProgressMethods(TestCase):
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
+        )
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
         )
 
         message = project_file.get_progress_message()
@@ -478,7 +545,6 @@ class TestProjectFileProgressMethods(TestCase):
             original_url="https://example.com/file.gds",
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
-            download_status=ProjectFile.DownloadStatus.PENDING,
         )
 
         message = project_file.get_progress_message()
@@ -503,33 +569,39 @@ class TestProjectFile(TestCase):
             description="Test project",
         )
 
-    def test_projectfile_has_worker_tracking_fields(self):
-        """Test that ProjectFile has worker tracking fields."""
+    def test_downloadattempt_has_worker_tracking_fields(self):
+        """Test that DownloadAttempt has worker tracking fields."""
         project_file = ProjectFile.objects.create(
             project=self.project,
             source_url="http://example.com/test.gds",
-            download_status=ProjectFile.DownloadStatus.PENDING,
             is_active=False,
         )
 
+        # Create attempt with worker tracking
+        attempt = DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
+        )
+
         # Verify fields exist and are nullable
-        assert hasattr(project_file, "worker_pid")
-        assert hasattr(project_file, "worker_hostname")
-        assert hasattr(project_file, "task_started_at")
-        assert project_file.worker_pid is None
-        assert project_file.worker_hostname == ""
-        assert project_file.task_started_at is None
+        assert hasattr(attempt, "worker_pid")
+        assert hasattr(attempt, "worker_hostname")
+        assert hasattr(attempt, "task_started_at")
+        assert attempt.worker_pid is None
+        assert attempt.worker_hostname == ""
+        assert attempt.task_started_at is None
 
         # Verify we can set values
-        project_file.worker_pid = TEST_WORKER_PID
-        project_file.worker_hostname = "worker-01"
-        project_file.task_started_at = timezone.now()
-        project_file.save()
+        attempt.worker_pid = TEST_WORKER_PID
+        attempt.worker_hostname = "worker-01"
+        attempt.task_started_at = timezone.now()
+        attempt.save()
 
-        project_file.refresh_from_db()
-        assert project_file.worker_pid == TEST_WORKER_PID
-        assert project_file.worker_hostname == "worker-01"
-        assert project_file.task_started_at is not None
+        attempt.refresh_from_db()
+        assert attempt.worker_pid == TEST_WORKER_PID
+        assert attempt.worker_hostname == "worker-01"
+        assert attempt.task_started_at is not None
 
     def test_projectfile_queued_status_exists(self):
         """Test that QUEUED status exists in DownloadStatus choices."""
@@ -538,12 +610,13 @@ class TestProjectFile(TestCase):
         assert "queued" in statuses
 
         # Verify we can create a file with QUEUED status
+        # QUEUED = has task_id but no DownloadAttempt
         project_file = ProjectFile.objects.create(
             project=self.project,
             source_url="http://example.com/test.gds",
-            download_status=ProjectFile.DownloadStatus.QUEUED,
             download_task_id="task-123",
             is_active=False,
+            original_filename="test.gds",
         )
 
         assert project_file.download_status == ProjectFile.DownloadStatus.QUEUED

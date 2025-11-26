@@ -19,6 +19,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
+from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.models import ProjectFileChunk
@@ -28,7 +29,7 @@ from wafer_space.projects.tasks import _should_log_progress
 from wafer_space.projects.tasks import _should_update_database
 
 User = get_user_model()
-TEST_PASSWORD = "testpass123"  # noqa: S105
+TEST_PASSWORD = "testpass123"  # noqa: S105 - Test password constant
 
 # Test constants
 MB = 1024 * 1024
@@ -77,7 +78,6 @@ class DatabaseCheckpointFrequencyTests(TestCase):
             project=self.project,
             source_url="http://example.com/test.gds",
             original_filename="test.gds",
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
             is_active=True,
         )
 
@@ -327,7 +327,6 @@ class DownloadChunksIntegrationTests(TestCase):
             project=self.project,
             source_url="http://example.com/test.gds",
             original_filename="test.gds",
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
             is_active=True,
         )
 
@@ -353,6 +352,13 @@ class DownloadChunksIntegrationTests(TestCase):
         temp_path = temp_dir / "test_download.gds"
         temp_path.unlink(missing_ok=True)
 
+        # Create a download attempt for the test
+        attempt = DownloadAttempt.objects.create(
+            project_file=self.project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
+        )
+
         try:
             # Create download state
             state = _ChunkDownloadState(
@@ -360,23 +366,22 @@ class DownloadChunksIntegrationTests(TestCase):
                 temp_path=temp_path,
                 task=mock_task,
                 project_file=self.project_file,
+                attempt=attempt,
                 total_size=0,  # Unknown size
                 resume_byte_pos=0,
-                md5_hasher=Mock(update=Mock()),
-                sha1_hasher=Mock(update=Mock()),
                 chunk_size=CHUNK_SIZE,
                 start_time=0.0,
             )
 
             # Run download
-            chunk_count = _download_chunks(state)
+            _download_chunks(state)
 
-            # Verify chunks downloaded (25 chunks of 1MB each)
-            assert chunk_count == DOWNLOAD_CHUNKS_25MB
+            # Verify file was downloaded (25 chunks of 1MB each = 25MB)
+            assert temp_path.stat().st_size == 25 * MB
 
             # Verify database checkpoints created
             checkpoints = ProjectFileChunk.objects.filter(
-                project_file=self.project_file
+                download_attempt=attempt
             ).order_by("bytes_downloaded")
 
             # Should have 5 checkpoints: 5MB, 10MB, 15MB, 20MB, 25MB
@@ -414,6 +419,13 @@ class DownloadChunksIntegrationTests(TestCase):
         temp_path = temp_dir / "test_resume_download.gds"
         temp_path.write_bytes(b"x" * resume_pos)
 
+        # Create a download attempt for the test
+        attempt = DownloadAttempt.objects.create(
+            project_file=self.project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
+        )
+
         try:
             # Create download state (resuming from 42MB)
             state = _ChunkDownloadState(
@@ -421,23 +433,22 @@ class DownloadChunksIntegrationTests(TestCase):
                 temp_path=temp_path,
                 task=mock_task,
                 project_file=self.project_file,
+                attempt=attempt,
                 total_size=0,  # Unknown size
                 resume_byte_pos=resume_pos,
-                md5_hasher=Mock(update=Mock()),
-                sha1_hasher=Mock(update=Mock()),
                 chunk_size=CHUNK_SIZE,
                 start_time=0.0,
             )
 
             # Run download
-            chunk_count = _download_chunks(state)
+            _download_chunks(state)
 
-            # Verify chunks downloaded
-            assert chunk_count == DOWNLOAD_CHUNKS_18MB
+            # Verify file was downloaded to expected size (60MB total)
+            assert temp_path.stat().st_size == 60 * MB
 
             # Verify database checkpoints align to clean boundaries
             checkpoints = ProjectFileChunk.objects.filter(
-                project_file=self.project_file
+                download_attempt=attempt
             ).order_by("bytes_downloaded")
 
             # Resume from 42MB, aligned to 40MB
@@ -470,16 +481,22 @@ class DownloadChunksIntegrationTests(TestCase):
         temp_path = temp_dir / "test_checkpoint_data.gds"
         temp_path.unlink(missing_ok=True)
 
+        # Create a download attempt for the test
+        attempt = DownloadAttempt.objects.create(
+            project_file=self.project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
+        )
+
         try:
             state = _ChunkDownloadState(
                 response=mock_response,
                 temp_path=temp_path,
                 task=mock_task,
                 project_file=self.project_file,
+                attempt=attempt,
                 total_size=0,
                 resume_byte_pos=0,
-                md5_hasher=Mock(update=Mock()),
-                sha1_hasher=Mock(update=Mock()),
                 chunk_size=CHUNK_SIZE,
                 start_time=0.0,
             )
@@ -488,7 +505,7 @@ class DownloadChunksIntegrationTests(TestCase):
 
             # Verify checkpoint data
             checkpoints = ProjectFileChunk.objects.filter(
-                project_file=self.project_file
+                download_attempt=attempt
             ).order_by("bytes_downloaded")
 
             assert checkpoints.count() == EXPECTED_CHECKPOINTS_10MB
@@ -525,7 +542,6 @@ class KnownSizeCheckpointTests(TestCase):
             project=self.project,
             source_url="http://example.com/test.gds",
             original_filename="test.gds",
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
             is_active=True,
         )
 
@@ -554,16 +570,22 @@ class KnownSizeCheckpointTests(TestCase):
         temp_path = temp_dir / "test_known_size_checkpoint.gds"
         temp_path.unlink(missing_ok=True)
 
+        # Create a download attempt for the test
+        attempt = DownloadAttempt.objects.create(
+            project_file=self.project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
+        )
+
         try:
             state = _ChunkDownloadState(
                 response=mock_response,
                 temp_path=temp_path,
                 task=mock_task,
                 project_file=self.project_file,
+                attempt=attempt,
                 total_size=total_size,  # KNOWN SIZE - triggers the buggy code path
                 resume_byte_pos=0,
-                md5_hasher=Mock(update=Mock()),
-                sha1_hasher=Mock(update=Mock()),
                 chunk_size=CHUNK_SIZE,
                 start_time=0.0,
             )
@@ -572,7 +594,7 @@ class KnownSizeCheckpointTests(TestCase):
 
             # Verify checkpoints have correct bytes_downloaded values
             checkpoints = ProjectFileChunk.objects.filter(
-                project_file=self.project_file
+                download_attempt=attempt
             ).order_by("bytes_downloaded")
 
             # With 10MB file and 1MB chunks, checkpoints trigger at 10%, 20%... 100%
@@ -628,7 +650,6 @@ class ProgressLoggingIntegrationTests(TestCase):
             project=self.project,
             source_url="http://example.com/test.gds",
             original_filename="test.gds",
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
             is_active=True,
         )
 
@@ -650,16 +671,22 @@ class ProgressLoggingIntegrationTests(TestCase):
         temp_path = temp_dir / "test_progress_logs.gds"
         temp_path.unlink(missing_ok=True)
 
+        # Create a download attempt for the test
+        attempt = DownloadAttempt.objects.create(
+            project_file=self.project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
+        )
+
         try:
             state = _ChunkDownloadState(
                 response=mock_response,
                 temp_path=temp_path,
                 task=mock_task,
                 project_file=self.project_file,
+                attempt=attempt,
                 total_size=0,  # Unknown size
                 resume_byte_pos=0,
-                md5_hasher=Mock(update=Mock()),
-                sha1_hasher=Mock(update=Mock()),
                 chunk_size=CHUNK_SIZE,
                 start_time=0.0,
             )

@@ -1,39 +1,173 @@
 {% load static %}
 
 {# Reusable file display partial - used for both submitted and in-progress files #}
-{# Parameters: file, show_submit_button #}
-<h6>{{ file.original_filename }}</h6>
-{# Status Badges #}
-<p class="mb-3">
-  <strong>Download Status:</strong>
-  <span class="badge {% if file.download_status == 'completed' %}bg-success{% elif file.download_status == 'failed' %}bg-danger{% elif file.download_status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
-    {% if file.download_status == 'completed' %}
-      <i class="bi bi-check-circle"></i>
-    {% elif file.download_status == 'failed' %}
-      <i class="bi bi-exclamation-triangle"></i>
-    {% elif file.download_status == 'downloading' %}
-      <span class="spinner-border spinner-border-sm"
-            role="status"
-            aria-hidden="true"></span>
-    {% else %}
-      <i class="bi bi-clock"></i>
+{# Parameters: #}
+{#   - file: ProjectFile instance to display #}
+{#   - download_attempts: (optional) QuerySet of DownloadAttempt instances #}
+{#   - show_attempts: (optional, default=False) Show download attempts in foldable sections #}
+{#   - first_open: (optional, default=True) Keep first attempt section open #}
+{# Status and Filename Header #}
+{% with latest_attempt=file.latest_attempt %}
+  {% with status=latest_attempt.status|default:"pending" %}
+    {# Status Badge - shown prominently #}
+    <div class="d-flex justify-content-between align-items-start mb-2">
+      <div>
+        {# Filename display #}
+        {% if file.processed_filename %}
+          <h6 class="mb-1">
+            <i class="bi bi-file-earmark-check text-success"></i>
+            {{ file.processed_filename }}
+          </h6>
+          {% if file.processed_filename != file.original_filename %}
+            <p class="text-muted small mb-0">
+              Extracted from <code>{{ file.original_filename }}</code>
+            </p>
+          {% endif %}
+        {% else %}
+          <h6 class="mb-1">
+            {% if status == 'downloading' %}
+              <span class="spinner-border spinner-border-sm text-primary" role="status"></span>
+            {% elif status == 'failed' %}
+              <i class="bi bi-file-earmark-x text-danger"></i>
+            {% else %}
+              <i class="bi bi-file-earmark text-muted"></i>
+            {% endif %}
+            {% if file.original_filename == 'download' and file.original_url %}
+              GitHub Artifact
+            {% else %}
+              {{ file.original_filename }}
+            {% endif %}
+          </h6>
+          {% if status == 'downloading' or status == 'pending' %}
+            <p class="text-muted small mb-0">
+              <i class="bi bi-hourglass-split"></i>
+              Processing <code>{{ file.original_filename }}</code>...
+            </p>
+          {% elif status == 'failed' %}
+            <p class="text-danger small mb-0">
+              <i class="bi bi-exclamation-circle"></i>
+              Download failed
+            </p>
+          {% endif %}
+        {% endif %}
+      </div>
+      {# Status Badge - show Hash Mismatch as failure state #}
+      <span id="status-badge"
+            class="badge {% if status == 'completed' and file.has_hash_mismatch %}bg-danger{% elif status == 'completed' %}bg-success{% elif status == 'failed' %}bg-danger{% elif status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
+        {% if status == 'completed' and file.has_hash_mismatch %}
+          <i class="bi bi-exclamation-triangle"></i>
+          <span id="status-text">Hash Mismatch</span>
+        {% elif status == 'completed' %}
+          <i class="bi bi-check-circle"></i>
+          <span id="status-text">Completed</span>
+        {% elif status == 'failed' %}
+          <i class="bi bi-exclamation-triangle"></i>
+          <span id="status-text">Failed</span>
+        {% elif status == 'downloading' %}
+          <span class="spinner-border spinner-border-sm" role="status"></span>
+          <span id="status-text">Downloading</span>
+        {% else %}
+          <i class="bi bi-clock"></i>
+          <span id="status-text">Pending</span>
+        {% endif %}
+      </span>
+    </div>
+    {# Hash verification badge if applicable #}
+    {% if file.hash_verified %}
+      <p class="mb-2">
+        <span class="badge bg-success">
+          <i class="bi bi-shield-check"></i> Hash Verified
+        </span>
+      </p>
+    {% elif status == 'completed' and file.has_hash_mismatch %}
+      <p class="mb-2">
+        <span class="badge bg-danger">
+          <i class="bi bi-shield-x"></i> Hash Mismatch
+        </span>
+      </p>
+    {% elif status == 'completed' and file.has_expected_hash and not file.hash_verified %}
+      <p class="mb-2">
+        <span class="badge bg-warning text-dark">
+          <i class="bi bi-shield-exclamation"></i> Hash Not Verified
+        </span>
+      </p>
     {% endif %}
-    {{ file.get_download_status_display }}
-  </span>
-  {% if file.hash_verified %}
-    <span class="badge bg-success">
-      <i class="bi bi-check-circle"></i> Hash Verified
-    </span>
-  {% elif file.download_status == 'completed' %}
-    <span class="badge bg-warning text-dark">
-      <i class="bi bi-exclamation-triangle"></i> Hash Not Verified
-    </span>
+  {% endwith %}
+{% endwith %}
+{# Manufacturability Check Section #}
+{% with check=file.manufacturability_check %}
+  {% if check %}
+    {# Show check status when check exists #}
+    <div class="card bg-light mb-3">
+      <div class="card-body">
+        <h6 class="card-title">
+          <i class="bi bi-check-circle"></i> Manufacturability Check
+        </h6>
+        <p class="mb-2">
+          <strong>Status:</strong>
+          {% if check.status == 'queued' %}
+            <span class="badge bg-secondary">
+              <i class="bi bi-clock"></i> Queued for checking
+            </span>
+          {% elif check.status == 'processing' %}
+            <span id="check-status-badge" class="badge bg-primary">
+              <span class="spinner-border spinner-border-sm"
+                    role="status"
+                    aria-hidden="true"></span>
+              <span id="check-status-text">Checking manufacturability...</span>
+            </span>
+          {% elif check.status == 'completed' %}
+            {% if check.is_manufacturable %}
+              <span class="badge bg-success">
+                <i class="bi bi-check-circle"></i> Manufacturable
+              </span>
+            {% else %}
+              <span class="badge bg-danger">
+                <i class="bi bi-x-circle"></i> Not Manufacturable
+              </span>
+            {% endif %}
+          {% elif check.status == 'failed' %}
+            <span class="badge bg-danger">
+              <i class="bi bi-exclamation-triangle"></i> Check Failed
+            </span>
+          {% endif %}
+        </p>
+        {% if check.started_at %}
+          <p class="mb-2">
+            <strong>Started:</strong> {{ check.started_at|date:"Y-m-d H:i:s" }}
+          </p>
+        {% endif %}
+        {% if check.completed_at %}
+          <p class="mb-2">
+            <strong>Completed:</strong> {{ check.completed_at|date:"Y-m-d H:i:s" }}
+          </p>
+        {% endif %}
+        {# Display errors if check completed with errors #}
+        {% if check.status == 'completed' and check.errors %}
+          <div class="mt-3">
+            <h6 class="text-danger">
+              <i class="bi bi-exclamation-triangle"></i> Errors
+            </h6>
+            {% for error in check.errors %}<div class="alert alert-danger mb-2" role="alert">{{ error }}</div>{% endfor %}
+          </div>
+        {% endif %}
+        {# Display warnings if any #}
+        {% if check.status == 'completed' and check.warnings %}
+          <div class="mt-3">
+            <h6 class="text-warning">
+              <i class="bi bi-exclamation-circle"></i> Warnings
+            </h6>
+            {% for warning in check.warnings %}<div class="alert alert-warning mb-2" role="alert">{{ warning }}</div>{% endfor %}
+          </div>
+        {% endif %}
+      </div>
+    </div>
   {% endif %}
-</p>
-{# Download Information #}
+{% endwith %}
+{# File Information Card #}
 <div class="card bg-light">
   <div class="card-body">
-    <h6 class="card-title">Download Information</h6>
+    <h6 class="card-title">File Information</h6>
     {% if file.original_url %}
       <p class="mb-2">
         <strong>Original URL:</strong>
@@ -50,89 +184,12 @@
         <strong>File Size:</strong> {{ file.file_size|filesizeformat }}
       </p>
     {% endif %}
-    {% if file.download_started_at %}
+    {% if file.uploaded_at %}
       <p class="mb-2">
-        <strong>Download Started:</strong> {{ file.download_started_at|date:"Y-m-d H:i:s" }}
+        <strong>Created:</strong> {{ file.uploaded_at|date:"Y-m-d H:i:s" }}
       </p>
     {% endif %}
-    {% if file.download_completed_at and file.download_status == 'completed' %}
-      <p class="mb-2">
-        <strong>Download Completed:</strong> {{ file.download_completed_at|date:"Y-m-d H:i:s" }}
-      </p>
-    {% endif %}
-    {% if file.download_duration_seconds %}
-      <p class="mb-2">
-        <strong>Download Duration:</strong> {{ file.download_duration_seconds|floatformat:1 }} seconds
-      </p>
-    {% endif %}
-    {% if file.download_speed_formatted %}
-      <p class="mb-2">
-        <strong>Average Download Speed:</strong> {{ file.download_speed_formatted }}
-      </p>
-    {% endif %}
-    {% if file.retry_count > 0 %}
-      <p class="mb-2">
-        <strong>Auto-Retry Attempts:</strong> {{ file.retry_count }}/{{ file.max_retries }}
-      </p>
-    {% endif %}
-    {% if file.download_status == 'failed' and file.auto_retry_enabled %}
-      <p class="mb-2">
-        <strong>Auto-Retry:</strong>
-        {% if file.retry_count >= file.max_retries %}
-          <span class="badge bg-danger">
-            <i class="bi bi-x-circle"></i> Max retries reached
-          </span>
-        {% elif file.next_retry_at %}
-          <span class="badge bg-warning text-dark">
-            <i class="bi bi-clock"></i> Next retry at {{ file.next_retry_at|date:"g:i a" }}
-          </span>
-        {% else %}
-          <span class="badge bg-info text-dark">
-            <i class="bi bi-arrow-repeat"></i> Retry pending
-          </span>
-        {% endif %}
-      </p>
-    {% endif %}
-    {% if file.chunks.exists %}
-      <hr />
-      <h6>Download Performance</h6>
-      <p class="mb-2">
-        <strong>Checkpoints Tracked:</strong> {{ file.chunks.count }}
-      </p>
-      <details>
-        <summary class="text-primary" style="cursor: pointer;">
-          <i class="bi bi-graph-up"></i> View Download Timeline
-        </summary>
-        <div class="table-responsive mt-2">
-          <table class="table table-sm table-striped">
-            <thead>
-              <tr>
-                <th>Checkpoint</th>
-                <th>Downloaded</th>
-                <th>Time</th>
-                <th>Speed</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for chunk in file.chunks.all|dictsortreversed:"chunk_number" %}
-                <tr>
-                  <td>#{{ chunk.chunk_number }}</td>
-                  <td>{{ chunk.bytes_downloaded|filesizeformat }}</td>
-                  <td>{{ chunk.timestamp|date:"Y-m-d H:i:s" }}</td>
-                  <td>
-                    {% if chunk.speed_since_previous %}
-                      {{ chunk.speed_since_previous|floatformat:0|filesizeformat }}/s
-                    {% else %}
-                      <span class="text-muted">-</span>
-                    {% endif %}
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </details>
-    {% endif %}
+    {# File Hashes #}
     {% if file.hash_md5 or file.hash_sha1 %}
       <hr />
       <h6>File Hashes</h6>
@@ -171,3 +228,21 @@
     {% endif %}
   </div>
 </div>
+{# Download Attempts Section #}
+{% if show_attempts|default:False and download_attempts %}
+  <div class="mt-3">
+    <h6>
+      <i class="bi bi-arrow-repeat"></i>
+      Download Attempts ({{ download_attempts.count }})
+    </h6>
+    <p class="mb-2 text-muted small">Celery automatically retries failed downloads with exponential backoff.</p>
+    {% for attempt in download_attempts %}
+      {# Honor first_open parameter: only open first attempt when first_open=True (default) #}
+      {% if first_open|default:True %}
+        {% include "projects/_download_attempt.html" with attempt=attempt is_latest=forloop.first start_open=forloop.first show_checkpoints=True show_errors=True show_technical_details=True %}
+      {% else %}
+        {% include "projects/_download_attempt.html" with attempt=attempt is_latest=forloop.first start_open=False show_checkpoints=True show_errors=True show_technical_details=True %}
+      {% endif %}
+    {% endfor %}
+  </div>
+{% endif %}
