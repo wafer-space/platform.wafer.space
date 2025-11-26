@@ -1439,7 +1439,9 @@ def _process_and_save_content(
     project_file.file_size = len(processed_content)
     project_file.hash_md5 = final_md5
     project_file.hash_sha1 = final_sha1
-    project_file.save(update_fields=["file_size", "hash_md5", "hash_sha1"])
+    project_file.save(
+        update_fields=["file_size", "hash_md5", "hash_sha1", "processed_filename"]
+    )
     logger.info("  ✓ File size: %s", _format_bytes(project_file.file_size))
     logger.info("  ✓ MD5 hash: %s", final_md5)
     logger.info("  ✓ SHA1 hash: %s", final_sha1)
