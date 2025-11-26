@@ -237,10 +237,19 @@ def _run_container_and_stream_logs(context: _CheckContext):
 
     # Log the full Docker command for debugging
     docker_command = ["nix-shell", "--run", precheck_cmd]
-    context.logger.info("  Docker image: %s", settings.PRECHECK_DOCKER_IMAGE)
-    context.logger.info("  Docker command: %s", docker_command)
-    context.logger.info("  Volume mount: %s -> /input/design.gds", context.gds_path)
-    context.logger.info("  Working dir: /workspace")
+
+    # Log equivalent docker run command for easy reproduction
+    docker_run_cmd = (
+        f"docker run --rm "
+        f"-v {context.gds_path}:/input/design.gds:ro "
+        f"-w /workspace "
+        f"--memory 8g "
+        f"--cpu-quota 100000 "
+        f"{settings.PRECHECK_DOCKER_IMAGE} "
+        f"nix-shell --run '{precheck_cmd}'"
+    )
+    context.logger.info("  Docker run command:")
+    context.logger.info("  %s", docker_run_cmd)
 
     container = context.client.containers.run(
         image=settings.PRECHECK_DOCKER_IMAGE,
