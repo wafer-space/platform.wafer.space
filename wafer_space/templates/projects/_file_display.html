@@ -170,10 +170,10 @@
             <small class="text-muted ms-2">({{ check.log_file.size|filesizeformat }})</small>
           </p>
         {% endif %}
-        {# Docker command for reproducibility #}
+        {# Docker command for reproducibility - show when processing or completed #}
         {% if check.docker_command %}
           <div class="mt-3">
-            <details>
+            <details {% if check.status == 'processing' %}open{% endif %}>
               <summary class="text-primary small" style="cursor: pointer;">
                 <i class="bi bi-terminal"></i> Docker Command (for reproducibility)
               </summary>
@@ -184,10 +184,10 @@
             </details>
           </div>
         {% endif %}
-        {# Resource usage checkpoints #}
+        {# Resource usage checkpoints - show when processing or completed #}
         {% if check.checkpoints.exists %}
           <div class="mt-3">
-            <details>
+            <details {% if check.status == 'processing' %}open{% endif %}>
               <summary class="text-primary small" style="cursor: pointer;">
                 <i class="bi bi-graph-up"></i>
                 Resource Usage Timeline ({{ check.checkpoints.count }} checkpoints)
