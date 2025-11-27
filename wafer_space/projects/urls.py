@@ -28,6 +28,16 @@ urlpatterns = [
         views.ProjectFileProgressView.as_view(),
         name="progress",
     ),
+    path(
+        "<uuid:pk>/check-status/",
+        views.ManufacturabilityCheckStatusView.as_view(),
+        name="check_status",
+    ),
+    path(
+        "<uuid:pk>/cancel-check/",
+        views.ManufacturabilityCheckCancelView.as_view(),
+        name="cancel_check",
+    ),
     # Compliance certification
     path(
         "<uuid:pk>/compliance/certify/",
