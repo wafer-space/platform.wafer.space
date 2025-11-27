@@ -1044,6 +1044,34 @@ class ManufacturabilityCheck(models.Model):
         """Check if this check can be retried."""
         return self.retry_count < self.max_retries
 
+    def cancel(self, reason: str = "Cancelled by user") -> str | None:
+        """Cancel the check if it's still running.
+
+        Updates the check status to CANCELLED and returns the task_id
+        so the caller can revoke the Celery task if needed.
+
+        Args:
+            reason: Why the check was cancelled
+
+        Returns:
+            str | None: The task_id to revoke if cancelled, None if not cancellable
+        """
+        if self.status not in [self.Status.QUEUED, self.Status.PROCESSING]:
+            return None
+
+        task_id = self.task_id  # Capture before state change
+        self.status = self.Status.CANCELLED
+        self.completed_at = timezone.now()
+        self.processing_logs += f"\n\nCANCELLED: {reason}"
+        self.save()
+
+        return task_id
+
+    @property
+    def is_cancellable(self) -> bool:
+        """Check if this check can be cancelled."""
+        return self.status in [self.Status.QUEUED, self.Status.PROCESSING]
+
     def get_reproduction_instructions(self) -> str:
         """Generate markdown instructions for reproducing check locally."""
         project_file = self.project_file
