@@ -2793,25 +2793,27 @@ def scan_and_queue_manufacturability_checks():
         # Check if a check already exists for this file
         try:
             existing_check = project_file.manufacturability_check
-            # Check exists - see if it's running or completed
+            # Skip if check is running, completed, or cancelled
             if existing_check.status in [
                 ManufacturabilityCheck.Status.QUEUED,
                 ManufacturabilityCheck.Status.PROCESSING,
             ]:
                 already_running += 1
                 continue
-            if existing_check.status == ManufacturabilityCheck.Status.COMPLETED:
-                # Already completed (pass or fail on manufacturing issues)
+            # Skip completed or cancelled checks (user cancelled = don't auto-restart)
+            if existing_check.status in [
+                ManufacturabilityCheck.Status.COMPLETED,
+                ManufacturabilityCheck.Status.CANCELLED,
+            ]:
                 continue
+            # For failed checks, only retry if allowed
             if existing_check.status == ManufacturabilityCheck.Status.FAILED:
-                # System failure - check if retryable
                 if not existing_check.can_retry():
                     logger.info(
                         "  File %s: check failed, max retries exceeded",
                         project_file.id,
                     )
                     continue
-                # Retryable - will be re-queued below
                 logger.info(
                     "  File %s: retrying failed check (attempt %d/%d)",
                     project_file.id,

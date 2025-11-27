@@ -37,6 +37,7 @@ from wafer_space.projects.tasks import _process_and_save_content
 from wafer_space.projects.tasks import _safe_urlopen
 from wafer_space.projects.tasks import check_project_manufacturability
 from wafer_space.projects.tasks import download_project_file
+from wafer_space.projects.tasks import scan_and_queue_manufacturability_checks
 
 User = get_user_model()
 TEST_PASSWORD = "testpass123"  # noqa: S105 - Test password constant
@@ -1175,3 +1176,108 @@ class DownloadTaskTests(TestCase):
         project_file.refresh_from_db()
         assert project_file.hash_md5 == expected_md5
         assert project_file.hash_sha1 == expected_sha1
+
+
+@pytest.mark.django_db
+class TestScanAndQueueManufacturabilityChecks(TestCase):
+    """Test the scan_and_queue_manufacturability_checks periodic task."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test.gds",
+            source_url="https://example.com/test.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+        # Create completed download attempt so file is "ready"
+        DownloadAttempt.objects.create(
+            project_file=self.project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
+        )
+
+    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    def test_cancelled_check_not_requeued(self, mock_check_task):
+        """Test that cancelled checks are not automatically re-queued."""
+        # Create a cancelled check
+        ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLED,
+        )
+
+        # Run the scan task
+        result = scan_and_queue_manufacturability_checks()
+
+        # Verify no new check was queued
+        assert result["queued_checks"] == 0
+        mock_check_task.assert_not_called()
+
+        # Verify the check is still cancelled
+        check = ManufacturabilityCheck.objects.get(project_file=self.project_file)
+        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+
+    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    def test_completed_check_not_requeued(self, mock_check_task):
+        """Test that completed checks are not automatically re-queued."""
+        # Create a completed check
+        ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.COMPLETED,
+            is_manufacturable=True,
+        )
+
+        # Run the scan task
+        result = scan_and_queue_manufacturability_checks()
+
+        # Verify no new check was queued
+        assert result["queued_checks"] == 0
+        mock_check_task.assert_not_called()
+
+    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    def test_queued_check_not_duplicated(self, mock_check_task):
+        """Test that queued checks are not duplicated."""
+        # Create a queued check
+        ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.QUEUED,
+            task_id="existing-task",
+        )
+
+        # Run the scan task
+        result = scan_and_queue_manufacturability_checks()
+
+        # Verify no new check was queued (already running)
+        assert result["queued_checks"] == 0
+        assert result["already_running"] == 1
+        mock_check_task.assert_not_called()
+
+    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    def test_file_without_check_gets_queued(self, mock_check_task):
+        """Test that files without checks get one queued."""
+        mock_check_task.return_value = Mock(id="new-task-123")
+
+        # Run the scan task (no existing check)
+        result = scan_and_queue_manufacturability_checks()
+
+        # Verify a check was queued
+        assert result["queued_checks"] == 1
+        mock_check_task.assert_called_once()
+
+        # Verify check was created
+        check = ManufacturabilityCheck.objects.get(project_file=self.project_file)
+        assert check.status == ManufacturabilityCheck.Status.QUEUED
