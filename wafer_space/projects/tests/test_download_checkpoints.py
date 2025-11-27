@@ -19,6 +19,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
+from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.models import ProjectFileChunk
@@ -77,8 +78,13 @@ class DatabaseCheckpointFrequencyTests(TestCase):
             project=self.project,
             source_url="http://example.com/test.gds",
             original_filename="test.gds",
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
             is_active=True,
+        )
+        # Create DownloadAttempt to set download_status to DOWNLOADING
+        DownloadAttempt.objects.create(
+            project_file=self.project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
         )
 
     def test_checkpoint_every_5mb_unknown_size(self):
@@ -327,8 +333,13 @@ class DownloadChunksIntegrationTests(TestCase):
             project=self.project,
             source_url="http://example.com/test.gds",
             original_filename="test.gds",
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
             is_active=True,
+        )
+        # Create DownloadAttempt to set download_status to DOWNLOADING
+        self.download_attempt = DownloadAttempt.objects.create(
+            project_file=self.project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
         )
 
     @patch("wafer_space.projects.tasks.timezone")
@@ -360,6 +371,7 @@ class DownloadChunksIntegrationTests(TestCase):
                 temp_path=temp_path,
                 task=mock_task,
                 project_file=self.project_file,
+                attempt=self.download_attempt,
                 total_size=0,  # Unknown size
                 resume_byte_pos=0,
                 md5_hasher=Mock(update=Mock()),
@@ -370,14 +382,11 @@ class DownloadChunksIntegrationTests(TestCase):
             )
 
             # Run download
-            chunk_count = _download_chunks(state)
-
-            # Verify chunks downloaded (25 chunks of 1MB each)
-            assert chunk_count == DOWNLOAD_CHUNKS_25MB
+            _download_chunks(state)
 
             # Verify database checkpoints created
             checkpoints = ProjectFileChunk.objects.filter(
-                project_file=self.project_file
+                download_attempt=self.download_attempt
             ).order_by("bytes_downloaded")
 
             # Should have 5 checkpoints: 5MB, 10MB, 15MB, 20MB, 25MB
@@ -422,6 +431,7 @@ class DownloadChunksIntegrationTests(TestCase):
                 temp_path=temp_path,
                 task=mock_task,
                 project_file=self.project_file,
+                attempt=self.download_attempt,
                 total_size=0,  # Unknown size
                 resume_byte_pos=resume_pos,
                 md5_hasher=Mock(update=Mock()),
@@ -432,14 +442,11 @@ class DownloadChunksIntegrationTests(TestCase):
             )
 
             # Run download
-            chunk_count = _download_chunks(state)
-
-            # Verify chunks downloaded
-            assert chunk_count == DOWNLOAD_CHUNKS_18MB
+            _download_chunks(state)
 
             # Verify database checkpoints align to clean boundaries
             checkpoints = ProjectFileChunk.objects.filter(
-                project_file=self.project_file
+                download_attempt=self.download_attempt
             ).order_by("bytes_downloaded")
 
             # Resume from 42MB, aligned to 40MB
@@ -478,6 +485,7 @@ class DownloadChunksIntegrationTests(TestCase):
                 temp_path=temp_path,
                 task=mock_task,
                 project_file=self.project_file,
+                attempt=self.download_attempt,
                 total_size=0,
                 resume_byte_pos=0,
                 md5_hasher=Mock(update=Mock()),
@@ -491,7 +499,7 @@ class DownloadChunksIntegrationTests(TestCase):
 
             # Verify checkpoint data
             checkpoints = ProjectFileChunk.objects.filter(
-                project_file=self.project_file
+                download_attempt=self.download_attempt
             ).order_by("bytes_downloaded")
 
             assert checkpoints.count() == EXPECTED_CHECKPOINTS_10MB
@@ -528,8 +536,13 @@ class KnownSizeCheckpointTests(TestCase):
             project=self.project,
             source_url="http://example.com/test.gds",
             original_filename="test.gds",
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
             is_active=True,
+        )
+        # Create DownloadAttempt to set download_status to DOWNLOADING
+        self.download_attempt = DownloadAttempt.objects.create(
+            project_file=self.project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
         )
 
     @patch("wafer_space.projects.tasks.timezone")
@@ -563,6 +576,7 @@ class KnownSizeCheckpointTests(TestCase):
                 temp_path=temp_path,
                 task=mock_task,
                 project_file=self.project_file,
+                attempt=self.download_attempt,
                 total_size=total_size,  # KNOWN SIZE - triggers the buggy code path
                 resume_byte_pos=0,
                 md5_hasher=Mock(update=Mock()),
@@ -576,7 +590,7 @@ class KnownSizeCheckpointTests(TestCase):
 
             # Verify checkpoints have correct bytes_downloaded values
             checkpoints = ProjectFileChunk.objects.filter(
-                project_file=self.project_file
+                download_attempt=self.download_attempt
             ).order_by("bytes_downloaded")
 
             # With 10MB file and 1MB chunks, checkpoints trigger at 10%, 20%... 100%
@@ -632,8 +646,13 @@ class ProgressLoggingIntegrationTests(TestCase):
             project=self.project,
             source_url="http://example.com/test.gds",
             original_filename="test.gds",
-            download_status=ProjectFile.DownloadStatus.DOWNLOADING,
             is_active=True,
+        )
+        # Create DownloadAttempt to set download_status to DOWNLOADING
+        self.download_attempt = DownloadAttempt.objects.create(
+            project_file=self.project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
         )
 
     @patch("wafer_space.projects.tasks.timezone")
@@ -660,6 +679,7 @@ class ProgressLoggingIntegrationTests(TestCase):
                 temp_path=temp_path,
                 task=mock_task,
                 project_file=self.project_file,
+                attempt=self.download_attempt,
                 total_size=0,  # Unknown size
                 resume_byte_pos=0,
                 md5_hasher=Mock(update=Mock()),

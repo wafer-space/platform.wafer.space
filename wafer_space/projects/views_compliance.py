@@ -55,14 +55,14 @@ def compliance_certification_create(request, pk):
     project = get_object_or_404(Project, pk=pk, user=request.user)
 
     # Check if project is manufacturable
-    if not hasattr(project, "manufacturability_check"):
+    # Get the most recent manufacturability check
+    check = project.manufacturability_checks.order_by("-started_at").first()
+    if not check:
         messages.error(
             request,
             "This project has not been checked for manufacturability yet.",
         )
         return redirect("projects:detail", pk=project.pk)
-
-    check = project.manufacturability_check
     if not check.is_manufacturable:
         messages.error(
             request,

@@ -3,6 +3,7 @@
 import pytest
 from django.test import TestCase
 
+from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
@@ -34,9 +35,14 @@ class TestManufacturabilityCheckReproducibility(TestCase):
             original_url="https://example.com/test.gds",
             source_url="https://example.com/test.gds",
             is_active=True,
-            download_status=ProjectFile.DownloadStatus.COMPLETED,
             hash_md5="abc123def456",
             hash_sha1="sha1hash123",
+        )
+        # Create DownloadAttempt to set download_status to COMPLETED
+        DownloadAttempt.objects.create(
+            project_file=self.project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
     def test_get_reproduction_instructions(self):
