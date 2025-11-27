@@ -170,6 +170,60 @@
             <small class="text-muted ms-2">({{ check.log_file.size|filesizeformat }})</small>
           </p>
         {% endif %}
+        {# Docker command for reproducibility #}
+        {% if check.docker_command %}
+          <div class="mt-3">
+            <details>
+              <summary class="text-primary small" style="cursor: pointer;">
+                <i class="bi bi-terminal"></i> Docker Command (for reproducibility)
+              </summary>
+              <pre class="bg-dark text-light p-3 rounded mt-2"
+                   style="font-size: 0.8rem;
+                          white-space: pre-wrap;
+                          word-break: break-all">{{ check.docker_command }}</pre>
+            </details>
+          </div>
+        {% endif %}
+        {# Resource usage checkpoints #}
+        {% if check.checkpoints.exists %}
+          <div class="mt-3">
+            <details>
+              <summary class="text-primary small" style="cursor: pointer;">
+                <i class="bi bi-graph-up"></i>
+                Resource Usage Timeline ({{ check.checkpoints.count }} checkpoints)
+              </summary>
+              <div class="table-responsive mt-2">
+                <table class="table table-sm table-striped mb-0">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Time</th>
+                      <th>CPU</th>
+                      <th>Memory</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for cp in check.checkpoints.all %}
+                      <tr>
+                        <td>{{ cp.checkpoint_number }}</td>
+                        <td>{{ cp.elapsed_seconds|floatformat:1 }}s</td>
+                        <td>{{ cp.cpu_percent_formatted|default:"-" }}</td>
+                        <td>
+                          {% if cp.memory_usage_bytes %}
+                            {{ cp.memory_usage_formatted }}
+                            {% if cp.memory_percent %}({{ cp.memory_percent|floatformat:1 }}%){% endif %}
+                          {% else %}
+                            -
+                          {% endif %}
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          </div>
+        {% endif %}
         {# Display processing logs if available or if check is processing #}
         {% if check.processing_logs or check.status == 'processing' or check.status == 'queued' %}
           <div class="mt-3" id="processing-logs-container">
