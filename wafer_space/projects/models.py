@@ -953,6 +953,11 @@ class ManufacturabilityCheck(models.Model):
         default="",
         help_text="SHA256 digest of Docker image for reproducibility",
     )
+    docker_command = models.TextField(
+        blank=True,
+        default="",
+        help_text="Full docker run command for reproducibility",
+    )
     tool_versions = models.JSONField(
         default=dict,
         blank=True,

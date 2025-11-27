@@ -203,7 +203,7 @@ def _record_checkpoint(
         mem_str = (
             _format_bytes(memory_usage or 0) if isinstance(memory_usage, int) else "N/A"
         )
-        logger.debug(
+        logger.info(
             "  Checkpoint %d: CPU=%.1f%%, Mem=%.1f%% (%s)",
             checkpoint_number,
             cpu_percent or 0,
@@ -514,6 +514,10 @@ def _run_container_and_stream_logs(context: _CheckContext):
     )
     context.logger.info("  Docker run command:")
     context.logger.info("  %s", docker_run_cmd)
+
+    # Save docker command to check record for reproducibility
+    context.check.docker_command = docker_run_cmd
+    context.check.save(update_fields=["docker_command"])
 
     container = context.client.containers.run(
         image=settings.PRECHECK_DOCKER_IMAGE,
