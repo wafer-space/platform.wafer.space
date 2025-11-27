@@ -492,18 +492,26 @@ def _run_container_and_stream_logs(context: _CheckContext):
     top_cell = context.project_file.top_cell
     context.logger.info("  Top cell: %s", top_cell)
 
-    precheck_cmd = f'python3 precheck.py --input /input/design.gds --top "{top_cell}"'
-    docker_command = ["nix-shell", "--run", precheck_cmd]
+    # Build command - the container's dev-shell entrypoint handles nix develop --offline
+    docker_command = [
+        "python3",
+        "precheck.py",
+        "--input",
+        "/input/design.gds",
+        "--top",
+        top_cell,
+    ]
 
     # Log equivalent docker run command for easy reproduction
+    precheck_cmd = f'python3 precheck.py --input /input/design.gds --top "{top_cell}"'
     docker_run_cmd = (
-        f"docker run --rm "
+        f"docker run --rm --network=none "
         f"-v {context.gds_path}:/input/design.gds:ro "
         f"-w /workspace "
         f"--memory 8g "
         f"--cpu-quota 100000 "
         f"{settings.PRECHECK_DOCKER_IMAGE} "
-        f"nix-shell --run '{precheck_cmd}'"
+        f"{precheck_cmd}"
     )
     context.logger.info("  Docker run command:")
     context.logger.info("  %s", docker_run_cmd)
@@ -516,6 +524,7 @@ def _run_container_and_stream_logs(context: _CheckContext):
         detach=True,
         mem_limit="8g",
         cpu_quota=100000,
+        network_disabled=True,
         labels={
             "wafer.space.service": "manufacturability-check",
             "wafer.space.check_id": str(context.check.id),
