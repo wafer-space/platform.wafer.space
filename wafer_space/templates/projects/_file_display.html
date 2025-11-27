@@ -130,6 +130,22 @@
             <span class="badge bg-danger">
               <i class="bi bi-exclamation-triangle"></i> Check Failed
             </span>
+          {% elif check.status == 'cancelled' %}
+            <span class="badge bg-secondary">
+              <i class="bi bi-x-circle"></i> Cancelled
+            </span>
+          {% endif %}
+          {# Cancel button for running checks #}
+          {% if check.status == 'queued' or check.status == 'processing' %}
+            <form method="post"
+                  action="{% url 'projects:cancel_check' pk=file.project.pk %}"
+                  class="d-inline ms-2"
+                  onsubmit="return confirm('Are you sure you want to cancel this manufacturability check?');">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-outline-danger">
+                <i class="bi bi-x-circle"></i> Cancel
+              </button>
+            </form>
           {% endif %}
         </p>
         {% if check.started_at %}
@@ -153,6 +169,15 @@
             </a>
             <small class="text-muted ms-2">({{ check.log_file.size|filesizeformat }})</small>
           </p>
+        {% endif %}
+        {# Display processing logs if available or if check is processing #}
+        {% if check.processing_logs or check.status == 'processing' or check.status == 'queued' %}
+          <div class="mt-3" id="processing-logs-container">
+            <h6>
+              <i class="bi bi-terminal"></i> Processing Logs
+            </h6>
+            <pre id="processing-logs" class="bg-dark text-light p-3 rounded" style="max-height: 400px; overflow-y: auto; font-size: 0.85rem;">{{ check.processing_logs|default:"Waiting for logs..." }}</pre>
+          </div>
         {% endif %}
         {# Display errors if check completed with errors #}
         {% if check.status == 'completed' and check.errors %}

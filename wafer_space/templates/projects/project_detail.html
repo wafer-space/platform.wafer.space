@@ -372,23 +372,49 @@
       })();
     </script>
   {% endif %}
-  {# Auto-reload when manufacturability check is processing #}
-  {% if check_status and check_status.status == 'processing' %}
+  {# Auto-update logs when manufacturability check is processing #}
+  {% if check_status and check_status.status in 'processing,queued' %}
     <script>
-      // Auto-reload page every 10 seconds while check is processing
+      // Poll for updated logs every 5 seconds while check is processing
       (function() {
-        let reloadInterval;
+        let pollInterval;
+        const checkStatusUrl = '{% url "projects:check_status" pk=project.pk %}';
+        const logsElement = document.getElementById('processing-logs');
 
-        function reloadPage() {
-          location.reload();
+        function updateCheckStatus() {
+          fetch(checkStatusUrl)
+            .then(response => response.json())
+            .then(data => {
+              // Update logs, preserving scroll position
+              if (logsElement && data.processing_logs) {
+                const wasAtBottom = logsElement.scrollHeight - logsElement.scrollTop <= logsElement.clientHeight + 50;
+                logsElement.textContent = data.processing_logs;
+                // Auto-scroll to bottom if user was already at the bottom
+                if (wasAtBottom) {
+                  logsElement.scrollTop = logsElement.scrollHeight;
+                }
+              }
+
+              // If check is complete, reload page once to update UI
+              if (data.status === 'completed' || data.status === 'failed') {
+                clearInterval(pollInterval);
+                location.reload();
+              }
+            })
+            .catch(error => {
+              console.error('[Check Status] Error fetching status:', error);
+            });
         }
 
-        // Reload every 10 seconds
-        reloadInterval = setInterval(reloadPage, 10000);
+        // Poll every 5 seconds
+        pollInterval = setInterval(updateCheckStatus, 5000);
+
+        // Initial update
+        updateCheckStatus();
 
         // Clean up on page unload
         window.addEventListener('beforeunload', () => {
-          clearInterval(reloadInterval);
+          clearInterval(pollInterval);
         });
       })();
     </script>
