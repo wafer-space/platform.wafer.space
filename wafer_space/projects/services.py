@@ -19,6 +19,8 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
+from config import celery_app
+
 from .models import ManufacturabilityCheck
 from .models import Project
 from .models import ProjectFile
@@ -384,6 +386,8 @@ class ProjectFileService:
     def _handle_file_replacement(cls, project: Project) -> None:
         """Mark existing active file as inactive before creating new one.
 
+        Also cancels any running manufacturability check on the active file.
+
         Args:
             project: The project to check for active files
         """
@@ -394,6 +398,16 @@ class ProjectFileService:
         ).first()
 
         if active_file:
+            # Cancel any running manufacturability check on this file
+            try:
+                check = active_file.manufacturability_check
+                if check.is_cancellable:
+                    ManufacturabilityService.cancel_check(
+                        check, reason="Cancelled: new file submitted"
+                    )
+            except ManufacturabilityCheck.DoesNotExist:
+                pass  # No check to cancel
+
             # Mark as inactive (the new file will be marked active)
             active_file.is_active = False
             active_file.save(update_fields=["is_active"])
@@ -725,3 +739,27 @@ class ManufacturabilityService:
             return None
 
         return cls.get_check_status_for_file(active_file)
+
+    @classmethod
+    def cancel_check(
+        cls,
+        check: ManufacturabilityCheck,
+        *,
+        reason: str = "Cancelled by user",
+    ) -> bool:
+        """Cancel a manufacturability check and revoke its Celery task.
+
+        Args:
+            check: The check to cancel
+            reason: Why the check was cancelled
+
+        Returns:
+            bool: True if cancelled, False if not cancellable
+        """
+        task_id = check.cancel(reason=reason)
+        if task_id is None:
+            return False
+
+        # Revoke the Celery task
+        celery_app.control.revoke(task_id, terminate=True)
+        return True
