@@ -255,6 +255,8 @@ runserver: stopserver ## Run Django development server with Celery worker (via H
 	@echo "$(BLUE)Starting development server and Celery worker...$(NC)"
 	@echo "$(BLUE)Cleaning Celery Beat schedule database...$(NC)"
 	@rm -f celerybeat-schedule celerybeat-schedule.db celerybeat-schedule.sqlite3 celerybeat-schedule.sqlite3-shm celerybeat-schedule.sqlite3-wal
+	@echo "$(BLUE)Purging stale Celery messages from broker queue...$(NC)"
+	@sqlite3 db.sqlite3 "DELETE FROM kombu_message" 2>/dev/null || true
 	@$(UV) run honcho start
 
 .PHONY: stopserver
