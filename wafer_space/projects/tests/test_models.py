@@ -621,3 +621,160 @@ class TestProjectFile(TestCase):
         )
 
         assert project_file.download_status == ProjectFile.DownloadStatus.QUEUED
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckCancel(TestCase):
+    """Test ManufacturabilityCheck.cancel() method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_cancel_queued_check_returns_task_id(self):
+        """Test that cancelling a queued check returns the task_id."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.QUEUED,
+            task_id="celery-task-123",
+        )
+
+        result = check.cancel(reason="Test cancellation")
+
+        assert result == "celery-task-123"
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+        assert "CANCELLED: Test cancellation" in check.processing_logs
+        assert check.completed_at is not None
+
+    def test_cancel_processing_check_returns_task_id(self):
+        """Test that cancelling a processing check returns the task_id."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PROCESSING,
+            task_id="celery-task-456",
+            started_at=timezone.now(),
+        )
+
+        result = check.cancel(reason="User requested cancellation")
+
+        assert result == "celery-task-456"
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+        assert "CANCELLED: User requested cancellation" in check.processing_logs
+
+    def test_cancel_completed_check_returns_none(self):
+        """Test that cancelling a completed check returns None."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.COMPLETED,
+            task_id="celery-task-789",
+            is_manufacturable=True,
+        )
+
+        result = check.cancel(reason="Should not work")
+
+        assert result is None
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.COMPLETED
+
+    def test_cancel_failed_check_returns_none(self):
+        """Test that cancelling a failed check returns None."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FAILED,
+            task_id="celery-task-999",
+            error_message="Previous failure",
+        )
+
+        result = check.cancel(reason="Should not work")
+
+        assert result is None
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.FAILED
+
+    def test_cancel_without_task_id_returns_empty_string(self):
+        """Test that cancelling a check without task_id returns empty string."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.QUEUED,
+            task_id="",  # No task ID
+        )
+
+        result = check.cancel(reason="No task")
+
+        # Should still be cancelled, just returns empty string
+        assert result == ""
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+
+    def test_is_cancellable_for_queued(self):
+        """Test is_cancellable returns True for queued checks."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.QUEUED,
+        )
+
+        assert check.is_cancellable is True
+
+    def test_is_cancellable_for_processing(self):
+        """Test is_cancellable returns True for processing checks."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PROCESSING,
+        )
+
+        assert check.is_cancellable is True
+
+    def test_is_not_cancellable_for_completed(self):
+        """Test is_cancellable returns False for completed checks."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.COMPLETED,
+        )
+
+        assert check.is_cancellable is False
+
+    def test_is_not_cancellable_for_failed(self):
+        """Test is_cancellable returns False for failed checks."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FAILED,
+        )
+
+        assert check.is_cancellable is False
+
+    def test_is_not_cancellable_for_cancelled(self):
+        """Test is_cancellable returns False for already cancelled checks."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLED,
+        )
+
+        assert check.is_cancellable is False
