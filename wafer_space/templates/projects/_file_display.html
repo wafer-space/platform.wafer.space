@@ -176,7 +176,11 @@
             <h6>
               <i class="bi bi-terminal"></i> Processing Logs
             </h6>
-            <pre id="processing-logs" class="bg-dark text-light p-3 rounded" style="max-height: 400px; overflow-y: auto; font-size: 0.85rem;">{{ check.processing_logs|default:"Waiting for logs..." }}</pre>
+            <pre id="processing-logs"
+                 class="bg-dark text-light p-3 rounded"
+                 style="max-height: 400px;
+                        overflow-y: auto;
+                        font-size: 0.85rem">{{ check.processing_logs|default:"Waiting for logs..." }}</pre>
           </div>
         {% endif %}
         {# Display errors if check completed with errors #}

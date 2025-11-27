@@ -11,8 +11,12 @@ web: python manage.py runserver 8081
 # -Q: Listen to specific queues (celery=default, manufacturability=project tasks, referrals=referral tasks)
 worker: celery -A config worker -Q celery,manufacturability,referrals --loglevel=info --concurrency=1 --pool=solo
 
+# Celery worker for quick maintenance tasks (cleanup, health checks)
+# Separate worker ensures maintenance tasks run even when main worker is busy with long-running checks
+maintenance: celery -A config worker -Q maintenance --loglevel=info --concurrency=1 --pool=solo
+
 # Celery Beat scheduler for periodic tasks (auto-retry failed downloads)
 # --loglevel=info: Show scheduling logs
 # --schedule: SQLite database file for beat schedule (uses .sqlite3 extension for consistency)
 # Runs periodic tasks defined in CELERY_BEAT_SCHEDULE (e.g., retry_failed_downloads every 5 minutes)
-beat: celery -A config beat --loglevel=info --schedule=celerybeat-schedule.sqlite3
+beat: celery -A config beat --loglevel=debug --schedule=celerybeat-schedule.sqlite3

@@ -21,6 +21,7 @@ from urllib.request import urlopen
 import docker
 import requests
 from celery import shared_task
+from celery.utils.log import get_task_logger
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.db import models
@@ -2945,8 +2946,8 @@ def _queue_manufacturability_check(project_file: ProjectFile, logger) -> None:
     )
 
 
-@shared_task
-def cleanup_orphaned_precheck_containers():
+@shared_task(bind=True, queue="maintenance")
+def cleanup_orphaned_precheck_containers(self):
     """Clean up orphaned Docker containers from cancelled/failed checks.
 
     This periodic task finds containers with the wafer.space.service label that
@@ -2960,7 +2961,7 @@ def cleanup_orphaned_precheck_containers():
     Returns:
         dict: Status with counts of found, stopped, removed, and failed containers
     """
-    logger = logging.getLogger(__name__)
+    logger = get_task_logger(__name__)
     logger.info("=" * 60)
     logger.info("CLEANING UP ORPHANED PRECHECK CONTAINERS")
     logger.info("=" * 60)

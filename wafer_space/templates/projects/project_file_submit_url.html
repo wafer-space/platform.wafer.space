@@ -22,7 +22,13 @@
             </h5>
             <p class="mb-0">
               A manufacturability check is currently
-              <strong>{% if running_check.status == 'processing' %}running{% else %}queued{% endif %}</strong>
+              <strong>
+                {% if running_check.status == 'processing' %}
+                  running
+                {% else %}
+                  queued
+                {% endif %}
+              </strong>
               for your existing file. Submitting a new file will <strong>cancel</strong> this check
               and start fresh with the new file.
             </p>
