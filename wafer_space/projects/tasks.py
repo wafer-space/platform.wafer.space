@@ -479,8 +479,7 @@ def _run_container_and_stream_logs(context: _CheckContext):
     context.logger.info("  Input file: %s", context.gds_path)
     context.logger.info("  Project name: %s", context.project.name)
     context.logger.info("  Project ID: %s", context.project.id)
-    context.logger.info("  Memory limit: 8GB")
-    context.logger.info("  CPU limit: 1 CPU")
+    context.logger.info("  Memory limit: 64GB")
 
     container_start = timezone.now()
 
@@ -506,10 +505,10 @@ def _run_container_and_stream_logs(context: _CheckContext):
     precheck_cmd = f'python3 precheck.py --input /input/design.gds --top "{top_cell}"'
     docker_run_cmd = (
         f"docker run --rm --network=none "
+        f"-e COLUMNS=200 -e TERM=xterm-256color "
         f"-v {context.gds_path}:/input/design.gds:ro "
         f"-w /workspace "
-        f"--memory 8g "
-        f"--cpu-quota 100000 "
+        f"--memory 64g "
         f"{settings.PRECHECK_DOCKER_IMAGE} "
         f"{precheck_cmd}"
     )
@@ -522,9 +521,12 @@ def _run_container_and_stream_logs(context: _CheckContext):
         volumes={context.gds_path: {"bind": "/input/design.gds", "mode": "ro"}},
         working_dir="/workspace",
         detach=True,
-        mem_limit="8g",
-        cpu_quota=100000,
+        mem_limit="64g",
         network_disabled=True,
+        environment={
+            "COLUMNS": "200",  # Wide terminal for better log output
+            "TERM": "xterm-256color",
+        },
         labels={
             "wafer.space.service": "manufacturability-check",
             "wafer.space.check_id": str(context.check.id),
