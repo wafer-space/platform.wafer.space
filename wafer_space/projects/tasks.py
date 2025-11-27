@@ -515,6 +515,10 @@ def _run_container_and_stream_logs(context: _CheckContext):
         detach=True,
         mem_limit="8g",
         cpu_quota=100000,
+        labels={
+            "wafer.space.service": "manufacturability-check",
+            "wafer.space.check_id": str(context.check.id),
+        },
     )
     context.logger.info("  ✓ Container started: %s", container.id[:12])
 
