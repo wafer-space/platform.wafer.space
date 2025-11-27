@@ -19,6 +19,7 @@
       <meta name="version" content="{{ GIT_DESCRIBE|default:GIT_COMMIT_SHORT }}" />
       <meta name="revision" content="{{ GIT_COMMIT_HASH }}" />
     {% endif %}
+    {% if SERVER_HOSTNAME %}<meta name="server" content="{{ SERVER_HOSTNAME }}" />{% endif %}
     <!-- Favicons -->
     <link rel="icon"
           href="{% static 'images/favicons/favicon.ico' %}"
@@ -154,12 +155,16 @@
     <!-- /container -->
     {% block modal %}
     {% endblock modal %}
-    {% if GIT_COMMIT_URL %}
+    {% if GIT_COMMIT_URL or SERVER_HOSTNAME %}
       <footer class="text-center text-muted py-2" style="font-size: 0.7rem;">
-        <a href="{{ GIT_COMMIT_URL }}"
-           target="_blank"
-           rel="noopener noreferrer"
-           class="text-muted text-decoration-none">{{ GIT_DESCRIBE|default:GIT_COMMIT_SHORT }}</a>
+        {% if SERVER_HOSTNAME %}<span class="text-muted">{{ SERVER_HOSTNAME }}</span>{% endif %}
+        {% if SERVER_HOSTNAME and GIT_COMMIT_URL %}<span class="text-muted mx-1">|</span>{% endif %}
+        {% if GIT_COMMIT_URL %}
+          <a href="{{ GIT_COMMIT_URL }}"
+             target="_blank"
+             rel="noopener noreferrer"
+             class="text-muted text-decoration-none">{{ GIT_DESCRIBE|default:GIT_COMMIT_SHORT }}</a>
+        {% endif %}
       </footer>
     {% endif %}
     {% block inline_javascript %}
