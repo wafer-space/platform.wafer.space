@@ -2891,3 +2891,110 @@ def _queue_manufacturability_check(project_file: ProjectFile, logger) -> None:
         project_file.id,
         task.id,
     )
+
+
+@shared_task
+def cleanup_orphaned_precheck_containers():
+    """Clean up orphaned Docker containers from cancelled/failed checks.
+
+    This periodic task finds containers with the wafer.space.service label that
+    don't have a corresponding active ManufacturabilityCheck (QUEUED or PROCESSING).
+
+    Orphaned containers can occur when:
+    - A Celery task is revoked/terminated (task cancel)
+    - The worker crashes during a check
+    - A check times out but container cleanup fails
+
+    Returns:
+        dict: Status with counts of found, stopped, removed, and failed containers
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("=" * 60)
+    logger.info("CLEANING UP ORPHANED PRECHECK CONTAINERS")
+    logger.info("=" * 60)
+
+    stopped_count = 0
+    removed_count = 0
+    failed_count = 0
+
+    try:
+        client = docker.from_env()
+    except docker.errors.DockerException as exc:
+        logger.exception("Failed to connect to Docker")
+        return {
+            "status": "error",
+            "error": str(exc),
+        }
+
+    # Find all containers with our service label
+    containers = client.containers.list(
+        all=True,  # Include stopped containers
+        filters={"label": "wafer.space.service=manufacturability-check"},
+    )
+
+    logger.info("  Found %d precheck containers", len(containers))
+
+    # Get IDs of active checks (QUEUED or PROCESSING)
+    active_check_ids = set(
+        ManufacturabilityCheck.objects.filter(
+            status__in=[
+                ManufacturabilityCheck.Status.QUEUED,
+                ManufacturabilityCheck.Status.PROCESSING,
+            ]
+        ).values_list("id", flat=True)
+    )
+    active_check_ids_str = {str(check_id) for check_id in active_check_ids}
+
+    logger.info("  Active checks: %d", len(active_check_ids))
+
+    for container in containers:
+        container_check_id = container.labels.get("wafer.space.check_id", "")
+
+        # Skip if this container belongs to an active check
+        if container_check_id in active_check_ids_str:
+            logger.info(
+                "  Container %s: belongs to active check %s, skipping",
+                container.short_id,
+                container_check_id,
+            )
+            continue
+
+        # This container is orphaned - clean it up
+        logger.info(
+            "  Container %s: orphaned (check_id=%s, status=%s)",
+            container.short_id,
+            container_check_id or "none",
+            container.status,
+        )
+
+        try:
+            # Stop if running
+            if container.status == "running":
+                logger.info("    Stopping container...")
+                container.stop(timeout=10)
+                stopped_count += 1
+
+            # Remove container
+            logger.info("    Removing container...")
+            container.remove(force=True)
+            removed_count += 1
+            logger.info("    ✓ Container removed")
+
+        except docker.errors.DockerException as exc:
+            logger.warning("    ⚠ Failed to clean up container: %s", exc)
+            failed_count += 1
+
+    logger.info("=" * 60)
+    logger.info("CLEANUP COMPLETE")
+    logger.info("  Stopped: %d", stopped_count)
+    logger.info("  Removed: %d", removed_count)
+    logger.info("  Failed: %d", failed_count)
+    logger.info("=" * 60)
+
+    return {
+        "status": "completed",
+        "containers_found": len(containers),
+        "stopped": stopped_count,
+        "removed": removed_count,
+        "failed": failed_count,
+    }

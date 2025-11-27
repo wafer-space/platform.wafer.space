@@ -79,6 +79,7 @@ DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS = 30.0  # Check every 30s in dev
 
 # Manufacturability check scanning (faster for development)
 PRECHECK_SCAN_INTERVAL_SECONDS = 15.0  # Scan every 15s in dev
+PRECHECK_CONTAINER_CLEANUP_INTERVAL_SECONDS = 60.0  # Cleanup every 60s in dev
 
 CELERY_BEAT_SCHEDULE = {
     "ensure-download-tasks-queued": {
@@ -88,6 +89,10 @@ CELERY_BEAT_SCHEDULE = {
     "scan-and-queue-manufacturability-checks": {
         "task": "wafer_space.projects.tasks.scan_and_queue_manufacturability_checks",
         "schedule": PRECHECK_SCAN_INTERVAL_SECONDS,
+    },
+    "cleanup-orphaned-precheck-containers": {
+        "task": "wafer_space.projects.tasks.cleanup_orphaned_precheck_containers",
+        "schedule": PRECHECK_CONTAINER_CLEANUP_INTERVAL_SECONDS,
     },
 }
 
