@@ -359,9 +359,7 @@ class TestComplianceCertificationCreateView(TestCase):
 
         # Set HTTP_USER_AGENT
         response = self.client.post(
-            url,
-            data=form_data,
-            HTTP_USER_AGENT="Mozilla/5.0 Test Browser",
+            url, data=form_data, headers={"user-agent": "Mozilla/5.0 Test Browser"}
         )
 
         assert response.status_code == HTTP_FOUND
@@ -400,7 +398,7 @@ class TestComplianceCertificationCreateView(TestCase):
             url,
             data=form_data,
             REMOTE_ADDR="203.0.113.195",
-            HTTP_USER_AGENT="New Browser",
+            headers={"user-agent": "New Browser"},
         )
 
         assert response.status_code == HTTP_FOUND

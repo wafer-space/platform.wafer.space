@@ -8,7 +8,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("projects", "0012_project_submitted_file"),
+        ("projects", "0023_manufacturabilitycheck_log_file"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

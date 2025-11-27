@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("projects", "0023_manufacturabilitycheckpoint"),
+        ("projects", "0022_manufacturabilitycheckpoint"),
     ]
 
     operations = [

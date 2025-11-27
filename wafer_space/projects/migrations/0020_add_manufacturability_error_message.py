@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("projects", "0020_merge_20251126_0518"),
+        ("projects", "0019_populate_manufacturability_check_project_file"),
     ]
 
     operations = [

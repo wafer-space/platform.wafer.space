@@ -8,7 +8,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("projects", "0013_manufacturabilitycheck_docker_image_and_more"),
+        ("projects", "0024_manufacturabilitycheck_docker_image_and_more"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

@@ -23,7 +23,7 @@ def get_client_ip(request):
     Returns:
         str: Validated IP address or None if invalid
     """
-    x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+    x_forwarded_for = request.headers.get("x-forwarded-for")
     if x_forwarded_for:
         # Get first IP from comma-separated list
         potential_ip = x_forwarded_for.split(",")[0].strip()
@@ -97,7 +97,7 @@ def compliance_certification_create(request, pk):
 
             # Capture IP address and user agent
             certification.ip_address = get_client_ip(request)
-            certification.user_agent = request.META.get("HTTP_USER_AGENT", "")
+            certification.user_agent = request.headers.get("user-agent", "")
             certification.save()
 
             messages.success(

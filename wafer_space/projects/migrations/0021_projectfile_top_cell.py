@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("projects", "0021_add_manufacturability_error_message"),
+        ("projects", "0020_add_manufacturability_error_message"),
     ]
 
     operations = [
