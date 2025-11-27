@@ -2730,6 +2730,55 @@ def update_project_status(project_id, new_status):
         }
 
 
+def _count_files_by_check_status(ready_files) -> dict:
+    """Count files by their manufacturability check status.
+
+    Returns dict with counts for each status plus 'needs_check' for actionable files.
+    """
+    counts = {
+        "no_check": 0,
+        "queued": 0,
+        "processing": 0,
+        "completed": 0,
+        "cancelled": 0,
+        "failed": 0,
+        "needs_check": 0,
+    }
+
+    for pf in ready_files:
+        try:
+            check = pf.manufacturability_check
+            if check.status == ManufacturabilityCheck.Status.QUEUED:
+                counts["queued"] += 1
+            elif check.status == ManufacturabilityCheck.Status.PROCESSING:
+                counts["processing"] += 1
+            elif check.status == ManufacturabilityCheck.Status.COMPLETED:
+                counts["completed"] += 1
+            elif check.status == ManufacturabilityCheck.Status.CANCELLED:
+                counts["cancelled"] += 1
+            elif check.status == ManufacturabilityCheck.Status.FAILED:
+                counts["failed"] += 1
+                if check.can_retry():
+                    counts["needs_check"] += 1
+        except ManufacturabilityCheck.DoesNotExist:
+            counts["no_check"] += 1
+            counts["needs_check"] += 1
+
+    return counts
+
+
+def _log_file_status_counts(logger, file_count: int, counts: dict) -> None:
+    """Log the breakdown of files by their check status."""
+    logger.info("  Found %d files with completed verified downloads:", file_count)
+    logger.info("    - No check yet: %d", counts["no_check"])
+    logger.info("    - Queued: %d", counts["queued"])
+    logger.info("    - Processing: %d", counts["processing"])
+    logger.info("    - Completed: %d", counts["completed"])
+    logger.info("    - Cancelled: %d", counts["cancelled"])
+    logger.info("    - Failed: %d", counts["failed"])
+    logger.info("  Need checks: %d", counts["needs_check"])
+
+
 @shared_task
 def scan_and_queue_manufacturability_checks():
     """Scan for files ready for manufacturability checking and queue checks.
@@ -2786,7 +2835,10 @@ def scan_and_queue_manufacturability_checks():
     ).distinct()
 
     file_count = ready_files.count()
-    logger.info("  Found %d files with completed verified downloads", file_count)
+
+    # Count and log files by their check status
+    counts = _count_files_by_check_status(ready_files)
+    _log_file_status_counts(logger, file_count, counts)
 
     for project_file in ready_files:
         # Check if we've hit the concurrent limit
