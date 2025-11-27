@@ -170,28 +170,32 @@
             <small class="text-muted ms-2">({{ check.log_file.size|filesizeformat }})</small>
           </p>
         {% endif %}
-        {# Docker command for reproducibility - show when processing or completed #}
-        {% if check.docker_command %}
-          <div class="mt-3">
-            <details {% if check.status == 'processing' %}open{% endif %}>
-              <summary class="text-primary small" style="cursor: pointer;">
-                <i class="bi bi-terminal"></i> Docker Command (for reproducibility)
-              </summary>
+        {# Docker command for reproducibility - always show section #}
+        <div class="mt-3">
+          <details>
+            <summary class="text-primary small" style="cursor: pointer;">
+              <i class="bi bi-terminal"></i> Docker Command (for reproducibility)
+            </summary>
+            {% if check.docker_command %}
               <pre class="bg-dark text-light p-3 rounded mt-2"
                    style="font-size: 0.8rem;
                           white-space: pre-wrap;
                           word-break: break-all">{{ check.docker_command }}</pre>
-            </details>
-          </div>
-        {% endif %}
-        {# Resource usage checkpoints - show when processing or completed #}
-        {% if check.checkpoints.exists %}
-          <div class="mt-3">
-            <details {% if check.status == 'processing' %}open{% endif %}>
-              <summary class="text-primary small" style="cursor: pointer;">
-                <i class="bi bi-graph-up"></i>
-                Resource Usage Timeline ({{ check.checkpoints.count }} checkpoints)
-              </summary>
+            {% else %}
+              <p class="text-muted small mt-2 mb-0">
+                <i class="bi bi-hourglass-split"></i> Waiting for container to start...
+              </p>
+            {% endif %}
+          </details>
+        </div>
+        {# Resource usage checkpoints - always show section #}
+        <div class="mt-3">
+          <details>
+            <summary class="text-primary small" style="cursor: pointer;">
+              <i class="bi bi-graph-up"></i>
+              Resource Usage Timeline ({{ check.checkpoints.count }} checkpoint{{ check.checkpoints.count|pluralize }})
+            </summary>
+            {% if check.checkpoints.exists %}
               <div class="table-responsive mt-2">
                 <table class="table table-sm table-striped mb-0">
                   <thead>
@@ -211,7 +215,9 @@
                         <td>
                           {% if cp.memory_usage_bytes %}
                             {{ cp.memory_usage_formatted }}
-                            {% if cp.memory_percent %}({{ cp.memory_percent|floatformat:1 }}%){% endif %}
+                            {% if cp.memory_percent %}
+                              ({{ cp.memory_percent|floatformat:1 }}%)
+                            {% endif %}
                           {% else %}
                             -
                           {% endif %}
@@ -221,9 +227,13 @@
                   </tbody>
                 </table>
               </div>
-            </details>
-          </div>
-        {% endif %}
+            {% else %}
+              <p class="text-muted small mt-2 mb-0">
+                <i class="bi bi-hourglass-split"></i> Waiting for resource data...
+              </p>
+            {% endif %}
+          </details>
+        </div>
         {# Display processing logs if available or if check is processing #}
         {% if check.processing_logs or check.status == 'processing' or check.status == 'queued' %}
           <div class="mt-3" id="processing-logs-container">
