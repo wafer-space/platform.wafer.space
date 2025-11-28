@@ -103,7 +103,6 @@
                   <th>Project</th>
                   <th>User</th>
                   <th>File</th>
-                  <th>Created</th>
                   <th>Task ID</th>
                   <th>Actions</th>
                 </tr>
@@ -122,7 +121,6 @@
                         <span class="text-muted">-</span>
                       {% endif %}
                     </td>
-                    <td>{{ check.created_at|date:"Y-m-d H:i:s" }}</td>
                     <td>
                       {% if check.task_id %}
                         <code class="small">{{ check.task_id|truncatechars:20 }}</code>
@@ -162,7 +160,7 @@
                   <th>User</th>
                   <th>File</th>
                   <th>Result</th>
-                  <th>Created</th>
+                  <th>Started</th>
                   <th>Completed</th>
                   <th>Actions</th>
                 </tr>
@@ -219,7 +217,11 @@
                       {% endif %}
                     </td>
                     <td>
-                      <small>{{ check.created_at|date:"Y-m-d H:i" }}</small>
+                      {% if check.started_at %}
+                        <small>{{ check.started_at|date:"Y-m-d H:i" }}</small>
+                      {% else %}
+                        <span class="text-muted">-</span>
+                      {% endif %}
                     </td>
                     <td>
                       {% if check.completed_at %}

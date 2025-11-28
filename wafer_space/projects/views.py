@@ -499,7 +499,7 @@ class ManufacturabilityCheckAdminStatusView(
             "project",
             "project__user",
             "project_file",
-        ).order_by("-created_at")[:50]
+        ).order_by("-id")[:50]
 
         # Get currently processing checks
         processing_checks = (
@@ -524,7 +524,7 @@ class ManufacturabilityCheckAdminStatusView(
                 "project__user",
                 "project_file",
             )
-            .order_by("-created_at")
+            .order_by("-id")
         )
 
         return render(

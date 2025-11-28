@@ -115,9 +115,7 @@ class Command(BaseCommand):
                 )
             )
 
-    def _promote_user(
-        self, user, *, grant_staff: bool, grant_superuser: bool
-    ) -> list:
+    def _promote_user(self, user, *, grant_staff: bool, grant_superuser: bool) -> list:
         """Grant permissions to user."""
         changes = []
         if grant_staff and not user.is_staff:
@@ -128,9 +126,7 @@ class Command(BaseCommand):
             changes.append("granted superuser status")
         return changes
 
-    def _demote_user(
-        self, user, *, grant_staff: bool, grant_superuser: bool
-    ) -> list:
+    def _demote_user(self, user, *, grant_staff: bool, grant_superuser: bool) -> list:
         """Remove permissions from user."""
         changes = []
         if grant_staff and user.is_staff:
