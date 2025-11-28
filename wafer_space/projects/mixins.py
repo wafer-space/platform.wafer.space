@@ -1,9 +1,22 @@
 """Permission mixins for project views."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+from typing import Any
+from typing import cast
+
 from django.contrib.auth.mixins import UserPassesTestMixin
 from django.views.generic.edit import DeleteView
 
+from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectAccessLog
+
+if TYPE_CHECKING:
+    from django.http import HttpRequest
+    from django.http import HttpResponseBase
+
+    from wafer_space.users.models import User
 
 # HTTP status code boundary for successful responses
 HTTP_SUCCESS_THRESHOLD = 400
@@ -37,7 +50,12 @@ class ProjectOwnerOrStaffMixin(UserPassesTestMixin):
             model = Project
     """
 
-    def test_func(self):
+    # Type stubs for attributes provided by the view class this mixin is combined with
+    # request is provided by View, get_object() is provided by SingleObjectMixin
+    request: HttpRequest
+    _accessed_project: Project | None
+
+    def test_func(self) -> bool:
         """Check if user can access this project.
 
         Returns True if:
@@ -49,8 +67,8 @@ class ProjectOwnerOrStaffMixin(UserPassesTestMixin):
         - Regular users without staff flag
         - Unauthenticated users (even if is_staff=True)
         """
-        project = self.get_object()  # type: ignore[attr-defined]
-        user = self.request.user  # type: ignore[attr-defined]
+        project: Project = self.get_object()  # type: ignore[attr-defined]
+        user = self.request.user
 
         # Store project reference for use in handle_no_permission
         self._accessed_project = project
@@ -63,10 +81,12 @@ class ProjectOwnerOrStaffMixin(UserPassesTestMixin):
         # Both checks required for security (fail-closed)
         return user.is_authenticated and user.is_staff
 
-    def dispatch(self, request, *args, **kwargs):
+    def dispatch(
+        self, request: HttpRequest, *args: Any, **kwargs: Any
+    ) -> HttpResponseBase:
         """Dispatch request and create audit log for staff access."""
         # Get project BEFORE dispatch (DeleteView will delete it)
-        project = self.get_object()  # type: ignore[attr-defined]
+        project: Project = self.get_object()  # type: ignore[attr-defined]
         user = request.user
 
         # Check if this is a delete operation (POST to DeleteView)
@@ -88,7 +108,8 @@ class ProjectOwnerOrStaffMixin(UserPassesTestMixin):
                 user.is_authenticated and user.is_staff and project.user != user
             )
             if is_admin_access and not is_delete_operation:
-                self._create_audit_log(project, user, request)
+                # Cast is safe: is_admin_access check confirms user.is_authenticated
+                self._create_audit_log(project, cast("User", user), request)
 
         return response
 
@@ -99,18 +120,20 @@ class ProjectOwnerOrStaffMixin(UserPassesTestMixin):
         We log unauthorized access attempts for security auditing before returning
         the standard 403 Forbidden response.
         """
-        user = self.request.user  # type: ignore[attr-defined]
+        user = self.request.user
         project = getattr(self, "_accessed_project", None)
 
         # Only log if we have both user and project information
         # Log for authenticated users who were denied (not owners, not staff)
         if user.is_authenticated and project is not None:
-            self._create_denied_access_log(project, user, self.request)  # type: ignore[attr-defined]
+            self._create_denied_access_log(project, user, self.request)
 
         # Return standard 403 response
         return super().handle_no_permission()
 
-    def _create_audit_log(self, project, admin_user, request):
+    def _create_audit_log(
+        self, project: Project, admin_user: User, request: HttpRequest
+    ) -> None:
         """Create audit log entry for admin access.
 
         Args:
@@ -126,12 +149,13 @@ class ProjectOwnerOrStaffMixin(UserPassesTestMixin):
             "PATCH": ProjectAccessLog.Action.EDIT,
             "DELETE": ProjectAccessLog.Action.DELETE,
         }
-        action = action_map.get(request.method, ProjectAccessLog.Action.VIEW)
+        method = request.method or "GET"
+        action = action_map.get(method, ProjectAccessLog.Action.VIEW)
 
         # Get client IP address
         x_forwarded_for = request.headers.get("x-forwarded-for")
         if x_forwarded_for:
-            ip_address = x_forwarded_for.split(",")[0].strip()
+            ip_address: str | None = x_forwarded_for.split(",")[0].strip()
         else:
             ip_address = request.META.get("REMOTE_ADDR")
 
@@ -145,7 +169,9 @@ class ProjectOwnerOrStaffMixin(UserPassesTestMixin):
             view_name=self.__class__.__name__,
         )
 
-    def _create_denied_access_log(self, project, user, request):
+    def _create_denied_access_log(
+        self, project: Project, user: User, request: HttpRequest
+    ) -> None:
         """Create audit log entry for denied access attempt.
 
         Args:
@@ -156,7 +182,7 @@ class ProjectOwnerOrStaffMixin(UserPassesTestMixin):
         # Get client IP address
         x_forwarded_for = request.headers.get("x-forwarded-for")
         if x_forwarded_for:
-            ip_address = x_forwarded_for.split(",")[0].strip()
+            ip_address: str | None = x_forwarded_for.split(",")[0].strip()
         else:
             ip_address = request.META.get("REMOTE_ADDR")
 
