@@ -1,5 +1,6 @@
 """Tests for project models."""
 
+from datetime import timedelta
 from unittest.mock import Mock
 from unittest.mock import patch
 
@@ -861,7 +862,7 @@ class TestManufacturabilityCheckQueueProperties(TestCase):
             project=project2,
             project_file=file2,
             status=ManufacturabilityCheck.Status.QUEUED,
-            queued_at=timezone.now() - timezone.timedelta(minutes=5),
+            queued_at=timezone.now() - timedelta(minutes=5),
         )
 
         # Create our check (behind)
@@ -922,7 +923,7 @@ class TestManufacturabilityCheckQueueProperties(TestCase):
     def test_queue_wait_duration_returns_timedelta(self):
         """Test queue_wait_duration returns correct timedelta."""
         wait_minutes = 10
-        queued_time = timezone.now() - timezone.timedelta(minutes=wait_minutes)
+        queued_time = timezone.now() - timedelta(minutes=wait_minutes)
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,

@@ -922,6 +922,19 @@ class ManufacturabilityCheck(models.Model):
         help_text="When check entered/re-entered the QUEUED state",
     )
 
+    # Worker tracking (matching DownloadAttempt pattern)
+    worker_pid = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Process ID of worker executing this check",
+    )
+    worker_hostname = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Hostname of worker executing this check",
+    )
+
     # Results
     is_manufacturable = models.BooleanField(null=True, blank=True)
     errors = models.JSONField(default=list, blank=True)  # Manufacturing errors
@@ -1087,6 +1100,25 @@ class ManufacturabilityCheck(models.Model):
             self.Status.STARTING,
             self.Status.PROCESSING,
         ]
+
+    @property
+    def result_display(self) -> str:
+        """Get human-readable result classification.
+
+        Returns one of:
+        - "Manufacturable - Clean" (no warnings)
+        - "Manufacturable with Warnings" (warnings present)
+        - "Not Manufacturable" (failed checks)
+        - "" (not yet completed)
+        """
+        if self.status != self.Status.COMPLETED or self.is_manufacturable is None:
+            return ""
+
+        if self.is_manufacturable:
+            if self.warnings:
+                return "Manufacturable with Warnings"
+            return "Manufacturable - Clean"
+        return "Not Manufacturable"
 
     @property
     def queue_position(self) -> int | None:
