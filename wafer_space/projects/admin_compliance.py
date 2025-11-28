@@ -2,11 +2,13 @@
 
 from django.contrib import admin
 
+from wafer_space.contrib.admin_mixins import StaffReadOnlyAdminMixin
+
 from .models import ProjectComplianceCertification
 
 
 @admin.register(ProjectComplianceCertification)
-class ProjectComplianceCertificationAdmin(admin.ModelAdmin):
+class ProjectComplianceCertificationAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
     """Admin for compliance certifications."""
 
     list_display = [

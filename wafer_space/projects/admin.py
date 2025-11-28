@@ -2,11 +2,13 @@
 
 from django.contrib import admin
 
+from wafer_space.contrib.admin_mixins import StaffReadOnlyAdminMixin
+
 from .models import ManufacturabilityCheck
 
 
 @admin.register(ManufacturabilityCheck)
-class ManufacturabilityCheckAdmin(admin.ModelAdmin):
+class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
     """Admin for manufacturability checks."""
 
     list_display = [
