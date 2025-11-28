@@ -96,7 +96,25 @@
 {% endwith %}
 {# Manufacturability Check Section #}
 {% with check=file.manufacturability_check %}
-  {% if check %}
+  {% if not check and file.hash_verified and status == 'completed' %}
+    {# Show pending state when file is ready but check not yet created #}
+    <div class="card bg-light mb-3">
+      <div class="card-body">
+        <h6 class="card-title">
+          <i class="bi bi-check-circle"></i> Manufacturability Check
+        </h6>
+        <p class="mb-0">
+          <strong>Status:</strong>
+          <span class="badge bg-secondary">
+            <i class="bi bi-hourglass-split"></i> Pending - waiting to be queued
+          </span>
+        </p>
+        <p class="text-muted small mt-2 mb-0">
+          The manufacturability check will be queued automatically.
+        </p>
+      </div>
+    </div>
+  {% elif check %}
     {# Show check status when check exists #}
     <div class="card bg-light mb-3">
       <div class="card-body">
