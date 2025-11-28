@@ -8,6 +8,12 @@ from .views_compliance import compliance_certification_create
 app_name = "projects"
 
 urlpatterns = [
+    # Admin status page
+    path(
+        "admin/check-status/",
+        views.ManufacturabilityCheckAdminStatusView.as_view(),
+        name="admin_check_status",
+    ),
     # Project CRUD
     path("", views.ProjectListView.as_view(), name="list"),
     path("<uuid:pk>/", views.ProjectDetailView.as_view(), name="detail"),

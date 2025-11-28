@@ -474,6 +474,71 @@ class ManufacturabilityCheckCancelView(LoginRequiredMixin, UserPassesTestMixin, 
         return redirect("projects:detail", pk=pk)
 
 
+class ManufacturabilityCheckAdminStatusView(
+    LoginRequiredMixin, UserPassesTestMixin, View
+):
+    """Admin-only status page for monitoring all manufacturability checks."""
+
+    def test_func(self):
+        """Only allow staff users to view this page."""
+        return self.request.user.is_staff
+
+    def get(self, request):
+        """Display manufacturability check status dashboard."""
+        # Get counts by status
+        status_counts = {}
+        for status_value, status_label in ManufacturabilityCheck.Status.choices:
+            count = ManufacturabilityCheck.objects.filter(status=status_value).count()
+            status_counts[status_value] = {
+                "label": status_label,
+                "count": count,
+            }
+
+        # Get recent checks (last 50)
+        recent_checks = ManufacturabilityCheck.objects.select_related(
+            "project",
+            "project__user",
+            "project_file",
+        ).order_by("-created_at")[:50]
+
+        # Get currently processing checks
+        processing_checks = (
+            ManufacturabilityCheck.objects.filter(
+                status=ManufacturabilityCheck.Status.PROCESSING,
+            )
+            .select_related(
+                "project",
+                "project__user",
+                "project_file",
+            )
+            .order_by("-started_at")
+        )
+
+        # Get queued checks
+        queued_checks = (
+            ManufacturabilityCheck.objects.filter(
+                status=ManufacturabilityCheck.Status.QUEUED,
+            )
+            .select_related(
+                "project",
+                "project__user",
+                "project_file",
+            )
+            .order_by("-created_at")
+        )
+
+        return render(
+            request,
+            "projects/manufacturability_check_status.html",
+            {
+                "status_counts": status_counts,
+                "recent_checks": recent_checks,
+                "processing_checks": processing_checks,
+                "queued_checks": queued_checks,
+            },
+        )
+
+
 class ProjectSubmitView(LoginRequiredMixin, UserPassesTestMixin, View):
     """Submit a project for manufacturing (POST-only)."""
 
