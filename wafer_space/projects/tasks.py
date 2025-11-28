@@ -2230,6 +2230,7 @@ def _verify_and_notify(
         # Create manufacturability check immediately in QUEUED state
         logger.info("Step 9.5: Creating manufacturability check...")
         check = ManufacturabilityCheck.objects.create(
+            project=project_file.project,
             project_file=project_file,
             status=ManufacturabilityCheck.Status.QUEUED,
             queued_at=timezone.now(),

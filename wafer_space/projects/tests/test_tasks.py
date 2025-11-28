@@ -22,6 +22,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
 from django.test import TestCase
+from django.utils import timezone
 
 from wafer_space.projects import tasks
 from wafer_space.projects.models import DownloadAttempt
@@ -37,7 +38,7 @@ from wafer_space.projects.tasks import _process_and_save_content
 from wafer_space.projects.tasks import _safe_urlopen
 from wafer_space.projects.tasks import check_project_manufacturability
 from wafer_space.projects.tasks import download_project_file
-from wafer_space.projects.tasks import scan_and_queue_manufacturability_checks
+from wafer_space.projects.tasks import process_manufacturability_check_queue
 
 User = get_user_model()
 TEST_PASSWORD = "testpass123"  # noqa: S105 - Test password constant
@@ -1179,8 +1180,8 @@ class DownloadTaskTests(TestCase):
 
 
 @pytest.mark.django_db
-class TestScanAndQueueManufacturabilityChecks(TestCase):
-    """Test the scan_and_queue_manufacturability_checks periodic task."""
+class TestProcessManufacturabilityCheckQueue(TestCase):
+    """Test the process_manufacturability_check_queue periodic task (state machine)."""
 
     def setUp(self):
         """Set up test fixtures."""
@@ -1209,8 +1210,8 @@ class TestScanAndQueueManufacturabilityChecks(TestCase):
         )
 
     @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
-    def test_cancelled_check_not_requeued(self, mock_check_task):
-        """Test that cancelled checks are not automatically re-queued."""
+    def test_cancelled_check_not_dispatched(self, mock_check_task):
+        """Test that cancelled checks are not dispatched."""
         # Create a cancelled check
         ManufacturabilityCheck.objects.create(
             project=self.project,
@@ -1218,11 +1219,11 @@ class TestScanAndQueueManufacturabilityChecks(TestCase):
             status=ManufacturabilityCheck.Status.CANCELLED,
         )
 
-        # Run the scan task
-        result = scan_and_queue_manufacturability_checks()
+        # Run the queue processing task
+        result = process_manufacturability_check_queue()
 
-        # Verify no new check was queued
-        assert result["queued_checks"] == 0
+        # Verify no checks were dispatched (cancelled checks are ignored)
+        assert result["queued_dispatched"] == 0
         mock_check_task.assert_not_called()
 
         # Verify the check is still cancelled
@@ -1230,8 +1231,8 @@ class TestScanAndQueueManufacturabilityChecks(TestCase):
         assert check.status == ManufacturabilityCheck.Status.CANCELLED
 
     @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
-    def test_completed_check_not_requeued(self, mock_check_task):
-        """Test that completed checks are not automatically re-queued."""
+    def test_completed_check_not_dispatched(self, mock_check_task):
+        """Test that completed checks are not dispatched."""
         # Create a completed check
         ManufacturabilityCheck.objects.create(
             project=self.project,
@@ -1240,44 +1241,57 @@ class TestScanAndQueueManufacturabilityChecks(TestCase):
             is_manufacturable=True,
         )
 
-        # Run the scan task
-        result = scan_and_queue_manufacturability_checks()
+        # Run the queue processing task
+        result = process_manufacturability_check_queue()
 
-        # Verify no new check was queued
-        assert result["queued_checks"] == 0
+        # Verify no checks were dispatched
+        assert result["queued_dispatched"] == 0
         mock_check_task.assert_not_called()
 
     @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
-    def test_queued_check_not_duplicated(self, mock_check_task):
-        """Test that queued checks are not duplicated."""
-        # Create a queued check
-        ManufacturabilityCheck.objects.create(
+    def test_queued_check_gets_dispatched(self, mock_check_task):
+        """Test that QUEUED checks get dispatched to STARTING."""
+        mock_check_task.return_value = Mock(id="new-task-123")
+
+        # Create a queued check (as would be created by download completion)
+        check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.QUEUED,
+            queued_at=timezone.now(),
+        )
+
+        # Run the queue processing task
+        result = process_manufacturability_check_queue()
+
+        # Verify check was dispatched
+        assert result["queued_dispatched"] == 1
+        mock_check_task.assert_called_once_with(check.id)
+
+        # Verify check transitioned to STARTING
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.STARTING
+        assert check.task_id == "new-task-123"
+
+    @patch("wafer_space.projects.tasks.is_check_task_queued")
+    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    def test_starting_check_not_re_dispatched(self, mock_check_task, mock_queued):
+        """Test that STARTING checks are not re-dispatched."""
+        # Mock verification to say task is in queue
+        mock_queued.return_value = True
+
+        # Create a check already in STARTING state
+        ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.STARTING,
             task_id="existing-task",
         )
 
-        # Run the scan task
-        result = scan_and_queue_manufacturability_checks()
+        # Run the queue processing task
+        result = process_manufacturability_check_queue()
 
-        # Verify no new check was queued (already running)
-        assert result["queued_checks"] == 0
-        assert result["already_running"] == 1
+        # Verify no new dispatches (STARTING checks are verified, not dispatched)
+        assert result["queued_dispatched"] == 0
+        assert result["starting_verified"] == 1
         mock_check_task.assert_not_called()
-
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
-    def test_file_without_check_gets_queued(self, mock_check_task):
-        """Test that files without checks get one queued."""
-        mock_check_task.return_value = Mock(id="new-task-123")
-
-        # Run the scan task (no existing check)
-        result = scan_and_queue_manufacturability_checks()
-
-        # Verify a check was queued
-        assert result["queued_checks"] == 1
-        mock_check_task.assert_called_once()
-
-        # Verify check was created
-        check = ManufacturabilityCheck.objects.get(project_file=self.project_file)
-        assert check.status == ManufacturabilityCheck.Status.QUEUED
