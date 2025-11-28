@@ -44,6 +44,8 @@ from .processors.top_cell_extractor import extract_top_cell
 from .url_handlers import GitHubArtifactHandler
 from .url_handlers import GoogleSourceHandler
 from .url_handlers import URLHandlerRegistry
+from .verification import is_check_task_actively_running
+from .verification import is_check_task_queued
 from .verification import is_task_actively_running
 from .verification import is_task_queued
 
@@ -2802,170 +2804,231 @@ def _log_file_status_counts(logger, file_count: int, counts: dict) -> None:
     logger.info("  Need checks: %d", counts["needs_check"])
 
 
-@shared_task
-def scan_and_queue_manufacturability_checks():
-    """Scan for files ready for manufacturability checking and queue checks.
-
-    This periodic task finds ProjectFiles that are:
-    - Download completed (has a COMPLETED download attempt)
-    - Hash verified (hash_verified=True)
-    - Either no ManufacturabilityCheck exists, OR check status is FAILED and retryable
-
-    Respects global concurrent limit (PRECHECK_CONCURRENT_LIMIT setting).
+def _handle_starting_checks(logger) -> tuple[int, int]:
+    """Handle STARTING checks - verify task exists in queue.
 
     Returns:
-        dict: Status with counts of queued_checks, skipped (at limit), already_running
+        Tuple of (verified_count, lost_count)
     """
-    logger = logging.getLogger(__name__)
-    logger.info("=" * 60)
-    logger.info("SCANNING FOR FILES READY FOR MANUFACTURABILITY CHECKING")
-    logger.info("=" * 60)
+    verified = 0
+    lost = 0
 
-    queued_checks = 0
-    skipped_at_limit = 0
-    already_running = 0
+    starting_checks = ManufacturabilityCheck.objects.filter(
+        status=ManufacturabilityCheck.Status.STARTING,
+    )
 
-    # Get concurrent limit from settings
-    concurrent_limit = getattr(settings, "PRECHECK_CONCURRENT_LIMIT", 4)
+    for check in starting_checks:
+        if is_check_task_queued(check):
+            verified += 1
+            logger.debug("  Check %s: STARTING verified in queue", check.id)
+        else:
+            # Task lost - move back to QUEUED
+            logger.warning("  Check %s: STARTING task lost, requeuing", check.id)
+            check.status = ManufacturabilityCheck.Status.QUEUED
+            check.task_id = ""
+            check.queued_at = timezone.now()
+            check.save(update_fields=["status", "task_id", "queued_at"])
+            lost += 1
 
-    # Count currently active checks (QUEUED or PROCESSING)
+    return verified, lost
+
+
+def _reset_check_for_retry(check: ManufacturabilityCheck) -> None:
+    """Reset a check's fields for retry."""
+    check.status = ManufacturabilityCheck.Status.QUEUED
+    check.retry_count += 1
+    check.queued_at = timezone.now()
+    check.is_manufacturable = None
+    check.errors = []
+    check.warnings = []
+    check.error_message = ""
+    check.started_at = None
+    check.completed_at = None
+    check.save()
+
+
+def _handle_processing_checks(logger) -> tuple[int, int, int]:
+    """Handle PROCESSING checks - verify task running AND process exists.
+
+    Returns:
+        Tuple of (verified_count, orphaned_count, retried_count)
+    """
+    verified = 0
+    orphaned = 0
+    retried = 0
+
+    processing_checks = ManufacturabilityCheck.objects.filter(
+        status=ManufacturabilityCheck.Status.PROCESSING,
+    )
+
+    for check in processing_checks:
+        if is_check_task_actively_running(check):
+            verified += 1
+            logger.debug("  Check %s: PROCESSING verified running", check.id)
+        else:
+            # Task orphaned - mark FAILED
+            logger.warning("  Check %s: PROCESSING task orphaned", check.id)
+            check.status = ManufacturabilityCheck.Status.FAILED
+            check.error_message = "Task not running (worker crashed or task failed)"
+            check.completed_at = timezone.now()
+            check.worker_pid = None
+            check.worker_hostname = ""
+            check.save(
+                update_fields=[
+                    "status",
+                    "error_message",
+                    "completed_at",
+                    "worker_pid",
+                    "worker_hostname",
+                ]
+            )
+            orphaned += 1
+
+            # Check if we should retry
+            if check.can_retry():
+                logger.info(
+                    "  Check %s: requeuing for retry (attempt %d/%d)",
+                    check.id,
+                    check.retry_count + 1,
+                    check.max_retries,
+                )
+                _reset_check_for_retry(check)
+                retried += 1
+
+    return verified, orphaned, retried
+
+
+def _handle_failed_checks(logger) -> tuple[int, int]:
+    """Handle FAILED checks - retry if allowed.
+
+    Returns:
+        Tuple of (retried_count, exhausted_count)
+    """
+    retried = 0
+    exhausted = 0
+
+    failed_checks = ManufacturabilityCheck.objects.filter(
+        status=ManufacturabilityCheck.Status.FAILED,
+    )
+
+    for check in failed_checks:
+        if check.can_retry():
+            logger.info(
+                "  Check %s: FAILED, requeuing (attempt %d/%d)",
+                check.id,
+                check.retry_count + 1,
+                check.max_retries,
+            )
+            _reset_check_for_retry(check)
+            retried += 1
+        else:
+            exhausted += 1
+            logger.debug("  Check %s: FAILED, max retries exhausted", check.id)
+
+    return retried, exhausted
+
+
+def _handle_queued_checks(logger, concurrent_limit: int) -> tuple[int, int]:
+    """Handle QUEUED checks - dispatch if under limit.
+
+    Returns:
+        Tuple of (dispatched_count, waiting_count)
+    """
+    dispatched = 0
+    waiting = 0
+
+    # Count currently active checks (STARTING or PROCESSING)
     active_count = ManufacturabilityCheck.objects.filter(
         status__in=[
-            ManufacturabilityCheck.Status.QUEUED,
+            ManufacturabilityCheck.Status.STARTING,
             ManufacturabilityCheck.Status.PROCESSING,
         ]
     ).count()
 
     logger.info("  Active checks: %d / %d (limit)", active_count, concurrent_limit)
 
-    if active_count >= concurrent_limit:
-        logger.info("  At concurrent limit, skipping scan")
-        return {
-            "status": "at_limit",
-            "active_count": active_count,
-            "concurrent_limit": concurrent_limit,
-            "queued_checks": 0,
-        }
+    # Get QUEUED checks ordered by queued_at (FIFO)
+    queued_checks = ManufacturabilityCheck.objects.filter(
+        status=ManufacturabilityCheck.Status.QUEUED,
+    ).order_by("queued_at")
 
-    # Find files ready for checking:
-    # 1. Download completed (has COMPLETED attempt)
-    # 2. Hash verified
-    # 3. Is active file
-    ready_files = ProjectFile.objects.filter(
-        is_active=True,
-        hash_verified=True,
-        download_attempts__status=DownloadAttempt.Status.COMPLETED,
-    ).distinct()
-
-    file_count = ready_files.count()
-
-    # Count and log files by their check status
-    counts = _count_files_by_check_status(ready_files)
-    _log_file_status_counts(logger, file_count, counts)
-
-    for project_file in ready_files:
-        # Check if we've hit the concurrent limit
+    for check in queued_checks:
         if active_count >= concurrent_limit:
-            skipped_at_limit += 1
+            waiting += 1
             continue
 
-        # Check if a check already exists for this file
+        # Dispatch the task
         try:
-            existing_check = project_file.manufacturability_check
-            # Skip if check is running, completed, or cancelled
-            if existing_check.status in [
-                ManufacturabilityCheck.Status.QUEUED,
-                ManufacturabilityCheck.Status.PROCESSING,
-            ]:
-                already_running += 1
-                continue
-            # Skip completed or cancelled checks (user cancelled = don't auto-restart)
-            if existing_check.status in [
-                ManufacturabilityCheck.Status.COMPLETED,
-                ManufacturabilityCheck.Status.CANCELLED,
-            ]:
-                continue
-            # For failed checks, only retry if allowed
-            if existing_check.status == ManufacturabilityCheck.Status.FAILED:
-                if not existing_check.can_retry():
-                    logger.info(
-                        "  File %s: check failed, max retries exceeded",
-                        project_file.id,
-                    )
-                    continue
-                logger.info(
-                    "  File %s: retrying failed check (attempt %d/%d)",
-                    project_file.id,
-                    existing_check.retry_count + 1,
-                    existing_check.max_retries,
-                )
-        except ManufacturabilityCheck.DoesNotExist:
-            # No check exists - this file needs one
-            pass
-
-        # Queue the check
-        try:
-            _queue_manufacturability_check(project_file, logger)
-            queued_checks += 1
+            task = check_project_manufacturability.delay(check.id)
+            check.status = ManufacturabilityCheck.Status.STARTING
+            check.task_id = task.id
+            check.save(update_fields=["status", "task_id"])
+            dispatched += 1
             active_count += 1
+            logger.info("  Check %s: QUEUED -> STARTING (task: %s)", check.id, task.id)
         except Exception:
-            logger.exception("Failed to queue check for file %s", project_file.id)
+            logger.exception("Failed to dispatch check %s", check.id)
 
+    return dispatched, waiting
+
+
+@shared_task
+def process_manufacturability_check_queue():
+    """Process manufacturability check queue with state machine transitions.
+
+    This periodic task manages the lifecycle of manufacturability checks:
+    - STARTING: Verify task in Celery queue, if not -> QUEUED (task lost)
+    - PROCESSING: Verify task running AND process exists, if not -> FAILED
+    - FAILED: If can_retry() -> QUEUED with retry_count++
+    - QUEUED: If under concurrent limit -> dispatch task, set STARTING
+
+    Respects global concurrent limit (PRECHECK_CONCURRENT_LIMIT setting).
+
+    Returns:
+        dict: Status with counts of transitions and verifications
+    """
+    logger = logging.getLogger(__name__)
     logger.info("=" * 60)
-    logger.info("SCAN COMPLETE")
-    logger.info("  Queued: %d", queued_checks)
-    logger.info("  Already running: %d", already_running)
-    logger.info("  Skipped (at limit): %d", skipped_at_limit)
+    logger.info("PROCESSING MANUFACTURABILITY CHECK QUEUE")
+    logger.info("=" * 60)
+
+    # Get concurrent limit from settings
+    concurrent_limit = getattr(settings, "PRECHECK_CONCURRENT_LIMIT", 4)
+
+    # Process each state
+    starting_verified, starting_lost = _handle_starting_checks(logger)
+    proc_verified, proc_orphaned, proc_retried = _handle_processing_checks(logger)
+    failed_retried, failed_exhausted = _handle_failed_checks(logger)
+    queued_dispatched, queued_waiting = _handle_queued_checks(logger, concurrent_limit)
+
+    # Summary
+    logger.info("=" * 60)
+    logger.info("QUEUE PROCESSING COMPLETE")
+    logger.info("  STARTING: %d verified, %d lost", starting_verified, starting_lost)
+    logger.info("  PROCESSING: %d verified, %d orphaned", proc_verified, proc_orphaned)
+    logger.info("  FAILED: %d retried, %d exhausted", failed_retried, failed_exhausted)
+    logger.info(
+        "  QUEUED: %d dispatched, %d waiting",
+        queued_dispatched,
+        queued_waiting,
+    )
     logger.info("=" * 60)
 
     return {
         "status": "completed",
-        "queued_checks": queued_checks,
-        "already_running": already_running,
-        "skipped_at_limit": skipped_at_limit,
+        "starting_verified": starting_verified,
+        "starting_lost": starting_lost,
+        "processing_verified": proc_verified,
+        "processing_orphaned": proc_orphaned,
+        "failed_retried": failed_retried + proc_retried,
+        "failed_exhausted": failed_exhausted,
+        "queued_dispatched": queued_dispatched,
+        "queued_waiting": queued_waiting,
     }
 
 
-def _queue_manufacturability_check(project_file: ProjectFile, logger) -> None:
-    """Queue a manufacturability check for a file.
-
-    Creates or updates ManufacturabilityCheck and queues the Celery task.
-
-    Args:
-        project_file: The file to check
-        logger: Logger instance for output
-    """
-    # Get or create the check
-    check, created = ManufacturabilityCheck.objects.get_or_create(
-        project=project_file.project,
-        project_file=project_file,
-        defaults={"status": ManufacturabilityCheck.Status.QUEUED},
-    )
-
-    if not created:
-        # Existing check - reset for retry
-        check.status = ManufacturabilityCheck.Status.QUEUED
-        check.retry_count += 1
-        check.is_manufacturable = None
-        check.errors = []
-        check.warnings = []
-        check.error_message = ""
-        check.started_at = None
-        check.completed_at = None
-
-    check.save()
-
-    # Queue the task
-    task = check_project_manufacturability.delay(check.id)
-    check.task_id = task.id
-    check.save(update_fields=["task_id"])
-
-    logger.info(
-        "  Queued check %s for file %s (task: %s)",
-        check.id,
-        project_file.id,
-        task.id,
-    )
+# Keep old name as alias for backwards compatibility with Celery Beat config
+scan_and_queue_manufacturability_checks = process_manufacturability_check_queue
 
 
 @shared_task(bind=True, queue="maintenance")
