@@ -556,6 +556,19 @@ def _run_container_and_stream_logs(context: _CheckContext):
 
     container_duration = (timezone.now() - container_start).total_seconds()
 
+    # Fetch complete logs after container exits to capture any final output
+    # (streaming may miss buffered output that's flushed on exit)
+    complete_logs = container.logs(stdout=True, stderr=True).decode("utf-8")
+    if len(complete_logs) > len(logs):
+        context.logger.info(
+            "  Captured %d additional bytes of final output",
+            len(complete_logs) - len(logs),
+        )
+        logs = complete_logs
+        # Update the check with complete logs
+        context.check.processing_logs = logs
+        context.check.save(update_fields=["processing_logs"])
+
     # Record final checkpoint
     _record_checkpoint(
         context.check, container, checkpoint_number, container_duration, context.logger
