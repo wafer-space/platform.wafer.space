@@ -260,6 +260,59 @@ def _save_logs_to_file(
         logger.warning("  Could not save logs to file: %s", e)
 
 
+def _extract_runs_archive(
+    check: "ManufacturabilityCheck",
+    container,
+    logger: logging.Logger,
+) -> None:
+    """Extract the runs/ directory from container and save as tar archive.
+
+    The precheck tool creates detailed step logs in runs/RUN_<timestamp>/
+    which contain more information than the main log output.
+
+    Args:
+        check: ManufacturabilityCheck instance
+        container: Docker container object (must still exist, not yet removed)
+        logger: Logger instance
+    """
+    try:
+        # Get tar archive of runs directory from container
+        # get_archive returns (tar_stream, stat_info)
+        tar_stream, _stat_info = container.get_archive("/workspace/runs")
+
+        # Read the tar data
+        tar_data = b"".join(tar_stream)
+
+        if len(tar_data) == 0:
+            logger.info("  No runs directory found in container")
+            return
+
+        logger.info("  Extracted runs archive: %d bytes", len(tar_data))
+
+        # Generate filename
+        timestamp = check.started_at or timezone.now()
+        timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")
+        gds_name = "design"
+        if check.project_file and check.project_file.processed_filename:
+            gds_name = check.project_file.processed_filename
+        top_cell = "unknown"
+        if check.project_file and check.project_file.top_cell:
+            top_cell = check.project_file.top_cell.replace("/", "_").replace("\\", "_")
+
+        filename = f"{gds_name}.{top_cell}.precheck.{timestamp_str}.runs.tar"
+
+        # Save using Django's file handling
+        content = ContentFile(tar_data)
+        check.runs_archive.save(filename, content, save=True)
+
+        logger.info("  ✓ Runs archive saved to: %s", check.runs_archive.name)
+
+    except docker.errors.NotFound:
+        logger.info("  No runs directory found in container (path does not exist)")
+    except OSError as e:
+        logger.warning("  Could not save runs archive: %s", e)
+
+
 def _setup_temp_directory() -> Path:
     """Create and return temporary directory for downloads."""
     temp_dir = Path(tempfile.gettempdir()) / "wafer_space_downloads"
@@ -853,8 +906,12 @@ def check_project_manufacturability(self, check_id):
         if isinstance(result, tuple) and result[0] == "system":
             _handle_retry(check, result[1], self, logger)
 
-        # Step 8: Cleanup
-        logger.info("Step 8: Cleaning up...")
+        # Step 8: Extract detailed run logs before cleanup
+        logger.info("Step 8: Extracting detailed run logs...")
+        _extract_runs_archive(check, container, logger)
+
+        # Step 9: Cleanup
+        logger.info("Step 9: Cleaning up...")
         _cleanup_container(container, logger)
 
         # Final summary

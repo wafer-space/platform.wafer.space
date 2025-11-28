@@ -859,13 +859,11 @@ class ProjectFileChunk(models.Model):
         return bytes_diff / duration
 
 
-def manufacturability_check_log_path(instance, filename):
-    """Generate upload path for manufacturability check logs.
+def _get_check_file_prefix(instance) -> tuple[str, str, str]:
+    """Get common file naming components for manufacturability check files.
 
-    Logs are stored next to the GDS file with a unique name per check run.
-    Format: projects/<project_id>/<gds_name>.<top_cell>.precheck.<timestamp>.log
-
-    Example: projects/abc123/design.gds.TOP_CELL.precheck.20251126_231820.log
+    Returns:
+        tuple: (gds_name, top_cell, timestamp_str)
     """
     timestamp = instance.started_at or timezone.now()
     timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")
@@ -881,7 +879,32 @@ def manufacturability_check_log_path(instance, filename):
         # Sanitize top cell name for filesystem (replace unsafe chars)
         top_cell = instance.project_file.top_cell.replace("/", "_").replace("\\", "_")
 
+    return gds_name, top_cell, timestamp_str
+
+
+def manufacturability_check_log_path(instance, filename):
+    """Generate upload path for manufacturability check logs.
+
+    Logs are stored next to the GDS file with a unique name per check run.
+    Format: projects/<project_id>/<gds_name>.<top_cell>.precheck.<timestamp>.log
+
+    Example: projects/abc123/design.gds.TOP_CELL.precheck.20251126_231820.log
+    """
+    gds_name, top_cell, timestamp_str = _get_check_file_prefix(instance)
     filename = f"{gds_name}.{top_cell}.precheck.{timestamp_str}.log"
+    return f"projects/{instance.project.id}/{filename}"
+
+
+def manufacturability_check_runs_path(instance, filename):
+    """Generate upload path for manufacturability check runs archive.
+
+    Runs archive contains detailed step-by-step logs from the precheck tool.
+    Format: projects/<project_id>/<gds_name>.<top_cell>.precheck.<timestamp>.runs.tar
+
+    Example: projects/abc123/design.gds.TOP_CELL.precheck.20251126_231820.runs.tar
+    """
+    gds_name, top_cell, timestamp_str = _get_check_file_prefix(instance)
+    filename = f"{gds_name}.{top_cell}.precheck.{timestamp_str}.runs.tar"
     return f"projects/{instance.project.id}/{filename}"
 
 
@@ -945,6 +968,12 @@ class ManufacturabilityCheck(models.Model):
         max_length=512,
         blank=True,
         help_text="Log file stored on filesystem (next to GDS file)",
+    )
+    runs_archive = models.FileField(
+        upload_to=manufacturability_check_runs_path,
+        max_length=512,
+        blank=True,
+        help_text="Tar archive of detailed step logs from precheck runs/ directory",
     )
 
     # System error tracking (distinct from manufacturing errors)
