@@ -125,8 +125,32 @@
           <strong>Status:</strong>
           {% if check.status == 'queued' %}
             <span class="badge bg-secondary">
-              <i class="bi bi-clock"></i> Queued for checking
+              <i class="bi bi-clock"></i> Queued
             </span>
+            {# Cancel button for queued checks #}
+            <form method="post"
+                  action="{% url 'projects:cancel_check' pk=file.project.pk %}"
+                  class="d-inline ms-2"
+                  onsubmit="return confirm('Are you sure you want to cancel this manufacturability check?');">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-outline-danger">
+                <i class="bi bi-x-circle"></i> Cancel
+              </button>
+            </form>
+          {% elif check.status == 'starting' %}
+            <span class="badge bg-info">
+              <i class="bi bi-hourglass-split"></i> Starting...
+            </span>
+            {# Cancel button for starting checks #}
+            <form method="post"
+                  action="{% url 'projects:cancel_check' pk=file.project.pk %}"
+                  class="d-inline ms-2"
+                  onsubmit="return confirm('Are you sure you want to cancel this manufacturability check?');">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-outline-danger">
+                <i class="bi bi-x-circle"></i> Cancel
+              </button>
+            </form>
           {% elif check.status == 'processing' %}
             <span id="check-status-badge" class="badge bg-primary">
               <span class="spinner-border spinner-border-sm"
@@ -134,6 +158,16 @@
                     aria-hidden="true"></span>
               <span id="check-status-text">Checking manufacturability...</span>
             </span>
+            {# Cancel button for processing checks #}
+            <form method="post"
+                  action="{% url 'projects:cancel_check' pk=file.project.pk %}"
+                  class="d-inline ms-2"
+                  onsubmit="return confirm('Are you sure you want to cancel this manufacturability check?');">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-outline-danger">
+                <i class="bi bi-x-circle"></i> Cancel
+              </button>
+            </form>
           {% elif check.status == 'completed' %}
             {% if check.is_manufacturable %}
               <span class="badge bg-success">
@@ -153,19 +187,32 @@
               <i class="bi bi-x-circle"></i> Cancelled
             </span>
           {% endif %}
-          {# Cancel button for running checks #}
-          {% if check.status == 'queued' or check.status == 'processing' %}
-            <form method="post"
-                  action="{% url 'projects:cancel_check' pk=file.project.pk %}"
-                  class="d-inline ms-2"
-                  onsubmit="return confirm('Are you sure you want to cancel this manufacturability check?');">
-              {% csrf_token %}
-              <button type="submit" class="btn btn-sm btn-outline-danger">
-                <i class="bi bi-x-circle"></i> Cancel
-              </button>
-            </form>
-          {% endif %}
         </p>
+        {# Queue position and wait time info for queued checks #}
+        {% if check.status == 'queued' %}
+          <div class="mt-2 p-2 bg-white rounded border">
+            <p class="mb-1 small">
+              <i class="bi bi-list-ol"></i>
+              <strong>{{ check.checks_ahead }}</strong> check{{ check.checks_ahead|pluralize }} ahead of yours
+            </p>
+            <p class="mb-1 small">
+              <i class="bi bi-play-circle"></i>
+              <strong>{{ check.checks_running }}</strong> check{{ check.checks_running|pluralize }} currently running
+            </p>
+            {% if check.queue_wait_duration %}
+              <p class="mb-0 small text-muted">
+                <i class="bi bi-hourglass-split"></i>
+                Waiting for {{ check.queue_wait_duration|timesince }}
+              </p>
+            {% endif %}
+            {% if request.user.is_staff and check.checks_behind > 0 %}
+              <p class="mb-0 small text-muted">
+                <i class="bi bi-info-circle"></i>
+                {{ check.checks_behind }} check{{ check.checks_behind|pluralize }} behind (admin info)
+              </p>
+            {% endif %}
+          </div>
+        {% endif %}
         {% if check.started_at %}
           <p class="mb-2">
             <strong>Started:</strong> {{ check.started_at|date:"Y-m-d H:i:s" }}

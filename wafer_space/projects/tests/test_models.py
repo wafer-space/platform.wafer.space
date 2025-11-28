@@ -778,3 +778,161 @@ class TestManufacturabilityCheckCancel(TestCase):
         )
 
         assert check.is_cancellable is False
+
+    def test_is_cancellable_for_starting(self):
+        """Test is_cancellable returns True for starting checks."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.STARTING,
+        )
+
+        assert check.is_cancellable is True
+
+
+class TestManufacturabilityCheckQueueProperties(TestCase):
+    """Tests for queue position and count properties."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password="testpass123",  # noqa: S106
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_queue_position_returns_none_when_not_queued(self):
+        """Test queue_position returns None for non-queued checks."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PROCESSING,
+            queued_at=timezone.now(),
+        )
+
+        assert check.queue_position is None
+
+    def test_queue_position_returns_none_when_no_queued_at(self):
+        """Test queue_position returns None when queued_at is not set."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.QUEUED,
+            queued_at=None,
+        )
+
+        assert check.queue_position is None
+
+    def test_queue_position_returns_1_when_first_in_queue(self):
+        """Test queue_position returns 1 when first in queue."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.QUEUED,
+            queued_at=timezone.now(),
+        )
+
+        assert check.queue_position == 1
+
+    def test_checks_ahead_counts_earlier_queued_checks(self):
+        """Test checks_ahead counts checks queued before this one."""
+        # Create another project with file for second check
+        project2 = Project.objects.create(user=self.user, name="Project 2")
+        file2 = ProjectFile.objects.create(
+            project=project2,
+            original_url="https://example.com/file2.gds",
+            source_url="https://example.com/file2.gds",
+            original_filename="file2.gds",
+            is_active=True,
+        )
+
+        # Create first check (ahead)
+        ManufacturabilityCheck.objects.create(
+            project=project2,
+            project_file=file2,
+            status=ManufacturabilityCheck.Status.QUEUED,
+            queued_at=timezone.now() - timezone.timedelta(minutes=5),
+        )
+
+        # Create our check (behind)
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.QUEUED,
+            queued_at=timezone.now(),
+        )
+
+        assert check.checks_ahead == 1
+        assert check.queue_position == 2  # noqa: PLR2004
+
+    def test_checks_running_counts_starting_and_processing(self):
+        """Test checks_running counts STARTING and PROCESSING checks."""
+        # Create another project with files for additional checks
+        project2 = Project.objects.create(user=self.user, name="Project 2")
+        file2 = ProjectFile.objects.create(
+            project=project2,
+            original_url="https://example.com/file2.gds",
+            source_url="https://example.com/file2.gds",
+            original_filename="file2.gds",
+            is_active=True,
+        )
+        project3 = Project.objects.create(user=self.user, name="Project 3")
+        file3 = ProjectFile.objects.create(
+            project=project3,
+            original_url="https://example.com/file3.gds",
+            source_url="https://example.com/file3.gds",
+            original_filename="file3.gds",
+            is_active=True,
+        )
+
+        # Create STARTING check
+        ManufacturabilityCheck.objects.create(
+            project=project2,
+            project_file=file2,
+            status=ManufacturabilityCheck.Status.STARTING,
+        )
+
+        # Create PROCESSING check
+        ManufacturabilityCheck.objects.create(
+            project=project3,
+            project_file=file3,
+            status=ManufacturabilityCheck.Status.PROCESSING,
+        )
+
+        # Create our QUEUED check
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.QUEUED,
+            queued_at=timezone.now(),
+        )
+
+        assert check.checks_running == 2  # noqa: PLR2004
+
+    def test_queue_wait_duration_returns_timedelta(self):
+        """Test queue_wait_duration returns correct timedelta."""
+        wait_minutes = 10
+        queued_time = timezone.now() - timezone.timedelta(minutes=wait_minutes)
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.QUEUED,
+            queued_at=queued_time,
+        )
+
+        duration = check.queue_wait_duration
+        assert duration is not None
+        # Should be approximately 10 minutes (allow some margin)
+        expected_seconds = wait_minutes * 60
+        assert duration.total_seconds() >= expected_seconds
+        assert duration.total_seconds() < expected_seconds + 100

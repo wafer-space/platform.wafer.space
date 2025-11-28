@@ -2,6 +2,7 @@ import hashlib
 import json
 import urllib.parse
 import uuid
+from datetime import timedelta
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -889,6 +890,7 @@ class ManufacturabilityCheck(models.Model):
 
     class Status(models.TextChoices):
         QUEUED = "queued", "Queued"
+        STARTING = "starting", "Starting"
         PROCESSING = "processing", "Processing"
         COMPLETED = "completed", "Completed"
         FAILED = "failed", "Failed"
@@ -914,6 +916,11 @@ class ManufacturabilityCheck(models.Model):
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     task_id = models.CharField(max_length=100, blank=True, default="")  # Celery task ID
+    queued_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When check entered/re-entered the QUEUED state",
+    )
 
     # Results
     is_manufacturable = models.BooleanField(null=True, blank=True)
@@ -1075,7 +1082,74 @@ class ManufacturabilityCheck(models.Model):
     @property
     def is_cancellable(self) -> bool:
         """Check if this check can be cancelled."""
-        return self.status in [self.Status.QUEUED, self.Status.PROCESSING]
+        return self.status in [
+            self.Status.QUEUED,
+            self.Status.STARTING,
+            self.Status.PROCESSING,
+        ]
+
+    @property
+    def queue_position(self) -> int | None:
+        """Get position in the queue (1-indexed).
+
+        Returns None if not in QUEUED state.
+        """
+        if self.status != self.Status.QUEUED or not self.queued_at:
+            return None
+
+        # Count checks queued before this one (lower queued_at = ahead)
+        ahead = ManufacturabilityCheck.objects.filter(
+            status=self.Status.QUEUED,
+            queued_at__lt=self.queued_at,
+        ).count()
+
+        return ahead + 1  # 1-indexed position
+
+    @property
+    def checks_ahead(self) -> int:
+        """Get number of checks ahead in the queue.
+
+        Returns 0 if not in QUEUED state or no queued_at.
+        """
+        if self.status != self.Status.QUEUED or not self.queued_at:
+            return 0
+
+        return ManufacturabilityCheck.objects.filter(
+            status=self.Status.QUEUED,
+            queued_at__lt=self.queued_at,
+        ).count()
+
+    @property
+    def checks_behind(self) -> int:
+        """Get number of checks behind in the queue (admin info).
+
+        Returns 0 if not in QUEUED state or no queued_at.
+        """
+        if self.status != self.Status.QUEUED or not self.queued_at:
+            return 0
+
+        return ManufacturabilityCheck.objects.filter(
+            status=self.Status.QUEUED,
+            queued_at__gt=self.queued_at,
+        ).count()
+
+    @property
+    def checks_running(self) -> int:
+        """Get number of checks currently running (STARTING or PROCESSING)."""
+        return ManufacturabilityCheck.objects.filter(
+            status__in=[self.Status.STARTING, self.Status.PROCESSING],
+        ).count()
+
+    @property
+    def queue_wait_duration(self) -> timedelta | None:
+        """Get how long this check has been waiting in queue.
+
+        Returns None if not in QUEUED state or no queued_at.
+        """
+        if self.status != self.Status.QUEUED or not self.queued_at:
+            return None
+
+        return timezone.now() - self.queued_at
 
     def get_reproduction_instructions(self) -> str:
         """Generate markdown instructions for reproducing check locally."""
