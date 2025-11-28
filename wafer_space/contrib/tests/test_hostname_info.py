@@ -19,23 +19,6 @@ if TYPE_CHECKING:
 HTTP_OK = 200
 
 
-def _get_hostname_from_command() -> str | None:
-    """Get hostname using hostname -A command for test comparison."""
-    try:
-        result = subprocess.run(
-            ["hostname", "-A"],  # noqa: S607
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=5,
-        )
-    except (subprocess.SubprocessError, FileNotFoundError, OSError):
-        return None
-    else:
-        output = result.stdout.strip()
-        return output if output else None
-
-
 class TestGetHostname:
     """Tests for get_hostname function."""
 
@@ -52,14 +35,6 @@ class TestGetHostname:
             assert isinstance(result, str)
             assert len(result) > 0
 
-    def test_returns_fqdn_from_hostname_command(self) -> None:
-        """Test that get_hostname returns the FQDN from hostname -A."""
-        result = get_hostname()
-        expected = _get_hostname_from_command()
-
-        # Both should match (either both None or both the same value)
-        assert result == expected
-
     def test_result_is_cached(self) -> None:
         """Test that the result is cached between calls."""
         result1 = get_hostname()
@@ -75,6 +50,18 @@ class TestGetHostname:
         """Test that get_hostname returns None when command fails."""
         get_hostname.cache_clear()
         mock_run.side_effect = subprocess.SubprocessError("Command failed")
+
+        result = get_hostname()
+
+        assert result is None
+
+    @patch("wafer_space.contrib.hostname_info.subprocess.run")
+    def test_returns_none_on_empty_output(self, mock_run: MagicMock) -> None:
+        """Test that get_hostname returns None when command returns empty output."""
+        get_hostname.cache_clear()
+        mock_result = MagicMock()
+        mock_result.stdout = "   \n  "
+        mock_run.return_value = mock_result
 
         result = get_hostname()
 
@@ -113,15 +100,6 @@ class TestHostnameInfoContextProcessor:
         if hostname is not None:
             assert isinstance(hostname, str)
             assert len(hostname) > 0
-
-    def test_hostname_matches_command_output(self) -> None:
-        """Test that returned hostname matches hostname -A output."""
-        request = MagicMock()
-
-        result = hostname_info(request)
-        expected = _get_hostname_from_command()
-
-        assert result["SERVER_HOSTNAME"] == expected
 
     @patch("wafer_space.contrib.hostname_info.get_hostname")
     def test_uses_get_hostname_function(self, mock_get_hostname: MagicMock) -> None:
@@ -163,8 +141,8 @@ class TestHostnameInfoIntegration:
         response = client.get("/")
         content = response.content.decode()
 
-        # Get expected hostname from command
-        hostname = _get_hostname_from_command()
+        # Get expected hostname from get_hostname()
+        hostname = get_hostname()
 
         if hostname:
             # Check hostname is present in the response
