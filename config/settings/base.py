@@ -457,8 +457,8 @@ CELERY_BEAT_SCHEDULE = {
         "task": "wafer_space.projects.tasks.ensure_download_tasks_queued",
         "schedule": DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS,
     },
-    "scan-and-queue-manufacturability-checks": {
-        "task": "wafer_space.projects.tasks.scan_and_queue_manufacturability_checks",
+    "process-manufacturability-check-queue": {
+        "task": "wafer_space.projects.tasks.process_manufacturability_check_queue",
         "schedule": PRECHECK_SCAN_INTERVAL_SECONDS,
     },
 }
