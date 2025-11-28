@@ -2,19 +2,19 @@
 
 ## Overview
 
-Django superusers can view, edit, and manage any user's project on the platform. This feature includes comprehensive audit logging and visual indicators to ensure transparency and accountability.
+Django staff users can view, edit, and manage any user's project on the platform. This feature includes comprehensive audit logging and visual indicators to ensure transparency and accountability.
 
 ## Who Has Access
 
-**Superusers Only**: Access is restricted to users with `is_superuser=True`.
+**Staff Users Only**: Access is restricted to users with `is_staff=True`.
 
-**Staff users** (`is_staff=True` without `is_superuser=True`) do **NOT** have access to other users' projects.
+Regular users (without `is_staff=True`) can only access their own projects.
 
 ## Features
 
 ### 1. Full Project Access
 
-Superusers can:
+Staff users can:
 - **View** any project's details, files, and status
 - **Edit** project name, description, and metadata
 - **Delete** projects
@@ -23,15 +23,15 @@ Superusers can:
 
 ### 2. Unified Project List
 
-When superusers visit the project list page, they see **all users' projects**, not just their own.
+When staff users visit the project list page, they see **all users' projects**, not just their own.
 
 Regular users continue to see only their own projects.
 
 ### 3. Visual Indicators
 
-**Warning Banner**: When viewing another user's project, superusers see a prominent yellow warning banner:
+**Warning Banner**: When viewing another user's project, staff users see a prominent yellow warning banner:
 
-```
+```text
 ⚠️ Admin Mode: You are viewing [username]'s project.
 All actions will be logged for audit purposes.
 ```
@@ -42,14 +42,16 @@ All actions will be logged for audit purposes.
 
 ### 4. Comprehensive Audit Logging
 
-**All superuser access to other users' projects is logged**, including:
+**Staff access to other users' projects is logged**, including:
 - Timestamp
 - Admin username
 - Project accessed
-- Action type (view, edit, delete, submit, file upload)
+- Action type (view, edit, submit, file upload)
 - IP address
 - User agent
 - View name
+
+**Note:** DELETE operations are currently **not logged** due to database constraint limitations. See issue #74 for tracking.
 
 **Owner access is NOT logged** (normal operation).
 
@@ -62,7 +64,7 @@ All actions will be logged for audit purposes.
 
 ## Viewing Audit Logs
 
-Superusers can view audit logs through Django admin:
+Staff users can view audit logs through Django admin:
 
 1. Navigate to Django admin (`/admin/`)
 2. Go to "Projects" → "Project Access Logs"
@@ -72,28 +74,29 @@ Superusers can view audit logs through Django admin:
 ## Security Features
 
 1. **Fail-Closed Design**: Permission checks default to deny if undefined
-2. **Explicit Dual Check**: Both `is_authenticated` AND `is_superuser` required
-3. **Centralized Logic**: Single mixin (`ProjectOwnerOrSuperuserMixin`) prevents bypass
+2. **Explicit Dual Check**: Both `is_authenticated` AND `is_staff` required
+3. **Centralized Logic**: Single mixin (`ProjectOwnerOrStaffMixin`) prevents bypass
 4. **Protected Audit Logs**: Cannot delete users with log entries
-5. **No Backdoors**: Staff users without superuser flag explicitly denied
+5. **No Backdoors**: Regular users without staff flag explicitly denied
 
 ## Implementation Details
 
 ### Permission Mixin
 
-All project views use `ProjectOwnerOrSuperuserMixin`:
+All project views use `ProjectOwnerOrStaffMixin`:
 
 ```python
-class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin, DetailView):
+class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView):
     model = Project
 ```
 
 ### Audit Logging
 
 Audit logs are created automatically in mixin's `dispatch()` method when:
-- User is authenticated superuser
+- User is authenticated staff user
 - Project owner is different from current user
 - Access is granted (status < 400)
+- Operation is NOT a delete (see issue #74)
 
 ### Context Variables
 
@@ -107,7 +110,7 @@ def get_context_data(self, **kwargs):
 
     context["viewing_as_admin"] = (
         user.is_authenticated
-        and user.is_superuser
+        and user.is_staff
         and project.user != user
     )
 
@@ -117,9 +120,9 @@ def get_context_data(self, **kwargs):
 ## Testing
 
 Comprehensive test coverage includes:
-- **Permission tests**: Owner, superuser, non-owner, staff without superuser
+- **Permission tests**: Owner, staff user, non-owner, regular users
 - **Audit log tests**: Creation, immutability, protection, cascade
-- **Integration tests**: All views with superuser access
+- **Integration tests**: All views with staff access
 - **Browser tests**: Warning banner, project list, edit access, audit logging
 
 Run tests:
@@ -132,7 +135,7 @@ make test-browser-headless   # Browser tests
 
 If extending this feature to new views:
 
-1. Add `ProjectOwnerOrSuperuserMixin` to view class
+1. Add `ProjectOwnerOrStaffMixin` to view class
 2. Remove old `test_func()` method if present
 3. Add `get_context_data()` to set `viewing_as_admin` flag
 4. Include `_admin_warning_banner.html` in template
