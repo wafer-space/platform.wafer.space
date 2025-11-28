@@ -95,26 +95,9 @@
   {% endwith %}
 {% endwith %}
 {# Manufacturability Check Section #}
+{# Check is created immediately when download completes with verified hash #}
 {% with check=file.manufacturability_check %}
-  {% if not check and file.hash_verified and status == 'completed' %}
-    {# Show pending state when file is ready but check not yet created #}
-    <div class="card bg-light mb-3">
-      <div class="card-body">
-        <h6 class="card-title">
-          <i class="bi bi-check-circle"></i> Manufacturability Check
-        </h6>
-        <p class="mb-0">
-          <strong>Status:</strong>
-          <span class="badge bg-secondary">
-            <i class="bi bi-hourglass-split"></i> Pending - waiting to be queued
-          </span>
-        </p>
-        <p class="text-muted small mt-2 mb-0">
-          The manufacturability check will be queued automatically.
-        </p>
-      </div>
-    </div>
-  {% elif check %}
+  {% if check %}
     {# Show check status when check exists #}
     <div class="card bg-light mb-3">
       <div class="card-body">
@@ -169,10 +152,17 @@
               </button>
             </form>
           {% elif check.status == 'completed' %}
+            {# 3-tier result display: Clean, Warnings, or Not Manufacturable #}
             {% if check.is_manufacturable %}
-              <span class="badge bg-success">
-                <i class="bi bi-check-circle"></i> Manufacturable
-              </span>
+              {% if check.warnings %}
+                <span class="badge bg-warning text-dark">
+                  <i class="bi bi-exclamation-triangle"></i> Manufacturable with Warnings
+                </span>
+              {% else %}
+                <span class="badge bg-success">
+                  <i class="bi bi-check-circle"></i> Manufacturable - Clean
+                </span>
+              {% endif %}
             {% else %}
               <span class="badge bg-danger">
                 <i class="bi bi-x-circle"></i> Not Manufacturable

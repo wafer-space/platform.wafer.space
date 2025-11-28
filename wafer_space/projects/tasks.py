@@ -2220,9 +2220,16 @@ def _verify_and_notify(
             project_file=project_file,
         )
         logger.info("  ✓ Checksum verified notification created")
+
+        # Create manufacturability check immediately in QUEUED state
+        logger.info("Step 9.5: Creating manufacturability check...")
+        check = ManufacturabilityCheck.objects.create(
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.QUEUED,
+            queued_at=timezone.now(),
+        )
+        logger.info("  ✓ Manufacturability check created (ID: %s)", check.id)
         logger.info("  ✓ File ready for manufacturability checking")
-        # Note: Manufacturability check is queued by a separate periodic task
-        # that scans for verified files without checks
     elif verification_errors:
         NotificationService.create_checksum_mismatch_notification(
             user=project_file.project.user,
