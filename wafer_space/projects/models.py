@@ -1062,7 +1062,7 @@ class ManufacturabilityCheck(models.Model):
         self.status = self.Status.FAILED
         self.completed_at = timezone.now()
         self.error_message = error_msg
-        self.processing_logs += f"\nFAILED: {error_msg}"
+        self.processing_logs += "\n\n=== SYSTEM FAILURE - See error details above ==="
         self.save()
 
     def can_retry(self):
