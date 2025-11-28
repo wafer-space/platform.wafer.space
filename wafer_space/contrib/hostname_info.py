@@ -28,7 +28,7 @@ def get_hostname() -> str | None:
     """
     try:
         result = subprocess.run(
-            ["hostname", "-A"],  # noqa: S607
+            ["/usr/bin/hostname", "-A"],
             capture_output=True,
             text=True,
             check=True,
