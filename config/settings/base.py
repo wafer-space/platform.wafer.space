@@ -226,6 +226,7 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
                 "wafer_space.users.context_processors.allauth_settings",
                 "wafer_space.contrib.git_info.git_info",
+                "wafer_space.contrib.hostname_info.hostname_info",
             ],
         },
     },
