@@ -2156,6 +2156,51 @@ def _process_and_save_content(
     return processed_content, final_md5, final_sha1, final_sha256
 
 
+def _queue_manufacturability_check(project_file: ProjectFile) -> ManufacturabilityCheck:
+    """Cancel old checks and create new manufacturability check for the file.
+
+    When a new file is uploaded, any existing checks for other files in the
+    project should be cancelled, and a new check should be queued.
+
+    Args:
+        project_file: The newly verified project file
+
+    Returns:
+        The newly created ManufacturabilityCheck in QUEUED state
+    """
+    logger = logging.getLogger(__name__)
+
+    # Cancel any existing checks for other files in this project
+    old_checks = ManufacturabilityCheck.objects.filter(
+        project=project_file.project,
+        status__in=[
+            ManufacturabilityCheck.Status.QUEUED,
+            ManufacturabilityCheck.Status.STARTING,
+            ManufacturabilityCheck.Status.PROCESSING,
+        ],
+    ).exclude(project_file=project_file)
+
+    for old_check in old_checks:
+        task_id = old_check.cancel(reason="Cancelled due to new file upload")
+        if task_id:
+            logger.info("  ✓ Cancelled old check %s (task: %s)", old_check.id, task_id)
+        else:
+            logger.info("  ✓ Cancelled old check %s", old_check.id)
+
+    # Create manufacturability check in QUEUED state
+    logger.info("Step 9.5: Creating manufacturability check...")
+    check = ManufacturabilityCheck.objects.create(
+        project=project_file.project,
+        project_file=project_file,
+        status=ManufacturabilityCheck.Status.QUEUED,
+        queued_at=timezone.now(),
+    )
+    logger.info("  ✓ Manufacturability check created (ID: %s)", check.id)
+    logger.info("  ✓ File ready for manufacturability checking")
+
+    return check
+
+
 def _verify_and_notify(
     project_file: ProjectFile,
     hashes: HashResults,
@@ -2227,16 +2272,8 @@ def _verify_and_notify(
         )
         logger.info("  ✓ Checksum verified notification created")
 
-        # Create manufacturability check immediately in QUEUED state
-        logger.info("Step 9.5: Creating manufacturability check...")
-        check = ManufacturabilityCheck.objects.create(
-            project=project_file.project,
-            project_file=project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            queued_at=timezone.now(),
-        )
-        logger.info("  ✓ Manufacturability check created (ID: %s)", check.id)
-        logger.info("  ✓ File ready for manufacturability checking")
+        # Cancel old checks and create new one
+        _queue_manufacturability_check(project_file)
     elif verification_errors:
         NotificationService.create_checksum_mismatch_notification(
             user=project_file.project.user,
@@ -2809,13 +2846,14 @@ def _log_file_status_counts(logger, file_count: int, counts: dict) -> None:
     logger.info("  Need checks: %d", counts["needs_check"])
 
 
-def _handle_starting_checks(logger) -> tuple[int, int]:
-    """Handle STARTING checks - verify task exists in queue.
+def _handle_starting_checks(logger) -> tuple[int, int, int]:
+    """Handle STARTING checks - verify task exists and transition if running.
 
     Returns:
-        Tuple of (verified_count, lost_count)
+        Tuple of (verified_count, transitioned_count, lost_count)
     """
     verified = 0
+    transitioned = 0
     lost = 0
 
     starting_checks = ManufacturabilityCheck.objects.filter(
@@ -2823,7 +2861,16 @@ def _handle_starting_checks(logger) -> tuple[int, int]:
     )
 
     for check in starting_checks:
-        if is_check_task_queued(check):
+        # First check if task has started running (should transition to PROCESSING)
+        if is_check_task_actively_running(check):
+            logger.info("  Check %s: Task started -> PROCESSING", check.id)
+            check.status = ManufacturabilityCheck.Status.PROCESSING
+            if not check.started_at:
+                check.started_at = timezone.now()
+            check.save(update_fields=["status", "started_at"])
+            transitioned += 1
+        elif is_check_task_queued(check):
+            # Still in queue (reserved but not started)
             verified += 1
             logger.debug("  Check %s: STARTING verified in queue", check.id)
         else:
@@ -2835,7 +2882,7 @@ def _handle_starting_checks(logger) -> tuple[int, int]:
             check.save(update_fields=["status", "task_id", "queued_at"])
             lost += 1
 
-    return verified, lost
+    return verified, transitioned, lost
 
 
 def _reset_check_for_retry(check: ManufacturabilityCheck) -> None:
@@ -3001,7 +3048,9 @@ def process_manufacturability_check_queue():
     concurrent_limit = getattr(settings, "PRECHECK_CONCURRENT_LIMIT", 4)
 
     # Process each state
-    starting_verified, starting_lost = _handle_starting_checks(logger)
+    starting_verified, starting_transitioned, starting_lost = _handle_starting_checks(
+        logger
+    )
     proc_verified, proc_orphaned, proc_retried = _handle_processing_checks(logger)
     failed_retried, failed_exhausted = _handle_failed_checks(logger)
     queued_dispatched, queued_waiting = _handle_queued_checks(logger, concurrent_limit)
@@ -3009,7 +3058,12 @@ def process_manufacturability_check_queue():
     # Summary
     logger.info("=" * 60)
     logger.info("QUEUE PROCESSING COMPLETE")
-    logger.info("  STARTING: %d verified, %d lost", starting_verified, starting_lost)
+    logger.info(
+        "  STARTING: %d verified, %d transitioned, %d lost",
+        starting_verified,
+        starting_transitioned,
+        starting_lost,
+    )
     logger.info("  PROCESSING: %d verified, %d orphaned", proc_verified, proc_orphaned)
     logger.info("  FAILED: %d retried, %d exhausted", failed_retried, failed_exhausted)
     logger.info(
@@ -3022,6 +3076,7 @@ def process_manufacturability_check_queue():
     return {
         "status": "completed",
         "starting_verified": starting_verified,
+        "starting_transitioned": starting_transitioned,
         "starting_lost": starting_lost,
         "processing_verified": proc_verified,
         "processing_orphaned": proc_orphaned,

@@ -1081,7 +1081,11 @@ class ManufacturabilityCheck(models.Model):
         Returns:
             str | None: The task_id to revoke if cancelled, None if not cancellable
         """
-        if self.status not in [self.Status.QUEUED, self.Status.PROCESSING]:
+        if self.status not in [
+            self.Status.QUEUED,
+            self.Status.STARTING,
+            self.Status.PROCESSING,
+        ]:
             return None
 
         task_id = self.task_id  # Capture before state change

@@ -1000,7 +1000,7 @@ class TestManufacturabilityCheckResultDisplay(TestCase):
         assert check.result_display == "Manufacturable - Clean"
 
     def test_result_display_manufacturable_clean_default_warnings(self):
-        """Test result_display returns 'Manufacturable - Clean' with default warnings."""
+        """Test result_display shows 'Manufacturable - Clean' with default warnings."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,

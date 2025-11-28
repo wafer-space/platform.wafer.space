@@ -1273,11 +1273,15 @@ class TestProcessManufacturabilityCheckQueue(TestCase):
         assert check.status == ManufacturabilityCheck.Status.STARTING
         assert check.task_id == "new-task-123"
 
+    @patch("wafer_space.projects.tasks.is_check_task_actively_running")
     @patch("wafer_space.projects.tasks.is_check_task_queued")
     @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
-    def test_starting_check_not_re_dispatched(self, mock_check_task, mock_queued):
+    def test_starting_check_not_re_dispatched(
+        self, mock_check_task, mock_queued, mock_active
+    ):
         """Test that STARTING checks are not re-dispatched."""
-        # Mock verification to say task is in queue
+        # Mock verification: task is in queue but not yet running
+        mock_active.return_value = False
         mock_queued.return_value = True
 
         # Create a check already in STARTING state
@@ -1294,4 +1298,33 @@ class TestProcessManufacturabilityCheckQueue(TestCase):
         # Verify no new dispatches (STARTING checks are verified, not dispatched)
         assert result["queued_dispatched"] == 0
         assert result["starting_verified"] == 1
+        assert result["starting_transitioned"] == 0
+        mock_check_task.assert_not_called()
+
+    @patch("wafer_space.projects.tasks.is_check_task_actively_running")
+    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    def test_starting_check_transitions_to_processing(
+        self, mock_check_task, mock_active
+    ):
+        """Test STARTING check transitions to PROCESSING when actively running."""
+        # Mock verification: task is actively running
+        mock_active.return_value = True
+
+        # Create a check in STARTING state
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.STARTING,
+            task_id="running-task-123",
+        )
+
+        # Run the queue processing task
+        result = process_manufacturability_check_queue()
+
+        # Verify check transitioned to PROCESSING
+        assert result["starting_transitioned"] == 1
+        assert result["starting_verified"] == 0
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.PROCESSING
+        assert check.started_at is not None
         mock_check_task.assert_not_called()
