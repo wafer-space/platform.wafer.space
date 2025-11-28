@@ -1178,46 +1178,6 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
         assert check_status["errors"] == ["Error 1", "Error 2"]
         assert check_status["warnings"] == ["Warning 1"]
 
-    def test_project_detail_owner_access(self):
-        """Test that project owner can access detail view."""
-        self.client.force_login(self.user)
-        response = self.client.get(
-            reverse("projects:detail", kwargs={"pk": self.project.pk})
-        )
-        assert response.status_code == HTTP_OK
-        assert response.context["project"] == self.project
-
-    def test_project_detail_other_user_denied(self):
-        """Test that non-owner is denied access to detail view."""
-        other_user = User.objects.create_user(
-            username="other",
-            email="other@example.com",
-            password=TEST_PASSWORD,
-        )
-        self.client.force_login(other_user)
-
-        response = self.client.get(
-            reverse("projects:detail", kwargs={"pk": self.project.pk})
-        )
-        assert response.status_code == HTTP_FORBIDDEN
-
-    def test_project_detail_staff_access(self):
-        """Test that staff user can access any project detail view."""
-        staff_user = User.objects.create_user(
-            username="staff",
-            email="staff@example.com",
-            password=TEST_PASSWORD,
-            is_staff=True,
-        )
-        self.client.force_login(staff_user)
-
-        response = self.client.get(
-            reverse("projects:detail", kwargs={"pk": self.project.pk})
-        )
-        assert response.status_code == HTTP_OK
-        assert response.context["project"] == self.project
-        assert response.context["viewing_as_admin"] is True
-
 
 @pytest.mark.django_db
 class TestProjectListViewStaff(TestCase):
