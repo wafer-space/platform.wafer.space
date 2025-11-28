@@ -1,4 +1,4 @@
-"""Download verification functions for state checking."""
+"""Download and check verification functions for state checking."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import psutil
 from celery import current_app
 
 if TYPE_CHECKING:
+    from wafer_space.projects.models import ManufacturabilityCheck
     from wafer_space.projects.models import ProjectFile
 
 
@@ -113,6 +114,76 @@ def is_task_actively_running(project_file: ProjectFile) -> bool:
         return _verify_worker_process(
             latest_attempt.worker_pid,
             latest_attempt.worker_hostname,
+        )
+
+    return True
+
+
+def is_check_task_queued(check: ManufacturabilityCheck) -> bool:
+    """Verify manufacturability check task is in Celery queue.
+
+    Args:
+        check: ManufacturabilityCheck to verify
+
+    Returns:
+        True if task is queued or started, False if missing
+    """
+    task_id = check.task_id
+    if not task_id:
+        return False
+
+    inspect = current_app.control.inspect()
+
+    # Check reserved queue
+    reserved = inspect.reserved()
+    if reserved:
+        for tasks in reserved.values():
+            if any(t["id"] == task_id for t in tasks):
+                return True
+
+    # Check if task started
+    active = inspect.active()
+    if active:
+        for tasks in active.values():
+            if any(t["id"] == task_id for t in tasks):
+                return True
+
+    return False
+
+
+def is_check_task_actively_running(check: ManufacturabilityCheck) -> bool:
+    """Verify manufacturability check task is executing AND process exists.
+
+    Args:
+        check: ManufacturabilityCheck to verify
+
+    Returns:
+        True if task is running with valid PID, False otherwise
+    """
+    task_id = check.task_id
+    if not task_id:
+        return False
+
+    inspect = current_app.control.inspect()
+
+    # Check task in active list
+    active = inspect.active()
+    task_in_active = False
+
+    if active:
+        for tasks in active.values():
+            if any(t["id"] == task_id for t in tasks):
+                task_in_active = True
+                break
+
+    if not task_in_active:
+        return False
+
+    # Verify PID exists (if available)
+    if check.worker_pid and check.worker_hostname:
+        return _verify_worker_process(
+            check.worker_pid,
+            check.worker_hostname,
         )
 
     return True
