@@ -814,7 +814,11 @@ def check_project_manufacturability(self, check_id):
         logger.info("Step 1: Loading check and project data...")
         check = ManufacturabilityCheck.objects.get(id=check_id)
         check.task_id = self.request.id or "test-task"
-        check.save(update_fields=["task_id"])
+        # Set worker tracking info for orphan detection
+        check.worker_pid = os.getpid()
+        check.worker_hostname = socket.gethostname()
+        check.save(update_fields=["task_id", "worker_pid", "worker_hostname"])
+        # Transition STARTING -> PROCESSING (sets started_at)
         check.start_processing()
 
         project_file = _validate_project_file(check)
