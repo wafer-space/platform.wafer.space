@@ -937,3 +937,97 @@ class TestManufacturabilityCheckQueueProperties(TestCase):
         expected_seconds = wait_minutes * 60
         assert duration.total_seconds() >= expected_seconds
         assert duration.total_seconds() < expected_seconds + 100
+
+
+class TestManufacturabilityCheckResultDisplay(TestCase):
+    """Tests for the result_display property of ManufacturabilityCheck."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password="testpass123",  # noqa: S106
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_result_display_empty_when_not_completed(self):
+        """Test result_display returns empty string for non-completed checks."""
+        statuses = [
+            ManufacturabilityCheck.Status.QUEUED,
+            ManufacturabilityCheck.Status.STARTING,
+            ManufacturabilityCheck.Status.PROCESSING,
+            ManufacturabilityCheck.Status.FAILED,
+            ManufacturabilityCheck.Status.CANCELLED,
+        ]
+        for status in statuses:
+            check = ManufacturabilityCheck.objects.create(
+                project=self.project,
+                project_file=self.project_file,
+                status=status,
+            )
+            assert check.result_display == "", f"Expected empty for {status}"
+            check.delete()
+
+    def test_result_display_empty_when_is_manufacturable_none(self):
+        """Test result_display returns empty string when is_manufacturable is None."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.COMPLETED,
+            is_manufacturable=None,
+        )
+        assert check.result_display == ""
+
+    def test_result_display_manufacturable_clean(self):
+        """Test result_display returns 'Manufacturable - Clean' with no warnings."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.COMPLETED,
+            is_manufacturable=True,
+            warnings=[],  # Empty list - no warnings
+        )
+        assert check.result_display == "Manufacturable - Clean"
+
+    def test_result_display_manufacturable_clean_default_warnings(self):
+        """Test result_display returns 'Manufacturable - Clean' with default warnings."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.COMPLETED,
+            is_manufacturable=True,
+            # warnings uses default empty list
+        )
+        assert check.result_display == "Manufacturable - Clean"
+
+    def test_result_display_manufacturable_with_warnings(self):
+        """Test result_display returns 'Manufacturable with Warnings' when warnings."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.COMPLETED,
+            is_manufacturable=True,
+            warnings=["Some minor design issue", "Another warning"],
+        )
+        assert check.result_display == "Manufacturable with Warnings"
+
+    def test_result_display_not_manufacturable(self):
+        """Test result_display returns 'Not Manufacturable' when failed."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.COMPLETED,
+            is_manufacturable=False,
+            errors=["Critical design rule violation"],
+        )
+        assert check.result_display == "Not Manufacturable"
