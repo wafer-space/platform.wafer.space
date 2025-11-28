@@ -188,24 +188,8 @@ class TestProjectDetailView(TestCase):
         )
         assert response.status_code == HTTP_FORBIDDEN
 
-    def test_project_detail_superuser_access(self):
-        """Test that superuser can access any project detail view."""
-        superuser = User.objects.create_superuser(
-            username="admin",
-            email="admin@example.com",
-            password=TEST_PASSWORD,
-        )
-        self.client.force_login(superuser)
-
-        response = self.client.get(
-            reverse("projects:detail", kwargs={"pk": self.project.pk}),
-        )
-        assert response.status_code == HTTP_OK
-        assert response.context["project"] == self.project
-        assert response.context["viewing_as_admin"] is True
-
-    def test_project_detail_staff_without_superuser_denied(self):
-        """Test that staff user without superuser is denied access."""
+    def test_project_detail_staff_access(self):
+        """Test that staff user can access any project detail view."""
         staff_user = User.objects.create_user(
             username="staff",
             email="staff@example.com",
@@ -217,7 +201,9 @@ class TestProjectDetailView(TestCase):
         response = self.client.get(
             reverse("projects:detail", kwargs={"pk": self.project.pk}),
         )
-        assert response.status_code == HTTP_FORBIDDEN
+        assert response.status_code == HTTP_OK
+        assert response.context["project"] == self.project
+        assert response.context["viewing_as_admin"] is True
 
 
 @pytest.mark.django_db
@@ -1238,24 +1224,8 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
         )
         assert response.status_code == HTTP_FORBIDDEN
 
-    def test_project_detail_superuser_access(self):
-        """Test that superuser can access any project detail view."""
-        superuser = User.objects.create_superuser(
-            username="admin",
-            email="admin@example.com",
-            password=TEST_PASSWORD,
-        )
-        self.client.force_login(superuser)
-
-        response = self.client.get(
-            reverse("projects:detail", kwargs={"pk": self.project.pk})
-        )
-        assert response.status_code == HTTP_OK
-        assert response.context["project"] == self.project
-        assert response.context["viewing_as_admin"] is True
-
-    def test_project_detail_staff_without_superuser_denied(self):
-        """Test that staff user without superuser is denied access."""
+    def test_project_detail_staff_access(self):
+        """Test that staff user can access any project detail view."""
         staff_user = User.objects.create_user(
             username="staff",
             email="staff@example.com",
@@ -1267,12 +1237,14 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
         response = self.client.get(
             reverse("projects:detail", kwargs={"pk": self.project.pk})
         )
-        assert response.status_code == HTTP_FORBIDDEN
+        assert response.status_code == HTTP_OK
+        assert response.context["project"] == self.project
+        assert response.context["viewing_as_admin"] is True
 
 
 @pytest.mark.django_db
-class TestProjectListViewSuperuser(TestCase):
-    """Test ProjectListView with superuser access."""
+class TestProjectListViewStaff(TestCase):
+    """Test ProjectListView with staff user access."""
 
     def setUp(self):
         """Set up test fixtures."""
@@ -1310,8 +1282,8 @@ class TestProjectListViewSuperuser(TestCase):
         assert self.project in projects
         assert other_project not in projects
 
-    def test_project_list_shows_all_projects_for_superuser(self):
-        """Test that superusers see all users' projects in list."""
+    def test_project_list_shows_all_projects_for_staff(self):
+        """Test that staff users see all users' projects in list."""
         # Create another user with a project
         other_user = User.objects.create_user(
             username="other",
@@ -1324,12 +1296,13 @@ class TestProjectListViewSuperuser(TestCase):
             description="Other description",
         )
 
-        superuser = User.objects.create_superuser(
-            username="admin",
-            email="admin@example.com",
+        staff_user = User.objects.create_user(
+            username="staff",
+            email="staff@example.com",
             password=TEST_PASSWORD,
+            is_staff=True,
         )
-        self.client.force_login(superuser)
+        self.client.force_login(staff_user)
 
         response = self.client.get(reverse("projects:list"))
         assert response.status_code == HTTP_OK
@@ -1340,8 +1313,8 @@ class TestProjectListViewSuperuser(TestCase):
 
 
 @pytest.mark.django_db
-class TestProjectUpdateViewSuperuser(TestCase):
-    """Test ProjectUpdateView with superuser access."""
+class TestProjectUpdateViewStaff(TestCase):
+    """Test ProjectUpdateView with staff user access."""
 
     def setUp(self):
         """Set up test fixtures."""
@@ -1357,14 +1330,15 @@ class TestProjectUpdateViewSuperuser(TestCase):
             description="Test description",
         )
 
-    def test_project_update_superuser_access(self):
-        """Test that superuser can access update view for any project."""
-        superuser = User.objects.create_superuser(
-            username="admin",
-            email="admin@example.com",
+    def test_project_update_staff_access(self):
+        """Test that staff user can access update view for any project."""
+        staff_user = User.objects.create_user(
+            username="staff",
+            email="staff@example.com",
             password=TEST_PASSWORD,
+            is_staff=True,
         )
-        self.client.force_login(superuser)
+        self.client.force_login(staff_user)
 
         response = self.client.get(
             reverse("projects:update", kwargs={"pk": self.project.pk})
@@ -1374,8 +1348,8 @@ class TestProjectUpdateViewSuperuser(TestCase):
 
 
 @pytest.mark.django_db
-class TestProjectDeleteViewSuperuser(TestCase):
-    """Test ProjectDeleteView with superuser access."""
+class TestProjectDeleteViewStaff(TestCase):
+    """Test ProjectDeleteView with staff user access."""
 
     def setUp(self):
         """Set up test fixtures."""
@@ -1391,14 +1365,15 @@ class TestProjectDeleteViewSuperuser(TestCase):
             description="Test description",
         )
 
-    def test_project_delete_superuser_access(self):
-        """Test that superuser can access delete view for any project."""
-        superuser = User.objects.create_superuser(
-            username="admin",
-            email="admin@example.com",
+    def test_project_delete_staff_access(self):
+        """Test that staff user can access delete view for any project."""
+        staff_user = User.objects.create_user(
+            username="staff",
+            email="staff@example.com",
             password=TEST_PASSWORD,
+            is_staff=True,
         )
-        self.client.force_login(superuser)
+        self.client.force_login(staff_user)
 
         response = self.client.get(
             reverse("projects:delete", kwargs={"pk": self.project.pk})
@@ -1406,8 +1381,8 @@ class TestProjectDeleteViewSuperuser(TestCase):
         assert response.status_code == HTTP_OK
         assert response.context["viewing_as_admin"] is True
 
-    def test_superuser_can_actually_delete_project(self):
-        """Test that superuser can POST to delete another user's project.
+    def test_staff_can_actually_delete_project(self):
+        """Test that staff user can POST to delete another user's project.
 
         This tests the fix for the FK constraint issue where audit logging
         would fail after the project was deleted (orphaned FK reference).
@@ -1417,12 +1392,13 @@ class TestProjectDeleteViewSuperuser(TestCase):
         2. Creating log before delete causes orphaned FK (CASCADE timing)
         3. A proper fix requires making project FK nullable (SET_NULL)
         """
-        superuser = User.objects.create_superuser(
-            username="admin_delete",
-            email="admin_delete@example.com",
+        staff_user = User.objects.create_user(
+            username="staff_delete",
+            email="staff_delete@example.com",
             password=TEST_PASSWORD,
+            is_staff=True,
         )
-        self.client.force_login(superuser)
+        self.client.force_login(staff_user)
 
         project_pk = self.project.pk
 

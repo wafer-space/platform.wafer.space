@@ -29,12 +29,13 @@ def owner(db):
 
 
 @pytest.fixture
-def superuser(db):
-    """Create superuser."""
-    return User.objects.create_superuser(
+def staff_user(db):
+    """Create staff user."""
+    return User.objects.create_user(
         username="admin",
         email="admin@example.com",
         password=TEST_PASSWORD,
+        is_staff=True,
     )
 
 
@@ -96,9 +97,9 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
         # Verify session is active by navigating to a page that requires auth
         driver.get(f"{self.live_server_url}/accounts/confirm-email/")
 
-    def test_superuser_sees_warning_banner(self, driver, superuser, project, wait):
-        """Test that superuser sees warning banner on other user's project."""
-        # Login as superuser
+    def test_staff_user_sees_warning_banner(self, driver, staff_user, project, wait):
+        """Test that staff user sees warning banner on other user's project."""
+        # Login as staff user
         self.perform_login(driver, "admin", TEST_PASSWORD, wait)
 
         # Navigate to owner's project
@@ -126,18 +127,18 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
         banners = driver.find_elements(By.CSS_SELECTOR, ".alert-warning")
         assert len(banners) == 0
 
-    def test_superuser_sees_all_projects_in_list(
-        self, driver, superuser, project, wait
+    def test_staff_user_sees_all_projects_in_list(
+        self, driver, staff_user, project, wait
     ):
-        """Test that superuser sees all users' projects in list view."""
-        # Create another project for superuser
+        """Test that staff user sees all users' projects in list view."""
+        # Create another project for staff user
         Project.objects.create(
-            user=superuser,
+            user=staff_user,
             name="Admin Project",
             description="Admin description",
         )
 
-        # Login as superuser
+        # Login as staff user
         self.perform_login(driver, "admin", TEST_PASSWORD, wait)
 
         # Navigate to project list
@@ -148,7 +149,7 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
         assert "Test Project" in page_text
         assert "Admin Project" in page_text
 
-    def test_regular_user_sees_only_own_projects(self, driver, owner, superuser, wait):
+    def test_regular_user_sees_only_own_projects(self, driver, owner, staff_user, wait):
         """Test that regular user only sees their own projects in list."""
         # Create projects for both users
         Project.objects.create(
@@ -157,7 +158,7 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
             description="Owner description",
         )
         Project.objects.create(
-            user=superuser,
+            user=staff_user,
             name="Admin Project",
             description="Admin description",
         )
@@ -173,11 +174,11 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
         assert "Owner Project" in page_text
         assert "Admin Project" not in page_text
 
-    def test_superuser_can_edit_other_users_project(
-        self, driver, superuser, project, wait
+    def test_staff_user_can_edit_other_users_project(
+        self, driver, staff_user, project, wait
     ):
-        """Test that superuser can edit another user's project."""
-        # Login as superuser
+        """Test that staff user can edit another user's project."""
+        # Login as staff user
         self.perform_login(driver, "admin", TEST_PASSWORD, wait)
 
         # Navigate to update page
@@ -209,14 +210,14 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
         # Verify success message contains the updated project name
         assert "Updated by Admin" in success_alert.text
 
-    def test_audit_log_created_on_superuser_access(
-        self, driver, superuser, project, wait
+    def test_audit_log_created_on_staff_user_access(
+        self, driver, staff_user, project, wait
     ):
-        """Test that audit log is created when superuser views project."""
+        """Test that audit log is created when staff user views project."""
         # Verify no logs initially
         assert ProjectAccessLog.objects.count() == 0
 
-        # Login as superuser
+        # Login as staff user
         self.perform_login(driver, "admin", TEST_PASSWORD, wait)
 
         # Navigate to owner's project
@@ -225,7 +226,7 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
         # Verify audit log created
         logs = ProjectAccessLog.objects.filter(
             project=project,
-            admin_user=superuser,
+            admin_user=staff_user,
         )
         assert logs.count() == 1
 

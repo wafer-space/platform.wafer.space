@@ -23,7 +23,7 @@ from django.views.generic import View
 
 from .forms import ProjectFileURLSubmitForm
 from .forms import ProjectForm
-from .mixins import ProjectOwnerOrSuperuserMixin
+from .mixins import ProjectOwnerOrStaffMixin
 from .models import DownloadAttempt
 from .models import Project
 from .models import ProjectFile
@@ -49,20 +49,20 @@ class ProjectListView(LoginRequiredMixin, ListView):
         """Return projects accessible to current user.
 
         - Regular users: only their own projects
-        - Superusers: all projects from all users
+        - Staff users: all projects from all users
         """
         # Cast user since LoginRequiredMixin ensures authentication
         user = cast("User", self.request.user)
 
-        if user.is_superuser:
-            # Superusers see all projects
+        if user.is_staff:
+            # Staff users see all projects
             return Project.objects.all().select_related("user").order_by("-created_at")
 
         # Regular users see only their own projects
         return Project.objects.filter(user=user).order_by("-created_at")
 
 
-class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin, DetailView):
+class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView):
     """View a single project with its files."""
 
     model = Project
@@ -75,9 +75,9 @@ class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin, Detail
         project = self.get_object()
         user = self.request.user
 
-        # Flag if superuser is viewing another user's project
+        # Flag if staff user is viewing another user's project
         context["viewing_as_admin"] = (
-            user.is_authenticated and user.is_superuser and project.user != user
+            user.is_authenticated and user.is_staff and project.user != user
         )
 
         # Get submitted file (file that was submitted for manufacturing)
@@ -188,7 +188,7 @@ class ProjectCreateView(LoginRequiredMixin, CreateView):
         return reverse_lazy("projects:detail", kwargs={"pk": self.object.pk})
 
 
-class ProjectUpdateView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin, UpdateView):
+class ProjectUpdateView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, UpdateView):
     """Update an existing project."""
 
     model = Project
@@ -202,7 +202,7 @@ class ProjectUpdateView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin, Update
         user = self.request.user
 
         context["viewing_as_admin"] = (
-            user.is_authenticated and user.is_superuser and project.user != user
+            user.is_authenticated and user.is_staff and project.user != user
         )
 
         return context
@@ -222,7 +222,7 @@ class ProjectUpdateView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin, Update
         return reverse_lazy("projects:detail", kwargs={"pk": self.object.pk})
 
 
-class ProjectDeleteView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin, DeleteView):
+class ProjectDeleteView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DeleteView):
     """Delete a project."""
 
     model = Project
@@ -236,7 +236,7 @@ class ProjectDeleteView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin, Delete
         user = self.request.user
 
         context["viewing_as_admin"] = (
-            user.is_authenticated and user.is_superuser and project.user != user
+            user.is_authenticated and user.is_staff and project.user != user
         )
 
         return context
@@ -251,7 +251,7 @@ class ProjectDeleteView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin, Delete
         return super().form_valid(form)
 
 
-class ProjectFileSubmitURLView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin, View):
+class ProjectFileSubmitURLView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
     """Submit a file URL for background download."""
 
     def get_object(self):
@@ -267,7 +267,7 @@ class ProjectFileSubmitURLView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin,
 
         # Add viewing_as_admin flag for template
         viewing_as_admin = (
-            user.is_authenticated and user.is_superuser and project.user != user
+            user.is_authenticated and user.is_staff and project.user != user
         )
 
         return render(
@@ -317,7 +317,7 @@ class ProjectFileSubmitURLView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin,
 
         # Add viewing_as_admin flag for template
         viewing_as_admin = (
-            user.is_authenticated and user.is_superuser and project.user != user
+            user.is_authenticated and user.is_staff and project.user != user
         )
 
         return render(
@@ -331,7 +331,7 @@ class ProjectFileSubmitURLView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin,
         )
 
 
-class ProjectFileProgressView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin, View):
+class ProjectFileProgressView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
     """Get download progress for a project file (AJAX endpoint)."""
 
     def get_object(self):
@@ -379,7 +379,7 @@ class ProjectFileProgressView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin, 
         return JsonResponse(progress)
 
 
-class ProjectSubmitView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin, View):
+class ProjectSubmitView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
     """Submit a project for manufacturing (POST-only)."""
 
     def get_object(self):

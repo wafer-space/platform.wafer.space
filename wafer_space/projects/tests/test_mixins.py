@@ -9,7 +9,7 @@ from django.test import RequestFactory
 from django.test import TestCase
 from django.views.generic import DetailView
 
-from wafer_space.projects.mixins import ProjectOwnerOrSuperuserMixin
+from wafer_space.projects.mixins import ProjectOwnerOrStaffMixin
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectAccessLog
 
@@ -18,14 +18,14 @@ User = get_user_model()
 TEST_PASSWORD = "testpass123"  # noqa: S105
 
 
-class DummyProjectView(ProjectOwnerOrSuperuserMixin, DetailView):
+class DummyProjectView(ProjectOwnerOrStaffMixin, DetailView):
     """Dummy view for testing mixin."""
 
     model = Project
 
 
-class ProjectOwnerOrSuperuserMixinTestCase(TestCase):
-    """Test ProjectOwnerOrSuperuserMixin permission logic."""
+class ProjectOwnerOrStaffMixinTestCase(TestCase):
+    """Test ProjectOwnerOrStaffMixin permission logic."""
 
     def setUp(self):
         """Set up test users and projects."""
@@ -38,21 +38,14 @@ class ProjectOwnerOrSuperuserMixinTestCase(TestCase):
             password=TEST_PASSWORD,
         )
 
-        # Create regular user (not owner)
+        # Create regular user (not owner, not staff)
         self.other_user = User.objects.create_user(
             username="other",
             email="other@example.com",
             password=TEST_PASSWORD,
         )
 
-        # Create superuser
-        self.superuser = User.objects.create_superuser(
-            username="admin",
-            email="admin@example.com",
-            password=TEST_PASSWORD,
-        )
-
-        # Create staff user (not superuser)
+        # Create staff user (has admin access)
         self.staff_user = User.objects.create_user(
             username="staff",
             email="staff@example.com",
@@ -89,19 +82,8 @@ class ProjectOwnerOrSuperuserMixinTestCase(TestCase):
 
         assert view.test_func() is False
 
-    def test_superuser_has_access(self):
-        """Test that superuser has access to any project."""
-        request = self.factory.get(f"/projects/{self.project.pk}/")
-        request.user = self.superuser
-
-        view = DummyProjectView()
-        view.request = request
-        view.kwargs = {"pk": self.project.pk}
-
-        assert view.test_func() is True
-
-    def test_staff_without_superuser_denied(self):
-        """Test that staff user without superuser flag is denied access."""
+    def test_staff_has_access(self):
+        """Test that staff user has access to any project."""
         request = self.factory.get(f"/projects/{self.project.pk}/")
         request.user = self.staff_user
 
@@ -109,7 +91,7 @@ class ProjectOwnerOrSuperuserMixinTestCase(TestCase):
         view.request = request
         view.kwargs = {"pk": self.project.pk}
 
-        assert view.test_func() is False
+        assert view.test_func() is True
 
     def test_unauthenticated_user_denied(self):
         """Test that unauthenticated user is denied access."""
@@ -122,10 +104,10 @@ class ProjectOwnerOrSuperuserMixinTestCase(TestCase):
 
         assert view.test_func() is False
 
-    def test_superuser_access_creates_audit_log(self):
-        """Test that superuser access creates audit log entry."""
+    def test_staff_access_creates_audit_log(self):
+        """Test that staff user access creates audit log entry."""
         request = self.factory.get(f"/projects/{self.project.pk}/")
-        request.user = self.superuser
+        request.user = self.staff_user
         request.META = {
             "REMOTE_ADDR": "127.0.0.1",
             "HTTP_USER_AGENT": "Mozilla/5.0",
@@ -144,7 +126,7 @@ class ProjectOwnerOrSuperuserMixinTestCase(TestCase):
         # Verify audit log created
         logs = ProjectAccessLog.objects.filter(
             project=self.project,
-            admin_user=self.superuser,
+            admin_user=self.staff_user,
         )
         assert logs.count() == 1
 

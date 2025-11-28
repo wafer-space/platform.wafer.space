@@ -25,10 +25,11 @@ class ProjectAccessLogTestCase(TestCase):
             password=TEST_PASSWORD,
         )
 
-        self.admin = User.objects.create_superuser(
+        self.admin = User.objects.create_user(
             username="admin",
             email="admin@example.com",
             password=TEST_PASSWORD,
+            is_staff=True,
         )
 
         self.project = Project.objects.create(

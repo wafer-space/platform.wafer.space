@@ -9,29 +9,29 @@ from wafer_space.projects.models import ProjectAccessLog
 HTTP_SUCCESS_THRESHOLD = 400
 
 
-class ProjectOwnerOrSuperuserMixin(UserPassesTestMixin):
-    """Mixin to allow access to project owner or superusers.
+class ProjectOwnerOrStaffMixin(UserPassesTestMixin):
+    """Mixin to allow access to project owner or staff users.
 
     This mixin should be used on all project-related views to enforce
     consistent permission checking:
     - Project owner always has access
-    - Superusers have access to all projects
+    - Staff users have access to all projects
     - All other users are denied access
 
     Audit Logging:
-    - When superusers access projects they don't own, an audit log is created
+    - When staff users access projects they don't own, an audit log is created
     - Logs include: timestamp, IP address, user agent, action, view name
     - Owner access is NOT logged (normal operation)
 
     Security Design:
     - Fail-closed: Returns False by default
-    - Explicit dual check: user.is_authenticated AND user.is_superuser
-    - Prevents bypass via unauthenticated superuser accounts
+    - Explicit dual check: user.is_authenticated AND user.is_staff
+    - Prevents bypass via unauthenticated staff accounts
 
     Usage:
         class ProjectDetailView(
             LoginRequiredMixin,
-            ProjectOwnerOrSuperuserMixin,
+            ProjectOwnerOrStaffMixin,
             DetailView,
         ):
             model = Project
@@ -42,12 +42,12 @@ class ProjectOwnerOrSuperuserMixin(UserPassesTestMixin):
 
         Returns True if:
         - User owns the project, OR
-        - User is an authenticated superuser
+        - User is an authenticated staff user
 
         Returns False for:
         - Non-owners
-        - Staff users without superuser flag
-        - Unauthenticated users (even if is_superuser=True)
+        - Regular users without staff flag
+        - Unauthenticated users (even if is_staff=True)
         """
         project = self.get_object()  # type: ignore[attr-defined]
         user = self.request.user  # type: ignore[attr-defined]
@@ -59,12 +59,12 @@ class ProjectOwnerOrSuperuserMixin(UserPassesTestMixin):
         if project.user == user:
             return True
 
-        # Superusers have access to all projects
+        # Staff users have access to all projects
         # Both checks required for security (fail-closed)
-        return user.is_authenticated and user.is_superuser
+        return user.is_authenticated and user.is_staff
 
     def dispatch(self, request, *args, **kwargs):
-        """Dispatch request and create audit log for superuser access."""
+        """Dispatch request and create audit log for staff access."""
         # Get project BEFORE dispatch (DeleteView will delete it)
         project = self.get_object()  # type: ignore[attr-defined]
         user = request.user
@@ -83,9 +83,9 @@ class ProjectOwnerOrSuperuserMixin(UserPassesTestMixin):
         # 3. A proper fix requires making project FK nullable (SET_NULL)
         # TODO: Consider adding nullable project FK to preserve DELETE audit logs
         if response.status_code < HTTP_SUCCESS_THRESHOLD:
-            # Only log superuser access to OTHER users' projects (non-DELETE)
+            # Only log staff access to OTHER users' projects (non-DELETE)
             is_admin_access = (
-                user.is_authenticated and user.is_superuser and project.user != user
+                user.is_authenticated and user.is_staff and project.user != user
             )
             if is_admin_access and not is_delete_operation:
                 self._create_audit_log(project, user, request)
@@ -103,7 +103,7 @@ class ProjectOwnerOrSuperuserMixin(UserPassesTestMixin):
         project = getattr(self, "_accessed_project", None)
 
         # Only log if we have both user and project information
-        # Log for authenticated users who were denied (not owners, not superusers)
+        # Log for authenticated users who were denied (not owners, not staff)
         if user.is_authenticated and project is not None:
             self._create_denied_access_log(project, user, self.request)  # type: ignore[attr-defined]
 
@@ -115,7 +115,7 @@ class ProjectOwnerOrSuperuserMixin(UserPassesTestMixin):
 
         Args:
             project: Project being accessed
-            admin_user: Superuser accessing the project
+            admin_user: Staff user accessing the project
             request: HTTP request object
         """
         # Determine action based on request method
