@@ -194,6 +194,9 @@
             <p class="mb-1 small">
               <i class="bi bi-list-ol"></i>
               <strong>{{ check.checks_ahead }}</strong> check{{ check.checks_ahead|pluralize }} ahead of yours
+              {% if request.user.is_staff %}
+                (of {{ check.queue_position|add:check.checks_behind }} total)
+              {% endif %}
             </p>
             <p class="mb-1 small">
               <i class="bi bi-play-circle"></i>
@@ -203,12 +206,6 @@
               <p class="mb-0 small text-muted">
                 <i class="bi bi-hourglass-split"></i>
                 Waiting for {{ check.queue_wait_duration|timesince }}
-              </p>
-            {% endif %}
-            {% if request.user.is_staff and check.checks_behind > 0 %}
-              <p class="mb-0 small text-muted">
-                <i class="bi bi-info-circle"></i>
-                {{ check.checks_behind }} check{{ check.checks_behind|pluralize }} behind (admin info)
               </p>
             {% endif %}
           </div>
