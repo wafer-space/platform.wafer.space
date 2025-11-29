@@ -734,8 +734,10 @@ def _validate_project_file(check):
     return check.project_file
 
 
-def _handle_retry(check, error_summary, task_instance, logger):
+def _handle_retry(check, error_summary, _task_instance, logger):
     """Handle system failure - mark as FAILED for periodic retry.
+
+    Note: _task_instance is unused but kept for API compatibility with callers.
 
     System failures (Docker errors, timeouts, etc.) are different from
     manufacturing issues. System failures:
@@ -761,8 +763,10 @@ def _handle_retry(check, error_summary, task_instance, logger):
     )
 
 
-def _handle_exception_retry(check_id, exc, task_instance, logger):
+def _handle_exception_retry(check_id, exc, _task_instance, logger):
     """Handle exception - mark as FAILED for periodic retry.
+
+    Note: _task_instance is unused but kept for API compatibility with callers.
 
     System failures (Docker errors, timeouts, etc.) are different from
     manufacturing issues. System failures:
@@ -3167,8 +3171,10 @@ scan_and_queue_manufacturability_checks = process_manufacturability_check_queue
 
 
 @shared_task(bind=True, queue="maintenance")
-def cleanup_orphaned_precheck_containers(self):
+def cleanup_orphaned_precheck_containers(_self):
     """Clean up orphaned Docker containers from cancelled/failed checks.
+
+    Note: _self is unused but bind=True is kept for Celery task introspection potential.
 
     This periodic task finds containers with the wafer.space.service label that
     don't have a corresponding active ManufacturabilityCheck (QUEUED or PROCESSING).
