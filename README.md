@@ -199,7 +199,7 @@ make pre-commit
 
 ### Admin Project Access
 
-Django superusers can view and manage any user's project with comprehensive audit logging:
+Django staff users can view and manage any user's project with comprehensive audit logging:
 - Full access to view, edit, delete, and submit any project
 - Visual warning banners indicate admin mode
 - All access automatically logged with IP, timestamp, and action
