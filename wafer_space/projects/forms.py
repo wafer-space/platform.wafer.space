@@ -20,7 +20,7 @@ class ProjectForm(forms.ModelForm):
 
     class Meta:
         model = Project
-        fields = ["name", "description"]
+        fields = ["name", "description", "slot_size"]
         widgets = {
             "name": forms.TextInput(
                 attrs={
@@ -35,10 +35,16 @@ class ProjectForm(forms.ModelForm):
                     "placeholder": "Description of your design project...",
                 },
             ),
+            "slot_size": forms.Select(
+                attrs={
+                    "class": "form-control",
+                },
+            ),
         }
         help_texts = {
             "name": "A descriptive name for your project",
             "description": "Optional details about your design",
+            "slot_size": "Select the die slot size for your design",
         }
 
 
