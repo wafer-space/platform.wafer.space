@@ -70,7 +70,9 @@
                     <td>{{ check.started_at|date:"Y-m-d H:i:s" }}</td>
                     <td>
                       {% if check.started_at %}
-                        <span class="badge bg-info">Running</span>
+                        {{ check.started_at|timesince }}
+                      {% else %}
+                        <span class="text-muted">-</span>
                       {% endif %}
                     </td>
                     <td>
