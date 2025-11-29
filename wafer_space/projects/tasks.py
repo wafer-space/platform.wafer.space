@@ -769,6 +769,27 @@ def _handle_retry(check, error_summary, _task_instance, logger):
     )
 
 
+def _handle_validation_error(check_id, exc, logger):
+    """Handle validation errors as permanent failures (no retry).
+
+    Validation errors like missing GDS files are permanent - retrying won't help.
+    Mark check as failed immediately without retry.
+
+    Args:
+        check_id: ManufacturabilityCheck ID
+        exc: ValueError instance
+        logger: Logger instance
+
+    Returns:
+        Dict with failure status and message
+    """
+    logger.warning("Validation error in manufacturability check: %s", exc)
+    with contextlib.suppress(ManufacturabilityCheck.DoesNotExist):
+        check = ManufacturabilityCheck.objects.get(id=check_id)
+        check.fail(str(exc))
+    return {"status": "failed", "message": str(exc)}
+
+
 def _handle_exception_retry(check_id, exc, _task_instance, logger):
     """Handle exception - mark as FAILED for periodic retry.
 
@@ -940,33 +961,25 @@ def check_project_manufacturability(self, check_id):
             "message": f"ManufacturabilityCheck with id {check_id} not found",
         }
 
-    except docker.errors.ContainerError as exc:
-        logger.exception("Container error during precheck execution")
-        _handle_exception_retry(check_id, exc, self, logger)
-        return {
-            "status": "failed",
-            "message": f"Container error: {exc!s}",
-        }
-
     except docker.errors.ImageNotFound:
         logger.exception(
             "Docker image not found: %s",
             settings.PRECHECK_DOCKER_IMAGE,
         )
-
         with contextlib.suppress(ManufacturabilityCheck.DoesNotExist):
             check = ManufacturabilityCheck.objects.get(id=check_id)
             check.fail(f"Docker image not found: {settings.PRECHECK_DOCKER_IMAGE}")
-
         return {"status": "failed", "message": "Docker image not found"}
 
-    except docker.errors.APIError as exc:
-        logger.exception("Docker API error")
+    except (docker.errors.ContainerError, docker.errors.APIError) as exc:
+        is_container = isinstance(exc, docker.errors.ContainerError)
+        error_type = "Container" if is_container else "Docker API"
+        logger.exception("%s error during precheck execution", error_type)
         _handle_exception_retry(check_id, exc, self, logger)
-        return {
-            "status": "failed",
-            "message": f"Docker API error: {exc!s}",
-        }
+        return {"status": "failed", "message": f"{error_type} error: {exc!s}"}
+
+    except ValueError as exc:
+        return _handle_validation_error(check_id, exc, logger)
 
     except Exception as exc:
         logger.exception("Unexpected error in manufacturability check task")

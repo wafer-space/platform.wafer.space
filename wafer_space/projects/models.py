@@ -1289,7 +1289,7 @@ Your GDS file should have:
 <summary>Click to expand logs</summary>
 
 ```
-{self.processing_logs[-self.GITHUB_ISSUE_LOG_CHARS:]}
+{self.processing_logs[-self.GITHUB_ISSUE_LOG_CHARS :]}
 ```
 </details>
 

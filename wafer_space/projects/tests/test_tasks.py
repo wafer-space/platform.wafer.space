@@ -509,15 +509,32 @@ FATAL: Design has critical errors
             self.project.submitted_file = project_file
             self.project.save()
 
-        # Mock docker.errors to be proper exception classes
-        mock_docker.errors.DockerException = Exception
-        mock_docker.errors.ContainerError = Exception
-        mock_docker.errors.ImageNotFound = Exception
-        mock_docker.errors.APIError = Exception
-        mock_docker.errors.NotFound = Exception
+        # Create unique exception classes for Docker errors
+        # so they don't catch unrelated errors
+        class MockDockerError(Exception):
+            pass
 
-        # Setup mock Docker to raise an exception
-        mock_docker.from_env.side_effect = ValueError("Test error")
+        class MockContainerError(MockDockerError):
+            pass
+
+        class MockImageNotFoundError(MockDockerError):
+            pass
+
+        class MockAPIError(MockDockerError):
+            pass
+
+        class MockNotFoundError(MockDockerError):
+            pass
+
+        mock_docker.errors.DockerException = MockDockerError
+        mock_docker.errors.ContainerError = MockContainerError
+        mock_docker.errors.ImageNotFound = MockImageNotFoundError
+        mock_docker.errors.APIError = MockAPIError
+        mock_docker.errors.NotFound = MockNotFoundError
+
+        # Setup mock Docker to raise a RuntimeError
+        # (transient error, should trigger retry)
+        mock_docker.from_env.side_effect = RuntimeError("Test error")
 
         # Create a check with max retries set to 0 to avoid retry loop
         check = ManufacturabilityCheck.objects.create(
