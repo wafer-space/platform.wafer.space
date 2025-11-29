@@ -1250,11 +1250,11 @@ docker images --digests | grep gf180mcu-precheck
 ### 2. Run the precheck
 ```bash
 docker run --rm \\
-  -v $(pwd)/{project_file.original_filename}:/input/design.gds:ro \\
+  -v "$(pwd)/{project_file.original_filename}":/input/design.gds:ro \\
   {self.docker_image} \\
   python3 /precheck/precheck.py \\
     --input /input/design.gds \\
-    --top {self.project.name} \\
+    --top "{self.project.name}" \\
     --id {self.project.id}
 ```
 
