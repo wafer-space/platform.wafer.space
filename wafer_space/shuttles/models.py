@@ -234,6 +234,20 @@ class ShuttleSlot(models.Model):
             msg = "Shuttle is not accepting new projects"
             raise ValueError(msg)
 
+        # NEW: Check compliance certification
+        if not hasattr(project, "compliance_certification"):
+            msg = "Project must have compliance certification before shuttle assignment"
+            raise ValueError(msg)
+
+        cert = project.compliance_certification
+        if not (cert.export_control_compliant and cert.not_restricted_entity):
+            msg = "Compliance certification is incomplete"
+            raise ValueError(msg)
+
+        if not cert.end_use_statement.strip():
+            msg = "End-use statement is required"
+            raise ValueError(msg)
+
         self.project = project
         self.reserved_by = user
         self.status = self.Status.RESERVED

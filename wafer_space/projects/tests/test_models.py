@@ -1,5 +1,6 @@
 """Tests for project models."""
 
+from datetime import timedelta
 from unittest.mock import Mock
 from unittest.mock import patch
 
@@ -347,6 +348,7 @@ class TestProjectSubmit(TestCase):
         # Create existing check
         existing_check = ManufacturabilityCheck.objects.create(
             project=self.project,
+            project_file=_pf,
             status=ManufacturabilityCheck.Status.PROCESSING,
             task_id="existing-task-123",
         )
@@ -356,7 +358,7 @@ class TestProjectSubmit(TestCase):
         # Verify only one check exists
         assert ManufacturabilityCheck.objects.filter(project=self.project).count() == 1
         # Verify it's the original check (not replaced)
-        check = ManufacturabilityCheck.objects.get(project=self.project)
+        check = ManufacturabilityCheck.objects.get(project_file=_pf)
         assert check.id == existing_check.id
         assert check.status == ManufacturabilityCheck.Status.PROCESSING
 
@@ -620,3 +622,412 @@ class TestProjectFile(TestCase):
         )
 
         assert project_file.download_status == ProjectFile.DownloadStatus.QUEUED
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckCancel(TestCase):
+    """Test ManufacturabilityCheck.cancel() method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_cancel_queued_check_returns_task_id(self):
+        """Test that cancelling a queued check returns the task_id."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.QUEUED,
+            task_id="celery-task-123",
+        )
+
+        result = check.cancel(reason="Test cancellation")
+
+        assert result == "celery-task-123"
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+        assert "CANCELLED: Test cancellation" in check.processing_logs
+        assert check.completed_at is not None
+
+    def test_cancel_processing_check_returns_task_id(self):
+        """Test that cancelling a processing check returns the task_id."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PROCESSING,
+            task_id="celery-task-456",
+            started_at=timezone.now(),
+        )
+
+        result = check.cancel(reason="User requested cancellation")
+
+        assert result == "celery-task-456"
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+        assert "CANCELLED: User requested cancellation" in check.processing_logs
+
+    def test_cancel_completed_check_returns_none(self):
+        """Test that cancelling a completed check returns None."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.COMPLETED,
+            task_id="celery-task-789",
+            is_manufacturable=True,
+        )
+
+        result = check.cancel(reason="Should not work")
+
+        assert result is None
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.COMPLETED
+
+    def test_cancel_failed_check_returns_none(self):
+        """Test that cancelling a failed check returns None."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FAILED,
+            task_id="celery-task-999",
+            error_message="Previous failure",
+        )
+
+        result = check.cancel(reason="Should not work")
+
+        assert result is None
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.FAILED
+
+    def test_cancel_without_task_id_returns_empty_string(self):
+        """Test that cancelling a check without task_id returns empty string."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.QUEUED,
+            task_id="",  # No task ID
+        )
+
+        result = check.cancel(reason="No task")
+
+        # Should still be cancelled, just returns empty string
+        assert result == ""
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+
+    def test_is_cancellable_for_queued(self):
+        """Test is_cancellable returns True for queued checks."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.QUEUED,
+        )
+
+        assert check.is_cancellable is True
+
+    def test_is_cancellable_for_processing(self):
+        """Test is_cancellable returns True for processing checks."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PROCESSING,
+        )
+
+        assert check.is_cancellable is True
+
+    def test_is_not_cancellable_for_completed(self):
+        """Test is_cancellable returns False for completed checks."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.COMPLETED,
+        )
+
+        assert check.is_cancellable is False
+
+    def test_is_not_cancellable_for_failed(self):
+        """Test is_cancellable returns False for failed checks."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FAILED,
+        )
+
+        assert check.is_cancellable is False
+
+    def test_is_not_cancellable_for_cancelled(self):
+        """Test is_cancellable returns False for already cancelled checks."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLED,
+        )
+
+        assert check.is_cancellable is False
+
+    def test_is_cancellable_for_starting(self):
+        """Test is_cancellable returns True for starting checks."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.STARTING,
+        )
+
+        assert check.is_cancellable is True
+
+
+class TestManufacturabilityCheckQueueProperties(TestCase):
+    """Tests for queue position and count properties."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password="testpass123",  # noqa: S106
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_queue_position_returns_none_when_not_queued(self):
+        """Test queue_position returns None for non-queued checks."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PROCESSING,
+            queued_at=timezone.now(),
+        )
+
+        assert check.queue_position is None
+
+    def test_queue_position_returns_none_when_no_queued_at(self):
+        """Test queue_position returns None when queued_at is not set."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.QUEUED,
+            queued_at=None,
+        )
+
+        assert check.queue_position is None
+
+    def test_queue_position_returns_1_when_first_in_queue(self):
+        """Test queue_position returns 1 when first in queue."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.QUEUED,
+            queued_at=timezone.now(),
+        )
+
+        assert check.queue_position == 1
+
+    def test_checks_ahead_counts_earlier_queued_checks(self):
+        """Test checks_ahead counts checks queued before this one."""
+        # Create another project with file for second check
+        project2 = Project.objects.create(user=self.user, name="Project 2")
+        file2 = ProjectFile.objects.create(
+            project=project2,
+            original_url="https://example.com/file2.gds",
+            source_url="https://example.com/file2.gds",
+            original_filename="file2.gds",
+            is_active=True,
+        )
+
+        # Create first check (ahead)
+        ManufacturabilityCheck.objects.create(
+            project=project2,
+            project_file=file2,
+            status=ManufacturabilityCheck.Status.QUEUED,
+            queued_at=timezone.now() - timedelta(minutes=5),
+        )
+
+        # Create our check (behind)
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.QUEUED,
+            queued_at=timezone.now(),
+        )
+
+        assert check.checks_ahead == 1
+        assert check.queue_position == 2  # noqa: PLR2004
+
+    def test_checks_running_counts_starting_and_processing(self):
+        """Test checks_running counts STARTING and PROCESSING checks."""
+        # Create another project with files for additional checks
+        project2 = Project.objects.create(user=self.user, name="Project 2")
+        file2 = ProjectFile.objects.create(
+            project=project2,
+            original_url="https://example.com/file2.gds",
+            source_url="https://example.com/file2.gds",
+            original_filename="file2.gds",
+            is_active=True,
+        )
+        project3 = Project.objects.create(user=self.user, name="Project 3")
+        file3 = ProjectFile.objects.create(
+            project=project3,
+            original_url="https://example.com/file3.gds",
+            source_url="https://example.com/file3.gds",
+            original_filename="file3.gds",
+            is_active=True,
+        )
+
+        # Create STARTING check
+        ManufacturabilityCheck.objects.create(
+            project=project2,
+            project_file=file2,
+            status=ManufacturabilityCheck.Status.STARTING,
+        )
+
+        # Create PROCESSING check
+        ManufacturabilityCheck.objects.create(
+            project=project3,
+            project_file=file3,
+            status=ManufacturabilityCheck.Status.PROCESSING,
+        )
+
+        # Create our QUEUED check
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.QUEUED,
+            queued_at=timezone.now(),
+        )
+
+        assert check.checks_running == 2  # noqa: PLR2004
+
+    def test_queue_wait_duration_returns_timedelta(self):
+        """Test queue_wait_duration returns correct timedelta."""
+        wait_minutes = 10
+        queued_time = timezone.now() - timedelta(minutes=wait_minutes)
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.QUEUED,
+            queued_at=queued_time,
+        )
+
+        duration = check.queue_wait_duration
+        assert duration is not None
+        # Should be approximately 10 minutes (allow some margin)
+        expected_seconds = wait_minutes * 60
+        assert duration.total_seconds() >= expected_seconds
+        assert duration.total_seconds() < expected_seconds + 100
+
+
+class TestManufacturabilityCheckResultDisplay(TestCase):
+    """Tests for the result_display property of ManufacturabilityCheck."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password="testpass123",  # noqa: S106
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_result_display_empty_when_not_completed(self):
+        """Test result_display returns empty string for non-completed checks."""
+        statuses = [
+            ManufacturabilityCheck.Status.QUEUED,
+            ManufacturabilityCheck.Status.STARTING,
+            ManufacturabilityCheck.Status.PROCESSING,
+            ManufacturabilityCheck.Status.FAILED,
+            ManufacturabilityCheck.Status.CANCELLED,
+        ]
+        for status in statuses:
+            check = ManufacturabilityCheck.objects.create(
+                project=self.project,
+                project_file=self.project_file,
+                status=status,
+            )
+            assert check.result_display == "", f"Expected empty for {status}"
+            check.delete()
+
+    def test_result_display_empty_when_is_manufacturable_none(self):
+        """Test result_display returns empty string when is_manufacturable is None."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.COMPLETED,
+            is_manufacturable=None,
+        )
+        assert check.result_display == ""
+
+    def test_result_display_manufacturable_clean(self):
+        """Test result_display returns 'Manufacturable - Clean' with no warnings."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.COMPLETED,
+            is_manufacturable=True,
+            warnings=[],  # Empty list - no warnings
+        )
+        assert check.result_display == "Manufacturable - Clean"
+
+    def test_result_display_manufacturable_clean_default_warnings(self):
+        """Test result_display shows 'Manufacturable - Clean' with default warnings."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.COMPLETED,
+            is_manufacturable=True,
+            # warnings uses default empty list
+        )
+        assert check.result_display == "Manufacturable - Clean"
+
+    def test_result_display_manufacturable_with_warnings(self):
+        """Test result_display returns 'Manufacturable with Warnings' when warnings."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.COMPLETED,
+            is_manufacturable=True,
+            warnings=["Some minor design issue", "Another warning"],
+        )
+        assert check.result_display == "Manufacturable with Warnings"
+
+    def test_result_display_not_manufacturable(self):
+        """Test result_display returns 'Not Manufacturable' when failed."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.COMPLETED,
+            is_manufacturable=False,
+            errors=["Critical design rule violation"],
+        )
+        assert check.result_display == "Not Manufacturable"

@@ -217,3 +217,25 @@ except Exception:  # Too broad
 **Key principle:** Client IDs are public (hardcoded), secrets use `env()` without defaults.
 
 See `deployment/README.md` for full deployment guide.
+
+---
+
+## CELERY DEBUGGING
+
+### 5. WORKER RESTART IS NOT THE ISSUE
+
+**The development environment auto-restarts Celery workers on code changes. Worker restart is not the problem.**
+
+When you see Celery errors like "unregistered task", the issue is your code - not a missing restart:
+
+```python
+# ❌ This does NOT register a new task name:
+scan_and_queue = process_check_queue  # Just a Python variable!
+
+# ✅ The config must reference the actual decorated function:
+CELERY_BEAT_SCHEDULE = {
+    "my-task": {
+        "task": "app.tasks.process_check_queue",  # Must match @shared_task
+    }
+}
+```

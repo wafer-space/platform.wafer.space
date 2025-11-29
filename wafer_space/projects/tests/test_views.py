@@ -20,6 +20,7 @@ from .constants import EXPECTED_USER_PROJECTS
 from .constants import FIVE_MB
 from .constants import HTTP_FORBIDDEN
 from .constants import HTTP_FOUND
+from .constants import HTTP_METHOD_NOT_ALLOWED
 from .constants import HTTP_NOT_FOUND
 from .constants import HTTP_OK
 from .constants import PROGRESS_COMPLETE
@@ -1118,12 +1119,19 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
             name="Test Project",
             description="Test Description",
         )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test.gds",
+            source_url="https://example.com/test.gds",
+            is_active=True,
+        )
 
     def test_detail_view_includes_check_status_when_check_exists(self):
         """Test that detail view includes check status in context."""
         # Create a manufacturability check
         ManufacturabilityCheck.objects.create(
             project=self.project,
+            project_file=self.project_file,
             status=ManufacturabilityCheck.Status.QUEUED,
         )
 
@@ -1156,6 +1164,7 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
         # Create a completed check
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
+            project_file=self.project_file,
             status=ManufacturabilityCheck.Status.QUEUED,
         )
         check.start_processing()
@@ -1177,6 +1186,239 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
         assert check_status["is_manufacturable"] is False
         assert check_status["errors"] == ["Error 1", "Error 2"]
         assert check_status["warnings"] == ["Warning 1"]
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckCancelView(TestCase):
+    """Test ManufacturabilityCheckCancelView."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.other_user = User.objects.create_user(
+            username="otheruser",
+            email="other@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    @patch("wafer_space.projects.services.celery_app")
+    def test_cancel_check_success(self, mock_celery_app):
+        """Test successfully cancelling a check."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.QUEUED,
+            task_id="celery-task-123",
+        )
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:cancel_check", kwargs={"pk": self.project.pk})
+        response = self.client.post(url)
+
+        assert response.status_code == HTTP_FOUND
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+        mock_celery_app.control.revoke.assert_called_once()
+
+    @patch("wafer_space.projects.services.celery_app")
+    def test_cancel_check_processing_success(self, mock_celery_app):
+        """Test successfully cancelling a processing check."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PROCESSING,
+            task_id="celery-task-456",
+        )
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:cancel_check", kwargs={"pk": self.project.pk})
+        response = self.client.post(url)
+
+        assert response.status_code == HTTP_FOUND
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+
+    def test_cancel_check_already_completed(self):
+        """Test cancelling already completed check shows warning."""
+        ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.COMPLETED,
+            is_manufacturable=True,
+        )
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:cancel_check", kwargs={"pk": self.project.pk})
+        response = self.client.post(url, follow=True)
+
+        assert response.status_code == HTTP_OK
+        messages_list = list(response.context["messages"])
+        assert len(messages_list) == 1
+        assert "could not be cancelled" in str(messages_list[0]).lower()
+
+    def test_cancel_check_no_active_file(self):
+        """Test cancelling with no active file shows error."""
+        self.project_file.is_active = False
+        self.project_file.save()
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:cancel_check", kwargs={"pk": self.project.pk})
+        response = self.client.post(url, follow=True)
+
+        assert response.status_code == HTTP_OK
+        messages_list = list(response.context["messages"])
+        assert len(messages_list) == 1
+        assert "no active file" in str(messages_list[0]).lower()
+
+    def test_cancel_check_no_check_exists(self):
+        """Test cancelling with no check shows error."""
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:cancel_check", kwargs={"pk": self.project.pk})
+        response = self.client.post(url, follow=True)
+
+        assert response.status_code == HTTP_OK
+        messages_list = list(response.context["messages"])
+        assert len(messages_list) == 1
+        assert "no manufacturability check" in str(messages_list[0]).lower()
+
+    def test_cancel_check_requires_authentication(self):
+        """Test that cancel requires authentication."""
+        url = reverse("projects:cancel_check", kwargs={"pk": self.project.pk})
+        response = self.client.post(url)
+
+        assert response.status_code == HTTP_FOUND
+        assert "/accounts/login/" in response["Location"]
+
+    def test_cancel_check_requires_ownership(self):
+        """Test that only project owner can cancel check."""
+        ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.QUEUED,
+        )
+
+        # Log in as other user
+        self.client.login(username="otheruser", password=TEST_PASSWORD)
+        url = reverse("projects:cancel_check", kwargs={"pk": self.project.pk})
+        response = self.client.post(url)
+
+        # Should be forbidden (403)
+        assert response.status_code == HTTP_FORBIDDEN
+
+    def test_cancel_check_get_not_allowed(self):
+        """Test that GET requests are not allowed."""
+        ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.QUEUED,
+        )
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:cancel_check", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        # GET should return 405 Method Not Allowed
+        assert response.status_code == HTTP_METHOD_NOT_ALLOWED
+
+
+@pytest.mark.django_db
+class TestProjectFileSubmitURLViewWarning(TestCase):
+    """Test submit-url page shows warning when check is running."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_submit_url_shows_warning_for_queued_check(self):
+        """Test submit URL page shows warning when queued check exists."""
+        ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.QUEUED,
+        )
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:submit_url", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        assert "running_check" in response.context
+        assert response.context["running_check"] is not None
+        assert b"will be cancelled" in response.content.lower() or (
+            b"Will Be Cancelled" in response.content
+        )
+
+    def test_submit_url_shows_warning_for_processing_check(self):
+        """Test submit URL page shows warning when processing check exists."""
+        ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PROCESSING,
+        )
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:submit_url", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        assert response.context["running_check"] is not None
+
+    def test_submit_url_no_warning_for_completed_check(self):
+        """Test submit URL page has no warning when check is completed."""
+        ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.COMPLETED,
+            is_manufacturable=True,
+        )
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:submit_url", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        assert response.context["running_check"] is None
+
+    def test_submit_url_no_warning_when_no_check(self):
+        """Test submit URL page has no warning when no check exists."""
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:submit_url", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        assert response.context["running_check"] is None
 
 
 @pytest.mark.django_db

@@ -19,7 +19,8 @@ ExecStart=/home/django/platform.wafer.space/.venv/bin/celery \
     --logfile=/var/log/platform.wafer.space/celery.log \
     --pidfile=/run/platform.wafer.space/celery.pid \
     --detach \
-    --queues=manufacturability,referrals
+    --queues=referrals \
+    --hostname=referrals@%h
 
 ExecStop=/bin/kill -s TERM $MAINPID
 ExecReload=/bin/kill -s HUP $MAINPID

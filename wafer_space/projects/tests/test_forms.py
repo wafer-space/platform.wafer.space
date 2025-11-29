@@ -212,29 +212,31 @@ class TestProjectFileURLSubmitForm(TestCase):
         assert form.is_valid()
         assert form.cleaned_data["expected_hash_sha1"] == expected_sha1
 
-    def test_form_md5_hash_with_whitespace_invalid(self):
-        """Test MD5 hash with whitespace is invalid (pattern validation)."""
+    def test_form_md5_hash_with_whitespace_stripped(self):
+        """Test MD5 hash with whitespace is stripped and normalized."""
+        expected_md5 = "abc123def456789012345678901234ab"
         form_data = {
             "url": "https://example.com/file.gds",
             "expected_hash_md5": "abc123 def456 789012 345678 901234ab",
         }
         form = ProjectFileURLSubmitForm(data=form_data)
 
-        # HTML5 pattern attribute rejects this before clean method runs
-        assert not form.is_valid()
-        assert "expected_hash_md5" in form.errors
+        # Whitespace is stripped by clean method
+        assert form.is_valid()
+        assert form.cleaned_data["expected_hash_md5"] == expected_md5
 
-    def test_form_md5_hash_with_dashes_invalid(self):
-        """Test MD5 hash with dashes is invalid (pattern validation)."""
+    def test_form_md5_hash_with_dashes_stripped(self):
+        """Test MD5 hash with dashes is stripped and normalized."""
+        expected_md5 = "abc123def456789012345678901234ab"
         form_data = {
             "url": "https://example.com/file.gds",
             "expected_hash_md5": "abc123-def456-789012-345678-901234ab",
         }
         form = ProjectFileURLSubmitForm(data=form_data)
 
-        # HTML5 pattern attribute rejects this before clean method runs
-        assert not form.is_valid()
-        assert "expected_hash_md5" in form.errors
+        # Dashes are stripped by clean method
+        assert form.is_valid()
+        assert form.cleaned_data["expected_hash_md5"] == expected_md5
 
     def test_form_invalid_md5_hash_wrong_length(self):
         """Test MD5 hash with wrong length is invalid."""
@@ -314,11 +316,12 @@ class TestProjectFileURLSubmitForm(TestCase):
         assert form.cleaned_data["expected_hash_sha1"] == ""
 
     def test_form_requires_at_least_one_hash(self):
-        """Test that form requires at least one hash (MD5 or SHA1)."""
+        """Test that form requires at least one hash (MD5, SHA1, or SHA256)."""
         form_data = {
             "url": "https://example.com/file.gds",
             "expected_hash_md5": "",
             "expected_hash_sha1": "",
+            "expected_hash_sha256": "",
         }
         form = ProjectFileURLSubmitForm(data=form_data)
 
@@ -326,4 +329,237 @@ class TestProjectFileURLSubmitForm(TestCase):
         assert "__all__" in form.errors
         error_msg = str(form.errors["__all__"])
         assert "At least one checksum" in error_msg
-        assert "MD5 or SHA1" in error_msg
+        assert "MD5, SHA1, or SHA256" in error_msg
+
+    def test_form_md5_hash_strips_md5_prefix(self):
+        """Test MD5 hash with 'md5:' prefix is stripped and normalized."""
+        expected_md5 = "abc123def456789012345678901234ab"
+        form_data = {
+            "url": "https://example.com/file.gds",
+            "expected_hash_md5": f"md5:{expected_md5}",
+        }
+        form = ProjectFileURLSubmitForm(data=form_data)
+
+        assert form.is_valid()
+        assert form.cleaned_data["expected_hash_md5"] == expected_md5
+
+    def test_form_md5_hash_strips_sha256_prefix(self):
+        """Test MD5 hash with 'sha256:' prefix is stripped (any prefix works)."""
+        expected_md5 = "abc123def456789012345678901234ab"
+        form_data = {
+            "url": "https://example.com/file.gds",
+            "expected_hash_md5": f"sha256:{expected_md5}",
+        }
+        form = ProjectFileURLSubmitForm(data=form_data)
+
+        assert form.is_valid()
+        assert form.cleaned_data["expected_hash_md5"] == expected_md5
+
+    def test_form_md5_hash_strips_uppercase_prefix(self):
+        """Test MD5 hash with uppercase prefix is stripped and hash normalized."""
+        expected_md5 = "abc123def456789012345678901234ab"
+        form_data = {
+            "url": "https://example.com/file.gds",
+            "expected_hash_md5": f"MD5:{expected_md5.upper()}",
+        }
+        form = ProjectFileURLSubmitForm(data=form_data)
+
+        assert form.is_valid()
+        # Hash should be lowercased
+        assert form.cleaned_data["expected_hash_md5"] == expected_md5
+
+    def test_form_sha1_hash_strips_sha1_prefix(self):
+        """Test SHA1 hash with 'sha1:' prefix is stripped and normalized."""
+        expected_sha1 = "abc123def456789012345678901234567890abcd"
+        form_data = {
+            "url": "https://example.com/file.gds",
+            "expected_hash_sha1": f"sha1:{expected_sha1}",
+        }
+        form = ProjectFileURLSubmitForm(data=form_data)
+
+        assert form.is_valid()
+        assert form.cleaned_data["expected_hash_sha1"] == expected_sha1
+
+    def test_form_sha1_hash_strips_sha256_prefix(self):
+        """Test SHA1 hash with 'sha256:' prefix is stripped (any prefix works)."""
+        expected_sha1 = "abc123def456789012345678901234567890abcd"
+        form_data = {
+            "url": "https://example.com/file.gds",
+            "expected_hash_sha1": f"sha256:{expected_sha1}",
+        }
+        form = ProjectFileURLSubmitForm(data=form_data)
+
+        assert form.is_valid()
+        assert form.cleaned_data["expected_hash_sha1"] == expected_sha1
+
+    def test_form_sha1_hash_strips_uppercase_dashed_prefix(self):
+        """Test SHA1 hash with 'SHA-256:' prefix is stripped and hash normalized."""
+        expected_sha1 = "abc123def456789012345678901234567890abcd"
+        form_data = {
+            "url": "https://example.com/file.gds",
+            "expected_hash_sha1": f"SHA-256:{expected_sha1.upper()}",
+        }
+        form = ProjectFileURLSubmitForm(data=form_data)
+
+        assert form.is_valid()
+        # Hash should be lowercased
+        assert form.cleaned_data["expected_hash_sha1"] == expected_sha1
+
+    def test_form_hash_without_prefix_still_works(self):
+        """Test that hashes without prefixes still work (backwards compatibility)."""
+        expected_md5 = "abc123def456789012345678901234ab"
+        expected_sha1 = "abc123def456789012345678901234567890abcd"
+        form_data = {
+            "url": "https://example.com/file.gds",
+            "expected_hash_md5": expected_md5,
+            "expected_hash_sha1": expected_sha1,
+        }
+        form = ProjectFileURLSubmitForm(data=form_data)
+
+        assert form.is_valid()
+        assert form.cleaned_data["expected_hash_md5"] == expected_md5
+        assert form.cleaned_data["expected_hash_sha1"] == expected_sha1
+
+    def test_form_valid_with_sha256_hash(self):
+        """Test form is valid with SHA256 hash only."""
+        expected_sha256 = (
+            "abc123def456789012345678901234567890abcdef123456789012345678abcd"
+        )
+        form_data = {
+            "url": "https://example.com/file.gds",
+            "expected_hash_sha256": expected_sha256,
+        }
+        form = ProjectFileURLSubmitForm(data=form_data)
+
+        assert form.is_valid()
+        assert form.cleaned_data["expected_hash_sha256"] == expected_sha256
+
+    def test_form_valid_with_all_three_hashes(self):
+        """Test form is valid with MD5, SHA1, and SHA256 hashes."""
+        form_data = {
+            "url": "https://example.com/file.gds",
+            "expected_hash_md5": "abc123def456789012345678901234ab",
+            "expected_hash_sha1": "abc123def456789012345678901234567890abcd",
+            "expected_hash_sha256": (
+                "abc123def456789012345678901234567890abcdef123456789012345678abcd"
+            ),
+        }
+        form = ProjectFileURLSubmitForm(data=form_data)
+
+        assert form.is_valid()
+
+    def test_form_invalid_sha256_hash_wrong_length(self):
+        """Test SHA256 hash with wrong length is invalid."""
+        form_data = {
+            "url": "https://example.com/file.gds",
+            "expected_hash_sha256": "abc123",  # Too short
+        }
+        form = ProjectFileURLSubmitForm(data=form_data)
+
+        assert not form.is_valid()
+        assert "expected_hash_sha256" in form.errors
+        assert "64 hexadecimal characters" in str(form.errors["expected_hash_sha256"])
+
+    def test_form_invalid_sha256_hash_non_hex(self):
+        """Test SHA256 hash with non-hex characters is invalid."""
+        invalid_sha256 = (
+            "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg"
+        )
+        form_data = {
+            "url": "https://example.com/file.gds",
+            "expected_hash_sha256": invalid_sha256,
+        }
+        form = ProjectFileURLSubmitForm(data=form_data)
+
+        assert not form.is_valid()
+        assert "expected_hash_sha256" in form.errors
+        assert "hexadecimal characters" in str(form.errors["expected_hash_sha256"])
+
+    def test_form_sha256_hash_cleaned_lowercase(self):
+        """Test SHA256 hash is converted to lowercase."""
+        expected_sha256 = (
+            "abc123def456789012345678901234567890abcdef123456789012345678abcd"
+        )
+        uppercase_sha256 = (
+            "ABC123DEF456789012345678901234567890ABCDEF123456789012345678ABCD"
+        )
+        form_data = {
+            "url": "https://example.com/file.gds",
+            "expected_hash_sha256": uppercase_sha256,
+        }
+        form = ProjectFileURLSubmitForm(data=form_data)
+
+        assert form.is_valid()
+        assert form.cleaned_data["expected_hash_sha256"] == expected_sha256
+
+    def test_form_sha256_hash_strips_sha256_prefix(self):
+        """Test SHA256 hash with 'sha256:' prefix is stripped and normalized."""
+        expected_sha256 = (
+            "abc123def456789012345678901234567890abcdef123456789012345678abcd"
+        )
+        form_data = {
+            "url": "https://example.com/file.gds",
+            "expected_hash_sha256": f"sha256:{expected_sha256}",
+        }
+        form = ProjectFileURLSubmitForm(data=form_data)
+
+        assert form.is_valid()
+        assert form.cleaned_data["expected_hash_sha256"] == expected_sha256
+
+    def test_form_sha256_hash_with_whitespace_stripped(self):
+        """Test SHA256 hash with whitespace is stripped and normalized."""
+        expected_sha256 = (
+            "abc123def456789012345678901234567890abcdef123456789012345678abcd"
+        )
+        sha256_with_spaces = (
+            "abc123 def456 789012 345678 901234 567890 abcdef 123456 789012 345678abcd"
+        )
+        form_data = {
+            "url": "https://example.com/file.gds",
+            "expected_hash_sha256": sha256_with_spaces,
+        }
+        form = ProjectFileURLSubmitForm(data=form_data)
+
+        assert form.is_valid()
+        assert form.cleaned_data["expected_hash_sha256"] == expected_sha256
+
+    def test_form_sha256_hash_with_dashes_stripped(self):
+        """Test SHA256 hash with dashes is stripped and normalized."""
+        expected_sha256 = (
+            "abc123def456789012345678901234567890abcdef123456789012345678abcd"
+        )
+        sha256_with_dashes = (
+            "abc123-def456-789012-345678-901234-567890-abcdef-123456-789012-345678abcd"
+        )
+        form_data = {
+            "url": "https://example.com/file.gds",
+            "expected_hash_sha256": sha256_with_dashes,
+        }
+        form = ProjectFileURLSubmitForm(data=form_data)
+
+        assert form.is_valid()
+        assert form.cleaned_data["expected_hash_sha256"] == expected_sha256
+
+    def test_form_requires_at_least_one_hash_including_sha256(self):
+        """Test that form accepts SHA256 as the required hash."""
+        # SHA256 alone should be valid
+        valid_sha256 = (
+            "abc123def456789012345678901234567890abcdef123456789012345678abcd"
+        )
+        form_data = {
+            "url": "https://example.com/file.gds",
+            "expected_hash_sha256": valid_sha256,
+        }
+        form = ProjectFileURLSubmitForm(data=form_data)
+        assert form.is_valid()
+
+        # Empty hashes should be invalid
+        form_data_empty = {
+            "url": "https://example.com/file.gds",
+            "expected_hash_md5": "",
+            "expected_hash_sha1": "",
+            "expected_hash_sha256": "",
+        }
+        form_empty = ProjectFileURLSubmitForm(data=form_data_empty)
+        assert not form_empty.is_valid()
+        assert "__all__" in form_empty.errors

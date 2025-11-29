@@ -8,6 +8,7 @@ from typing import cast
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.mixins import UserPassesTestMixin
 from django.core.exceptions import ValidationError
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
@@ -25,6 +26,7 @@ from .forms import ProjectFileURLSubmitForm
 from .forms import ProjectForm
 from .mixins import ProjectOwnerOrStaffMixin
 from .models import DownloadAttempt
+from .models import ManufacturabilityCheck
 from .models import Project
 from .models import ProjectFile
 from .security import SecurityValidationError
@@ -261,29 +263,12 @@ class ProjectFileSubmitURLView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, Vie
     def get(self, request, pk):
         """Show the URL submission form."""
         project = get_object_or_404(Project, pk=pk)
-        user = request.user
-
         form = ProjectFileURLSubmitForm()
-
-        # Add viewing_as_admin flag for template
-        viewing_as_admin = (
-            user.is_authenticated and user.is_staff and project.user != user
-        )
-
-        return render(
-            request,
-            "projects/project_file_submit_url.html",
-            {
-                "project": project,
-                "form": form,
-                "viewing_as_admin": viewing_as_admin,
-            },
-        )
+        return self.render_form(request, project, form)
 
     def post(self, request, pk):
         """Process the URL submission."""
         project = get_object_or_404(Project, pk=pk)
-        user = request.user
 
         form = ProjectFileURLSubmitForm(request.POST)
 
@@ -295,6 +280,9 @@ class ProjectFileSubmitURLView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, Vie
                     url=form.cleaned_data["url"],
                     expected_hash_md5=form.cleaned_data.get("expected_hash_md5", ""),
                     expected_hash_sha1=form.cleaned_data.get("expected_hash_sha1", ""),
+                    expected_hash_sha256=form.cleaned_data.get(
+                        "expected_hash_sha256", ""
+                    ),
                 )
 
                 # Build success message
@@ -315,10 +303,31 @@ class ProjectFileSubmitURLView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, Vie
                 # Catch file and network-related errors
                 messages.error(request, f"An error occurred: {e}")
 
+        return self.render_form(request, project, form)
+
+    def render_form(self, request, project, form):
+        """Render the form template."""
+        user = request.user
+
         # Add viewing_as_admin flag for template
         viewing_as_admin = (
             user.is_authenticated and user.is_staff and project.user != user
         )
+
+        # Check if there's a running manufacturability check that would be cancelled
+        running_check = None
+        active_file = ProjectFile.objects.filter(
+            project=project,
+            is_active=True,
+        ).first()
+
+        if active_file:
+            try:
+                check = active_file.manufacturability_check
+                if check.is_cancellable:
+                    running_check = check
+            except ManufacturabilityCheck.DoesNotExist:
+                pass
 
         return render(
             request,
@@ -327,6 +336,7 @@ class ProjectFileSubmitURLView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, Vie
                 "project": project,
                 "form": form,
                 "viewing_as_admin": viewing_as_admin,
+                "running_check": running_check,
             },
         )
 
@@ -377,6 +387,164 @@ class ProjectFileProgressView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View
             progress["error"] = latest_attempt.download_error or "Download failed"
 
         return JsonResponse(progress)
+
+
+class ManufacturabilityCheckStatusView(LoginRequiredMixin, UserPassesTestMixin, View):
+    """Get manufacturability check status (AJAX endpoint)."""
+
+    def test_func(self):
+        """Only allow the owner to view check status."""
+        project = get_object_or_404(Project, pk=self.kwargs["pk"])
+        return project.user == self.request.user
+
+    def get(self, request, pk):
+        """Return check status as JSON.
+
+        Returns:
+            JsonResponse: Check status data containing:
+                - status: Current check status (queued, processing, completed, failed)
+                - processing_logs: Raw logs from the check
+                - is_manufacturable: Boolean or null
+                - error_message: Error message if failed
+        """
+        project = get_object_or_404(Project, pk=pk)
+
+        # Check if user owns the project
+        if project.user != request.user:
+            return JsonResponse({"error": "Permission denied"}, status=403)
+
+        # Get active file's manufacturability check
+        active_file = ProjectFile.objects.filter(
+            project=project,
+            is_active=True,
+        ).first()
+
+        if not active_file:
+            return JsonResponse({"error": "No active file found"}, status=404)
+
+        try:
+            check = active_file.manufacturability_check
+        except ManufacturabilityCheck.DoesNotExist:
+            return JsonResponse(
+                {"error": "No manufacturability check found"}, status=404
+            )
+
+        started = check.started_at.isoformat() if check.started_at else None
+        completed = check.completed_at.isoformat() if check.completed_at else None
+
+        return JsonResponse(
+            {
+                "status": check.status,
+                "processing_logs": check.processing_logs or "",
+                "is_manufacturable": check.is_manufacturable,
+                "error_message": check.error_message or "",
+                "started_at": started,
+                "completed_at": completed,
+            }
+        )
+
+
+class ManufacturabilityCheckCancelView(LoginRequiredMixin, UserPassesTestMixin, View):
+    """Cancel a running manufacturability check (POST-only)."""
+
+    def test_func(self):
+        """Only allow the owner to cancel the check."""
+        project = get_object_or_404(Project, pk=self.kwargs["pk"])
+        return project.user == self.request.user
+
+    def post(self, request, pk):
+        """Handle check cancellation."""
+        project = get_object_or_404(Project, pk=pk)
+
+        # Get active file's manufacturability check
+        active_file = ProjectFile.objects.filter(
+            project=project,
+            is_active=True,
+        ).first()
+
+        if not active_file:
+            messages.error(request, "No active file found.")
+            return redirect("projects:detail", pk=pk)
+
+        try:
+            check = active_file.manufacturability_check
+        except ManufacturabilityCheck.DoesNotExist:
+            messages.error(request, "No manufacturability check found.")
+            return redirect("projects:detail", pk=pk)
+
+        if ManufacturabilityService.cancel_check(check, reason="Cancelled by user"):
+            messages.success(request, "Manufacturability check cancelled.")
+        else:
+            messages.warning(
+                request, "Check could not be cancelled (already completed or failed)."
+            )
+
+        return redirect("projects:detail", pk=pk)
+
+
+class ManufacturabilityCheckAdminStatusView(
+    LoginRequiredMixin, UserPassesTestMixin, View
+):
+    """Admin-only status page for monitoring all manufacturability checks."""
+
+    def test_func(self):
+        """Only allow staff users to view this page."""
+        return self.request.user.is_staff
+
+    def get(self, request):
+        """Display manufacturability check status dashboard."""
+        # Get counts by status
+        status_counts = {}
+        for status_value, status_label in ManufacturabilityCheck.Status.choices:
+            count = ManufacturabilityCheck.objects.filter(status=status_value).count()
+            status_counts[status_value] = {
+                "label": status_label,
+                "count": count,
+            }
+
+        # Get recent checks (last 50)
+        recent_checks = ManufacturabilityCheck.objects.select_related(
+            "project",
+            "project__user",
+            "project_file",
+        ).order_by("-id")[:50]
+
+        # Get currently processing checks
+        processing_checks = (
+            ManufacturabilityCheck.objects.filter(
+                status=ManufacturabilityCheck.Status.PROCESSING,
+            )
+            .select_related(
+                "project",
+                "project__user",
+                "project_file",
+            )
+            .order_by("-started_at")
+        )
+
+        # Get queued checks
+        queued_checks = (
+            ManufacturabilityCheck.objects.filter(
+                status=ManufacturabilityCheck.Status.QUEUED,
+            )
+            .select_related(
+                "project",
+                "project__user",
+                "project_file",
+            )
+            .order_by("-id")
+        )
+
+        return render(
+            request,
+            "projects/manufacturability_check_status.html",
+            {
+                "status_counts": status_counts,
+                "recent_checks": recent_checks,
+                "processing_checks": processing_checks,
+                "queued_checks": queued_checks,
+            },
+        )
 
 
 class ProjectSubmitView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):

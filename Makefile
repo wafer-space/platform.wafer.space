@@ -255,6 +255,8 @@ runserver: stopserver ## Run Django development server with Celery worker (via H
 	@echo "$(BLUE)Starting development server and Celery worker...$(NC)"
 	@echo "$(BLUE)Cleaning Celery Beat schedule database...$(NC)"
 	@rm -f celerybeat-schedule celerybeat-schedule.db celerybeat-schedule.sqlite3 celerybeat-schedule.sqlite3-shm celerybeat-schedule.sqlite3-wal
+	@echo "$(BLUE)Purging stale Celery messages from broker queue...$(NC)"
+	@sqlite3 db.sqlite3 "DELETE FROM kombu_message" 2>/dev/null || true
 	@$(UV) run honcho start
 
 .PHONY: stopserver
@@ -302,9 +304,20 @@ shell-plus: ## Open Django shell_plus (requires django-extensions)
 # ==================== Celery ====================
 
 .PHONY: celery
-celery: ## Start Celery worker
-	@echo "$(BLUE)Starting Celery worker...$(NC)"
-	@$(CELERY) -A config worker --loglevel=info
+celery: ## Start Celery worker (all queues: celery, manufacturability, referrals)
+	@echo "$(BLUE)Starting Celery worker (all queues)...$(NC)"
+	@$(CELERY) -A config worker -Q celery,manufacturability,referrals --loglevel=info --concurrency=1 --pool=solo
+
+.PHONY: celery-manufacturability
+celery-manufacturability: ## Start Celery worker for manufacturability queue only
+	@echo "$(BLUE)Starting Celery worker (manufacturability queue only)...$(NC)"
+	@echo "$(YELLOW)Note: This requires Docker access to run precheck containers$(NC)"
+	@$(CELERY) -A config worker -Q manufacturability --loglevel=info --concurrency=1 --pool=solo
+
+.PHONY: celery-referrals
+celery-referrals: ## Start Celery worker for referrals queue only
+	@echo "$(BLUE)Starting Celery worker (referrals queue only)...$(NC)"
+	@$(CELERY) -A config worker -Q referrals --loglevel=info --concurrency=1 --pool=solo
 
 .PHONY: celery-purge
 celery-purge: ## Purge all Celery tasks

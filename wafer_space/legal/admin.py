@@ -7,6 +7,8 @@ from django.utils.html import escape
 from django.utils.html import format_html
 from django.utils.text import Truncator
 
+from wafer_space.contrib.admin_mixins import StaffReadOnlyAdminMixin
+
 from .models import TermsOfService
 from .models import TermsOfServiceAcceptance
 from .models import TermsOfServiceNotification
@@ -14,7 +16,7 @@ from .tasks import send_tos_update_email
 
 
 @admin.register(TermsOfService)
-class TermsOfServiceAdmin(admin.ModelAdmin):
+class TermsOfServiceAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
     """Admin interface for TermsOfService."""
 
     list_display = [
@@ -140,7 +142,7 @@ class TermsOfServiceAdmin(admin.ModelAdmin):
 
 
 @admin.register(TermsOfServiceAcceptance)
-class TermsOfServiceAcceptanceAdmin(admin.ModelAdmin):
+class TermsOfServiceAcceptanceAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
     """Admin interface for TermsOfServiceAcceptance."""
 
     list_display = [
@@ -180,7 +182,7 @@ class TermsOfServiceAcceptanceAdmin(admin.ModelAdmin):
 
 
 @admin.register(TermsOfServiceNotification)
-class TermsOfServiceNotificationAdmin(admin.ModelAdmin):
+class TermsOfServiceNotificationAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
     """Admin interface for TermsOfServiceNotification."""
 
     list_display = [

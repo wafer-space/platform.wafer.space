@@ -13,9 +13,12 @@ from pathlib import Path
 from urllib.parse import unquote
 from urllib.parse import urlparse
 
-import magic
 from celery.result import AsyncResult
+from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import transaction
+
+from config import celery_app
 
 from .models import ManufacturabilityCheck
 from .models import Project
@@ -103,52 +106,6 @@ def _extract_filename_from_url(
     return "download"
 
 
-def detect_file_type_from_data(data: bytes) -> tuple[str, str]:
-    """Detect file type from actual file data using MIME type detection.
-
-    Args:
-        data: File data bytes (at least first 1MB recommended)
-
-    Returns:
-        tuple: (mime_type, file_extension)
-            - mime_type: Detected MIME type (e.g., "application/gzip")
-            - file_extension: Appropriate file extension (e.g., ".gds.gz")
-
-    Raises:
-        ValueError: If file type is not a valid GDS/OASIS file
-    """
-    # Detect MIME type from data
-    mime = magic.Magic(mime=True)
-    mime_type = mime.from_buffer(data)
-
-    # Map MIME types to file extensions
-    # GDS/OASIS files are binary formats, often detected as generic binary
-    mime_to_extension = {
-        # Compressed formats
-        "application/gzip": ".gds.gz",  # Assume GDS compressed with gzip
-        "application/x-gzip": ".gds.gz",
-        "application/zip": ".gds.zip",
-        "application/x-zip-compressed": ".gds.zip",
-        "application/x-bzip2": ".gds.bz2",
-        "application/x-xz": ".gds.xz",
-        # Uncompressed - these are tricky as GDS/OASIS have no standard MIME type
-        "application/octet-stream": ".gds",  # Generic binary, assume GDS
-        "application/x-gds": ".gds",  # Non-standard but sometimes used
-        "application/x-oasis": ".oas",
-    }
-
-    if mime_type not in mime_to_extension:
-        msg = (
-            f"Unsupported file type: {mime_type}. "
-            f"Only GDS/OASIS files are accepted. "
-            f"Supported MIME types: {', '.join(sorted(mime_to_extension.keys()))}"
-        )
-        raise ValueError(msg)
-
-    extension = mime_to_extension[mime_type]
-    return mime_type, extension
-
-
 def _validate_filename_format(filename: str) -> None:
     """Validate that filename has a GDS or OASIS format.
 
@@ -225,6 +182,7 @@ class FileCreationData:
     source_url: str
     expected_hash_md5: str
     expected_hash_sha1: str
+    expected_hash_sha256: str
     file_size: int
     content_type: str
 
@@ -240,6 +198,7 @@ class ProjectFileService:
         *,
         expected_hash_md5: str = "",
         expected_hash_sha1: str = "",
+        expected_hash_sha256: str = "",
     ) -> tuple[ProjectFile, dict[str, bool | str | int | None]]:
         """Submit a file URL for download with validation and rewriting.
 
@@ -257,6 +216,7 @@ class ProjectFileService:
             url: The URL submitted by the user
             expected_hash_md5: Optional MD5 hash for verification
             expected_hash_sha1: Optional SHA1 hash for verification
+            expected_hash_sha256: Optional SHA256 hash for verification
 
         Returns:
             tuple: (ProjectFile instance, metadata dict)
@@ -348,6 +308,7 @@ class ProjectFileService:
             source_url=rewritten_url,
             expected_hash_md5=expected_hash_md5,
             expected_hash_sha1=expected_hash_sha1,
+            expected_hash_sha256=expected_hash_sha256,
             file_size=file_size,
             content_type=content_type,
         )
@@ -378,6 +339,8 @@ class ProjectFileService:
     def _handle_file_replacement(cls, project: Project) -> None:
         """Mark existing active file as inactive before creating new one.
 
+        Also cancels any running manufacturability check on the active file.
+
         Args:
             project: The project to check for active files
         """
@@ -388,6 +351,16 @@ class ProjectFileService:
         ).first()
 
         if active_file:
+            # Cancel any running manufacturability check on this file
+            try:
+                check = active_file.manufacturability_check
+                if check.is_cancellable:
+                    ManufacturabilityService.cancel_check(
+                        check, reason="Cancelled: new file submitted"
+                    )
+            except ManufacturabilityCheck.DoesNotExist:
+                pass  # No check to cancel
+
             # Mark as inactive (the new file will be marked active)
             active_file.is_active = False
             active_file.save(update_fields=["is_active"])
@@ -421,6 +394,7 @@ class ProjectFileService:
             source_url=file_data.source_url,
             expected_hash_md5=file_data.expected_hash_md5.strip().lower(),
             expected_hash_sha1=file_data.expected_hash_sha1.strip().lower(),
+            expected_hash_sha256=file_data.expected_hash_sha256.strip().lower(),
             file_size=file_data.file_size,
             content_type=file_data.content_type,
             original_filename=filename,
@@ -589,52 +563,89 @@ class ManufacturabilityService:
 
     @classmethod
     def queue_check(
-        cls, project: Project, project_file: "ProjectFile | None" = None
+        cls,
+        project: Project,
+        project_file: "ProjectFile",
+        *,
+        force: bool = False,
     ) -> ManufacturabilityCheck:
-        """Queue a manufacturability check for a project file.
+        """Queue a manufacturability check for a specific project file.
 
-        Creates or gets an existing check for the file, sets status to QUEUED,
-        and triggers the Celery task for processing.
+        Note: Normally checks are queued automatically by the periodic
+        scan_and_queue_manufacturability_checks task. This method is for
+        manual queueing from admin or other code paths.
+
+        Thread-safe: Uses database transaction to ensure global
+        concurrency limits are enforced atomically.
 
         Args:
             project: The project to check
-            project_file: The specific file to check (optional for backwards compat)
+            project_file: The specific file to check (required)
+            force: If True, skip concurrent limit check (for admin use)
 
         Returns:
-            ManufacturabilityCheck: The queued check instance
+            ManufacturabilityCheck instance
+
+        Raises:
+            ValidationError: If global concurrent limit reached
         """
-        # Build filter for get_or_create
-        filter_kwargs: dict = {"project": project}
-        if project_file:
-            filter_kwargs["project_file"] = project_file
+        # Use transaction for database operations only
+        with transaction.atomic():
+            # Get or create the check FIRST (within transaction)
+            # Each check is tied to a specific project_file
+            check, created = ManufacturabilityCheck.objects.get_or_create(
+                project=project,
+                project_file=project_file,
+                defaults={"status": ManufacturabilityCheck.Status.QUEUED},
+            )
 
-        # Get or create the check
-        check, created = ManufacturabilityCheck.objects.get_or_create(
-            **filter_kwargs,
-            defaults={
-                "status": ManufacturabilityCheck.Status.QUEUED,
-            },
-        )
+            # If already queued/processing, return immediately (idempotent)
+            if not created and check.status in [
+                ManufacturabilityCheck.Status.QUEUED,
+                ManufacturabilityCheck.Status.PROCESSING,
+            ]:
+                return check
 
-        # If check already exists and is processing/queued, don't re-queue
-        if not created and check.status in [
-            ManufacturabilityCheck.Status.PROCESSING,
-            ManufacturabilityCheck.Status.QUEUED,
-        ]:
-            # Check is already in progress, don't modify it
-            return check
+            # Check global concurrent limit (unless forced)
+            if not force:
+                active_checks_qs = ManufacturabilityCheck.objects.select_for_update()
+                active_count = (
+                    active_checks_qs.filter(
+                        status__in=[
+                            ManufacturabilityCheck.Status.QUEUED,
+                            ManufacturabilityCheck.Status.PROCESSING,
+                        ],
+                    )
+                    .exclude(id=check.id)
+                    .count()
+                )
 
-        # If check exists but failed/completed, reset and re-queue
-        if not created:
+                concurrent_limit = getattr(settings, "PRECHECK_CONCURRENT_LIMIT", 4)
+                if active_count >= concurrent_limit:
+                    # If we just created this check, delete it before raising
+                    if created:
+                        check.delete()
+                    msg = (
+                        f"System is at capacity ({active_count} checks running). "
+                        "Please try again later."
+                    )
+                    raise ValidationError(msg)
+
+            # Reset for new run (including ALL fields)
             check.status = ManufacturabilityCheck.Status.QUEUED
-            check.is_manufacturable = None
+            check.is_manufacturable = None  # Reset manufacturability
             check.errors = []
             check.warnings = []
+            check.error_message = ""
             check.processing_logs = ""
-            check.retry_count = 0
+            check.retry_count = 0  # Reset retry count
+            check.started_at = None
+            check.completed_at = None
             check.save()
 
-        # Trigger Celery task (only for new or reset checks)
+        # Queue task OUTSIDE transaction to avoid SQLite broker issues
+        # The check is now committed to the database, so the task can safely
+        # reference it by ID
         task = check_project_manufacturability.delay(check.id)
         check.task_id = task.id
         check.save(update_fields=["task_id"])
@@ -673,23 +684,35 @@ class ManufacturabilityService:
             project: The project to get check status for
 
         Returns:
-            dict with check status information, or None if no check exists.
+            dict with check status information, or None if no active file
+            or no check exists for the active file.
         """
-        # Get the active file and its check
         active_file = project.files.filter(is_active=True).first()
-        if active_file:
-            return cls.get_check_status_for_file(active_file)
-
-        # Fallback: get most recent check for the project
-        check = project.manufacturability_checks.order_by("-started_at").first()
-        if not check:
+        if not active_file:
             return None
 
-        return {
-            "status": check.status,
-            "is_manufacturable": check.is_manufacturable,
-            "errors": check.errors,
-            "warnings": check.warnings,
-            "started_at": check.started_at,
-            "completed_at": check.completed_at,
-        }
+        return cls.get_check_status_for_file(active_file)
+
+    @classmethod
+    def cancel_check(
+        cls,
+        check: ManufacturabilityCheck,
+        *,
+        reason: str = "Cancelled by user",
+    ) -> bool:
+        """Cancel a manufacturability check and revoke its Celery task.
+
+        Args:
+            check: The check to cancel
+            reason: Why the check was cancelled
+
+        Returns:
+            bool: True if cancelled, False if not cancellable
+        """
+        task_id = check.cancel(reason=reason)
+        if task_id is None:
+            return False
+
+        # Revoke the Celery task
+        celery_app.control.revoke(task_id, terminate=True)
+        return True

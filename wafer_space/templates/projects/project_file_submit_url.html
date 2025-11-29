@@ -14,6 +14,26 @@
         <p class="text-muted mb-4">
           <i class="bi bi-folder-fill"></i> Project: <strong>{{ project.name }}</strong>
         </p>
+        {# Warning about cancelling running check #}
+        {% if running_check %}
+          <div class="alert alert-warning" role="alert">
+            <h5 class="alert-heading">
+              <i class="bi bi-exclamation-triangle"></i> Running Check Will Be Cancelled
+            </h5>
+            <p class="mb-0">
+              A manufacturability check is currently
+              <strong>
+                {% if running_check.status == 'processing' %}
+                  running
+                {% else %}
+                  queued
+                {% endif %}
+              </strong>
+              for your existing file. Submitting a new file will <strong>cancel</strong> this check
+              and start fresh with the new file.
+            </p>
+          </div>
+        {% endif %}
         {# Main Information Box #}
         <div class="alert alert-info" role="alert">
           <h5 class="alert-heading">
@@ -65,17 +85,21 @@
                       (before compressing it for upload).
                     </p>
                     <h6>Linux</h6>
-                    <pre class="bg-dark text-light p-3 rounded"><code>md5sum your_design.gds     # MD5
-sha1sum your_design.gds    # SHA1</code></pre>
+                    <pre class="bg-dark text-light p-3 rounded"><code>md5sum your_design.gds       # MD5
+sha1sum your_design.gds      # SHA1
+sha256sum your_design.gds    # SHA256</code></pre>
                     <h6>macOS</h6>
-                    <pre class="bg-dark text-light p-3 rounded"><code>md5 your_design.gds        # MD5
-shasum your_design.gds     # SHA1</code></pre>
+                    <pre class="bg-dark text-light p-3 rounded"><code>md5 your_design.gds          # MD5
+shasum your_design.gds       # SHA1
+shasum -a 256 your_design.gds  # SHA256</code></pre>
                     <h6>Windows (PowerShell)</h6>
-                    <pre class="bg-dark text-light p-3 rounded"><code>Get-FileHash -Algorithm MD5 your_design.gds   # MD5
-Get-FileHash -Algorithm SHA1 your_design.gds  # SHA1</code></pre>
+                    <pre class="bg-dark text-light p-3 rounded"><code>Get-FileHash -Algorithm MD5 your_design.gds     # MD5
+Get-FileHash -Algorithm SHA1 your_design.gds    # SHA1
+Get-FileHash -Algorithm SHA256 your_design.gds  # SHA256</code></pre>
                     <h6>Windows (Command Prompt)</h6>
-                    <pre class="bg-dark text-light p-3 rounded"><code>certutil -hashfile your_design.gds MD5   # MD5
-certutil -hashfile your_design.gds SHA1  # SHA1</code></pre>
+                    <pre class="bg-dark text-light p-3 rounded"><code>certutil -hashfile your_design.gds MD5     # MD5
+certutil -hashfile your_design.gds SHA1    # SHA1
+certutil -hashfile your_design.gds SHA256  # SHA256</code></pre>
                     <div class="alert alert-warning mt-3 mb-0">
                       <i class="bi bi-exclamation-triangle"></i>
                       <strong>Remember:</strong> Generate the checksum from the original uncompressed file,
@@ -89,6 +113,7 @@ certutil -hashfile your_design.gds SHA1  # SHA1</code></pre>
           {# Hash Fields #}
           {{ form.expected_hash_md5|as_crispy_field }}
           {{ form.expected_hash_sha1|as_crispy_field }}
+          {{ form.expected_hash_sha256|as_crispy_field }}
           {# Good to Know #}
           <div class="alert alert-secondary" role="alert">
             <h5 class="alert-heading">

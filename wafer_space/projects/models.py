@@ -1,11 +1,17 @@
 import hashlib
+import json
+import urllib.parse
 import uuid
+from datetime import timedelta
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.utils import timezone
+
+# Byte conversion constant
+_BYTES_PER_KB = 1024.0
 
 
 class Project(models.Model):
@@ -311,10 +317,16 @@ class ProjectFile(models.Model):
         blank=True,
         help_text="SHA1 hash provided by user for verification",
     )
+    expected_hash_sha256 = models.CharField(
+        max_length=64,
+        blank=True,
+        help_text="SHA256 hash provided by user for verification",
+    )
 
     # File verification (calculated) - keep original field names from migration
     hash_md5 = models.CharField(max_length=32, blank=True)
     hash_sha1 = models.CharField(max_length=40, blank=True)
+    hash_sha256 = models.CharField(max_length=64, blank=True)
     hash_verified = models.BooleanField(default=False)
 
     # URL handler metadata
@@ -337,6 +349,11 @@ class ProjectFile(models.Model):
         max_length=255,
         blank=True,
         help_text="Final filename after extraction/decompression pipeline",
+    )
+    top_cell = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Top-level cell name extracted from GDS/OASIS file",
     )
     content_type = models.CharField(max_length=100, blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
@@ -373,7 +390,7 @@ class ProjectFile(models.Model):
         return f"{self.project.name} - {self.original_filename}"
 
     def calculate_hashes(self):
-        """Calculate MD5 and SHA1 hashes for the downloaded file."""
+        """Calculate MD5, SHA1, and SHA256 hashes for the downloaded file."""
         if not self.file:
             return False
 
@@ -383,6 +400,7 @@ class ProjectFile(models.Model):
 
             self.hash_md5 = hashlib.md5(content, usedforsecurity=False).hexdigest()
             self.hash_sha1 = hashlib.sha1(content, usedforsecurity=False).hexdigest()
+            self.hash_sha256 = hashlib.sha256(content).hexdigest()
             self.file_size = len(content)
 
             self.file.seek(0)  # Reset file pointer
@@ -394,7 +412,14 @@ class ProjectFile(models.Model):
 
     def verify_hash(self):
         """Verify downloaded file hash against user-provided expected values."""
-        if not self.hash_md5 or not self.hash_sha1:
+        # Calculate missing hashes if needed for verification
+        needs_calculation = (
+            (self.expected_hash_md5 and not self.hash_md5)
+            or (self.expected_hash_sha1 and not self.hash_sha1)
+            or (self.expected_hash_sha256 and not self.hash_sha256)
+        )
+
+        if needs_calculation:
             if not self.calculate_hashes():
                 return False, "Could not calculate file hashes"
 
@@ -415,6 +440,14 @@ class ProjectFile(models.Model):
                 errors.append(
                     f"SHA1 mismatch: expected {self.expected_hash_sha1}, "
                     f"got {self.hash_sha1}",
+                )
+
+        if self.expected_hash_sha256:
+            if self.hash_sha256.lower() != self.expected_hash_sha256.lower():
+                verified = False
+                errors.append(
+                    f"SHA256 mismatch: expected {self.expected_hash_sha256}, "
+                    f"got {self.hash_sha256}",
                 )
 
         self.hash_verified = verified
@@ -602,18 +635,6 @@ class ProjectFile(models.Model):
         return dict(self.DownloadStatus.choices).get(status_value, status_value)
 
     @property
-    def current_status(self) -> str:
-        """Get current download status from latest attempt.
-
-        DEPRECATED: Use download_status property instead.
-        Returns 'pending' if no attempts exist.
-        """
-        attempt = self.latest_attempt
-        if not attempt:
-            return "pending"
-        return attempt.status
-
-    @property
     def attempt_count(self) -> int:
         """Get number of download attempts.
 
@@ -650,12 +671,21 @@ class ProjectFile(models.Model):
             if self.expected_hash_sha1.lower() != self.hash_sha1.lower():
                 return True
 
+        # Check SHA256 mismatch
+        if self.expected_hash_sha256 and self.hash_sha256:
+            if self.expected_hash_sha256.lower() != self.hash_sha256.lower():
+                return True
+
         return False
 
     @property
     def has_expected_hash(self) -> bool:
         """Check if user provided any expected hash for verification."""
-        return bool(self.expected_hash_md5 or self.expected_hash_sha1)
+        return bool(
+            self.expected_hash_md5
+            or self.expected_hash_sha1
+            or self.expected_hash_sha256
+        )
 
 
 class FileProcessingError(models.Model):
@@ -924,15 +954,68 @@ class ProjectFileChunk(models.Model):
         return bytes_diff / duration
 
 
+def _get_check_file_prefix(instance) -> tuple[str, str, str]:
+    """Get common file naming components for manufacturability check files.
+
+    Returns:
+        tuple: (gds_name, top_cell, timestamp_str)
+    """
+    timestamp = instance.started_at or timezone.now()
+    timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")
+
+    # Get GDS filename (without path)
+    gds_name = "design"
+    if instance.project_file and instance.project_file.processed_filename:
+        gds_name = instance.project_file.processed_filename
+
+    # Get top cell name
+    top_cell = "unknown"
+    if instance.project_file and instance.project_file.top_cell:
+        # Sanitize top cell name for filesystem (replace unsafe chars)
+        top_cell = instance.project_file.top_cell.replace("/", "_").replace("\\", "_")
+
+    return gds_name, top_cell, timestamp_str
+
+
+def manufacturability_check_log_path(instance, filename):
+    """Generate upload path for manufacturability check logs.
+
+    Logs are stored next to the GDS file with a unique name per check run.
+    Format: projects/<project_id>/<gds_name>.<top_cell>.precheck.<timestamp>.log
+
+    Example: projects/abc123/design.gds.TOP_CELL.precheck.20251126_231820.log
+    """
+    gds_name, top_cell, timestamp_str = _get_check_file_prefix(instance)
+    filename = f"{gds_name}.{top_cell}.precheck.{timestamp_str}.log"
+    return f"projects/{instance.project.id}/{filename}"
+
+
+def manufacturability_check_runs_path(instance, filename):
+    """Generate upload path for manufacturability check runs archive.
+
+    Runs archive contains detailed step-by-step logs from the precheck tool.
+    Format: projects/<project_id>/<gds_name>.<top_cell>.precheck.<timestamp>.runs.tar
+
+    Example: projects/abc123/design.gds.TOP_CELL.precheck.20251126_231820.runs.tar
+    """
+    gds_name, top_cell, timestamp_str = _get_check_file_prefix(instance)
+    filename = f"{gds_name}.{top_cell}.precheck.{timestamp_str}.runs.tar"
+    return f"projects/{instance.project.id}/{filename}"
+
+
 class ManufacturabilityCheck(models.Model):
     """Track manufacturability checking process for projects."""
 
     class Status(models.TextChoices):
         QUEUED = "queued", "Queued"
+        STARTING = "starting", "Starting"
         PROCESSING = "processing", "Processing"
         COMPLETED = "completed", "Completed"
         FAILED = "failed", "Failed"
         CANCELLED = "cancelled", "Cancelled"
+
+    # Maximum characters of processing logs to include in GitHub issue body
+    GITHUB_ISSUE_LOG_CHARS = 5000
 
     project = models.ForeignKey(
         Project,
@@ -943,8 +1026,6 @@ class ManufacturabilityCheck(models.Model):
         "ProjectFile",
         on_delete=models.CASCADE,
         related_name="manufacturability_check",
-        null=True,
-        blank=True,
     )
     status = models.CharField(
         max_length=20,
@@ -956,16 +1037,110 @@ class ManufacturabilityCheck(models.Model):
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     task_id = models.CharField(max_length=100, blank=True, default="")  # Celery task ID
+    queued_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When check entered/re-entered the QUEUED state",
+    )
+
+    # Worker tracking (matching DownloadAttempt pattern)
+    worker_pid = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Process ID of worker executing this check",
+    )
+    worker_hostname = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Hostname of worker executing this check",
+    )
 
     # Results
     is_manufacturable = models.BooleanField(null=True, blank=True)
-    errors = models.JSONField(default=list, blank=True)
-    warnings = models.JSONField(default=list, blank=True)
+    errors = models.JSONField(default=list, blank=True)  # Manufacturing errors
+    warnings = models.JSONField(default=list, blank=True)  # Manufacturing warnings
     processing_logs = models.TextField(blank=True)
+    log_file = models.FileField(
+        upload_to=manufacturability_check_log_path,
+        max_length=512,
+        blank=True,
+        help_text="Log file stored on filesystem (next to GDS file)",
+    )
+    runs_archive = models.FileField(
+        upload_to=manufacturability_check_runs_path,
+        max_length=512,
+        blank=True,
+        help_text="Tar archive of detailed step logs from precheck runs/ directory",
+    )
+
+    # System error tracking (distinct from manufacturing errors)
+    error_message = models.TextField(
+        blank=True,
+        default="",
+        help_text="System error message if check failed to run (Docker, timeout, etc.)",
+    )
 
     # Retry handling
     retry_count = models.PositiveIntegerField(default=0)
     max_retries = models.PositiveIntegerField(default=3)
+
+    # Version tracking
+    docker_image = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text=(
+            "Docker image used (e.g., ghcr.io/wafer-space/gf180mcu-precheck:latest)"
+        ),
+    )
+    docker_image_digest = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        help_text="SHA256 digest of Docker image for reproducibility",
+    )
+    docker_command = models.TextField(
+        blank=True,
+        default="",
+        help_text="Full docker run command for reproducibility",
+    )
+    tool_versions = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            "Tool versions: "
+            "{magic: '8.3.x', klayout: '0.28.x', pdk: 'gf180mcuD-v1.2.3'}"
+        ),
+    )
+    precheck_version = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        help_text="gf180mcu-precheck version/commit hash",
+    )
+
+    # Activity tracking
+    last_activity = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Last activity timestamp for progress tracking",
+    )
+
+    # Admin controls
+    rerun_requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="requested_precheck_reruns",
+        help_text="Admin who requested re-run",
+    )
+    rerun_reason = models.TextField(
+        blank=True,
+        default="",
+        help_text="Why this check was re-run (e.g., 'Updated DRC rules')",
+    )
 
     class Meta:
         verbose_name = "Manufacturability Check"
@@ -1001,13 +1176,422 @@ class ManufacturabilityCheck(models.Model):
         self.project.check_completed_at = self.completed_at
         self.project.save()
 
-    def fail(self, error_message):
-        """Mark check as failed."""
+    def fail(self, error_msg: str) -> None:
+        """Mark check as failed due to system error.
+
+        System failures (Docker errors, timeouts, etc.) should be retried.
+        This is different from a check that ran successfully but found
+        manufacturing issues.
+
+        Args:
+            error_msg: Description of the system error
+        """
         self.status = self.Status.FAILED
         self.completed_at = timezone.now()
-        self.processing_logs += f"\nFAILED: {error_message}"
+        self.error_message = error_msg
+        self.processing_logs += "\n\n=== SYSTEM FAILURE - See error details above ==="
         self.save()
 
     def can_retry(self):
         """Check if this check can be retried."""
         return self.retry_count < self.max_retries
+
+    def cancel(self, reason: str = "Cancelled by user") -> str | None:
+        """Cancel the check if it's still running.
+
+        Updates the check status to CANCELLED and returns the task_id
+        so the caller can revoke the Celery task if needed.
+
+        Args:
+            reason: Why the check was cancelled
+
+        Returns:
+            str | None: The task_id to revoke if cancelled, None if not cancellable
+        """
+        if self.status not in [
+            self.Status.QUEUED,
+            self.Status.STARTING,
+            self.Status.PROCESSING,
+        ]:
+            return None
+
+        task_id = self.task_id  # Capture before state change
+        self.status = self.Status.CANCELLED
+        self.completed_at = timezone.now()
+        self.processing_logs += f"\n\nCANCELLED: {reason}"
+        self.save()
+
+        return task_id
+
+    @property
+    def is_cancellable(self) -> bool:
+        """Check if this check can be cancelled."""
+        return self.status in [
+            self.Status.QUEUED,
+            self.Status.STARTING,
+            self.Status.PROCESSING,
+        ]
+
+    @property
+    def result_display(self) -> str:
+        """Get human-readable result classification.
+
+        Returns one of:
+        - "Manufacturable - Clean" (no warnings)
+        - "Manufacturable with Warnings" (warnings present)
+        - "Not Manufacturable" (failed checks)
+        - "" (not yet completed)
+        """
+        if self.status != self.Status.COMPLETED or self.is_manufacturable is None:
+            return ""
+
+        if self.is_manufacturable:
+            if self.warnings:
+                return "Manufacturable with Warnings"
+            return "Manufacturable - Clean"
+        return "Not Manufacturable"
+
+    @property
+    def queue_position(self) -> int | None:
+        """Get position in the queue (1-indexed).
+
+        Returns None if not in QUEUED state.
+        """
+        if self.status != self.Status.QUEUED or not self.queued_at:
+            return None
+
+        # Count checks queued before this one (lower queued_at = ahead)
+        ahead = ManufacturabilityCheck.objects.filter(
+            status=self.Status.QUEUED,
+            queued_at__lt=self.queued_at,
+        ).count()
+
+        return ahead + 1  # 1-indexed position
+
+    @property
+    def checks_ahead(self) -> int:
+        """Get number of checks ahead in the queue.
+
+        Returns 0 if not in QUEUED state or no queued_at.
+        """
+        if self.status != self.Status.QUEUED or not self.queued_at:
+            return 0
+
+        return ManufacturabilityCheck.objects.filter(
+            status=self.Status.QUEUED,
+            queued_at__lt=self.queued_at,
+        ).count()
+
+    @property
+    def checks_behind(self) -> int:
+        """Get number of checks behind in the queue (admin info).
+
+        Returns 0 if not in QUEUED state or no queued_at.
+        """
+        if self.status != self.Status.QUEUED or not self.queued_at:
+            return 0
+
+        return ManufacturabilityCheck.objects.filter(
+            status=self.Status.QUEUED,
+            queued_at__gt=self.queued_at,
+        ).count()
+
+    @property
+    def checks_running(self) -> int:
+        """Get number of checks currently running (STARTING or PROCESSING)."""
+        return ManufacturabilityCheck.objects.filter(
+            status__in=[self.Status.STARTING, self.Status.PROCESSING],
+        ).count()
+
+    @property
+    def queue_wait_duration(self) -> timedelta | None:
+        """Get how long this check has been waiting in queue.
+
+        Returns None if not in QUEUED state or no queued_at.
+        """
+        if self.status != self.Status.QUEUED or not self.queued_at:
+            return None
+
+        return timezone.now() - self.queued_at
+
+    def get_reproduction_instructions(self) -> str:
+        """Generate markdown instructions for reproducing check locally."""
+        project_file = self.project_file
+
+        return f"""# Reproducing Manufacturability Check Locally
+
+## Prerequisites
+- Docker installed and running
+- Access to your GDS file
+
+## Steps
+
+### 1. Pull the exact Docker image used
+```bash
+docker pull {self.docker_image}
+# Verify digest matches: {self.docker_image_digest}
+docker images --digests | grep gf180mcu-precheck
+```
+
+### 2. Run the precheck
+```bash
+docker run --rm \\
+  -v "$(pwd)/{project_file.original_filename}":/input/design.gds:ro \\
+  {self.docker_image} \\
+  python3 /precheck/precheck.py \\
+    --input /input/design.gds \\
+    --top "{self.project.name}" \\
+    --id {self.project.id}
+```
+
+### 3. Verify file hash
+Your GDS file should have:
+- MD5: {project_file.hash_md5}
+- SHA1: {project_file.hash_sha1}
+
+## Environment
+- Precheck Version: {self.precheck_version}
+- Tool Versions: {json.dumps(self.tool_versions, indent=2)}
+
+## Need Help?
+[Report issue on GitHub]({self.generate_github_issue_url()})
+"""
+
+    def generate_github_issue_url(self) -> str:
+        """Generate pre-filled GitHub issue URL."""
+        title = f"Issue with precheck for project {self.project.name}"
+
+        body = f"""### Environment
+- Docker Image: `{self.docker_image}`
+- Image Digest: `{self.docker_image_digest}`
+- Precheck Version: `{self.precheck_version}`
+- Tool Versions: {json.dumps(self.tool_versions, indent=2)}
+
+### Issue Description
+<!-- Describe the issue here -->
+
+### Logs
+<details>
+<summary>Click to expand logs</summary>
+
+```
+{self.processing_logs[-self.GITHUB_ISSUE_LOG_CHARS :]}
+```
+</details>
+
+### Error Messages
+```json
+{json.dumps(self.errors, indent=2)}
+```
+"""
+
+        params = urllib.parse.urlencode(
+            {"title": title, "body": body, "labels": "bug,from-platform"}
+        )
+
+        return f"https://github.com/wafer-space/gf180mcu-precheck/issues/new?{params}"
+
+
+class ManufacturabilityCheckpoint(models.Model):
+    """Track resource usage during manufacturability check execution.
+
+    Similar to ProjectFileChunk for downloads, this records periodic snapshots
+    of Docker container stats during the precheck run for performance analysis.
+    """
+
+    manufacturability_check = models.ForeignKey(
+        ManufacturabilityCheck,
+        on_delete=models.CASCADE,
+        related_name="checkpoints",
+        help_text="The manufacturability check this checkpoint belongs to",
+    )
+
+    # Timing
+    timestamp = models.DateTimeField(
+        auto_now_add=True,
+        help_text="When this checkpoint was recorded",
+    )
+    checkpoint_number = models.IntegerField(
+        help_text="Sequential checkpoint number for ordering",
+    )
+    elapsed_seconds = models.FloatField(
+        help_text="Seconds since check started",
+    )
+
+    # CPU stats
+    cpu_percent = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="CPU usage percentage at this checkpoint",
+    )
+    cpu_total_usage = models.BigIntegerField(
+        null=True,
+        blank=True,
+        help_text="Total CPU usage in nanoseconds",
+    )
+    cpu_system_usage = models.BigIntegerField(
+        null=True,
+        blank=True,
+        help_text="System CPU usage in nanoseconds",
+    )
+    cpu_online_cpus = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Number of online CPUs",
+    )
+
+    # Memory stats
+    memory_usage_bytes = models.BigIntegerField(
+        null=True,
+        blank=True,
+        help_text="Memory usage in bytes",
+    )
+    memory_limit_bytes = models.BigIntegerField(
+        null=True,
+        blank=True,
+        help_text="Memory limit in bytes",
+    )
+    memory_percent = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Memory usage as percentage of limit",
+    )
+    memory_cache_bytes = models.BigIntegerField(
+        null=True,
+        blank=True,
+        help_text="Memory cache in bytes",
+    )
+
+    # I/O stats
+    block_read_bytes = models.BigIntegerField(
+        null=True,
+        blank=True,
+        help_text="Block device read bytes",
+    )
+    block_write_bytes = models.BigIntegerField(
+        null=True,
+        blank=True,
+        help_text="Block device write bytes",
+    )
+
+    # Network stats
+    network_rx_bytes = models.BigIntegerField(
+        null=True,
+        blank=True,
+        help_text="Network bytes received",
+    )
+    network_tx_bytes = models.BigIntegerField(
+        null=True,
+        blank=True,
+        help_text="Network bytes transmitted",
+    )
+
+    # Container state
+    container_state = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text="Container state (running, exited, etc.)",
+    )
+
+    class Meta:
+        ordering = ["checkpoint_number"]
+        indexes = [
+            models.Index(fields=["manufacturability_check", "checkpoint_number"]),
+            models.Index(fields=["manufacturability_check", "timestamp"]),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"Check {self.manufacturability_check_id} - "
+            f"Checkpoint {self.checkpoint_number} ({self.elapsed_seconds:.1f}s)"
+        )
+
+    @property
+    def memory_usage_formatted(self) -> str:
+        """Format memory usage for display."""
+        if not self.memory_usage_bytes:
+            return ""
+        return _format_bytes_static(self.memory_usage_bytes)
+
+    @property
+    def cpu_percent_formatted(self) -> str:
+        """Format CPU percentage for display."""
+        if self.cpu_percent is None:
+            return ""
+        return f"{self.cpu_percent:.1f}%"
+
+
+def _format_bytes_static(num_bytes: int) -> str:
+    """Format bytes as human-readable string."""
+    bytes_float = float(num_bytes)
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
+        if abs(bytes_float) < _BYTES_PER_KB:
+            return f"{bytes_float:.1f} {unit}"
+        bytes_float /= _BYTES_PER_KB
+    return f"{bytes_float:.1f} PB"
+
+
+class ProjectComplianceCertification(models.Model):
+    """Export compliance attestation for a specific project."""
+
+    project = models.OneToOneField(
+        Project,
+        on_delete=models.CASCADE,
+        related_name="compliance_certification",
+    )
+
+    # Attestations
+    export_control_compliant = models.BooleanField(
+        default=False,
+        help_text="User confirms compliance with EAR/ITAR export control regulations",
+    )
+    end_use_statement = models.TextField(
+        help_text=(
+            "Description of intended end-use (commercial, research, educational, etc.)"
+        ),
+    )
+    not_restricted_entity = models.BooleanField(
+        default=False,
+        help_text=(
+            "User confirms they are not from a restricted country or sanctioned entity"
+        ),
+    )
+
+    # Tracking
+    certified_at = models.DateTimeField(auto_now_add=True)
+    certified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="compliance_certifications",
+    )
+    ip_address = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        help_text="IP address from which certification was submitted",
+    )
+    user_agent = models.TextField(
+        blank=True,
+        help_text="Browser user agent string",
+    )
+
+    # Admin review (optional - can be added later)
+    admin_reviewed = models.BooleanField(default=False)
+    admin_reviewer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_certifications",
+    )
+    admin_notes = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = "Compliance Certification"
+        verbose_name_plural = "Compliance Certifications"
+        indexes = [
+            models.Index(fields=["certified_at"]),
+            models.Index(fields=["admin_reviewed"]),
+        ]
+
+    def __str__(self):
+        return f"Compliance Certification for {self.project.name}"

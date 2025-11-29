@@ -6,6 +6,7 @@ from unittest.mock import patch
 import pytest
 from django.test import TestCase
 
+from wafer_space.projects.file_type_utils import detect_file_type_from_data
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
@@ -13,7 +14,6 @@ from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.security import SecurityValidationError
 from wafer_space.projects.services import ManufacturabilityService
 from wafer_space.projects.services import ProjectFileService
-from wafer_space.projects.services import detect_file_type_from_data
 from wafer_space.users.models import User
 
 from .constants import FIVE_MB
@@ -630,6 +630,12 @@ class TestManufacturabilityService(TestCase):
             name="Test Project",
             description="Test project for manufacturability checks",
         )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test.gds",
+            source_url="https://example.com/test.gds",
+            is_active=True,
+        )
 
     @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
     def test_queue_check_creates_new_check(self, mock_task):
@@ -638,11 +644,12 @@ class TestManufacturabilityService(TestCase):
         mock_task.return_value = Mock(id="task-123")
 
         # Queue the check
-        check = ManufacturabilityService.queue_check(self.project)
+        check = ManufacturabilityService.queue_check(self.project, self.project_file)
 
         # Verify check was created
         assert check is not None
         assert check.project == self.project
+        assert check.project_file == self.project_file
         assert check.status == ManufacturabilityCheck.Status.QUEUED
         assert check.task_id == "task-123"
 
@@ -650,7 +657,10 @@ class TestManufacturabilityService(TestCase):
         mock_task.assert_called_once_with(check.id)
 
         # Verify check exists in database
-        assert ManufacturabilityCheck.objects.filter(project=self.project).count() == 1
+        check_count = ManufacturabilityCheck.objects.filter(
+            project_file=self.project_file
+        ).count()
+        assert check_count == 1
 
     @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
     def test_queue_check_resets_existing_check(self, mock_task):
@@ -658,6 +668,7 @@ class TestManufacturabilityService(TestCase):
         # Create an existing completed check
         existing_check = ManufacturabilityCheck.objects.create(
             project=self.project,
+            project_file=self.project_file,
             status=ManufacturabilityCheck.Status.COMPLETED,
             is_manufacturable=True,
             errors=["Old error"],
@@ -670,7 +681,7 @@ class TestManufacturabilityService(TestCase):
         mock_task.return_value = Mock(id="task-456")
 
         # Queue the check again
-        check = ManufacturabilityService.queue_check(self.project)
+        check = ManufacturabilityService.queue_check(self.project, self.project_file)
 
         # Verify it's the same check instance, but reset
         assert check.id == existing_check.id
@@ -686,7 +697,10 @@ class TestManufacturabilityService(TestCase):
         mock_task.assert_called_once_with(check.id)
 
         # Verify only one check exists
-        assert ManufacturabilityCheck.objects.filter(project=self.project).count() == 1
+        check_count = ManufacturabilityCheck.objects.filter(
+            project_file=self.project_file
+        ).count()
+        assert check_count == 1
 
     @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
     def test_queue_check_does_not_reset_queued_check(self, mock_task):
@@ -694,6 +708,7 @@ class TestManufacturabilityService(TestCase):
         # Create an existing queued check
         existing_check = ManufacturabilityCheck.objects.create(
             project=self.project,
+            project_file=self.project_file,
             status=ManufacturabilityCheck.Status.QUEUED,
             task_id="existing-task-id",
         )
@@ -702,7 +717,7 @@ class TestManufacturabilityService(TestCase):
         mock_task.return_value = Mock(id="task-789")
 
         # Queue the check again
-        check = ManufacturabilityService.queue_check(self.project)
+        check = ManufacturabilityService.queue_check(self.project, self.project_file)
 
         # Verify it's the same check instance and unchanged
         assert check.id == existing_check.id
@@ -719,6 +734,7 @@ class TestManufacturabilityService(TestCase):
         # Create a completed check
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
+            project_file=self.project_file,
             status=ManufacturabilityCheck.Status.COMPLETED,
             is_manufacturable=False,
             errors=["Error 1", "Error 2"],
@@ -756,6 +772,7 @@ class TestManufacturabilityService(TestCase):
         # Create a queued check
         ManufacturabilityCheck.objects.create(
             project=self.project,
+            project_file=self.project_file,
             status=ManufacturabilityCheck.Status.QUEUED,
         )
 
@@ -776,6 +793,7 @@ class TestManufacturabilityService(TestCase):
         # Create and start processing a check
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
+            project_file=self.project_file,
             status=ManufacturabilityCheck.Status.QUEUED,
         )
         check.start_processing()
@@ -795,6 +813,7 @@ class TestManufacturabilityService(TestCase):
         # Create a failed check
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
+            project_file=self.project_file,
             status=ManufacturabilityCheck.Status.QUEUED,
         )
         check.start_processing()
@@ -809,3 +828,259 @@ class TestManufacturabilityService(TestCase):
         assert status["is_manufacturable"] is None
         assert status["started_at"] is not None
         assert status["completed_at"] is not None
+
+    @patch("wafer_space.projects.services.celery_app")
+    def test_cancel_check_cancels_queued_check(self, mock_celery_app):
+        """Test cancel_check successfully cancels a queued check."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.QUEUED,
+            task_id="celery-task-123",
+        )
+
+        result = ManufacturabilityService.cancel_check(
+            check, reason="Test cancellation"
+        )
+
+        assert result is True
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+        assert "CANCELLED: Test cancellation" in check.processing_logs
+
+        # Verify Celery task was revoked
+        mock_celery_app.control.revoke.assert_called_once_with(
+            "celery-task-123", terminate=True
+        )
+
+    @patch("wafer_space.projects.services.celery_app")
+    def test_cancel_check_cancels_processing_check(self, mock_celery_app):
+        """Test cancel_check successfully cancels a processing check."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PROCESSING,
+            task_id="celery-task-456",
+        )
+
+        result = ManufacturabilityService.cancel_check(
+            check, reason="User requested cancellation"
+        )
+
+        assert result is True
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+
+        # Verify Celery task was revoked
+        mock_celery_app.control.revoke.assert_called_once_with(
+            "celery-task-456", terminate=True
+        )
+
+    @patch("wafer_space.projects.services.celery_app")
+    def test_cancel_check_returns_false_for_completed(self, mock_celery_app):
+        """Test cancel_check returns False for completed check."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.COMPLETED,
+            is_manufacturable=True,
+        )
+
+        result = ManufacturabilityService.cancel_check(check, reason="Should fail")
+
+        assert result is False
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.COMPLETED
+
+        # Verify Celery was NOT called
+        mock_celery_app.control.revoke.assert_not_called()
+
+    @patch("wafer_space.projects.services.celery_app")
+    def test_cancel_check_returns_false_for_failed(self, mock_celery_app):
+        """Test cancel_check returns False for failed check."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FAILED,
+            error_message="Previous failure",
+        )
+
+        result = ManufacturabilityService.cancel_check(check, reason="Should fail")
+
+        assert result is False
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.FAILED
+
+        # Verify Celery was NOT called
+        mock_celery_app.control.revoke.assert_not_called()
+
+
+@pytest.mark.django_db
+class TestFileReplacementCancelsCheck(TestCase):
+    """Test that submitting a new file cancels running manufacturability checks."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project for file replacement",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_filename="original.gds",
+            source_url="https://example.com/original.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+        # Set up download status via DownloadAttempt
+        DownloadAttempt.objects.create(
+            project_file=self.project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
+        )
+
+    @patch("wafer_space.projects.services.celery_app")
+    @patch("wafer_space.projects.tasks.download_project_file.delay")
+    @patch("wafer_space.projects.services.URLValidator.validate_url")
+    @patch("wafer_space.projects.services.URLRewriter.rewrite_url")
+    def test_new_file_cancels_queued_check(
+        self,
+        mock_rewrite,
+        mock_validate,
+        mock_download_task,
+        mock_celery_app,
+    ):
+        """Test that submitting a new file cancels a queued manufacturability check."""
+        # Create a queued check on the existing file
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.QUEUED,
+            task_id="celery-task-to-cancel",
+        )
+
+        # Mock URL validation for new file submission
+        new_url = "https://example.com/new_file.gds"
+        mock_rewrite.return_value = (new_url, False, "")
+        mock_validate.return_value = {
+            "file_size": ONE_MB,
+            "content_type": "application/octet-stream",
+            "content_disposition": None,
+            "etag": "new-etag",
+            "supports_range": True,
+        }
+        mock_download_task.return_value = Mock(id="new-download-task")
+
+        # Submit a new file
+        _new_file, _ = ProjectFileService.submit_file_from_url(
+            project=self.project,
+            url=new_url,
+        )
+
+        # Verify the old check was cancelled
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+        assert "new file submitted" in check.processing_logs.lower()
+
+        # Verify Celery task was revoked
+        mock_celery_app.control.revoke.assert_called_once_with(
+            "celery-task-to-cancel", terminate=True
+        )
+
+    @patch("wafer_space.projects.services.celery_app")
+    @patch("wafer_space.projects.tasks.download_project_file.delay")
+    @patch("wafer_space.projects.services.URLValidator.validate_url")
+    @patch("wafer_space.projects.services.URLRewriter.rewrite_url")
+    def test_new_file_cancels_processing_check(
+        self,
+        mock_rewrite,
+        mock_validate,
+        mock_download_task,
+        mock_celery_app,
+    ):
+        """Test that submitting a new file cancels a processing check."""
+        # Create a processing check on the existing file
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PROCESSING,
+            task_id="processing-task-to-cancel",
+        )
+
+        # Mock URL validation for new file submission
+        new_url = "https://example.com/new_file.gds"
+        mock_rewrite.return_value = (new_url, False, "")
+        mock_validate.return_value = {
+            "file_size": ONE_MB,
+            "content_type": "application/octet-stream",
+            "content_disposition": None,
+            "etag": "new-etag",
+            "supports_range": True,
+        }
+        mock_download_task.return_value = Mock(id="new-download-task")
+
+        # Submit a new file
+        ProjectFileService.submit_file_from_url(
+            project=self.project,
+            url=new_url,
+        )
+
+        # Verify the old check was cancelled
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+
+        # Verify Celery task was revoked
+        mock_celery_app.control.revoke.assert_called_once_with(
+            "processing-task-to-cancel", terminate=True
+        )
+
+    @patch("wafer_space.projects.services.celery_app")
+    @patch("wafer_space.projects.tasks.download_project_file.delay")
+    @patch("wafer_space.projects.services.URLValidator.validate_url")
+    @patch("wafer_space.projects.services.URLRewriter.rewrite_url")
+    def test_new_file_does_not_cancel_completed_check(
+        self,
+        mock_rewrite,
+        mock_validate,
+        mock_download_task,
+        mock_celery_app,
+    ):
+        """Test that submitting a new file does not cancel a completed check."""
+        # Create a completed check on the existing file
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.COMPLETED,
+            is_manufacturable=True,
+        )
+
+        # Mock URL validation for new file submission
+        new_url = "https://example.com/new_file.gds"
+        mock_rewrite.return_value = (new_url, False, "")
+        mock_validate.return_value = {
+            "file_size": ONE_MB,
+            "content_type": "application/octet-stream",
+            "content_disposition": None,
+            "etag": "new-etag",
+            "supports_range": True,
+        }
+        mock_download_task.return_value = Mock(id="new-download-task")
+
+        # Submit a new file
+        ProjectFileService.submit_file_from_url(
+            project=self.project,
+            url=new_url,
+        )
+
+        # Verify the completed check was NOT modified
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.COMPLETED
+
+        # Verify Celery revoke was NOT called
+        mock_celery_app.control.revoke.assert_not_called()

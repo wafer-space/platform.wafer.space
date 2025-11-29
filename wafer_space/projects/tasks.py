@@ -6,7 +6,6 @@ import contextlib
 import hashlib
 import logging
 import os
-import random
 import socket
 import tempfile
 import time
@@ -19,8 +18,10 @@ from urllib.parse import urlparse
 from urllib.request import Request
 from urllib.request import urlopen
 
+import docker
 import requests
 from celery import shared_task
+from celery.utils.log import get_task_logger
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.db import models
@@ -30,28 +31,38 @@ from django_celery_results.models import TaskResult
 
 from wafer_space.notifications.services import NotificationService
 
+from .content_pipeline import ContentPipeline
+from .content_pipeline import cleanup_temp_dir
+from .content_pipeline import get_temp_dir_for_file
+from .content_processors import _processor_registry
+from .file_type_utils import detect_file_type_from_data
+from .format_validators import validate_output_format
 from .models import DownloadAttempt
 from .models import FileProcessingError
 from .models import ManufacturabilityCheck
+from .models import ManufacturabilityCheckpoint
 from .models import Project
 from .models import ProjectFile
 from .models import ProjectFileChunk
+from .precheck_parser import PrecheckLogParser
+from .precheck_parser import classify_failure
+from .processors.top_cell_extractor import extract_top_cell
 from .url_handlers import GitHubArtifactHandler
 from .url_handlers import GoogleSourceHandler
 from .url_handlers import URLHandlerRegistry
+from .verification import is_check_task_actively_running
+from .verification import is_check_task_queued
 from .verification import is_task_actively_running
 from .verification import is_task_queued
-
-# Mock manufacturability check constants
-MOCK_PROCESSING_TIME_MIN = 2.0
-MOCK_PROCESSING_TIME_MAX = 5.0
-MOCK_SUCCESS_RATE = 0.8  # 80% success rate for testing
 
 # HTTP status codes
 HTTP_PARTIAL_CONTENT = 206  # Server supports range requests
 
 # Byte conversion constants
 BYTES_PER_KILOBYTE = 1024
+
+# Progress logging interval (seconds)
+PROGRESS_LOG_INTERVAL_SECONDS = 30
 
 # Initialize URL handler registry for post-download processing
 _url_handler_registry = URLHandlerRegistry()
@@ -77,6 +88,237 @@ def _format_bytes(num_bytes: int) -> str:
     return f"{bytes_float:.2f} PB"
 
 
+# Checkpoint interval for manufacturability checks (seconds)
+CHECKPOINT_INTERVAL_SECONDS = 10
+
+
+def _calculate_cpu_percent(stats: dict[str, Any]) -> float | None:
+    """Calculate CPU percentage from Docker stats.
+
+    Args:
+        stats: Docker container stats dictionary
+
+    Returns:
+        CPU percentage or None if stats unavailable
+    """
+    try:
+        cpu_stats = stats.get("cpu_stats", {})
+        precpu_stats = stats.get("precpu_stats", {})
+
+        current_cpu = cpu_stats.get("cpu_usage", {}).get("total_usage", 0)
+        previous_cpu = precpu_stats.get("cpu_usage", {}).get("total_usage", 0)
+        cpu_delta = current_cpu - previous_cpu
+
+        system_delta = cpu_stats.get("system_cpu_usage", 0) - precpu_stats.get(
+            "system_cpu_usage", 0
+        )
+
+        online_cpus = cpu_stats.get("online_cpus") or len(
+            cpu_stats.get("cpu_usage", {}).get("percpu_usage", []) or [1]
+        )
+
+        if system_delta > 0 and cpu_delta > 0:
+            return (cpu_delta / system_delta) * online_cpus * 100.0
+    except (KeyError, TypeError, ZeroDivisionError):
+        pass
+    return None
+
+
+def _record_checkpoint(
+    check: "ManufacturabilityCheck",
+    container,
+    checkpoint_number: int,
+    elapsed_seconds: float,
+    logger: logging.Logger,
+) -> None:
+    """Record a checkpoint with Docker container stats.
+
+    Args:
+        check: ManufacturabilityCheck instance
+        container: Docker container object
+        checkpoint_number: Sequential checkpoint number
+        elapsed_seconds: Seconds since container start
+        logger: Logger instance
+    """
+    try:
+        # Get container stats (non-streaming, single snapshot)
+        stats = container.stats(stream=False)
+
+        # Validate stats is a dict (not a mock)
+        if not isinstance(stats, dict):
+            logger.debug(
+                "  Checkpoint %d: stats not available (mock)", checkpoint_number
+            )
+            return
+
+        # Extract CPU stats
+        cpu_stats = stats.get("cpu_stats", {})
+        cpu_usage = cpu_stats.get("cpu_usage", {})
+        cpu_percent = _calculate_cpu_percent(stats)
+
+        # Extract memory stats
+        memory_stats = stats.get("memory_stats", {})
+        memory_usage = memory_stats.get("usage")
+        memory_limit = memory_stats.get("limit")
+        memory_cache = memory_stats.get("stats", {}).get("cache")
+        memory_percent = None
+        if (
+            isinstance(memory_usage, int | float)
+            and isinstance(memory_limit, int | float)
+            and memory_limit > 0
+        ):
+            memory_percent = (memory_usage / memory_limit) * 100.0
+
+        # Extract block I/O stats
+        blkio_stats = stats.get("blkio_stats", {})
+        io_service_bytes = blkio_stats.get("io_service_bytes_recursive") or []
+        block_read = sum(
+            entry.get("value", 0)
+            for entry in io_service_bytes
+            if entry.get("op") == "Read"
+        )
+        block_write = sum(
+            entry.get("value", 0)
+            for entry in io_service_bytes
+            if entry.get("op") == "Write"
+        )
+
+        # Extract network stats
+        networks = stats.get("networks", {})
+        network_rx = sum(net.get("rx_bytes", 0) for net in networks.values())
+        network_tx = sum(net.get("tx_bytes", 0) for net in networks.values())
+
+        # Create checkpoint record
+        ManufacturabilityCheckpoint.objects.create(
+            manufacturability_check=check,
+            checkpoint_number=checkpoint_number,
+            elapsed_seconds=elapsed_seconds,
+            cpu_percent=cpu_percent,
+            cpu_total_usage=cpu_usage.get("total_usage"),
+            cpu_system_usage=cpu_stats.get("system_cpu_usage"),
+            cpu_online_cpus=cpu_stats.get("online_cpus"),
+            memory_usage_bytes=memory_usage if isinstance(memory_usage, int) else None,
+            memory_limit_bytes=memory_limit if isinstance(memory_limit, int) else None,
+            memory_percent=memory_percent,
+            memory_cache_bytes=memory_cache if isinstance(memory_cache, int) else None,
+            block_read_bytes=block_read if block_read else None,
+            block_write_bytes=block_write if block_write else None,
+            network_rx_bytes=network_rx if network_rx else None,
+            network_tx_bytes=network_tx if network_tx else None,
+            container_state=stats.get("State", ""),
+        )
+
+        mem_str = (
+            _format_bytes(memory_usage or 0) if isinstance(memory_usage, int) else "N/A"
+        )
+        logger.info(
+            "  Checkpoint %d: CPU=%.1f%%, Mem=%.1f%% (%s)",
+            checkpoint_number,
+            cpu_percent or 0,
+            memory_percent or 0,
+            mem_str,
+        )
+
+    except (AttributeError, TypeError, KeyError) as e:
+        # Handle cases where container is a mock or stats are unavailable
+        logger.debug(
+            "  Could not get stats for checkpoint %d: %s", checkpoint_number, e
+        )
+
+
+def _save_logs_to_file(
+    check: "ManufacturabilityCheck",
+    logs: str,
+    logger: logging.Logger,
+) -> None:
+    """Save container logs to filesystem next to the GDS file.
+
+    Creates a unique log file for each check run.
+    Format: <gds_name>.<top_cell>.precheck.<timestamp>.log
+
+    Args:
+        check: ManufacturabilityCheck instance
+        logs: Container logs string
+        logger: Logger instance
+    """
+    try:
+        timestamp = check.started_at or timezone.now()
+        timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")
+
+        # Get GDS filename
+        gds_name = "design"
+        if check.project_file and check.project_file.processed_filename:
+            gds_name = check.project_file.processed_filename
+
+        # Get top cell name (sanitized for filesystem)
+        top_cell = "unknown"
+        if check.project_file and check.project_file.top_cell:
+            top_cell = check.project_file.top_cell.replace("/", "_").replace("\\", "_")
+
+        filename = f"{gds_name}.{top_cell}.precheck.{timestamp_str}.log"
+
+        # Save logs using Django's file handling
+        content = ContentFile(logs.encode("utf-8"))
+        check.log_file.save(filename, content, save=True)
+
+        logger.info("  ✓ Logs saved to: %s", check.log_file.name)
+    except OSError as e:
+        logger.warning("  Could not save logs to file: %s", e)
+
+
+def _extract_runs_archive(
+    check: "ManufacturabilityCheck",
+    container,
+    logger: logging.Logger,
+) -> None:
+    """Extract the runs/ directory from container and save as tar archive.
+
+    The precheck tool creates detailed step logs in runs/RUN_<timestamp>/
+    which contain more information than the main log output.
+
+    Args:
+        check: ManufacturabilityCheck instance
+        container: Docker container object (must still exist, not yet removed)
+        logger: Logger instance
+    """
+    try:
+        # Get tar archive of runs directory from container
+        # get_archive returns (tar_stream, stat_info)
+        tar_stream, _stat_info = container.get_archive("/workspace/runs")
+
+        # Read the tar data
+        tar_data = b"".join(tar_stream)
+
+        if len(tar_data) == 0:
+            logger.info("  No runs directory found in container")
+            return
+
+        logger.info("  Extracted runs archive: %d bytes", len(tar_data))
+
+        # Generate filename
+        timestamp = check.started_at or timezone.now()
+        timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")
+        gds_name = "design"
+        if check.project_file and check.project_file.processed_filename:
+            gds_name = check.project_file.processed_filename
+        top_cell = "unknown"
+        if check.project_file and check.project_file.top_cell:
+            top_cell = check.project_file.top_cell.replace("/", "_").replace("\\", "_")
+
+        filename = f"{gds_name}.{top_cell}.precheck.{timestamp_str}.runs.tar"
+
+        # Save using Django's file handling
+        content = ContentFile(tar_data)
+        check.runs_archive.save(filename, content, save=True)
+
+        logger.info("  ✓ Runs archive saved to: %s", check.runs_archive.name)
+
+    except docker.errors.NotFound:
+        logger.info("  No runs directory found in container (path does not exist)")
+    except OSError as e:
+        logger.warning("  Could not save runs archive: %s", e)
+
+
 def _setup_temp_directory() -> Path:
     """Create and return temporary directory for downloads."""
     temp_dir = Path(tempfile.gettempdir()) / "wafer_space_downloads"
@@ -90,53 +332,567 @@ def _extract_filename_from_url(url: str) -> str:
     return Path(parsed_url.path).name or "downloaded_file"
 
 
-def _calculate_file_hashes(content: bytes) -> tuple[str, str]:
-    """Calculate MD5 and SHA1 hashes for file content.
+def _calculate_file_hashes(content: bytes) -> tuple[str, str, str]:
+    """Calculate MD5, SHA1, and SHA256 hashes for file content.
 
     Note: MD5 and SHA1 are used here for file integrity verification only,
     not for cryptographic security purposes. These match industry standard
     hash algorithms commonly used for file verification in manufacturing.
+    SHA256 is also provided as a more modern alternative.
     """
     md5_hash = hashlib.md5(content, usedforsecurity=False).hexdigest()
     sha1_hash = hashlib.sha1(content, usedforsecurity=False).hexdigest()
-    return md5_hash, sha1_hash
+    sha256_hash = hashlib.sha256(content).hexdigest()
+    return md5_hash, sha1_hash, sha256_hash
 
 
 def _verify_file_hashes(
     project_file,
-    md5_hash: str,
-    sha1_hash: str,
+    hashes: "HashResults",
 ) -> tuple[bool, list[str]]:
     """Verify file hashes against expected values."""
     verified = True
     errors = []
 
     if project_file.expected_hash_md5:
-        if md5_hash.lower() != project_file.expected_hash_md5.lower():
+        if hashes.md5.lower() != project_file.expected_hash_md5.lower():
             verified = False
             errors.append(
                 f"MD5 mismatch: expected {project_file.expected_hash_md5}, "
-                f"got {md5_hash}",
+                f"got {hashes.md5}",
             )
 
     if project_file.expected_hash_sha1:
-        if sha1_hash.lower() != project_file.expected_hash_sha1.lower():
+        if hashes.sha1.lower() != project_file.expected_hash_sha1.lower():
             verified = False
             errors.append(
                 f"SHA1 mismatch: expected {project_file.expected_hash_sha1}, "
-                f"got {sha1_hash}",
+                f"got {hashes.sha1}",
+            )
+
+    if project_file.expected_hash_sha256:
+        if hashes.sha256.lower() != project_file.expected_hash_sha256.lower():
+            verified = False
+            errors.append(
+                f"SHA256 mismatch: expected {project_file.expected_hash_sha256}, "
+                f"got {hashes.sha256}",
             )
 
     return verified, errors
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def check_project_manufacturability(self, check_id):  # noqa: PLR0915
-    """Background task to check project manufacturability.
+@dataclass
+class _CheckContext:
+    """Context object for manufacturability check execution."""
 
-    This task performs manufacturability analysis on a project's design files.
-    Currently uses mock implementation - will be replaced with real GDS/OASIS
-    analysis tools in the future.
+    check: "ManufacturabilityCheck"
+    client: "docker.DockerClient"
+    project: "Project"
+    project_file: "ProjectFile"
+    gds_path: str
+    task_instance: "shared_task"
+    logger: logging.Logger
+
+
+def _pull_and_record_image(context: _CheckContext):
+    """Pull Docker image and record metadata.
+
+    Args:
+        context: Check execution context
+
+    Returns:
+        Docker image object
+    """
+    image_name = settings.PRECHECK_DOCKER_IMAGE
+    context.logger.info("Step 3: Pulling Docker image: %s", image_name)
+
+    # Check if image already exists locally
+    try:
+        existing = context.client.images.get(image_name)
+        context.logger.info("  ✓ Image already exists locally: %s", existing.id[:12])
+        context.logger.info("  Checking for updates...")
+    except docker.errors.ImageNotFound:
+        context.logger.info("  Image not found locally, will download...")
+
+    # Pull with progress logging
+    context.logger.info("  Starting pull (this may take several minutes)...")
+    pull_start = timezone.now()
+    last_status = {}
+
+    # Use low-level API to get progress
+    for line in context.client.api.pull(image_name, stream=True, decode=True):
+        status = line.get("status", "")
+        progress = line.get("progress", "")
+        layer_id = line.get("id", "")
+
+        # Log layer progress changes
+        if layer_id and status:
+            key = f"{layer_id}:{status}"
+            if key not in last_status:
+                last_status[key] = True
+                layer_short = layer_id[:12]
+                if progress:
+                    context.logger.info("    [%s] %s %s", layer_short, status, progress)
+                elif status in ("Pull complete", "Already exists", "Download complete"):
+                    context.logger.info("    [%s] %s", layer_short, status)
+        elif status and not layer_id:
+            # Status without layer ID (e.g., "Digest:", "Status:")
+            context.logger.info("  %s", status)
+
+    pull_duration = (timezone.now() - pull_start).total_seconds()
+    context.logger.info("  Pull completed in %.1f seconds", pull_duration)
+
+    # Get the pulled image
+    image = context.client.images.get(image_name)
+    context.check.docker_image = image.tags[0] if image.tags else image_name
+    context.check.docker_image_digest = image.id
+    context.check.save(update_fields=["docker_image", "docker_image_digest"])
+
+    # Log image details
+    image_size = image.attrs.get("Size", 0)
+    context.logger.info(
+        "  ✓ Image ready: %s (digest: %s, size: %s)",
+        context.check.docker_image,
+        context.check.docker_image_digest[:12],
+        _format_bytes(image_size),
+    )
+    return image
+
+
+def _stream_logs_with_checkpoints(context: _CheckContext, container, container_start):
+    """Stream container logs and record checkpoints periodically.
+
+    Args:
+        context: Check execution context
+        container: Docker container object
+        container_start: Datetime when container started
+
+    Returns:
+        tuple: (logs string, line_count int, checkpoint_number int)
+    """
+    logs = ""
+    line_count = 0
+    last_progress_log = timezone.now()
+    last_checkpoint_time = timezone.now()
+    checkpoint_number = 0
+
+    # Record initial checkpoint
+    _record_checkpoint(context.check, container, checkpoint_number, 0.0, context.logger)
+    checkpoint_number += 1
+
+    for line in container.logs(stream=True):
+        line_text = line.decode("utf-8")
+        logs += line_text
+        line_count += 1
+
+        # Log the actual container output
+        for log_line in line_text.strip().split("\n"):
+            if log_line:
+                context.logger.info("  [container] %s", log_line)
+
+        # Update last activity and logs
+        context.check.last_activity = timezone.now()
+        context.check.processing_logs = logs
+        context.check.save(update_fields=["last_activity", "processing_logs"])
+
+        now = timezone.now()
+
+        # Record checkpoint periodically
+        if (now - last_checkpoint_time).total_seconds() >= CHECKPOINT_INTERVAL_SECONDS:
+            elapsed = (now - container_start).total_seconds()
+            _record_checkpoint(
+                context.check, container, checkpoint_number, elapsed, context.logger
+            )
+            checkpoint_number += 1
+            last_checkpoint_time = now
+
+        # Periodic progress update
+        if (now - last_progress_log).total_seconds() >= PROGRESS_LOG_INTERVAL_SECONDS:
+            elapsed = (now - container_start).total_seconds()
+            context.logger.info(
+                "  ... still running (%.0f seconds, %d log lines)", elapsed, line_count
+            )
+            last_progress_log = now
+
+        # Update Celery task state
+        context.task_instance.update_state(
+            state="PROGRESS",
+            meta={
+                "message": "Running precheck...",
+                "logs": logs[-1000:],
+                "line_count": line_count,
+            },
+        )
+
+    return logs, line_count, checkpoint_number
+
+
+def _run_container_and_stream_logs(context: _CheckContext):
+    """Run Docker container and stream logs with progress updates.
+
+    Args:
+        context: Check execution context
+
+    Returns:
+        tuple: (logs string, exit_code int, container object)
+    """
+    context.logger.info("Step 4: Creating Docker container...")
+    context.logger.info("  Input file: %s", context.gds_path)
+    context.logger.info("  Project name: %s", context.project.name)
+    context.logger.info("  Project ID: %s", context.project.id)
+    context.logger.info("  Memory limit: 64GB")
+
+    container_start = timezone.now()
+
+    # Build the precheck command to run inside nix-shell
+    if not context.project_file.top_cell:
+        msg = "Cannot run manufacturability check: top_cell not extracted from file"
+        raise ValueError(msg)
+
+    top_cell = context.project_file.top_cell
+    context.logger.info("  Top cell: %s", top_cell)
+
+    # Build command - the container's dev-shell entrypoint handles nix develop --offline
+    docker_command = [
+        "python3",
+        "precheck.py",
+        "--input",
+        "/input/design.gds",
+        "--top",
+        top_cell,
+    ]
+
+    # Log equivalent docker run command for easy reproduction
+    precheck_cmd = f'python3 precheck.py --input /input/design.gds --top "{top_cell}"'
+    docker_run_cmd = (
+        f"docker run --rm --network=none "
+        f"-e COLUMNS=200 -e TERM=xterm-256color "
+        f"-v {context.gds_path}:/input/design.gds:ro "
+        f"-w /workspace "
+        f"--memory 64g "
+        f"{settings.PRECHECK_DOCKER_IMAGE} "
+        f"{precheck_cmd}"
+    )
+    context.logger.info("  Docker run command:")
+    context.logger.info("  %s", docker_run_cmd)
+
+    # Save docker command to check record for reproducibility
+    context.check.docker_command = docker_run_cmd
+    context.check.save(update_fields=["docker_command"])
+
+    container = context.client.containers.run(
+        image=settings.PRECHECK_DOCKER_IMAGE,
+        command=docker_command,
+        volumes={context.gds_path: {"bind": "/input/design.gds", "mode": "ro"}},
+        working_dir="/workspace",
+        detach=True,
+        mem_limit="64g",
+        network_disabled=True,
+        environment={
+            "COLUMNS": "200",  # Wide terminal for better log output
+            "TERM": "xterm-256color",
+        },
+        labels={
+            "wafer.space.service": "manufacturability-check",
+            "wafer.space.check_id": str(context.check.id),
+        },
+    )
+    context.logger.info("  ✓ Container started: %s", container.id[:12])
+
+    context.logger.info("Step 5: Running precheck analysis...")
+    context.logger.info("  Streaming container logs...")
+
+    # Stream logs and record checkpoints
+    logs, line_count, checkpoint_number = _stream_logs_with_checkpoints(
+        context, container, container_start
+    )
+
+    context.logger.info("Step 6: Waiting for container to complete...")
+
+    # Wait for completion
+    result = container.wait(timeout=settings.PRECHECK_TIMEOUT_SECONDS)
+    exit_code = result["StatusCode"]
+
+    container_duration = (timezone.now() - container_start).total_seconds()
+
+    # Fetch complete logs after container exits to capture any final output
+    # (streaming may miss buffered output that's flushed on exit)
+    complete_logs = container.logs(stdout=True, stderr=True).decode("utf-8")
+    if len(complete_logs) > len(logs):
+        context.logger.info(
+            "  Captured %d additional bytes of final output",
+            len(complete_logs) - len(logs),
+        )
+        logs = complete_logs
+        # Update the check with complete logs
+        context.check.processing_logs = logs
+        context.check.save(update_fields=["processing_logs"])
+
+    # Record final checkpoint
+    _record_checkpoint(
+        context.check, container, checkpoint_number, container_duration, context.logger
+    )
+    checkpoint_number += 1
+
+    context.logger.info(
+        "  ✓ Container completed in %.1f seconds "
+        "(exit code: %d, %d log lines, %d checkpoints)",
+        container_duration,
+        exit_code,
+        line_count,
+        checkpoint_number,
+    )
+
+    return logs, exit_code, container
+
+
+def _handle_check_result(check, logs, exit_code, logger):
+    """Parse logs and update check status based on results.
+
+    Args:
+        check: ManufacturabilityCheck instance
+        logs: Container logs string
+        exit_code: Container exit code
+        logger: Logger instance
+
+    Returns:
+        dict: Result data with status and details
+    """
+    logger.info("Step 7: Parsing check results...")
+
+    # Save logs to filesystem (before parsing, so we always have them)
+    _save_logs_to_file(check, logs, logger)
+
+    # Extract version information
+    check.tool_versions = {
+        "pdk": "gf180mcuD",  # Will extract from logs
+        "magic": "unknown",  # Will extract from logs
+        "klayout": "unknown",  # Will extract from logs
+    }
+    check.save(update_fields=["tool_versions"])
+
+    # Parse logs
+    logger.info("  Parsing %d bytes of logs...", len(logs))
+    parsed = PrecheckLogParser.parse_logs(logs, exit_code)
+    logger.info(
+        "  ✓ Parsing completed: success=%s, errors=%d, warnings=%d",
+        parsed["success"],
+        len(parsed["errors"]),
+        len(parsed["warnings"]),
+    )
+
+    # Handle results based on exit code
+    if exit_code == 0:
+        # Success
+        check.complete(
+            is_manufacturable=True,
+            errors=[],
+            warnings=parsed.get("warnings", []),
+            logs=logs,
+        )
+        logger.info("Check completed successfully - project is manufacturable")
+        return "success"
+
+    # Failure - classify
+    failure_type = classify_failure(logs, exit_code)
+    logger.info("Check failed with type: %s", failure_type)
+
+    if failure_type == "system":
+        # System failure - prepare for retry
+        error_summary = (
+            parsed["errors"][0]["message"]
+            if parsed["errors"]
+            else "Unknown system error"
+        )
+        return "system", error_summary
+
+    # Design failure - complete with errors
+    check.complete(
+        is_manufacturable=False,
+        errors=parsed.get("errors", []),
+        warnings=parsed.get("warnings", []),
+        logs=logs,
+    )
+    logger.info("Design errors found - check completed with errors")
+    return "design"
+
+
+def _validate_project_file(check):
+    """Validate that check has a valid GDS file.
+
+    Args:
+        check: ManufacturabilityCheck instance (must have project_file set)
+
+    Returns:
+        ProjectFile instance
+
+    Raises:
+        ValueError: If no valid file available
+    """
+    if not check.project_file:
+        msg = "ManufacturabilityCheck must have a project_file"
+        raise ValueError(msg)
+
+    if not check.project_file.file:
+        msg = "ProjectFile has no uploaded file"
+        raise ValueError(msg)
+
+    return check.project_file
+
+
+def _handle_retry(check, error_summary, _task_instance, logger):
+    """Handle system failure - mark as FAILED for periodic retry.
+
+    Note: _task_instance is unused but kept for API compatibility with callers.
+
+    System failures (Docker errors, timeouts, etc.) are different from
+    manufacturing issues. System failures:
+    - Set status to FAILED
+    - Store error in error_message field
+    - Will be retried by the periodic scan task if retry_count < max_retries
+
+    We don't use Celery's built-in retry here because the periodic scan
+    provides better visibility and control over the retry queue.
+
+    Args:
+        check: ManufacturabilityCheck instance
+        error_summary: Error message string
+        task_instance: Celery task instance (unused, kept for API compatibility)
+        logger: Logger instance
+    """
+    logger.error("System failure detected: %s", error_summary)
+    check.fail(error_summary)
+    logger.info(
+        "  Check marked as FAILED (retry %d/%d available)",
+        check.retry_count,
+        check.max_retries,
+    )
+
+
+def _handle_validation_error(check_id, exc, logger):
+    """Handle validation errors as permanent failures (no retry).
+
+    Validation errors like missing GDS files are permanent - retrying won't help.
+    Mark check as failed immediately without retry.
+
+    Args:
+        check_id: ManufacturabilityCheck ID
+        exc: ValueError instance
+        logger: Logger instance
+
+    Returns:
+        Dict with failure status and message
+    """
+    logger.warning("Validation error in manufacturability check: %s", exc)
+    with contextlib.suppress(ManufacturabilityCheck.DoesNotExist):
+        check = ManufacturabilityCheck.objects.get(id=check_id)
+        check.fail(str(exc))
+    return {"status": "failed", "message": str(exc)}
+
+
+def _handle_exception_retry(check_id, exc, _task_instance, logger):
+    """Handle exception - mark as FAILED for periodic retry.
+
+    Note: _task_instance is unused but kept for API compatibility with callers.
+
+    System failures (Docker errors, timeouts, etc.) are different from
+    manufacturing issues. System failures:
+    - Set status to FAILED
+    - Store error in error_message field
+    - Will be retried by the periodic scan task if retry_count < max_retries
+
+    We don't use Celery's built-in retry here because the periodic scan
+    provides better visibility and control over the retry queue.
+
+    Args:
+        check_id: ManufacturabilityCheck ID
+        exc: Exception instance
+        task_instance: Celery task instance (unused, kept for API compatibility)
+        logger: Logger instance
+    """
+    try:
+        check = ManufacturabilityCheck.objects.get(id=check_id)
+        error_msg = str(exc)
+        logger.error("Exception during check: %s", error_msg)
+        check.fail(error_msg)
+        logger.info(
+            "  Check marked as FAILED (retry %d/%d available)",
+            check.retry_count,
+            check.max_retries,
+        )
+    except ManufacturabilityCheck.DoesNotExist:
+        logger.warning("Check %s not found when handling exception", check_id)
+
+
+def _cleanup_container(container, logger):
+    """Remove Docker container safely.
+
+    Args:
+        container: Docker container object or None
+        logger: Logger instance
+    """
+    if container:
+        try:
+            container.remove()
+            logger.info("  ✓ Container removed")
+        except docker.errors.DockerException as exc:
+            logger.warning("  ⚠ Failed to remove container: %s", exc)
+
+
+def _log_task_start(logger, check_id, task_id):
+    """Log task start banner."""
+    logger.info("=" * 60)
+    logger.info("MANUFACTURABILITY CHECK TASK STARTING")
+    logger.info("=" * 60)
+    logger.info("Check ID: %s", check_id)
+    logger.info("Task ID: %s", task_id)
+
+
+def _log_task_complete(logger, task_start, check):
+    """Log task completion summary."""
+    task_duration = (timezone.now() - task_start).total_seconds()
+    logger.info("=" * 60)
+    logger.info("MANUFACTURABILITY CHECK COMPLETED")
+    logger.info("  Duration: %.1f seconds", task_duration)
+    logger.info("  Result: %s", "PASS" if check.is_manufacturable else "FAIL")
+    logger.info("  Errors: %d", len(check.errors or []))
+    logger.info("  Warnings: %d", len(check.warnings or []))
+    logger.info("=" * 60)
+
+
+def _setup_docker_context(check, project_file, task_instance, logger):
+    """Set up Docker client and execution context.
+
+    Returns:
+        _CheckContext: Execution context for the check
+    """
+    logger.info("Step 2: Connecting to Docker daemon...")
+    client = docker.from_env()
+    docker_info = client.info()
+    logger.info("  ✓ Docker connected: %s", docker_info.get("Name", "unknown"))
+    logger.info("  ✓ Docker version: %s", docker_info.get("ServerVersion", "unknown"))
+
+    return _CheckContext(
+        check=check,
+        client=client,
+        project=check.project,
+        project_file=project_file,
+        gds_path=project_file.file.path,
+        task_instance=task_instance,
+        logger=logger,
+    )
+
+
+@shared_task(
+    bind=True,
+    time_limit=settings.PRECHECK_TIMEOUT_SECONDS,
+    soft_time_limit=settings.PRECHECK_TIMEOUT_SECONDS - 300,
+)
+def check_project_manufacturability(self, check_id):
+    """Run manufacturability check in Docker container.
+
+    This task performs manufacturability analysis using the gf180mcu-precheck
+    tool running in a Docker container. It replaces the previous mock implementation.
 
     Args:
         check_id: The ID of the ManufacturabilityCheck instance
@@ -145,81 +901,57 @@ def check_project_manufacturability(self, check_id):  # noqa: PLR0915
         dict: Result data with status and details
     """
     logger = logging.getLogger(__name__)
+    container = None
+    task_start = timezone.now()
 
     try:
-        # Get the manufacturability check instance
+        _log_task_start(logger, check_id, self.request.id)
+
+        # Step 1: Get check and project
+        logger.info("Step 1: Loading check and project data...")
         check = ManufacturabilityCheck.objects.get(id=check_id)
-        check.task_id = self.request.id or "test-task"  # Handle test environment
-        check.save(update_fields=["task_id"])  # Save task_id first
+        check.task_id = self.request.id or "test-task"
+        # Set worker tracking info for orphan detection
+        check.worker_pid = os.getpid()
+        check.worker_hostname = socket.gethostname()
+        check.save(update_fields=["task_id", "worker_pid", "worker_hostname"])
+        # Transition STARTING -> PROCESSING (sets started_at)
         check.start_processing()
 
-        project = check.project
-        errors = []
-        warnings = []
-        logs = f"Starting manufacturability check for project: {project.name}\n"
+        project_file = _validate_project_file(check)
+        logger.info("  ✓ Project: %s (ID: %s)", check.project.name, check.project.id)
+        logger.info("  ✓ File: %s", project_file.original_filename)
+        logger.info("  ✓ File size: %s", _format_bytes(project_file.file_size or 0))
 
-        logger.info("Starting manufacturability check for project %s", project.id)
+        # Step 2: Connect to Docker (in helper)
+        context = _setup_docker_context(check, project_file, self, logger)
 
-        # TODO: Replace with real GDS/OASIS analysis
-        # Simulate processing time (2-5 seconds)
-        processing_time = random.uniform(  # noqa: S311
-            MOCK_PROCESSING_TIME_MIN,
-            MOCK_PROCESSING_TIME_MAX,
-        )
-        logs += f"Processing design files (simulated {processing_time:.1f}s)...\n"
-        time.sleep(processing_time)
+        # Steps 3-6: Pull image and run container (in helpers)
+        _pull_and_record_image(context)
+        logs, exit_code, container = _run_container_and_stream_logs(context)
 
-        # Mock implementation: use file count to determine result
-        # 0 files or odd number -> not manufacturable, even (non-zero) -> manufacturable
-        file_count = project.files.count()
-        is_manufacturable = file_count > 0 and file_count % 2 == 0
-        logs += f"File count: {file_count}\n"
+        # Step 7: Handle results (in helper)
+        result = _handle_check_result(check, logs, exit_code, logger)
 
-        if is_manufacturable:
-            # Success case - add sample warning
-            warnings.append("Sample warning: Design uses non-standard layer")
-            logs += "Design rule checks: PASSED\n"
-            logs += "Manufacturing constraints: PASSED\n"
-            logs += "Layer validation: PASSED (with warnings)\n"
-            logs += "SUCCESS: Project is manufacturable\n"
+        # Handle system failures
+        if isinstance(result, tuple) and result[0] == "system":
+            _handle_retry(check, result[1], self, logger)
 
-            logger.info(
-                "Manufacturability check completed: %s - MANUFACTURABLE",
-                project.id,
-            )
-        else:
-            # Failure case - add sample errors
-            error_msg = (
-                "Sample error: Minimum feature size violated "
-                "(found 45nm, minimum is 50nm)"
-            )
-            errors.append(error_msg)
-            errors.append("Sample error: Metal layer spacing below minimum threshold")
-            warnings.append("Sample warning: High density area may affect yield")
-            logs += "Design rule checks: FAILED\n"
-            logs += "  - Minimum feature size violation detected\n"
-            logs += "  - Metal layer spacing violation detected\n"
-            logs += f"FAILED: Project is not manufacturable ({len(errors)} errors)\n"
+        # Step 8: Extract detailed run logs before cleanup
+        logger.info("Step 8: Extracting detailed run logs...")
+        _extract_runs_archive(check, container, logger)
 
-            logger.warning(
-                "Manufacturability check completed: %s - NOT MANUFACTURABLE",
-                project.id,
-            )
+        # Note: Container cleanup is now handled in finally block
 
-        # Complete the check
-        check.complete(
-            is_manufacturable=is_manufacturable,
-            errors=errors,
-            warnings=warnings,
-            logs=logs,
-        )
+        # Final summary
+        _log_task_complete(logger, task_start, check)
 
         return {
             "status": "completed",
-            "is_manufacturable": is_manufacturable,
-            "errors": errors,
-            "warnings": warnings,
-            "project_id": str(project.id),
+            "is_manufacturable": check.is_manufacturable,
+            "errors": check.errors,
+            "warnings": check.warnings,
+            "project_id": str(check.project.id),
         }
 
     except ManufacturabilityCheck.DoesNotExist:
@@ -229,35 +961,41 @@ def check_project_manufacturability(self, check_id):  # noqa: PLR0915
             "message": f"ManufacturabilityCheck with id {check_id} not found",
         }
 
-    except Exception as exc:
-        logger.exception("Error in manufacturability check task")
-
-        # Handle task retry logic
-        if self.request.retries < self.max_retries:
-            # Update check with retry info
-            try:
-                check = ManufacturabilityCheck.objects.get(id=check_id)
-                check.retry_count += 1
-                check.processing_logs += f"\nRetry {check.retry_count}: {exc!s}\n"
-                check.save()
-            except ManufacturabilityCheck.DoesNotExist:
-                pass
-
-            # Retry the task
-            raise self.retry(exc=exc) from exc
-
-        # Max retries reached, mark as failed
-        try:
+    except docker.errors.ImageNotFound:
+        logger.exception(
+            "Docker image not found: %s",
+            settings.PRECHECK_DOCKER_IMAGE,
+        )
+        with contextlib.suppress(ManufacturabilityCheck.DoesNotExist):
             check = ManufacturabilityCheck.objects.get(id=check_id)
-            check.fail(f"Max retries reached: {exc!s}")
-        except ManufacturabilityCheck.DoesNotExist:
-            pass
+            check.fail(f"Docker image not found: {settings.PRECHECK_DOCKER_IMAGE}")
+        return {"status": "failed", "message": "Docker image not found"}
 
+    except (docker.errors.ContainerError, docker.errors.APIError) as exc:
+        is_container = isinstance(exc, docker.errors.ContainerError)
+        error_type = "Container" if is_container else "Docker API"
+        logger.exception("%s error during precheck execution", error_type)
+        _handle_exception_retry(check_id, exc, self, logger)
+        return {"status": "failed", "message": f"{error_type} error: {exc!s}"}
+
+    except ValueError as exc:
+        return _handle_validation_error(check_id, exc, logger)
+
+    except Exception as exc:
+        logger.exception("Unexpected error in manufacturability check task")
+        _handle_exception_retry(check_id, exc, self, logger)
         return {
             "status": "failed",
             "message": str(exc),
             "retries": self.request.retries,
         }
+
+    finally:
+        # Always cleanup container, even if exceptions occur
+        # This prevents Docker resource leaks on failures or timeouts
+        if container is not None:
+            logger.info("Cleaning up container in finally block...")
+            _cleanup_container(container, logger)
 
 
 @shared_task
@@ -553,8 +1291,6 @@ def _prepare_download_request(
     ):
         logger.info("  GitHub artifact detected - obtaining authenticated URL...")
 
-        from django.conf import settings  # noqa: PLC0415
-
         metadata = project_file.handler_metadata
         auth_data = _download_github_artifact(
             owner=metadata["owner"],
@@ -671,6 +1407,34 @@ def _log_file_size(
     return total_size
 
 
+def _initialize_hash_calculators(
+    temp_path: Path,
+    resume_byte_pos: int,
+):
+    """Initialize hash calculators, updating with existing content if resuming.
+
+    Returns:
+        tuple: (md5_hasher, sha1_hasher, sha256_hasher)
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("  Initializing hash calculators (MD5, SHA1, SHA256)...")
+
+    md5_hasher = hashlib.md5(usedforsecurity=False)
+    sha1_hasher = hashlib.sha1(usedforsecurity=False)
+    sha256_hasher = hashlib.sha256()
+
+    if resume_byte_pos > 0:
+        logger.info("  Reading existing partial download for hash calculation...")
+        with temp_path.open("rb") as existing_file:
+            existing_content = existing_file.read()
+            md5_hasher.update(existing_content)
+            sha1_hasher.update(existing_content)
+            sha256_hasher.update(existing_content)
+        logger.info("  ✓ Hashes updated with %s", _format_bytes(resume_byte_pos))
+
+    return md5_hasher, sha1_hasher, sha256_hasher
+
+
 @dataclass
 class _ChunkDownloadState:
     """State for chunk download operation."""
@@ -682,8 +1446,20 @@ class _ChunkDownloadState:
     attempt: DownloadAttempt
     total_size: int
     resume_byte_pos: int
+    md5_hasher: "hashlib._Hash"  # hashlib hash object
+    sha1_hasher: "hashlib._Hash"  # hashlib hash object
+    sha256_hasher: "hashlib._Hash"  # hashlib hash object
     chunk_size: int
     start_time: float
+
+
+@dataclass
+class HashResults:
+    """Container for file hash calculation results."""
+
+    md5: str
+    sha1: str
+    sha256: str
 
 
 def _should_log_progress(
@@ -820,6 +1596,9 @@ def _download_chunks(state: _ChunkDownloadState) -> None:
 
             # Write chunk
             temp_file.write(chunk)
+            state.md5_hasher.update(chunk)
+            state.sha1_hasher.update(chunk)
+            state.sha256_hasher.update(chunk)
             downloaded += len(chunk)
             chunk_count += 1
 
@@ -920,7 +1699,7 @@ def _download_with_progress(
     temp_path: Path,
     *,
     chunk_size: int = 1024 * 1024,  # 1MB chunks
-) -> None:
+) -> tuple[str, str, str]:
     """Download file with progress tracking and resume capability.
 
     Downloads file in chunks, tracking progress to database.
@@ -934,7 +1713,7 @@ def _download_with_progress(
         chunk_size: Size of download chunks in bytes
 
     Returns:
-        None - file downloaded to temp_path
+        tuple: (md5_hash, sha1_hash, sha256_hash) of downloaded content
     """
     # Prepare request (gets authenticated URL for GitHub artifacts)
     url, headers, resume_byte_pos = _prepare_download_request(project_file, temp_path)
@@ -947,6 +1726,11 @@ def _download_with_progress(
     # Log file size information
     total_size = _log_file_size(response, project_file, resume_byte_pos)
 
+    # Initialize hash calculators
+    md5_hasher, sha1_hasher, sha256_hasher = _initialize_hash_calculators(
+        temp_path, resume_byte_pos
+    )
+
     # Download chunks with progress tracking
     download_state = _ChunkDownloadState(
         response=response,
@@ -956,10 +1740,15 @@ def _download_with_progress(
         attempt=attempt,
         total_size=total_size,
         resume_byte_pos=resume_byte_pos,
+        md5_hasher=md5_hasher,
+        sha1_hasher=sha1_hasher,
+        sha256_hasher=sha256_hasher,
         chunk_size=chunk_size,
         start_time=time.time(),
     )
     _download_chunks(download_state)
+
+    return md5_hasher.hexdigest(), sha1_hasher.hexdigest(), sha256_hasher.hexdigest()
 
 
 def _create_download_attempt_atomic(
@@ -1243,7 +2032,7 @@ def _apply_content_pipeline(
     project_file: ProjectFile,
     content: bytes,
     temp_path: Path,
-) -> tuple[bytes, str, str]:
+) -> tuple[bytes, str, str, str]:
     """Apply content extraction pipeline to process compressed/archived files.
 
     Args:
@@ -1252,19 +2041,12 @@ def _apply_content_pipeline(
         temp_path: Temporary file path for intermediate processing
 
     Returns:
-        tuple: (processed_content, md5_hash, sha1_hash)
+        tuple: (processed_content, md5_hash, sha1_hash, sha256_hash)
 
     Raises:
         ValueError: If pipeline processing fails or format validation fails
     """
     logger = logging.getLogger(__name__)
-    from django.conf import settings  # noqa: PLC0415
-
-    from .content_pipeline import ContentPipeline  # noqa: PLC0415
-    from .content_pipeline import cleanup_temp_dir  # noqa: PLC0415
-    from .content_pipeline import get_temp_dir_for_file  # noqa: PLC0415
-    from .content_processors import _processor_registry  # noqa: PLC0415
-    from .format_validators import validate_output_format  # noqa: PLC0415
 
     # Write content to temp file for pipeline
     temp_path.write_bytes(content)
@@ -1291,9 +2073,10 @@ def _apply_content_pipeline(
 
         # Recalculate hashes after pipeline processing
         logger.info("  Recalculating hashes after pipeline processing...")
-        final_md5, final_sha1 = _calculate_file_hashes(processed_content)
+        final_md5, final_sha1, final_sha256 = _calculate_file_hashes(processed_content)
         logger.info("  ✓ MD5: %s", final_md5)
         logger.info("  ✓ SHA1: %s", final_sha1)
+        logger.info("  ✓ SHA256: %s", final_sha256)
 
         # Build final filename
         # For GitHub artifacts, include metadata prefix for better identification
@@ -1330,7 +2113,7 @@ def _apply_content_pipeline(
         logger.info("  ✓ Pipeline processing complete")
         logger.info("  ✓ Output size: %s", _format_bytes(result.size_bytes))
 
-        return processed_content, final_md5, final_sha1
+        return processed_content, final_md5, final_sha1, final_sha256
 
     finally:
         # Always cleanup temp directory
@@ -1342,7 +2125,7 @@ def _process_and_save_content(
     attempt: DownloadAttempt,
     downloaded_content: bytes,
     temp_path: Path,
-) -> tuple[bytes, str, str]:
+) -> tuple[bytes, str, str, str]:
     """Process downloaded content and save to Django storage.
 
     Args:
@@ -1352,7 +2135,7 @@ def _process_and_save_content(
         temp_path: Path to temporary file
 
     Returns:
-        tuple: (processed_content, final_md5_hash, final_sha1_hash)
+        tuple: (processed_content, final_md5_hash, final_sha1_hash, final_sha256_hash)
               Hashes are for the FINAL extracted GDS/OASIS file
     """
     logger = logging.getLogger(__name__)
@@ -1378,11 +2161,8 @@ def _process_and_save_content(
     # This extracts GDS/OASIS from archives and calculates hashes on final file
     logger.info("Step 6.5: Running content extraction pipeline...")
     try:
-        processed_content, final_md5, final_sha1 = _apply_content_pipeline(
-            project_file,
-            processed_content,
-            temp_path,
-        )
+        result = _apply_content_pipeline(project_file, processed_content, temp_path)
+        processed_content, final_md5, final_sha1, final_sha256 = result
     except ValueError as e:
         logger.exception("Pipeline processing failed")
 
@@ -1440,20 +2220,73 @@ def _process_and_save_content(
     project_file.file_size = len(processed_content)
     project_file.hash_md5 = final_md5
     project_file.hash_sha1 = final_sha1
+    project_file.hash_sha256 = final_sha256
     project_file.save(
-        update_fields=["file_size", "hash_md5", "hash_sha1", "processed_filename"]
+        update_fields=[
+            "file",
+            "file_size",
+            "hash_md5",
+            "hash_sha1",
+            "hash_sha256",
+            "processed_filename",
+        ]
     )
     logger.info("  ✓ File size: %s", _format_bytes(project_file.file_size))
     logger.info("  ✓ MD5 hash: %s", final_md5)
     logger.info("  ✓ SHA1 hash: %s", final_sha1)
+    logger.info("  ✓ SHA256 hash: %s", final_sha256)
 
-    return processed_content, final_md5, final_sha1
+    return processed_content, final_md5, final_sha1, final_sha256
+
+
+def _queue_manufacturability_check(project_file: ProjectFile) -> ManufacturabilityCheck:
+    """Cancel old checks and create new manufacturability check for the file.
+
+    When a new file is uploaded, any existing checks for other files in the
+    project should be cancelled, and a new check should be queued.
+
+    Args:
+        project_file: The newly verified project file
+
+    Returns:
+        The newly created ManufacturabilityCheck in QUEUED state
+    """
+    logger = logging.getLogger(__name__)
+
+    # Cancel any existing checks for other files in this project
+    old_checks = ManufacturabilityCheck.objects.filter(
+        project=project_file.project,
+        status__in=[
+            ManufacturabilityCheck.Status.QUEUED,
+            ManufacturabilityCheck.Status.STARTING,
+            ManufacturabilityCheck.Status.PROCESSING,
+        ],
+    ).exclude(project_file=project_file)
+
+    for old_check in old_checks:
+        task_id = old_check.cancel(reason="Cancelled due to new file upload")
+        if task_id:
+            logger.info("  ✓ Cancelled old check %s (task: %s)", old_check.id, task_id)
+        else:
+            logger.info("  ✓ Cancelled old check %s", old_check.id)
+
+    # Create manufacturability check in QUEUED state
+    logger.info("Step 9.5: Creating manufacturability check...")
+    check = ManufacturabilityCheck.objects.create(
+        project=project_file.project,
+        project_file=project_file,
+        status=ManufacturabilityCheck.Status.QUEUED,
+        queued_at=timezone.now(),
+    )
+    logger.info("  ✓ Manufacturability check created (ID: %s)", check.id)
+    logger.info("  ✓ File ready for manufacturability checking")
+
+    return check
 
 
 def _verify_and_notify(
     project_file: ProjectFile,
-    md5_hash: str,
-    sha1_hash: str,
+    hashes: HashResults,
 ) -> tuple[bool, list[str]]:
     """Verify file hashes and create notifications.
 
@@ -1466,15 +2299,17 @@ def _verify_and_notify(
     logger.info("Step 8: Verifying file integrity...")
     if project_file.expected_hash_md5:
         logger.info("  Expected MD5: %s", project_file.expected_hash_md5)
-        logger.info("  Actual MD5:   %s", md5_hash)
+        logger.info("  Actual MD5:   %s", hashes.md5)
     if project_file.expected_hash_sha1:
         logger.info("  Expected SHA1: %s", project_file.expected_hash_sha1)
-        logger.info("  Actual SHA1:   %s", sha1_hash)
+        logger.info("  Actual SHA1:   %s", hashes.sha1)
+    if project_file.expected_hash_sha256:
+        logger.info("  Expected SHA256: %s", project_file.expected_hash_sha256)
+        logger.info("  Actual SHA256:   %s", hashes.sha256)
 
     hash_verified, verification_errors = _verify_file_hashes(
         project_file,
-        md5_hash,
-        sha1_hash,
+        hashes,
     )
 
     if hash_verified:
@@ -1488,6 +2323,22 @@ def _verify_and_notify(
     project_file.save(update_fields=["hash_verified"])
     project_file.mark_download_complete()
     logger.info("  ✓ Download marked as COMPLETE")
+
+    # Extract top cell from GDS/OASIS file (required for manufacturability check)
+    logger.info("Step 8.5: Extracting top cell from layout file...")
+    if not project_file.file:
+        msg = "No file available for top cell extraction"
+        raise ValueError(msg)
+
+    file_path = Path(project_file.file.path)
+    top_cell = extract_top_cell(file_path)
+    if not top_cell:
+        msg = f"Could not extract top cell from {project_file.processed_filename}"
+        raise ValueError(msg)
+
+    project_file.top_cell = top_cell
+    project_file.save(update_fields=["top_cell"])
+    logger.info("  ✓ Top cell identified: %s", top_cell)
 
     # Create notifications
     logger.info("Step 9: Creating notifications...")
@@ -1504,12 +2355,8 @@ def _verify_and_notify(
         )
         logger.info("  ✓ Checksum verified notification created")
 
-        # Queue manufacturability check now that hash is verified
-        from .services import ManufacturabilityService  # noqa: PLC0415
-
-        logger.info("Step 10: Queueing manufacturability check...")
-        ManufacturabilityService.queue_check(project_file.project, project_file)
-        logger.info("  ✓ Manufacturability check queued")
+        # Cancel old checks and create new one
+        _queue_manufacturability_check(project_file)
     elif verification_errors:
         NotificationService.create_checksum_mismatch_notification(
             user=project_file.project.user,
@@ -1592,7 +2439,7 @@ def download_project_file(self, project_id):  # noqa: PLR0915, C901
     - Chunked downloading for large files (up to 100GB)
     - Resume capability with HTTP Range requests
     - Progress tracking via Celery task state
-    - Hash verification (MD5, SHA1)
+    - Hash verification (MD5, SHA1, SHA256)
     - Exponential backoff retry on failures
 
     Args:
@@ -1659,16 +2506,16 @@ def download_project_file(self, project_id):  # noqa: PLR0915, C901
             else "unknown"
         )
         logger.info("  Expected file size: %s", expected_size)
-
-        # Download file (all downloads now use progress tracking)
-        logger.info("  Starting chunked download with progress tracking...")
-        _download_with_progress(
+        md5_hash, sha1_hash, sha256_hash = _download_with_progress(
             self,
             project_file,
             attempt,
             temp_path,
         )
         logger.info("  ✓ Download completed successfully!")
+        logger.info("  ✓ MD5: %s", md5_hash)
+        logger.info("  ✓ SHA1: %s", sha1_hash)
+        logger.info("  ✓ SHA256: %s", sha256_hash)
 
         # Read downloaded content
         logger.info("Step 5: Reading downloaded content...")
@@ -1679,7 +2526,6 @@ def download_project_file(self, project_id):  # noqa: PLR0915, C901
 
         # Detect file type from actual content
         logger.info("Step 6: Detecting file type from content...")
-        from .services import detect_file_type_from_data  # noqa: PLC0415
 
         # Use first 1MB for MIME detection (or entire file if smaller)
         detection_data = downloaded_content[: 1024 * 1024]
@@ -1727,19 +2573,24 @@ def download_project_file(self, project_id):  # noqa: PLR0915, C901
 
         # Process and save content (extracts GDS/OASIS and calculates hashes)
         logger.info("Step 7: Processing and saving content...")
-        _processed_content, final_md5, final_sha1 = _process_and_save_content(
-            project_file,
-            attempt,
-            downloaded_content,
-            temp_path,
+        result = _process_and_save_content(
+            project_file, attempt, downloaded_content, temp_path
+        )
+        _processed_content, final_md5, final_sha1, final_sha256 = result
+
+        # Create HashResults for verification
+        # All hashes are for the FINAL extracted file
+        final_hashes = HashResults(
+            md5=final_md5,
+            sha1=final_sha1,
+            sha256=final_sha256,
         )
 
         # Verify hashes and create notifications
         logger.info("Step 8: Verifying hashes and creating notifications...")
         hash_verified, verification_errors = _verify_and_notify(
             project_file,
-            final_md5,
-            final_sha1,
+            final_hashes,
         )
 
         # Mark attempt as completed
@@ -1776,6 +2627,7 @@ def download_project_file(self, project_id):  # noqa: PLR0915, C901
             "verification_errors": verification_errors,
             "md5": project_file.hash_md5,
             "sha1": project_file.hash_sha1,
+            "sha256": project_file.hash_sha256,
         }
 
     except Project.DoesNotExist:
@@ -2025,3 +2877,406 @@ def update_project_status(project_id, new_status):
             "status": "error",
             "message": f"Project with id {project_id} not found",
         }
+
+
+def _count_files_by_check_status(ready_files) -> dict:
+    """Count files by their manufacturability check status.
+
+    Returns dict with counts for each status plus 'needs_check' for actionable files.
+    """
+    counts = {
+        "no_check": 0,
+        "queued": 0,
+        "processing": 0,
+        "completed": 0,
+        "cancelled": 0,
+        "failed": 0,
+        "needs_check": 0,
+    }
+
+    for pf in ready_files:
+        try:
+            check = pf.manufacturability_check
+            if check.status == ManufacturabilityCheck.Status.QUEUED:
+                counts["queued"] += 1
+            elif check.status == ManufacturabilityCheck.Status.PROCESSING:
+                counts["processing"] += 1
+            elif check.status == ManufacturabilityCheck.Status.COMPLETED:
+                counts["completed"] += 1
+            elif check.status == ManufacturabilityCheck.Status.CANCELLED:
+                counts["cancelled"] += 1
+            elif check.status == ManufacturabilityCheck.Status.FAILED:
+                counts["failed"] += 1
+                if check.can_retry():
+                    counts["needs_check"] += 1
+        except ManufacturabilityCheck.DoesNotExist:
+            counts["no_check"] += 1
+            counts["needs_check"] += 1
+
+    return counts
+
+
+def _log_file_status_counts(logger, file_count: int, counts: dict) -> None:
+    """Log the breakdown of files by their check status."""
+    logger.info("  Found %d files with completed verified downloads:", file_count)
+    logger.info("    - No check yet: %d", counts["no_check"])
+    logger.info("    - Queued: %d", counts["queued"])
+    logger.info("    - Processing: %d", counts["processing"])
+    logger.info("    - Completed: %d", counts["completed"])
+    logger.info("    - Cancelled: %d", counts["cancelled"])
+    logger.info("    - Failed: %d", counts["failed"])
+    logger.info("  Need checks: %d", counts["needs_check"])
+
+
+def _handle_starting_checks(logger) -> tuple[int, int, int]:
+    """Handle STARTING checks - verify task exists and transition if running.
+
+    Returns:
+        Tuple of (verified_count, transitioned_count, lost_count)
+    """
+    verified = 0
+    transitioned = 0
+    lost = 0
+
+    starting_checks = ManufacturabilityCheck.objects.filter(
+        status=ManufacturabilityCheck.Status.STARTING,
+    )
+
+    for check in starting_checks:
+        # First check if task has started running (should transition to PROCESSING)
+        if is_check_task_actively_running(check):
+            logger.info("  Check %s: Task started -> PROCESSING", check.id)
+            check.status = ManufacturabilityCheck.Status.PROCESSING
+            if not check.started_at:
+                check.started_at = timezone.now()
+            check.save(update_fields=["status", "started_at"])
+            transitioned += 1
+        elif is_check_task_queued(check):
+            # Still in queue (reserved but not started)
+            verified += 1
+            logger.debug("  Check %s: STARTING verified in queue", check.id)
+        else:
+            # Task lost - move back to QUEUED
+            logger.warning("  Check %s: STARTING task lost, requeuing", check.id)
+            check.status = ManufacturabilityCheck.Status.QUEUED
+            check.task_id = ""
+            check.queued_at = timezone.now()
+            check.save(update_fields=["status", "task_id", "queued_at"])
+            lost += 1
+
+    return verified, transitioned, lost
+
+
+def _reset_check_for_retry(check: ManufacturabilityCheck) -> None:
+    """Reset a check's fields for retry."""
+    check.status = ManufacturabilityCheck.Status.QUEUED
+    check.retry_count += 1
+    check.queued_at = timezone.now()
+    check.is_manufacturable = None
+    check.errors = []
+    check.warnings = []
+    check.error_message = ""
+    check.started_at = None
+    check.completed_at = None
+    check.save()
+
+
+def _handle_processing_checks(logger) -> tuple[int, int, int]:
+    """Handle PROCESSING checks - verify task running AND process exists.
+
+    Returns:
+        Tuple of (verified_count, orphaned_count, retried_count)
+    """
+    verified = 0
+    orphaned = 0
+    retried = 0
+
+    processing_checks = ManufacturabilityCheck.objects.filter(
+        status=ManufacturabilityCheck.Status.PROCESSING,
+    )
+
+    for check in processing_checks:
+        if is_check_task_actively_running(check):
+            verified += 1
+            logger.debug("  Check %s: PROCESSING verified running", check.id)
+        else:
+            # Task orphaned - mark FAILED
+            logger.warning("  Check %s: PROCESSING task orphaned", check.id)
+            check.status = ManufacturabilityCheck.Status.FAILED
+            check.error_message = "Task not running (worker crashed or task failed)"
+            check.completed_at = timezone.now()
+            check.worker_pid = None
+            check.worker_hostname = ""
+            check.save(
+                update_fields=[
+                    "status",
+                    "error_message",
+                    "completed_at",
+                    "worker_pid",
+                    "worker_hostname",
+                ]
+            )
+            orphaned += 1
+
+            # Check if we should retry
+            if check.can_retry():
+                logger.info(
+                    "  Check %s: requeuing for retry (attempt %d/%d)",
+                    check.id,
+                    check.retry_count + 1,
+                    check.max_retries,
+                )
+                _reset_check_for_retry(check)
+                retried += 1
+
+    return verified, orphaned, retried
+
+
+def _handle_failed_checks(logger) -> tuple[int, int]:
+    """Handle FAILED checks - retry if allowed.
+
+    Returns:
+        Tuple of (retried_count, exhausted_count)
+    """
+    retried = 0
+    exhausted = 0
+
+    failed_checks = ManufacturabilityCheck.objects.filter(
+        status=ManufacturabilityCheck.Status.FAILED,
+    )
+
+    for check in failed_checks:
+        if check.can_retry():
+            logger.info(
+                "  Check %s: FAILED, requeuing (attempt %d/%d)",
+                check.id,
+                check.retry_count + 1,
+                check.max_retries,
+            )
+            _reset_check_for_retry(check)
+            retried += 1
+        else:
+            exhausted += 1
+            logger.debug("  Check %s: FAILED, max retries exhausted", check.id)
+
+    return retried, exhausted
+
+
+def _handle_queued_checks(logger, concurrent_limit: int) -> tuple[int, int]:
+    """Handle QUEUED checks - dispatch if under limit.
+
+    Returns:
+        Tuple of (dispatched_count, waiting_count)
+    """
+    dispatched = 0
+    waiting = 0
+
+    # Count currently active checks (STARTING or PROCESSING)
+    active_count = ManufacturabilityCheck.objects.filter(
+        status__in=[
+            ManufacturabilityCheck.Status.STARTING,
+            ManufacturabilityCheck.Status.PROCESSING,
+        ]
+    ).count()
+
+    logger.info("  Active checks: %d / %d (limit)", active_count, concurrent_limit)
+
+    # Get QUEUED checks ordered by queued_at (FIFO)
+    queued_checks = ManufacturabilityCheck.objects.filter(
+        status=ManufacturabilityCheck.Status.QUEUED,
+    ).order_by("queued_at")
+
+    for check in queued_checks:
+        if active_count >= concurrent_limit:
+            waiting += 1
+            continue
+
+        # Dispatch the task
+        try:
+            task = check_project_manufacturability.delay(check.id)
+            check.status = ManufacturabilityCheck.Status.STARTING
+            check.task_id = task.id
+            check.save(update_fields=["status", "task_id"])
+            dispatched += 1
+            active_count += 1
+            logger.info("  Check %s: QUEUED -> STARTING (task: %s)", check.id, task.id)
+        except Exception:
+            logger.exception("Failed to dispatch check %s", check.id)
+
+    return dispatched, waiting
+
+
+@shared_task
+def process_manufacturability_check_queue():
+    """Process manufacturability check queue with state machine transitions.
+
+    This periodic task manages the lifecycle of manufacturability checks:
+    - STARTING: Verify task in Celery queue, if not -> QUEUED (task lost)
+    - PROCESSING: Verify task running AND process exists, if not -> FAILED
+    - FAILED: If can_retry() -> QUEUED with retry_count++
+    - QUEUED: If under concurrent limit -> dispatch task, set STARTING
+
+    Respects global concurrent limit (PRECHECK_CONCURRENT_LIMIT setting).
+
+    Returns:
+        dict: Status with counts of transitions and verifications
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("=" * 60)
+    logger.info("PROCESSING MANUFACTURABILITY CHECK QUEUE")
+    logger.info("=" * 60)
+
+    # Get concurrent limit from settings
+    concurrent_limit = getattr(settings, "PRECHECK_CONCURRENT_LIMIT", 4)
+
+    # Process each state
+    starting_verified, starting_transitioned, starting_lost = _handle_starting_checks(
+        logger
+    )
+    proc_verified, proc_orphaned, proc_retried = _handle_processing_checks(logger)
+    failed_retried, failed_exhausted = _handle_failed_checks(logger)
+    queued_dispatched, queued_waiting = _handle_queued_checks(logger, concurrent_limit)
+
+    # Summary
+    logger.info("=" * 60)
+    logger.info("QUEUE PROCESSING COMPLETE")
+    logger.info(
+        "  STARTING: %d verified, %d transitioned, %d lost",
+        starting_verified,
+        starting_transitioned,
+        starting_lost,
+    )
+    logger.info("  PROCESSING: %d verified, %d orphaned", proc_verified, proc_orphaned)
+    logger.info("  FAILED: %d retried, %d exhausted", failed_retried, failed_exhausted)
+    logger.info(
+        "  QUEUED: %d dispatched, %d waiting",
+        queued_dispatched,
+        queued_waiting,
+    )
+    logger.info("=" * 60)
+
+    return {
+        "status": "completed",
+        "starting_verified": starting_verified,
+        "starting_transitioned": starting_transitioned,
+        "starting_lost": starting_lost,
+        "processing_verified": proc_verified,
+        "processing_orphaned": proc_orphaned,
+        "failed_retried": failed_retried + proc_retried,
+        "failed_exhausted": failed_exhausted,
+        "queued_dispatched": queued_dispatched,
+        "queued_waiting": queued_waiting,
+    }
+
+
+# Keep old name as alias for backwards compatibility with Celery Beat config
+scan_and_queue_manufacturability_checks = process_manufacturability_check_queue
+
+
+@shared_task(bind=True, queue="maintenance")
+def cleanup_orphaned_precheck_containers(_self):
+    """Clean up orphaned Docker containers from cancelled/failed checks.
+
+    Note: _self is unused but bind=True is kept for Celery task introspection potential.
+
+    This periodic task finds containers with the wafer.space.service label that
+    don't have a corresponding active ManufacturabilityCheck (QUEUED or PROCESSING).
+
+    Orphaned containers can occur when:
+    - A Celery task is revoked/terminated (task cancel)
+    - The worker crashes during a check
+    - A check times out but container cleanup fails
+
+    Returns:
+        dict: Status with counts of found, stopped, removed, and failed containers
+    """
+    logger = get_task_logger(__name__)
+    logger.info("=" * 60)
+    logger.info("CLEANING UP ORPHANED PRECHECK CONTAINERS")
+    logger.info("=" * 60)
+
+    stopped_count = 0
+    removed_count = 0
+    failed_count = 0
+
+    try:
+        client = docker.from_env()
+    except docker.errors.DockerException as exc:
+        logger.exception("Failed to connect to Docker")
+        return {
+            "status": "error",
+            "error": str(exc),
+        }
+
+    # Find all containers with our service label
+    containers = client.containers.list(
+        all=True,  # Include stopped containers
+        filters={"label": "wafer.space.service=manufacturability-check"},
+    )
+
+    logger.info("  Found %d precheck containers", len(containers))
+
+    # Get IDs of active checks (QUEUED or PROCESSING)
+    active_check_ids = set(
+        ManufacturabilityCheck.objects.filter(
+            status__in=[
+                ManufacturabilityCheck.Status.QUEUED,
+                ManufacturabilityCheck.Status.PROCESSING,
+            ]
+        ).values_list("id", flat=True)
+    )
+    active_check_ids_str = {str(check_id) for check_id in active_check_ids}
+
+    logger.info("  Active checks: %d", len(active_check_ids))
+
+    for container in containers:
+        container_check_id = container.labels.get("wafer.space.check_id", "")
+
+        # Skip if this container belongs to an active check
+        if container_check_id in active_check_ids_str:
+            logger.info(
+                "  Container %s: belongs to active check %s, skipping",
+                container.short_id,
+                container_check_id,
+            )
+            continue
+
+        # This container is orphaned - clean it up
+        logger.info(
+            "  Container %s: orphaned (check_id=%s, status=%s)",
+            container.short_id,
+            container_check_id or "none",
+            container.status,
+        )
+
+        try:
+            # Stop if running
+            if container.status == "running":
+                logger.info("    Stopping container...")
+                container.stop(timeout=10)
+                stopped_count += 1
+
+            # Remove container
+            logger.info("    Removing container...")
+            container.remove(force=True)
+            removed_count += 1
+            logger.info("    ✓ Container removed")
+
+        except docker.errors.DockerException as exc:
+            logger.warning("    ⚠ Failed to clean up container: %s", exc)
+            failed_count += 1
+
+    logger.info("=" * 60)
+    logger.info("CLEANUP COMPLETE")
+    logger.info("  Stopped: %d", stopped_count)
+    logger.info("  Removed: %d", removed_count)
+    logger.info("  Failed: %d", failed_count)
+    logger.info("=" * 60)
+
+    return {
+        "status": "completed",
+        "containers_found": len(containers),
+        "stopped": stopped_count,
+        "removed": removed_count,
+        "failed": failed_count,
+    }
