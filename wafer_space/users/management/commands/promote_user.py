@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from argparse import ArgumentParser
+from typing import Any
+
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
@@ -14,7 +17,7 @@ class Command(BaseCommand):
 
     help = "Promote an existing user to staff (admin) and/or superuser status"
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: ArgumentParser) -> None:
         """Add command arguments."""
         parser.add_argument(
             "username",
@@ -49,7 +52,7 @@ class Command(BaseCommand):
             help="List all staff/superusers instead of promoting",
         )
 
-    def handle(self, *args, **options):
+    def handle(self, *args: Any, **options: Any) -> None:
         """Execute the command."""
         if options["list_users"]:
             self._list_staff_users()
@@ -65,7 +68,7 @@ class Command(BaseCommand):
         self._show_status(user)
         return
 
-    def _find_user(self, username: str):
+    def _find_user(self, username: str) -> Any:
         """Find user by username or email."""
         try:
             return User.objects.get(username=username)
@@ -78,7 +81,7 @@ class Command(BaseCommand):
             msg = f"User '{username}' not found (checked username and email)"
             raise CommandError(msg) from None
 
-    def _update_permissions(self, user, options):
+    def _update_permissions(self, user: Any, options: dict[str, Any]) -> None:
         """Update user permissions based on options."""
         grant_staff = options["staff"]
         grant_superuser = options["superuser"]
@@ -137,14 +140,14 @@ class Command(BaseCommand):
             changes.append("removed superuser status")
         return changes
 
-    def _show_status(self, user):
+    def _show_status(self, user: Any) -> None:
         """Display current user status."""
         self.stdout.write(f"\nCurrent status for '{user.username}':")
         self.stdout.write(f"  Email: {user.email}")
         self.stdout.write(f"  Staff: {user.is_staff}")
         self.stdout.write(f"  Superuser: {user.is_superuser}")
 
-    def _list_staff_users(self):
+    def _list_staff_users(self) -> None:
         """List all staff and superusers."""
         staff_users = User.objects.filter(is_staff=True).order_by("username")
         superusers = User.objects.filter(is_superuser=True).order_by("username")
