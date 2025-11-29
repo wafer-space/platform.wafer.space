@@ -11,9 +11,9 @@ from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.security import SecurityValidationError
+from wafer_space.projects.file_type_utils import detect_file_type_from_data
 from wafer_space.projects.services import ManufacturabilityService
 from wafer_space.projects.services import ProjectFileService
-from wafer_space.projects.services import detect_file_type_from_data
 from wafer_space.users.models import User
 
 from .constants import FIVE_MB
