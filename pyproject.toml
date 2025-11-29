@@ -131,6 +131,8 @@ ignore = [
     # Deactivated because it can make the code slow:
     # https://github.com/astral-sh/ruff/issues/7871
 ]
+# Allow Unicode multiplication sign (×) in slot size labels
+allowed-confusables = ["×"]
 
 [tool.ruff.lint.isort]
 force-single-line = true
