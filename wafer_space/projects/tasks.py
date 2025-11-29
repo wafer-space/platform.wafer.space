@@ -31,6 +31,12 @@ from django_celery_results.models import TaskResult
 
 from wafer_space.notifications.services import NotificationService
 
+from .content_pipeline import ContentPipeline
+from .content_pipeline import cleanup_temp_dir
+from .content_pipeline import get_temp_dir_for_file
+from .content_processors import _processor_registry
+from .file_type_utils import detect_file_type_from_data
+from .format_validators import validate_output_format
 from .models import DownloadAttempt
 from .models import FileProcessingError
 from .models import ManufacturabilityCheck
@@ -948,17 +954,11 @@ def check_project_manufacturability(self, check_id):
             settings.PRECHECK_DOCKER_IMAGE,
         )
 
-        try:
+        with contextlib.suppress(ManufacturabilityCheck.DoesNotExist):
             check = ManufacturabilityCheck.objects.get(id=check_id)
-            error_msg = f"Docker image not found: {settings.PRECHECK_DOCKER_IMAGE}"
-            check.fail(error_msg)
-        except ManufacturabilityCheck.DoesNotExist:
-            pass
+            check.fail(f"Docker image not found: {settings.PRECHECK_DOCKER_IMAGE}")
 
-        return {
-            "status": "failed",
-            "message": "Docker image not found",
-        }
+        return {"status": "failed", "message": "Docker image not found"}
 
     except docker.errors.APIError as exc:
         logger.exception("Docker API error")
@@ -1277,8 +1277,6 @@ def _prepare_download_request(
         "requires_github_auth"
     ):
         logger.info("  GitHub artifact detected - obtaining authenticated URL...")
-
-        from django.conf import settings  # noqa: PLC0415
 
         metadata = project_file.handler_metadata
         auth_data = _download_github_artifact(
@@ -2036,13 +2034,6 @@ def _apply_content_pipeline(
         ValueError: If pipeline processing fails or format validation fails
     """
     logger = logging.getLogger(__name__)
-    from django.conf import settings  # noqa: PLC0415
-
-    from .content_pipeline import ContentPipeline  # noqa: PLC0415
-    from .content_pipeline import cleanup_temp_dir  # noqa: PLC0415
-    from .content_pipeline import get_temp_dir_for_file  # noqa: PLC0415
-    from .content_processors import _processor_registry  # noqa: PLC0415
-    from .format_validators import validate_output_format  # noqa: PLC0415
 
     # Write content to temp file for pipeline
     temp_path.write_bytes(content)
@@ -2522,7 +2513,6 @@ def download_project_file(self, project_id):  # noqa: PLR0915, C901
 
         # Detect file type from actual content
         logger.info("Step 6: Detecting file type from content...")
-        from .services import detect_file_type_from_data  # noqa: PLC0415
 
         # Use first 1MB for MIME detection (or entire file if smaller)
         detection_data = downloaded_content[: 1024 * 1024]
