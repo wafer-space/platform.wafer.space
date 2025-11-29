@@ -1962,9 +1962,9 @@ Django staff users can view, edit, and manage any user's project on the platform
 
 ## Who Has Access
 
-**Staff users Only**: Access is restricted to users with `is_staff=True`.
+**Staff users** (`is_staff=True`): Full access to all projects on the platform.
 
-**Staff users** (`is_staff=True` without `is_staff=True`) do **NOT** have access to other users' projects.
+**Non-staff users** (`is_staff=False`): Can only access their own projects.
 
 ## Features
 
