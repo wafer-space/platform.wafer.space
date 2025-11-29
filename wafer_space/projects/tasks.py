@@ -910,9 +910,7 @@ def check_project_manufacturability(self, check_id):
         logger.info("Step 8: Extracting detailed run logs...")
         _extract_runs_archive(check, container, logger)
 
-        # Step 9: Cleanup
-        logger.info("Step 9: Cleaning up...")
-        _cleanup_container(container, logger)
+        # Note: Container cleanup is now handled in finally block
 
         # Final summary
         _log_task_complete(logger, task_start, check)
@@ -974,6 +972,13 @@ def check_project_manufacturability(self, check_id):
             "message": str(exc),
             "retries": self.request.retries,
         }
+
+    finally:
+        # Always cleanup container, even if exceptions occur
+        # This prevents Docker resource leaks on failures or timeouts
+        if container is not None:
+            logger.info("Cleaning up container in finally block...")
+            _cleanup_container(container, logger)
 
 
 @shared_task
