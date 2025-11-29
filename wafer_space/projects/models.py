@@ -153,7 +153,6 @@ class ProjectAccessLog(models.Model):
         EDIT = "edit", "Edited"
         DELETE = "delete", "Deleted"
         SUBMIT = "submit", "Submitted"
-        FILE_UPLOAD = "file_upload", "Uploaded File"
         ACCESS_DENIED = "access_denied", "Access Denied"
 
     project = models.ForeignKey(

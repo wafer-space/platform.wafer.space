@@ -100,7 +100,7 @@ class ProjectAccessLogTestCase(TestCase):
             ProjectAccessLog.Action.EDIT,
             ProjectAccessLog.Action.DELETE,
             ProjectAccessLog.Action.SUBMIT,
-            ProjectAccessLog.Action.FILE_UPLOAD,
+            ProjectAccessLog.Action.ACCESS_DENIED,
         ]
 
         for action in actions:
