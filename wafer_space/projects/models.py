@@ -136,14 +136,17 @@ class Project(models.Model):
 class ProjectAccessLog(models.Model):
     """Audit log for when admins access other users' projects.
 
-    This model provides immutable audit logging for all admin access to
-    projects they don't own. Logs are append-only and cannot be deleted
-    while the admin user exists (PROTECT constraint).
+    This model provides audit logging for staff access to projects they
+    don't own. Logs are read-only in Django admin but programmatic
+    changes are still technically possible.
 
     Security Features:
-    - Immutable: No update operations allowed in admin
-    - Protected: Cannot delete admin users with logs
+    - Admin UI read-only: No update/delete operations allowed in admin
+    - User protection: Cannot delete admin users with logs (PROTECT)
     - Comprehensive: Captures IP, user agent, timestamp, action
+
+    Note: For stronger immutability guarantees, consider overriding
+    save()/delete() or using database-level protections.
     """
 
     class Action(models.TextChoices):
