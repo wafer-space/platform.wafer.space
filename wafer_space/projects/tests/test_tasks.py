@@ -278,14 +278,22 @@ class TestManufacturabilityCheckTask(TestCase):
 
         # Mock container with manufacturable result
         mock_container = MagicMock()
-        mock_container.logs.return_value = [b"Precheck successfully completed."]
+        # logs(stream=True) returns iterator, logs() returns bytes
+        mock_container.logs.side_effect = lambda *args, **kwargs: (
+            [b"Precheck successfully completed."]
+            if kwargs.get("stream")
+            else b"Precheck successfully completed."
+        )
         mock_container.wait.return_value = {"StatusCode": 0}
         mock_container.remove.return_value = None
         mock_client.containers.run.return_value = mock_container
 
         # Mock docker.errors
         mock_docker.errors.DockerException = Exception
+        mock_docker.errors.ContainerError = Exception
         mock_docker.errors.ImageNotFound = Exception
+        mock_docker.errors.APIError = Exception
+        mock_docker.errors.NotFound = Exception
 
         # Create a check
         check = ManufacturabilityCheck.objects.create(
@@ -346,14 +354,20 @@ WARNING: Minor DRC violation at (100, 200)
 INFO: Check completed
 """
         mock_container = MagicMock()
-        mock_container.logs.return_value = [mock_logs]
+        # logs(stream=True) returns iterator, logs() returns bytes
+        mock_container.logs.side_effect = lambda *args, **kwargs: (
+            [mock_logs] if kwargs.get("stream") else mock_logs
+        )
         mock_container.wait.return_value = {"StatusCode": 0}
         mock_container.remove.return_value = None
         mock_client.containers.run.return_value = mock_container
 
         # Mock docker.errors
         mock_docker.errors.DockerException = Exception
+        mock_docker.errors.ContainerError = Exception
         mock_docker.errors.ImageNotFound = Exception
+        mock_docker.errors.APIError = Exception
+        mock_docker.errors.NotFound = Exception
 
         # Create a check
         check = ManufacturabilityCheck.objects.create(
@@ -422,14 +436,20 @@ ERROR: Metal spacing violation
 FATAL: Design has critical errors
 """
         mock_container = MagicMock()
-        mock_container.logs.return_value = [mock_logs]
+        # logs(stream=True) returns iterator, logs() returns bytes
+        mock_container.logs.side_effect = lambda *args, **kwargs: (
+            [mock_logs] if kwargs.get("stream") else mock_logs
+        )
         mock_container.wait.return_value = {"StatusCode": 1}
         mock_container.remove.return_value = None
         mock_client.containers.run.return_value = mock_container
 
         # Mock docker.errors
         mock_docker.errors.DockerException = Exception
+        mock_docker.errors.ContainerError = Exception
         mock_docker.errors.ImageNotFound = Exception
+        mock_docker.errors.APIError = Exception
+        mock_docker.errors.NotFound = Exception
 
         # Create a check
         check = ManufacturabilityCheck.objects.create(
@@ -494,6 +514,7 @@ FATAL: Design has critical errors
         mock_docker.errors.ContainerError = Exception
         mock_docker.errors.ImageNotFound = Exception
         mock_docker.errors.APIError = Exception
+        mock_docker.errors.NotFound = Exception
 
         # Setup mock Docker to raise an exception
         mock_docker.from_env.side_effect = ValueError("Test error")
@@ -546,14 +567,22 @@ FATAL: Design has critical errors
 
         # Mock container with manufacturable result
         mock_container = MagicMock()
-        mock_container.logs.return_value = [b"Precheck successfully completed."]
+        # logs(stream=True) returns iterator, logs() returns bytes
+        mock_container.logs.side_effect = lambda *args, **kwargs: (
+            [b"Precheck successfully completed."]
+            if kwargs.get("stream")
+            else b"Precheck successfully completed."
+        )
         mock_container.wait.return_value = {"StatusCode": 0}
         mock_container.remove.return_value = None
         mock_client.containers.run.return_value = mock_container
 
         # Mock docker.errors
         mock_docker.errors.DockerException = Exception
+        mock_docker.errors.ContainerError = Exception
         mock_docker.errors.ImageNotFound = Exception
+        mock_docker.errors.APIError = Exception
+        mock_docker.errors.NotFound = Exception
 
         # Set project to SUBMITTED status
         self.project.status = Project.Status.SUBMITTED
@@ -690,7 +719,12 @@ class TestDockerIntegration(TestCase):
 
         # Mock container
         mock_container = MagicMock()
-        mock_container.logs.return_value = [b"Precheck successfully completed."]
+        # logs(stream=True) returns iterator, logs() returns bytes
+        mock_container.logs.side_effect = lambda *args, **kwargs: (
+            [b"Precheck successfully completed."]
+            if kwargs.get("stream")
+            else b"Precheck successfully completed."
+        )
         mock_container.wait.return_value = {"StatusCode": 0}
         mock_container.remove.return_value = None
         mock_client.containers.run.return_value = mock_container
@@ -700,6 +734,7 @@ class TestDockerIntegration(TestCase):
         mock_docker.errors.ContainerError = Exception
         mock_docker.errors.ImageNotFound = Exception
         mock_docker.errors.APIError = Exception
+        mock_docker.errors.NotFound = Exception
 
         # Create check
         check = ManufacturabilityCheck.objects.create(
@@ -1112,7 +1147,7 @@ class DownloadTaskTests(TestCase):
     @patch("wafer_space.projects.tasks.extract_top_cell")
     @patch("wafer_space.projects.services.ManufacturabilityService.queue_check")
     @patch("wafer_space.projects.tasks._apply_content_pipeline")
-    @patch("wafer_space.projects.services.detect_file_type_from_data")
+    @patch("wafer_space.projects.tasks.detect_file_type_from_data")
     @patch("wafer_space.projects.tasks._download_with_progress")
     def test_hash_calculated_on_extracted_file_not_zip(
         self,
