@@ -16,21 +16,24 @@ class TestProjectForm(TestCase):
     """Test ProjectForm."""
 
     def test_form_valid_with_all_fields(self):
-        """Test form is valid with name and description."""
+        """Test form is valid with name, description, and slot_size."""
         form_data = {
             "name": "Test Project",
             "description": "This is a test project",
+            "slot_size": "1x1",
         }
         form = ProjectForm(data=form_data)
 
         assert form.is_valid()
         assert form.cleaned_data["name"] == "Test Project"
         assert form.cleaned_data["description"] == "This is a test project"
+        assert form.cleaned_data["slot_size"] == "1x1"
 
     def test_form_valid_without_description(self):
         """Test form is valid without description (optional field)."""
         form_data = {
             "name": "Test Project",
+            "slot_size": "1x1",
         }
         form = ProjectForm(data=form_data)
 
@@ -70,6 +73,7 @@ class TestProjectForm(TestCase):
         form_data = {
             "name": "My Project",
             "description": "My description",
+            "slot_size": "0p5x0p5",
         }
         form = ProjectForm(data=form_data)
 
@@ -87,6 +91,7 @@ class TestProjectForm(TestCase):
         assert saved_project.name == "My Project"
         assert saved_project.description == "My description"
         assert saved_project.user == user
+        assert saved_project.slot_size == "0p5x0p5"
 
 
 @pytest.mark.django_db

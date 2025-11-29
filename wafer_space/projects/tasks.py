@@ -540,6 +540,7 @@ def _run_container_and_stream_logs(context: _CheckContext):
     context.logger.info("  Input file: %s", context.gds_path)
     context.logger.info("  Project name: %s", context.project.name)
     context.logger.info("  Project ID: %s", context.project.id)
+    context.logger.info("  Slot size: %s", context.project.slot_size)
     context.logger.info("  Memory limit: 64GB")
 
     container_start = timezone.now()
@@ -553,6 +554,7 @@ def _run_container_and_stream_logs(context: _CheckContext):
     context.logger.info("  Top cell: %s", top_cell)
 
     # Build command - the container's dev-shell entrypoint handles nix develop --offline
+    slot_size = context.project.slot_size
     docker_command = [
         "python3",
         "precheck.py",
@@ -560,10 +562,15 @@ def _run_container_and_stream_logs(context: _CheckContext):
         "/input/design.gds",
         "--top",
         top_cell,
+        "--slot",
+        slot_size,
     ]
 
     # Log equivalent docker run command for easy reproduction
-    precheck_cmd = f'python3 precheck.py --input /input/design.gds --top "{top_cell}"'
+    precheck_cmd = (
+        f"python3 precheck.py --input /input/design.gds "
+        f'--top "{top_cell}" --slot {slot_size}'
+    )
     docker_run_cmd = (
         f"docker run --rm --network=none "
         f"-e COLUMNS=200 -e TERM=xterm-256color "
