@@ -51,43 +51,9 @@
           {% endif %}
         {% endif %}
       </div>
-      {# Right side: all status badges stacked #}
+      {# Right side: all status badges stacked (most relevant first) #}
       <div class="d-flex flex-column gap-1 align-items-end flex-shrink-0">
-        {# Download status badge #}
-        <span id="status-badge"
-              class="badge {% if status == 'completed' and file.has_hash_mismatch %}bg-danger{% elif status == 'completed' %}bg-success{% elif status == 'failed' %}bg-danger{% elif status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
-          {% if status == 'completed' and file.has_hash_mismatch %}
-            <i class="bi bi-exclamation-triangle"></i>
-            <span id="status-text">Hash Mismatch</span>
-          {% elif status == 'completed' %}
-            <i class="bi bi-check-circle"></i>
-            <span id="status-text">Downloaded</span>
-          {% elif status == 'failed' %}
-            <i class="bi bi-exclamation-triangle"></i>
-            <span id="status-text">Download Failed</span>
-          {% elif status == 'downloading' %}
-            <span class="spinner-border spinner-border-sm" role="status"></span>
-            <span id="status-text">Downloading</span>
-          {% else %}
-            <i class="bi bi-clock"></i>
-            <span id="status-text">Pending</span>
-          {% endif %}
-        </span>
-        {# Hash verification badge #}
-        {% if file.hash_verified %}
-          <span class="badge bg-success">
-            <i class="bi bi-shield-check"></i> Hash Verified
-          </span>
-        {% elif status == 'completed' and file.has_hash_mismatch %}
-          <span class="badge bg-danger">
-            <i class="bi bi-shield-x"></i> Hash Mismatch
-          </span>
-        {% elif status == 'completed' and file.has_expected_hash and not file.hash_verified %}
-          <span class="badge bg-warning text-dark">
-            <i class="bi bi-shield-exclamation"></i> Hash Not Verified
-          </span>
-        {% endif %}
-        {# Manufacturability check status badge #}
+        {# Manufacturability check status badge (most relevant) #}
         {% with check=file.manufacturability_check %}
           {% if check %}
             {% if check.status == 'completed' and check.is_manufacturable %}
@@ -117,6 +83,40 @@
             {% endif %}
           {% endif %}
         {% endwith %}
+        {# Hash verification badge #}
+        {% if file.hash_verified %}
+          <span class="badge bg-success">
+            <i class="bi bi-shield-check"></i> Hash Verified
+          </span>
+        {% elif status == 'completed' and file.has_hash_mismatch %}
+          <span class="badge bg-danger">
+            <i class="bi bi-shield-x"></i> Hash Mismatch
+          </span>
+        {% elif status == 'completed' and file.has_expected_hash and not file.hash_verified %}
+          <span class="badge bg-warning text-dark">
+            <i class="bi bi-shield-exclamation"></i> Hash Not Verified
+          </span>
+        {% endif %}
+        {# Download status badge #}
+        <span id="status-badge"
+              class="badge {% if status == 'completed' and file.has_hash_mismatch %}bg-danger{% elif status == 'completed' %}bg-success{% elif status == 'failed' %}bg-danger{% elif status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
+          {% if status == 'completed' and file.has_hash_mismatch %}
+            <i class="bi bi-exclamation-triangle"></i>
+            <span id="status-text">Hash Mismatch</span>
+          {% elif status == 'completed' %}
+            <i class="bi bi-check-circle"></i>
+            <span id="status-text">Downloaded</span>
+          {% elif status == 'failed' %}
+            <i class="bi bi-exclamation-triangle"></i>
+            <span id="status-text">Download Failed</span>
+          {% elif status == 'downloading' %}
+            <span class="spinner-border spinner-border-sm" role="status"></span>
+            <span id="status-text">Downloading</span>
+          {% else %}
+            <i class="bi bi-clock"></i>
+            <span id="status-text">Pending</span>
+          {% endif %}
+        </span>
       </div>
     </div>
   {% endwith %}
