@@ -115,7 +115,7 @@ class ProjectOwnerOrStaffMixinTestCase(TestCase):
     def test_non_staff_denied(self):
         """Test that non-staff user is denied access to others' projects."""
         request = self.factory.get(f"/projects/{self.project.pk}/")
-        request.user = self.staff_user
+        request.user = self.other_user  # other_user has is_staff=False
 
         view = DummyProjectView()
         view.request = request
