@@ -52,9 +52,7 @@
         {% endif %}
       </div>
       {# Right side: status badges #}
-      <div class="flex-shrink-0">
-        {% include "projects/_file_badges.html" with file=file layout="vertical" %}
-      </div>
+      <div class="flex-shrink-0">{% include "projects/_file_badges.html" with file=file layout="vertical" %}</div>
     </div>
   {% endwith %}
 {% endwith %}
@@ -148,9 +146,7 @@
             <p class="mb-1 small">
               <i class="bi bi-list-ol"></i>
               <strong>{{ check.checks_ahead }}</strong> check{{ check.checks_ahead|pluralize }} ahead of yours
-              {% if request.user.is_staff %}
-                (of {{ check.queue_position|add:check.checks_behind }} total)
-              {% endif %}
+              {% if request.user.is_staff %}(of {{ check.queue_position|add:check.checks_behind }} total){% endif %}
             </p>
             <p class="mb-1 small">
               <i class="bi bi-play-circle"></i>
