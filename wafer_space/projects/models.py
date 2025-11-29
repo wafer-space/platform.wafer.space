@@ -210,8 +210,9 @@ class ProjectAccessLog(models.Model):
 
     def __str__(self):
         """String representation of access log."""
+        action_text = self.get_action_display().lower()
         return (
-            f"{self.admin_user.username} viewed "
+            f"{self.admin_user.username} {action_text} "
             f"{self.project.user.username}'s {self.project.name} "
             f"at {self.accessed_at}"
         )

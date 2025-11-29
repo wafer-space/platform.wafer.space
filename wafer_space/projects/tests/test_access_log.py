@@ -65,7 +65,7 @@ class ProjectAccessLogTestCase(TestCase):
             action=ProjectAccessLog.Action.EDIT,
         )
 
-        expected = f"admin viewed owner's Test Project at {log.accessed_at}"
+        expected = f"admin edited owner's Test Project at {log.accessed_at}"
         assert str(log) == expected
 
     def test_project_deletion_cascades_logs(self):
