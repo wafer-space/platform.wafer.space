@@ -6,12 +6,6 @@ from ipaddress import ip_address
 from typing import TYPE_CHECKING
 
 from django.contrib import messages
-
-if TYPE_CHECKING:
-    from uuid import UUID
-
-    from django.http import HttpRequest
-    from django.http import HttpResponse
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404
 from django.shortcuts import redirect
@@ -21,6 +15,12 @@ from django.views.decorators.http import require_http_methods
 from .forms import ComplianceCertificationForm
 from .models import Project
 from .models import ProjectComplianceCertification
+
+if TYPE_CHECKING:
+    from uuid import UUID
+
+    from django.http import HttpRequest
+    from django.http import HttpResponse
 
 
 def get_client_ip(request: HttpRequest) -> str | None:
