@@ -1076,13 +1076,14 @@ class TestProjectSlotSize(TestCase):
 
     def test_slot_size_display_values(self):
         """Test that slot size display values are correct."""
-        # Test that the display labels match expected format with mm dimensions
-        assert Project.SlotSize.FULL.label == "1x1 - Full Slot (3.88mm x 5.07mm)"
-        expected_half_width = "0.5x1 - Half Width (1.94mm x 5.07mm)"
+        # Test that the display labels match expected format with mm dimensions and area
+        expected_full = "1×1 - Full Slot (3.88mm × 5.07mm = 19.67mm²)"
+        assert Project.SlotSize.FULL.label == expected_full
+        expected_half_width = "0.5×1 - Half Width (1.94mm × 5.07mm = 9.84mm²)"
         assert Project.SlotSize.HALF_WIDTH.label == expected_half_width
-        expected_half_height = "1x0.5 - Half Height (3.88mm x 2.535mm)"
+        expected_half_height = "1×0.5 - Half Height (3.88mm × 2.535mm = 9.84mm²)"
         assert Project.SlotSize.HALF_HEIGHT.label == expected_half_height
-        expected_quarter = "0.5x0.5 - Quarter Slot (1.94mm x 2.535mm)"
+        expected_quarter = "0.5×0.5 - Quarter Slot (1.94mm × 2.535mm = 4.92mm²)"
         assert Project.SlotSize.QUARTER.label == expected_quarter
 
     def test_slot_size_can_be_updated(self):
