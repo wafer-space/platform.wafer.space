@@ -44,6 +44,9 @@
                 {{ project.get_status_display }}
               </span>
             </p>
+            <p>
+              <strong>Slot Size:</strong> {{ project.get_slot_size_display }}
+            </p>
             {% if project.submitted_at %}
               <p>
                 <strong>Submitted:</strong> {{ project.submitted_at|date:"F d, Y, g:i a" }}
