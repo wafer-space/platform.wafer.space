@@ -64,14 +64,7 @@ class ProjectOwnerOrStaffMixinTestCase(TestCase):
             password="testpass123",
         )
 
-        # Create staff user
-        self.staff_user = User.objects.create_superuser(
-            username="admin",
-            email="admin@example.com",
-            password="testpass123",
-        )
-
-        # Create staff user (not staff user)
+        # Create staff user (has is_staff=True)
         self.staff_user = User.objects.create_user(
             username="staff",
             email="staff@example.com",
