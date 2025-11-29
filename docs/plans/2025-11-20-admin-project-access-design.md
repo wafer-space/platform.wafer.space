@@ -6,28 +6,28 @@
 
 ## Overview
 
-This design allows Django superusers to view and manage all projects on the platform while maintaining strict security boundaries for regular users. The implementation uses a centralized mixin pattern to ensure consistent, secure, and auditable admin access.
+This design allows Django staff users to view and manage all projects on the platform while maintaining strict security boundaries for regular users. The implementation uses a centralized mixin pattern to ensure consistent, secure, and auditable admin access.
 
 ## Requirements
 
 ### Functional Requirements
-1. Django superusers (`is_superuser=True`) can view all projects from any user
-2. Superusers have full access to all project operations (view, edit, delete, submit)
-3. Superusers see a unified project list showing all users' projects
-4. All superuser access to other users' projects is logged for audit purposes
+1. Django staff users (`is_staff=True`) can view all projects from any user
+2. Staff users have full access to all project operations (view, edit, delete, submit)
+3. Staff users see a unified project list showing all users' projects
+4. All staff user access to other users' projects is logged for audit purposes
 5. Visual indicators clearly show when viewing/editing another user's project
 
 ### Security Requirements
 1. Regular users can only access their own projects (existing behavior preserved)
-2. Staff users without superuser flag cannot access other users' projects
+2. Non-staff users cannot access other users' projects
 3. Permission checks must fail closed (deny access if check fails)
 4. Audit logs are immutable and prevent deletion of accounts with logs
 5. Comprehensive test coverage to prevent accidental permission bypass
 
 ### User Experience Requirements
-1. Prominent warning banner when superuser views another user's project
+1. Prominent warning banner when staff user views another user's project
 2. Project list shows owner badges to distinguish own vs others' projects
-3. "Admin View" indicators in page titles for superusers
+3. "Admin View" indicators in page titles for staff users
 4. No changes to UI/UX for regular users
 
 ## Architecture Decision
@@ -46,11 +46,11 @@ This design allows Django superusers to view and manage all projects on the plat
 
 ## Component Design
 
-### 1. ProjectOwnerOrSuperuserMixin
+### 1. ProjectOwnerOrStaffMixin
 
 **Location:** `wafer_space/projects/mixins.py`
 
-**Purpose:** Replaces `UserPassesTestMixin` in all project views to add superuser access
+**Purpose:** Replaces `UserPassesTestMixin` in all project views to add staff user access
 
 **Key Methods:**
 
@@ -63,7 +63,7 @@ def test_func(self):
 
     Returns True if:
     - User owns the project, OR
-    - User is an authenticated superuser
+    - User is an authenticated staff user
 
     Returns False otherwise (fails closed for security).
     """
@@ -74,16 +74,16 @@ def test_func(self):
     if project.user == user:
         return True
 
-    # Superusers have access to all projects
+    # Staff users have access to all projects
     # Both checks required for security (fail-closed)
-    if user.is_authenticated and user.is_superuser:
+    if user.is_authenticated and user.is_staff:
         return True
 
     return False
 ```
 
 **Security Analysis:**
-- Explicit dual check: `is_authenticated` AND `is_superuser`
+- Explicit dual check: `is_authenticated` AND `is_staff`
 - Owner check first (fast path for common case)
 - Fails closed: If either condition undefined → access denied
 - No implicit truthy checks that could be bypassed
@@ -97,7 +97,7 @@ def dispatch(self, request, *args, **kwargs):
     # Run normal authentication/permission checks
     response = super().dispatch(request, *args, **kwargs)
 
-    # Log if superuser accessing another user's project
+    # Log if staff user accessing another user's project
     if self._is_accessing_others_project():
         self._create_audit_log()
 
@@ -114,7 +114,7 @@ def get_context_data(self, **kwargs):
     project = self.get_object()
 
     context['viewing_as_admin'] = (
-        self.request.user.is_superuser and
+        self.request.user.is_staff and
         project.user != self.request.user
     )
     context['project_owner'] = project.user
@@ -126,8 +126,8 @@ def get_context_data(self, **kwargs):
 
 ```python
 def _is_accessing_others_project(self):
-    """Check if superuser is accessing someone else's project."""
-    if not self.request.user.is_superuser:
+    """Check if staff user is accessing someone else's project."""
+    if not self.request.user.is_staff:
         return False
 
     project = self.get_object()
@@ -146,7 +146,7 @@ def _get_client_ip(self):
 
 **Location:** `wafer_space/projects/models.py`
 
-**Purpose:** Immutable audit trail of superuser access to other users' projects
+**Purpose:** Immutable audit trail of staff user access to other users' projects
 
 **Model Definition:**
 
@@ -193,7 +193,7 @@ class ProjectAccessLog(models.Model):
 ```
 
 **Security Features:**
-1. **`on_delete=models.PROTECT`**: Cannot delete superuser accounts with audit logs (prevents covering tracks)
+1. **`on_delete=models.PROTECT`**: Cannot delete staff user accounts with audit logs (prevents covering tracks)
 2. **Immutable by design**: No update/delete permissions in admin interface
 3. **Comprehensive context**: IP address, user agent, view name for forensics
 4. **Indexed queries**: Fast lookup by project or admin user
@@ -217,12 +217,12 @@ class ProjectDetailView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
 
 To:
 ```python
-class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin, DetailView):
+class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView):
     # No test_func needed - mixin provides it
 ```
 
 **Views to Update:**
-1. `ProjectListView` - Add superuser queryset logic
+1. `ProjectListView` - Add staff user queryset logic
 2. `ProjectDetailView` - Replace mixin
 3. `ProjectCreateView` - No changes (only owners create)
 4. `ProjectUpdateView` - Replace mixin
@@ -238,8 +238,8 @@ def get_queryset(self):
     """Return projects based on user role."""
     user = cast("User", self.request.user)
 
-    # Superusers see all projects
-    if user.is_superuser:
+    # Staff users see all projects
+    if user.is_staff:
         return Project.objects.all().order_by("-created_at")
 
     # Regular users see only their projects
@@ -280,7 +280,7 @@ Update `projects/project_list.html`:
 ```html
 <h1 class="mb-4">
     Projects
-    {% if user.is_superuser %}
+    {% if user.is_staff %}
         <span class="badge bg-primary">All Users - Admin View</span>
     {% endif %}
 </h1>
@@ -315,26 +315,26 @@ Update `projects/project_list.html`:
 **Test Cases:**
 
 ```python
-class TestProjectOwnerOrSuperuserMixin:
+class TestProjectOwnerOrStaffMixin:
     """Test permission mixin behavior."""
 
     def test_owner_can_access_own_project(self):
         """Regular user can access their own project."""
 
-    def test_superuser_can_access_any_project(self):
+    def test_staff_user_can_access_any_project(self):
         """Superuser can access any user's project."""
 
     def test_regular_user_cannot_access_others_project(self):
         """Regular user gets 403 when accessing others' project."""
 
-    def test_staff_user_without_superuser_cannot_access_others_project(self):
-        """Staff user (is_staff=True) without superuser cannot access."""
+    def test_non_staff_user_cannot_access_others_project(self):
+        """Non-staff user (is_staff=False) cannot access other users' projects."""
 
     def test_unauthenticated_user_redirected_to_login(self):
         """Anonymous user redirected to login page."""
 
-    def test_anonymous_superuser_flag_ignored(self):
-        """SECURITY: is_superuser=True without authentication is denied."""
+    def test_anonymous_staff_flag_ignored(self):
+        """SECURITY: is_staff=True without authentication is denied."""
 
     def test_permission_check_on_all_views(self):
         """All 7+ project views use correct permission mixin."""
@@ -350,14 +350,14 @@ class TestProjectOwnerOrSuperuserMixin:
 class TestProjectAccessLog:
     """Test audit logging functionality."""
 
-    def test_log_created_when_superuser_views_others_project(self):
+    def test_log_created_when_staff_user_views_others_project(self):
         """Audit log created with correct action (VIEW)."""
 
     def test_no_log_when_owner_views_own_project(self):
         """No audit log when user views their own project."""
 
-    def test_no_log_when_superuser_views_own_project(self):
-        """No audit log when superuser views their own project."""
+    def test_no_log_when_staff_user_views_own_project(self):
+        """No audit log when staff user views their own project."""
 
     def test_audit_log_captures_ip_address(self):
         """IP address captured from request."""
@@ -368,7 +368,7 @@ class TestProjectAccessLog:
     def test_audit_log_immutable_cannot_delete(self):
         """Audit logs cannot be deleted via admin interface."""
 
-    def test_cannot_delete_superuser_with_audit_logs(self):
+    def test_cannot_delete_staff_user_with_audit_logs(self):
         """PROTECT constraint prevents deleting users with logs."""
 
     def test_different_actions_logged_correctly(self):
@@ -392,7 +392,7 @@ class TestAdminProjectAccessUI:
         """Warning banner visible when viewing others' project."""
 
     def test_admin_sees_all_projects_in_list(self):
-        """Project list shows all users' projects for superuser."""
+        """Project list shows all users' projects for staff user."""
 
     def test_regular_user_sees_only_own_projects(self):
         """Regular user project list unchanged."""
@@ -415,15 +415,15 @@ class TestAdminProjectAccessUI:
 **Critical Edge Cases:**
 
 ```python
-def test_is_superuser_true_but_not_authenticated():
-    """Unauthenticated request with is_superuser=True is denied."""
+def test_is_staff_true_but_not_authenticated():
+    """Unauthenticated request with is_staff=True is denied."""
     # Simulates potential attack vector
 
-def test_is_staff_true_without_is_superuser():
-    """Staff users without superuser flag cannot access."""
+def test_non_staff_user_denied():
+    """Non-staff users cannot access other users' projects."""
 
-def test_removing_superuser_status_revokes_access():
-    """Removing is_superuser immediately prevents access."""
+def test_removing_staff_status_revokes_access():
+    """Removing is_staff immediately prevents access."""
 
 def test_url_manipulation_cannot_bypass_permission():
     """Direct URL access to project still checks permissions."""
@@ -468,7 +468,7 @@ def test_url_manipulation_cannot_bypass_permission():
    - Fail-closed design prevents accidental access grants
 
 2. **Privilege Escalation**
-   - Mitigation: Explicit `is_authenticated AND is_superuser` check
+   - Mitigation: Explicit `is_authenticated AND is_staff` check
    - No implicit truthy checks that could be bypassed
 
 3. **Lack of Accountability**
@@ -485,12 +485,12 @@ def test_url_manipulation_cannot_bypass_permission():
 
 **Attack Vectors Considered:**
 
-- ✅ Unauthenticated request with `is_superuser=True` → Denied
-- ✅ Staff user without superuser → Denied
+- ✅ Unauthenticated request with `is_staff=True` → Denied
+- ✅ Non-staff user → Denied
 - ✅ URL manipulation → Permission checked on every view
-- ✅ Removing superuser status → Immediate access revocation
+- ✅ Removing staff user status → Immediate access revocation
 - ✅ Deleting audit logs → Prevented by admin configuration
-- ✅ Deleting superuser with logs → Prevented by PROTECT constraint
+- ✅ Deleting staff user with logs → Prevented by PROTECT constraint
 
 ### Compliance Considerations
 
@@ -501,18 +501,18 @@ def test_url_manipulation_cannot_bypass_permission():
 - Retention: Logs retained indefinitely (no automatic deletion)
 
 **Access Control:**
-- Explicit role-based access (superuser flag)
+- Explicit role-based access (is_staff flag)
 - No escalation path for regular users
 - Clear separation between owner and admin access
 
 ## Implementation Checklist
 
 ### Backend
-- [ ] Create `wafer_space/projects/mixins.py` with `ProjectOwnerOrSuperuserMixin`
+- [ ] Create `wafer_space/projects/mixins.py` with `ProjectOwnerOrStaffMixin`
 - [ ] Add `ProjectAccessLog` model to `models.py`
 - [ ] Create database migration for `ProjectAccessLog`
 - [ ] Run migration on development database
-- [ ] Update `ProjectListView` to show all projects for superusers
+- [ ] Update `ProjectListView` to show all projects for staff users
 - [ ] Update `ProjectDetailView` to use new mixin
 - [ ] Update `ProjectUpdateView` to use new mixin
 - [ ] Update `ProjectDeleteView` to use new mixin
@@ -535,7 +535,7 @@ def test_url_manipulation_cannot_bypass_permission():
 - [ ] Write browser UI tests (~7 tests)
 - [ ] Write security edge case tests (~4 tests)
 - [ ] Run full test suite and verify no regressions
-- [ ] Manual testing with superuser account
+- [ ] Manual testing with staff user account
 
 ### Documentation
 - [ ] Update `CLAUDE.md` with new permission model
@@ -547,7 +547,7 @@ def test_url_manipulation_cannot_bypass_permission():
 ## Success Criteria
 
 ✅ **Functionality:**
-- Superusers can view and manage all projects
+- Staff users can view and manage all projects
 - Regular users see no changes to existing behavior
 - All actions are auditable
 

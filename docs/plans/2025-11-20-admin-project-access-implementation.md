@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Allow Django superusers to view, edit, and manage any user's project with comprehensive audit logging and visual indicators.
+**Goal:** Allow Django staff users to view, edit, and manage any user's project with comprehensive audit logging and visual indicators.
 
-**Architecture:** Centralized permission mixin (`ProjectOwnerOrSuperuserMixin`) replaces individual `test_func()` implementations across 7 project views. Immutable audit log model (`ProjectAccessLog`) tracks all admin access. UI warning banners and badges provide visual feedback.
+**Architecture:** Centralized permission mixin (`ProjectOwnerOrStaffMixin`) replaces individual `test_func()` implementations across 7 project views. Immutable audit log model (`ProjectAccessLog`) tracks all admin access. UI warning banners and badges provide visual feedback.
 
 **Tech Stack:** Django 5.2+, PostgreSQL, pytest-django, Playwright (browser tests), Bootstrap 5
 
@@ -12,7 +12,7 @@
 
 ---
 
-## Task 1: Create ProjectOwnerOrSuperuserMixin with Permission Tests
+## Task 1: Create ProjectOwnerOrStaffMixin with Permission Tests
 
 **Files:**
 - Create: `wafer_space/projects/mixins.py`
@@ -31,20 +31,20 @@ from django.http import HttpRequest
 from django.test import RequestFactory, TestCase
 from django.views.generic import DetailView
 
-from wafer_space.projects.mixins import ProjectOwnerOrSuperuserMixin
+from wafer_space.projects.mixins import ProjectOwnerOrStaffMixin
 from wafer_space.projects.models import Project
 
 User = get_user_model()
 
 
-class DummyProjectView(ProjectOwnerOrSuperuserMixin, DetailView):
+class DummyProjectView(ProjectOwnerOrStaffMixin, DetailView):
     """Dummy view for testing mixin."""
 
     model = Project
 
 
-class ProjectOwnerOrSuperuserMixinTestCase(TestCase):
-    """Test ProjectOwnerOrSuperuserMixin permission logic."""
+class ProjectOwnerOrStaffMixinTestCase(TestCase):
+    """Test ProjectOwnerOrStaffMixin permission logic."""
 
     def setUp(self):
         """Set up test users and projects."""
@@ -64,14 +64,14 @@ class ProjectOwnerOrSuperuserMixinTestCase(TestCase):
             password="testpass123",
         )
 
-        # Create superuser
-        self.superuser = User.objects.create_superuser(
+        # Create staff user
+        self.staff_user = User.objects.create_superuser(
             username="admin",
             email="admin@example.com",
             password="testpass123",
         )
 
-        # Create staff user (not superuser)
+        # Create staff user (not staff user)
         self.staff_user = User.objects.create_user(
             username="staff",
             email="staff@example.com",
@@ -108,10 +108,10 @@ class ProjectOwnerOrSuperuserMixinTestCase(TestCase):
 
         assert view.test_func() is False
 
-    def test_superuser_has_access(self):
-        """Test that superuser has access to any project."""
+    def test_staff_user_has_access(self):
+        """Test that staff user has access to any project."""
         request = self.factory.get(f"/projects/{self.project.pk}/")
-        request.user = self.superuser
+        request.user = self.staff_user
 
         view = DummyProjectView()
         view.request = request
@@ -119,8 +119,8 @@ class ProjectOwnerOrSuperuserMixinTestCase(TestCase):
 
         assert view.test_func() is True
 
-    def test_staff_without_superuser_denied(self):
-        """Test that staff user without superuser flag is denied access."""
+    def test_non_staff_denied(self):
+        """Test that non-staff user is denied access to others' projects."""
         request = self.factory.get(f"/projects/{self.project.pk}/")
         request.user = self.staff_user
 
@@ -163,24 +163,24 @@ Create `wafer_space/projects/mixins.py`:
 from django.contrib.auth.mixins import UserPassesTestMixin
 
 
-class ProjectOwnerOrSuperuserMixin(UserPassesTestMixin):
-    """Mixin to allow access to project owner or superusers.
+class ProjectOwnerOrStaffMixin(UserPassesTestMixin):
+    """Mixin to allow access to project owner or staff users.
 
     This mixin should be used on all project-related views to enforce
     consistent permission checking:
     - Project owner always has access
-    - Superusers have access to all projects
+    - Staff users have access to all projects
     - All other users are denied access
 
     Security Design:
     - Fail-closed: Returns False by default
-    - Explicit dual check: user.is_authenticated AND user.is_superuser
-    - Prevents bypass via unauthenticated superuser accounts
+    - Explicit dual check: user.is_authenticated AND user.is_staff
+    - Prevents bypass via unauthenticated staff user accounts
 
     Usage:
         class ProjectDetailView(
             LoginRequiredMixin,
-            ProjectOwnerOrSuperuserMixin,
+            ProjectOwnerOrStaffMixin,
             DetailView,
         ):
             model = Project
@@ -191,12 +191,12 @@ class ProjectOwnerOrSuperuserMixin(UserPassesTestMixin):
 
         Returns True if:
         - User owns the project, OR
-        - User is an authenticated superuser
+        - User is an authenticated staff user
 
         Returns False for:
         - Non-owners
-        - Staff users without superuser flag
-        - Unauthenticated users (even if is_superuser=True)
+        - Non-staff users
+        - Unauthenticated users (even if is_staff=True)
         """
         project = self.get_object()
         user = self.request.user
@@ -205,9 +205,9 @@ class ProjectOwnerOrSuperuserMixin(UserPassesTestMixin):
         if project.user == user:
             return True
 
-        # Superusers have access to all projects
+        # Staff users have access to all projects
         # Both checks required for security (fail-closed)
-        if user.is_authenticated and user.is_superuser:
+        if user.is_authenticated and user.is_staff:
             return True
 
         # Default deny
@@ -236,20 +236,20 @@ Expected: All tests pass (baseline: 496 passed, 1 skipped)
 make lint-fix
 make lint
 git add wafer_space/projects/mixins.py wafer_space/projects/tests/test_mixins.py
-git commit -m "Add ProjectOwnerOrSuperuserMixin with permission tests
+git commit -m "Add ProjectOwnerOrStaffMixin with permission tests
 
 Implement centralized permission mixin to allow project owner or
-superuser access. Includes comprehensive tests for:
+staff user access. Includes comprehensive tests for:
 - Owner access
 - Superuser access
 - Non-owner denial
-- Staff without superuser denial
+- Non-staff user denial
 - Unauthenticated user denial
 
 Security features:
 - Fail-closed design (default deny)
-- Explicit dual check (is_authenticated AND is_superuser)
-- Prevents unauthenticated superuser bypass
+- Explicit dual check (is_authenticated AND is_staff)
+- Prevents unauthenticated staff user bypass
 
 🤖 Generated with [Claude Code](https://claude.ai/code)
 
@@ -673,14 +673,14 @@ def test_project_detail_other_user_denied(self):
     assert response.status_code == 403  # Forbidden
 
 
-def test_project_detail_superuser_access(self):
-    """Test that superuser can access any project detail view."""
-    superuser = User.objects.create_superuser(
+def test_project_detail_staff_user_access(self):
+    """Test that staff user can access any project detail view."""
+    staff_user = User.objects.create_superuser(
         username="admin",
         email="admin@example.com",
         password="testpass123",
     )
-    self.client.force_login(superuser)
+    self.client.force_login(staff_user)
 
     response = self.client.get(
         reverse("projects:detail", kwargs={"pk": self.project.pk})
@@ -690,8 +690,8 @@ def test_project_detail_superuser_access(self):
     assert response.context["viewing_as_admin"] is True
 
 
-def test_project_detail_staff_without_superuser_denied(self):
-    """Test that staff user without superuser is denied access."""
+def test_project_detail_non_staff_denied(self):
+    """Test that non-staff user is denied access to others' projects."""
     staff_user = User.objects.create_user(
         username="staff",
         email="staff@example.com",
@@ -711,11 +711,11 @@ def test_project_detail_staff_without_superuser_denied(self):
 ```bash
 uv run pytest wafer_space/projects/tests/test_views.py::test_project_detail_owner_access -v
 uv run pytest wafer_space/projects/tests/test_views.py::test_project_detail_other_user_denied -v
-uv run pytest wafer_space/projects/tests/test_views.py::test_project_detail_superuser_access -v
-uv run pytest wafer_space/projects/tests/test_views.py::test_project_detail_staff_without_superuser_denied -v
+uv run pytest wafer_space/projects/tests/test_views.py::test_project_detail_staff_user_access -v
+uv run pytest wafer_space/projects/tests/test_views.py::test_project_detail_non_staff_denied -v
 ```
 
-Expected: Tests may fail or pass depending on existing implementation. The superuser test should fail with KeyError on 'viewing_as_admin'.
+Expected: Tests may fail or pass depending on existing implementation. The staff user test should fail with KeyError on 'viewing_as_admin'.
 
 **Step 3: Update ProjectDetailView to use new mixin**
 
@@ -723,7 +723,7 @@ Modify `wafer_space/projects/views.py`:
 
 ```python
 # At top of file, add import:
-from wafer_space.projects.mixins import ProjectOwnerOrSuperuserMixin
+from wafer_space.projects.mixins import ProjectOwnerOrStaffMixin
 
 # Find ProjectDetailView class, change from:
 class ProjectDetailView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
@@ -735,7 +735,7 @@ class ProjectDetailView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
         return project.user == self.request.user
 
 # Change to:
-class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin, DetailView):
+class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView):
     model = Project
 
     def get_context_data(self, **kwargs):
@@ -744,10 +744,10 @@ class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin, Detail
         project = self.get_object()
         user = self.request.user
 
-        # Flag if superuser is viewing another user's project
+        # Flag if staff user is viewing another user's project
         context["viewing_as_admin"] = (
             user.is_authenticated
-            and user.is_superuser
+            and user.is_staff
             and project.user != user
         )
 
@@ -759,8 +759,8 @@ class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin, Detail
 ```bash
 uv run pytest wafer_space/projects/tests/test_views.py::test_project_detail_owner_access -v
 uv run pytest wafer_space/projects/tests/test_views.py::test_project_detail_other_user_denied -v
-uv run pytest wafer_space/projects/tests/test_views.py::test_project_detail_superuser_access -v
-uv run pytest wafer_space/projects/tests/test_views.py::test_project_detail_staff_without_superuser_denied -v
+uv run pytest wafer_space/projects/tests/test_views.py::test_project_detail_staff_user_access -v
+uv run pytest wafer_space/projects/tests/test_views.py::test_project_detail_non_staff_denied -v
 ```
 
 Expected: 4 passed
@@ -781,15 +781,15 @@ make lint
 git add wafer_space/projects/views.py wafer_space/projects/tests/test_views.py
 git commit -m "Update ProjectDetailView to use new permission mixin
 
-Replace UserPassesTestMixin with ProjectOwnerOrSuperuserMixin to
-allow superuser access. Add viewing_as_admin context variable for
+Replace UserPassesTestMixin with ProjectOwnerOrStaffMixin to
+allow staff user access. Add viewing_as_admin context variable for
 UI indicator support.
 
 Tests verify:
 - Owner access granted
 - Non-owner denied
 - Superuser access granted
-- Staff without superuser denied
+- Non-staff user denied
 - viewing_as_admin flag set correctly
 
 🤖 Generated with [Claude Code](https://claude.ai/code)
@@ -841,8 +841,8 @@ def test_project_list_shows_only_own_projects_for_regular_user(self):
     assert other_project not in projects
 
 
-def test_project_list_shows_all_projects_for_superuser(self):
-    """Test that superusers see all users' projects in list."""
+def test_project_list_shows_all_projects_for_staff_user(self):
+    """Test that staff users see all users' projects in list."""
     # Create another user with a project
     other_user = User.objects.create_user(
         username="other",
@@ -855,12 +855,12 @@ def test_project_list_shows_all_projects_for_superuser(self):
         description="Other description",
     )
 
-    superuser = User.objects.create_superuser(
+    staff_user = User.objects.create_superuser(
         username="admin",
         email="admin@example.com",
         password="testpass123",
     )
-    self.client.force_login(superuser)
+    self.client.force_login(staff_user)
 
     response = self.client.get(reverse("projects:list"))
     assert response.status_code == 200
@@ -874,7 +874,7 @@ def test_project_list_shows_all_projects_for_superuser(self):
 
 ```bash
 uv run pytest wafer_space/projects/tests/test_views.py::test_project_list_shows_only_own_projects_for_regular_user -v
-uv run pytest wafer_space/projects/tests/test_views.py::test_project_list_shows_all_projects_for_superuser -v
+uv run pytest wafer_space/projects/tests/test_views.py::test_project_list_shows_all_projects_for_staff_user -v
 ```
 
 Expected: Superuser test fails (only shows their own empty project list)
@@ -900,12 +900,12 @@ class ProjectListView(LoginRequiredMixin, ListView):
         """Return projects accessible to current user.
 
         - Regular users: only their own projects
-        - Superusers: all projects from all users
+        - Staff users: all projects from all users
         """
         user = self.request.user
 
-        if user.is_superuser:
-            # Superusers see all projects
+        if user.is_staff:
+            # Staff users see all projects
             return Project.objects.all().select_related("user")
 
         # Regular users see only their own projects
@@ -916,7 +916,7 @@ class ProjectListView(LoginRequiredMixin, ListView):
 
 ```bash
 uv run pytest wafer_space/projects/tests/test_views.py::test_project_list_shows_only_own_projects_for_regular_user -v
-uv run pytest wafer_space/projects/tests/test_views.py::test_project_list_shows_all_projects_for_superuser -v
+uv run pytest wafer_space/projects/tests/test_views.py::test_project_list_shows_all_projects_for_staff_user -v
 ```
 
 Expected: 2 passed
@@ -925,7 +925,7 @@ Expected: 2 passed
 
 For each of ProjectUpdateView, ProjectDeleteView, ProjectFileSubmitURLView, ProjectFileProgressView, ProjectSubmitView:
 
-1. Replace `UserPassesTestMixin` with `ProjectOwnerOrSuperuserMixin` in class definition
+1. Replace `UserPassesTestMixin` with `ProjectOwnerOrStaffMixin` in class definition
 2. Remove the old `test_func()` method
 3. Add `get_context_data()` to set `viewing_as_admin` flag (same pattern as ProjectDetailView)
 
@@ -943,7 +943,7 @@ class ProjectUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
         return project.user == self.request.user
 
 # NEW:
-class ProjectUpdateView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin, UpdateView):
+class ProjectUpdateView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, UpdateView):
     model = Project
     fields = ["name", "description"]
 
@@ -955,7 +955,7 @@ class ProjectUpdateView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin, Update
 
         context["viewing_as_admin"] = (
             user.is_authenticated
-            and user.is_superuser
+            and user.is_staff
             and project.user != user
         )
 
@@ -969,14 +969,14 @@ Apply same pattern to remaining 4 views.
 Add to `wafer_space/projects/tests/test_views.py`:
 
 ```python
-def test_project_update_superuser_access(self):
-    """Test that superuser can access update view for any project."""
-    superuser = User.objects.create_superuser(
+def test_project_update_staff_user_access(self):
+    """Test that staff user can access update view for any project."""
+    staff_user = User.objects.create_superuser(
         username="admin",
         email="admin@example.com",
         password="testpass123",
     )
-    self.client.force_login(superuser)
+    self.client.force_login(staff_user)
 
     response = self.client.get(
         reverse("projects:update", kwargs={"pk": self.project.pk})
@@ -985,14 +985,14 @@ def test_project_update_superuser_access(self):
     assert response.context["viewing_as_admin"] is True
 
 
-def test_project_delete_superuser_access(self):
-    """Test that superuser can access delete view for any project."""
-    superuser = User.objects.create_superuser(
+def test_project_delete_staff_user_access(self):
+    """Test that staff user can access delete view for any project."""
+    staff_user = User.objects.create_superuser(
         username="admin",
         email="admin@example.com",
         password="testpass123",
     )
-    self.client.force_login(superuser)
+    self.client.force_login(staff_user)
 
     response = self.client.get(
         reverse("projects:delete", kwargs={"pk": self.project.pk})
@@ -1026,17 +1026,17 @@ git add wafer_space/projects/views.py wafer_space/projects/tests/test_views.py
 git commit -m "Update all project views to use new permission mixin
 
 Migrate all 6 remaining project views to use
-ProjectOwnerOrSuperuserMixin:
-- ProjectListView: show all projects to superusers
-- ProjectUpdateView: allow superuser edit access
-- ProjectDeleteView: allow superuser delete access
-- ProjectFileSubmitURLView: allow superuser file access
-- ProjectFileProgressView: allow superuser progress view
-- ProjectSubmitView: allow superuser submission
+ProjectOwnerOrStaffMixin:
+- ProjectListView: show all projects to staff users
+- ProjectUpdateView: allow staff user edit access
+- ProjectDeleteView: allow staff user delete access
+- ProjectFileSubmitURLView: allow staff user file access
+- ProjectFileProgressView: allow staff user progress view
+- ProjectSubmitView: allow staff user submission
 
 All views now include viewing_as_admin context flag.
 
-Tests verify superuser access and regular user restrictions
+Tests verify staff user access and regular user restrictions
 for all views.
 
 🤖 Generated with [Claude Code](https://claude.ai/code)
@@ -1060,10 +1060,10 @@ Add to `wafer_space/projects/tests/test_mixins.py`:
 from wafer_space.projects.models import ProjectAccessLog
 
 
-def test_superuser_access_creates_audit_log(self):
-    """Test that superuser access creates audit log entry."""
+def test_staff_user_access_creates_audit_log(self):
+    """Test that staff user access creates audit log entry."""
     request = self.factory.get(f"/projects/{self.project.pk}/")
-    request.user = self.superuser
+    request.user = self.staff_user
     request.META = {
         "REMOTE_ADDR": "127.0.0.1",
         "HTTP_USER_AGENT": "Mozilla/5.0",
@@ -1082,7 +1082,7 @@ def test_superuser_access_creates_audit_log(self):
     # Verify audit log created
     logs = ProjectAccessLog.objects.filter(
         project=self.project,
-        admin_user=self.superuser,
+        admin_user=self.staff_user,
     )
     assert logs.count() == 1
 
@@ -1147,7 +1147,7 @@ def test_denied_access_no_audit_log(self):
 **Step 2: Run tests to verify they fail**
 
 ```bash
-uv run pytest wafer_space/projects/tests/test_mixins.py::test_superuser_access_creates_audit_log -v
+uv run pytest wafer_space/projects/tests/test_mixins.py::test_staff_user_access_creates_audit_log -v
 uv run pytest wafer_space/projects/tests/test_mixins.py::test_owner_access_no_audit_log -v
 uv run pytest wafer_space/projects/tests/test_mixins.py::test_denied_access_no_audit_log -v
 ```
@@ -1164,29 +1164,29 @@ Modify `wafer_space/projects/mixins.py`:
 from django.contrib.auth.mixins import UserPassesTestMixin
 
 
-class ProjectOwnerOrSuperuserMixin(UserPassesTestMixin):
-    """Mixin to allow access to project owner or superusers.
+class ProjectOwnerOrStaffMixin(UserPassesTestMixin):
+    """Mixin to allow access to project owner or staff users.
 
     This mixin should be used on all project-related views to enforce
     consistent permission checking:
     - Project owner always has access
-    - Superusers have access to all projects
+    - Staff users have access to all projects
     - All other users are denied access
 
     Audit Logging:
-    - When superusers access projects they don't own, an audit log is created
+    - When staff users access projects they don't own, an audit log is created
     - Logs include: timestamp, IP address, user agent, action, view name
     - Owner access is NOT logged (normal operation)
 
     Security Design:
     - Fail-closed: Returns False by default
-    - Explicit dual check: user.is_authenticated AND user.is_superuser
-    - Prevents bypass via unauthenticated superuser accounts
+    - Explicit dual check: user.is_authenticated AND user.is_staff
+    - Prevents bypass via unauthenticated staff user accounts
 
     Usage:
         class ProjectDetailView(
             LoginRequiredMixin,
-            ProjectOwnerOrSuperuserMixin,
+            ProjectOwnerOrStaffMixin,
             DetailView,
         ):
             model = Project
@@ -1197,12 +1197,12 @@ class ProjectOwnerOrSuperuserMixin(UserPassesTestMixin):
 
         Returns True if:
         - User owns the project, OR
-        - User is an authenticated superuser
+        - User is an authenticated staff user
 
         Returns False for:
         - Non-owners
-        - Staff users without superuser flag
-        - Unauthenticated users (even if is_superuser=True)
+        - Non-staff users
+        - Unauthenticated users (even if is_staff=True)
         """
         project = self.get_object()
         user = self.request.user
@@ -1211,16 +1211,16 @@ class ProjectOwnerOrSuperuserMixin(UserPassesTestMixin):
         if project.user == user:
             return True
 
-        # Superusers have access to all projects
+        # Staff users have access to all projects
         # Both checks required for security (fail-closed)
-        if user.is_authenticated and user.is_superuser:
+        if user.is_authenticated and user.is_staff:
             return True
 
         # Default deny
         return False
 
     def dispatch(self, request, *args, **kwargs):
-        """Dispatch request and create audit log for superuser access."""
+        """Dispatch request and create audit log for staff user access."""
         # Get response from parent
         response = super().dispatch(request, *args, **kwargs)
 
@@ -1229,10 +1229,10 @@ class ProjectOwnerOrSuperuserMixin(UserPassesTestMixin):
             project = self.get_object()
             user = request.user
 
-            # Only log superuser access to OTHER users' projects
+            # Only log staff user access to OTHER users' projects
             if (
                 user.is_authenticated
-                and user.is_superuser
+                and user.is_staff
                 and project.user != user
             ):
                 self._create_audit_log(project, user, request)
@@ -1280,7 +1280,7 @@ class ProjectOwnerOrSuperuserMixin(UserPassesTestMixin):
 **Step 4: Run tests to verify they pass**
 
 ```bash
-uv run pytest wafer_space/projects/tests/test_mixins.py::test_superuser_access_creates_audit_log -v
+uv run pytest wafer_space/projects/tests/test_mixins.py::test_staff_user_access_creates_audit_log -v
 uv run pytest wafer_space/projects/tests/test_mixins.py::test_owner_access_no_audit_log -v
 uv run pytest wafer_space/projects/tests/test_mixins.py::test_denied_access_no_audit_log -v
 ```
@@ -1309,9 +1309,9 @@ Expected: All tests pass
 make lint-fix
 make lint
 git add wafer_space/projects/mixins.py wafer_space/projects/tests/test_mixins.py
-git commit -m "Add audit logging to ProjectOwnerOrSuperuserMixin
+git commit -m "Add audit logging to ProjectOwnerOrStaffMixin
 
-Implement automatic audit logging when superusers access other
+Implement automatic audit logging when staff users access other
 users' projects:
 - Log created on successful access (status < 400)
 - Captures IP address, user agent, timestamp, action, view name
@@ -1432,8 +1432,8 @@ Start development server and manually verify:
 make runserver
 ```
 
-1. Create superuser if needed: `make createsuperuser`
-2. Login as superuser
+1. Create staff user if needed: `make createsuperuser`
+2. Login as staff user
 3. Visit another user's project detail page
 4. Verify warning banner appears
 5. Verify owner badge shows in project list
@@ -1444,7 +1444,7 @@ make runserver
 git add wafer_space/projects/templates/
 git commit -m "Add UI warning banner for admin project access
 
-Add visual indicators for superuser project access:
+Add visual indicators for staff user project access:
 - Warning banner on detail, edit, delete views
 - Shows project owner username
 - Indicates audit logging active
@@ -1494,8 +1494,8 @@ def owner(db):
 
 
 @pytest.fixture
-def superuser(db):
-    """Create superuser."""
+def staff_user(db):
+    """Create staff user."""
     return User.objects.create_superuser(
         username="admin",
         email="admin@example.com",
@@ -1513,9 +1513,9 @@ def project(owner):
     )
 
 
-def test_superuser_sees_warning_banner(driver, live_server, superuser, project):
-    """Test that superuser sees warning banner on other user's project."""
-    # Login as superuser
+def test_staff_user_sees_warning_banner(driver, live_server, staff_user, project):
+    """Test that staff user sees warning banner on other user's project."""
+    # Login as staff user
     driver.get(f"{live_server.url}/accounts/login/")
     driver.find_element("id", "id_login").send_keys("admin")
     driver.find_element("id", "id_password").send_keys("testpass123")
@@ -1547,16 +1547,16 @@ def test_owner_does_not_see_warning_banner(driver, live_server, owner, project):
     assert len(banners) == 0
 
 
-def test_superuser_sees_all_projects_in_list(driver, live_server, superuser, owner, project):
-    """Test that superuser sees all users' projects in list view."""
-    # Create another project for superuser
+def test_staff_user_sees_all_projects_in_list(driver, live_server, staff_user, owner, project):
+    """Test that staff user sees all users' projects in list view."""
+    # Create another project for staff user
     admin_project = Project.objects.create(
-        user=superuser,
+        user=staff_user,
         name="Admin Project",
         description="Admin description",
     )
 
-    # Login as superuser
+    # Login as staff user
     driver.get(f"{live_server.url}/accounts/login/")
     driver.find_element("id", "id_login").send_keys("admin")
     driver.find_element("id", "id_password").send_keys("testpass123")
@@ -1571,7 +1571,7 @@ def test_superuser_sees_all_projects_in_list(driver, live_server, superuser, own
     assert "Admin Project" in page_text
 
 
-def test_regular_user_sees_only_own_projects(driver, live_server, owner, superuser):
+def test_regular_user_sees_only_own_projects(driver, live_server, owner, staff_user):
     """Test that regular user only sees their own projects in list."""
     # Create projects for both users
     owner_project = Project.objects.create(
@@ -1580,7 +1580,7 @@ def test_regular_user_sees_only_own_projects(driver, live_server, owner, superus
         description="Owner description",
     )
     admin_project = Project.objects.create(
-        user=superuser,
+        user=staff_user,
         name="Admin Project",
         description="Admin description",
     )
@@ -1600,9 +1600,9 @@ def test_regular_user_sees_only_own_projects(driver, live_server, owner, superus
     assert "Admin Project" not in page_text
 
 
-def test_superuser_can_edit_other_users_project(driver, live_server, superuser, project):
-    """Test that superuser can edit another user's project."""
-    # Login as superuser
+def test_staff_user_can_edit_other_users_project(driver, live_server, staff_user, project):
+    """Test that staff user can edit another user's project."""
+    # Login as staff user
     driver.get(f"{live_server.url}/accounts/login/")
     driver.find_element("id", "id_login").send_keys("admin")
     driver.find_element("id", "id_password").send_keys("testpass123")
@@ -1628,12 +1628,12 @@ def test_superuser_can_edit_other_users_project(driver, live_server, superuser, 
     assert project.name == "Updated by Admin"
 
 
-def test_audit_log_created_on_superuser_access(driver, live_server, superuser, project):
-    """Test that audit log is created when superuser views project."""
+def test_audit_log_created_on_staff_user_access(driver, live_server, staff_user, project):
+    """Test that audit log is created when staff user views project."""
     # Verify no logs initially
     assert ProjectAccessLog.objects.count() == 0
 
-    # Login as superuser
+    # Login as staff user
     driver.get(f"{live_server.url}/accounts/login/")
     driver.find_element("id", "id_login").send_keys("admin")
     driver.find_element("id", "id_password").send_keys("testpass123")
@@ -1645,7 +1645,7 @@ def test_audit_log_created_on_superuser_access(driver, live_server, superuser, p
     # Verify audit log created
     logs = ProjectAccessLog.objects.filter(
         project=project,
-        admin_user=superuser,
+        admin_user=staff_user,
     )
     assert logs.count() == 1
 
@@ -1678,10 +1678,10 @@ make lint
 git add tests/browser/test_admin_project_access.py
 git commit -m "Add browser tests for admin project access
 
-Implement comprehensive browser tests for superuser access:
+Implement comprehensive browser tests for staff user access:
 - Warning banner visibility for admin vs owner
 - Project list filtering (all vs own projects)
-- Edit access for superusers
+- Edit access for staff users
 - Audit log creation on access
 
 Tests verify complete user flow including:
@@ -1965,19 +1965,19 @@ Create `docs/admin_project_access.md`:
 
 ## Overview
 
-Django superusers can view, edit, and manage any user's project on the platform. This feature includes comprehensive audit logging and visual indicators to ensure transparency and accountability.
+Django staff users can view, edit, and manage any user's project on the platform. This feature includes comprehensive audit logging and visual indicators to ensure transparency and accountability.
 
 ## Who Has Access
 
-**Superusers Only**: Access is restricted to users with `is_superuser=True`.
+**Staff users Only**: Access is restricted to users with `is_staff=True`.
 
-**Staff users** (`is_staff=True` without `is_superuser=True`) do **NOT** have access to other users' projects.
+**Staff users** (`is_staff=True` without `is_staff=True`) do **NOT** have access to other users' projects.
 
 ## Features
 
 ### 1. Full Project Access
 
-Superusers can:
+Staff users can:
 - **View** any project's details, files, and status
 - **Edit** project name, description, and metadata
 - **Delete** projects
@@ -1986,13 +1986,13 @@ Superusers can:
 
 ### 2. Unified Project List
 
-When superusers visit the project list page, they see **all users' projects**, not just their own.
+When staff users visit the project list page, they see **all users' projects**, not just their own.
 
 Regular users continue to see only their own projects.
 
 ### 3. Visual Indicators
 
-**Warning Banner**: When viewing another user's project, superusers see a prominent yellow warning banner:
+**Warning Banner**: When viewing another user's project, staff users see a prominent yellow warning banner:
 
 ```
 ⚠️ Admin Mode: You are viewing [username]'s project.
@@ -2005,7 +2005,7 @@ All actions will be logged for audit purposes.
 
 ### 4. Comprehensive Audit Logging
 
-**All superuser access to other users' projects is logged**, including:
+**All staff user access to other users' projects is logged**, including:
 - Timestamp
 - Admin username
 - Project accessed
@@ -2025,7 +2025,7 @@ All actions will be logged for audit purposes.
 
 ## Viewing Audit Logs
 
-Superusers can view audit logs through Django admin:
+Staff users can view audit logs through Django admin:
 
 1. Navigate to Django admin (`/admin/`)
 2. Go to "Projects" → "Project Access Logs"
@@ -2035,26 +2035,26 @@ Superusers can view audit logs through Django admin:
 ## Security Features
 
 1. **Fail-Closed Design**: Permission checks default to deny if undefined
-2. **Explicit Dual Check**: Both `is_authenticated` AND `is_superuser` required
-3. **Centralized Logic**: Single mixin (`ProjectOwnerOrSuperuserMixin`) prevents bypass
+2. **Explicit Dual Check**: Both `is_authenticated` AND `is_staff` required
+3. **Centralized Logic**: Single mixin (`ProjectOwnerOrStaffMixin`) prevents bypass
 4. **Protected Audit Logs**: Cannot delete users with log entries
-5. **No Backdoors**: Staff users without superuser flag explicitly denied
+5. **No Backdoors**: Non-staff users explicitly denied
 
 ## Implementation Details
 
 ### Permission Mixin
 
-All project views use `ProjectOwnerOrSuperuserMixin`:
+All project views use `ProjectOwnerOrStaffMixin`:
 
 ```python
-class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrSuperuserMixin, DetailView):
+class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView):
     model = Project
 ```
 
 ### Audit Logging
 
 Audit logs are created automatically in mixin's `dispatch()` method when:
-- User is authenticated superuser
+- User is authenticated staff user
 - Project owner is different from current user
 - Access is granted (status < 400)
 
@@ -2070,7 +2070,7 @@ def get_context_data(self, **kwargs):
 
     context["viewing_as_admin"] = (
         user.is_authenticated
-        and user.is_superuser
+        and user.is_staff
         and project.user != user
     )
 
@@ -2080,9 +2080,9 @@ def get_context_data(self, **kwargs):
 ## Testing
 
 Comprehensive test coverage includes:
-- **Permission tests**: Owner, superuser, non-owner, staff without superuser
+- **Permission tests**: Owner, staff_user, non-owner, non-staff user
 - **Audit log tests**: Creation, immutability, protection, cascade
-- **Integration tests**: All views with superuser access
+- **Integration tests**: All views with staff user access
 - **Browser tests**: Warning banner, project list, edit access, audit logging
 
 Run tests:
@@ -2095,7 +2095,7 @@ make test-browser-headless   # Browser tests
 
 If extending this feature to new views:
 
-1. Add `ProjectOwnerOrSuperuserMixin` to view class
+1. Add `ProjectOwnerOrStaffMixin` to view class
 2. Remove old `test_func()` method if present
 3. Add `get_context_data()` to set `viewing_as_admin` flag
 4. Include `_admin_warning_banner.html` in template
@@ -2111,7 +2111,7 @@ Add to README.md features section:
 ```markdown
 ### Admin Project Access
 
-Django superusers can view and manage any user's project with comprehensive audit logging:
+Django staff users can view and manage any user's project with comprehensive audit logging:
 - Full access to view, edit, delete, and submit any project
 - Visual warning banners indicate admin mode
 - All access automatically logged with IP, timestamp, and action
@@ -2126,7 +2126,7 @@ See [docs/admin_project_access.md](docs/admin_project_access.md) for details.
 git add docs/admin_project_access.md README.md
 git commit -m "Add documentation for admin project access feature
 
-Document superuser project access capabilities:
+Document staff user project access capabilities:
 - Access levels and restrictions
 - Visual indicators and UI changes
 - Audit logging and retention
@@ -2187,9 +2187,9 @@ make runserver
 ```
 
 Test manually:
-1. Create test users (owner, superuser)
+1. Create test users (owner, staff_user)
 2. Create test project as owner
-3. Login as superuser
+3. Login as staff user
 4. View project list (see all projects)
 5. View owner's project (see warning banner)
 6. Edit owner's project (verify access)
@@ -2217,10 +2217,10 @@ gh pr create \
   --title "Add admin project access with audit logging" \
   --body "$(cat <<'EOF'
 ## Summary
-Allow Django superusers to view, edit, and manage any user's project with comprehensive audit logging and visual indicators.
+Allow Django staff users to view, edit, and manage any user's project with comprehensive audit logging and visual indicators.
 
 ## Changes
-- ✅ **Permission System**: New `ProjectOwnerOrSuperuserMixin` with fail-closed design
+- ✅ **Permission System**: New `ProjectOwnerOrStaffMixin` with fail-closed design
 - ✅ **Audit Logging**: Immutable `ProjectAccessLog` model tracks all admin access
 - ✅ **UI Indicators**: Warning banners and owner badges for visual feedback
 - ✅ **View Updates**: All 7 project views migrated to new permission system
@@ -2229,8 +2229,8 @@ Allow Django superusers to view, edit, and manage any user's project with compre
 - ✅ **Documentation**: Complete feature documentation and implementation guide
 
 ## Security
-- Explicit dual authentication check (is_authenticated AND is_superuser)
-- Staff users without superuser explicitly denied
+- Explicit dual authentication check (is_authenticated AND is_staff)
+- Non-staff users explicitly denied
 - PROTECT constraint prevents deletion of admins with logs
 - Centralized permission logic prevents bypass
 
@@ -2261,7 +2261,7 @@ All tasks complete! PR ready for review.
 This implementation plan covers:
 
 1. **Backend Permission System** (Tasks 1-6):
-   - ProjectOwnerOrSuperuserMixin with TDD
+   - ProjectOwnerOrStaffMixin with TDD
    - ProjectAccessLog model with comprehensive tests
    - Migration creation and verification
    - All 7 project views updated
