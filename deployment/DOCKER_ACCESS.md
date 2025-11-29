@@ -169,6 +169,12 @@ If containers fail to start:
 
 - **Regular updates**: Keep Docker and the precheck image updated
 
+- **X-Forwarded-For and IP Tracking**: Export compliance certification logs the client IP address for audit purposes. Ensure nginx is configured as the trusted reverse proxy:
+  - The nginx config uses `$proxy_add_x_forwarded_for` which appends to existing headers
+  - For accurate client IP logging, ensure requests only come through trusted nginx proxy
+  - Client-provided X-Forwarded-For headers can be spoofed if requests bypass nginx
+  - IP addresses are used for audit trail purposes, not security enforcement
+
 - **Two-worker architecture**:
   - `django-celery.service` (as `www-data`): Handles referrals queue
   - `django-celery-manufacturability.service` (as `celery-mfg`): Handles manufacturability queue with Docker access
