@@ -193,6 +193,12 @@ except Exception:  # Too broad
 - One assertion concept per test
 - Test file mirrors source: `wafer_space/users/models.py` → `wafer_space/users/tests/test_models.py`
 
+### Documentation Standards
+
+- All fenced code blocks must have a language specifier (e.g., `python`, `bash`, `text`)
+- Wrap URLs in angle brackets: `<https://example.com>` (avoids MD034 lint error)
+- Use proper markdown link syntax for clickable links: `[Link text](url)`
+
 ---
 
 ## SECRETS MANAGEMENT
