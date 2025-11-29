@@ -585,12 +585,19 @@ class ProjectFile(models.Model):
             if self.expected_hash_sha1.lower() != self.hash_sha1.lower():
                 return True
 
+        # Check SHA256 mismatch
+        if self.expected_hash_sha256 and self.hash_sha256:
+            if self.expected_hash_sha256.lower() != self.hash_sha256.lower():
+                return True
+
         return False
 
     @property
     def has_expected_hash(self) -> bool:
         """Check if user provided any expected hash for verification."""
-        return bool(self.expected_hash_md5 or self.expected_hash_sha1)
+        return bool(
+            self.expected_hash_md5 or self.expected_hash_sha1 or self.expected_hash_sha256
+        )
 
 
 class FileProcessingError(models.Model):
