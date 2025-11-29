@@ -926,6 +926,9 @@ class ManufacturabilityCheck(models.Model):
         FAILED = "failed", "Failed"
         CANCELLED = "cancelled", "Cancelled"
 
+    # Maximum characters of processing logs to include in GitHub issue body
+    GITHUB_ISSUE_LOG_CHARS = 5000
+
     project = models.ForeignKey(
         Project,
         on_delete=models.CASCADE,
@@ -1284,7 +1287,7 @@ Your GDS file should have:
 <summary>Click to expand logs</summary>
 
 ```
-{self.processing_logs[-5000:]}
+{self.processing_logs[-self.GITHUB_ISSUE_LOG_CHARS:]}
 ```
 </details>
 
