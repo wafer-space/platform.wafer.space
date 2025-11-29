@@ -780,6 +780,77 @@ class TestDockerIntegration(TestCase):
         assert result["status"] == "completed"
         assert result["is_manufacturable"] is True
 
+    @patch("wafer_space.projects.tasks.docker")
+    def test_docker_command_includes_slot_size(self, mock_docker):
+        """Test that Docker command includes --slot argument with project slot_size."""
+        # Create a real temp file for the GDS file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".gds") as tmp:
+            tmp.write(b"fake GDS content")
+            tmp_path = Path(tmp.name)
+
+        # Save the file to the project_file
+        with tmp_path.open("rb") as f:
+            self.project_file.file.save("test.gds", ContentFile(f.read()), save=True)
+
+        # Set a non-default slot size on the project
+        self.project.slot_size = Project.SlotSize.QUARTER  # 0p5x0p5
+        self.project.save()
+
+        # Setup mock
+        mock_client = MagicMock()
+        mock_docker.from_env.return_value = mock_client
+        mock_image = MagicMock()
+        mock_image.id = "sha256:abc123"
+        mock_image.tags = ["ghcr.io/wafer-space/gf180mcu-precheck:latest"]
+        mock_client.images.pull.return_value = mock_image
+        mock_client.images.get.return_value = mock_image
+        mock_client.api.pull.return_value = []  # Empty progress stream
+
+        # Mock container
+        mock_container = MagicMock()
+        mock_container.logs.side_effect = lambda *args, **kwargs: (
+            [b"Precheck successfully completed."]
+            if kwargs.get("stream")
+            else b"Precheck successfully completed."
+        )
+        mock_container.wait.return_value = {"StatusCode": 0}
+        mock_container.remove.return_value = None
+        mock_client.containers.run.return_value = mock_container
+
+        # Mock docker.errors
+        mock_docker.errors.DockerException = Exception
+        mock_docker.errors.ContainerError = Exception
+        mock_docker.errors.ImageNotFound = Exception
+        mock_docker.errors.APIError = Exception
+        mock_docker.errors.NotFound = Exception
+
+        # Create check
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+        )
+
+        # Run the task
+        with mock_patch.object(
+            tasks.check_project_manufacturability,
+            "update_state",
+        ):
+            tasks.check_project_manufacturability.run(check.id)
+
+        # Verify the docker command includes --slot with the project's slot_size
+        call_args = mock_client.containers.run.call_args
+        command = call_args.kwargs.get("command") or call_args[1].get("command")
+        assert "--slot" in command
+        slot_index = command.index("--slot")
+        assert command[slot_index + 1] == "0p5x0p5"
+
+        # Verify docker_command in check record also includes --slot
+        check.refresh_from_db()
+        assert "--slot 0p5x0p5" in check.docker_command
+
+        # Cleanup
+        tmp_path.unlink(missing_ok=True)
+
 
 class TestDownloadLogging(TestCase):
     """Tests for download task logging functionality."""
