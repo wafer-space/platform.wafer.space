@@ -59,6 +59,8 @@ def send_tos_update_email(self, notification_id: int) -> dict[str, str]:
         site_url = _validate_site_url()
 
         # Prepare email context
+        # SITE_URL is always set in runtime environments (dev/pytest/stage/prod)
+        assert settings.SITE_URL is not None
         context = {
             "user": notification.user,
             "tos_version": notification.tos_version,

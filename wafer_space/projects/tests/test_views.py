@@ -166,6 +166,23 @@ class TestProjectDetailView(TestCase):
         # Active file is provided as in_progress_file in the context
         assert response.context["in_progress_file"] == active_file
 
+    def test_project_detail_staff_access(self):
+        """Test that staff user can access any project detail view."""
+        staff_user = User.objects.create_user(
+            username="staff",
+            email="staff@example.com",
+            password=TEST_PASSWORD,
+            is_staff=True,
+        )
+        self.client.force_login(staff_user)
+
+        response = self.client.get(
+            reverse("projects:detail", kwargs={"pk": self.project.pk}),
+        )
+        assert response.status_code == HTTP_OK
+        assert response.context["project"] == self.project
+        assert response.context["viewing_as_admin"] is True
+
 
 @pytest.mark.django_db
 class TestProjectCreateView(TestCase):
@@ -1402,3 +1419,175 @@ class TestProjectFileSubmitURLViewWarning(TestCase):
 
         assert response.status_code == HTTP_OK
         assert response.context["running_check"] is None
+
+
+@pytest.mark.django_db
+class TestProjectListViewStaff(TestCase):
+    """Test ProjectListView with staff user access."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.client = Client()
+        self.owner = User.objects.create_user(
+            username="owner",
+            email="owner@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.owner,
+            name="Owner Project",
+            description="Owner description",
+        )
+
+    def test_project_list_shows_only_own_projects_for_regular_user(self):
+        """Test that regular users only see their own projects in list."""
+        # Create another user with a project
+        other_user = User.objects.create_user(
+            username="other",
+            email="other@example.com",
+            password=TEST_PASSWORD,
+        )
+        other_project = Project.objects.create(
+            user=other_user,
+            name="Other Project",
+            description="Other description",
+        )
+
+        self.client.force_login(self.owner)
+        response = self.client.get(reverse("projects:list"))
+
+        assert response.status_code == HTTP_OK
+        projects = list(response.context["object_list"])
+        assert self.project in projects
+        assert other_project not in projects
+
+    def test_project_list_shows_all_projects_for_staff(self):
+        """Test that staff users see all users' projects in list."""
+        # Create another user with a project
+        other_user = User.objects.create_user(
+            username="other",
+            email="other@example.com",
+            password=TEST_PASSWORD,
+        )
+        other_project = Project.objects.create(
+            user=other_user,
+            name="Other Project",
+            description="Other description",
+        )
+
+        staff_user = User.objects.create_user(
+            username="staff",
+            email="staff@example.com",
+            password=TEST_PASSWORD,
+            is_staff=True,
+        )
+        self.client.force_login(staff_user)
+
+        response = self.client.get(reverse("projects:list"))
+        assert response.status_code == HTTP_OK
+
+        projects = list(response.context["object_list"])
+        assert self.project in projects
+        assert other_project in projects
+
+
+@pytest.mark.django_db
+class TestProjectUpdateViewStaff(TestCase):
+    """Test ProjectUpdateView with staff user access."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.client = Client()
+        self.owner = User.objects.create_user(
+            username="owner",
+            email="owner@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.owner,
+            name="Test Project",
+            description="Test description",
+        )
+
+    def test_project_update_staff_access(self):
+        """Test that staff user can access update view for any project."""
+        staff_user = User.objects.create_user(
+            username="staff",
+            email="staff@example.com",
+            password=TEST_PASSWORD,
+            is_staff=True,
+        )
+        self.client.force_login(staff_user)
+
+        response = self.client.get(
+            reverse("projects:update", kwargs={"pk": self.project.pk})
+        )
+        assert response.status_code == HTTP_OK
+        assert response.context["viewing_as_admin"] is True
+
+
+@pytest.mark.django_db
+class TestProjectDeleteViewStaff(TestCase):
+    """Test ProjectDeleteView with staff user access."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.client = Client()
+        self.owner = User.objects.create_user(
+            username="owner",
+            email="owner@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.owner,
+            name="Test Project",
+            description="Test description",
+        )
+
+    def test_project_delete_staff_access(self):
+        """Test that staff user can access delete view for any project."""
+        staff_user = User.objects.create_user(
+            username="staff",
+            email="staff@example.com",
+            password=TEST_PASSWORD,
+            is_staff=True,
+        )
+        self.client.force_login(staff_user)
+
+        response = self.client.get(
+            reverse("projects:delete", kwargs={"pk": self.project.pk})
+        )
+        assert response.status_code == HTTP_OK
+        assert response.context["viewing_as_admin"] is True
+
+    def test_staff_can_actually_delete_project(self):
+        """Test that staff user can POST to delete another user's project.
+
+        This tests the fix for the FK constraint issue where audit logging
+        would fail after the project was deleted (orphaned FK reference).
+
+        Note: DELETE operations are intentionally NOT logged because:
+        1. The project is deleted, so logging after fails (FK constraint)
+        2. Creating log before delete causes orphaned FK (CASCADE timing)
+        3. A proper fix requires making project FK nullable (SET_NULL)
+        """
+        staff_user = User.objects.create_user(
+            username="staff_delete",
+            email="staff_delete@example.com",
+            password=TEST_PASSWORD,
+            is_staff=True,
+        )
+        self.client.force_login(staff_user)
+
+        project_pk = self.project.pk
+
+        # POST to actually delete the project
+        response = self.client.post(
+            reverse("projects:delete", kwargs={"pk": project_pk})
+        )
+
+        # Should redirect on successful delete
+        assert response.status_code == HTTP_FOUND
+
+        # Verify project is actually deleted
+        assert not Project.objects.filter(pk=project_pk).exists()

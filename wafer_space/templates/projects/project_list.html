@@ -23,7 +23,14 @@
               <a href="{% url 'projects:detail' pk=project.pk %}"
                  class="list-group-item list-group-item-action">
                 <div class="d-flex w-100 justify-content-between">
-                  <h5 class="mb-1">{{ project.name }}</h5>
+                  <h5 class="mb-1">
+                    {{ project.name }}
+                    {% if project.user == request.user %}
+                      <span class="badge bg-success ms-2">Your Project</span>
+                    {% else %}
+                      <span class="badge bg-info ms-2">{{ project.user.username }}'s Project</span>
+                    {% endif %}
+                  </h5>
                   <small class="text-muted">{{ project.created_at|date:"M d, Y" }}</small>
                 </div>
                 {% if project.description %}<p class="mb-1">{{ project.description|truncatewords:30 }}</p>{% endif %}

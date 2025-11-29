@@ -139,6 +139,92 @@ class Project(models.Model):
         # (it was triggered automatically when file hash was verified)
 
 
+class ProjectAccessLog(models.Model):
+    """Audit log for when admins access other users' projects.
+
+    This model provides audit logging for staff access to projects they
+    don't own. Logs are read-only in Django admin but programmatic
+    changes are still technically possible.
+
+    Security Features:
+    - Admin UI read-only: No update/delete operations allowed in admin
+    - User protection: Cannot delete admin users with logs (PROTECT)
+    - Comprehensive: Captures IP, user agent, timestamp, action
+
+    Note: For stronger immutability guarantees, consider overriding
+    save()/delete() or using database-level protections.
+    """
+
+    class Action(models.TextChoices):
+        """Types of actions admins can perform on projects."""
+
+        VIEW = "view", "Viewed"
+        EDIT = "edit", "Edited"
+        DELETE = "delete", "Deleted"
+        ACCESS_DENIED = "access_denied", "Access Denied"
+
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name="access_logs",
+        help_text="Project that was accessed",
+    )
+
+    admin_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,  # SECURITY: Prevent deletion of users with logs
+        related_name="admin_access_logs",
+        help_text="Admin user who accessed the project",
+    )
+
+    accessed_at = models.DateTimeField(
+        auto_now_add=True,
+        help_text="When the access occurred",
+    )
+
+    action = models.CharField(
+        max_length=20,
+        choices=Action.choices,
+        help_text="Type of action performed",
+    )
+
+    ip_address = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        help_text="IP address of the admin user",
+    )
+
+    user_agent = models.TextField(
+        blank=True,
+        help_text="User agent string from the request",
+    )
+
+    view_name = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="Name of the view that was accessed",
+    )
+
+    class Meta:
+        ordering = ["-accessed_at"]
+        verbose_name = "Project Access Log"
+        verbose_name_plural = "Project Access Logs"
+        indexes = [
+            models.Index(fields=["-accessed_at"]),
+            models.Index(fields=["admin_user", "-accessed_at"]),
+            models.Index(fields=["project", "-accessed_at"]),
+        ]
+
+    def __str__(self):
+        """String representation of access log."""
+        action_text = self.get_action_display().lower()
+        return (
+            f"{self.admin_user.username} {action_text} "
+            f"{self.project.user.username}'s {self.project.name} "
+            f"at {self.accessed_at}"
+        )
+
+
 def project_file_upload_path(instance, filename):
     """Generate upload path for project files."""
     return f"projects/{instance.project.id}/{filename}"
