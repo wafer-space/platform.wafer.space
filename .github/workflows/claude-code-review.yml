@@ -1,27 +1,56 @@
 name: Claude Code Review
 
 on:
-  pull_request:
-    types: [opened, synchronize]
-    # Optional: Only run on specific file changes
-    # paths:
-    #   - "src/**/*.ts"
-    #   - "src/**/*.tsx"
-    #   - "src/**/*.js"
-    #   - "src/**/*.jsx"
+  # Run every 6 hours to check for PRs that haven't been updated in 24+ hours
+  schedule:
+    - cron: '0 */6 * * *'
+  # Allow manual triggering for testing
+  workflow_dispatch:
+    inputs:
+      hours_since_update:
+        description: 'Minimum hours since last update (default: 24)'
+        required: false
+        default: '24'
 
 jobs:
-  claude-review:
-    # Optional: Filter by PR author
-    # if: |
-    #   github.event.pull_request.user.login == 'external-contributor' ||
-    #   github.event.pull_request.user.login == 'new-developer' ||
-    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
-
+  find-stale-prs:
     runs-on: ubuntu-latest
+    outputs:
+      prs: ${{ steps.find-prs.outputs.prs }}
+    steps:
+      - name: Find PRs not updated in 24+ hours
+        id: find-prs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOURS_THRESHOLD: ${{ inputs.hours_since_update || '24' }}
+        run: |
+          # Calculate the cutoff time (24 hours ago by default)
+          cutoff=$(date -u -d "${HOURS_THRESHOLD} hours ago" +%Y-%m-%dT%H:%M:%SZ)
+
+          echo "Looking for PRs not updated since: $cutoff"
+
+          # Get open PRs that haven't been updated since the cutoff
+          # and don't have the 'claude-reviewed' label
+          prs=$(gh pr list \
+            --repo "${{ github.repository }}" \
+            --state open \
+            --json number,updatedAt,labels \
+            --jq "[.[] | select(.updatedAt < \"$cutoff\") | select(.labels | map(.name) | index(\"claude-reviewed\") | not) | .number]")
+
+          echo "Found PRs: $prs"
+          echo "prs=$prs" >> "$GITHUB_OUTPUT"
+
+  claude-review:
+    needs: find-stale-prs
+    if: needs.find-stale-prs.outputs.prs != '[]' && needs.find-stale-prs.outputs.prs != ''
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        pr: ${{ fromJson(needs.find-stale-prs.outputs.prs) }}
+      max-parallel: 1  # Review one PR at a time to avoid rate limits
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: write
       issues: read
       id-token: write
 
@@ -31,13 +60,13 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Run Claude Code Review
+      - name: Run Claude Code Review for PR #${{ matrix.pr }}
         id: claude-review
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
-            Please review this pull request and provide feedback on:
+            Please review pull request #${{ matrix.pr }} and provide feedback on:
             - Code quality and best practices
             - Potential bugs or issues
             - Performance considerations
@@ -52,3 +81,9 @@ jobs:
           # or https://docs.claude.com/en/docs/claude-code/sdk#command-line for available options
           claude_args: '--allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"'
           show_full_output: true
+
+      - name: Add claude-reviewed label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr edit ${{ matrix.pr }} --add-label "claude-reviewed" --repo "${{ github.repository }}"
