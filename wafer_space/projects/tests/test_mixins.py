@@ -160,8 +160,14 @@ class ProjectOwnerOrStaffMixinTestCase(TestCase):
         logs = ProjectAccessLog.objects.filter(project=self.project)
         assert logs.count() == 0
 
-    def test_denied_access_creates_audit_log(self):
-        """Test that denied access creates audit log with ACCESS_DENIED action."""
+    def test_regular_user_denied_access_no_log(self):
+        """Test that regular user denied access does NOT create audit log.
+
+        Only staff users being denied should create audit logs because:
+        1. Regular users being denied is expected behavior (not their project)
+        2. ProjectAccessLog.admin_user has on_delete=PROTECT which would make
+           all logged users undeletable
+        """
         request = self.factory.get(f"/projects/{self.project.pk}/")
         request.user = self.other_user
         request.META = {
@@ -175,22 +181,16 @@ class ProjectOwnerOrStaffMixinTestCase(TestCase):
         # Verify access denied
         assert view.test_func() is False
 
-        # Attempt dispatch (will fail permission check and log the attempt)
+        # Attempt dispatch (will fail permission check)
         with contextlib.suppress(PermissionDenied):
             view.dispatch(request, pk=self.project.pk)
 
-        # Verify audit log created with ACCESS_DENIED action
+        # Verify NO audit log created for regular user
         logs = ProjectAccessLog.objects.filter(
             project=self.project,
             admin_user=self.other_user,
         )
-        assert logs.count() == 1
-
-        log = logs.first()
-        assert log is not None
-        assert log.action == ProjectAccessLog.Action.ACCESS_DENIED
-        assert log.ip_address == "127.0.0.1"
-        assert log.view_name == "DummyProjectView"
+        assert logs.count() == 0
 
     def test_unauthenticated_denied_access_no_log(self):
         """Test that unauthenticated denied access does NOT create audit log."""

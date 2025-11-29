@@ -117,15 +117,18 @@ class ProjectOwnerOrStaffMixin(UserPassesTestMixin):
         """Handle denied access and log the attempt.
 
         This method is called by UserPassesTestMixin when test_func returns False.
-        We log unauthorized access attempts for security auditing before returning
-        the standard 403 Forbidden response.
+        We only log denied access attempts for staff users because:
+        1. Regular users being denied is expected (not their project)
+        2. ProjectAccessLog.admin_user has on_delete=PROTECT, which would make
+           all logged users undeletable
+        3. Staff users being denied is unexpected and worth auditing
         """
         user = self.request.user
         project = getattr(self, "_accessed_project", None)
 
-        # Only log if we have both user and project information
-        # Log for authenticated users who were denied (not owners, not staff)
-        if user.is_authenticated and project is not None:
+        # Only log denied access for staff users (unexpected scenario worth auditing)
+        # Regular users being denied is normal and doesn't need logging
+        if user.is_authenticated and user.is_staff and project is not None:
             self._create_denied_access_log(project, user, self.request)
 
         # Return standard 403 response

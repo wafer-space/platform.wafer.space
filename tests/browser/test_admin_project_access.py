@@ -234,10 +234,16 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
         assert log.action == ProjectAccessLog.Action.VIEW
         assert log.view_name == "ProjectDetailView"
 
-    def test_regular_user_denied_access_logged(self, driver, owner, project, wait):
-        """Test that regular user denied access is logged."""
+    def test_regular_user_denied_access_not_logged(self, driver, owner, project, wait):
+        """Test that regular user denied access is NOT logged.
+
+        Only staff users being denied should create audit logs because:
+        1. Regular users being denied is expected behavior (not their project)
+        2. ProjectAccessLog.admin_user has on_delete=PROTECT which would make
+           all logged users undeletable
+        """
         # Create another regular user
-        other_user = User.objects.create_user(
+        User.objects.create_user(
             username="otheruser",
             email="otheruser@example.com",
             password=TEST_PASSWORD,
@@ -252,13 +258,5 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
         # Attempt to navigate to owner's project (will be denied with 403)
         driver.get(f"{self.live_server_url}/projects/{project.pk}/")
 
-        # Verify denied access log created
-        logs = ProjectAccessLog.objects.filter(
-            project=project,
-            admin_user=other_user,
-        )
-        assert logs.count() == 1
-
-        log = logs.first()
-        assert log.action == ProjectAccessLog.Action.ACCESS_DENIED
-        assert log.view_name == "ProjectDetailView"
+        # Verify NO denied access log created for regular user
+        assert ProjectAccessLog.objects.count() == 0
