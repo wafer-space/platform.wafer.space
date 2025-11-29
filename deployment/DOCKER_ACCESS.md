@@ -13,9 +13,13 @@ The manufacturability checking system requires the Celery worker to have access 
 ### 1. Install Docker
 
 ```bash
-# Install Docker Engine (if not already installed)
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
+# Install Docker from Debian repository (if not already installed)
+sudo apt-get update
+sudo apt-get install docker.io
+
+# Enable and start Docker service
+sudo systemctl enable docker
+sudo systemctl start docker
 ```
 
 ### 2. Create Dedicated Celery Worker User
