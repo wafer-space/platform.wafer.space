@@ -102,7 +102,7 @@ class ProjectOwnerOrStaffMixin(UserPassesTestMixin):
         # 1. The project is deleted, so FK constraint would fail if logged after
         # 2. Creating log before delete causes orphaned FK (CASCADE timing issue)
         # 3. A proper fix requires making project FK nullable (SET_NULL)
-        # TODO: Consider adding nullable project FK to preserve DELETE audit logs
+        # TODO: Fix DELETE audit logging (see issue #74)
         if response.status_code < HTTP_SUCCESS_THRESHOLD:
             # Only log staff access to OTHER users' projects (non-DELETE)
             is_admin_access = (
