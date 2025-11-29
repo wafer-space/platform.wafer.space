@@ -38,10 +38,10 @@ class Project(models.Model):
         - 0p5x0p5: Quarter slot (1.94mm x 2.535mm)
         """
 
-        FULL = "1x1", "1x1 (Full Slot)"
-        HALF_WIDTH = "0p5x1", "0.5x1 (Half Width)"
-        HALF_HEIGHT = "1x0p5", "1x0.5 (Half Height)"
-        QUARTER = "0p5x0p5", "0.5x0.5 (Quarter Slot)"
+        FULL = "1x1", "1x1 - Full Slot (3.88mm x 5.07mm)"
+        HALF_WIDTH = "0p5x1", "0.5x1 - Half Width (1.94mm x 5.07mm)"
+        HALF_HEIGHT = "1x0p5", "1x0.5 - Half Height (3.88mm x 2.535mm)"
+        QUARTER = "0p5x0p5", "0.5x0.5 - Quarter Slot (1.94mm x 2.535mm)"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
