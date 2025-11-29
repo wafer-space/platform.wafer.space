@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from argparse import ArgumentParser
+from typing import TYPE_CHECKING
 from typing import Any
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
+
+if TYPE_CHECKING:
+    from argparse import ArgumentParser
 
 User = get_user_model()
 

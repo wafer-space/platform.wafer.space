@@ -596,7 +596,9 @@ class ProjectFile(models.Model):
     def has_expected_hash(self) -> bool:
         """Check if user provided any expected hash for verification."""
         return bool(
-            self.expected_hash_md5 or self.expected_hash_sha1 or self.expected_hash_sha256
+            self.expected_hash_md5
+            or self.expected_hash_sha1
+            or self.expected_hash_sha256
         )
 
 
