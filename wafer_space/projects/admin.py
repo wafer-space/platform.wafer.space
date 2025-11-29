@@ -12,8 +12,8 @@ from wafer_space.projects.models import ProjectAccessLog
 class ProjectAdmin(admin.ModelAdmin):
     """Admin interface for Project model."""
 
-    list_display = ["name", "user", "status", "created_at", "updated_at"]
-    list_filter = ["status", "created_at", "updated_at"]
+    list_display = ["name", "user", "slot_size", "status", "created_at", "updated_at"]
+    list_filter = ["status", "slot_size", "created_at", "updated_at"]
     search_fields = ["name", "description", "user__username"]
     readonly_fields = ["created_at", "updated_at"]
 
