@@ -89,7 +89,8 @@ Stage 1: Decompression → Stage 2: Archive Extraction → Stage 3: Decompressio
 
 **Stage 2 - Archive Extraction** (handles .tar, .zip):
 - Try extractors: Tar → Zip
-- Scans archive for files, **ignores non-GDS/OASIS files** (README.txt, etc.)
+- **Recursively** scans archive for files (including subdirectories like `designs/chip.gds`)
+- Ignores non-GDS/OASIS files (README.txt, etc.)
 - Validates exactly ONE `.gds`/`.oas`/`.gds.gz`/`.gds.bz2`/`.gds.xz` file found
 - Error if 0 or 2+ valid files
 - Extracts that file and passes to Stage 3
