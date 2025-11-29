@@ -7,9 +7,9 @@
 {#   - show_attempts: (optional, default=False) Show download attempts in foldable sections #}
 {#   - first_open: (optional, default=True) Keep first attempt section open #}
 {# Status and Filename Header #}
+{# Header row: filename left, badges right #}
 {% with latest_attempt=file.latest_attempt %}
   {% with status=latest_attempt.status|default:"pending" %}
-    {# Header row: filename left, badges right #}
     <div class="d-flex justify-content-between align-items-start mb-2">
       {# Left side: filename and subtitle #}
       <div class="flex-grow-1 me-3">
@@ -51,72 +51,9 @@
           {% endif %}
         {% endif %}
       </div>
-      {# Right side: all status badges stacked (most relevant first) #}
-      <div class="d-flex flex-column gap-1 align-items-end flex-shrink-0">
-        {# Manufacturability check status badge (most relevant) #}
-        {% with check=file.manufacturability_check %}
-          {% if check %}
-            {% if check.status == 'completed' and check.is_manufacturable %}
-              <span class="badge bg-success">
-                <i class="bi bi-check-circle"></i> Manufacturable
-              </span>
-            {% elif check.status == 'completed' and not check.is_manufacturable %}
-              <span class="badge bg-danger">
-                <i class="bi bi-x-circle"></i> Not Manufacturable
-              </span>
-            {% elif check.status == 'failed' %}
-              <span class="badge bg-danger">
-                <i class="bi bi-exclamation-triangle"></i> Check Failed
-              </span>
-            {% elif check.status == 'processing' or check.status == 'starting' %}
-              <span class="badge bg-primary">
-                <span class="spinner-border spinner-border-sm" role="status"></span> Checking...
-              </span>
-            {% elif check.status == 'queued' %}
-              <span class="badge bg-secondary">
-                <i class="bi bi-hourglass-split"></i> Check Queued
-              </span>
-            {% elif check.status == 'cancelled' %}
-              <span class="badge bg-warning text-dark">
-                <i class="bi bi-x-circle"></i> Check Cancelled
-              </span>
-            {% endif %}
-          {% endif %}
-        {% endwith %}
-        {# Hash verification badge #}
-        {% if file.hash_verified %}
-          <span class="badge bg-success">
-            <i class="bi bi-shield-check"></i> Hash Verified
-          </span>
-        {% elif status == 'completed' and file.has_hash_mismatch %}
-          <span class="badge bg-danger">
-            <i class="bi bi-shield-x"></i> Hash Mismatch
-          </span>
-        {% elif status == 'completed' and file.has_expected_hash and not file.hash_verified %}
-          <span class="badge bg-warning text-dark">
-            <i class="bi bi-shield-exclamation"></i> Hash Not Verified
-          </span>
-        {% endif %}
-        {# Download status badge #}
-        <span id="status-badge"
-              class="badge {% if status == 'completed' and file.has_hash_mismatch %}bg-danger{% elif status == 'completed' %}bg-success{% elif status == 'failed' %}bg-danger{% elif status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
-          {% if status == 'completed' and file.has_hash_mismatch %}
-            <i class="bi bi-exclamation-triangle"></i>
-            <span id="status-text">Hash Mismatch</span>
-          {% elif status == 'completed' %}
-            <i class="bi bi-check-circle"></i>
-            <span id="status-text">Downloaded</span>
-          {% elif status == 'failed' %}
-            <i class="bi bi-exclamation-triangle"></i>
-            <span id="status-text">Download Failed</span>
-          {% elif status == 'downloading' %}
-            <span class="spinner-border spinner-border-sm" role="status"></span>
-            <span id="status-text">Downloading</span>
-          {% else %}
-            <i class="bi bi-clock"></i>
-            <span id="status-text">Pending</span>
-          {% endif %}
-        </span>
+      {# Right side: status badges #}
+      <div class="flex-shrink-0">
+        {% include "projects/_file_badges.html" with file=file layout="vertical" %}
       </div>
     </div>
   {% endwith %}
