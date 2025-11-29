@@ -263,29 +263,12 @@ class ProjectFileSubmitURLView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, Vie
     def get(self, request, pk):
         """Show the URL submission form."""
         project = get_object_or_404(Project, pk=pk)
-        user = request.user
-
         form = ProjectFileURLSubmitForm()
-
-        # Add viewing_as_admin flag for template
-        viewing_as_admin = (
-            user.is_authenticated and user.is_staff and project.user != user
-        )
-
-        return render(
-            request,
-            "projects/project_file_submit_url.html",
-            {
-                "project": project,
-                "form": form,
-                "viewing_as_admin": viewing_as_admin,
-            },
-        )
+        return self.render_form(request, project, form)
 
     def post(self, request, pk):
         """Process the URL submission."""
         project = get_object_or_404(Project, pk=pk)
-        user = request.user
 
         form = ProjectFileURLSubmitForm(request.POST)
 
@@ -320,20 +303,7 @@ class ProjectFileSubmitURLView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, Vie
                 # Catch file and network-related errors
                 messages.error(request, f"An error occurred: {e}")
 
-        # Add viewing_as_admin flag for template
-        viewing_as_admin = (
-            user.is_authenticated and user.is_staff and project.user != user
-        )
-
-        return render(
-            request,
-            "projects/project_file_submit_url.html",
-            {
-                "project": project,
-                "form": form,
-                "viewing_as_admin": viewing_as_admin,
-            },
-        )
+        return self.render_form(request, project, form)
 
     def render_form(self, request, project, form):
         """Render the form template."""
