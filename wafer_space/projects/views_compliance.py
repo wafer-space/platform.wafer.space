@@ -1,8 +1,17 @@
 """Views for export compliance certification."""
 
+from __future__ import annotations
+
 from ipaddress import ip_address
+from typing import TYPE_CHECKING
 
 from django.contrib import messages
+
+if TYPE_CHECKING:
+    from uuid import UUID
+
+    from django.http import HttpRequest
+    from django.http import HttpResponse
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404
 from django.shortcuts import redirect
@@ -14,7 +23,7 @@ from .models import Project
 from .models import ProjectComplianceCertification
 
 
-def get_client_ip(request):
+def get_client_ip(request: HttpRequest) -> str | None:
     """Extract and validate client IP address from request.
 
     Args:
@@ -24,6 +33,7 @@ def get_client_ip(request):
         str: Validated IP address or None if invalid
     """
     x_forwarded_for = request.headers.get("x-forwarded-for")
+    potential_ip: str | None
     if x_forwarded_for:
         # Get first IP from comma-separated list
         potential_ip = x_forwarded_for.split(",")[0].strip()
@@ -31,9 +41,11 @@ def get_client_ip(request):
         potential_ip = request.META.get("REMOTE_ADDR")
 
     # Validate IP address format
+    if potential_ip is None:
+        return request.META.get("REMOTE_ADDR")
     try:
         ip_address(potential_ip)  # Validates IPv4/IPv6
-    except (ValueError, TypeError, AttributeError):
+    except (ValueError, AttributeError):
         # Fall back to REMOTE_ADDR if validation fails
         return request.META.get("REMOTE_ADDR")
     else:
@@ -42,7 +54,7 @@ def get_client_ip(request):
 
 @login_required
 @require_http_methods(["GET", "POST"])
-def compliance_certification_create(request, pk):
+def compliance_certification_create(request: HttpRequest, pk: UUID) -> HttpResponse:
     """Create or update compliance certification for a project.
 
     Args:
