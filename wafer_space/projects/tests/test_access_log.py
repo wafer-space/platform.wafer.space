@@ -99,7 +99,6 @@ class ProjectAccessLogTestCase(TestCase):
             ProjectAccessLog.Action.VIEW,
             ProjectAccessLog.Action.EDIT,
             ProjectAccessLog.Action.DELETE,
-            ProjectAccessLog.Action.SUBMIT,
             ProjectAccessLog.Action.ACCESS_DENIED,
         ]
 
