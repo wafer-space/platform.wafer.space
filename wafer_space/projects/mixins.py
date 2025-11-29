@@ -15,6 +15,7 @@ from wafer_space.projects.models import ProjectAccessLog
 if TYPE_CHECKING:
     from django.http import HttpRequest
     from django.http import HttpResponseBase
+    from django.http import HttpResponseRedirect
 
     from wafer_space.users.models import User
 
@@ -113,7 +114,7 @@ class ProjectOwnerOrStaffMixin(UserPassesTestMixin):
 
         return response
 
-    def handle_no_permission(self):
+    def handle_no_permission(self) -> HttpResponseRedirect:
         """Handle denied access and log the attempt.
 
         This method is called by UserPassesTestMixin when test_func returns False.
