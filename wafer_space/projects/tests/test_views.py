@@ -224,6 +224,7 @@ class TestProjectCreateView(TestCase):
         form_data = {
             "name": "New Project",
             "description": "New project description",
+            "slot_size": "1x1",
         }
         response = self.client.post(url, form_data)
 
@@ -237,6 +238,7 @@ class TestProjectCreateView(TestCase):
         assert project.name == "New Project"
         assert project.description == "New project description"
         assert project.user == self.user
+        assert project.slot_size == "1x1"
 
         # Verify success message
         messages = list(get_messages(response.wsgi_request))
@@ -285,6 +287,7 @@ class TestProjectUpdateView(TestCase):
         form_data = {
             "name": "Updated Project",
             "description": "Updated description",
+            "slot_size": "0p5x1",
         }
         response = self.client.post(url, form_data)
 
@@ -295,6 +298,7 @@ class TestProjectUpdateView(TestCase):
         self.project.refresh_from_db()
         assert self.project.name == "Updated Project"
         assert self.project.description == "Updated description"
+        assert self.project.slot_size == "0p5x1"
 
     def test_non_owner_cannot_update(self):
         """Test that non-owner cannot update project."""
