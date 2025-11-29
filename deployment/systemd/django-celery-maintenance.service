@@ -1,6 +1,6 @@
 [Unit]
 Description=platform.wafer.space Celery Worker (Maintenance)
-After=network.target postgresql.service django-gunicorn.service
+After=network.target postgresql.service django-gunicorn.service docker.service
 Requires=postgresql.service docker.service
 
 [Service]
