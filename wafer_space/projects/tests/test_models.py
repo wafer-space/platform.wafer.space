@@ -628,11 +628,81 @@ class TestProjectFile(TestCase):
 class TestManufacturabilityCheckCancellingState(TestCase):
     """Test CANCELLING state in ManufacturabilityCheck."""
 
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
     def test_cancelling_status_exists(self):
         """Test CANCELLING is a valid status choice."""
         assert hasattr(ManufacturabilityCheck.Status, "CANCELLING")
         assert ManufacturabilityCheck.Status.CANCELLING.value == "cancelling"
         assert ManufacturabilityCheck.Status.CANCELLING.label == "Cancelling"
+
+    def test_can_transition_to_cancelling_from_pending(self):
+        """Test PENDING can transition to CANCELLING."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.CANCELLING) is True
+
+    def test_can_transition_to_cancelling_from_dispatched(self):
+        """Test DISPATCHED can transition to CANCELLING."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.CANCELLING) is True
+
+    def test_can_transition_to_cancelling_from_running(self):
+        """Test RUNNING can transition to CANCELLING."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.CANCELLING) is True
+
+    def test_cancelling_can_only_transition_to_cancelled(self):
+        """Test CANCELLING can only transition to CANCELLED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.CANCELLED) is True
+        # Cannot transition to anything else
+        assert check.can_transition_to(ManufacturabilityCheck.Status.PENDING) is False
+        assert check.can_transition_to(ManufacturabilityCheck.Status.ERROR) is False
+        assert check.can_transition_to(ManufacturabilityCheck.Status.FINISHED) is False
+
+    def test_cannot_transition_to_cancelled_directly_from_running(self):
+        """Test RUNNING cannot skip CANCELLING and go directly to CANCELLED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        # Must go through CANCELLING first
+        assert check.can_transition_to(ManufacturabilityCheck.Status.CANCELLED) is False
 
 
 @pytest.mark.django_db

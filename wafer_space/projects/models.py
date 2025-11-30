@@ -1046,11 +1046,12 @@ class ManufacturabilityCheck(models.Model):
     # ERROR: system failure, can retry
     # CANCELLED: user cancelled (terminal)
     ALLOWED_TRANSITIONS: ClassVar[dict[Status, set[Status]]] = {
-        Status.PENDING: {Status.DISPATCHED, Status.ERROR, Status.CANCELLED},
-        Status.DISPATCHED: {Status.RUNNING, Status.ERROR, Status.CANCELLED},
-        Status.RUNNING: {Status.FINISHED, Status.ERROR, Status.CANCELLED},
+        Status.PENDING: {Status.DISPATCHED, Status.ERROR, Status.CANCELLING},
+        Status.DISPATCHED: {Status.RUNNING, Status.ERROR, Status.CANCELLING},
+        Status.RUNNING: {Status.FINISHED, Status.ERROR, Status.CANCELLING},
         Status.FINISHED: set(),  # Terminal - no transitions
         Status.ERROR: {Status.PENDING},  # Can retry
+        Status.CANCELLING: {Status.CANCELLED},  # Only cleanup task can complete
         Status.CANCELLED: set(),  # Terminal - no transitions
     }
 
