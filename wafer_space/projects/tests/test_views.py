@@ -1130,8 +1130,8 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
             is_active=True,
         )
 
-    def test_detail_view_includes_check_status_when_check_exists(self):
-        """Test that detail view includes check status in context."""
+    def test_detail_view_includes_check_when_check_exists(self):
+        """Test that detail view includes check in context."""
         # Create a manufacturability check
         ManufacturabilityCheck.objects.create(
             project=self.project,
@@ -1145,25 +1145,23 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
         response = self.client.get(url)
 
         assert response.status_code == HTTP_OK
-        assert "check_status" in response.context
-        assert response.context["check_status"] is not None
-        assert (
-            response.context["check_status"]["status"]
-            == ManufacturabilityCheck.Status.PENDING
-        )
+        assert "check" in response.context
+        check = response.context["check"]
+        assert check is not None
+        assert check.status == ManufacturabilityCheck.Status.PENDING
 
-    def test_detail_view_check_status_none_when_no_check(self):
-        """Test that check_status is None when no check exists."""
+    def test_detail_view_check_none_when_no_check(self):
+        """Test that check is None when no check exists."""
         # Log in and access detail view
         self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:detail", kwargs={"pk": self.project.pk})
         response = self.client.get(url)
 
         assert response.status_code == HTTP_OK
-        assert "check_status" in response.context
-        assert response.context["check_status"] is None
+        assert "check" in response.context
+        assert response.context["check"] is None
 
-    def test_detail_view_shows_completed_check_status(self):
+    def test_detail_view_shows_completed_check(self):
         """Test that detail view shows completed check with results."""
         # Create a completed check
         check = ManufacturabilityCheck.objects.create(
@@ -1190,13 +1188,13 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
         response = self.client.get(url)
 
         assert response.status_code == HTTP_OK
-        check_status = response.context["check_status"]
-        assert check_status is not None
-        assert check_status["status"] == ManufacturabilityCheck.Status.FINISHED
-        assert check_status["is_manufacturable"] is False
+        check = response.context["check"]
+        assert check is not None
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
+        assert check.is_manufacturable is False
         expected_errors = [{"message": "Error 1"}, {"message": "Error 2"}]
-        assert check_status["errors"] == expected_errors
-        assert check_status["warnings"] == [{"message": "Warning 1"}]
+        assert check.errors == expected_errors
+        assert check.warnings == [{"message": "Warning 1"}]
 
 
 @pytest.mark.django_db
@@ -1228,9 +1226,8 @@ class TestManufacturabilityCheckCancelView(TestCase):
             is_active=True,
         )
 
-    @patch("wafer_space.projects.services.celery_app")
-    def test_cancel_check_success(self, mock_celery_app):
-        """Test successfully cancelling a check."""
+    def test_cancel_check_success(self):
+        """Test successfully requesting cancellation of a check."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
@@ -1244,12 +1241,11 @@ class TestManufacturabilityCheckCancelView(TestCase):
 
         assert response.status_code == HTTP_FOUND
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.CANCELLED
-        mock_celery_app.control.revoke.assert_called_once()
+        # Should be CANCELLING, not CANCELLED (cleanup task will complete it)
+        assert check.status == ManufacturabilityCheck.Status.CANCELLING
 
-    @patch("wafer_space.projects.services.celery_app")
-    def test_cancel_check_processing_success(self, mock_celery_app):
-        """Test successfully cancelling a processing check."""
+    def test_cancel_check_processing_success(self):
+        """Test successfully requesting cancellation of a processing check."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
@@ -1263,7 +1259,8 @@ class TestManufacturabilityCheckCancelView(TestCase):
 
         assert response.status_code == HTTP_FOUND
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+        # Should be CANCELLING, not CANCELLED (cleanup task will complete it)
+        assert check.status == ManufacturabilityCheck.Status.CANCELLING
 
     def test_cancel_check_already_completed(self):
         """Test cancelling already completed check shows warning."""

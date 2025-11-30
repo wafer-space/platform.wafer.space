@@ -637,125 +637,8 @@ class TestManufacturabilityService(TestCase):
             is_active=True,
         )
 
-    def test_get_check_status_returns_correct_data(self):
-        """Test that get_check_status returns correct status information."""
-        # Create a completed check
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PENDING,
-        )
-        check.mark_dispatched(celery_job_id="test-job-id")
-        check.mark_running(
-            celery_worker_pid=12345,
-            celery_worker_hostname="test-worker",
-            docker_container_id="test-container-id",
-        )
-        check.mark_finished(
-            is_manufacturable=False,
-            errors=[{"message": "Error 1"}, {"message": "Error 2"}],
-            warnings=[{"message": "Warning 1"}],
-            processing_logs="Test processing logs",
-        )
-
-        # Get status
-        status = ManufacturabilityService.get_check_status(self.project)
-
-        # Verify status data
-        assert status is not None
-        assert status["status"] == ManufacturabilityCheck.Status.FINISHED
-        assert status["is_manufacturable"] is False
-        assert status["errors"] == [{"message": "Error 1"}, {"message": "Error 2"}]
-        assert status["warnings"] == [{"message": "Warning 1"}]
-        assert status["celery_job_started_at"] is not None
-        assert status["celery_job_finished_at"] is not None
-
-    def test_get_check_status_returns_none_when_no_check(self):
-        """Test that get_check_status returns None when no check exists."""
-        # Get status for project with no check
-        status = ManufacturabilityService.get_check_status(self.project)
-
-        # Verify None is returned
-        assert status is None
-
-    def test_get_check_status_for_queued_check(self):
-        """Test get_check_status for a queued check."""
-        # Create a queued check
-        ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PENDING,
-        )
-
-        # Get status
-        status = ManufacturabilityService.get_check_status(self.project)
-
-        # Verify status data
-        assert status is not None
-        assert status["status"] == ManufacturabilityCheck.Status.PENDING
-        assert status["is_manufacturable"] is None
-        assert status["errors"] == []
-        assert status["warnings"] == []
-        assert status["celery_job_started_at"] is None
-        assert status["celery_job_finished_at"] is None
-
-    def test_get_check_status_for_processing_check(self):
-        """Test get_check_status for a processing check."""
-        # Create and start processing a check
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PENDING,
-        )
-        check.mark_dispatched(celery_job_id="test-job-id")
-        check.mark_running(
-            celery_worker_pid=12345,
-            celery_worker_hostname="test-worker",
-            docker_container_id="test-container-id",
-        )
-
-        # Get status
-        status = ManufacturabilityService.get_check_status(self.project)
-
-        # Verify status data
-        assert status is not None
-        assert status["status"] == ManufacturabilityCheck.Status.RUNNING
-        assert status["is_manufacturable"] is None
-        assert status["celery_job_started_at"] is not None
-        assert status["celery_job_finished_at"] is None
-
-    def test_get_check_status_for_failed_check(self):
-        """Test get_check_status for a failed check."""
-        # Create a failed check
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PENDING,
-        )
-        check.mark_dispatched(celery_job_id="test-job-id")
-        check.mark_running(
-            celery_worker_pid=12345,
-            celery_worker_hostname="test-worker",
-            docker_container_id="test-container-id",
-        )
-        check.mark_error(
-            error_message="Test error message",
-            processing_logs="Test error logs",
-        )
-
-        # Get status
-        status = ManufacturabilityService.get_check_status(self.project)
-
-        # Verify status data
-        assert status is not None
-        assert status["status"] == ManufacturabilityCheck.Status.ERROR
-        assert status["is_manufacturable"] is None
-        assert status["celery_job_started_at"] is not None
-        assert status["celery_job_finished_at"] is not None
-
-    @patch("wafer_space.projects.services.celery_app")
-    def test_cancel_check_cancels_queued_check(self, mock_celery_app):
-        """Test cancel_check successfully cancels a queued check."""
+    def test_cancel_check_cancels_queued_check(self):
+        """Test cancel_check requests cancellation for a queued check."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
@@ -769,17 +652,12 @@ class TestManufacturabilityService(TestCase):
 
         assert result is True
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.CANCELLED
-        assert "CANCELLED: Test cancellation" in check.processing_logs
+        # Should be CANCELLING, not CANCELLED (cleanup task will complete it)
+        assert check.status == ManufacturabilityCheck.Status.CANCELLING
+        assert "CANCELLATION REQUESTED: Test cancellation" in check.processing_logs
 
-        # Verify Celery task was revoked
-        mock_celery_app.control.revoke.assert_called_once_with(
-            "celery-task-123", terminate=True
-        )
-
-    @patch("wafer_space.projects.services.celery_app")
-    def test_cancel_check_cancels_processing_check(self, mock_celery_app):
-        """Test cancel_check successfully cancels a processing check."""
+    def test_cancel_check_cancels_processing_check(self):
+        """Test cancel_check requests cancellation for a processing check."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
@@ -793,15 +671,10 @@ class TestManufacturabilityService(TestCase):
 
         assert result is True
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+        # Should be CANCELLING, not CANCELLED (cleanup task will complete it)
+        assert check.status == ManufacturabilityCheck.Status.CANCELLING
 
-        # Verify Celery task was revoked
-        mock_celery_app.control.revoke.assert_called_once_with(
-            "celery-task-456", terminate=True
-        )
-
-    @patch("wafer_space.projects.services.celery_app")
-    def test_cancel_check_returns_false_for_completed(self, mock_celery_app):
+    def test_cancel_check_returns_false_for_completed(self):
         """Test cancel_check returns False for completed check."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
@@ -816,11 +689,7 @@ class TestManufacturabilityService(TestCase):
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.FINISHED
 
-        # Verify Celery was NOT called
-        mock_celery_app.control.revoke.assert_not_called()
-
-    @patch("wafer_space.projects.services.celery_app")
-    def test_cancel_check_returns_false_for_failed(self, mock_celery_app):
+    def test_cancel_check_returns_false_for_failed(self):
         """Test cancel_check returns False for failed check."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
@@ -834,9 +703,6 @@ class TestManufacturabilityService(TestCase):
         assert result is False
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.ERROR
-
-        # Verify Celery was NOT called
-        mock_celery_app.control.revoke.assert_not_called()
 
 
 @pytest.mark.django_db
@@ -869,7 +735,6 @@ class TestFileReplacementCancelsCheck(TestCase):
             status=DownloadAttempt.Status.COMPLETED,
         )
 
-    @patch("wafer_space.projects.services.celery_app")
     @patch("wafer_space.projects.tasks.download_project_file.delay")
     @patch("wafer_space.projects.services.URLValidator.validate_url")
     @patch("wafer_space.projects.services.URLRewriter.rewrite_url")
@@ -878,9 +743,8 @@ class TestFileReplacementCancelsCheck(TestCase):
         mock_rewrite,
         mock_validate,
         mock_download_task,
-        mock_celery_app,
     ):
-        """Test that submitting a new file cancels a queued manufacturability check."""
+        """Test new file submission requests cancellation of queued check."""
         # Create a queued check on the existing file
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
@@ -907,17 +771,11 @@ class TestFileReplacementCancelsCheck(TestCase):
             url=new_url,
         )
 
-        # Verify the old check was cancelled
+        # Verify the old check was transitioned to CANCELLING
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.CANCELLED
-        assert "new file submitted" in check.processing_logs.lower()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLING
+        assert "new file" in check.processing_logs.lower()
 
-        # Verify Celery task was revoked
-        mock_celery_app.control.revoke.assert_called_once_with(
-            "celery-task-to-cancel", terminate=True
-        )
-
-    @patch("wafer_space.projects.services.celery_app")
     @patch("wafer_space.projects.tasks.download_project_file.delay")
     @patch("wafer_space.projects.services.URLValidator.validate_url")
     @patch("wafer_space.projects.services.URLRewriter.rewrite_url")
@@ -926,9 +784,8 @@ class TestFileReplacementCancelsCheck(TestCase):
         mock_rewrite,
         mock_validate,
         mock_download_task,
-        mock_celery_app,
     ):
-        """Test that submitting a new file cancels a processing check."""
+        """Test new file submission requests cancellation of processing check."""
         # Create a processing check on the existing file
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
@@ -955,16 +812,10 @@ class TestFileReplacementCancelsCheck(TestCase):
             url=new_url,
         )
 
-        # Verify the old check was cancelled
+        # Verify the old check was transitioned to CANCELLING
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+        assert check.status == ManufacturabilityCheck.Status.CANCELLING
 
-        # Verify Celery task was revoked
-        mock_celery_app.control.revoke.assert_called_once_with(
-            "processing-task-to-cancel", terminate=True
-        )
-
-    @patch("wafer_space.projects.services.celery_app")
     @patch("wafer_space.projects.tasks.download_project_file.delay")
     @patch("wafer_space.projects.services.URLValidator.validate_url")
     @patch("wafer_space.projects.services.URLRewriter.rewrite_url")
@@ -973,7 +824,6 @@ class TestFileReplacementCancelsCheck(TestCase):
         mock_rewrite,
         mock_validate,
         mock_download_task,
-        mock_celery_app,
     ):
         """Test that submitting a new file does not cancel a completed check."""
         # Create a completed check on the existing file
@@ -1005,6 +855,3 @@ class TestFileReplacementCancelsCheck(TestCase):
         # Verify the completed check was NOT modified
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.FINISHED
-
-        # Verify Celery revoke was NOT called
-        mock_celery_app.control.revoke.assert_not_called()
