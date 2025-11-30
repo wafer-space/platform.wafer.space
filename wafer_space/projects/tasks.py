@@ -893,7 +893,7 @@ def _setup_docker_context(check, project_file, task_instance, logger):
 @shared_task(
     bind=True,
     time_limit=settings.PRECHECK_TIMEOUT_SECONDS,
-    soft_time_limit=settings.PRECHECK_TIMEOUT_SECONDS - 300,
+    soft_time_limit=settings.PRECHECK_TIMEOUT_SECONDS - 3600,  # 1 hour buffer
 )
 def check_project_manufacturability(self, check_id):
     """Run manufacturability check in Docker container.
