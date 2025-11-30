@@ -9,24 +9,29 @@ This document describes the systemd service units for platform.wafer.space, thei
 | **gunicorn**                 | www-data   | -                  | -     | -      |
 | **celery**                   | www-data   | default, referrals | -     | -      |
 | **celery-downloads**         | www-data   | downloads          | W     | -      |
-| **celery-manufacturability** | celery-mfg | manufacturability  | W     | Y      |
-| **celery-maintenance**       | celery-mfg | maintenance        | -     | Y      |
+| **celery-docker-persistent** | celery-mfg | docker-persistent  | W     | Y      |
+| **celery-docker-ephemeral**  | celery-mfg | docker-ephemeral   | -     | Y      |
 | **celery-beat**              | www-data   | -                  | -     | -      |
 
 **Legend:** W = Write, Y = Yes, - = None
 
 ## Task to Queue Mapping
 
-| Queue             | Task                                    | Description                                               |
-|-------------------|-----------------------------------------|-----------------------------------------------------------|
-| default           | `send_tos_update_email`                 | Send TOS notification email to user                       |
-| default           | `send_bulk_tos_notifications`           | Queue bulk TOS notifications                              |
-| downloads         | `download_project_file`                 | Download with chunked transfer, resume, hash verification |
-| manufacturability | `celery_job_run`                        | Run gf180mcu-precheck in Docker container                 |
-| maintenance       | `ensure_download_tasks_queued`          | Recover lost download tasks                               |
-| maintenance       | `process_manufacturability_check_queue` | Orchestrate check scheduling                              |
-| maintenance       | `cleanup_old_task_results`              | Remove old Celery TaskResult records                      |
-| maintenance       | `cleanup_orphaned_precheck_containers`  | Remove orphaned Docker containers                         |
+| Queue             | Task                                | Description                                               |
+|-------------------|-------------------------------------|-----------------------------------------------------------|
+| default           | `send_tos_update_email`             | Send TOS notification email to user                       |
+| default           | `send_bulk_tos_notifications`       | Queue bulk TOS notifications                              |
+| default           | `checks_create`                     | Create new checks from ready files                        |
+| default           | `checks_dispatch`                   | Dispatch PENDING checks to docker-persistent queue        |
+| default           | `checks_retry`                      | Retry ERROR checks within limit                           |
+| default           | `checks_cleanup_orphaned_dispatch`  | Detect and reset stuck DISPATCHED checks                  |
+| default           | `checks_cleanup_orphaned_processing` | Detect and reset stuck PROCESSING checks                  |
+| downloads         | `download_project_file`             | Download with chunked transfer, resume, hash verification |
+| docker-persistent | `check_process_job`                 | Run gf180mcu-precheck in Docker container                 |
+| docker-ephemeral  | `ensure_download_tasks_queued`      | Recover lost download tasks                               |
+| docker-ephemeral  | `cleanup_old_task_results`          | Remove old Celery TaskResult records                      |
+| docker-ephemeral  | `checks_cancelling`                 | Complete cancellation of CANCELLING checks                |
+| docker-ephemeral  | `checks_cleanup_orphaned_docker`    | Remove orphaned Docker containers                         |
 
 ---
 
@@ -41,7 +46,7 @@ This document describes the systemd service units for platform.wafer.space, thei
           |                |               |               |                |
 +---------v----+  +--------v-------+  +----v----+  +------v------+  +------v------+
 |   Gunicorn   |  | Celery Default |  | Celery  |  |   Celery    |  |   Celery    |
-| (Web Server) |  |   (Email)      |  |Downloads|  |Manufacturab.|  | Maintenance |
+| (Web Server) |  | (Orchestrat.)  |  |Downloads|  |Docker-Persist|  |Docker-Ephem.|
 +--------------+  +----------------+  +---------+  +-------------+  +-------------+
                                            |              |               |
                                            v              v               v
@@ -105,7 +110,7 @@ WSGI application server serving HTTP requests via Unix socket.
 
 ### django-celery.service
 
-Default Celery worker for email notifications and referral processing.
+Default Celery worker for email notifications and check orchestration tasks.
 
 - **Type:** forking
 - **Queues:** default, referrals
@@ -121,6 +126,26 @@ Default Celery worker for email notifications and referral processing.
 `send_bulk_tos_notifications` - Queue bulk TOS notifications
 - Defined: `wafer_space/legal/tasks.py:136`
 - Called from: Django admin interface
+
+`checks_create` - Create checks from ready files
+- Defined: `wafer_space/projects/tasks.py:3093`
+- Called from: Celery Beat scheduler (periodic, every 30s)
+
+`checks_dispatch` - Dispatch PENDING checks to docker-persistent
+- Defined: `wafer_space/projects/tasks.py:3033`
+- Called from: Celery Beat scheduler (periodic, every 30s)
+
+`checks_retry` - Retry ERROR checks within limit
+- Defined: `wafer_space/projects/tasks.py:3070`
+- Called from: Celery Beat scheduler (periodic, every 60s)
+
+`checks_cleanup_orphaned_dispatch` - Reset stuck DISPATCHED checks
+- Defined: `wafer_space/projects/tasks.py:3121`
+- Called from: Celery Beat scheduler (periodic, every 60s)
+
+`checks_cleanup_orphaned_processing` - Reset stuck PROCESSING checks
+- Defined: `wafer_space/projects/tasks.py:3153`
+- Called from: Celery Beat scheduler (periodic, every 60s)
 
 ---
 
@@ -143,39 +168,39 @@ Dedicated worker for downloading large files (up to 100GB) from external URLs.
 
 ---
 
-### django-celery-manufacturability.service
+### django-celery-docker-persistent.service
 
-Runs manufacturability checks in Docker containers (gf180mcu-precheck).
+Runs long-running Docker jobs (manufacturability checks via gf180mcu-precheck).
 
 - **Type:** forking
 - **User:** celery-mfg
-- **Queues:** manufacturability
-- **Hostname:** manufacturability@%h
+- **Queues:** docker-persistent
+- **Hostname:** docker-persistent@%h
 - **SupplementaryGroups:** docker
 - **ReadWritePaths:** `.../wafer_space/media` (for saving check results)
 
 **Tasks:**
 
-`celery_job_run` - Run gf180mcu-precheck in Docker container
-- Defined: `wafer_space/projects/tasks.py:901`
-- Called from: `wafer_space/projects/tasks.py:3096` (process_manufacturability_check_queue dispatches PENDING checks)
+`check_process_job` - Run gf180mcu-precheck in Docker container
+- Defined: `wafer_space/projects/tasks.py:903`
+- Called from: `wafer_space/projects/tasks.py:3033` (checks_dispatch dispatches PENDING checks)
 - Writes: `check.log_file` (container logs), `check.runs_archive` (run directory tar)
 
 **State Machine:** ManufacturabilityCheck uses a state machine with transitions:
-- PENDING → DISPATCHED → RUNNING → FINISHED/ERROR
-- CANCELLED is a terminal state (cannot be restarted)
+- PENDING → DISPATCHED → PROCESSING → FINISHED/ERROR
+- CANCELLING → CANCELLED is a terminal state (cannot be restarted)
 - ERROR checks can be retried up to 3 times
 
 ---
 
-### django-celery-maintenance.service
+### django-celery-docker-ephemeral.service
 
-Orchestration tasks that manage other tasks and clean up resources.
+Quick Docker operations and cleanup tasks (no long-running containers).
 
 - **Type:** forking
 - **User:** celery-mfg
-- **Queues:** maintenance
-- **Hostname:** maintenance@%h
+- **Queues:** docker-ephemeral
+- **Hostname:** docker-ephemeral@%h
 - **SupplementaryGroups:** docker
 
 **Tasks:**
@@ -184,18 +209,18 @@ Orchestration tasks that manage other tasks and clean up resources.
 - Defined: `wafer_space/projects/tasks.py:2726`
 - Called from: Celery Beat scheduler (periodic)
 
-`process_manufacturability_check_queue` - Orchestrate check scheduling
-- Defined: `wafer_space/projects/tasks.py:3096`
-- Called from: Celery Beat scheduler (periodic)
-- Handles: PENDING → DISPATCHED transitions, watchdog for DISPATCHED/RUNNING, retry for ERROR
-
 `cleanup_old_task_results` - Remove old Celery TaskResult records
 - Defined: `wafer_space/projects/tasks.py:1024`
 - Called from: Celery Beat scheduler (periodic)
 
-`cleanup_orphaned_precheck_containers` - Remove orphaned Docker containers
-- Defined: `wafer_space/projects/tasks.py:3176`
-- Called from: Celery Beat scheduler (periodic)
+`checks_cancelling` - Complete cancellation of CANCELLING checks
+- Defined: `wafer_space/projects/tasks.py:3188`
+- Called from: Celery Beat scheduler (periodic, every 15s)
+- Handles: CANCELLING → CANCELLED transitions, stops containers
+
+`checks_cleanup_orphaned_docker` - Remove orphaned Docker containers
+- Defined: `wafer_space/projects/tasks.py:2935`
+- Called from: Celery Beat scheduler (periodic, every 5min)
 
 ---
 
@@ -233,8 +258,8 @@ This will:
 sudo systemctl status django-gunicorn
 sudo systemctl status django-celery
 sudo systemctl status django-celery-downloads
-sudo systemctl status django-celery-manufacturability
-sudo systemctl status django-celery-maintenance
+sudo systemctl status django-celery-docker-persistent
+sudo systemctl status django-celery-docker-ephemeral
 sudo systemctl status django-celery-beat
 
 # View logs via journalctl
