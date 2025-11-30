@@ -1442,3 +1442,165 @@ class TestProjectSlotSize(TestCase):
         project.refresh_from_db()
         assert project.slot_size == Project.SlotSize.QUARTER
         assert project.slot_size == "0p5x0p5"
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckMarkFinished(TestCase):
+    """Tests for mark_finished() method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_mark_finished_from_running(self):
+        """Can mark RUNNING check as FINISHED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        check.mark_finished(
+            is_manufacturable=True,
+            errors=[],
+            warnings=[],
+            processing_logs="Processing completed successfully",
+        )
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
+        assert check.is_manufacturable is True
+        assert check.celery_job_finished_at is not None
+
+    def test_mark_finished_sets_all_fields(self):
+        """mark_finished() sets all required fields."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+
+        test_errors = [
+            {"rule": "metal1.width", "message": "Width violation"},
+        ]
+        test_warnings = [
+            {"rule": "density", "message": "Low metal density"},
+        ]
+        test_logs = "Step 1: Loading GDS\nStep 2: Running checks\nComplete"
+
+        before = timezone.now()
+        check.mark_finished(
+            is_manufacturable=False,
+            errors=test_errors,
+            warnings=test_warnings,
+            processing_logs=test_logs,
+        )
+        after = timezone.now()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
+        assert check.is_manufacturable is False
+        assert check.errors == test_errors
+        assert check.warnings == test_warnings
+        assert check.processing_logs == test_logs
+        assert check.celery_job_finished_at is not None
+        assert before <= check.celery_job_finished_at <= after
+
+    def test_mark_finished_from_pending_raises(self):
+        """Cannot mark PENDING check as FINISHED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        with pytest.raises(InvalidStateTransitionError) as exc_info:
+            check.mark_finished(
+                is_manufacturable=True,
+                errors=[],
+                warnings=[],
+                processing_logs="Should fail",
+            )
+
+        assert "pending" in str(exc_info.value).lower()
+        assert "finished" in str(exc_info.value).lower()
+
+    def test_mark_finished_from_dispatched_raises(self):
+        """Cannot mark DISPATCHED check as FINISHED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+        )
+        with pytest.raises(InvalidStateTransitionError) as exc_info:
+            check.mark_finished(
+                is_manufacturable=True,
+                errors=[],
+                warnings=[],
+                processing_logs="Should fail",
+            )
+
+        assert "dispatched" in str(exc_info.value).lower()
+        assert "finished" in str(exc_info.value).lower()
+
+    def test_mark_finished_from_finished_raises(self):
+        """Cannot mark FINISHED check as FINISHED again (terminal state)."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_finished(
+                is_manufacturable=True,
+                errors=[],
+                warnings=[],
+                processing_logs="Should fail",
+            )
+
+    def test_mark_finished_from_error_raises(self):
+        """Cannot mark ERROR check as FINISHED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+        )
+        with pytest.raises(InvalidStateTransitionError) as exc_info:
+            check.mark_finished(
+                is_manufacturable=True,
+                errors=[],
+                warnings=[],
+                processing_logs="Should fail",
+            )
+
+        assert "error" in str(exc_info.value).lower()
+        assert "finished" in str(exc_info.value).lower()
+
+    def test_mark_finished_from_cancelled_raises(self):
+        """Cannot mark CANCELLED check as FINISHED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLED,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_finished(
+                is_manufacturable=True,
+                errors=[],
+                warnings=[],
+                processing_logs="Should fail",
+            )

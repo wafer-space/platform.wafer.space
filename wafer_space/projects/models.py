@@ -1333,6 +1333,50 @@ class ManufacturabilityCheck(models.Model):
             ]
         )
 
+    def mark_finished(
+        self,
+        *,
+        is_manufacturable: bool,
+        errors: list[dict],
+        warnings: list[dict],
+        processing_logs: str,
+    ) -> None:
+        """Mark check as finished with results.
+
+        Pathway 4: RUNNING → FINISHED
+
+        Args:
+            is_manufacturable: Whether the design is manufacturable
+            errors: List of error dicts (manufacturing issues)
+            warnings: List of warning dicts (manufacturing warnings)
+            processing_logs: Full log output from processing
+
+        Raises:
+            InvalidStateTransitionError: If transition is not allowed
+        """
+        if not self.can_transition_to(self.Status.FINISHED):
+            raise InvalidStateTransitionError(
+                from_status=self.status,
+                to_status=self.Status.FINISHED,
+            )
+
+        self.status = self.Status.FINISHED
+        self.is_manufacturable = is_manufacturable
+        self.errors = errors
+        self.warnings = warnings
+        self.processing_logs = processing_logs
+        self.celery_job_finished_at = timezone.now()
+        self.save(
+            update_fields=[
+                "status",
+                "is_manufacturable",
+                "errors",
+                "warnings",
+                "processing_logs",
+                "celery_job_finished_at",
+            ]
+        )
+
     def cancel(self, reason: str = "Cancelled by user") -> str | None:
         """Cancel the check if it's still running.
 
