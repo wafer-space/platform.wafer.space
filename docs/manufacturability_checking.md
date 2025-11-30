@@ -30,8 +30,16 @@ The check runs in a Docker container and takes up to 3 hours. You can:
 
 **Concurrency Limits:**
 - You can only have 1 active check at a time
-- Multiple checks can be queued
+- Multiple checks can be pending
 - System-wide limit (default: 4 concurrent checks)
+
+**Check States:**
+- **PENDING** - Waiting for capacity to start
+- **DISPATCHED** - Sent to worker queue
+- **RUNNING** - Docker container executing analysis
+- **FINISHED** - Analysis complete (check results available)
+- **ERROR** - System failure (auto-retries up to 3 times)
+- **CANCELLED** - User cancelled (terminal, cannot be restarted)
 
 ### 3. Review Results
 
@@ -94,11 +102,12 @@ These indicate infrastructure problems:
 
 ## Troubleshooting
 
-### Check is Queued for a Long Time
+### Check is Pending for a Long Time
 
 - Check queue position on project detail page
 - System has limited concurrent capacity (default: 4)
 - Large designs take longer to process
+- Checks progress through states: PENDING → DISPATCHED → RUNNING → FINISHED
 
 ### Different Results Locally
 

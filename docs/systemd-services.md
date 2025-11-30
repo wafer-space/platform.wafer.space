@@ -22,7 +22,7 @@ This document describes the systemd service units for platform.wafer.space, thei
 | default           | `send_tos_update_email`                 | Send TOS notification email to user                       |
 | default           | `send_bulk_tos_notifications`           | Queue bulk TOS notifications                              |
 | downloads         | `download_project_file`                 | Download with chunked transfer, resume, hash verification |
-| manufacturability | `check_project_manufacturability`       | Run gf180mcu-precheck in Docker container                 |
+| manufacturability | `celery_job_run`                        | Run gf180mcu-precheck in Docker container                 |
 | maintenance       | `ensure_download_tasks_queued`          | Recover lost download tasks                               |
 | maintenance       | `process_manufacturability_check_queue` | Orchestrate check scheduling                              |
 | maintenance       | `cleanup_old_task_results`              | Remove old Celery TaskResult records                      |
@@ -137,8 +137,8 @@ Dedicated worker for downloading large files (up to 100GB) from external URLs.
 **Tasks:**
 
 `download_project_file` - Chunked transfer with resume support and hash verification
-- Defined: `wafer_space/projects/tasks.py:2440`
-- Called from: `wafer_space/projects/services.py:417` (queue_download_task), `wafer_space/projects/tasks.py:2741` and `:2832` (ensure_download_tasks_queued recovery)
+- Defined: `wafer_space/projects/tasks.py:2460`
+- Called from: `wafer_space/projects/services.py` (queue_download_task), `wafer_space/projects/tasks.py:2726` (ensure_download_tasks_queued recovery)
 - Writes: `project_file.file.save()` saves downloaded files to media
 
 ---
@@ -156,10 +156,15 @@ Runs manufacturability checks in Docker containers (gf180mcu-precheck).
 
 **Tasks:**
 
-`check_project_manufacturability` - Run gf180mcu-precheck in Docker container
-- Defined: `wafer_space/projects/tasks.py:893`
-- Called from: `wafer_space/projects/services.py:649` (queue_manufacturability_check), `wafer_space/projects/tasks.py:3075` (process_manufacturability_check_queue)
+`celery_job_run` - Run gf180mcu-precheck in Docker container
+- Defined: `wafer_space/projects/tasks.py:901`
+- Called from: `wafer_space/projects/tasks.py:3096` (process_manufacturability_check_queue dispatches PENDING checks)
 - Writes: `check.log_file` (container logs), `check.runs_archive` (run directory tar)
+
+**State Machine:** ManufacturabilityCheck uses a state machine with transitions:
+- PENDING → DISPATCHED → RUNNING → FINISHED/ERROR
+- CANCELLED is a terminal state (cannot be restarted)
+- ERROR checks can be retried up to 3 times
 
 ---
 
@@ -176,19 +181,20 @@ Orchestration tasks that manage other tasks and clean up resources.
 **Tasks:**
 
 `ensure_download_tasks_queued` - Recover lost download tasks
-- Defined: `wafer_space/projects/tasks.py:2711`
+- Defined: `wafer_space/projects/tasks.py:2726`
 - Called from: Celery Beat scheduler (periodic)
 
 `process_manufacturability_check_queue` - Orchestrate check scheduling
-- Defined: `wafer_space/projects/tasks.py:3088`
+- Defined: `wafer_space/projects/tasks.py:3096`
 - Called from: Celery Beat scheduler (periodic)
+- Handles: PENDING → DISPATCHED transitions, watchdog for DISPATCHED/RUNNING, retry for ERROR
 
 `cleanup_old_task_results` - Remove old Celery TaskResult records
-- Defined: `wafer_space/projects/tasks.py:1011`
+- Defined: `wafer_space/projects/tasks.py:1024`
 - Called from: Celery Beat scheduler (periodic)
 
 `cleanup_orphaned_precheck_containers` - Remove orphaned Docker containers
-- Defined: `wafer_space/projects/tasks.py:3155`
+- Defined: `wafer_space/projects/tasks.py:3176`
 - Called from: Celery Beat scheduler (periodic)
 
 ---
