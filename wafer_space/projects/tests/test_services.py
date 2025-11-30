@@ -637,12 +637,12 @@ class TestManufacturabilityService(TestCase):
             is_active=True,
         )
 
-    @patch("wafer_space.projects.tasks.celery_job_run.delay")
-    def test_queue_check_creates_new_check(self, mock_task):
-        """Test that queue_check creates a new check and triggers task."""
-        # Mock the Celery task
-        mock_task.return_value = Mock(id="task-123")
+    def test_queue_check_creates_new_check(self):
+        """Test that queue_check creates a new check in PENDING state.
 
+        Note: queue_check no longer directly dispatches to Celery.
+        Dispatching is handled by the periodic scanner task.
+        """
         # Queue the check
         check = ManufacturabilityService.queue_check(self.project, self.project_file)
 
@@ -651,10 +651,8 @@ class TestManufacturabilityService(TestCase):
         assert check.project == self.project
         assert check.project_file == self.project_file
         assert check.status == ManufacturabilityCheck.Status.PENDING
-        assert check.celery_job_id == "task-123"
-
-        # Verify task was called
-        mock_task.assert_called_once_with(check.id)
+        # celery_job_id is empty until dispatch
+        assert check.celery_job_id == ""
 
         # Verify check exists in database
         check_count = ManufacturabilityCheck.objects.filter(
@@ -662,11 +660,10 @@ class TestManufacturabilityService(TestCase):
         ).count()
         assert check_count == 1
 
-    @patch("wafer_space.projects.tasks.celery_job_run.delay")
-    def test_queue_check_resets_existing_check(self, mock_task):
-        """Test that queue_check resets an existing completed check."""
-        # Create an existing completed check
-        existing_check = ManufacturabilityCheck.objects.create(
+    def test_queue_check_rejects_finished_check(self):
+        """Test that queue_check raises error for FINISHED (terminal) check."""
+        # Create an existing FINISHED check (terminal state)
+        ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.FINISHED,
@@ -677,24 +674,11 @@ class TestManufacturabilityService(TestCase):
             retry_count=2,
         )
 
-        # Mock the Celery task
-        mock_task.return_value = Mock(id="task-456")
+        # Attempting to queue again should raise error
+        from wafer_space.projects.exceptions import InvalidStateTransitionError
 
-        # Queue the check again
-        check = ManufacturabilityService.queue_check(self.project, self.project_file)
-
-        # Verify it's the same check instance, but reset
-        assert check.id == existing_check.id
-        assert check.status == ManufacturabilityCheck.Status.PENDING
-        assert check.is_manufacturable is None
-        assert check.errors == []
-        assert check.warnings == []
-        assert check.processing_logs == ""
-        assert check.retry_count == 0
-        assert check.celery_job_id == "task-456"
-
-        # Verify task was called
-        mock_task.assert_called_once_with(check.id)
+        with pytest.raises(InvalidStateTransitionError):
+            ManufacturabilityService.queue_check(self.project, self.project_file)
 
         # Verify only one check exists
         check_count = ManufacturabilityCheck.objects.filter(
