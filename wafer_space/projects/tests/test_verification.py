@@ -57,7 +57,7 @@ class TaskQueuedVerificationTests(TestCase):
 
         assert result is True
         project_file.refresh_from_db()
-        assert project_file.download_status == ProjectFile.DownloadStatus.PENDING
+        assert project_file.download_status == ProjectFile.DownloadStatus.QUEUED
 
     @patch("wafer_space.projects.verification.current_app")
     def test_task_in_active_auto_transitions(self, mock_app):
@@ -84,7 +84,7 @@ class TaskQueuedVerificationTests(TestCase):
 
         assert result is True
         project_file.refresh_from_db()
-        # Status is QUEUED (has task_id but no DownloadAttempt)
+        # Status is QUEUED (has download_task_id but no DownloadAttempt)
         assert project_file.download_status == ProjectFile.DownloadStatus.QUEUED
 
     @patch("wafer_space.projects.verification.current_app")

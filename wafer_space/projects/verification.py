@@ -110,10 +110,10 @@ def is_task_actively_running(project_file: ProjectFile) -> bool:
         return True
 
     # Verify PID exists (if available)
-    if latest_attempt.worker_pid and latest_attempt.worker_hostname:
+    if latest_attempt.celery_worker_pid and latest_attempt.celery_worker_hostname:
         return _verify_worker_process(
-            latest_attempt.worker_pid,
-            latest_attempt.worker_hostname,
+            latest_attempt.celery_worker_pid,
+            latest_attempt.celery_worker_hostname,
         )
 
     return True
@@ -128,7 +128,7 @@ def is_check_task_queued(check: ManufacturabilityCheck) -> bool:
     Returns:
         True if task is queued or started, False if missing
     """
-    task_id = check.task_id
+    task_id = check.celery_job_id
     if not task_id:
         return False
 
@@ -160,7 +160,7 @@ def is_check_task_actively_running(check: ManufacturabilityCheck) -> bool:
     Returns:
         True if task is running with valid PID, False otherwise
     """
-    task_id = check.task_id
+    task_id = check.celery_job_id
     if not task_id:
         return False
 
@@ -180,10 +180,10 @@ def is_check_task_actively_running(check: ManufacturabilityCheck) -> bool:
         return False
 
     # Verify PID exists (if available)
-    if check.worker_pid and check.worker_hostname:
+    if check.celery_worker_pid and check.celery_worker_hostname:
         return _verify_worker_process(
-            check.worker_pid,
-            check.worker_hostname,
+            check.celery_worker_pid,
+            check.celery_worker_hostname,
         )
 
     return True
