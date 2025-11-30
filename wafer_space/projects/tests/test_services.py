@@ -718,16 +718,19 @@ class TestManufacturabilityService(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.FINISHED,
-            is_manufacturable=False,
-            errors=["Error 1", "Error 2"],
-            warnings=["Warning 1"],
+            status=ManufacturabilityCheck.Status.PENDING,
         )
-        check.start_processing()
-        check.complete(
+        check.mark_dispatched(celery_job_id="test-job-id")
+        check.mark_running(
+            celery_worker_pid=12345,
+            celery_worker_hostname="test-worker",
+            docker_container_id="test-container-id",
+        )
+        check.mark_finished(
             is_manufacturable=False,
-            errors=["Error 1", "Error 2"],
-            warnings=["Warning 1"],
+            errors=[{"message": "Error 1"}, {"message": "Error 2"}],
+            warnings=[{"message": "Warning 1"}],
+            processing_logs="Test processing logs",
         )
 
         # Get status
@@ -737,8 +740,8 @@ class TestManufacturabilityService(TestCase):
         assert status is not None
         assert status["status"] == ManufacturabilityCheck.Status.FINISHED
         assert status["is_manufacturable"] is False
-        assert status["errors"] == ["Error 1", "Error 2"]
-        assert status["warnings"] == ["Warning 1"]
+        assert status["errors"] == [{"message": "Error 1"}, {"message": "Error 2"}]
+        assert status["warnings"] == [{"message": "Warning 1"}]
         assert status["celery_job_started_at"] is not None
         assert status["celery_job_finished_at"] is not None
 
@@ -779,7 +782,12 @@ class TestManufacturabilityService(TestCase):
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.PENDING,
         )
-        check.start_processing()
+        check.mark_dispatched(celery_job_id="test-job-id")
+        check.mark_running(
+            celery_worker_pid=12345,
+            celery_worker_hostname="test-worker",
+            docker_container_id="test-container-id",
+        )
 
         # Get status
         status = ManufacturabilityService.get_check_status(self.project)
@@ -799,8 +807,16 @@ class TestManufacturabilityService(TestCase):
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.PENDING,
         )
-        check.start_processing()
-        check.fail("Test error message")
+        check.mark_dispatched(celery_job_id="test-job-id")
+        check.mark_running(
+            celery_worker_pid=12345,
+            celery_worker_hostname="test-worker",
+            docker_container_id="test-container-id",
+        )
+        check.mark_error(
+            error_message="Test error message",
+            processing_logs="Test error logs",
+        )
 
         # Get status
         status = ManufacturabilityService.get_check_status(self.project)

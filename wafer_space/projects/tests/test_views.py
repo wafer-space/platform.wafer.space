@@ -1171,11 +1171,17 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.PENDING,
         )
-        check.start_processing()
-        check.complete(
+        check.mark_dispatched(celery_job_id="test-job-id")
+        check.mark_running(
+            celery_worker_pid=12345,
+            celery_worker_hostname="test-worker",
+            docker_container_id="test-container-id",
+        )
+        check.mark_finished(
             is_manufacturable=False,
-            errors=["Error 1", "Error 2"],
-            warnings=["Warning 1"],
+            errors=[{"message": "Error 1"}, {"message": "Error 2"}],
+            warnings=[{"message": "Warning 1"}],
+            processing_logs="Test processing logs",
         )
 
         # Log in and access detail view
@@ -1188,8 +1194,8 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
         assert check_status is not None
         assert check_status["status"] == ManufacturabilityCheck.Status.FINISHED
         assert check_status["is_manufacturable"] is False
-        assert check_status["errors"] == ["Error 1", "Error 2"]
-        assert check_status["warnings"] == ["Warning 1"]
+        assert check_status["errors"] == [{"message": "Error 1"}, {"message": "Error 2"}]
+        assert check_status["warnings"] == [{"message": "Warning 1"}]
 
 
 @pytest.mark.django_db

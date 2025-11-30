@@ -1208,48 +1208,6 @@ class ManufacturabilityCheck(models.Model):
     def __str__(self):
         return f"Check for {self.project.name} - {self.get_status_display()}"
 
-    def start_processing(self):
-        """Mark check as started."""
-        self.status = self.Status.RUNNING
-        self.celery_job_started_at = timezone.now()
-        self.save()
-
-    def complete(self, is_manufacturable, errors=None, warnings=None, logs=""):
-        """Mark check as completed with results."""
-        self.status = self.Status.FINISHED
-        self.celery_job_finished_at = timezone.now()
-        self.is_manufacturable = is_manufacturable
-        self.errors = errors or []
-        self.warnings = warnings or []
-        self.processing_logs = logs
-        self.save()
-
-        # Update project status
-        if is_manufacturable:
-            self.project.status = Project.Status.MANUFACTURABLE
-        else:
-            self.project.status = Project.Status.NOT_MANUFACTURABLE
-        self.project.is_manufacturable = is_manufacturable
-        self.project.manufacturability_errors = self.errors
-        self.project.check_completed_at = self.celery_job_finished_at
-        self.project.save()
-
-    def fail(self, error_msg: str) -> None:
-        """Mark check as failed due to system error.
-
-        System failures (Docker errors, timeouts, etc.) should be retried.
-        This is different from a check that ran successfully but found
-        manufacturing issues.
-
-        Args:
-            error_msg: Description of the system error
-        """
-        self.status = self.Status.ERROR
-        self.celery_job_finished_at = timezone.now()
-        self.error_message = error_msg
-        self.processing_logs += "\n\n=== SYSTEM FAILURE - See error details above ==="
-        self.save()
-
     def can_retry(self):
         """Check if this check can be retried."""
         return self.retry_count < self.max_retries
@@ -1376,6 +1334,16 @@ class ManufacturabilityCheck(models.Model):
                 "celery_job_finished_at",
             ]
         )
+
+        # Update project status
+        if is_manufacturable:
+            self.project.status = Project.Status.MANUFACTURABLE
+        else:
+            self.project.status = Project.Status.NOT_MANUFACTURABLE
+        self.project.is_manufacturable = is_manufacturable
+        self.project.manufacturability_errors = self.errors
+        self.project.check_completed_at = self.celery_job_finished_at
+        self.project.save()
 
     def mark_error(
         self,
