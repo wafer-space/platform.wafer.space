@@ -864,6 +864,44 @@ def _log_task_complete(logger, task_start, check):
     logger.info("=" * 60)
 
 
+def _initialize_check_for_processing(check, task_request_id, logger):
+    """Initialize check with task tracking info and transition to RUNNING.
+
+    Sets celery_job_id, worker tracking info, and transitions status to RUNNING.
+
+    Args:
+        check: ManufacturabilityCheck instance
+        task_request_id: Celery task request ID
+        logger: Logger instance
+
+    Returns:
+        ProjectFile instance for the check
+    """
+    logger.info("Step 1: Loading check and project data...")
+    check.celery_job_id = task_request_id or "test-task"
+    # Set worker tracking info for orphan detection
+    check.celery_worker_pid = os.getpid()
+    check.celery_worker_hostname = socket.gethostname()
+    check.save(
+        update_fields=[
+            "celery_job_id",
+            "celery_worker_pid",
+            "celery_worker_hostname",
+        ]
+    )
+    # Transition DISPATCHED -> RUNNING
+    check.status = ManufacturabilityCheck.Status.RUNNING
+    check.celery_job_started_at = timezone.now()
+    check.save(update_fields=["status", "celery_job_started_at"])
+
+    project_file = _validate_project_file(check)
+    logger.info("  ✓ Project: %s (ID: %s)", check.project.name, check.project.id)
+    logger.info("  ✓ File: %s", project_file.original_filename)
+    logger.info("  ✓ File size: %s", _format_bytes(project_file.file_size or 0))
+
+    return project_file
+
+
 def _setup_docker_context(check, project_file, task_instance, logger):
     """Set up Docker client and execution context.
 
@@ -895,7 +933,7 @@ def _setup_docker_context(check, project_file, task_instance, logger):
         settings.PRECHECK_TIMEOUT_SECONDS - settings.PRECHECK_SOFT_TIMEOUT_BUFFER
     ),
 )
-def check_process_job(self, check_id):  # noqa: PLR0915
+def check_process_job(self, check_id):
     """Run manufacturability check in Docker container for a single check.
 
     This task performs manufacturability analysis using the gf180mcu-precheck
@@ -914,32 +952,9 @@ def check_process_job(self, check_id):  # noqa: PLR0915
     try:
         _log_task_start(logger, check_id, self.request.id)
 
-        # Step 1: Get check and project
-        logger.info("Step 1: Loading check and project data...")
+        # Step 1: Get check, initialize tracking, transition to RUNNING
         check = ManufacturabilityCheck.objects.get(id=check_id)
-        check.celery_job_id = self.request.id or "test-task"
-        # Set worker tracking info for orphan detection
-        check.celery_worker_pid = os.getpid()
-        check.celery_worker_hostname = socket.gethostname()
-        check.save(
-            update_fields=[
-                "celery_job_id",
-                "celery_worker_pid",
-                "celery_worker_hostname",
-            ]
-        )
-        # Transition DISPATCHED -> RUNNING
-        # (we'll call mark_running after container starts)
-        # For now, just update status manually since we don't have
-        # docker_container_id yet
-        check.status = ManufacturabilityCheck.Status.RUNNING
-        check.celery_job_started_at = timezone.now()
-        check.save(update_fields=["status", "celery_job_started_at"])
-
-        project_file = _validate_project_file(check)
-        logger.info("  ✓ Project: %s (ID: %s)", check.project.name, check.project.id)
-        logger.info("  ✓ File: %s", project_file.original_filename)
-        logger.info("  ✓ File size: %s", _format_bytes(project_file.file_size or 0))
+        project_file = _initialize_check_for_processing(check, self.request.id, logger)
 
         # Step 2: Connect to Docker (in helper)
         context = _setup_docker_context(check, project_file, self, logger)
