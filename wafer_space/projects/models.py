@@ -1075,6 +1075,12 @@ class ManufacturabilityCheck(models.Model):
         default=Status.PENDING,
     )
 
+    # Timestamps
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        help_text="When this check record was created",
+    )
+
     # Processing details
     celery_job_started_at = models.DateTimeField(null=True, blank=True)
     celery_job_finished_at = models.DateTimeField(null=True, blank=True)
