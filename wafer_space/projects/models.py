@@ -1028,12 +1028,12 @@ class ManufacturabilityCheck(models.Model):
     """Track manufacturability checking process for projects."""
 
     class Status(models.TextChoices):
-        QUEUED = "queued", "Queued"
-        STARTING = "starting", "Starting"
-        PROCESSING = "processing", "Processing"
-        COMPLETED = "completed", "Completed"
-        FAILED = "failed", "Failed"
-        CANCELLED = "cancelled", "Cancelled"
+        PENDING = "pending", "Pending"  # Waiting for capacity
+        DISPATCHED = "dispatched", "Dispatched"  # Job sent to Celery
+        RUNNING = "running", "Running"  # Celery worker executing
+        FINISHED = "finished", "Finished"  # Analysis complete
+        ERROR = "error", "Error"  # System/processing failure
+        CANCELLED = "cancelled", "Cancelled"  # User cancelled
 
     # Maximum characters of processing logs to include in GitHub issue body
     GITHUB_ISSUE_LOG_CHARS = 5000
@@ -1051,7 +1051,7 @@ class ManufacturabilityCheck(models.Model):
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
-        default=Status.QUEUED,
+        default=Status.PENDING,
     )
 
     # Processing details
