@@ -4,8 +4,6 @@ This document describes the systemd service units for platform.wafer.space, thei
 
 ## Architecture Overview
 
-The application is split into isolated services, each with minimal permissions:
-
 ```
                                     +-----------------+
                                     |    PostgreSQL   |
@@ -25,266 +23,166 @@ The application is split into isolated services, each with minimal permissions:
                                       +--------+    +--------+       +--------+
 ```
 
-## Service Units
+## Common Configuration
+
+All services share these security hardening settings:
+
+- **NoNewPrivileges=true** - Process cannot gain new privileges
+- **PrivateDevices=true** - Isolated /dev with only pseudo-devices (null, zero, random)
+- **PrivateTmp=true** - Isolated /tmp namespace
+- **ReadOnlyPaths=/home/django/platform.wafer.space** - Application code read-only
+
+RuntimeDirectory and LogsDirectory are automatically excluded from ProtectSystem restrictions.
+
+### Users
+
+| User       | Services                                | Docker Access |
+|------------|----------------------------------------|:-------------:|
+| www-data   | gunicorn, celery, celery-downloads, celery-beat | No      |
+| celery-mfg | celery-manufacturability, celery-maintenance    | Yes     |
+
+The `celery-mfg` user requires `SupplementaryGroups=docker` for Docker socket access at `/var/run/docker.sock`. Note: Docker socket access is root-equivalent.
+
+### Environment Variables
+
+Systemd provides these variables to all services:
+
+- `$RUNTIME_DIRECTORY` - e.g., `/run/platform.wafer.space-celery`
+- `$LOGS_DIRECTORY` - e.g., `/var/log/platform.wafer.space-celery`
+
+---
+
+## Service Details
 
 ### django-gunicorn.service
 
-**Purpose:** WSGI application server serving HTTP requests via Unix socket.
+WSGI application server serving HTTP requests via Unix socket.
 
-| Property         | Value                            |
-|------------------|----------------------------------|
-| Type             | `notify`                         |
-| User             | `www-data`                       |
-| Group            | `www-data`                       |
-| RuntimeDirectory | `platform.wafer.space-gunicorn`  |
-| LogsDirectory    | `platform.wafer.space-gunicorn`  |
+- **Type:** notify
+- **Queues:** -
+- **ProtectSystem:** strict
 
-**Files Written:**
-- `/run/platform.wafer.space-gunicorn/gunicorn.sock` - Unix socket for nginx
-- `/var/log/platform.wafer.space-gunicorn/access.log` - HTTP access logs
-- `/var/log/platform.wafer.space-gunicorn/error.log` - Application errors
-
-**Security Hardening:**
-| Setting         | Value                              | Purpose                       |
-|-----------------|------------------------------------|-------------------------------|
-| ProtectSystem   | `strict`                           | Entire filesystem read-only   |
-| ReadOnlyPaths   | `/home/django/platform.wafer.space`| Application code read-only    |
-| PrivateDevices  | `true`                             | No access to physical devices |
-| PrivateTmp      | `true`                             | Isolated /tmp namespace       |
-| NoNewPrivileges | `true`                             | Cannot gain new privileges    |
-
-**Permissions:**
-- Media write: **No** - File uploads handled by Celery workers
-- Docker access: **No**
-- Network: Yes (serves HTTP via socket)
+**Files:**
+- `$RUNTIME_DIRECTORY/gunicorn.sock` - Unix socket for nginx
+- `$LOGS_DIRECTORY/access.log`, `$LOGS_DIRECTORY/error.log`
 
 ---
 
 ### django-celery.service
 
-**Purpose:** Default Celery worker handling email notifications and referral processing.
+Default Celery worker for email notifications and referral processing.
 
-| Property         | Value                        |
-|------------------|------------------------------|
-| Type             | `forking`                    |
-| User             | `www-data`                   |
-| Group            | `www-data`                   |
-| Queues           | `default`, `referrals`       |
-| Hostname         | `default@%h`                 |
-| RuntimeDirectory | `platform.wafer.space-celery`|
-| LogsDirectory    | `platform.wafer.space-celery`|
+- **Type:** forking
+- **Queues:** default, referrals
+- **Hostname:** default@%h
+- **ProtectSystem:** strict
 
-**Tasks Handled:**
-- `send_tos_update_email` - Sends TOS notification emails
-- `send_bulk_tos_notifications` - Queues bulk TOS notifications
-- Referral-related tasks
-
-**Files Written:**
-- `/run/platform.wafer.space-celery/worker.pid` - Process ID file
-- `/var/log/platform.wafer.space-celery/worker.log` - Worker logs
-
-**Security Hardening:**
-| Setting         | Value                              | Purpose                       |
-|-----------------|------------------------------------|-------------------------------|
-| ProtectSystem   | `strict`                           | Entire filesystem read-only   |
-| ReadOnlyPaths   | `/home/django/platform.wafer.space`| Application code read-only    |
-| PrivateDevices  | `true`                             | No access to physical devices |
-| PrivateTmp      | `true`                             | Isolated /tmp namespace       |
-| NoNewPrivileges | `true`                             | Cannot gain new privileges    |
-
-**Permissions:**
-- Media write: **No** - Email tasks don't write files
-- Docker access: **No**
-- Network: Yes (SMTP for sending emails)
+**Tasks:**
+- `send_tos_update_email` - Send TOS notification email
+- `send_bulk_tos_notifications` - Queue bulk TOS notifications
 
 ---
 
 ### django-celery-downloads.service
 
-**Purpose:** Dedicated worker for downloading large files (up to 100GB) from external URLs.
+Dedicated worker for downloading large files (up to 100GB) from external URLs.
 
-| Property         | Value                                   |
-|------------------|-----------------------------------------|
-| Type             | `forking`                               |
-| User             | `www-data`                              |
-| Group            | `www-data`                              |
-| Queues           | `downloads`                             |
-| Hostname         | `downloads@%h`                          |
-| RuntimeDirectory | `platform.wafer.space-celery-downloads` |
-| LogsDirectory    | `platform.wafer.space-celery-downloads` |
+- **Type:** forking
+- **Queues:** downloads
+- **Hostname:** downloads@%h
+- **ProtectSystem:** strict
+- **ReadWritePaths:** `.../wafer_space/media` (for saving downloaded files)
 
-**Tasks Handled:**
-- `download_project_file` - Downloads files with chunked transfer, resume support, and hash verification
+**Tasks:**
+- `download_project_file` - Chunked transfer with resume support and hash verification
 
-**Files Written:**
-- `/run/platform.wafer.space-celery-downloads/worker.pid` - Process ID file
-- `/var/log/platform.wafer.space-celery-downloads/worker.log` - Worker logs
-- `/home/django/platform.wafer.space/wafer_space/media/**` - Downloaded project files
-
-**Security Hardening:**
-| Setting         | Value                              | Purpose                                |
-|-----------------|------------------------------------|----------------------------------------|
-| ProtectSystem   | `strict`                           | Entire filesystem read-only except allowed |
-| ReadOnlyPaths   | `/home/django/platform.wafer.space`| Application code read-only             |
-| ReadWritePaths  | `.../wafer_space/media`            | Media directory writable               |
-| PrivateDevices  | `true`                             | No access to physical devices          |
-| PrivateTmp      | `true`                             | Isolated /tmp namespace                |
-| NoNewPrivileges | `true`                             | Cannot gain new privileges             |
-
-**Permissions:**
-- Media write: **Yes** - Saves downloaded files via `project_file.file.save()`
-- Docker access: **No**
-- Network: Yes (downloads from external URLs)
+**Media files written:** `project_file.file.save()` saves downloaded files
 
 ---
 
 ### django-celery-manufacturability.service
 
-**Purpose:** Runs manufacturability checks in Docker containers (gf180mcu-precheck).
+Runs manufacturability checks in Docker containers (gf180mcu-precheck).
 
-| Property            | Value                                            |
-|---------------------|--------------------------------------------------|
-| Type                | `forking`                                        |
-| User                | `celery-mfg`                                     |
-| Group               | `celery-mfg`                                     |
-| Queues              | `manufacturability`                              |
-| Hostname            | `manufacturability@%h`                           |
-| RuntimeDirectory    | `platform.wafer.space-celery-manufacturability`  |
-| LogsDirectory       | `platform.wafer.space-celery-manufacturability`  |
-| SupplementaryGroups | `docker`                                         |
+- **Type:** forking
+- **User:** celery-mfg
+- **Queues:** manufacturability
+- **Hostname:** manufacturability@%h
+- **SupplementaryGroups:** docker
+- **ReadWritePaths:** `.../wafer_space/media` (for saving check results)
 
-**Tasks Handled:**
-- `check_project_manufacturability` - Runs Docker containers for design rule checks
+**Tasks:**
+- `check_project_manufacturability` - Run gf180mcu-precheck in Docker container
 
-**Files Written:**
-- `/run/platform.wafer.space-celery-manufacturability/worker.pid` - Process ID file
-- `/var/log/platform.wafer.space-celery-manufacturability/worker.log` - Worker logs
-- `/home/django/platform.wafer.space/wafer_space/media/**` - Check results:
-  - `check.log_file` - Container stdout/stderr logs
-  - `check.runs_archive` - Detailed run directory as tar archive
-
-**Security Hardening:**
-| Setting             | Value                              | Purpose                       |
-|---------------------|------------------------------------|-------------------------------|
-| ReadOnlyPaths       | `/home/django/platform.wafer.space`| Application code read-only    |
-| ReadWritePaths      | `.../wafer_space/media`            | Media directory writable      |
-| PrivateDevices      | `true`                             | No access to physical devices |
-| PrivateTmp          | `true`                             | Isolated /tmp namespace       |
-| NoNewPrivileges     | `true`                             | Cannot gain new privileges    |
-| SupplementaryGroups | `docker`                           | Docker socket access          |
-
-**Permissions:**
-- Media write: **Yes** - Saves log files and run archives
-- Docker access: **Yes** - Runs precheck containers
-- Network: Yes (pulls Docker images)
-
-**Note:** Docker socket access is root-equivalent. The `celery-mfg` user must be in the `docker` group.
+**Media files written:**
+- `check.log_file` - Container stdout/stderr logs
+- `check.runs_archive` - Detailed run directory as tar archive
 
 ---
 
 ### django-celery-maintenance.service
 
-**Purpose:** Orchestration tasks that manage other tasks and clean up resources.
+Orchestration tasks that manage other tasks and clean up resources.
 
-| Property            | Value                                      |
-|---------------------|--------------------------------------------|
-| Type                | `forking`                                  |
-| User                | `celery-mfg`                               |
-| Group               | `celery-mfg`                               |
-| Queues              | `maintenance`                              |
-| Hostname            | `maintenance@%h`                           |
-| RuntimeDirectory    | `platform.wafer.space-celery-maintenance`  |
-| LogsDirectory       | `platform.wafer.space-celery-maintenance`  |
-| SupplementaryGroups | `docker`                                   |
+- **Type:** forking
+- **User:** celery-mfg
+- **Queues:** maintenance
+- **Hostname:** maintenance@%h
+- **SupplementaryGroups:** docker
 
-**Tasks Handled:**
-- `ensure_download_tasks_queued` - Recovers lost download tasks
-- `process_manufacturability_check_queue` - Orchestrates check scheduling
-- `cleanup_old_task_results` - Removes old Celery TaskResult records
-- `cleanup_orphaned_precheck_containers` - Removes orphaned Docker containers
-
-**Files Written:**
-- `/run/platform.wafer.space-celery-maintenance/worker.pid` - Process ID file
-- `/var/log/platform.wafer.space-celery-maintenance/worker.log` - Worker logs
-
-**Security Hardening:**
-| Setting             | Value                              | Purpose                          |
-|---------------------|------------------------------------|----------------------------------|
-| ReadOnlyPaths       | `/home/django/platform.wafer.space`| Application code read-only       |
-| PrivateDevices      | `true`                             | No access to physical devices    |
-| PrivateTmp          | `true`                             | Isolated /tmp namespace          |
-| NoNewPrivileges     | `true`                             | Cannot gain new privileges       |
-| SupplementaryGroups | `docker`                           | Docker socket access for cleanup |
-
-**Permissions:**
-- Media write: **No** - Only orchestrates other tasks and cleans up
-- Docker access: **Yes** - Stops and removes orphaned containers
-- Network: Database only
+**Tasks:**
+- `ensure_download_tasks_queued` - Recover lost download tasks
+- `process_manufacturability_check_queue` - Orchestrate check scheduling
+- `cleanup_old_task_results` - Remove old Celery TaskResult records
+- `cleanup_orphaned_precheck_containers` - Remove orphaned Docker containers
 
 ---
 
 ### django-celery-beat.service
 
-**Purpose:** Celery Beat scheduler that triggers periodic tasks.
+Celery Beat scheduler that triggers periodic tasks.
 
-| Property         | Value                              |
-|------------------|----------------------------------- |
-| Type             | `simple`                           |
-| User             | `www-data`                         |
-| Group            | `www-data`                         |
-| RuntimeDirectory | `platform.wafer.space-celery-beat` |
-| LogsDirectory    | `platform.wafer.space-celery-beat` |
+- **Type:** simple
+- **ProtectSystem:** strict
 
-**Files Written:**
-- `/run/platform.wafer.space-celery-beat/beat.pid` - Process ID file
-- `/run/platform.wafer.space-celery-beat/celerybeat-schedule` - Schedule database
-- `/var/log/platform.wafer.space-celery-beat/beat.log` - Scheduler logs
-
-**Security Hardening:**
-| Setting         | Value                              | Purpose                       |
-|-----------------|------------------------------------|-------------------------------|
-| ProtectSystem   | `strict`                           | Entire filesystem read-only   |
-| ReadOnlyPaths   | `/home/django/platform.wafer.space`| Application code read-only    |
-| PrivateDevices  | `true`                             | No access to physical devices |
-| PrivateTmp      | `true`                             | Isolated /tmp namespace       |
-| NoNewPrivileges | `true`                             | Cannot gain new privileges    |
-
-**Permissions:**
-- Media write: **No** - Only schedules tasks
-- Docker access: **No**
-- Network: Database only (to queue tasks)
+**Files:**
+- `$RUNTIME_DIRECTORY/beat.pid`
+- `$RUNTIME_DIRECTORY/celerybeat-schedule` - Schedule database
+- `$LOGS_DIRECTORY/beat.log`
 
 ---
 
-## Summary Table
+## Summary Tables
 
-| Service                      | User       | Queue(s)           | Purpose                              | Media | Docker |
-|------------------------------|------------|--------------------|--------------------------------------|:-----:|:------:|
-| **gunicorn**                 | www-data   | -                  | WSGI server (HTTP requests via socket) | -   | -      |
-| **celery**                   | www-data   | default, referrals | Email notifications (TOS updates)    | -     | -      |
-| **celery-downloads**         | www-data   | downloads          | File downloads (up to 100GB, chunked)| W     | -      |
-| **celery-manufacturability** | celery-mfg | manufacturability  | Design rule checks (Docker containers)| W    | Y      |
-| **celery-maintenance**       | celery-mfg | maintenance        | Orchestration and cleanup tasks      | -     | Y      |
-| **celery-beat**              | www-data   | -                  | Periodic task scheduler              | -     | -      |
+### Services Overview
+
+| Service                      | User       | Queue(s)           | Media | Docker |
+|------------------------------|------------|--------------------|:-----:|:------:|
+| **gunicorn**                 | www-data   | -                  | -     | -      |
+| **celery**                   | www-data   | default, referrals | -     | -      |
+| **celery-downloads**         | www-data   | downloads          | W     | -      |
+| **celery-manufacturability** | celery-mfg | manufacturability  | W     | Y      |
+| **celery-maintenance**       | celery-mfg | maintenance        | -     | Y      |
+| **celery-beat**              | www-data   | -                  | -     | -      |
 
 **Legend:** W = Write, Y = Yes, - = None
 
-## Task Assignment
+### Task to Queue Mapping
 
-| Queue             | Task                                    | Description                                        |
-|-------------------|-----------------------------------------|----------------------------------------------------|
-| default           | `send_tos_update_email`                 | Send TOS notification email to user                |
-| default           | `send_bulk_tos_notifications`           | Queue bulk TOS notifications                       |
+| Queue             | Task                                    | Description                                               |
+|-------------------|-----------------------------------------|-----------------------------------------------------------|
+| default           | `send_tos_update_email`                 | Send TOS notification email to user                       |
+| default           | `send_bulk_tos_notifications`           | Queue bulk TOS notifications                              |
 | downloads         | `download_project_file`                 | Download with chunked transfer, resume, hash verification |
-| manufacturability | `check_project_manufacturability`       | Run gf180mcu-precheck in Docker container          |
-| maintenance       | `ensure_download_tasks_queued`          | Recover lost download tasks                        |
-| maintenance       | `process_manufacturability_check_queue` | Orchestrate check scheduling                       |
-| maintenance       | `cleanup_old_task_results`              | Remove old Celery TaskResult records               |
-| maintenance       | `cleanup_orphaned_precheck_containers`  | Remove orphaned Docker containers                  |
+| manufacturability | `check_project_manufacturability`       | Run gf180mcu-precheck in Docker container                 |
+| maintenance       | `ensure_download_tasks_queued`          | Recover lost download tasks                               |
+| maintenance       | `process_manufacturability_check_queue` | Orchestrate check scheduling                              |
+| maintenance       | `cleanup_old_task_results`              | Remove old Celery TaskResult records                      |
+| maintenance       | `cleanup_orphaned_precheck_containers`  | Remove orphaned Docker containers                         |
+
+---
 
 ## Code References
-
-This section maps each Celery task to its source code location (where the task is defined) and the callers (where the task is queued).
 
 ### Default Queue Tasks
 
@@ -296,8 +194,7 @@ This section maps each Celery task to its source code location (where the task i
 
 **`send_bulk_tos_notifications`**
 - **Defined:** `wafer_space/legal/tasks.py:136`
-- **Called from:**
-  - Admin actions via Django admin interface
+- **Called from:** Admin actions via Django admin interface
 
 ### Downloads Queue Tasks
 
@@ -320,38 +217,25 @@ This section maps each Celery task to its source code location (where the task i
 
 **`cleanup_old_task_results`**
 - **Defined:** `wafer_space/projects/tasks.py:1011`
-- **Called from:**
-  - Celery Beat scheduler (periodic task)
+- **Called from:** Celery Beat scheduler (periodic task)
 
 **`ensure_download_tasks_queued`**
 - **Defined:** `wafer_space/projects/tasks.py:2711`
-- **Called from:**
-  - Celery Beat scheduler (periodic task)
+- **Called from:** Celery Beat scheduler (periodic task)
 
 **`process_manufacturability_check_queue`**
 - **Defined:** `wafer_space/projects/tasks.py:3088`
-- **Called from:**
-  - Celery Beat scheduler (periodic task)
+- **Called from:** Celery Beat scheduler (periodic task)
 
 **`cleanup_orphaned_precheck_containers`**
 - **Defined:** `wafer_space/projects/tasks.py:3155`
-- **Called from:**
-  - Celery Beat scheduler (periodic task)
+- **Called from:** Celery Beat scheduler (periodic task)
 
-## Detailed Permission Matrix
-
-| Service                  | PrivateDevices | PrivateTmp | NoNewPrivileges | ReadOnlyPaths | ReadWritePaths |
-|--------------------------|----------------|------------|-----------------|---------------|----------------|
-| gunicorn                 | Yes            | Yes        | Yes             | App code      | -              |
-| celery                   | Yes            | Yes        | Yes             | App code      | -              |
-| celery-downloads         | Yes            | Yes        | Yes             | App code      | Media          |
-| celery-manufacturability | Yes            | Yes        | Yes             | App code      | Media          |
-| celery-maintenance       | Yes            | Yes        | Yes             | App code      | -              |
-| celery-beat              | Yes            | Yes        | Yes             | App code      | -              |
+---
 
 ## Directory Structure
 
-```
+```text
 /run/
 ├── platform.wafer.space-gunicorn/
 │   └── gunicorn.sock
@@ -383,16 +267,7 @@ This section maps each Celery task to its source code location (where the task i
     └── beat.log
 ```
 
-## Environment Variables
-
-Each service has access to these systemd-provided environment variables:
-
-| Variable             | Source              | Example Value                        |
-|----------------------|---------------------|--------------------------------------|
-| `$RUNTIME_DIRECTORY` | `RuntimeDirectory=` | `/run/platform.wafer.space-celery`   |
-| `$LOGS_DIRECTORY`    | `LogsDirectory=`    | `/var/log/platform.wafer.space-celery`|
-
-These are used in command-line arguments to avoid hardcoding paths.
+---
 
 ## Installation
 
@@ -409,22 +284,19 @@ This will:
 
 ## Monitoring
 
-Check service status:
 ```bash
+# Check status
 sudo systemctl status django-gunicorn
 sudo systemctl status django-celery
 sudo systemctl status django-celery-downloads
 sudo systemctl status django-celery-manufacturability
 sudo systemctl status django-celery-maintenance
 sudo systemctl status django-celery-beat
-```
 
-View logs:
-```bash
-# Via journalctl
+# View logs via journalctl
 sudo journalctl -u django-celery -f
 
-# Via log files
+# View logs via log files
 sudo tail -f /var/log/platform.wafer.space-celery/worker.log
 ```
 
