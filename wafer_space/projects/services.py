@@ -26,7 +26,6 @@ from .models import Project
 from .models import ProjectFile
 from .security import SecurityValidationError
 from .security import URLValidator
-from .tasks import check_project_manufacturability
 from .tasks import download_project_file
 from .url_handlers import GitHubArtifactHandler
 from .url_handlers import GoogleSourceHandler
@@ -572,12 +571,17 @@ class ManufacturabilityService:
     ) -> ManufacturabilityCheck:
         """Queue a manufacturability check for a specific project file.
 
-        Note: Normally checks are queued automatically by the periodic
-        scan_and_queue_manufacturability_checks task. This method is for
-        manual queueing from admin or other code paths.
+        This method only handles the database state for queueing. The actual
+        dispatch to Celery is handled by the periodic scheduler task
+        (scan_and_queue_manufacturability_checks).
 
-        Thread-safe: Uses database transaction to ensure global
-        concurrency limits are enforced atomically.
+        State Transitions Allowed:
+        - New check creation → PENDING
+        - ERROR → PENDING (retry via reset_for_retry)
+
+        Terminal States (Cannot Queue):
+        - FINISHED: Analysis complete, no re-queueing
+        - CANCELLED: User cancelled, no re-queueing
 
         Args:
             project: The project to check
@@ -589,6 +593,7 @@ class ManufacturabilityService:
 
         Raises:
             ValidationError: If global concurrent limit reached
+            InvalidStateTransitionError: If check is in terminal state
         """
         # Use transaction for database operations only
         with transaction.atomic():
@@ -597,14 +602,35 @@ class ManufacturabilityService:
             check, created = ManufacturabilityCheck.objects.get_or_create(
                 project=project,
                 project_file=project_file,
-                defaults={"status": ManufacturabilityCheck.Status.QUEUED},
+                defaults={"status": ManufacturabilityCheck.Status.PENDING},
             )
 
-            # If already queued/processing, return immediately (idempotent)
+            # If already in active states, return immediately (idempotent)
             if not created and check.status in [
-                ManufacturabilityCheck.Status.QUEUED,
-                ManufacturabilityCheck.Status.PROCESSING,
+                ManufacturabilityCheck.Status.PENDING,
+                ManufacturabilityCheck.Status.DISPATCHED,
+                ManufacturabilityCheck.Status.RUNNING,
             ]:
+                return check
+
+            # Terminal states cannot be re-queued
+            if not created and check.status in [
+                ManufacturabilityCheck.Status.FINISHED,
+                ManufacturabilityCheck.Status.CANCELLED,
+            ]:
+                msg = (
+                    f"Cannot re-queue check in terminal state: {check.status}. "
+                    f"Terminal states (FINISHED, CANCELLED) cannot be re-queued."
+                )
+                raise InvalidStateTransitionError(
+                    from_status=check.status,
+                    to_status=ManufacturabilityCheck.Status.PENDING,
+                )
+
+            # Handle ERROR state - use reset_for_retry
+            if not created and check.status == ManufacturabilityCheck.Status.ERROR:
+                # Use the state machine's reset_for_retry method
+                check.reset_for_retry(reason="Manual retry requested")
                 return check
 
             # Check global concurrent limit (unless forced)
@@ -613,8 +639,9 @@ class ManufacturabilityService:
                 active_count = (
                     active_checks_qs.filter(
                         status__in=[
-                            ManufacturabilityCheck.Status.QUEUED,
-                            ManufacturabilityCheck.Status.PROCESSING,
+                            ManufacturabilityCheck.Status.PENDING,
+                            ManufacturabilityCheck.Status.DISPATCHED,
+                            ManufacturabilityCheck.Status.RUNNING,
                         ],
                     )
                     .exclude(id=check.id)
@@ -632,24 +659,9 @@ class ManufacturabilityService:
                     )
                     raise ValidationError(msg)
 
-            # Reset for new run (including ALL fields)
-            check.status = ManufacturabilityCheck.Status.QUEUED
-            check.is_manufacturable = None  # Reset manufacturability
-            check.errors = []
-            check.warnings = []
-            check.error_message = ""
-            check.processing_logs = ""
-            check.retry_count = 0  # Reset retry count
-            check.started_at = None
-            check.completed_at = None
-            check.save()
-
-        # Queue task OUTSIDE transaction to avoid SQLite broker issues
-        # The check is now committed to the database, so the task can safely
-        # reference it by ID
-        task = check_project_manufacturability.delay(check.id)
-        check.task_id = task.id
-        check.save(update_fields=["task_id"])
+        # Note: We do NOT dispatch to Celery here. The periodic scheduler task
+        # (scan_and_queue_manufacturability_checks) will pick up PENDING checks
+        # and dispatch them to Celery when capacity is available.
 
         return check
 
@@ -673,8 +685,8 @@ class ManufacturabilityService:
                 "is_manufacturable": check.is_manufacturable,
                 "errors": check.errors,
                 "warnings": check.warnings,
-                "started_at": check.started_at,
-                "completed_at": check.completed_at,
+                "started_at": check.celery_job_started_at,
+                "completed_at": check.celery_job_finished_at,
             }
 
     @classmethod
