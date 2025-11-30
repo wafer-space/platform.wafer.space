@@ -591,19 +591,19 @@ class TestProjectFile(TestCase):
         assert hasattr(attempt, "worker_pid")
         assert hasattr(attempt, "worker_hostname")
         assert hasattr(attempt, "task_started_at")
-        assert attempt.celery_worker_pid is None
-        assert attempt.celery_worker_hostname == ""
+        assert attempt.worker_pid is None
+        assert attempt.worker_hostname == ""
         assert attempt.task_started_at is None
 
         # Verify we can set values
-        attempt.celery_worker_pid = TEST_WORKER_PID
-        attempt.celery_worker_hostname = "worker-01"
+        attempt.worker_pid = TEST_WORKER_PID
+        attempt.worker_hostname = "worker-01"
         attempt.task_started_at = timezone.now()
         attempt.save()
 
         attempt.refresh_from_db()
-        assert attempt.celery_worker_pid == TEST_WORKER_PID
-        assert attempt.celery_worker_hostname == "worker-01"
+        assert attempt.worker_pid == TEST_WORKER_PID
+        assert attempt.worker_hostname == "worker-01"
         assert attempt.task_started_at is not None
 
     def test_projectfile_queued_status_exists(self):
