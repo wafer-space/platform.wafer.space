@@ -2,6 +2,34 @@
 
 This document describes the systemd service units for platform.wafer.space, their security configurations, and the principle of least privilege applied to each.
 
+## Services Overview
+
+| Service                      | User       | Queue(s)           | Media | Docker |
+|------------------------------|------------|--------------------|:-----:|:------:|
+| **gunicorn**                 | www-data   | -                  | -     | -      |
+| **celery**                   | www-data   | default, referrals | -     | -      |
+| **celery-downloads**         | www-data   | downloads          | W     | -      |
+| **celery-manufacturability** | celery-mfg | manufacturability  | W     | Y      |
+| **celery-maintenance**       | celery-mfg | maintenance        | -     | Y      |
+| **celery-beat**              | www-data   | -                  | -     | -      |
+
+**Legend:** W = Write, Y = Yes, - = None
+
+## Task to Queue Mapping
+
+| Queue             | Task                                    | Description                                               |
+|-------------------|-----------------------------------------|-----------------------------------------------------------|
+| default           | `send_tos_update_email`                 | Send TOS notification email to user                       |
+| default           | `send_bulk_tos_notifications`           | Queue bulk TOS notifications                              |
+| downloads         | `download_project_file`                 | Download with chunked transfer, resume, hash verification |
+| manufacturability | `check_project_manufacturability`       | Run gf180mcu-precheck in Docker container                 |
+| maintenance       | `ensure_download_tasks_queued`          | Recover lost download tasks                               |
+| maintenance       | `process_manufacturability_check_queue` | Orchestrate check scheduling                              |
+| maintenance       | `cleanup_old_task_results`              | Remove old Celery TaskResult records                      |
+| maintenance       | `cleanup_orphaned_precheck_containers`  | Remove orphaned Docker containers                         |
+
+---
+
 ## Architecture Overview
 
 ```
@@ -176,36 +204,6 @@ Celery Beat scheduler that triggers periodic tasks.
 - `$RUNTIME_DIRECTORY/beat.pid`
 - `$RUNTIME_DIRECTORY/celerybeat-schedule` - Schedule database
 - `$LOGS_DIRECTORY/beat.log`
-
----
-
-## Summary Tables
-
-### Services Overview
-
-| Service                      | User       | Queue(s)           | Media | Docker |
-|------------------------------|------------|--------------------|:-----:|:------:|
-| **gunicorn**                 | www-data   | -                  | -     | -      |
-| **celery**                   | www-data   | default, referrals | -     | -      |
-| **celery-downloads**         | www-data   | downloads          | W     | -      |
-| **celery-manufacturability** | celery-mfg | manufacturability  | W     | Y      |
-| **celery-maintenance**       | celery-mfg | maintenance        | -     | Y      |
-| **celery-beat**              | www-data   | -                  | -     | -      |
-
-**Legend:** W = Write, Y = Yes, - = None
-
-### Task to Queue Mapping
-
-| Queue             | Task                                    | Description                                               |
-|-------------------|-----------------------------------------|-----------------------------------------------------------|
-| default           | `send_tos_update_email`                 | Send TOS notification email to user                       |
-| default           | `send_bulk_tos_notifications`           | Queue bulk TOS notifications                              |
-| downloads         | `download_project_file`                 | Download with chunked transfer, resume, hash verification |
-| manufacturability | `check_project_manufacturability`       | Run gf180mcu-precheck in Docker container                 |
-| maintenance       | `ensure_download_tasks_queued`          | Recover lost download tasks                               |
-| maintenance       | `process_manufacturability_check_queue` | Orchestrate check scheduling                              |
-| maintenance       | `cleanup_old_task_results`              | Remove old Celery TaskResult records                      |
-| maintenance       | `cleanup_orphaned_precheck_containers`  | Remove orphaned Docker containers                         |
 
 ---
 
