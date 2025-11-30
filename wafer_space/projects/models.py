@@ -1072,26 +1072,31 @@ class ManufacturabilityCheck(models.Model):
     )
 
     # Processing details
-    started_at = models.DateTimeField(null=True, blank=True)
-    completed_at = models.DateTimeField(null=True, blank=True)
-    task_id = models.CharField(max_length=100, blank=True, default="")  # Celery task ID
-    queued_at = models.DateTimeField(
+    celery_job_started_at = models.DateTimeField(null=True, blank=True)
+    celery_job_finished_at = models.DateTimeField(null=True, blank=True)
+    celery_job_id = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        help_text="ID of the Celery job processing this check",
+    )
+    celery_job_dispatched_at = models.DateTimeField(
         null=True,
         blank=True,
-        help_text="When check entered/re-entered the QUEUED state",
+        help_text="When job was dispatched to Celery queue",
     )
 
     # Worker tracking (matching DownloadAttempt pattern)
-    worker_pid = models.IntegerField(
+    celery_worker_pid = models.IntegerField(
         null=True,
         blank=True,
-        help_text="Process ID of worker executing this check",
+        help_text="Process ID of Celery worker executing this check",
     )
-    worker_hostname = models.CharField(
+    celery_worker_hostname = models.CharField(
         max_length=255,
         blank=True,
         default="",
-        help_text="Hostname of worker executing this check",
+        help_text="Hostname of Celery worker executing this check",
     )
 
     # Results
