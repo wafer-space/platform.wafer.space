@@ -31,13 +31,13 @@ The application is split into isolated services, each with minimal permissions:
 
 **Purpose:** WSGI application server serving HTTP requests via Unix socket.
 
-| Property | Value |
-|----------|-------|
-| Type | `notify` |
-| User | `www-data` |
-| Group | `www-data` |
-| RuntimeDirectory | `platform.wafer.space-gunicorn` |
-| LogsDirectory | `platform.wafer.space-gunicorn` |
+| Property         | Value                            |
+|------------------|----------------------------------|
+| Type             | `notify`                         |
+| User             | `www-data`                       |
+| Group            | `www-data`                       |
+| RuntimeDirectory | `platform.wafer.space-gunicorn`  |
+| LogsDirectory    | `platform.wafer.space-gunicorn`  |
 
 **Files Written:**
 - `/run/platform.wafer.space-gunicorn/gunicorn.sock` - Unix socket for nginx
@@ -45,13 +45,13 @@ The application is split into isolated services, each with minimal permissions:
 - `/var/log/platform.wafer.space-gunicorn/error.log` - Application errors
 
 **Security Hardening:**
-| Setting | Value | Purpose |
-|---------|-------|---------|
-| ProtectSystem | `strict` | Entire filesystem read-only |
-| ReadOnlyPaths | `/home/django/platform.wafer.space` | Application code read-only |
-| PrivateDevices | `true` | No access to physical devices |
-| PrivateTmp | `true` | Isolated /tmp namespace |
-| NoNewPrivileges | `true` | Cannot gain new privileges |
+| Setting         | Value                              | Purpose                       |
+|-----------------|------------------------------------|-------------------------------|
+| ProtectSystem   | `strict`                           | Entire filesystem read-only   |
+| ReadOnlyPaths   | `/home/django/platform.wafer.space`| Application code read-only    |
+| PrivateDevices  | `true`                             | No access to physical devices |
+| PrivateTmp      | `true`                             | Isolated /tmp namespace       |
+| NoNewPrivileges | `true`                             | Cannot gain new privileges    |
 
 **Permissions:**
 - Media write: **No** - File uploads handled by Celery workers
@@ -64,15 +64,15 @@ The application is split into isolated services, each with minimal permissions:
 
 **Purpose:** Default Celery worker handling email notifications and referral processing.
 
-| Property | Value |
-|----------|-------|
-| Type | `forking` |
-| User | `www-data` |
-| Group | `www-data` |
-| Queues | `default`, `referrals` |
-| Hostname | `default@%h` |
-| RuntimeDirectory | `platform.wafer.space-celery` |
-| LogsDirectory | `platform.wafer.space-celery` |
+| Property         | Value                        |
+|------------------|------------------------------|
+| Type             | `forking`                    |
+| User             | `www-data`                   |
+| Group            | `www-data`                   |
+| Queues           | `default`, `referrals`       |
+| Hostname         | `default@%h`                 |
+| RuntimeDirectory | `platform.wafer.space-celery`|
+| LogsDirectory    | `platform.wafer.space-celery`|
 
 **Tasks Handled:**
 - `send_tos_update_email` - Sends TOS notification emails
@@ -84,13 +84,13 @@ The application is split into isolated services, each with minimal permissions:
 - `/var/log/platform.wafer.space-celery/worker.log` - Worker logs
 
 **Security Hardening:**
-| Setting | Value | Purpose |
-|---------|-------|---------|
-| ProtectSystem | `strict` | Entire filesystem read-only |
-| ReadOnlyPaths | `/home/django/platform.wafer.space` | Application code read-only |
-| PrivateDevices | `true` | No access to physical devices |
-| PrivateTmp | `true` | Isolated /tmp namespace |
-| NoNewPrivileges | `true` | Cannot gain new privileges |
+| Setting         | Value                              | Purpose                       |
+|-----------------|------------------------------------|-------------------------------|
+| ProtectSystem   | `strict`                           | Entire filesystem read-only   |
+| ReadOnlyPaths   | `/home/django/platform.wafer.space`| Application code read-only    |
+| PrivateDevices  | `true`                             | No access to physical devices |
+| PrivateTmp      | `true`                             | Isolated /tmp namespace       |
+| NoNewPrivileges | `true`                             | Cannot gain new privileges    |
 
 **Permissions:**
 - Media write: **No** - Email tasks don't write files
@@ -103,15 +103,15 @@ The application is split into isolated services, each with minimal permissions:
 
 **Purpose:** Dedicated worker for downloading large files (up to 100GB) from external URLs.
 
-| Property | Value |
-|----------|-------|
-| Type | `forking` |
-| User | `www-data` |
-| Group | `www-data` |
-| Queues | `downloads` |
-| Hostname | `downloads@%h` |
+| Property         | Value                                   |
+|------------------|-----------------------------------------|
+| Type             | `forking`                               |
+| User             | `www-data`                              |
+| Group            | `www-data`                              |
+| Queues           | `downloads`                             |
+| Hostname         | `downloads@%h`                          |
 | RuntimeDirectory | `platform.wafer.space-celery-downloads` |
-| LogsDirectory | `platform.wafer.space-celery-downloads` |
+| LogsDirectory    | `platform.wafer.space-celery-downloads` |
 
 **Tasks Handled:**
 - `download_project_file` - Downloads files with chunked transfer, resume support, and hash verification
@@ -122,14 +122,14 @@ The application is split into isolated services, each with minimal permissions:
 - `/home/django/platform.wafer.space/wafer_space/media/**` - Downloaded project files
 
 **Security Hardening:**
-| Setting | Value | Purpose |
-|---------|-------|---------|
-| ProtectSystem | `strict` | Entire filesystem read-only except allowed |
-| ReadOnlyPaths | `/home/django/platform.wafer.space` | Application code read-only |
-| ReadWritePaths | `.../wafer_space/media` | Media directory writable |
-| PrivateDevices | `true` | No access to physical devices |
-| PrivateTmp | `true` | Isolated /tmp namespace |
-| NoNewPrivileges | `true` | Cannot gain new privileges |
+| Setting         | Value                              | Purpose                                |
+|-----------------|------------------------------------|----------------------------------------|
+| ProtectSystem   | `strict`                           | Entire filesystem read-only except allowed |
+| ReadOnlyPaths   | `/home/django/platform.wafer.space`| Application code read-only             |
+| ReadWritePaths  | `.../wafer_space/media`            | Media directory writable               |
+| PrivateDevices  | `true`                             | No access to physical devices          |
+| PrivateTmp      | `true`                             | Isolated /tmp namespace                |
+| NoNewPrivileges | `true`                             | Cannot gain new privileges             |
 
 **Permissions:**
 - Media write: **Yes** - Saves downloaded files via `project_file.file.save()`
@@ -142,16 +142,16 @@ The application is split into isolated services, each with minimal permissions:
 
 **Purpose:** Runs manufacturability checks in Docker containers (gf180mcu-precheck).
 
-| Property | Value |
-|----------|-------|
-| Type | `forking` |
-| User | `celery-mfg` |
-| Group | `celery-mfg` |
-| Queues | `manufacturability` |
-| Hostname | `manufacturability@%h` |
-| RuntimeDirectory | `platform.wafer.space-celery-manufacturability` |
-| LogsDirectory | `platform.wafer.space-celery-manufacturability` |
-| SupplementaryGroups | `docker` |
+| Property            | Value                                            |
+|---------------------|--------------------------------------------------|
+| Type                | `forking`                                        |
+| User                | `celery-mfg`                                     |
+| Group               | `celery-mfg`                                     |
+| Queues              | `manufacturability`                              |
+| Hostname            | `manufacturability@%h`                           |
+| RuntimeDirectory    | `platform.wafer.space-celery-manufacturability`  |
+| LogsDirectory       | `platform.wafer.space-celery-manufacturability`  |
+| SupplementaryGroups | `docker`                                         |
 
 **Tasks Handled:**
 - `check_project_manufacturability` - Runs Docker containers for design rule checks
@@ -164,13 +164,13 @@ The application is split into isolated services, each with minimal permissions:
   - `check.runs_archive` - Detailed run directory as tar archive
 
 **Security Hardening:**
-| Setting | Value | Purpose |
-|---------|-------|---------|
-| ReadOnlyPaths | `/home/django/platform.wafer.space` | Application code read-only |
-| ReadWritePaths | `.../wafer_space/media` | Media directory writable |
-| PrivateTmp | `true` | Isolated /tmp namespace |
-| NoNewPrivileges | `true` | Cannot gain new privileges |
-| SupplementaryGroups | `docker` | Docker socket access |
+| Setting             | Value                              | Purpose                    |
+|---------------------|------------------------------------|----------------------------|
+| ReadOnlyPaths       | `/home/django/platform.wafer.space`| Application code read-only |
+| ReadWritePaths      | `.../wafer_space/media`            | Media directory writable   |
+| PrivateTmp          | `true`                             | Isolated /tmp namespace    |
+| NoNewPrivileges     | `true`                             | Cannot gain new privileges |
+| SupplementaryGroups | `docker`                           | Docker socket access       |
 
 **Permissions:**
 - Media write: **Yes** - Saves log files and run archives
@@ -185,16 +185,16 @@ The application is split into isolated services, each with minimal permissions:
 
 **Purpose:** Orchestration tasks that manage other tasks and clean up resources.
 
-| Property | Value |
-|----------|-------|
-| Type | `forking` |
-| User | `celery-mfg` |
-| Group | `celery-mfg` |
-| Queues | `maintenance` |
-| Hostname | `maintenance@%h` |
-| RuntimeDirectory | `platform.wafer.space-celery-maintenance` |
-| LogsDirectory | `platform.wafer.space-celery-maintenance` |
-| SupplementaryGroups | `docker` |
+| Property            | Value                                      |
+|---------------------|--------------------------------------------|
+| Type                | `forking`                                  |
+| User                | `celery-mfg`                               |
+| Group               | `celery-mfg`                               |
+| Queues              | `maintenance`                              |
+| Hostname            | `maintenance@%h`                           |
+| RuntimeDirectory    | `platform.wafer.space-celery-maintenance`  |
+| LogsDirectory       | `platform.wafer.space-celery-maintenance`  |
+| SupplementaryGroups | `docker`                                   |
 
 **Tasks Handled:**
 - `ensure_download_tasks_queued` - Recovers lost download tasks
@@ -207,12 +207,12 @@ The application is split into isolated services, each with minimal permissions:
 - `/var/log/platform.wafer.space-celery-maintenance/worker.log` - Worker logs
 
 **Security Hardening:**
-| Setting | Value | Purpose |
-|---------|-------|---------|
-| ReadOnlyPaths | `/home/django/platform.wafer.space` | Application code read-only |
-| PrivateTmp | `true` | Isolated /tmp namespace |
-| NoNewPrivileges | `true` | Cannot gain new privileges |
-| SupplementaryGroups | `docker` | Docker socket access for cleanup |
+| Setting             | Value                              | Purpose                      |
+|---------------------|------------------------------------|------------------------------|
+| ReadOnlyPaths       | `/home/django/platform.wafer.space`| Application code read-only   |
+| PrivateTmp          | `true`                             | Isolated /tmp namespace      |
+| NoNewPrivileges     | `true`                             | Cannot gain new privileges   |
+| SupplementaryGroups | `docker`                           | Docker socket access for cleanup |
 
 **Permissions:**
 - Media write: **No** - Only orchestrates other tasks and cleans up
@@ -225,13 +225,13 @@ The application is split into isolated services, each with minimal permissions:
 
 **Purpose:** Celery Beat scheduler that triggers periodic tasks.
 
-| Property | Value |
-|----------|-------|
-| Type | `simple` |
-| User | `www-data` |
-| Group | `www-data` |
+| Property         | Value                              |
+|------------------|----------------------------------- |
+| Type             | `simple`                           |
+| User             | `www-data`                         |
+| Group            | `www-data`                         |
 | RuntimeDirectory | `platform.wafer.space-celery-beat` |
-| LogsDirectory | `platform.wafer.space-celery-beat` |
+| LogsDirectory    | `platform.wafer.space-celery-beat` |
 
 **Files Written:**
 - `/run/platform.wafer.space-celery-beat/beat.pid` - Process ID file
@@ -239,13 +239,13 @@ The application is split into isolated services, each with minimal permissions:
 - `/var/log/platform.wafer.space-celery-beat/beat.log` - Scheduler logs
 
 **Security Hardening:**
-| Setting | Value | Purpose |
-|---------|-------|---------|
-| ProtectSystem | `strict` | Entire filesystem read-only |
-| ReadOnlyPaths | `/home/django/platform.wafer.space` | Application code read-only |
-| PrivateDevices | `true` | No access to physical devices |
-| PrivateTmp | `true` | Isolated /tmp namespace |
-| NoNewPrivileges | `true` | Cannot gain new privileges |
+| Setting         | Value                              | Purpose                       |
+|-----------------|------------------------------------|-------------------------------|
+| ProtectSystem   | `strict`                           | Entire filesystem read-only   |
+| ReadOnlyPaths   | `/home/django/platform.wafer.space`| Application code read-only    |
+| PrivateDevices  | `true`                             | No access to physical devices |
+| PrivateTmp      | `true`                             | Isolated /tmp namespace       |
+| NoNewPrivileges | `true`                             | Cannot gain new privileges    |
 
 **Permissions:**
 - Media write: **No** - Only schedules tasks
@@ -256,29 +256,29 @@ The application is split into isolated services, each with minimal permissions:
 
 ## Summary Table
 
-| Service | User | Queue(s) | Purpose | Media | Docker |
-|---------|------|----------|---------|:-----:|:------:|
-| **gunicorn** | www-data | - | WSGI server (HTTP requests via socket) | - | - |
-| **celery** | www-data | default, referrals | Email notifications (TOS updates) | - | - |
-| **celery-downloads** | www-data | downloads | File downloads (up to 100GB, chunked) | W | - |
-| **celery-manufacturability** | celery-mfg | manufacturability | Design rule checks (Docker containers) | W | Y |
-| **celery-maintenance** | celery-mfg | maintenance | Orchestration and cleanup tasks | - | Y |
-| **celery-beat** | www-data | - | Periodic task scheduler | - | - |
+| Service                      | User       | Queue(s)           | Purpose                              | Media | Docker |
+|------------------------------|------------|--------------------|--------------------------------------|:-----:|:------:|
+| **gunicorn**                 | www-data   | -                  | WSGI server (HTTP requests via socket) | -   | -      |
+| **celery**                   | www-data   | default, referrals | Email notifications (TOS updates)    | -     | -      |
+| **celery-downloads**         | www-data   | downloads          | File downloads (up to 100GB, chunked)| W     | -      |
+| **celery-manufacturability** | celery-mfg | manufacturability  | Design rule checks (Docker containers)| W    | Y      |
+| **celery-maintenance**       | celery-mfg | maintenance        | Orchestration and cleanup tasks      | -     | Y      |
+| **celery-beat**              | www-data   | -                  | Periodic task scheduler              | -     | -      |
 
 **Legend:** W = Write, Y = Yes, - = None
 
 ## Task Assignment
 
-| Queue | Task | Description |
-|-------|------|-------------|
-| default | `send_tos_update_email` | Send TOS notification email to user |
-| default | `send_bulk_tos_notifications` | Queue bulk TOS notifications |
-| downloads | `download_project_file` | Download with chunked transfer, resume, hash verification |
-| manufacturability | `check_project_manufacturability` | Run gf180mcu-precheck in Docker container |
-| maintenance | `ensure_download_tasks_queued` | Recover lost download tasks |
-| maintenance | `process_manufacturability_check_queue` | Orchestrate check scheduling |
-| maintenance | `cleanup_old_task_results` | Remove old Celery TaskResult records |
-| maintenance | `cleanup_orphaned_precheck_containers` | Remove orphaned Docker containers |
+| Queue             | Task                                    | Description                                        |
+|-------------------|-----------------------------------------|----------------------------------------------------|
+| default           | `send_tos_update_email`                 | Send TOS notification email to user                |
+| default           | `send_bulk_tos_notifications`           | Queue bulk TOS notifications                       |
+| downloads         | `download_project_file`                 | Download with chunked transfer, resume, hash verification |
+| manufacturability | `check_project_manufacturability`       | Run gf180mcu-precheck in Docker container          |
+| maintenance       | `ensure_download_tasks_queued`          | Recover lost download tasks                        |
+| maintenance       | `process_manufacturability_check_queue` | Orchestrate check scheduling                       |
+| maintenance       | `cleanup_old_task_results`              | Remove old Celery TaskResult records               |
+| maintenance       | `cleanup_orphaned_precheck_containers`  | Remove orphaned Docker containers                  |
 
 ## Code References
 
@@ -338,14 +338,14 @@ This section maps each Celery task to its source code location (where the task i
 
 ## Detailed Permission Matrix
 
-| Service | PrivateDevices | PrivateTmp | NoNewPrivileges | ReadOnlyPaths | ReadWritePaths |
-|---------|----------------|------------|-----------------|---------------|----------------|
-| gunicorn | Yes | Yes | Yes | App code | - |
-| celery | Yes | Yes | Yes | App code | - |
-| celery-downloads | Yes | Yes | Yes | App code | Media |
-| celery-manufacturability | - | Yes | Yes | App code | Media |
-| celery-maintenance | - | Yes | Yes | App code | - |
-| celery-beat | Yes | Yes | Yes | App code | - |
+| Service                  | PrivateDevices | PrivateTmp | NoNewPrivileges | ReadOnlyPaths | ReadWritePaths |
+|--------------------------|----------------|------------|-----------------|---------------|----------------|
+| gunicorn                 | Yes            | Yes        | Yes             | App code      | -              |
+| celery                   | Yes            | Yes        | Yes             | App code      | -              |
+| celery-downloads         | Yes            | Yes        | Yes             | App code      | Media          |
+| celery-manufacturability | -              | Yes        | Yes             | App code      | Media          |
+| celery-maintenance       | -              | Yes        | Yes             | App code      | -              |
+| celery-beat              | Yes            | Yes        | Yes             | App code      | -              |
 
 ## Directory Structure
 
@@ -385,10 +385,10 @@ This section maps each Celery task to its source code location (where the task i
 
 Each service has access to these systemd-provided environment variables:
 
-| Variable | Source | Example Value |
-|----------|--------|---------------|
-| `$RUNTIME_DIRECTORY` | `RuntimeDirectory=` | `/run/platform.wafer.space-celery` |
-| `$LOGS_DIRECTORY` | `LogsDirectory=` | `/var/log/platform.wafer.space-celery` |
+| Variable             | Source              | Example Value                        |
+|----------------------|---------------------|--------------------------------------|
+| `$RUNTIME_DIRECTORY` | `RuntimeDirectory=` | `/run/platform.wafer.space-celery`   |
+| `$LOGS_DIRECTORY`    | `LogsDirectory=`    | `/var/log/platform.wafer.space-celery`|
 
 These are used in command-line arguments to avoid hardcoding paths.
 
