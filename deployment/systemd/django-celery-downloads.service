@@ -9,14 +9,14 @@ User=www-data
 Group=www-data
 WorkingDirectory=/home/django/platform.wafer.space
 EnvironmentFile=/home/django/platform.wafer.space/.env
-PIDFile=/run/platform.wafer.space/celery-downloads.pid
+PIDFile=/run/platform.wafer.space-celery-downloads/worker.pid
 
 ExecStart=/home/django/platform.wafer.space/.venv/bin/celery \
     -A config \
     worker \
     --loglevel=info \
-    --logfile=/var/log/platform.wafer.space/celery-downloads.log \
-    --pidfile=/run/platform.wafer.space/celery-downloads.pid \
+    --logfile=/var/log/platform.wafer.space-celery-downloads/worker.log \
+    --pidfile=/run/platform.wafer.space-celery-downloads/worker.pid \
     --detach \
     --queues=downloads \
     --hostname=downloads@%h
@@ -27,9 +27,11 @@ ExecReload=/bin/kill -s HUP $MAINPID
 # Startup timeout - give celery time to write PID file
 TimeoutStartSec=30s
 
-# Runtime directory (automatically created on boot)
-RuntimeDirectory=platform.wafer.space
-RuntimeDirectoryMode=0755
+# Isolated runtime and log directories (created automatically)
+RuntimeDirectory=platform.wafer.space-celery-downloads
+RuntimeDirectoryMode=0750
+LogsDirectory=platform.wafer.space-celery-downloads
+LogsDirectoryMode=0750
 
 # Security hardening
 # Media write needed: downloads save files via project_file.file.save()
@@ -38,7 +40,7 @@ PrivateDevices=true
 PrivateTmp=true
 ProtectSystem=strict
 ReadOnlyPaths=/home/django/platform.wafer.space
-ReadWritePaths=/var/log/platform.wafer.space /run/platform.wafer.space /home/django/platform.wafer.space/wafer_space/media
+ReadWritePaths=/var/log/platform.wafer.space-celery-downloads /run/platform.wafer.space-celery-downloads /home/django/platform.wafer.space/wafer_space/media
 
 # Restart policy
 Restart=on-failure

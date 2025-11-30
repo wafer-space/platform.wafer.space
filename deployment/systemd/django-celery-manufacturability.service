@@ -10,14 +10,14 @@ Group=celery-mfg
 WorkingDirectory=/home/django/platform.wafer.space
 Environment="DJANGO_SETTINGS_MODULE=config.settings.production"
 EnvironmentFile=/home/django/platform.wafer.space/.env
-PIDFile=/run/platform.wafer.space/celery-manufacturability.pid
+PIDFile=/run/platform.wafer.space-celery-manufacturability/worker.pid
 
 ExecStart=/home/django/platform.wafer.space/.venv/bin/celery \
     -A config \
     worker \
     --loglevel=info \
-    --logfile=/var/log/platform.wafer.space/celery-manufacturability.log \
-    --pidfile=/run/platform.wafer.space/celery-manufacturability.pid \
+    --logfile=/var/log/platform.wafer.space-celery-manufacturability/worker.log \
+    --pidfile=/run/platform.wafer.space-celery-manufacturability/worker.pid \
     --detach \
     --queues=manufacturability \
     --hostname=manufacturability@%h
@@ -28,6 +28,12 @@ ExecReload=/bin/kill -s HUP $MAINPID
 # Startup timeout - give celery time to write PID file
 TimeoutStartSec=30s
 
+# Isolated runtime and log directories (created automatically)
+RuntimeDirectory=platform.wafer.space-celery-manufacturability
+RuntimeDirectoryMode=0750
+LogsDirectory=platform.wafer.space-celery-manufacturability
+LogsDirectoryMode=0750
+
 # Security hardening
 # NOTE: This service requires Docker socket access, which is root-equivalent.
 # Media write needed: saves check.log_file and check.runs_archive after container run.
@@ -35,7 +41,7 @@ TimeoutStartSec=30s
 NoNewPrivileges=true
 PrivateTmp=true
 ReadOnlyPaths=/home/django/platform.wafer.space
-ReadWritePaths=/var/log/platform.wafer.space /run/platform.wafer.space /home/django/platform.wafer.space/wafer_space/media
+ReadWritePaths=/var/log/platform.wafer.space-celery-manufacturability /run/platform.wafer.space-celery-manufacturability /home/django/platform.wafer.space/wafer_space/media
 
 # Docker socket access
 SupplementaryGroups=docker

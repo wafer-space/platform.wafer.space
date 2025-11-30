@@ -10,14 +10,14 @@ Group=celery-mfg
 WorkingDirectory=/home/django/platform.wafer.space
 Environment="DJANGO_SETTINGS_MODULE=config.settings.production"
 EnvironmentFile=/home/django/platform.wafer.space/.env
-PIDFile=/run/platform.wafer.space/celery-maintenance.pid
+PIDFile=/run/platform.wafer.space-celery-maintenance/worker.pid
 
 ExecStart=/home/django/platform.wafer.space/.venv/bin/celery \
     -A config \
     worker \
     --loglevel=info \
-    --logfile=/var/log/platform.wafer.space/celery-maintenance.log \
-    --pidfile=/run/platform.wafer.space/celery-maintenance.pid \
+    --logfile=/var/log/platform.wafer.space-celery-maintenance/worker.log \
+    --pidfile=/run/platform.wafer.space-celery-maintenance/worker.pid \
     --detach \
     --queues=maintenance \
     --hostname=maintenance@%h
@@ -28,6 +28,12 @@ ExecReload=/bin/kill -s HUP $MAINPID
 # Startup timeout - give celery time to write PID file
 TimeoutStartSec=30s
 
+# Isolated runtime and log directories (created automatically)
+RuntimeDirectory=platform.wafer.space-celery-maintenance
+RuntimeDirectoryMode=0750
+LogsDirectory=platform.wafer.space-celery-maintenance
+LogsDirectoryMode=0750
+
 # Security hardening
 # NOTE: This service requires Docker socket access for container cleanup.
 # No media write needed - orchestration and cleanup tasks only (DB + Docker API).
@@ -35,7 +41,7 @@ TimeoutStartSec=30s
 NoNewPrivileges=true
 PrivateTmp=true
 ReadOnlyPaths=/home/django/platform.wafer.space
-ReadWritePaths=/var/log/platform.wafer.space /run/platform.wafer.space
+ReadWritePaths=/var/log/platform.wafer.space-celery-maintenance /run/platform.wafer.space-celery-maintenance
 
 # Docker socket access
 SupplementaryGroups=docker
