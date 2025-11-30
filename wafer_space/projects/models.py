@@ -1406,6 +1406,35 @@ class ManufacturabilityCheck(models.Model):
         self.celery_job_finished_at = timezone.now()
         self.save()
 
+    def mark_cancelling(self, *, reason: str) -> None:
+        """Request cancellation - transitions to CANCELLING state.
+
+        Cleanup task will complete the transition to CANCELLED after
+        revoking Celery task and stopping Docker container.
+
+        Args:
+            reason: Description of why the check is being cancelled
+
+        Raises:
+            InvalidStateTransitionError: If transition is not allowed
+        """
+        if not self.can_transition_to(self.Status.CANCELLING):
+            raise InvalidStateTransitionError(
+                from_status=self.status,
+                to_status=self.Status.CANCELLING,
+            )
+
+        self.status = self.Status.CANCELLING
+
+        # Append reason to processing_logs
+        cancellation_msg = f"CANCELLATION REQUESTED: {reason}"
+        if self.processing_logs:
+            self.processing_logs += f"\n\n{cancellation_msg}"
+        else:
+            self.processing_logs = cancellation_msg
+
+        self.save()
+
     def mark_cancelled(self, *, reason: str) -> str | None:
         """Mark check as cancelled by user.
 

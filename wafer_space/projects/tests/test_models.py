@@ -706,6 +706,125 @@ class TestManufacturabilityCheckCancellingState(TestCase):
 
 
 @pytest.mark.django_db
+class TestManufacturabilityCheckMarkCancelling(TestCase):
+    """Test mark_cancelling method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_mark_cancelling_from_pending(self):
+        """Test mark_cancelling transitions PENDING to CANCELLING."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+
+        check.mark_cancelling(reason="User requested cancellation")
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLING
+        assert "User requested cancellation" in check.processing_logs
+
+    def test_mark_cancelling_from_dispatched(self):
+        """Test mark_cancelling transitions DISPATCHED to CANCELLING."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+            celery_job_id="test-job-123",
+        )
+
+        check.mark_cancelling(reason="New file submitted")
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLING
+        # Job ID preserved for cleanup task
+        assert check.celery_job_id == "test-job-123"
+
+    def test_mark_cancelling_from_running(self):
+        """Test mark_cancelling transitions RUNNING to CANCELLING."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            docker_container_id="abc123def",
+        )
+
+        check.mark_cancelling(reason="Admin cancelled")
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLING
+        # Container ID preserved for cleanup task
+        assert check.docker_container_id == "abc123def"
+
+    def test_mark_cancelling_appends_to_existing_logs(self):
+        """Test mark_cancelling appends reason to existing logs."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            processing_logs="Previous log output",
+        )
+
+        check.mark_cancelling(reason="Cancelled by user")
+
+        check.refresh_from_db()
+        assert "Previous log output" in check.processing_logs
+        assert "CANCELLATION REQUESTED: Cancelled by user" in check.processing_logs
+
+    def test_mark_cancelling_from_finished_raises(self):
+        """Test mark_cancelling raises for terminal FINISHED state."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_cancelling(reason="Should fail")
+
+    def test_mark_cancelling_from_cancelled_raises(self):
+        """Test mark_cancelling raises for terminal CANCELLED state."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLED,
+        )
+
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_cancelling(reason="Should fail")
+
+    def test_mark_cancelling_from_error_raises(self):
+        """Test mark_cancelling raises for ERROR state (should retry instead)."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+        )
+
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_cancelling(reason="Should fail")
+
+
+@pytest.mark.django_db
 class TestManufacturabilityCheckMarkCancelled(TestCase):
     """Test ManufacturabilityCheck.mark_cancelled() method."""
 
