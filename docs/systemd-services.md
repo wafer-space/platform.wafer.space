@@ -254,16 +254,42 @@ The application is split into isolated services, each with minimal permissions:
 
 ---
 
-## Permission Matrix
+## Summary Table
 
-| Service | User | Media | Docker | ProtectSystem |
-|---------|------|-------|--------|---------------|
-| gunicorn | www-data | No | No | strict |
-| celery (default) | www-data | No | No | strict |
-| celery-downloads | www-data | **Yes** | No | strict |
-| celery-manufacturability | celery-mfg | **Yes** | **Yes** | - |
-| celery-maintenance | celery-mfg | No | **Yes** | - |
-| celery-beat | www-data | No | No | strict |
+| Service | User | Queue(s) | Purpose | Media | Docker |
+|---------|------|----------|---------|:-----:|:------:|
+| **gunicorn** | www-data | - | WSGI server (HTTP requests via socket) | - | - |
+| **celery** | www-data | default, referrals | Email notifications (TOS updates) | - | - |
+| **celery-downloads** | www-data | downloads | File downloads (up to 100GB, chunked) | W | - |
+| **celery-manufacturability** | celery-mfg | manufacturability | Design rule checks (Docker containers) | W | Y |
+| **celery-maintenance** | celery-mfg | maintenance | Orchestration and cleanup tasks | - | Y |
+| **celery-beat** | www-data | - | Periodic task scheduler | - | - |
+
+**Legend:** W = Write, Y = Yes, - = None
+
+## Task Assignment
+
+| Queue | Task | Description |
+|-------|------|-------------|
+| default | `send_tos_update_email` | Send TOS notification email to user |
+| default | `send_bulk_tos_notifications` | Queue bulk TOS notifications |
+| downloads | `download_project_file` | Download with chunked transfer, resume, hash verification |
+| manufacturability | `check_project_manufacturability` | Run gf180mcu-precheck in Docker container |
+| maintenance | `ensure_download_tasks_queued` | Recover lost download tasks |
+| maintenance | `process_manufacturability_check_queue` | Orchestrate check scheduling |
+| maintenance | `cleanup_old_task_results` | Remove old Celery TaskResult records |
+| maintenance | `cleanup_orphaned_precheck_containers` | Remove orphaned Docker containers |
+
+## Detailed Permission Matrix
+
+| Service | PrivateDevices | PrivateTmp | NoNewPrivileges | ReadOnlyPaths | ReadWritePaths |
+|---------|----------------|------------|-----------------|---------------|----------------|
+| gunicorn | Yes | Yes | Yes | App code | - |
+| celery | Yes | Yes | Yes | App code | - |
+| celery-downloads | Yes | Yes | Yes | App code | Media |
+| celery-manufacturability | - | Yes | Yes | App code | Media |
+| celery-maintenance | - | Yes | Yes | App code | - |
+| celery-beat | Yes | Yes | Yes | App code | - |
 
 ## Directory Structure
 
