@@ -24,7 +24,6 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
 from django.test import TestCase
-from django.utils import timezone
 
 from wafer_space.projects import tasks
 from wafer_space.projects.models import DownloadAttempt
@@ -46,7 +45,6 @@ from wafer_space.projects.tasks import checks_create
 from wafer_space.projects.tasks import checks_dispatch
 from wafer_space.projects.tasks import checks_retry
 from wafer_space.projects.tasks import download_project_file
-from wafer_space.projects.tasks import process_manufacturability_check_queue
 
 User = get_user_model()
 TEST_PASSWORD = "testpass123"  # noqa: S105 - Test password constant
@@ -1307,157 +1305,6 @@ class DownloadTaskTests(TestCase):
         project_file.refresh_from_db()
         assert project_file.hash_md5 == expected_md5
         assert project_file.hash_sha1 == expected_sha1
-
-
-@pytest.mark.django_db
-class TestProcessManufacturabilityCheckQueue(TestCase):
-    """Test the process_manufacturability_check_queue periodic task (state machine)."""
-
-    def setUp(self):
-        """Set up test fixtures."""
-        self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
-        )
-        self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            description="Test project",
-        )
-        self.project_file = ProjectFile.objects.create(
-            project=self.project,
-            original_filename="test.gds",
-            source_url="https://example.com/test.gds",
-            is_active=True,
-            hash_verified=True,
-        )
-        # Create completed download attempt so file is "ready"
-        DownloadAttempt.objects.create(
-            project_file=self.project_file,
-            attempt_number=1,
-            status=DownloadAttempt.Status.COMPLETED,
-        )
-
-    @patch("wafer_space.projects.tasks.check_process_job.delay")
-    def test_cancelled_check_not_dispatched(self, mock_check_task):
-        """Test that cancelled checks are not dispatched."""
-        # Create a cancelled check
-        ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.CANCELLED,
-        )
-
-        # Run the queue processing task
-        result = process_manufacturability_check_queue()
-
-        # Verify no checks were dispatched (cancelled checks are ignored)
-        assert result["pending_dispatched"] == 0
-        mock_check_task.assert_not_called()
-
-        # Verify the check is still cancelled
-        check = ManufacturabilityCheck.objects.get(project_file=self.project_file)
-        assert check.status == ManufacturabilityCheck.Status.CANCELLED
-
-    @patch("wafer_space.projects.tasks.check_process_job.delay")
-    def test_completed_check_not_dispatched(self, mock_check_task):
-        """Test that finished checks are not dispatched."""
-        # Create a completed check
-        ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.FINISHED,
-            is_manufacturable=True,
-        )
-
-        # Run the queue processing task
-        result = process_manufacturability_check_queue()
-
-        # Verify no checks were dispatched
-        assert result["pending_dispatched"] == 0
-        mock_check_task.assert_not_called()
-
-    @patch("wafer_space.projects.tasks.check_process_job.delay")
-    def test_queued_check_gets_dispatched(self, mock_check_task):
-        """Test that PENDING checks get dispatched to DISPATCHED."""
-        mock_check_task.return_value = Mock(id="new-task-123")
-
-        # Create a pending check (as would be created by download completion)
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PENDING,
-            celery_job_dispatched_at=timezone.now(),
-        )
-
-        # Run the queue processing task
-        result = process_manufacturability_check_queue()
-
-        # Verify check was dispatched
-        assert result["pending_dispatched"] == 1
-        mock_check_task.assert_called_once_with(check.id)
-
-        # Verify check transitioned to DISPATCHED
-        check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.DISPATCHED
-        assert check.celery_job_id == "new-task-123"
-
-    @patch("wafer_space.projects.tasks.is_check_task_actively_running")
-    @patch("wafer_space.projects.tasks.is_check_task_queued")
-    @patch("wafer_space.projects.tasks.check_process_job.delay")
-    def test_starting_check_not_re_dispatched(
-        self, mock_check_task, mock_queued, mock_active
-    ):
-        """Test that DISPATCHED checks are not re-dispatched."""
-        # Mock verification: task is in queue but not yet running
-        mock_active.return_value = False
-        mock_queued.return_value = True
-
-        # Create a check already in DISPATCHED state
-        ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHED,
-            celery_job_id="existing-task",
-        )
-
-        # Run the queue processing task
-        result = process_manufacturability_check_queue()
-
-        # Verify no new dispatches (DISPATCHED checks are verified, not dispatched)
-        assert result["pending_dispatched"] == 0
-        assert result["dispatched_verified"] == 1
-        assert result["dispatched_transitioned"] == 0
-        mock_check_task.assert_not_called()
-
-    @patch("wafer_space.projects.tasks.is_check_task_actively_running")
-    @patch("wafer_space.projects.tasks.check_process_job.delay")
-    def test_starting_check_transitions_to_processing(
-        self, mock_check_task, mock_active
-    ):
-        """Test DISPATCHED check transitions to RUNNING when actively running."""
-        # Mock verification: task is actively running
-        mock_active.return_value = True
-
-        # Create a check in DISPATCHED state
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHED,
-            celery_job_id="running-task-123",
-        )
-
-        # Run the queue processing task
-        result = process_manufacturability_check_queue()
-
-        # Verify check transitioned to RUNNING
-        assert result["dispatched_transitioned"] == 1
-        assert result["dispatched_verified"] == 0
-        check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.RUNNING
-        assert check.celery_job_started_at is not None
-        mock_check_task.assert_not_called()
 
 
 @pytest.mark.django_db

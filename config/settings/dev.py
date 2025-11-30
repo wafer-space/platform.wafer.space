@@ -93,7 +93,7 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": PRECHECK_SCAN_INTERVAL_SECONDS,
     },
     "cleanup-orphaned-precheck-containers": {
-        "task": "wafer_space.projects.tasks.cleanup_orphaned_precheck_containers",
+        "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_docker",
         "schedule": PRECHECK_CONTAINER_CLEANUP_INTERVAL_SECONDS,
     },
 }
