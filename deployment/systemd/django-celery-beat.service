@@ -11,19 +11,20 @@ WorkingDirectory=/home/django/platform.wafer.space
 # DJANGO_SETTINGS_MODULE is set in .env file (auto-detected: stage or prod)
 EnvironmentFile=/home/django/platform.wafer.space/.env
 
-ExecStart=/home/django/platform.wafer.space/.venv/bin/celery \
-    -A config \
-    beat \
-    --loglevel=info \
-    --logfile=/var/log/platform.wafer.space-celery-beat/beat.log \
-    --pidfile=/run/platform.wafer.space-celery-beat/beat.pid \
-    --schedule=/run/platform.wafer.space-celery-beat/celerybeat-schedule
-
 # Isolated runtime and log directories (created automatically)
+# Sets $RUNTIME_DIRECTORY and $LOGS_DIRECTORY environment variables
 RuntimeDirectory=platform.wafer.space-celery-beat
 RuntimeDirectoryMode=0750
 LogsDirectory=platform.wafer.space-celery-beat
 LogsDirectoryMode=0750
+
+ExecStart=/home/django/platform.wafer.space/.venv/bin/celery \
+    -A config \
+    beat \
+    --loglevel=info \
+    --logfile=${LOGS_DIRECTORY}/beat.log \
+    --pidfile=${RUNTIME_DIRECTORY}/beat.pid \
+    --schedule=${RUNTIME_DIRECTORY}/celerybeat-schedule
 
 # Security hardening
 # Beat only schedules tasks - no additional filesystem writes needed

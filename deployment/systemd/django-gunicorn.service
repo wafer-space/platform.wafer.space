@@ -11,12 +11,19 @@ WorkingDirectory=/home/django/platform.wafer.space
 # DJANGO_SETTINGS_MODULE is set in .env file (auto-detected: stage or prod)
 EnvironmentFile=/home/django/platform.wafer.space/.env
 
+# Isolated runtime and log directories (created automatically)
+# Sets $RUNTIME_DIRECTORY and $LOGS_DIRECTORY environment variables
+RuntimeDirectory=platform.wafer.space-gunicorn
+RuntimeDirectoryMode=0750
+LogsDirectory=platform.wafer.space-gunicorn
+LogsDirectoryMode=0750
+
 ExecStart=/home/django/platform.wafer.space/.venv/bin/gunicorn \
     --workers 4 \
     --worker-class sync \
-    --bind unix:/run/platform.wafer.space-gunicorn/gunicorn.sock \
-    --access-logfile /var/log/platform.wafer.space-gunicorn/access.log \
-    --error-logfile /var/log/platform.wafer.space-gunicorn/error.log \
+    --bind unix:${RUNTIME_DIRECTORY}/gunicorn.sock \
+    --access-logfile ${LOGS_DIRECTORY}/access.log \
+    --error-logfile ${LOGS_DIRECTORY}/error.log \
     --log-level info \
     --timeout 120 \
     config.wsgi:application
@@ -26,20 +33,13 @@ KillMode=mixed
 TimeoutStopSec=5
 PrivateTmp=true
 
-# Isolated runtime and log directories (created automatically)
-RuntimeDirectory=platform.wafer.space-gunicorn
-RuntimeDirectoryMode=0750
-LogsDirectory=platform.wafer.space-gunicorn
-LogsDirectoryMode=0750
-
 # Security hardening
-# Gunicorn needs media write for file uploads via Django
+# Gunicorn serves requests only - file writes are handled by Celery workers
 # RuntimeDirectory and LogsDirectory are auto-excluded from ProtectSystem
 NoNewPrivileges=true
 PrivateDevices=true
 ProtectSystem=strict
 ReadOnlyPaths=/home/django/platform.wafer.space
-ReadWritePaths=/home/django/platform.wafer.space/wafer_space/media
 
 # Restart policy
 Restart=on-failure
