@@ -689,7 +689,7 @@ class TestServiceIntegrationWithHandlers:
         assert project_file.handler_metadata["requires_github_auth"] is True
 
         # Verify file was created and marked for download
-        assert project_file.download_status == ProjectFile.DownloadStatus.QUEUED
+        assert project_file.download_status == ProjectFile.DownloadStatus.PENDING
         assert project_file.is_active is True
 
         # Verify download task was started

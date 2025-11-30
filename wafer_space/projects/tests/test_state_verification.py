@@ -70,7 +70,7 @@ class DownloadStateVerificationTests(TestCase):
         # Verify state transition
         project_file.refresh_from_db()
         assert project_file.download_task_id == "new-task-123"
-        assert project_file.download_status == ProjectFile.DownloadStatus.QUEUED
+        assert project_file.download_status == ProjectFile.DownloadStatus.PENDING
 
     @patch("wafer_space.projects.tasks.is_task_actively_running")
     @patch("wafer_space.projects.tasks.is_task_queued")
@@ -95,7 +95,7 @@ class DownloadStateVerificationTests(TestCase):
 
         # File should still be QUEUED
         project_file.refresh_from_db()
-        assert project_file.download_status == ProjectFile.DownloadStatus.QUEUED
+        assert project_file.download_status == ProjectFile.DownloadStatus.PENDING
 
     @patch("wafer_space.projects.tasks.is_task_actively_running")
     @patch("wafer_space.projects.tasks.is_task_queued")
@@ -120,7 +120,7 @@ class DownloadStateVerificationTests(TestCase):
 
         # File should be FAILED
         project_file.refresh_from_db()
-        assert project_file.download_status == ProjectFile.DownloadStatus.FAILED
+        assert project_file.download_status == ProjectFile.DownloadStatus.ERROR
         assert "not found in Celery queue" in project_file.download_error
 
     @patch("wafer_space.projects.tasks.is_task_queued")
@@ -197,7 +197,7 @@ class DownloadStateVerificationTests(TestCase):
 
         # First attempt should be marked FAILED
         first_attempt = project_file.download_attempts.get(attempt_number=1)
-        assert first_attempt.status == DownloadAttempt.Status.FAILED
+        assert first_attempt.status == DownloadAttempt.Status.ERROR
         assert "not running" in first_attempt.download_error
 
     @patch("wafer_space.projects.tasks.download_project_file.delay")
@@ -225,7 +225,7 @@ class DownloadStateVerificationTests(TestCase):
                 status=(
                     DownloadAttempt.Status.DOWNLOADING
                     if is_latest
-                    else DownloadAttempt.Status.FAILED
+                    else DownloadAttempt.Status.ERROR
                 ),
             )
 
@@ -269,6 +269,6 @@ class DownloadStateVerificationTests(TestCase):
         attempts = project_file.download_attempts.order_by("attempt_number")
         first_attempt = attempts.first()
         assert first_attempt is not None
-        assert first_attempt.worker_pid == TEST_WORKER_PID
-        assert first_attempt.worker_hostname == TEST_WORKER_HOSTNAME
+        assert first_attempt.celery_worker_pid == TEST_WORKER_PID
+        assert first_attempt.celery_worker_hostname == TEST_WORKER_HOSTNAME
         assert first_attempt.task_started_at is not None

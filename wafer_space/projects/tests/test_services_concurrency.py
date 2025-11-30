@@ -39,7 +39,7 @@ class TestGlobalConcurrency:
 
         check = ManufacturabilityService.queue_check(project, project_file)
 
-        assert check.status == ManufacturabilityCheck.Status.QUEUED
+        assert check.status == ManufacturabilityCheck.Status.PENDING
 
     @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
     def test_allows_multiple_checks_same_user(self, mock_delay, user):
@@ -64,8 +64,8 @@ class TestGlobalConcurrency:
         check1 = ManufacturabilityService.queue_check(project1, project_file1)
         check2 = ManufacturabilityService.queue_check(project2, project_file2)
 
-        assert check1.status == ManufacturabilityCheck.Status.QUEUED
-        assert check2.status == ManufacturabilityCheck.Status.QUEUED
+        assert check1.status == ManufacturabilityCheck.Status.PENDING
+        assert check2.status == ManufacturabilityCheck.Status.PENDING
 
     @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
     @patch.object(settings, "PRECHECK_CONCURRENT_LIMIT", 2)
@@ -128,12 +128,12 @@ class TestGlobalConcurrency:
 
         # Create and complete first check
         check1 = ManufacturabilityService.queue_check(project1, project_file1)
-        check1.status = ManufacturabilityCheck.Status.COMPLETED
+        check1.status = ManufacturabilityCheck.Status.FINISHED
         check1.save()
 
         # Second check should succeed
         check2 = ManufacturabilityService.queue_check(project2, project_file2)
-        assert check2.status == ManufacturabilityCheck.Status.QUEUED
+        assert check2.status == ManufacturabilityCheck.Status.PENDING
 
     @pytest.mark.skipif(
         connection.vendor == "sqlite",

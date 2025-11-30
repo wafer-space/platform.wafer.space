@@ -57,7 +57,7 @@ class TaskQueuedVerificationTests(TestCase):
 
         assert result is True
         project_file.refresh_from_db()
-        assert project_file.download_status == ProjectFile.DownloadStatus.QUEUED
+        assert project_file.download_status == ProjectFile.DownloadStatus.PENDING
 
     @patch("wafer_space.projects.verification.current_app")
     def test_task_in_active_auto_transitions(self, mock_app):
@@ -85,7 +85,7 @@ class TaskQueuedVerificationTests(TestCase):
         assert result is True
         project_file.refresh_from_db()
         # Status is QUEUED (has task_id but no DownloadAttempt)
-        assert project_file.download_status == ProjectFile.DownloadStatus.QUEUED
+        assert project_file.download_status == ProjectFile.DownloadStatus.PENDING
 
     @patch("wafer_space.projects.verification.current_app")
     def test_task_not_found_returns_false(self, mock_app):
@@ -137,8 +137,8 @@ class TaskActivelyRunningTests(TestCase):
             project_file=project_file,
             attempt_number=1,
             status=DownloadAttempt.Status.DOWNLOADING,
-            worker_pid=12345,
-            worker_hostname="worker-01",
+            celery_worker_pid=12345,
+            celery_worker_hostname="worker-01",
         )
 
         # Mock Celery inspect
@@ -177,8 +177,8 @@ class TaskActivelyRunningTests(TestCase):
             project_file=project_file,
             attempt_number=1,
             status=DownloadAttempt.Status.DOWNLOADING,
-            worker_pid=99999,
-            worker_hostname="worker-01",
+            celery_worker_pid=99999,
+            celery_worker_hostname="worker-01",
         )
 
         # Mock Celery inspect (task shows as active)
@@ -248,8 +248,8 @@ class CheckTaskQueuedVerificationTests(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.STARTING,
-            task_id="check-task-123",
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+            celery_job_id="check-task-123",
         )
 
         # Mock Celery inspect to return task in reserved
@@ -272,8 +272,8 @@ class CheckTaskQueuedVerificationTests(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.STARTING,
-            task_id="check-task-456",
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+            celery_job_id="check-task-456",
         )
 
         # Mock Celery inspect to return task in active
@@ -296,8 +296,8 @@ class CheckTaskQueuedVerificationTests(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.STARTING,
-            task_id="check-task-789",
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+            celery_job_id="check-task-789",
         )
 
         # Mock Celery inspect to return empty
@@ -315,8 +315,8 @@ class CheckTaskQueuedVerificationTests(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            task_id="",  # Empty task_id
+            status=ManufacturabilityCheck.Status.PENDING,
+            celery_job_id="",  # Empty task_id
         )
 
         result = is_check_task_queued(check)
@@ -351,10 +351,10 @@ class CheckTaskActivelyRunningTests(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PROCESSING,
-            task_id="check-task-123",
-            worker_pid=12345,
-            worker_hostname="worker-01",
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="check-task-123",
+            celery_worker_pid=12345,
+            celery_worker_hostname="worker-01",
         )
 
         # Mock Celery inspect
@@ -385,10 +385,10 @@ class CheckTaskActivelyRunningTests(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PROCESSING,
-            task_id="check-task-456",
-            worker_pid=99999,
-            worker_hostname="worker-01",
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="check-task-456",
+            celery_worker_pid=99999,
+            celery_worker_hostname="worker-01",
         )
 
         # Mock Celery inspect (task shows as active)
@@ -414,8 +414,8 @@ class CheckTaskActivelyRunningTests(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PROCESSING,
-            task_id="check-task-789",
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="check-task-789",
         )
 
         # Mock Celery inspect (empty)
@@ -432,8 +432,8 @@ class CheckTaskActivelyRunningTests(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PROCESSING,
-            task_id="",  # Empty task_id
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="",  # Empty task_id
         )
 
         result = is_check_task_actively_running(check)
@@ -449,10 +449,10 @@ class CheckTaskActivelyRunningTests(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PROCESSING,
-            task_id="check-task-remote",
-            worker_pid=12345,
-            worker_hostname="remote-worker",
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="check-task-remote",
+            celery_worker_pid=12345,
+            celery_worker_hostname="remote-worker",
         )
 
         # Mock Celery inspect

@@ -135,7 +135,7 @@ class TestComplianceCertificationCreateView(TestCase):
         self.check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.COMPLETED,
+            status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=True,
         )
 

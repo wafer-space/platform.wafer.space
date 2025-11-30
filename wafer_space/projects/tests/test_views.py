@@ -155,7 +155,7 @@ class TestProjectDetailView(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.COMPLETED,
+            status=DownloadAttempt.Status.FINISHED,
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -622,7 +622,7 @@ class TestProjectSubmitView(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.COMPLETED,
+            status=DownloadAttempt.Status.FINISHED,
         )
 
         # Mark as manufacturable
@@ -709,7 +709,7 @@ class TestProjectSubmitView(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.FAILED,
+            status=DownloadAttempt.Status.ERROR,
             download_error="Download failed",
         )
 
@@ -742,7 +742,7 @@ class TestProjectSubmitView(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.COMPLETED,
+            status=DownloadAttempt.Status.FINISHED,
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -775,7 +775,7 @@ class TestProjectSubmitView(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.COMPLETED,
+            status=DownloadAttempt.Status.FINISHED,
         )
 
         # Mark as manufacturable
@@ -820,7 +820,7 @@ class TestProjectSubmitView(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.COMPLETED,
+            status=DownloadAttempt.Status.FINISHED,
         )
 
         # Mark as manufacturable
@@ -964,7 +964,7 @@ class TestEnhancedProgressDashboard(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.FAILED,
+            status=DownloadAttempt.Status.ERROR,
             download_error="Connection timeout",
         )
 
@@ -1010,7 +1010,7 @@ class TestEnhancedProgressDashboard(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.FAILED,
+            status=DownloadAttempt.Status.ERROR,
             download_error="Network error occurred",
         )
 
@@ -1084,7 +1084,7 @@ class TestEnhancedProgressDashboard(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.COMPLETED,
+            status=DownloadAttempt.Status.FINISHED,
         )
 
         mock_progress.return_value = {
@@ -1136,7 +1136,7 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
         ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
+            status=ManufacturabilityCheck.Status.PENDING,
         )
 
         # Log in and access detail view
@@ -1149,7 +1149,7 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
         assert response.context["check_status"] is not None
         assert (
             response.context["check_status"]["status"]
-            == ManufacturabilityCheck.Status.QUEUED
+            == ManufacturabilityCheck.Status.PENDING
         )
 
     def test_detail_view_check_status_none_when_no_check(self):
@@ -1169,7 +1169,7 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
+            status=ManufacturabilityCheck.Status.PENDING,
         )
         check.start_processing()
         check.complete(
@@ -1186,7 +1186,7 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
         assert response.status_code == HTTP_OK
         check_status = response.context["check_status"]
         assert check_status is not None
-        assert check_status["status"] == ManufacturabilityCheck.Status.COMPLETED
+        assert check_status["status"] == ManufacturabilityCheck.Status.FINISHED
         assert check_status["is_manufacturable"] is False
         assert check_status["errors"] == ["Error 1", "Error 2"]
         assert check_status["warnings"] == ["Warning 1"]
@@ -1227,8 +1227,8 @@ class TestManufacturabilityCheckCancelView(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            task_id="celery-task-123",
+            status=ManufacturabilityCheck.Status.PENDING,
+            celery_job_id="celery-task-123",
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -1246,8 +1246,8 @@ class TestManufacturabilityCheckCancelView(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PROCESSING,
-            task_id="celery-task-456",
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="celery-task-456",
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -1263,7 +1263,7 @@ class TestManufacturabilityCheckCancelView(TestCase):
         ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.COMPLETED,
+            status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=True,
         )
 
@@ -1314,7 +1314,7 @@ class TestManufacturabilityCheckCancelView(TestCase):
         ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
+            status=ManufacturabilityCheck.Status.PENDING,
         )
 
         # Log in as other user
@@ -1330,7 +1330,7 @@ class TestManufacturabilityCheckCancelView(TestCase):
         ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
+            status=ManufacturabilityCheck.Status.PENDING,
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -1370,7 +1370,7 @@ class TestProjectFileSubmitURLViewWarning(TestCase):
         ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
+            status=ManufacturabilityCheck.Status.PENDING,
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -1389,7 +1389,7 @@ class TestProjectFileSubmitURLViewWarning(TestCase):
         ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PROCESSING,
+            status=ManufacturabilityCheck.Status.RUNNING,
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -1404,7 +1404,7 @@ class TestProjectFileSubmitURLViewWarning(TestCase):
         ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.COMPLETED,
+            status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=True,
         )
 

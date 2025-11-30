@@ -395,7 +395,7 @@ INFO: Check completed
         assert check.status == ManufacturabilityCheck.Status.FINISHED
         assert check.is_manufacturable is True
         assert check.errors == []
-        assert check.completed_at is not None
+        assert check.celery_job_finished_at is not None
 
         # Cleanup
         tmp_path.unlink(missing_ok=True)
@@ -476,7 +476,7 @@ FATAL: Design has critical errors
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.FINISHED
         assert check.is_manufacturable is False
-        assert check.completed_at is not None
+        assert check.celery_job_finished_at is not None
 
         # Cleanup
         tmp_path.unlink(missing_ok=True)
@@ -657,7 +657,7 @@ class TestProjectSubmissionIntegration(TestCase):
         DownloadAttempt.objects.create(
             project_file=self.project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.COMPLETED,
+            status=DownloadAttempt.Status.FINISHED,
         )
 
     def test_submit_updates_project_status(self):
@@ -709,7 +709,7 @@ class TestDockerIntegration(TestCase):
         DownloadAttempt.objects.create(
             project_file=self.project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.COMPLETED,
+            status=DownloadAttempt.Status.FINISHED,
         )
 
     @patch("wafer_space.projects.tasks.docker")
@@ -1033,7 +1033,7 @@ class TestContentPipelineIntegration(TestCase):
 
                 # Verify file was marked as failed
                 project_file.refresh_from_db()
-                assert project_file.download_status == ProjectFile.DownloadStatus.FAILED
+                assert project_file.download_status == ProjectFile.DownloadStatus.ERROR
                 assert "not a valid GDS or OASIS" in project_file.download_error
             finally:
                 temp_path.unlink(missing_ok=True)
@@ -1329,7 +1329,7 @@ class TestProcessManufacturabilityCheckQueue(TestCase):
         DownloadAttempt.objects.create(
             project_file=self.project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.COMPLETED,
+            status=DownloadAttempt.Status.FINISHED,
         )
 
     @patch("wafer_space.projects.tasks.celery_job_run.delay")

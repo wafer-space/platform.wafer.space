@@ -92,7 +92,7 @@ class TestProjectCanSubmit(TestCase):
         DownloadAttempt.objects.create(
             project_file=_pf,
             attempt_number=1,
-            status=DownloadAttempt.Status.FAILED,
+            status=DownloadAttempt.Status.ERROR,
             download_error="Download failed",
         )
 
@@ -115,7 +115,7 @@ class TestProjectCanSubmit(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.COMPLETED,
+            status=DownloadAttempt.Status.FINISHED,
         )
 
         can_submit, reason = self.project.can_submit()
@@ -139,7 +139,7 @@ class TestProjectCanSubmit(TestCase):
         DownloadAttempt.objects.create(
             project_file=_pf,
             attempt_number=1,
-            status=DownloadAttempt.Status.COMPLETED,
+            status=DownloadAttempt.Status.FINISHED,
         )
 
         # Mark as manufacturable and submitted
@@ -167,7 +167,7 @@ class TestProjectCanSubmit(TestCase):
         DownloadAttempt.objects.create(
             project_file=_pf,
             attempt_number=1,
-            status=DownloadAttempt.Status.COMPLETED,
+            status=DownloadAttempt.Status.FINISHED,
         )
         # Mark as manufacturable
         self.project.is_manufacturable = True
@@ -217,7 +217,7 @@ class TestProjectSubmit(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.COMPLETED,
+            status=DownloadAttempt.Status.FINISHED,
         )
 
         with pytest.raises(ValidationError) as exc_info:
@@ -242,7 +242,7 @@ class TestProjectSubmit(TestCase):
         DownloadAttempt.objects.create(
             project_file=_pf,
             attempt_number=1,
-            status=DownloadAttempt.Status.COMPLETED,
+            status=DownloadAttempt.Status.FINISHED,
         )
 
         # Mark as manufacturable
@@ -268,7 +268,7 @@ class TestProjectSubmit(TestCase):
         DownloadAttempt.objects.create(
             project_file=_pf,
             attempt_number=1,
-            status=DownloadAttempt.Status.COMPLETED,
+            status=DownloadAttempt.Status.FINISHED,
         )
 
         # Mark as manufacturable
@@ -302,7 +302,7 @@ class TestProjectSubmit(TestCase):
         DownloadAttempt.objects.create(
             project_file=_pf,
             attempt_number=1,
-            status=DownloadAttempt.Status.COMPLETED,
+            status=DownloadAttempt.Status.FINISHED,
         )
 
         # Mark as manufacturable (simulating completed check from earlier workflow)
@@ -339,7 +339,7 @@ class TestProjectSubmit(TestCase):
         DownloadAttempt.objects.create(
             project_file=_pf,
             attempt_number=1,
-            status=DownloadAttempt.Status.COMPLETED,
+            status=DownloadAttempt.Status.FINISHED,
         )
 
         # Mark as manufacturable
@@ -350,8 +350,8 @@ class TestProjectSubmit(TestCase):
         existing_check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=_pf,
-            status=ManufacturabilityCheck.Status.PROCESSING,
-            task_id="existing-task-123",
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="existing-task-123",
         )
 
         self.project.submit()
@@ -361,7 +361,7 @@ class TestProjectSubmit(TestCase):
         # Verify it's the original check (not replaced)
         check = ManufacturabilityCheck.objects.get(project_file=_pf)
         assert check.id == existing_check.id
-        assert check.status == ManufacturabilityCheck.Status.PROCESSING
+        assert check.status == ManufacturabilityCheck.Status.RUNNING
 
     def test_submit_prevents_double_submission(self):
         """Test that submit() prevents double submission."""
@@ -377,7 +377,7 @@ class TestProjectSubmit(TestCase):
         DownloadAttempt.objects.create(
             project_file=_pf,
             attempt_number=1,
-            status=DownloadAttempt.Status.COMPLETED,
+            status=DownloadAttempt.Status.FINISHED,
         )
 
         # Mark as manufacturable
@@ -428,7 +428,7 @@ class TestProjectFileProgressMethods(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.COMPLETED,
+            status=DownloadAttempt.Status.FINISHED,
         )
 
         assert project_file.get_progress_percentage() == PROGRESS_COMPLETE
@@ -478,7 +478,7 @@ class TestProjectFileProgressMethods(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.COMPLETED,
+            status=DownloadAttempt.Status.FINISHED,
         )
 
         message = project_file.get_progress_message()
@@ -497,7 +497,7 @@ class TestProjectFileProgressMethods(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.FAILED,
+            status=DownloadAttempt.Status.ERROR,
             download_error="Download failed",
         )
 
@@ -517,7 +517,7 @@ class TestProjectFileProgressMethods(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.FAILED,
+            status=DownloadAttempt.Status.ERROR,
             download_error="Download failed",
         )
 
@@ -591,19 +591,19 @@ class TestProjectFile(TestCase):
         assert hasattr(attempt, "worker_pid")
         assert hasattr(attempt, "worker_hostname")
         assert hasattr(attempt, "task_started_at")
-        assert attempt.worker_pid is None
-        assert attempt.worker_hostname == ""
+        assert attempt.celery_worker_pid is None
+        assert attempt.celery_worker_hostname == ""
         assert attempt.task_started_at is None
 
         # Verify we can set values
-        attempt.worker_pid = TEST_WORKER_PID
-        attempt.worker_hostname = "worker-01"
+        attempt.celery_worker_pid = TEST_WORKER_PID
+        attempt.celery_worker_hostname = "worker-01"
         attempt.task_started_at = timezone.now()
         attempt.save()
 
         attempt.refresh_from_db()
-        assert attempt.worker_pid == TEST_WORKER_PID
-        assert attempt.worker_hostname == "worker-01"
+        assert attempt.celery_worker_pid == TEST_WORKER_PID
+        assert attempt.celery_worker_hostname == "worker-01"
         assert attempt.task_started_at is not None
 
     def test_projectfile_queued_status_exists(self):
@@ -622,7 +622,7 @@ class TestProjectFile(TestCase):
             original_filename="test.gds",
         )
 
-        assert project_file.download_status == ProjectFile.DownloadStatus.QUEUED
+        assert project_file.download_status == ProjectFile.DownloadStatus.PENDING
 
 
 @pytest.mark.django_db
@@ -912,8 +912,8 @@ class TestManufacturabilityCheckQueueProperties(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PROCESSING,
-            queued_at=timezone.now(),
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_dispatched_at=timezone.now(),
         )
 
         assert check.queue_position is None
@@ -923,8 +923,8 @@ class TestManufacturabilityCheckQueueProperties(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            queued_at=None,
+            status=ManufacturabilityCheck.Status.PENDING,
+            celery_job_dispatched_at=None,
         )
 
         assert check.queue_position is None
@@ -934,8 +934,8 @@ class TestManufacturabilityCheckQueueProperties(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            queued_at=timezone.now(),
+            status=ManufacturabilityCheck.Status.PENDING,
+            celery_job_dispatched_at=timezone.now(),
         )
 
         assert check.queue_position == 1
@@ -956,16 +956,16 @@ class TestManufacturabilityCheckQueueProperties(TestCase):
         ManufacturabilityCheck.objects.create(
             project=project2,
             project_file=file2,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            queued_at=timezone.now() - timedelta(minutes=5),
+            status=ManufacturabilityCheck.Status.PENDING,
+            celery_job_dispatched_at=timezone.now() - timedelta(minutes=5),
         )
 
         # Create our check (behind)
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            queued_at=timezone.now(),
+            status=ManufacturabilityCheck.Status.PENDING,
+            celery_job_dispatched_at=timezone.now(),
         )
 
         assert check.checks_ahead == 1
@@ -995,22 +995,22 @@ class TestManufacturabilityCheckQueueProperties(TestCase):
         ManufacturabilityCheck.objects.create(
             project=project2,
             project_file=file2,
-            status=ManufacturabilityCheck.Status.STARTING,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
         )
 
         # Create PROCESSING check
         ManufacturabilityCheck.objects.create(
             project=project3,
             project_file=file3,
-            status=ManufacturabilityCheck.Status.PROCESSING,
+            status=ManufacturabilityCheck.Status.RUNNING,
         )
 
         # Create our QUEUED check
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            queued_at=timezone.now(),
+            status=ManufacturabilityCheck.Status.PENDING,
+            celery_job_dispatched_at=timezone.now(),
         )
 
         assert check.checks_running == 2  # noqa: PLR2004
@@ -1022,8 +1022,8 @@ class TestManufacturabilityCheckQueueProperties(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            queued_at=queued_time,
+            status=ManufacturabilityCheck.Status.PENDING,
+            celery_job_dispatched_at=queued_time,
         )
 
         duration = check.queue_wait_duration
@@ -1058,10 +1058,10 @@ class TestManufacturabilityCheckResultDisplay(TestCase):
     def test_result_display_empty_when_not_completed(self):
         """Test result_display returns empty string for non-completed checks."""
         statuses = [
-            ManufacturabilityCheck.Status.QUEUED,
-            ManufacturabilityCheck.Status.STARTING,
-            ManufacturabilityCheck.Status.PROCESSING,
-            ManufacturabilityCheck.Status.FAILED,
+            ManufacturabilityCheck.Status.PENDING,
+            ManufacturabilityCheck.Status.DISPATCHED,
+            ManufacturabilityCheck.Status.RUNNING,
+            ManufacturabilityCheck.Status.ERROR,
             ManufacturabilityCheck.Status.CANCELLED,
         ]
         for status in statuses:
@@ -1078,7 +1078,7 @@ class TestManufacturabilityCheckResultDisplay(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.COMPLETED,
+            status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=None,
         )
         assert check.result_display == ""
@@ -1088,7 +1088,7 @@ class TestManufacturabilityCheckResultDisplay(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.COMPLETED,
+            status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=True,
             warnings=[],  # Empty list - no warnings
         )
@@ -1099,7 +1099,7 @@ class TestManufacturabilityCheckResultDisplay(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.COMPLETED,
+            status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=True,
             # warnings uses default empty list
         )
@@ -1110,7 +1110,7 @@ class TestManufacturabilityCheckResultDisplay(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.COMPLETED,
+            status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=True,
             warnings=["Some minor design issue", "Another warning"],
         )
@@ -1121,7 +1121,7 @@ class TestManufacturabilityCheckResultDisplay(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.COMPLETED,
+            status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=False,
             errors=["Critical design rule violation"],
         )

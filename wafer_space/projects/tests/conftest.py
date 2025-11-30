@@ -49,8 +49,8 @@ def create_file_with_status():
         # Create DownloadAttempt if needed for non-PENDING/QUEUED statuses
         if status in [
             ProjectFile.DownloadStatus.DOWNLOADING,
-            ProjectFile.DownloadStatus.COMPLETED,
-            ProjectFile.DownloadStatus.FAILED,
+            ProjectFile.DownloadStatus.FINISHED,
+            ProjectFile.DownloadStatus.ERROR,
         ]:
             DownloadAttempt.objects.create(
                 project_file=project_file,

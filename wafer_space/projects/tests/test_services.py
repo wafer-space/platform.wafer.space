@@ -90,7 +90,7 @@ class TestProjectFileService(TestCase):
         assert project_file.content_type == "application/octet-stream"
         assert project_file.is_active is True
         # Status is QUEUED because download task is started
-        assert project_file.download_status == ProjectFile.DownloadStatus.QUEUED
+        assert project_file.download_status == ProjectFile.DownloadStatus.PENDING
 
         # Verify metadata
         assert metadata["url_rewritten"] is True
@@ -437,7 +437,7 @@ class TestProjectFileService(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.COMPLETED,
+            status=DownloadAttempt.Status.FINISHED,
         )
 
         # Mock task state
@@ -470,7 +470,7 @@ class TestProjectFileService(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.FAILED,
+            status=DownloadAttempt.Status.ERROR,
         )
 
         # Mock task state with error
@@ -650,8 +650,8 @@ class TestManufacturabilityService(TestCase):
         assert check is not None
         assert check.project == self.project
         assert check.project_file == self.project_file
-        assert check.status == ManufacturabilityCheck.Status.QUEUED
-        assert check.task_id == "task-123"
+        assert check.status == ManufacturabilityCheck.Status.PENDING
+        assert check.celery_job_id == "task-123"
 
         # Verify task was called
         mock_task.assert_called_once_with(check.id)
@@ -669,7 +669,7 @@ class TestManufacturabilityService(TestCase):
         existing_check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.COMPLETED,
+            status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=True,
             errors=["Old error"],
             warnings=["Old warning"],
@@ -685,13 +685,13 @@ class TestManufacturabilityService(TestCase):
 
         # Verify it's the same check instance, but reset
         assert check.id == existing_check.id
-        assert check.status == ManufacturabilityCheck.Status.QUEUED
+        assert check.status == ManufacturabilityCheck.Status.PENDING
         assert check.is_manufacturable is None
         assert check.errors == []
         assert check.warnings == []
         assert check.processing_logs == ""
         assert check.retry_count == 0
-        assert check.task_id == "task-456"
+        assert check.celery_job_id == "task-456"
 
         # Verify task was called
         mock_task.assert_called_once_with(check.id)
@@ -709,8 +709,8 @@ class TestManufacturabilityService(TestCase):
         existing_check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            task_id="existing-task-id",
+            status=ManufacturabilityCheck.Status.PENDING,
+            celery_job_id="existing-task-id",
         )
 
         # Mock the Celery task
@@ -721,13 +721,13 @@ class TestManufacturabilityService(TestCase):
 
         # Verify it's the same check instance and unchanged
         assert check.id == existing_check.id
-        assert check.status == ManufacturabilityCheck.Status.QUEUED
+        assert check.status == ManufacturabilityCheck.Status.PENDING
 
         # Task should NOT be called again (already queued)
         mock_task.assert_not_called()
 
-        # task_id should remain unchanged
-        assert check.task_id == "existing-task-id"
+        # celery_job_id should remain unchanged
+        assert check.celery_job_id == "existing-task-id"
 
     def test_get_check_status_returns_correct_data(self):
         """Test that get_check_status returns correct status information."""
@@ -735,7 +735,7 @@ class TestManufacturabilityService(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.COMPLETED,
+            status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=False,
             errors=["Error 1", "Error 2"],
             warnings=["Warning 1"],
@@ -752,12 +752,12 @@ class TestManufacturabilityService(TestCase):
 
         # Verify status data
         assert status is not None
-        assert status["status"] == ManufacturabilityCheck.Status.COMPLETED
+        assert status["status"] == ManufacturabilityCheck.Status.FINISHED
         assert status["is_manufacturable"] is False
         assert status["errors"] == ["Error 1", "Error 2"]
         assert status["warnings"] == ["Warning 1"]
-        assert status["started_at"] is not None
-        assert status["completed_at"] is not None
+        assert status["celery_job_started_at"] is not None
+        assert status["celery_job_finished_at"] is not None
 
     def test_get_check_status_returns_none_when_no_check(self):
         """Test that get_check_status returns None when no check exists."""
@@ -773,7 +773,7 @@ class TestManufacturabilityService(TestCase):
         ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
+            status=ManufacturabilityCheck.Status.PENDING,
         )
 
         # Get status
@@ -781,12 +781,12 @@ class TestManufacturabilityService(TestCase):
 
         # Verify status data
         assert status is not None
-        assert status["status"] == ManufacturabilityCheck.Status.QUEUED
+        assert status["status"] == ManufacturabilityCheck.Status.PENDING
         assert status["is_manufacturable"] is None
         assert status["errors"] == []
         assert status["warnings"] == []
-        assert status["started_at"] is None
-        assert status["completed_at"] is None
+        assert status["celery_job_started_at"] is None
+        assert status["celery_job_finished_at"] is None
 
     def test_get_check_status_for_processing_check(self):
         """Test get_check_status for a processing check."""
@@ -794,7 +794,7 @@ class TestManufacturabilityService(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
+            status=ManufacturabilityCheck.Status.PENDING,
         )
         check.start_processing()
 
@@ -803,10 +803,10 @@ class TestManufacturabilityService(TestCase):
 
         # Verify status data
         assert status is not None
-        assert status["status"] == ManufacturabilityCheck.Status.PROCESSING
+        assert status["status"] == ManufacturabilityCheck.Status.RUNNING
         assert status["is_manufacturable"] is None
-        assert status["started_at"] is not None
-        assert status["completed_at"] is None
+        assert status["celery_job_started_at"] is not None
+        assert status["celery_job_finished_at"] is None
 
     def test_get_check_status_for_failed_check(self):
         """Test get_check_status for a failed check."""
@@ -814,7 +814,7 @@ class TestManufacturabilityService(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
+            status=ManufacturabilityCheck.Status.PENDING,
         )
         check.start_processing()
         check.fail("Test error message")
@@ -824,10 +824,10 @@ class TestManufacturabilityService(TestCase):
 
         # Verify status data
         assert status is not None
-        assert status["status"] == ManufacturabilityCheck.Status.FAILED
+        assert status["status"] == ManufacturabilityCheck.Status.ERROR
         assert status["is_manufacturable"] is None
-        assert status["started_at"] is not None
-        assert status["completed_at"] is not None
+        assert status["celery_job_started_at"] is not None
+        assert status["celery_job_finished_at"] is not None
 
     @patch("wafer_space.projects.services.celery_app")
     def test_cancel_check_cancels_queued_check(self, mock_celery_app):
@@ -835,8 +835,8 @@ class TestManufacturabilityService(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            task_id="celery-task-123",
+            status=ManufacturabilityCheck.Status.PENDING,
+            celery_job_id="celery-task-123",
         )
 
         result = ManufacturabilityService.cancel_check(
@@ -859,8 +859,8 @@ class TestManufacturabilityService(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PROCESSING,
-            task_id="celery-task-456",
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="celery-task-456",
         )
 
         result = ManufacturabilityService.cancel_check(
@@ -882,7 +882,7 @@ class TestManufacturabilityService(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.COMPLETED,
+            status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=True,
         )
 
@@ -890,7 +890,7 @@ class TestManufacturabilityService(TestCase):
 
         assert result is False
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.COMPLETED
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
 
         # Verify Celery was NOT called
         mock_celery_app.control.revoke.assert_not_called()
@@ -901,7 +901,7 @@ class TestManufacturabilityService(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.FAILED,
+            status=ManufacturabilityCheck.Status.ERROR,
             error_message="Previous failure",
         )
 
@@ -909,7 +909,7 @@ class TestManufacturabilityService(TestCase):
 
         assert result is False
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.FAILED
+        assert check.status == ManufacturabilityCheck.Status.ERROR
 
         # Verify Celery was NOT called
         mock_celery_app.control.revoke.assert_not_called()
@@ -942,7 +942,7 @@ class TestFileReplacementCancelsCheck(TestCase):
         DownloadAttempt.objects.create(
             project_file=self.project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.COMPLETED,
+            status=DownloadAttempt.Status.FINISHED,
         )
 
     @patch("wafer_space.projects.services.celery_app")
@@ -961,8 +961,8 @@ class TestFileReplacementCancelsCheck(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            task_id="celery-task-to-cancel",
+            status=ManufacturabilityCheck.Status.PENDING,
+            celery_job_id="celery-task-to-cancel",
         )
 
         # Mock URL validation for new file submission
@@ -1009,8 +1009,8 @@ class TestFileReplacementCancelsCheck(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PROCESSING,
-            task_id="processing-task-to-cancel",
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="processing-task-to-cancel",
         )
 
         # Mock URL validation for new file submission
@@ -1056,7 +1056,7 @@ class TestFileReplacementCancelsCheck(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.COMPLETED,
+            status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=True,
         )
 
@@ -1080,7 +1080,7 @@ class TestFileReplacementCancelsCheck(TestCase):
 
         # Verify the completed check was NOT modified
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.COMPLETED
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
 
         # Verify Celery revoke was NOT called
         mock_celery_app.control.revoke.assert_not_called()
