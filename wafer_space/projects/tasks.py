@@ -2858,38 +2858,6 @@ def ensure_download_tasks_queued():
     }
 
 
-@shared_task
-def update_project_status(project_id, new_status):
-    """
-    Update a project's status.
-
-    Args:
-        project_id: UUID of the project
-        new_status: New status to set
-
-    Returns:
-        dict: Result data
-    """
-    try:
-        project = Project.objects.get(id=project_id)
-        old_status = project.status
-        project.status = new_status
-        project.save()
-
-        return {
-            "status": "completed",
-            "project_id": str(project_id),
-            "old_status": old_status,
-            "new_status": new_status,
-        }
-
-    except Project.DoesNotExist:
-        return {
-            "status": "error",
-            "message": f"Project with id {project_id} not found",
-        }
-
-
 def _count_files_by_check_status(ready_files) -> dict:
     """Count files by their manufacturability check status.
 
