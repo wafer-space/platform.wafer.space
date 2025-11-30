@@ -89,7 +89,7 @@ class TestProjectFileService(TestCase):
         assert project_file.file_size == ONE_MB
         assert project_file.content_type == "application/octet-stream"
         assert project_file.is_active is True
-        # Status is QUEUED because download task is started
+        # Status is PENDING because download task is started
         assert project_file.download_status == ProjectFile.DownloadStatus.PENDING
 
         # Verify metadata

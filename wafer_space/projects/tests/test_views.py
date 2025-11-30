@@ -934,7 +934,7 @@ class TestEnhancedProgressDashboard(TestCase):
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_task_id="celery-task-123",  # Task queued
+            download_task_id="celery-task-123",  # Task dispatched
         )
         # Intentionally NOT creating DownloadAttempt to simulate race condition
 

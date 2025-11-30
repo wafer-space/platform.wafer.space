@@ -84,7 +84,7 @@ class TaskQueuedVerificationTests(TestCase):
 
         assert result is True
         project_file.refresh_from_db()
-        # Status is QUEUED (has task_id but no DownloadAttempt)
+        # Status is PENDING (has task_id but no DownloadAttempt)
         assert project_file.download_status == ProjectFile.DownloadStatus.PENDING
 
     @patch("wafer_space.projects.verification.current_app")
@@ -311,12 +311,12 @@ class CheckTaskQueuedVerificationTests(TestCase):
         assert result is False
 
     def test_check_task_without_task_id_returns_false(self):
-        """Test that check without task_id returns False."""
+        """Test that check without celery_job_id returns False."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.PENDING,
-            celery_job_id="",  # Empty task_id
+            celery_job_id="",  # Empty celery_job_id
         )
 
         result = is_check_task_queued(check)
@@ -428,12 +428,12 @@ class CheckTaskActivelyRunningTests(TestCase):
         assert result is False
 
     def test_check_task_without_task_id_returns_false(self):
-        """Test that check without task_id returns False."""
+        """Test that check without celery_job_id returns False."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.RUNNING,
-            celery_job_id="",  # Empty task_id
+            celery_job_id="",  # Empty celery_job_id
         )
 
         result = is_check_task_actively_running(check)

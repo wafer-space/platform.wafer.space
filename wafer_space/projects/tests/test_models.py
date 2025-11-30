@@ -607,13 +607,13 @@ class TestProjectFile(TestCase):
         assert attempt.task_started_at is not None
 
     def test_projectfile_queued_status_exists(self):
-        """Test that QUEUED status exists in DownloadStatus choices."""
-        # Verify QUEUED is in choices
+        """Test that PENDING status exists in DownloadStatus choices."""
+        # Verify PENDING is in choices
         statuses = [choice[0] for choice in ProjectFile.DownloadStatus.choices]
-        assert "queued" in statuses
+        assert "pending" in statuses
 
-        # Verify we can create a file with QUEUED status
-        # QUEUED = has task_id but no DownloadAttempt
+        # Verify we can create a file with PENDING status
+        # PENDING = has task_id but no DownloadAttempt
         project_file = ProjectFile.objects.create(
             project=self.project,
             source_url="http://example.com/test.gds",
