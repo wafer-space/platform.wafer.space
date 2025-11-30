@@ -423,7 +423,7 @@ def classify_failure(logs: str, exit_code: int) -> str:
     max_retries=3,
     default_retry_delay=60,
     time_limit=settings.PRECHECK_TIMEOUT_SECONDS,
-    soft_time_limit=settings.PRECHECK_TIMEOUT_SECONDS - 300,
+    soft_time_limit=settings.PRECHECK_TIMEOUT_SECONDS - settings.PRECHECK_SOFT_TIMEOUT_BUFFER,
 )
 def check_project_manufacturability(self, check_id):
     """Run manufacturability check in Docker container."""
@@ -572,10 +572,10 @@ CELERY_TASK_ROUTES = {
     'wafer_space.projects.tasks.check_project_manufacturability': {'queue': 'manufacturability'},
 }
 
-PRECHECK_CONCURRENT_LIMIT = env.int('PRECHECK_CONCURRENT_LIMIT', default=4)
-PRECHECK_PER_USER_LIMIT = env.int('PRECHECK_PER_USER_LIMIT', default=1)
-PRECHECK_TIMEOUT_SECONDS = env.int('PRECHECK_TIMEOUT_SECONDS', default=10800)  # 3 hours
-PRECHECK_DOCKER_IMAGE = env('PRECHECK_DOCKER_IMAGE', default='ghcr.io/wafer-space/gf180mcu-precheck:latest')
+PRECHECK_DOCKER_IMAGE = "ghcr.io/wafer-space/gf180mcu-precheck:latest"
+PRECHECK_CONCURRENT_LIMIT = 4
+PRECHECK_TIMEOUT_SECONDS = 12 * 60 * 60  # 12 hours hard limit
+PRECHECK_SOFT_TIMEOUT_BUFFER = 60 * 60  # 1 hour buffer before hard limit
 ```
 
 **Worker Configuration:**
@@ -873,11 +873,11 @@ Before finalizing implementation:
 ### Configuration
 
 ```bash
-# .env additions
-PRECHECK_DOCKER_IMAGE=ghcr.io/wafer-space/gf180mcu-precheck:latest
-PRECHECK_CONCURRENT_LIMIT=4
-PRECHECK_PER_USER_LIMIT=1
-PRECHECK_TIMEOUT_SECONDS=10800
+# Settings in config/settings/base.py (not .env)
+# PRECHECK_DOCKER_IMAGE = "ghcr.io/wafer-space/gf180mcu-precheck:latest"
+# PRECHECK_CONCURRENT_LIMIT = 4
+# PRECHECK_TIMEOUT_SECONDS = 12 * 60 * 60  # 12 hours
+# PRECHECK_SOFT_TIMEOUT_BUFFER = 60 * 60  # 1 hour buffer
 ```
 
 ### Worker Deployment
