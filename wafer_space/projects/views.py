@@ -110,7 +110,7 @@ class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView
             # Get full download attempt history (all attempts, newest first)
             download_attempts = DownloadAttempt.objects.filter(
                 project_file=in_progress_file,
-            ).order_by("-started_at")
+            ).order_by("-task_started_at")
             context["download_attempts"] = download_attempts
 
             # Always set show_progress and show_error flags (tests expect them)
