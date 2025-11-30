@@ -1008,7 +1008,7 @@ def check_project_manufacturability(self, check_id):
             _cleanup_container(container, logger)
 
 
-@shared_task
+@shared_task(queue="maintenance")
 def cleanup_old_task_results():
     """
     Periodic task to clean up old Celery task results.
@@ -2708,7 +2708,7 @@ def download_project_file(self, project_id):  # noqa: PLR0915, C901
 # This eliminates duplicate retry logic (18 attempts → 3 attempts).
 
 
-@shared_task
+@shared_task(queue="maintenance")
 def ensure_download_tasks_queued():
     """Ensure all active files have download tasks queued (fallback recovery).
 
@@ -3117,7 +3117,7 @@ def _handle_queued_checks(logger, concurrent_limit: int) -> tuple[int, int]:
     return dispatched, waiting
 
 
-@shared_task
+@shared_task(queue="maintenance")
 def process_manufacturability_check_queue():
     """Process manufacturability check queue with state machine transitions.
 
