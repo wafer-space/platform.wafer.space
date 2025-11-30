@@ -1033,7 +1033,7 @@ class TestContentPipelineIntegration(TestCase):
 
                 # Verify file was marked as failed
                 project_file.refresh_from_db()
-                assert project_file.download_status == ProjectFile.DownloadStatus.ERROR
+                assert project_file.download_status == ProjectFile.DownloadStatus.FAILED
                 assert "not a valid GDS or OASIS" in project_file.download_error
             finally:
                 temp_path.unlink(missing_ok=True)

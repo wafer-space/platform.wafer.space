@@ -50,7 +50,7 @@ def create_file_with_status():
         if status in [
             ProjectFile.DownloadStatus.DOWNLOADING,
             ProjectFile.DownloadStatus.FINISHED,
-            ProjectFile.DownloadStatus.ERROR,
+            ProjectFile.DownloadStatus.FAILED,
         ]:
             DownloadAttempt.objects.create(
                 project_file=project_file,
