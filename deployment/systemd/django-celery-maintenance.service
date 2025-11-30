@@ -28,13 +28,14 @@ ExecReload=/bin/kill -s HUP $MAINPID
 # Startup timeout - give celery time to write PID file
 TimeoutStartSec=30s
 
-# Security hardening (minimal - Docker access requires elevated privileges)
+# Security hardening
 # NOTE: This service requires Docker socket access for container cleanup.
+# No media write needed - orchestration and cleanup tasks only (DB + Docker API).
 # The celery-mfg user must be in the 'docker' group.
 NoNewPrivileges=true
 PrivateTmp=true
 ReadOnlyPaths=/home/django/platform.wafer.space
-ReadWritePaths=/var/log/platform.wafer.space /run/platform.wafer.space /home/django/platform.wafer.space/wafer_space/media
+ReadWritePaths=/var/log/platform.wafer.space /run/platform.wafer.space
 
 # Docker socket access
 SupplementaryGroups=docker

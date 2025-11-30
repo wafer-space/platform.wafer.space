@@ -28,8 +28,9 @@ ExecReload=/bin/kill -s HUP $MAINPID
 # Startup timeout - give celery time to write PID file
 TimeoutStartSec=30s
 
-# Security hardening (minimal - Docker access requires elevated privileges)
+# Security hardening
 # NOTE: This service requires Docker socket access, which is root-equivalent.
+# Media write needed: saves check.log_file and check.runs_archive after container run.
 # The celery-mfg user must be in the 'docker' group.
 NoNewPrivileges=true
 PrivateTmp=true
