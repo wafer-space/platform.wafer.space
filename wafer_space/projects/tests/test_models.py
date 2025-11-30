@@ -1233,6 +1233,149 @@ class TestManufacturabilityCheckMarkDispatched(TestCase):
 
 
 @pytest.mark.django_db
+class TestManufacturabilityCheckMarkRunning(TestCase):
+    """Tests for mark_running() method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_mark_running_from_dispatched(self):
+        """Can mark DISPATCHED check as RUNNING."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+        )
+        check.mark_running(
+            celery_worker_pid=TEST_WORKER_PID,
+            celery_worker_hostname="worker-01",
+            docker_container_id="abc123def456",
+        )
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.RUNNING
+
+    def test_mark_running_sets_all_fields(self):
+        """mark_running() sets all required fields."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+        )
+
+        before = timezone.now()
+        check.mark_running(
+            celery_worker_pid=TEST_WORKER_PID,
+            celery_worker_hostname="worker-01",
+            docker_container_id="abc123def456",
+        )
+        after = timezone.now()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.RUNNING
+        assert check.celery_worker_pid == TEST_WORKER_PID
+        assert check.celery_worker_hostname == "worker-01"
+        assert check.docker_container_id == "abc123def456"
+        assert check.docker_container_started_at is not None
+        assert before <= check.docker_container_started_at <= after
+        assert check.celery_job_started_at is not None
+        assert before <= check.celery_job_started_at <= after
+
+    def test_mark_running_from_pending_raises(self):
+        """Cannot mark PENDING check as RUNNING."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        with pytest.raises(InvalidStateTransitionError) as exc_info:
+            check.mark_running(
+                celery_worker_pid=TEST_WORKER_PID,
+                celery_worker_hostname="worker-01",
+                docker_container_id="abc123def456",
+            )
+
+        assert "pending" in str(exc_info.value).lower()
+        assert "running" in str(exc_info.value).lower()
+
+    def test_mark_running_from_running_raises(self):
+        """Cannot mark RUNNING check as RUNNING again."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_running(
+                celery_worker_pid=TEST_WORKER_PID,
+                celery_worker_hostname="worker-01",
+                docker_container_id="abc123def456",
+            )
+
+    def test_mark_running_from_finished_raises(self):
+        """Cannot mark FINISHED check as RUNNING."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+        with pytest.raises(InvalidStateTransitionError) as exc_info:
+            check.mark_running(
+                celery_worker_pid=TEST_WORKER_PID,
+                celery_worker_hostname="worker-01",
+                docker_container_id="abc123def456",
+            )
+
+        assert "finished" in str(exc_info.value).lower()
+        assert "running" in str(exc_info.value).lower()
+
+    def test_mark_running_from_error_raises(self):
+        """Cannot mark ERROR check as RUNNING."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_running(
+                celery_worker_pid=TEST_WORKER_PID,
+                celery_worker_hostname="worker-01",
+                docker_container_id="abc123def456",
+            )
+
+    def test_mark_running_from_cancelled_raises(self):
+        """Cannot mark CANCELLED check as RUNNING."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLED,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_running(
+                celery_worker_pid=TEST_WORKER_PID,
+                celery_worker_hostname="worker-01",
+                docker_container_id="abc123def456",
+            )
+
+
+@pytest.mark.django_db
 class TestProjectSlotSize(TestCase):
     """Test Project.slot_size field and SlotSize choices."""
 

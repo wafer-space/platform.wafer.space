@@ -1291,6 +1291,48 @@ class ManufacturabilityCheck(models.Model):
         self.celery_job_dispatched_at = timezone.now()
         self.save(update_fields=["status", "celery_job_id", "celery_job_dispatched_at"])
 
+    def mark_running(
+        self,
+        *,
+        celery_worker_pid: int,
+        celery_worker_hostname: str,
+        docker_container_id: str,
+    ) -> None:
+        """Mark check as running in Celery worker.
+
+        Pathway 3: DISPATCHED → RUNNING
+
+        Args:
+            celery_worker_pid: Process ID of the Celery worker
+            celery_worker_hostname: Hostname of the Celery worker
+            docker_container_id: Docker container ID running the analysis
+
+        Raises:
+            InvalidStateTransitionError: If transition is not allowed
+        """
+        if not self.can_transition_to(self.Status.RUNNING):
+            raise InvalidStateTransitionError(
+                from_status=self.status,
+                to_status=self.Status.RUNNING,
+            )
+
+        self.status = self.Status.RUNNING
+        self.celery_worker_pid = celery_worker_pid
+        self.celery_worker_hostname = celery_worker_hostname
+        self.docker_container_id = docker_container_id
+        self.docker_container_started_at = timezone.now()
+        self.celery_job_started_at = timezone.now()
+        self.save(
+            update_fields=[
+                "status",
+                "celery_worker_pid",
+                "celery_worker_hostname",
+                "docker_container_id",
+                "docker_container_started_at",
+                "celery_job_started_at",
+            ]
+        )
+
     def cancel(self, reason: str = "Cancelled by user") -> str | None:
         """Cancel the check if it's still running.
 
