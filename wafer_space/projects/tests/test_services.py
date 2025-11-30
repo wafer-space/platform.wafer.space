@@ -637,7 +637,7 @@ class TestManufacturabilityService(TestCase):
             is_active=True,
         )
 
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    @patch("wafer_space.projects.tasks.celery_job_run.delay")
     def test_queue_check_creates_new_check(self, mock_task):
         """Test that queue_check creates a new check and triggers task."""
         # Mock the Celery task
@@ -662,7 +662,7 @@ class TestManufacturabilityService(TestCase):
         ).count()
         assert check_count == 1
 
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    @patch("wafer_space.projects.tasks.celery_job_run.delay")
     def test_queue_check_resets_existing_check(self, mock_task):
         """Test that queue_check resets an existing completed check."""
         # Create an existing completed check
@@ -702,7 +702,7 @@ class TestManufacturabilityService(TestCase):
         ).count()
         assert check_count == 1
 
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    @patch("wafer_space.projects.tasks.celery_job_run.delay")
     def test_queue_check_does_not_reset_queued_check(self, mock_task):
         """Test that queue_check doesn't reset/re-queue a check already QUEUED."""
         # Create an existing queued check

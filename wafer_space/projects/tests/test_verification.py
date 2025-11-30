@@ -256,7 +256,7 @@ class CheckTaskQueuedVerificationTests(TestCase):
         mock_inspect = Mock()
         mock_inspect.reserved.return_value = {
             "worker1": [
-                {"id": "check-task-123", "name": "check_project_manufacturability"},
+                {"id": "check-task-123", "name": "celery_job_run"},
             ],
         }
         mock_inspect.active.return_value = {}
@@ -281,7 +281,7 @@ class CheckTaskQueuedVerificationTests(TestCase):
         mock_inspect.reserved.return_value = {}
         mock_inspect.active.return_value = {
             "worker1": [
-                {"id": "check-task-456", "name": "check_project_manufacturability"},
+                {"id": "check-task-456", "name": "celery_job_run"},
             ],
         }
         mock_app.control.inspect.return_value = mock_inspect

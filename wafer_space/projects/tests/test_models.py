@@ -225,7 +225,7 @@ class TestProjectSubmit(TestCase):
 
         assert "hash" in str(exc_info.value).lower()
 
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    @patch("wafer_space.projects.tasks.celery_job_run.delay")
     def test_submit_sets_status_to_submitted(self, mock_task):
         """Test that submit() sets status to SUBMITTED."""
         mock_task.return_value = Mock(id="task-123")
@@ -322,7 +322,7 @@ class TestProjectSubmit(TestCase):
         ).count()
         assert final_check_count == initial_check_count
 
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    @patch("wafer_space.projects.tasks.celery_job_run.delay")
     def test_submit_does_not_create_duplicate_check(self, mock_task):
         """Test that submit() does not create duplicate manufacturability check."""
         mock_task.return_value = Mock(id="task-123")

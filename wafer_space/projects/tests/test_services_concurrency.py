@@ -25,7 +25,7 @@ User = get_user_model()
 class TestGlobalConcurrency:
     """Test global concurrency limits for manufacturability checks."""
 
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    @patch("wafer_space.projects.tasks.celery_job_run.delay")
     def test_allows_first_check(self, mock_delay, user):
         """Test that first check is allowed."""
         mock_delay.return_value.id = "test-task-id"
@@ -41,7 +41,7 @@ class TestGlobalConcurrency:
 
         assert check.status == ManufacturabilityCheck.Status.PENDING
 
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    @patch("wafer_space.projects.tasks.celery_job_run.delay")
     def test_allows_multiple_checks_same_user(self, mock_delay, user):
         """Test that same user can queue multiple checks (up to global limit)."""
         mock_delay.return_value.id = "test-task-id"
@@ -67,7 +67,7 @@ class TestGlobalConcurrency:
         assert check1.status == ManufacturabilityCheck.Status.PENDING
         assert check2.status == ManufacturabilityCheck.Status.PENDING
 
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    @patch("wafer_space.projects.tasks.celery_job_run.delay")
     @patch.object(settings, "PRECHECK_CONCURRENT_LIMIT", 2)
     def test_blocks_at_global_limit(self, mock_delay):
         """Test that checks are blocked when global limit is reached."""
@@ -107,7 +107,7 @@ class TestGlobalConcurrency:
         with pytest.raises(ValidationError, match=r"at capacity"):
             ManufacturabilityService.queue_check(project3, project_file3)
 
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    @patch("wafer_space.projects.tasks.celery_job_run.delay")
     def test_allows_check_after_completion(self, mock_delay, user):
         """Test that new checks can be queued after completion."""
         mock_delay.return_value.id = "test-task-id"
@@ -140,7 +140,7 @@ class TestGlobalConcurrency:
         reason="SQLite table-level locking causes failures in full test suite",
     )
     @pytest.mark.django_db(transaction=True)
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    @patch("wafer_space.projects.tasks.celery_job_run.delay")
     def test_concurrent_requests(self, mock_delay, user):
         """Test that concurrent requests are properly serialized.
 
