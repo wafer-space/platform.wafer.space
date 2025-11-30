@@ -759,90 +759,6 @@ def _validate_project_file(check):
     return check.project_file
 
 
-def _handle_retry(check, error_summary, _task_instance, logger):
-    """Handle system failure - mark as FAILED for periodic retry.
-
-    Note: _task_instance is unused but kept for API compatibility with callers.
-
-    System failures (Docker errors, timeouts, etc.) are different from
-    manufacturing issues. System failures:
-    - Set status to FAILED
-    - Store error in error_message field
-    - Will be retried by the periodic scan task if retry_count < max_retries
-
-    We don't use Celery's built-in retry here because the periodic scan
-    provides better visibility and control over the retry queue.
-
-    Args:
-        check: ManufacturabilityCheck instance
-        error_summary: Error message string
-        task_instance: Celery task instance (unused, kept for API compatibility)
-        logger: Logger instance
-    """
-    logger.error("System failure detected: %s", error_summary)
-    check.mark_error(error_message=error_summary)
-    logger.info(
-        "  Check marked as FAILED (retry %d/%d available)",
-        check.retry_count,
-        check.max_retries,
-    )
-
-
-def _handle_validation_error(check_id, exc, logger):
-    """Handle validation errors as permanent failures (no retry).
-
-    Validation errors like missing GDS files are permanent - retrying won't help.
-    Mark check as failed immediately without retry.
-
-    Args:
-        check_id: ManufacturabilityCheck ID
-        exc: ValueError instance
-        logger: Logger instance
-
-    Returns:
-        Dict with failure status and message
-    """
-    logger.warning("Validation error in manufacturability check: %s", exc)
-    with contextlib.suppress(ManufacturabilityCheck.DoesNotExist):
-        check = ManufacturabilityCheck.objects.get(id=check_id)
-        check.mark_error(error_message=str(exc))
-    return {"status": "failed", "message": str(exc)}
-
-
-def _handle_exception_retry(check_id, exc, _task_instance, logger):
-    """Handle exception - mark as FAILED for periodic retry.
-
-    Note: _task_instance is unused but kept for API compatibility with callers.
-
-    System failures (Docker errors, timeouts, etc.) are different from
-    manufacturing issues. System failures:
-    - Set status to FAILED
-    - Store error in error_message field
-    - Will be retried by the periodic scan task if retry_count < max_retries
-
-    We don't use Celery's built-in retry here because the periodic scan
-    provides better visibility and control over the retry queue.
-
-    Args:
-        check_id: ManufacturabilityCheck ID
-        exc: Exception instance
-        task_instance: Celery task instance (unused, kept for API compatibility)
-        logger: Logger instance
-    """
-    try:
-        check = ManufacturabilityCheck.objects.get(id=check_id)
-        error_msg = str(exc)
-        logger.error("Exception during check: %s", error_msg)
-        check.mark_error(error_message=error_msg)
-        logger.info(
-            "  Check marked as FAILED (retry %d/%d available)",
-            check.retry_count,
-            check.max_retries,
-        )
-    except ManufacturabilityCheck.DoesNotExist:
-        logger.warning("Check %s not found when handling exception", check_id)
-
-
 def _cleanup_container(container, logger):
     """Remove Docker container safely.
 
@@ -944,6 +860,7 @@ def check_process_job(self, check_id):
     logger = logging.getLogger(__name__)
     task_start = timezone.now()
     context = None
+    check: ManufacturabilityCheck | None = None
 
     try:
         _log_task_start(logger, check_id, self.request.id)
@@ -983,9 +900,11 @@ def check_process_job(self, check_id):
         # Step 7: Handle results and transition to FINISHED or ERROR
         result = _handle_check_result(check, logs, exit_code, logger)
 
-        # Handle system failures
+        # Handle system failures - mark as ERROR for periodic retry
         if isinstance(result, tuple) and result[0] == "system":
-            _handle_retry(check, result[1], self, logger)
+            error_summary = result[1]
+            logger.error("System failure detected: %s", error_summary)
+            check.mark_error(error_message=error_summary)
 
         # Step 8: Extract detailed run logs before cleanup
         logger.info("Step 8: Extracting detailed run logs...")
@@ -1014,8 +933,7 @@ def check_process_job(self, check_id):
             "Docker image not found: %s",
             settings.PRECHECK_DOCKER_IMAGE,
         )
-        with contextlib.suppress(ManufacturabilityCheck.DoesNotExist):
-            check = ManufacturabilityCheck.objects.get(id=check_id)
+        if check is not None:
             error_msg = f"Docker image not found: {settings.PRECHECK_DOCKER_IMAGE}"
             check.mark_error(error_message=error_msg)
         return {"status": "failed", "message": "Docker image not found"}
@@ -1024,15 +942,20 @@ def check_process_job(self, check_id):
         is_container = isinstance(exc, docker.errors.ContainerError)
         error_type = "Container" if is_container else "Docker API"
         logger.exception("%s error during precheck execution", error_type)
-        _handle_exception_retry(check_id, exc, self, logger)
+        if check is not None:
+            check.mark_error(error_message=str(exc))
         return {"status": "failed", "message": f"{error_type} error: {exc!s}"}
 
     except ValueError as exc:
-        return _handle_validation_error(check_id, exc, logger)
+        logger.warning("Validation error in manufacturability check: %s", exc)
+        if check is not None:
+            check.mark_error(error_message=str(exc))
+        return {"status": "failed", "message": str(exc)}
 
     except Exception as exc:
         logger.exception("Unexpected error in manufacturability check task")
-        _handle_exception_retry(check_id, exc, self, logger)
+        if check is not None:
+            check.mark_error(error_message=str(exc))
         return {
             "status": "failed",
             "message": str(exc),
@@ -3179,3 +3102,46 @@ def checks_cancelling() -> dict:
             failed += 1
 
     return {"completed": completed, "failed": failed}
+
+
+@shared_task(queue="default")
+def checks_cleanup_stale_files() -> dict:
+    """Cancel checks on project files that are no longer active.
+
+    When a user uploads a new file to a project, the old file's is_active
+    flag is set to False. Any in-progress checks (PENDING, DISPATCHED, RUNNING)
+    on inactive files should be cancelled since they're no longer relevant.
+
+    This task finds such checks and marks them as CANCELLING, which will
+    then be processed by the checks_cancelling task.
+
+    Returns:
+        dict with 'cancelled' count of checks marked for cancellation
+    """
+    logger = logging.getLogger(__name__)
+    status_enum = ManufacturabilityCheck.Status
+    cancelled = 0
+
+    # Find checks in active states on inactive project files
+    stale_checks = ManufacturabilityCheck.objects.filter(
+        status__in=[status_enum.PENDING, status_enum.DISPATCHED, status_enum.RUNNING],
+        project_file__is_active=False,
+    )
+
+    for check in stale_checks:
+        try:
+            logger.info(
+                "Cancelling stale check %s on inactive file %s (project %s)",
+                check.id,
+                check.project_file.original_filename,
+                check.project.name,
+            )
+            check.mark_cancelling(reason="Project file replaced with newer version")
+            cancelled += 1
+        except Exception:
+            logger.exception(
+                "Failed to mark check %s as cancelling",
+                check.id,
+            )
+
+    return {"cancelled": cancelled}

@@ -23,16 +23,14 @@ from .constants import TEST_WORKER_PID
 
 def _make_exec_context(**kwargs) -> CheckExecutionContext:
     """Create a CheckExecutionContext for tests with sensible defaults."""
-    defaults = {
-        "celery_worker_pid": TEST_WORKER_PID,
-        "celery_worker_hostname": "worker-01",
-        "docker_container_id": "abc123def456",
-        "docker_image": "test-image:latest",
-        "docker_image_digest": "sha256:test",
-        "docker_command": "docker run ...",
-    }
-    defaults.update(kwargs)
-    return CheckExecutionContext(**defaults)
+    return CheckExecutionContext(
+        celery_worker_pid=kwargs.get("celery_worker_pid", TEST_WORKER_PID),
+        celery_worker_hostname=kwargs.get("celery_worker_hostname", "worker-01"),
+        docker_container_id=kwargs.get("docker_container_id", "abc123def456"),
+        docker_image=kwargs.get("docker_image", "test-image:latest"),
+        docker_image_digest=kwargs.get("docker_image_digest", "sha256:test"),
+        docker_command=kwargs.get("docker_command", "docker run ..."),
+    )
 
 
 @pytest.mark.django_db

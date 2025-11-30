@@ -1862,8 +1862,10 @@ class TestChecksCleanupOrphanedProcessing(TestCase):
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.ERROR
         assert "orphaned" in check.error_message.lower()
-        assert check.celery_worker_pid is None
-        assert check.celery_worker_hostname == ""
+        # mark_error() preserves tracking fields for debugging
+        # They are only cleared by reset_for_retry() when retrying
+        assert check.celery_worker_pid == TEST_WORKER_PID
+        assert check.celery_worker_hostname == "worker1"
         assert result["orphaned"] == 1
         assert result["verified"] == 0
         mock_is_running.assert_called_once_with(check)
@@ -1931,8 +1933,9 @@ class TestChecksCleanupOrphanedProcessing(TestCase):
         orphaned_check.refresh_from_db()
         valid_check.refresh_from_db()
         assert orphaned_check.status == ManufacturabilityCheck.Status.ERROR
-        assert orphaned_check.celery_worker_pid is None
-        assert orphaned_check.celery_worker_hostname == ""
+        # mark_error() preserves tracking fields for debugging
+        assert orphaned_check.celery_worker_pid == 99999
+        assert orphaned_check.celery_worker_hostname == "dead-worker"
         assert valid_check.status == ManufacturabilityCheck.Status.RUNNING
         assert valid_check.celery_worker_pid == TEST_WORKER_PID
         assert result["orphaned"] == 1
