@@ -625,6 +625,17 @@ class TestProjectFile(TestCase):
 
 
 @pytest.mark.django_db
+class TestManufacturabilityCheckCancellingState(TestCase):
+    """Test CANCELLING state in ManufacturabilityCheck."""
+
+    def test_cancelling_status_exists(self):
+        """Test CANCELLING is a valid status choice."""
+        assert hasattr(ManufacturabilityCheck.Status, "CANCELLING")
+        assert ManufacturabilityCheck.Status.CANCELLING.value == "cancelling"
+        assert ManufacturabilityCheck.Status.CANCELLING.label == "Cancelling"
+
+
+@pytest.mark.django_db
 class TestManufacturabilityCheckMarkCancelled(TestCase):
     """Test ManufacturabilityCheck.mark_cancelled() method."""
 

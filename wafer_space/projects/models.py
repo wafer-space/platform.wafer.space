@@ -1035,6 +1035,7 @@ class ManufacturabilityCheck(models.Model):
         RUNNING = "running", "Running"  # Celery worker executing
         FINISHED = "finished", "Finished"  # Analysis complete
         ERROR = "error", "Error"  # System/processing failure
+        CANCELLING = "cancelling", "Cancelling"  # Cleanup in progress
         CANCELLED = "cancelled", "Cancelled"  # User cancelled
 
     # State machine: defines valid transitions
