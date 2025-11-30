@@ -1443,6 +1443,62 @@ class ManufacturabilityCheck(models.Model):
 
         return job_id
 
+    def reset_for_retry(self, *, reason: str = "") -> None:
+        """Reset check to PENDING state for retry after error.
+
+        Pathway 7: ERROR → PENDING (retry)
+
+        Args:
+            reason: Optional description of why the check is being retried
+
+        Raises:
+            InvalidStateTransitionError: If transition is not allowed or max
+                retries exceeded
+        """
+        # Check retry limit first (max_retries field default is 3)
+        max_retry_limit = 3
+        if self.retry_count >= max_retry_limit:
+            msg = (
+                f"Cannot retry: maximum retry limit (3) reached "
+                f"(current retry_count: {self.retry_count})"
+            )
+            raise InvalidStateTransitionError(
+                from_status=self.status,
+                to_status=self.Status.PENDING,
+                model_name=msg,
+            )
+
+        # Check state transition is valid
+        if not self.can_transition_to(self.Status.PENDING):
+            raise InvalidStateTransitionError(
+                from_status=self.status,
+                to_status=self.Status.PENDING,
+            )
+
+        # Reset to PENDING state
+        self.status = self.Status.PENDING
+        self.retry_count += 1
+
+        # Clear all job-related fields
+        self.celery_job_id = ""
+        self.celery_job_dispatched_at = None
+        self.celery_job_started_at = None
+        self.celery_job_finished_at = None
+        self.celery_worker_pid = None
+        self.celery_worker_hostname = ""
+        self.docker_container_id = ""
+        self.docker_container_started_at = None
+        self.error_message = ""
+
+        # Append reason to processing_logs if provided
+        if reason:
+            if self.processing_logs:
+                self.processing_logs += f"\n\nRETRY #{self.retry_count}: {reason}"
+            else:
+                self.processing_logs = f"RETRY #{self.retry_count}: {reason}"
+
+        self.save()
+
     @property
     def is_cancellable(self) -> bool:
         """Check if this check can be cancelled."""

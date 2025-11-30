@@ -1848,3 +1848,197 @@ class TestManufacturabilityCheckMarkError(TestCase):
         )
         with pytest.raises(InvalidStateTransitionError):
             check.mark_error(error_message="Should not work")
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckResetForRetry(TestCase):
+    """Test ManufacturabilityCheck.reset_for_retry() state machine method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            status=Project.Status.DRAFT,
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_reset_for_retry_from_error(self):
+        """Can reset ERROR check to PENDING for retry."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+            retry_count=0,
+            error_message="Initial error",
+        )
+        check.reset_for_retry(reason="Retrying after timeout")
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.PENDING
+        assert check.retry_count == 1
+
+    def test_reset_for_retry_increments_count(self):
+        """reset_for_retry() increments retry_count."""
+        initial_count = 1
+        expected_count = 2
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+            retry_count=initial_count,
+        )
+        check.reset_for_retry()
+
+        check.refresh_from_db()
+        assert check.retry_count == expected_count
+
+    def test_reset_for_retry_clears_job_fields(self):
+        """reset_for_retry() clears all Celery/Docker tracking fields."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+            retry_count=0,
+            celery_job_id="abc-123",
+            celery_job_dispatched_at=timezone.now(),
+            celery_job_started_at=timezone.now(),
+            celery_job_finished_at=timezone.now(),
+            celery_worker_pid=TEST_WORKER_PID,
+            celery_worker_hostname="worker-1",
+            docker_container_id="container-123",
+            docker_container_started_at=timezone.now(),
+            error_message="Previous error",
+        )
+        check.reset_for_retry()
+
+        check.refresh_from_db()
+        assert check.celery_job_id == ""
+        assert check.celery_job_dispatched_at is None
+        assert check.celery_job_started_at is None
+        assert check.celery_job_finished_at is None
+        assert check.celery_worker_pid is None
+        assert check.celery_worker_hostname == ""
+        assert check.docker_container_id == ""
+        assert check.docker_container_started_at is None
+        assert check.error_message == ""
+
+    def test_reset_for_retry_at_max_retries_raises(self):
+        """Cannot retry when retry_count >= 3."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+            retry_count=3,
+        )
+        with pytest.raises(InvalidStateTransitionError) as exc_info:
+            check.reset_for_retry()
+
+        # Verify error message mentions max retries
+        assert "maximum retry limit" in str(exc_info.value).lower()
+        assert "3" in str(exc_info.value)
+
+    def test_reset_for_retry_from_pending_raises(self):
+        """Cannot reset PENDING check (invalid transition)."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.reset_for_retry()
+
+    def test_reset_for_retry_from_dispatched_raises(self):
+        """Cannot reset DISPATCHED check (invalid transition)."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.reset_for_retry()
+
+    def test_reset_for_retry_from_running_raises(self):
+        """Cannot reset RUNNING check (invalid transition)."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.reset_for_retry()
+
+    def test_reset_for_retry_from_finished_raises(self):
+        """Cannot reset FINISHED check (terminal state)."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.reset_for_retry()
+
+    def test_reset_for_retry_from_cancelled_raises(self):
+        """Cannot reset CANCELLED check (terminal state)."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLED,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.reset_for_retry()
+
+    def test_reset_for_retry_with_reason_appends_to_logs(self):
+        """reset_for_retry() appends reason to processing_logs."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+            retry_count=0,
+            processing_logs="Previous logs from error",
+        )
+        check.reset_for_retry(reason="Temporary network failure")
+
+        check.refresh_from_db()
+        assert "RETRY #1: Temporary network failure" in check.processing_logs
+        assert "Previous logs from error" in check.processing_logs
+
+    def test_reset_for_retry_with_reason_creates_logs_when_empty(self):
+        """reset_for_retry() creates processing_logs when empty."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+            retry_count=1,
+            processing_logs="",
+        )
+        check.reset_for_retry(reason="Docker timeout")
+
+        check.refresh_from_db()
+        assert check.processing_logs == "RETRY #2: Docker timeout"
+
+    def test_reset_for_retry_without_reason_does_not_modify_logs(self):
+        """reset_for_retry() without reason doesn't modify processing_logs."""
+        original_logs = "Error occurred at step 3"
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+            retry_count=0,
+            processing_logs=original_logs,
+        )
+        check.reset_for_retry()
+
+        check.refresh_from_db()
+        assert check.processing_logs == original_logs
