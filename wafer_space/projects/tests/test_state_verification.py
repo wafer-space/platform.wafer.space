@@ -75,8 +75,8 @@ class DownloadStateVerificationTests(TestCase):
     @patch("wafer_space.projects.tasks.is_task_actively_running")
     @patch("wafer_space.projects.tasks.is_task_queued")
     def test_queued_file_verified(self, mock_is_queued, mock_is_running):
-        """Test PENDING file is verified and counted."""
-        # Create file with task_id (status = PENDING automatically)
+        """Test QUEUED file is verified and counted."""
+        # Create file with task_id (status = QUEUED automatically)
         project_file = ProjectFile.objects.create(
             project=self.project,
             source_url="http://example.com/test.gds",
@@ -100,8 +100,8 @@ class DownloadStateVerificationTests(TestCase):
     @patch("wafer_space.projects.tasks.is_task_actively_running")
     @patch("wafer_space.projects.tasks.is_task_queued")
     def test_queued_file_orphaned(self, mock_is_queued, mock_is_running):
-        """Test PENDING file not in queue is marked orphaned."""
-        # Create file with task_id (status = PENDING automatically)
+        """Test QUEUED file not in queue is marked orphaned."""
+        # Create file with task_id (status = QUEUED automatically)
         project_file = ProjectFile.objects.create(
             project=self.project,
             source_url="http://example.com/test.gds",

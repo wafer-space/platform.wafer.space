@@ -84,8 +84,8 @@ class TaskQueuedVerificationTests(TestCase):
 
         assert result is True
         project_file.refresh_from_db()
-        # Status is PENDING (has task_id but no DownloadAttempt)
-        assert project_file.download_status == ProjectFile.DownloadStatus.PENDING
+        # Status is QUEUED (has task_id but no DownloadAttempt)
+        assert project_file.download_status == ProjectFile.DownloadStatus.QUEUED
 
     @patch("wafer_space.projects.verification.current_app")
     def test_task_not_found_returns_false(self, mock_app):
