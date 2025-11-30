@@ -280,6 +280,62 @@ The application is split into isolated services, each with minimal permissions:
 | maintenance | `cleanup_old_task_results` | Remove old Celery TaskResult records |
 | maintenance | `cleanup_orphaned_precheck_containers` | Remove orphaned Docker containers |
 
+## Code References
+
+This section maps each Celery task to its source code location (where the task is defined) and the callers (where the task is queued).
+
+### Default Queue Tasks
+
+**`send_tos_update_email`**
+- **Defined:** `wafer_space/legal/tasks.py:31`
+- **Called from:**
+  - `wafer_space/legal/tasks.py:199` - `send_bulk_tos_notifications()` queues individual emails
+  - `wafer_space/legal/admin.py:251` - Admin action to resend TOS notification
+
+**`send_bulk_tos_notifications`**
+- **Defined:** `wafer_space/legal/tasks.py:136`
+- **Called from:**
+  - Admin actions via Django admin interface
+
+### Downloads Queue Tasks
+
+**`download_project_file`**
+- **Defined:** `wafer_space/projects/tasks.py:2440`
+- **Called from:**
+  - `wafer_space/projects/services.py:417` - `queue_download_task()` service function
+  - `wafer_space/projects/tasks.py:2741` - `ensure_download_tasks_queued()` recovery task
+  - `wafer_space/projects/tasks.py:2832` - `ensure_download_tasks_queued()` recovery task (different code path)
+
+### Manufacturability Queue Tasks
+
+**`check_project_manufacturability`**
+- **Defined:** `wafer_space/projects/tasks.py:893`
+- **Called from:**
+  - `wafer_space/projects/services.py:649` - `queue_manufacturability_check()` service function
+  - `wafer_space/projects/tasks.py:3075` - `process_manufacturability_check_queue()` orchestration task
+
+### Maintenance Queue Tasks
+
+**`cleanup_old_task_results`**
+- **Defined:** `wafer_space/projects/tasks.py:1011`
+- **Called from:**
+  - Celery Beat scheduler (periodic task)
+
+**`ensure_download_tasks_queued`**
+- **Defined:** `wafer_space/projects/tasks.py:2711`
+- **Called from:**
+  - Celery Beat scheduler (periodic task)
+
+**`process_manufacturability_check_queue`**
+- **Defined:** `wafer_space/projects/tasks.py:3088`
+- **Called from:**
+  - Celery Beat scheduler (periodic task)
+
+**`cleanup_orphaned_precheck_containers`**
+- **Defined:** `wafer_space/projects/tasks.py:3155`
+- **Called from:**
+  - Celery Beat scheduler (periodic task)
+
 ## Detailed Permission Matrix
 
 | Service | PrivateDevices | PrivateTmp | NoNewPrivileges | ReadOnlyPaths | ReadWritePaths |
