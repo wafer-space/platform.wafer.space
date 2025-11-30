@@ -80,6 +80,7 @@ DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS = 30.0  # Check every 30s in dev
 # Manufacturability check scanning (faster for development)
 PRECHECK_SCAN_INTERVAL_SECONDS = 15.0  # Scan every 15s in dev
 PRECHECK_CONTAINER_CLEANUP_INTERVAL_SECONDS = 15.0  # Cleanup every 15s in dev
+PRECHECK_TIMEOUT_SECONDS = 5 * 60  # 5 minutes for local dev (12 hours in prod)
 
 CELERY_BEAT_SCHEDULE = {
     "ensure-download-tasks-queued": {

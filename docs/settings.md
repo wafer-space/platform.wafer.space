@@ -223,6 +223,7 @@ export DJANGO_SETTINGS_MODULE=config.settings.prod
 
 | Setting | dev | pytest | stage | prod | Notes |
 |---------|-----|--------|-------|------|-------|
+| `PRECHECK_TIMEOUT_SECONDS` | `300` (5 min) | `43200` (12 hr) | `43200` (12 hr) | `43200` (12 hr) | Short timeout for dev testing |
 | `DOWNLOAD_RETRY_BASE_DELAY_MINUTES` | `0.5` (30 sec) | `5` (5 min) | `0.5` (30 sec) | `5` (5 min) | Faster retries for dev and stage |
 | `DOWNLOAD_RETRY_BACKOFF_MULTIPLIER` | `3` | `3` | `3` | `3` | Universal |
 | `DOWNLOAD_RETRY_CHECK_INTERVAL_SECONDS` | `30` | `300` | `30` | `300` | Faster checks for dev and stage |
