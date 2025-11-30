@@ -984,7 +984,7 @@ def _get_check_file_prefix(instance) -> tuple[str, str, str]:
     Returns:
         tuple: (gds_name, top_cell, timestamp_str)
     """
-    timestamp = instance.started_at or timezone.now()
+    timestamp = instance.celery_job_started_at or timezone.now()
     timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")
 
     # Get GDS filename (without path)
