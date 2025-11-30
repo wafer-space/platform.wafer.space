@@ -1435,16 +1435,12 @@ class ManufacturabilityCheck(models.Model):
 
         self.save()
 
-    def mark_cancelled(self, *, reason: str) -> str | None:
-        """Mark check as cancelled by user.
+    def mark_cancelled(self) -> None:
+        """Complete cancellation - only called by cleanup task after cleanup is done.
 
-        Pathway 8: PENDING/DISPATCHED/RUNNING → CANCELLED
-
-        Args:
-            reason: Description of why the check was cancelled
-
-        Returns:
-            str | None: celery_job_id if one exists (for revocation), None otherwise
+        This method should only be called from CANCELLING state, after the
+        checks_cancelling task has revoked the Celery task and stopped any
+        Docker container.
 
         Raises:
             InvalidStateTransitionError: If transition is not allowed
@@ -1455,21 +1451,9 @@ class ManufacturabilityCheck(models.Model):
                 to_status=self.Status.CANCELLED,
             )
 
-        # Capture celery_job_id before changing state
-        job_id = self.celery_job_id if self.celery_job_id else None
-
         self.status = self.Status.CANCELLED
         self.celery_job_finished_at = timezone.now()
-
-        # Append reason to processing_logs
-        if self.processing_logs:
-            self.processing_logs += f"\n\nCANCELLED: {reason}"
-        else:
-            self.processing_logs = f"CANCELLED: {reason}"
-
         self.save()
-
-        return job_id
 
     def reset_for_retry(self, *, reason: str = "") -> None:
         """Reset check to PENDING state for retry after error.
@@ -1528,8 +1512,11 @@ class ManufacturabilityCheck(models.Model):
 
     @property
     def is_cancellable(self) -> bool:
-        """Check if this check can be cancelled."""
-        return self.can_transition_to(self.Status.CANCELLED)
+        """Check if this check can be cancelled.
+
+        Returns True if check can transition to CANCELLING state.
+        """
+        return self.can_transition_to(self.Status.CANCELLING)
 
     @property
     def result_display(self) -> str:

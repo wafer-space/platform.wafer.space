@@ -2288,11 +2288,8 @@ def _create_manufacturability_check(
     ).exclude(project_file=project_file)
 
     for old_check in old_checks:
-        task_id = old_check.mark_cancelled(reason="Cancelled due to new file upload")
-        if task_id:
-            logger.info("  ✓ Cancelled old check %s (task: %s)", old_check.id, task_id)
-        else:
-            logger.info("  ✓ Cancelled old check %s", old_check.id)
+        old_check.mark_cancelling(reason="Cancelled due to new file upload")
+        logger.info("  ✓ Cancelling old check %s", old_check.id)
 
     # Create manufacturability check in PENDING state
     # Note: celery_job_dispatched_at is set by mark_dispatched() when the check

@@ -16,8 +16,6 @@ from urllib.parse import urlparse
 from celery.result import AsyncResult
 from django.db import transaction
 
-from config import celery_app
-
 from .exceptions import InvalidStateTransitionError
 from .models import ManufacturabilityCheck
 from .models import Project
@@ -560,69 +558,27 @@ class ManufacturabilityService:
     """Service for handling manufacturability check operations."""
 
     @classmethod
-    def get_check_status_for_file(cls, project_file: "ProjectFile") -> dict | None:
-        """Get check status information for a specific file.
-
-        Args:
-            project_file: The project file to get check status for
-
-        Returns:
-            dict with check status information, or None if no check exists.
-        """
-        try:
-            check = project_file.manufacturability_check
-        except ManufacturabilityCheck.DoesNotExist:
-            return None
-        else:
-            return {
-                "status": check.status,
-                "is_manufacturable": check.is_manufacturable,
-                "errors": check.errors,
-                "warnings": check.warnings,
-                "celery_job_started_at": check.celery_job_started_at,
-                "celery_job_finished_at": check.celery_job_finished_at,
-            }
-
-    @classmethod
-    def get_check_status(cls, project: Project) -> dict | None:
-        """Get check status for the project's active file.
-
-        Args:
-            project: The project to get check status for
-
-        Returns:
-            dict with check status information, or None if no active file
-            or no check exists for the active file.
-        """
-        active_file = project.files.filter(is_active=True).first()
-        if not active_file:
-            return None
-
-        return cls.get_check_status_for_file(active_file)
-
-    @classmethod
     def cancel_check(
         cls,
         check: ManufacturabilityCheck,
         *,
         reason: str = "Cancelled by user",
     ) -> bool:
-        """Cancel a manufacturability check and revoke its Celery task.
+        """Request cancellation of a manufacturability check.
+
+        This transitions the check to CANCELLING state. The cleanup task
+        will complete the transition to CANCELLED after cleanup.
 
         Args:
             check: The check to cancel
             reason: Why the check was cancelled
 
         Returns:
-            bool: True if cancelled, False if not cancellable
+            bool: True if cancellation requested, False if not cancellable
         """
         try:
-            task_id = check.mark_cancelled(reason=reason)
+            check.mark_cancelling(reason=reason)
         except InvalidStateTransitionError:
             return False
-
-        # Revoke the Celery task if one exists
-        if task_id:
-            celery_app.control.revoke(task_id, terminate=True)
 
         return True

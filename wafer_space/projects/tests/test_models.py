@@ -848,95 +848,78 @@ class TestManufacturabilityCheckMarkCancelled(TestCase):
             is_active=True,
         )
 
-    def test_mark_cancelled_from_pending(self):
-        """Can mark PENDING check as CANCELLED."""
+    def test_mark_cancelled_from_cancelling_succeeds(self):
+        """Test mark_cancelled works from CANCELLING state."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLING,
+            processing_logs="CANCELLATION REQUESTED: User cancelled",
+        )
+
+        check.mark_cancelled()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+        assert check.celery_job_finished_at is not None
+
+    def test_mark_cancelled_sets_timestamp(self):
+        """Test mark_cancelled sets celery_job_finished_at timestamp."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLING,
+        )
+
+        before = timezone.now()
+        check.mark_cancelled()
+        after = timezone.now()
+
+        check.refresh_from_db()
+        assert check.celery_job_finished_at is not None
+        assert before <= check.celery_job_finished_at <= after
+
+    def test_mark_cancelled_from_pending_raises(self):
+        """Test mark_cancelled raises from PENDING.
+
+        Must use mark_cancelling first.
+        """
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.PENDING,
         )
-        result = check.mark_cancelled(reason="User cancelled during pending")
 
-        check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.CANCELLED
-        assert "CANCELLED: User cancelled during pending" in check.processing_logs
-        assert check.celery_job_finished_at is not None
-        assert result is None  # No job_id for PENDING
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_cancelled()
 
-    def test_mark_cancelled_from_dispatched(self):
-        """Can mark DISPATCHED check as CANCELLED and returns job_id."""
+    def test_mark_cancelled_from_dispatched_raises(self):
+        """Test mark_cancelled raises from DISPATCHED.
+
+        Must use mark_cancelling first.
+        """
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.DISPATCHED,
-            celery_job_id="celery-task-123",
         )
-        result = check.mark_cancelled(reason="User cancelled after dispatch")
 
-        check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.CANCELLED
-        assert "CANCELLED: User cancelled after dispatch" in check.processing_logs
-        assert check.celery_job_finished_at is not None
-        assert result == "celery-task-123"
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_cancelled()
 
-    def test_mark_cancelled_from_running(self):
-        """Can mark RUNNING check as CANCELLED and returns job_id."""
+    def test_mark_cancelled_from_running_raises(self):
+        """Test mark_cancelled raises from RUNNING.
+
+        Must use mark_cancelling first.
+        """
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.RUNNING,
-            celery_job_id="celery-task-456",
-        )
-        result = check.mark_cancelled(reason="User cancelled during execution")
-
-        check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.CANCELLED
-        assert "CANCELLED: User cancelled during execution" in check.processing_logs
-        assert result == "celery-task-456"
-
-    def test_mark_cancelled_sets_fields(self):
-        """mark_cancelled() sets status and timestamp correctly."""
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PENDING,
         )
 
-        before = timezone.now()
-        check.mark_cancelled(reason="Testing field assignment")
-        after = timezone.now()
-
-        check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.CANCELLED
-        assert check.celery_job_finished_at is not None
-        assert before <= check.celery_job_finished_at <= after
-        assert "CANCELLED: Testing field assignment" in check.processing_logs
-
-    def test_mark_cancelled_returns_celery_job_id(self):
-        """mark_cancelled() returns celery_job_id when one exists."""
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHED,
-            celery_job_id="test-job-789",
-        )
-
-        result = check.mark_cancelled(reason="Test return value")
-
-        assert result == "test-job-789"
-
-    def test_mark_cancelled_returns_none_when_no_job(self):
-        """mark_cancelled() returns None when celery_job_id is empty."""
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PENDING,
-            celery_job_id="",
-        )
-
-        result = check.mark_cancelled(reason="No job ID")
-
-        assert result is None
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_cancelled()
 
     def test_mark_cancelled_from_finished_raises(self):
         """Cannot mark FINISHED check as CANCELLED (terminal state)."""
@@ -948,7 +931,7 @@ class TestManufacturabilityCheckMarkCancelled(TestCase):
         )
 
         with pytest.raises(InvalidStateTransitionError) as exc_info:
-            check.mark_cancelled(reason="Should not work")
+            check.mark_cancelled()
 
         assert "finished" in str(exc_info.value).lower()
         assert "cancelled" in str(exc_info.value).lower()
@@ -967,7 +950,7 @@ class TestManufacturabilityCheckMarkCancelled(TestCase):
         )
 
         with pytest.raises(InvalidStateTransitionError) as exc_info:
-            check.mark_cancelled(reason="Should not work")
+            check.mark_cancelled()
 
         assert "error" in str(exc_info.value).lower()
         assert "cancelled" in str(exc_info.value).lower()
@@ -985,44 +968,13 @@ class TestManufacturabilityCheckMarkCancelled(TestCase):
         )
 
         with pytest.raises(InvalidStateTransitionError) as exc_info:
-            check.mark_cancelled(reason="Already cancelled")
+            check.mark_cancelled()
 
         assert "cancelled" in str(exc_info.value).lower()
 
         # Verify status unchanged
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.CANCELLED
-
-    def test_mark_cancelled_appends_to_existing_logs(self):
-        """mark_cancelled() appends to existing processing_logs."""
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.RUNNING,
-            celery_job_id="test-job",
-            processing_logs="Previous log entry\nAnother entry",
-        )
-
-        check.mark_cancelled(reason="User requested stop")
-
-        check.refresh_from_db()
-        assert "Previous log entry" in check.processing_logs
-        assert "Another entry" in check.processing_logs
-        assert "\n\nCANCELLED: User requested stop" in check.processing_logs
-
-    def test_mark_cancelled_creates_logs_when_empty(self):
-        """mark_cancelled() creates processing_logs when none exist."""
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PENDING,
-            processing_logs="",
-        )
-
-        check.mark_cancelled(reason="Early cancellation")
-
-        check.refresh_from_db()
-        assert check.processing_logs == "CANCELLED: Early cancellation"
 
     def test_is_cancellable_for_pending(self):
         """Test is_cancellable returns True for PENDING checks."""
@@ -1350,14 +1302,16 @@ class TestManufacturabilityCheckStateTransitions(TestCase):
         )
         assert check.can_transition_to(ManufacturabilityCheck.Status.ERROR) is True
 
-    def test_can_transition_pending_to_cancelled(self):
-        """PENDING can transition to CANCELLED."""
+    def test_can_transition_pending_to_cancelling(self):
+        """PENDING can transition to CANCELLING (not directly to CANCELLED)."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.PENDING,
         )
-        assert check.can_transition_to(ManufacturabilityCheck.Status.CANCELLED) is True
+        assert check.can_transition_to(ManufacturabilityCheck.Status.CANCELLING) is True
+        # Cannot skip CANCELLING and go directly to CANCELLED
+        assert check.can_transition_to(ManufacturabilityCheck.Status.CANCELLED) is False
 
     def test_cannot_transition_pending_to_running(self):
         """PENDING cannot transition directly to RUNNING."""
