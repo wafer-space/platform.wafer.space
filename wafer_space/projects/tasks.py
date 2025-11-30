@@ -691,37 +691,32 @@ def _handle_check_result(check, logs, exit_code, logger):
     )
 
     # Handle results based on exit code
-    if exit_code == 0:
-        # Success
-        check.mark_finished(
-            is_manufacturable=True,
-            errors=[],
-            warnings=parsed.get("warnings", []),
-            processing_logs=logs,
-        )
-        logger.info("Check completed successfully - project is manufacturable")
-        return "success"
+    if exit_code != 0:
+        # Failure - classify
+        failure_type = classify_failure(logs, exit_code)
+        logger.info("Check failed with type: %s", failure_type)
 
-    # Failure - classify
-    failure_type = classify_failure(logs, exit_code)
-    logger.info("Check failed with type: %s", failure_type)
+        if failure_type == "system":
+            # System failure - prepare for retry (don't mark finished)
+            error_summary = (
+                parsed["errors"][0]["message"]
+                if parsed["errors"]
+                else "Unknown system error"
+            )
+            return "system", error_summary
 
-    if failure_type == "system":
-        # System failure - prepare for retry
-        error_summary = (
-            parsed["errors"][0]["message"]
-            if parsed["errors"]
-            else "Unknown system error"
-        )
-        return "system", error_summary
-
-    # Design failure - complete with errors
+    # Mark finished - either success or design failure
+    is_manufacturable = exit_code == 0
     check.mark_finished(
-        is_manufacturable=False,
-        errors=parsed.get("errors", []),
+        is_manufacturable=is_manufacturable,
+        errors=[] if is_manufacturable else parsed.get("errors", []),
         warnings=parsed.get("warnings", []),
         processing_logs=logs,
     )
+
+    if is_manufacturable:
+        logger.info("Check completed successfully - project is manufacturable")
+        return "success"
     logger.info("Design errors found - check completed with errors")
     return "design"
 
