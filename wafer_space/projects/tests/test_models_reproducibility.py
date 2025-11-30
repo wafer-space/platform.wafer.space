@@ -42,7 +42,7 @@ class TestManufacturabilityCheckReproducibility(TestCase):
         DownloadAttempt.objects.create(
             project_file=self.project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.FINISHED,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
     def test_get_reproduction_instructions(self):

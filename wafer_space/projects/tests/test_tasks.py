@@ -657,7 +657,7 @@ class TestProjectSubmissionIntegration(TestCase):
         DownloadAttempt.objects.create(
             project_file=self.project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.FINISHED,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
     def test_submit_updates_project_status(self):
@@ -709,7 +709,7 @@ class TestDockerIntegration(TestCase):
         DownloadAttempt.objects.create(
             project_file=self.project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.FINISHED,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
     @patch("wafer_space.projects.tasks.docker")
@@ -1329,7 +1329,7 @@ class TestProcessManufacturabilityCheckQueue(TestCase):
         DownloadAttempt.objects.create(
             project_file=self.project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.FINISHED,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
     @patch("wafer_space.projects.tasks.celery_job_run.delay")

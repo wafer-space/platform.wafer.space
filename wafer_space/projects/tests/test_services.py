@@ -437,7 +437,7 @@ class TestProjectFileService(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.FINISHED,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Mock task state
@@ -470,7 +470,7 @@ class TestProjectFileService(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.ERROR,
+            status=DownloadAttempt.Status.FAILED,
         )
 
         # Mock task state with error
@@ -942,7 +942,7 @@ class TestFileReplacementCancelsCheck(TestCase):
         DownloadAttempt.objects.create(
             project_file=self.project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.FINISHED,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
     @patch("wafer_space.projects.services.celery_app")

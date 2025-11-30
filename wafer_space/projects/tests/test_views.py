@@ -155,7 +155,7 @@ class TestProjectDetailView(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.FINISHED,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -622,7 +622,7 @@ class TestProjectSubmitView(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.FINISHED,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Mark as manufacturable
@@ -709,7 +709,7 @@ class TestProjectSubmitView(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.ERROR,
+            status=DownloadAttempt.Status.FAILED,
             download_error="Download failed",
         )
 
@@ -742,7 +742,7 @@ class TestProjectSubmitView(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.FINISHED,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -775,7 +775,7 @@ class TestProjectSubmitView(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.FINISHED,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Mark as manufacturable
@@ -820,7 +820,7 @@ class TestProjectSubmitView(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.FINISHED,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Mark as manufacturable
@@ -964,7 +964,7 @@ class TestEnhancedProgressDashboard(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.ERROR,
+            status=DownloadAttempt.Status.FAILED,
             download_error="Connection timeout",
         )
 
@@ -1010,7 +1010,7 @@ class TestEnhancedProgressDashboard(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.ERROR,
+            status=DownloadAttempt.Status.FAILED,
             download_error="Network error occurred",
         )
 
@@ -1084,7 +1084,7 @@ class TestEnhancedProgressDashboard(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.FINISHED,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         mock_progress.return_value = {

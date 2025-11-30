@@ -197,7 +197,7 @@ class DownloadStateVerificationTests(TestCase):
 
         # First attempt should be marked FAILED
         first_attempt = project_file.download_attempts.get(attempt_number=1)
-        assert first_attempt.status == DownloadAttempt.Status.ERROR
+        assert first_attempt.status == DownloadAttempt.Status.FAILED
         assert "not running" in first_attempt.download_error
 
     @patch("wafer_space.projects.tasks.download_project_file.delay")
@@ -225,7 +225,7 @@ class DownloadStateVerificationTests(TestCase):
                 status=(
                     DownloadAttempt.Status.DOWNLOADING
                     if is_latest
-                    else DownloadAttempt.Status.ERROR
+                    else DownloadAttempt.Status.FAILED
                 ),
             )
 

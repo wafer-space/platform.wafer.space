@@ -92,7 +92,7 @@ class TestProjectCanSubmit(TestCase):
         DownloadAttempt.objects.create(
             project_file=_pf,
             attempt_number=1,
-            status=DownloadAttempt.Status.ERROR,
+            status=DownloadAttempt.Status.FAILED,
             download_error="Download failed",
         )
 
@@ -115,7 +115,7 @@ class TestProjectCanSubmit(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.FINISHED,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         can_submit, reason = self.project.can_submit()
@@ -139,7 +139,7 @@ class TestProjectCanSubmit(TestCase):
         DownloadAttempt.objects.create(
             project_file=_pf,
             attempt_number=1,
-            status=DownloadAttempt.Status.FINISHED,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Mark as manufacturable and submitted
@@ -167,7 +167,7 @@ class TestProjectCanSubmit(TestCase):
         DownloadAttempt.objects.create(
             project_file=_pf,
             attempt_number=1,
-            status=DownloadAttempt.Status.FINISHED,
+            status=DownloadAttempt.Status.COMPLETED,
         )
         # Mark as manufacturable
         self.project.is_manufacturable = True
@@ -217,7 +217,7 @@ class TestProjectSubmit(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.FINISHED,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         with pytest.raises(ValidationError) as exc_info:
@@ -242,7 +242,7 @@ class TestProjectSubmit(TestCase):
         DownloadAttempt.objects.create(
             project_file=_pf,
             attempt_number=1,
-            status=DownloadAttempt.Status.FINISHED,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Mark as manufacturable
@@ -268,7 +268,7 @@ class TestProjectSubmit(TestCase):
         DownloadAttempt.objects.create(
             project_file=_pf,
             attempt_number=1,
-            status=DownloadAttempt.Status.FINISHED,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Mark as manufacturable
@@ -302,7 +302,7 @@ class TestProjectSubmit(TestCase):
         DownloadAttempt.objects.create(
             project_file=_pf,
             attempt_number=1,
-            status=DownloadAttempt.Status.FINISHED,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Mark as manufacturable (simulating completed check from earlier workflow)
@@ -339,7 +339,7 @@ class TestProjectSubmit(TestCase):
         DownloadAttempt.objects.create(
             project_file=_pf,
             attempt_number=1,
-            status=DownloadAttempt.Status.FINISHED,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Mark as manufacturable
@@ -377,7 +377,7 @@ class TestProjectSubmit(TestCase):
         DownloadAttempt.objects.create(
             project_file=_pf,
             attempt_number=1,
-            status=DownloadAttempt.Status.FINISHED,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         # Mark as manufacturable
@@ -428,7 +428,7 @@ class TestProjectFileProgressMethods(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.FINISHED,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         assert project_file.get_progress_percentage() == PROGRESS_COMPLETE
@@ -478,7 +478,7 @@ class TestProjectFileProgressMethods(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.FINISHED,
+            status=DownloadAttempt.Status.COMPLETED,
         )
 
         message = project_file.get_progress_message()
@@ -497,7 +497,7 @@ class TestProjectFileProgressMethods(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.ERROR,
+            status=DownloadAttempt.Status.FAILED,
             download_error="Download failed",
         )
 
@@ -517,7 +517,7 @@ class TestProjectFileProgressMethods(TestCase):
         DownloadAttempt.objects.create(
             project_file=project_file,
             attempt_number=1,
-            status=DownloadAttempt.Status.ERROR,
+            status=DownloadAttempt.Status.FAILED,
             download_error="Download failed",
         )
 
