@@ -49,11 +49,7 @@ The project submission system allows users to submit their chip design files (GD
 - File format validation (GDS/OASIS with optional compression)
 - Hash verification workflow
 - Download progress tracking
-
-**ManufacturabilityService**
-- Check queuing and status management
-- Integration with checking system
-- Results processing
+- File replacement and check cancellation coordination
 
 #### 3. Background Tasks (`tasks.py`)
 
