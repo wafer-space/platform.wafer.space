@@ -70,7 +70,7 @@ class DownloadStateVerificationTests(TestCase):
         # Verify state transition
         project_file.refresh_from_db()
         assert project_file.download_task_id == "new-task-123"
-        assert project_file.download_status == ProjectFile.DownloadStatus.PENDING
+        assert project_file.download_status == ProjectFile.DownloadStatus.QUEUED
 
     @patch("wafer_space.projects.tasks.is_task_actively_running")
     @patch("wafer_space.projects.tasks.is_task_queued")
@@ -269,6 +269,6 @@ class DownloadStateVerificationTests(TestCase):
         attempts = project_file.download_attempts.order_by("attempt_number")
         first_attempt = attempts.first()
         assert first_attempt is not None
-        assert first_attempt.celery_worker_pid == TEST_WORKER_PID
-        assert first_attempt.celery_worker_hostname == TEST_WORKER_HOSTNAME
+        assert first_attempt.worker_pid == TEST_WORKER_PID
+        assert first_attempt.worker_hostname == TEST_WORKER_HOSTNAME
         assert first_attempt.task_started_at is not None
