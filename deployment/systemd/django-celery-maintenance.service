@@ -44,10 +44,12 @@ TimeoutStartSec=30s
 NoNewPrivileges=true
 PrivateDevices=true
 PrivateTmp=true
+ProtectSystem=strict
 ReadOnlyPaths=/home/django/platform.wafer.space
 
-# Docker socket access
+# Docker socket access - BindPaths ensures socket is accessible despite ProtectSystem=strict
 SupplementaryGroups=docker
+BindPaths=/var/run/docker.sock
 
 # Restart policy
 Restart=on-failure

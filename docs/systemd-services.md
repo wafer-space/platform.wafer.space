@@ -30,18 +30,25 @@ All services share these security hardening settings:
 - **NoNewPrivileges=true** - Process cannot gain new privileges
 - **PrivateDevices=true** - Isolated /dev with only pseudo-devices (null, zero, random)
 - **PrivateTmp=true** - Isolated /tmp namespace
+- **ProtectSystem=strict** - Entire filesystem mounted read-only (except allowed paths)
 - **ReadOnlyPaths=/home/django/platform.wafer.space** - Application code read-only
 
 RuntimeDirectory and LogsDirectory are automatically excluded from ProtectSystem restrictions.
 
 ### Users
 
-| User       | Services                                | Docker Access |
-|------------|----------------------------------------|:-------------:|
-| www-data   | gunicorn, celery, celery-downloads, celery-beat | No      |
-| celery-mfg | celery-manufacturability, celery-maintenance    | Yes     |
+| User       | Services                                        | Docker Access |
+|------------|-------------------------------------------------|:-------------:|
+| www-data   | gunicorn, celery, celery-downloads, celery-beat | No            |
+| celery-mfg | celery-manufacturability, celery-maintenance    | Yes           |
 
-The `celery-mfg` user requires `SupplementaryGroups=docker` for Docker socket access at `/var/run/docker.sock`. Note: Docker socket access is root-equivalent.
+### Docker Socket Access
+
+Services needing Docker access use:
+- `SupplementaryGroups=docker` - Group permission on the socket
+- `BindPaths=/var/run/docker.sock` - Makes socket accessible despite ProtectSystem=strict
+
+Note: Docker socket access is root-equivalent. The `celery-mfg` user must be in the `docker` group.
 
 ### Environment Variables
 
