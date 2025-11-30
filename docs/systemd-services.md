@@ -164,13 +164,14 @@ The application is split into isolated services, each with minimal permissions:
   - `check.runs_archive` - Detailed run directory as tar archive
 
 **Security Hardening:**
-| Setting             | Value                              | Purpose                    |
-|---------------------|------------------------------------|----------------------------|
-| ReadOnlyPaths       | `/home/django/platform.wafer.space`| Application code read-only |
-| ReadWritePaths      | `.../wafer_space/media`            | Media directory writable   |
-| PrivateTmp          | `true`                             | Isolated /tmp namespace    |
-| NoNewPrivileges     | `true`                             | Cannot gain new privileges |
-| SupplementaryGroups | `docker`                           | Docker socket access       |
+| Setting             | Value                              | Purpose                       |
+|---------------------|------------------------------------|-------------------------------|
+| ReadOnlyPaths       | `/home/django/platform.wafer.space`| Application code read-only    |
+| ReadWritePaths      | `.../wafer_space/media`            | Media directory writable      |
+| PrivateDevices      | `true`                             | No access to physical devices |
+| PrivateTmp          | `true`                             | Isolated /tmp namespace       |
+| NoNewPrivileges     | `true`                             | Cannot gain new privileges    |
+| SupplementaryGroups | `docker`                           | Docker socket access          |
 
 **Permissions:**
 - Media write: **Yes** - Saves log files and run archives
@@ -207,11 +208,12 @@ The application is split into isolated services, each with minimal permissions:
 - `/var/log/platform.wafer.space-celery-maintenance/worker.log` - Worker logs
 
 **Security Hardening:**
-| Setting             | Value                              | Purpose                      |
-|---------------------|------------------------------------|------------------------------|
-| ReadOnlyPaths       | `/home/django/platform.wafer.space`| Application code read-only   |
-| PrivateTmp          | `true`                             | Isolated /tmp namespace      |
-| NoNewPrivileges     | `true`                             | Cannot gain new privileges   |
+| Setting             | Value                              | Purpose                          |
+|---------------------|------------------------------------|----------------------------------|
+| ReadOnlyPaths       | `/home/django/platform.wafer.space`| Application code read-only       |
+| PrivateDevices      | `true`                             | No access to physical devices    |
+| PrivateTmp          | `true`                             | Isolated /tmp namespace          |
+| NoNewPrivileges     | `true`                             | Cannot gain new privileges       |
 | SupplementaryGroups | `docker`                           | Docker socket access for cleanup |
 
 **Permissions:**
@@ -343,8 +345,8 @@ This section maps each Celery task to its source code location (where the task i
 | gunicorn                 | Yes            | Yes        | Yes             | App code      | -              |
 | celery                   | Yes            | Yes        | Yes             | App code      | -              |
 | celery-downloads         | Yes            | Yes        | Yes             | App code      | Media          |
-| celery-manufacturability | -              | Yes        | Yes             | App code      | Media          |
-| celery-maintenance       | -              | Yes        | Yes             | App code      | -              |
+| celery-manufacturability | Yes            | Yes        | Yes             | App code      | Media          |
+| celery-maintenance       | Yes            | Yes        | Yes             | App code      | -              |
 | celery-beat              | Yes            | Yes        | Yes             | App code      | -              |
 
 ## Directory Structure
