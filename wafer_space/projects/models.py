@@ -1210,14 +1210,14 @@ class ManufacturabilityCheck(models.Model):
 
     def start_processing(self):
         """Mark check as started."""
-        self.status = self.Status.PROCESSING
-        self.started_at = timezone.now()
+        self.status = self.Status.RUNNING
+        self.celery_job_started_at = timezone.now()
         self.save()
 
     def complete(self, is_manufacturable, errors=None, warnings=None, logs=""):
         """Mark check as completed with results."""
-        self.status = self.Status.COMPLETED
-        self.completed_at = timezone.now()
+        self.status = self.Status.FINISHED
+        self.celery_job_finished_at = timezone.now()
         self.is_manufacturable = is_manufacturable
         self.errors = errors or []
         self.warnings = warnings or []
@@ -1231,7 +1231,7 @@ class ManufacturabilityCheck(models.Model):
             self.project.status = Project.Status.NOT_MANUFACTURABLE
         self.project.is_manufacturable = is_manufacturable
         self.project.manufacturability_errors = self.errors
-        self.project.check_completed_at = self.completed_at
+        self.project.check_completed_at = self.celery_job_finished_at
         self.project.save()
 
     def fail(self, error_msg: str) -> None:
@@ -1244,8 +1244,8 @@ class ManufacturabilityCheck(models.Model):
         Args:
             error_msg: Description of the system error
         """
-        self.status = self.Status.FAILED
-        self.completed_at = timezone.now()
+        self.status = self.Status.ERROR
+        self.celery_job_finished_at = timezone.now()
         self.error_message = error_msg
         self.processing_logs += "\n\n=== SYSTEM FAILURE - See error details above ==="
         self.save()
@@ -1514,7 +1514,7 @@ class ManufacturabilityCheck(models.Model):
         - "Not Manufacturable" (failed checks)
         - "" (not yet completed)
         """
-        if self.status != self.Status.COMPLETED or self.is_manufacturable is None:
+        if self.status != self.Status.FINISHED or self.is_manufacturable is None:
             return ""
 
         if self.is_manufacturable:
@@ -1527,15 +1527,15 @@ class ManufacturabilityCheck(models.Model):
     def queue_position(self) -> int | None:
         """Get position in the queue (1-indexed).
 
-        Returns None if not in QUEUED state.
+        Returns None if not in PENDING state.
         """
-        if self.status != self.Status.QUEUED or not self.queued_at:
+        if self.status != self.Status.PENDING or not self.celery_job_dispatched_at:
             return None
 
-        # Count checks queued before this one (lower queued_at = ahead)
+        # Count checks queued before this one (lower celery_job_dispatched_at = ahead)
         ahead = ManufacturabilityCheck.objects.filter(
-            status=self.Status.QUEUED,
-            queued_at__lt=self.queued_at,
+            status=self.Status.PENDING,
+            celery_job_dispatched_at__lt=self.celery_job_dispatched_at,
         ).count()
 
         return ahead + 1  # 1-indexed position
@@ -1544,47 +1544,47 @@ class ManufacturabilityCheck(models.Model):
     def checks_ahead(self) -> int:
         """Get number of checks ahead in the queue.
 
-        Returns 0 if not in QUEUED state or no queued_at.
+        Returns 0 if not in PENDING state or no celery_job_dispatched_at.
         """
-        if self.status != self.Status.QUEUED or not self.queued_at:
+        if self.status != self.Status.PENDING or not self.celery_job_dispatched_at:
             return 0
 
         return ManufacturabilityCheck.objects.filter(
-            status=self.Status.QUEUED,
-            queued_at__lt=self.queued_at,
+            status=self.Status.PENDING,
+            celery_job_dispatched_at__lt=self.celery_job_dispatched_at,
         ).count()
 
     @property
     def checks_behind(self) -> int:
         """Get number of checks behind in the queue (admin info).
 
-        Returns 0 if not in QUEUED state or no queued_at.
+        Returns 0 if not in PENDING state or no celery_job_dispatched_at.
         """
-        if self.status != self.Status.QUEUED or not self.queued_at:
+        if self.status != self.Status.PENDING or not self.celery_job_dispatched_at:
             return 0
 
         return ManufacturabilityCheck.objects.filter(
-            status=self.Status.QUEUED,
-            queued_at__gt=self.queued_at,
+            status=self.Status.PENDING,
+            celery_job_dispatched_at__gt=self.celery_job_dispatched_at,
         ).count()
 
     @property
     def checks_running(self) -> int:
-        """Get number of checks currently running (STARTING or PROCESSING)."""
+        """Get number of checks currently running (DISPATCHED or RUNNING)."""
         return ManufacturabilityCheck.objects.filter(
-            status__in=[self.Status.STARTING, self.Status.PROCESSING],
+            status__in=[self.Status.DISPATCHED, self.Status.RUNNING],
         ).count()
 
     @property
     def queue_wait_duration(self) -> timedelta | None:
         """Get how long this check has been waiting in queue.
 
-        Returns None if not in QUEUED state or no queued_at.
+        Returns None if not in PENDING state or no celery_job_dispatched_at.
         """
-        if self.status != self.Status.QUEUED or not self.queued_at:
+        if self.status != self.Status.PENDING or not self.celery_job_dispatched_at:
             return None
 
-        return timezone.now() - self.queued_at
+        return timezone.now() - self.celery_job_dispatched_at
 
     def get_reproduction_instructions(self) -> str:
         """Generate markdown instructions for reproducing check locally."""
