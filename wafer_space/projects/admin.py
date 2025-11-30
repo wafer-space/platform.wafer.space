@@ -74,8 +74,8 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
         "project",
         "status",
         "is_manufacturable",
-        "started_at",
-        "completed_at",
+        "celery_job_started_at",
+        "celery_job_finished_at",
         "docker_image_digest",
         "rerun_requested_by",
     ]
@@ -83,8 +83,8 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
     list_filter = [
         "status",
         "is_manufacturable",
-        "started_at",
-        "completed_at",
+        "celery_job_started_at",
+        "celery_job_finished_at",
     ]
 
     search_fields = [
@@ -95,9 +95,9 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
 
     readonly_fields = [
         "project",
-        "started_at",
-        "completed_at",
-        "task_id",
+        "celery_job_started_at",
+        "celery_job_finished_at",
+        "celery_job_id",
         "is_manufacturable",
         "errors",
         "warnings",

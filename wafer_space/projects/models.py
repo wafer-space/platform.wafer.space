@@ -11,6 +11,8 @@ from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.utils import timezone
 
+from wafer_space.projects.exceptions import InvalidStateTransitionError
+
 # Byte conversion constant
 _BYTES_PER_KB = 1024.0
 
@@ -1201,7 +1203,7 @@ class ManufacturabilityCheck(models.Model):
     class Meta:
         verbose_name = "Manufacturability Check"
         verbose_name_plural = "Manufacturability Checks"
-        ordering = ["-started_at"]
+        ordering = ["-celery_job_started_at"]
 
     def __str__(self):
         return f"Check for {self.project.name} - {self.get_status_display()}"
@@ -1266,6 +1268,28 @@ class ManufacturabilityCheck(models.Model):
         current_status = self.Status(self.status)
         allowed = self.ALLOWED_TRANSITIONS.get(current_status, set())
         return new_status in allowed
+
+    def mark_dispatched(self, *, celery_job_id: str) -> None:
+        """Mark check as dispatched to Celery queue.
+
+        Pathway 2: PENDING → DISPATCHED
+
+        Args:
+            celery_job_id: The ID returned by celery_task.delay()
+
+        Raises:
+            InvalidStateTransitionError: If transition is not allowed
+        """
+        if not self.can_transition_to(self.Status.DISPATCHED):
+            raise InvalidStateTransitionError(
+                from_status=self.status,
+                to_status=self.Status.DISPATCHED,
+            )
+
+        self.status = self.Status.DISPATCHED
+        self.celery_job_id = celery_job_id
+        self.celery_job_dispatched_at = timezone.now()
+        self.save(update_fields=["status", "celery_job_id", "celery_job_dispatched_at"])
 
     def cancel(self, reason: str = "Cancelled by user") -> str | None:
         """Cancel the check if it's still running.

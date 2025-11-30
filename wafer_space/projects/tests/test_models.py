@@ -9,6 +9,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
 
+from wafer_space.projects.exceptions import InvalidStateTransitionError
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
@@ -1167,6 +1168,68 @@ class TestManufacturabilityCheckStateTransitions(TestCase):
         )
         result = check.can_transition_to(ManufacturabilityCheck.Status.DISPATCHED)
         assert result is False
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckMarkDispatched(TestCase):
+    """Tests for mark_dispatched() method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_mark_dispatched_from_pending(self):
+        """Can mark PENDING check as DISPATCHED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        check.mark_dispatched(celery_job_id="test-job-123")
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.DISPATCHED
+        assert check.celery_job_id == "test-job-123"
+        assert check.celery_job_dispatched_at is not None
+
+    def test_mark_dispatched_from_invalid_state_raises(self):
+        """Cannot mark FINISHED check as DISPATCHED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+        with pytest.raises(InvalidStateTransitionError) as exc_info:
+            check.mark_dispatched(celery_job_id="test-job-123")
+
+        assert "finished" in str(exc_info.value).lower()
+        assert "dispatched" in str(exc_info.value).lower()
+
+    def test_mark_dispatched_from_cancelled_raises(self):
+        """Cannot mark CANCELLED check as DISPATCHED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLED,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_dispatched(celery_job_id="test-job-123")
 
 
 @pytest.mark.django_db
