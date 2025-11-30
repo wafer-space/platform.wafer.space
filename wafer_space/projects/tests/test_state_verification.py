@@ -95,7 +95,7 @@ class DownloadStateVerificationTests(TestCase):
 
         # File should still be QUEUED
         project_file.refresh_from_db()
-        assert project_file.download_status == ProjectFile.DownloadStatus.PENDING
+        assert project_file.download_status == ProjectFile.DownloadStatus.QUEUED
 
     @patch("wafer_space.projects.tasks.is_task_actively_running")
     @patch("wafer_space.projects.tasks.is_task_queued")
@@ -120,7 +120,7 @@ class DownloadStateVerificationTests(TestCase):
 
         # File should be FAILED
         project_file.refresh_from_db()
-        assert project_file.download_status == ProjectFile.DownloadStatus.ERROR
+        assert project_file.download_status == ProjectFile.DownloadStatus.FAILED
         assert "not found in Celery queue" in project_file.download_error
 
     @patch("wafer_space.projects.tasks.is_task_queued")
