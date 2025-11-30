@@ -220,6 +220,23 @@ See `deployment/README.md` for full deployment guide.
 
 ---
 
+## .ENV FILES - SECRETS ONLY
+
+**`.env` files are for secrets and passwords ONLY - not for settings.**
+
+- ✅ **DO** put in `.env`: API keys, client secrets, database passwords, tokens
+- ❌ **DON'T** put in `.env`: Timeouts, limits, feature flags, configuration values
+
+**Why:** Settings belong in `config/settings/` where they are:
+- Version controlled
+- Environment-specific (dev.py, stage.py, prod.py)
+- Type-checked and validated
+- Documented with comments
+
+**If a value can be committed to the repository, it goes in settings, not `.env`.**
+
+---
+
 ## CELERY DEBUGGING
 
 ### 5. WORKER RESTART IS NOT THE ISSUE

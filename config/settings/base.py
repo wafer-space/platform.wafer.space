@@ -444,12 +444,10 @@ DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS = 60.0  # Check every 1 minute
 
 # Precheck (Manufacturability Checking) configuration
 # See: Design document for manufacturability checking implementation
-PRECHECK_DOCKER_IMAGE = env(
-    "PRECHECK_DOCKER_IMAGE",
-    default="ghcr.io/wafer-space/gf180mcu-precheck:latest",
-)
-PRECHECK_CONCURRENT_LIMIT = env.int("PRECHECK_CONCURRENT_LIMIT", default=4)
-PRECHECK_TIMEOUT_SECONDS = env.int("PRECHECK_TIMEOUT_SECONDS", default=10800)  # 3 hours
+PRECHECK_DOCKER_IMAGE = "ghcr.io/wafer-space/gf180mcu-precheck:latest"
+PRECHECK_CONCURRENT_LIMIT = 4
+PRECHECK_TIMEOUT_SECONDS = 12 * 60 * 60  # 12 hours hard limit
+PRECHECK_SOFT_TIMEOUT_BUFFER = 60 * 60  # 1 hour buffer before hard limit
 PRECHECK_SCAN_INTERVAL_SECONDS = 30.0  # Scan for files ready to check every 30s
 
 # Celery Beat periodic tasks

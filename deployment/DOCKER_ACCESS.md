@@ -183,21 +183,15 @@ If containers fail to start:
   - `django-celery.service` (as `www-data`): Handles referrals queue
   - `django-celery-manufacturability.service` (as `celery-mfg`): Handles manufacturability queue with Docker access
 
-## Environment Variables
+## Configuration
 
-Ensure these variables are set in the production `.env` file:
+Precheck settings are defined in `config/settings/` (not `.env` files):
 
-```bash
-# Docker image to use for manufacturability checking
-PRECHECK_DOCKER_IMAGE=ghcr.io/wafer-space/gf180mcu-precheck:latest
+- **Timeouts**: `config/settings/base.py` (12 hours for prod/stage, 5 min for dev)
+- **Concurrency**: `PRECHECK_CONCURRENT_LIMIT = 4`
+- **Docker image**: `PRECHECK_DOCKER_IMAGE`
 
-# Concurrency limits
-PRECHECK_CONCURRENT_LIMIT=4
-PRECHECK_PER_USER_LIMIT=1
-
-# Timeout for precheck execution (3 hours)
-PRECHECK_TIMEOUT_SECONDS=10800
-```
+See `docs/settings.md` for environment-specific values.
 
 ## Monitoring
 

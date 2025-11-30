@@ -50,7 +50,7 @@ Currently, the platform has a mock `check_project_manufacturability` task that s
 ### Non-Functional Requirements
 
 1. **Performance & Scalability**
-   - 3-hour timeout per check
+   - 12-hour timeout per check (production/staging), 5-minute for local development
    - Configurable concurrent check limit (default: 4)
    - One active check per user (multiple can queue)
    - Display queue position to users
@@ -114,7 +114,7 @@ Currently, the platform has a mock `check_project_manufacturability` task that s
 │  - Magic, KLayout DRC tools                                │
 │  - precheck.py script                                      │
 │  Mounts: /input/design.gds (read-only)                     │
-│  Limits: 8GB RAM, 1 CPU, 3-hour timeout                    │
+│  Limits: 8GB RAM, 1 CPU, 12-hour timeout                   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -423,7 +423,7 @@ def classify_failure(logs: str, exit_code: int) -> str:
     max_retries=3,
     default_retry_delay=60,
     time_limit=settings.PRECHECK_TIMEOUT_SECONDS,
-    soft_time_limit=settings.PRECHECK_TIMEOUT_SECONDS - 300,
+    soft_time_limit=settings.PRECHECK_TIMEOUT_SECONDS - settings.PRECHECK_SOFT_TIMEOUT_BUFFER,
 )
 def check_project_manufacturability(self, check_id):
     """Run manufacturability check in Docker container."""
@@ -572,22 +572,22 @@ CELERY_TASK_ROUTES = {
     'wafer_space.projects.tasks.check_project_manufacturability': {'queue': 'manufacturability'},
 }
 
-PRECHECK_CONCURRENT_LIMIT = env.int('PRECHECK_CONCURRENT_LIMIT', default=4)
-PRECHECK_PER_USER_LIMIT = env.int('PRECHECK_PER_USER_LIMIT', default=1)
-PRECHECK_TIMEOUT_SECONDS = env.int('PRECHECK_TIMEOUT_SECONDS', default=10800)  # 3 hours
-PRECHECK_DOCKER_IMAGE = env('PRECHECK_DOCKER_IMAGE', default='ghcr.io/wafer-space/gf180mcu-precheck:latest')
+PRECHECK_DOCKER_IMAGE = "ghcr.io/wafer-space/gf180mcu-precheck:latest"
+PRECHECK_CONCURRENT_LIMIT = 4
+PRECHECK_TIMEOUT_SECONDS = 12 * 60 * 60  # 12 hours hard limit
+PRECHECK_SOFT_TIMEOUT_BUFFER = 60 * 60  # 1 hour buffer before hard limit
 ```
 
 **Worker Configuration:**
 
 ```bash
 # Start dedicated worker for manufacturability checks
+# Note: Time limits are configured at task level via PRECHECK_TIMEOUT_SECONDS
+# and PRECHECK_SOFT_TIMEOUT_BUFFER settings, not via CLI args
 celery -A config worker \
   -Q manufacturability \
   --concurrency=4 \
   --max-tasks-per-child=1 \
-  --time-limit=10800 \
-  --soft-time-limit=10500 \
   --loglevel=info
 ```
 
@@ -863,7 +863,7 @@ Before finalizing implementation:
 - [ ] Run precheck manually with DRC errors → capture output
 - [ ] Run precheck manually with missing cells → capture output
 - [ ] Update `PrecheckLogParser` with real patterns
-- [ ] Test timeout behavior (create design that takes >3 hours or mock timeout)
+- [ ] Test timeout behavior (mock timeout to verify soft/hard limit handling)
 - [ ] Test retry behavior (force system failure)
 - [ ] Test concurrency limits (queue multiple checks)
 - [ ] Test compliance certification flow end-to-end
@@ -873,11 +873,11 @@ Before finalizing implementation:
 ### Configuration
 
 ```bash
-# .env additions
-PRECHECK_DOCKER_IMAGE=ghcr.io/wafer-space/gf180mcu-precheck:latest
-PRECHECK_CONCURRENT_LIMIT=4
-PRECHECK_PER_USER_LIMIT=1
-PRECHECK_TIMEOUT_SECONDS=10800
+# Settings in config/settings/base.py (not .env)
+# PRECHECK_DOCKER_IMAGE = "ghcr.io/wafer-space/gf180mcu-precheck:latest"
+# PRECHECK_CONCURRENT_LIMIT = 4
+# PRECHECK_TIMEOUT_SECONDS = 12 * 60 * 60  # 12 hours
+# PRECHECK_SOFT_TIMEOUT_BUFFER = 60 * 60  # 1 hour buffer
 ```
 
 ### Worker Deployment
@@ -896,12 +896,11 @@ User=django
 Group=django
 WorkingDirectory=/home/django/platform
 Environment="DJANGO_SETTINGS_MODULE=config.settings.production"
+# Note: Time limits are configured at task level via settings, not CLI args
 ExecStart=/home/django/platform/.venv/bin/celery -A config worker \
   -Q manufacturability \
   --concurrency=4 \
   --max-tasks-per-child=1 \
-  --time-limit=10800 \
-  --soft-time-limit=10500 \
   --loglevel=info \
   --logfile=/var/log/django/celery-manufacturability.log
 Restart=always
