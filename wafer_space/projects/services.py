@@ -685,8 +685,8 @@ class ManufacturabilityService:
                 "is_manufacturable": check.is_manufacturable,
                 "errors": check.errors,
                 "warnings": check.warnings,
-                "started_at": check.celery_job_started_at,
-                "completed_at": check.celery_job_finished_at,
+                "celery_job_started_at": check.celery_job_started_at,
+                "celery_job_finished_at": check.celery_job_finished_at,
             }
 
     @classmethod
