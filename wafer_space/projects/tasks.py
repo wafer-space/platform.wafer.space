@@ -1277,30 +1277,6 @@ def _download_github_artifact(
     }
 
 
-def _save_file_to_django(project_file, file_content: bytes, temp_dir: Path) -> None:
-    """Save downloaded content to Django file field."""
-    # Create temporary file to store content
-    temp_filename = f"{project_file.id}_{project_file.original_filename}"
-    temp_path = temp_dir / temp_filename
-
-    # Write content to temp file
-    temp_path.write_bytes(file_content)
-
-    # Create Django file from the downloaded content
-    with temp_path.open("rb") as temp_file:
-        django_file = ContentFile(temp_file.read())
-        django_file.name = project_file.original_filename
-        project_file.file.save(
-            project_file.original_filename,
-            django_file,
-            save=False,
-        )
-
-    # Clean up temp file
-    with contextlib.suppress(OSError):
-        temp_path.unlink()
-
-
 def _prepare_download_request(
     project_file: ProjectFile,
     temp_path: Path,
@@ -2880,55 +2856,6 @@ def ensure_download_tasks_queued():
         "requeued": requeued_count,
         "verified": verified_count,
     }
-
-
-def _count_files_by_check_status(ready_files) -> dict:
-    """Count files by their manufacturability check status.
-
-    Returns dict with counts for each status plus 'needs_check' for actionable files.
-    """
-    counts = {
-        "no_check": 0,
-        "pending": 0,
-        "running": 0,
-        "finished": 0,
-        "cancelled": 0,
-        "error": 0,
-        "needs_check": 0,
-    }
-
-    for pf in ready_files:
-        try:
-            check = pf.manufacturability_check
-            if check.status == ManufacturabilityCheck.Status.PENDING:
-                counts["pending"] += 1
-            elif check.status == ManufacturabilityCheck.Status.RUNNING:
-                counts["running"] += 1
-            elif check.status == ManufacturabilityCheck.Status.FINISHED:
-                counts["finished"] += 1
-            elif check.status == ManufacturabilityCheck.Status.CANCELLED:
-                counts["cancelled"] += 1
-            elif check.status == ManufacturabilityCheck.Status.ERROR:
-                counts["error"] += 1
-                if check.can_retry():
-                    counts["needs_check"] += 1
-        except ManufacturabilityCheck.DoesNotExist:
-            counts["no_check"] += 1
-            counts["needs_check"] += 1
-
-    return counts
-
-
-def _log_file_status_counts(logger, file_count: int, counts: dict) -> None:
-    """Log the breakdown of files by their check status."""
-    logger.info("  Found %d files with completed verified downloads:", file_count)
-    logger.info("    - No check yet: %d", counts["no_check"])
-    logger.info("    - Pending: %d", counts["pending"])
-    logger.info("    - Running: %d", counts["running"])
-    logger.info("    - Finished: %d", counts["finished"])
-    logger.info("    - Cancelled: %d", counts["cancelled"])
-    logger.info("    - Error: %d", counts["error"])
-    logger.info("  Need checks: %d", counts["needs_check"])
 
 
 def _stop_and_remove_container(container, logger) -> None:
