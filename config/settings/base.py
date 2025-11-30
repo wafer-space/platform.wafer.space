@@ -447,13 +447,41 @@ PRECHECK_SCAN_INTERVAL_SECONDS = 30.0  # Scan for files ready to check every 30s
 
 # Celery Beat periodic tasks
 CELERY_BEAT_SCHEDULE = {
+    # Download recovery
     "ensure-download-tasks-queued": {
         "task": "wafer_space.projects.tasks.ensure_download_tasks_queued",
         "schedule": DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS,
     },
-    "process-manufacturability-check-queue": {
-        "task": "wafer_space.projects.tasks.process_manufacturability_check_queue",
-        "schedule": PRECHECK_SCAN_INTERVAL_SECONDS,
+    # Manufacturability check lifecycle
+    "checks-create": {
+        "task": "wafer_space.projects.tasks.checks_create",
+        "schedule": 30.0,
+    },
+    "checks-dispatch": {
+        "task": "wafer_space.projects.tasks.checks_dispatch",
+        "schedule": 30.0,
+    },
+    "checks-retry": {
+        "task": "wafer_space.projects.tasks.checks_retry",
+        "schedule": 60.0,
+    },
+    # Cancellation cleanup (fast - critical for releasing slots)
+    "checks-cancelling": {
+        "task": "wafer_space.projects.tasks.checks_cancelling",
+        "schedule": 15.0,
+    },
+    # Orphan detection
+    "checks-cleanup-orphaned-dispatch": {
+        "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_dispatch",
+        "schedule": 60.0,
+    },
+    "checks-cleanup-orphaned-processing": {
+        "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_processing",
+        "schedule": 60.0,
+    },
+    "checks-cleanup-orphaned-docker": {
+        "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_docker",
+        "schedule": 300.0,
     },
 }
 
