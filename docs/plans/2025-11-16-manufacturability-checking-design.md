@@ -50,7 +50,7 @@ Currently, the platform has a mock `check_project_manufacturability` task that s
 ### Non-Functional Requirements
 
 1. **Performance & Scalability**
-   - 3-hour timeout per check
+   - 12-hour timeout per check (production/staging), 5-minute for local development
    - Configurable concurrent check limit (default: 4)
    - One active check per user (multiple can queue)
    - Display queue position to users
@@ -114,7 +114,7 @@ Currently, the platform has a mock `check_project_manufacturability` task that s
 │  - Magic, KLayout DRC tools                                │
 │  - precheck.py script                                      │
 │  Mounts: /input/design.gds (read-only)                     │
-│  Limits: 8GB RAM, 1 CPU, 3-hour timeout                    │
+│  Limits: 8GB RAM, 1 CPU, 12-hour timeout                   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -582,12 +582,12 @@ PRECHECK_SOFT_TIMEOUT_BUFFER = 60 * 60  # 1 hour buffer before hard limit
 
 ```bash
 # Start dedicated worker for manufacturability checks
+# Note: Time limits are configured at task level via PRECHECK_TIMEOUT_SECONDS
+# and PRECHECK_SOFT_TIMEOUT_BUFFER settings, not via CLI args
 celery -A config worker \
   -Q manufacturability \
   --concurrency=4 \
   --max-tasks-per-child=1 \
-  --time-limit=10800 \
-  --soft-time-limit=10500 \
   --loglevel=info
 ```
 
@@ -863,7 +863,7 @@ Before finalizing implementation:
 - [ ] Run precheck manually with DRC errors → capture output
 - [ ] Run precheck manually with missing cells → capture output
 - [ ] Update `PrecheckLogParser` with real patterns
-- [ ] Test timeout behavior (create design that takes >3 hours or mock timeout)
+- [ ] Test timeout behavior (mock timeout to verify soft/hard limit handling)
 - [ ] Test retry behavior (force system failure)
 - [ ] Test concurrency limits (queue multiple checks)
 - [ ] Test compliance certification flow end-to-end
@@ -896,12 +896,11 @@ User=django
 Group=django
 WorkingDirectory=/home/django/platform
 Environment="DJANGO_SETTINGS_MODULE=config.settings.production"
+# Note: Time limits are configured at task level via settings, not CLI args
 ExecStart=/home/django/platform/.venv/bin/celery -A config worker \
   -Q manufacturability \
   --concurrency=4 \
   --max-tasks-per-child=1 \
-  --time-limit=10800 \
-  --soft-time-limit=10500 \
   --loglevel=info \
   --logfile=/var/log/django/celery-manufacturability.log
 Restart=always
