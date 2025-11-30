@@ -892,14 +892,14 @@ def _setup_docker_context(check, project_file, task_instance, logger):
 
 @shared_task(
     bind=True,
-    queue="manufacturability",
+    queue="docker-persistent",
     time_limit=settings.PRECHECK_TIMEOUT_SECONDS,
     soft_time_limit=(
         settings.PRECHECK_TIMEOUT_SECONDS - settings.PRECHECK_SOFT_TIMEOUT_BUFFER
     ),
 )
-def celery_job_run(self, check_id):  # noqa: PLR0915
-    """Run manufacturability check in Docker container.
+def check_process_job(self, check_id):  # noqa: PLR0915
+    """Run manufacturability check in Docker container for a single check.
 
     This task performs manufacturability analysis using the gf180mcu-precheck
     tool running in a Docker container. It replaces the previous mock implementation.
@@ -3075,7 +3075,7 @@ def _handle_pending_checks(logger, concurrent_limit: int) -> tuple[int, int]:
 
         # Dispatch the task
         try:
-            task = celery_job_run.delay(check.id)
+            task = check_process_job.delay(check.id)
             check.mark_dispatched(celery_job_id=task.id)
             dispatched += 1
             active_count += 1

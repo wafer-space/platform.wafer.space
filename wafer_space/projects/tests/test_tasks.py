@@ -36,7 +36,7 @@ from wafer_space.projects.tasks import _log_download_start
 from wafer_space.projects.tasks import _prepare_download_request
 from wafer_space.projects.tasks import _process_and_save_content
 from wafer_space.projects.tasks import _safe_urlopen
-from wafer_space.projects.tasks import celery_job_run
+from wafer_space.projects.tasks import check_process_job
 from wafer_space.projects.tasks import download_project_file
 from wafer_space.projects.tasks import process_manufacturability_check_queue
 
@@ -305,10 +305,10 @@ class TestManufacturabilityCheckTask(TestCase):
 
         # Run task
         with mock_patch.object(
-            tasks.celery_job_run,
+            tasks.check_process_job,
             "update_state",
         ):
-            result = celery_job_run.run(check.id)
+            result = check_process_job.run(check.id)
 
         # Verify check was marked as running then completed
         check.refresh_from_db()
@@ -379,10 +379,10 @@ INFO: Check completed
 
         # Run task
         with mock_patch.object(
-            tasks.celery_job_run,
+            tasks.check_process_job,
             "update_state",
         ):
-            result = celery_job_run.run(check.id)
+            result = check_process_job.run(check.id)
 
         # Verify result
         assert result["status"] == "completed"
@@ -461,10 +461,10 @@ FATAL: Design has critical errors
 
         # Run task
         with mock_patch.object(
-            tasks.celery_job_run,
+            tasks.check_process_job,
             "update_state",
         ):
-            result = celery_job_run.run(check.id)
+            result = check_process_job.run(check.id)
 
         # Verify result - design is not manufacturable due to mock DRC violations
         assert result["status"] == "completed"
@@ -484,7 +484,7 @@ FATAL: Design has critical errors
     def test_check_task_handles_missing_check(self):
         """Test that task handles missing check gracefully."""
         # Run task with non-existent check ID
-        result = celery_job_run(999999)
+        result = check_process_job(999999)
 
         # Verify error handling
         assert result["status"] == "error"
@@ -545,7 +545,7 @@ FATAL: Design has critical errors
         )
 
         # Run task directly (not via Celery) - should handle the exception
-        result = celery_job_run.run(check.id)
+        result = check_process_job.run(check.id)
         assert result["status"] == "failed"
         assert "Test error" in result["message"]
 
@@ -615,10 +615,10 @@ FATAL: Design has critical errors
 
         # Run task
         with mock_patch.object(
-            tasks.celery_job_run,
+            tasks.check_process_job,
             "update_state",
         ):
-            celery_job_run.run(check.id)
+            check_process_job.run(check.id)
 
         # Verify check completed successfully
         check.refresh_from_db()
@@ -761,11 +761,11 @@ class TestDockerIntegration(TestCase):
 
         # Bind the function to the mock task
         with mock_patch.object(
-            tasks.celery_job_run,
+            tasks.check_process_job,
             "update_state",
         ):
             # Call the task directly
-            result = tasks.celery_job_run.run(check.id)
+            result = tasks.check_process_job.run(check.id)
 
         # Verify Docker operations
         mock_docker.from_env.assert_called_once()
@@ -832,10 +832,10 @@ class TestDockerIntegration(TestCase):
 
         # Run the task
         with mock_patch.object(
-            tasks.celery_job_run,
+            tasks.check_process_job,
             "update_state",
         ):
-            tasks.celery_job_run.run(check.id)
+            tasks.check_process_job.run(check.id)
 
         # Verify the docker command includes --slot with the project's slot_size
         call_args = mock_client.containers.run.call_args
@@ -1330,7 +1330,7 @@ class TestProcessManufacturabilityCheckQueue(TestCase):
             status=DownloadAttempt.Status.COMPLETED,
         )
 
-    @patch("wafer_space.projects.tasks.celery_job_run.delay")
+    @patch("wafer_space.projects.tasks.check_process_job.delay")
     def test_cancelled_check_not_dispatched(self, mock_check_task):
         """Test that cancelled checks are not dispatched."""
         # Create a cancelled check
@@ -1351,7 +1351,7 @@ class TestProcessManufacturabilityCheckQueue(TestCase):
         check = ManufacturabilityCheck.objects.get(project_file=self.project_file)
         assert check.status == ManufacturabilityCheck.Status.CANCELLED
 
-    @patch("wafer_space.projects.tasks.celery_job_run.delay")
+    @patch("wafer_space.projects.tasks.check_process_job.delay")
     def test_completed_check_not_dispatched(self, mock_check_task):
         """Test that finished checks are not dispatched."""
         # Create a completed check
@@ -1369,7 +1369,7 @@ class TestProcessManufacturabilityCheckQueue(TestCase):
         assert result["pending_dispatched"] == 0
         mock_check_task.assert_not_called()
 
-    @patch("wafer_space.projects.tasks.celery_job_run.delay")
+    @patch("wafer_space.projects.tasks.check_process_job.delay")
     def test_queued_check_gets_dispatched(self, mock_check_task):
         """Test that PENDING checks get dispatched to DISPATCHED."""
         mock_check_task.return_value = Mock(id="new-task-123")
@@ -1396,7 +1396,7 @@ class TestProcessManufacturabilityCheckQueue(TestCase):
 
     @patch("wafer_space.projects.tasks.is_check_task_actively_running")
     @patch("wafer_space.projects.tasks.is_check_task_queued")
-    @patch("wafer_space.projects.tasks.celery_job_run.delay")
+    @patch("wafer_space.projects.tasks.check_process_job.delay")
     def test_starting_check_not_re_dispatched(
         self, mock_check_task, mock_queued, mock_active
     ):
@@ -1423,7 +1423,7 @@ class TestProcessManufacturabilityCheckQueue(TestCase):
         mock_check_task.assert_not_called()
 
     @patch("wafer_space.projects.tasks.is_check_task_actively_running")
-    @patch("wafer_space.projects.tasks.celery_job_run.delay")
+    @patch("wafer_space.projects.tasks.check_process_job.delay")
     def test_starting_check_transitions_to_processing(
         self, mock_check_task, mock_active
     ):
