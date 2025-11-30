@@ -420,11 +420,6 @@ CELERY_ENABLE_UTC = True
 # Task routing and execution
 CELERY_TASK_ALWAYS_EAGER = False  # Set to True for synchronous testing
 CELERY_TASK_EAGER_PROPAGATES = True
-CELERY_TASK_ROUTES = {
-    "wafer_space.projects.tasks.*": {"queue": "manufacturability"},
-    "wafer_space.referrals.tasks.*": {"queue": "referrals"},
-    "wafer_space.legal.tasks.*": {"queue": "default"},
-}
 
 # Task result configuration
 CELERY_RESULT_EXPIRES = 3600  # Results expire after 1 hour
