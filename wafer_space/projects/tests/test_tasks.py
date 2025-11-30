@@ -36,7 +36,7 @@ from wafer_space.projects.tasks import _log_download_start
 from wafer_space.projects.tasks import _prepare_download_request
 from wafer_space.projects.tasks import _process_and_save_content
 from wafer_space.projects.tasks import _safe_urlopen
-from wafer_space.projects.tasks import check_project_manufacturability
+from wafer_space.projects.tasks import celery_job_run
 from wafer_space.projects.tasks import download_project_file
 from wafer_space.projects.tasks import process_manufacturability_check_queue
 
@@ -248,7 +248,7 @@ class TestManufacturabilityCheckTask(TestCase):
 
     @patch("wafer_space.projects.tasks.docker")
     def test_check_task_marks_processing(self, mock_docker):
-        """Test that task marks check as PROCESSING."""
+        """Test that task marks check as RUNNING."""
         # Create a temporary GDS file
         with tempfile.NamedTemporaryFile(suffix=".gds", delete=False) as tmp:
             tmp.write(b"Mock GDS content")
@@ -299,20 +299,20 @@ class TestManufacturabilityCheckTask(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            task_id="test-task-123",
+            status=ManufacturabilityCheck.Status.PENDING,
+            celery_job_id="test-task-123",
         )
 
         # Run task
         with mock_patch.object(
-            tasks.check_project_manufacturability,
+            tasks.celery_job_run,
             "update_state",
         ):
-            result = check_project_manufacturability.run(check.id)
+            result = celery_job_run.run(check.id)
 
-        # Verify check was marked as processing then completed
+        # Verify check was marked as running then completed
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.COMPLETED
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
         assert result["status"] == "completed"
 
         # Cleanup
@@ -373,16 +373,16 @@ INFO: Check completed
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            task_id="test-task-123",
+            status=ManufacturabilityCheck.Status.PENDING,
+            celery_job_id="test-task-123",
         )
 
         # Run task
         with mock_patch.object(
-            tasks.check_project_manufacturability,
+            tasks.celery_job_run,
             "update_state",
         ):
-            result = check_project_manufacturability.run(check.id)
+            result = celery_job_run.run(check.id)
 
         # Verify result
         assert result["status"] == "completed"
@@ -392,7 +392,7 @@ INFO: Check completed
 
         # Verify check was updated
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.COMPLETED
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
         assert check.is_manufacturable is True
         assert check.errors == []
         assert check.completed_at is not None
@@ -455,16 +455,16 @@ FATAL: Design has critical errors
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            task_id="test-task-123",
+            status=ManufacturabilityCheck.Status.PENDING,
+            celery_job_id="test-task-123",
         )
 
         # Run task
         with mock_patch.object(
-            tasks.check_project_manufacturability,
+            tasks.celery_job_run,
             "update_state",
         ):
-            result = check_project_manufacturability.run(check.id)
+            result = celery_job_run.run(check.id)
 
         # Verify result - design is not manufacturable due to mock DRC violations
         assert result["status"] == "completed"
@@ -474,7 +474,7 @@ FATAL: Design has critical errors
 
         # Verify check was updated
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.COMPLETED
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
         assert check.is_manufacturable is False
         assert check.completed_at is not None
 
@@ -484,7 +484,7 @@ FATAL: Design has critical errors
     def test_check_task_handles_missing_check(self):
         """Test that task handles missing check gracefully."""
         # Run task with non-existent check ID
-        result = check_project_manufacturability(999999)
+        result = celery_job_run(999999)
 
         # Verify error handling
         assert result["status"] == "error"
@@ -540,12 +540,12 @@ FATAL: Design has critical errors
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
+            status=ManufacturabilityCheck.Status.PENDING,
             max_retries=0,
         )
 
         # Run task directly (not via Celery) - should handle the exception
-        result = check_project_manufacturability.run(check.id)
+        result = celery_job_run.run(check.id)
         assert result["status"] == "failed"
         assert "Test error" in result["message"]
 
@@ -609,20 +609,20 @@ FATAL: Design has critical errors
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            task_id="test-task-456",
+            status=ManufacturabilityCheck.Status.PENDING,
+            celery_job_id="test-task-456",
         )
 
         # Run task
         with mock_patch.object(
-            tasks.check_project_manufacturability,
+            tasks.celery_job_run,
             "update_state",
         ):
-            check_project_manufacturability.run(check.id)
+            celery_job_run.run(check.id)
 
         # Verify check completed successfully
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.COMPLETED
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
         assert check.is_manufacturable is True
 
         # Cleanup
@@ -761,11 +761,11 @@ class TestDockerIntegration(TestCase):
 
         # Bind the function to the mock task
         with mock_patch.object(
-            tasks.check_project_manufacturability,
+            tasks.celery_job_run,
             "update_state",
         ):
             # Call the task directly
-            result = tasks.check_project_manufacturability.run(check.id)
+            result = tasks.celery_job_run.run(check.id)
 
         # Verify Docker operations
         mock_docker.from_env.assert_called_once()
@@ -832,10 +832,10 @@ class TestDockerIntegration(TestCase):
 
         # Run the task
         with mock_patch.object(
-            tasks.check_project_manufacturability,
+            tasks.celery_job_run,
             "update_state",
         ):
-            tasks.check_project_manufacturability.run(check.id)
+            tasks.celery_job_run.run(check.id)
 
         # Verify the docker command includes --slot with the project's slot_size
         call_args = mock_client.containers.run.call_args
@@ -1332,7 +1332,7 @@ class TestProcessManufacturabilityCheckQueue(TestCase):
             status=DownloadAttempt.Status.COMPLETED,
         )
 
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    @patch("wafer_space.projects.tasks.celery_job_run.delay")
     def test_cancelled_check_not_dispatched(self, mock_check_task):
         """Test that cancelled checks are not dispatched."""
         # Create a cancelled check
@@ -1346,21 +1346,21 @@ class TestProcessManufacturabilityCheckQueue(TestCase):
         result = process_manufacturability_check_queue()
 
         # Verify no checks were dispatched (cancelled checks are ignored)
-        assert result["queued_dispatched"] == 0
+        assert result["pending_dispatched"] == 0
         mock_check_task.assert_not_called()
 
         # Verify the check is still cancelled
         check = ManufacturabilityCheck.objects.get(project_file=self.project_file)
         assert check.status == ManufacturabilityCheck.Status.CANCELLED
 
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    @patch("wafer_space.projects.tasks.celery_job_run.delay")
     def test_completed_check_not_dispatched(self, mock_check_task):
-        """Test that completed checks are not dispatched."""
+        """Test that finished checks are not dispatched."""
         # Create a completed check
         ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.COMPLETED,
+            status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=True,
         )
 
@@ -1368,86 +1368,86 @@ class TestProcessManufacturabilityCheckQueue(TestCase):
         result = process_manufacturability_check_queue()
 
         # Verify no checks were dispatched
-        assert result["queued_dispatched"] == 0
+        assert result["pending_dispatched"] == 0
         mock_check_task.assert_not_called()
 
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    @patch("wafer_space.projects.tasks.celery_job_run.delay")
     def test_queued_check_gets_dispatched(self, mock_check_task):
-        """Test that QUEUED checks get dispatched to STARTING."""
+        """Test that PENDING checks get dispatched to DISPATCHED."""
         mock_check_task.return_value = Mock(id="new-task-123")
 
-        # Create a queued check (as would be created by download completion)
+        # Create a pending check (as would be created by download completion)
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            queued_at=timezone.now(),
+            status=ManufacturabilityCheck.Status.PENDING,
+            celery_job_dispatched_at=timezone.now(),
         )
 
         # Run the queue processing task
         result = process_manufacturability_check_queue()
 
         # Verify check was dispatched
-        assert result["queued_dispatched"] == 1
+        assert result["pending_dispatched"] == 1
         mock_check_task.assert_called_once_with(check.id)
 
-        # Verify check transitioned to STARTING
+        # Verify check transitioned to DISPATCHED
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.STARTING
-        assert check.task_id == "new-task-123"
+        assert check.status == ManufacturabilityCheck.Status.DISPATCHED
+        assert check.celery_job_id == "new-task-123"
 
     @patch("wafer_space.projects.tasks.is_check_task_actively_running")
     @patch("wafer_space.projects.tasks.is_check_task_queued")
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    @patch("wafer_space.projects.tasks.celery_job_run.delay")
     def test_starting_check_not_re_dispatched(
         self, mock_check_task, mock_queued, mock_active
     ):
-        """Test that STARTING checks are not re-dispatched."""
+        """Test that DISPATCHED checks are not re-dispatched."""
         # Mock verification: task is in queue but not yet running
         mock_active.return_value = False
         mock_queued.return_value = True
 
-        # Create a check already in STARTING state
+        # Create a check already in DISPATCHED state
         ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.STARTING,
-            task_id="existing-task",
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+            celery_job_id="existing-task",
         )
 
         # Run the queue processing task
         result = process_manufacturability_check_queue()
 
-        # Verify no new dispatches (STARTING checks are verified, not dispatched)
-        assert result["queued_dispatched"] == 0
-        assert result["starting_verified"] == 1
-        assert result["starting_transitioned"] == 0
+        # Verify no new dispatches (DISPATCHED checks are verified, not dispatched)
+        assert result["pending_dispatched"] == 0
+        assert result["dispatched_verified"] == 1
+        assert result["dispatched_transitioned"] == 0
         mock_check_task.assert_not_called()
 
     @patch("wafer_space.projects.tasks.is_check_task_actively_running")
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    @patch("wafer_space.projects.tasks.celery_job_run.delay")
     def test_starting_check_transitions_to_processing(
         self, mock_check_task, mock_active
     ):
-        """Test STARTING check transitions to PROCESSING when actively running."""
+        """Test DISPATCHED check transitions to RUNNING when actively running."""
         # Mock verification: task is actively running
         mock_active.return_value = True
 
-        # Create a check in STARTING state
+        # Create a check in DISPATCHED state
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.STARTING,
-            task_id="running-task-123",
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+            celery_job_id="running-task-123",
         )
 
         # Run the queue processing task
         result = process_manufacturability_check_queue()
 
-        # Verify check transitioned to PROCESSING
-        assert result["starting_transitioned"] == 1
-        assert result["starting_verified"] == 0
+        # Verify check transitioned to RUNNING
+        assert result["dispatched_transitioned"] == 1
+        assert result["dispatched_verified"] == 0
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.PROCESSING
-        assert check.started_at is not None
+        assert check.status == ManufacturabilityCheck.Status.RUNNING
+        assert check.celery_job_started_at is not None
         mock_check_task.assert_not_called()
