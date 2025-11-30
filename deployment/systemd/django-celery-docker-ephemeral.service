@@ -1,5 +1,5 @@
 [Unit]
-Description=platform.wafer.space Celery Worker (Manufacturability)
+Description=platform.wafer.space Celery Worker (Docker Ephemeral)
 After=network.target postgresql.service django-gunicorn.service docker.service
 Requires=postgresql.service docker.service
 
@@ -13,9 +13,9 @@ EnvironmentFile=/home/django/platform.wafer.space/.env
 
 # Isolated runtime and log directories (created automatically)
 # Sets $RUNTIME_DIRECTORY and $LOGS_DIRECTORY environment variables
-RuntimeDirectory=platform.wafer.space-celery-manufacturability
+RuntimeDirectory=platform.wafer.space-celery-docker-ephemeral
 RuntimeDirectoryMode=0750
-LogsDirectory=platform.wafer.space-celery-manufacturability
+LogsDirectory=platform.wafer.space-celery-docker-ephemeral
 LogsDirectoryMode=0750
 
 PIDFile=${RUNTIME_DIRECTORY}/worker.pid
@@ -27,8 +27,8 @@ ExecStart=/home/django/platform.wafer.space/.venv/bin/celery \
     --logfile=${LOGS_DIRECTORY}/worker.log \
     --pidfile=${RUNTIME_DIRECTORY}/worker.pid \
     --detach \
-    --queues=manufacturability \
-    --hostname=manufacturability@%h
+    --queues=docker-ephemeral \
+    --hostname=docker-ephemeral@%h
 
 ExecStop=/bin/kill -s TERM $MAINPID
 ExecReload=/bin/kill -s HUP $MAINPID
@@ -37,8 +37,8 @@ ExecReload=/bin/kill -s HUP $MAINPID
 TimeoutStartSec=30s
 
 # Security hardening
-# NOTE: This service requires Docker socket access, which is root-equivalent.
-# Media write needed: saves check.log_file and check.runs_archive after container run.
+# NOTE: This service requires Docker socket access for container cleanup.
+# No media write needed - orchestration and cleanup tasks only (DB + Docker API).
 # RuntimeDirectory and LogsDirectory are auto-excluded from ProtectSystem.
 # The celery-mfg user must be in the 'docker' group.
 NoNewPrivileges=true
@@ -46,7 +46,6 @@ PrivateDevices=true
 PrivateTmp=true
 ProtectSystem=strict
 ReadOnlyPaths=/home/django/platform.wafer.space
-ReadWritePaths=/home/django/platform.wafer.space/wafer_space/media
 
 # Docker socket access - BindPaths ensures socket is accessible despite ProtectSystem=strict
 SupplementaryGroups=docker
