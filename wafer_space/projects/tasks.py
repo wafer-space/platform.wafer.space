@@ -2438,6 +2438,7 @@ def _log_download_completion(
 
 @shared_task(
     bind=True,
+    queue="downloads",
     max_retries=settings.DOWNLOAD_TASK_MAX_RETRIES,
     default_retry_delay=settings.DOWNLOAD_TASK_RETRY_BASE_DELAY_SECONDS,
 )
