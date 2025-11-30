@@ -3369,6 +3369,73 @@ def checks_create() -> dict:
     return {"created": created}
 
 
+@shared_task(queue="default")
+def checks_cleanup_orphaned_dispatch() -> dict:
+    """Find and mark DISPATCHED checks with missing Celery tasks as ERROR.
+
+    Orphaned checks are those in DISPATCHED state whose Celery task is
+    no longer in the queue (not reserved or active). This can happen if
+    workers crash or tasks are lost.
+
+    Returns:
+        dict with 'orphaned' and 'verified' counts
+    """
+    orphaned = 0
+    verified = 0
+
+    dispatched_checks = ManufacturabilityCheck.objects.filter(
+        status=ManufacturabilityCheck.Status.DISPATCHED,
+    )
+
+    for check in dispatched_checks:
+        if is_check_task_queued(check):
+            verified += 1
+        else:
+            error_msg = (
+                f"Orphaned DISPATCHED check: Celery task {check.celery_job_id} "
+                f"not found in queue"
+            )
+            check.mark_error(error_message=error_msg)
+            orphaned += 1
+
+    return {"orphaned": orphaned, "verified": verified}
+
+
+@shared_task(queue="default")
+def checks_cleanup_orphaned_processing() -> dict:
+    """Find and mark RUNNING checks with dead workers as ERROR.
+
+    Orphaned checks are those in RUNNING state whose worker process
+    has died or is no longer actively executing the task.
+
+    Returns:
+        dict with 'orphaned' and 'verified' counts
+    """
+    orphaned = 0
+    verified = 0
+
+    running_checks = ManufacturabilityCheck.objects.filter(
+        status=ManufacturabilityCheck.Status.RUNNING,
+    )
+
+    for check in running_checks:
+        if is_check_task_actively_running(check):
+            verified += 1
+        else:
+            error_msg = (
+                f"Orphaned RUNNING check: Worker PID {check.celery_worker_pid} "
+                f"on {check.celery_worker_hostname} is dead or task not active"
+            )
+            check.mark_error(error_message=error_msg)
+            # Clear worker tracking fields
+            check.celery_worker_pid = None
+            check.celery_worker_hostname = ""
+            check.save(update_fields=["celery_worker_pid", "celery_worker_hostname"])
+            orphaned += 1
+
+    return {"orphaned": orphaned, "verified": verified}
+
+
 @shared_task(queue="docker-ephemeral")
 def checks_cancelling() -> dict:
     """Complete cancellation for checks in CANCELLING state.

@@ -40,6 +40,8 @@ from wafer_space.projects.tasks import _process_and_save_content
 from wafer_space.projects.tasks import _safe_urlopen
 from wafer_space.projects.tasks import check_process_job
 from wafer_space.projects.tasks import checks_cancelling
+from wafer_space.projects.tasks import checks_cleanup_orphaned_dispatch
+from wafer_space.projects.tasks import checks_cleanup_orphaned_processing
 from wafer_space.projects.tasks import checks_create
 from wafer_space.projects.tasks import checks_dispatch
 from wafer_space.projects.tasks import checks_retry
@@ -49,6 +51,7 @@ from wafer_space.projects.tasks import process_manufacturability_check_queue
 User = get_user_model()
 TEST_PASSWORD = "testpass123"  # noqa: S105 - Test password constant
 TEST_GITHUB_TOKEN = "test_token"  # noqa: S105 - Test token constant
+TEST_WORKER_PID = 12345  # Test worker process ID constant
 
 
 class URLValidationSecurityTests(TestCase):
@@ -1835,3 +1838,285 @@ class TestChecksCancelling(TestCase):
         mock_container.stop.assert_called_once()
         mock_container.remove.assert_called_once()
         assert result["completed"] == 1
+
+
+@pytest.mark.django_db
+class TestChecksCleanupOrphanedDispatch(TestCase):
+    """Test checks_cleanup_orphaned_dispatch task."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+
+    @patch("wafer_space.projects.tasks.is_check_task_queued")
+    def test_marks_orphaned_dispatched_checks_as_error(self, mock_is_queued):
+        """Test DISPATCHED checks with missing Celery tasks are marked ERROR."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+            celery_job_id="task-123",
+        )
+
+        mock_is_queued.return_value = False
+
+        result = checks_cleanup_orphaned_dispatch()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.ERROR
+        assert "orphaned" in check.error_message.lower()
+        assert result["orphaned"] == 1
+        assert result["verified"] == 0
+        mock_is_queued.assert_called_once_with(check)
+
+    @patch("wafer_space.projects.tasks.is_check_task_queued")
+    def test_leaves_valid_dispatched_checks_alone(self, mock_is_queued):
+        """Test DISPATCHED checks with valid Celery tasks are not touched."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+            celery_job_id="task-456",
+        )
+
+        # Task IS in queue (valid)
+        mock_is_queued.return_value = True
+
+        result = checks_cleanup_orphaned_dispatch()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.DISPATCHED
+        assert result["orphaned"] == 0
+        assert result["verified"] == 1
+        mock_is_queued.assert_called_once_with(check)
+
+    @patch("wafer_space.projects.tasks.is_check_task_queued")
+    def test_handles_mixed_checks(self, mock_is_queued):
+        """Test handles both orphaned and valid checks correctly."""
+        project2 = Project.objects.create(
+            user=self.user,
+            name="Test Project 2",
+        )
+        project_file2 = ProjectFile.objects.create(
+            project=project2,
+            original_filename="test2.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+        orphaned_check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+            celery_job_id="task-orphaned",
+        )
+        valid_check = ManufacturabilityCheck.objects.create(
+            project=project2,
+            project_file=project_file2,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+            celery_job_id="task-valid",
+        )
+
+        # First check is orphaned, second is valid
+        mock_is_queued.side_effect = [False, True]
+
+        result = checks_cleanup_orphaned_dispatch()
+
+        orphaned_check.refresh_from_db()
+        valid_check.refresh_from_db()
+        assert orphaned_check.status == ManufacturabilityCheck.Status.ERROR
+        assert valid_check.status == ManufacturabilityCheck.Status.DISPATCHED
+        assert result["orphaned"] == 1
+        assert result["verified"] == 1
+
+    @patch("wafer_space.projects.tasks.is_check_task_queued")
+    def test_ignores_non_dispatched_checks(self, mock_is_queued):
+        """Test only processes DISPATCHED checks."""
+        project2 = Project.objects.create(
+            user=self.user,
+            name="Test Project 2",
+        )
+        project_file2 = ProjectFile.objects.create(
+            project=project2,
+            original_filename="test2.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+        ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        ManufacturabilityCheck.objects.create(
+            project=project2,
+            project_file=project_file2,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+
+        result = checks_cleanup_orphaned_dispatch()
+
+        assert result["orphaned"] == 0
+        assert result["verified"] == 0
+        mock_is_queued.assert_not_called()
+
+
+@pytest.mark.django_db
+class TestChecksCleanupOrphanedProcessing(TestCase):
+    """Test checks_cleanup_orphaned_processing task."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+
+    @patch("wafer_space.projects.tasks.is_check_task_actively_running")
+    def test_marks_orphaned_running_checks_as_error(self, mock_is_running):
+        """Test RUNNING checks with dead PIDs are marked ERROR."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="task-123",
+            celery_worker_pid=TEST_WORKER_PID,
+            celery_worker_hostname="worker1",
+        )
+
+        # Task is NOT actively running (orphaned)
+        mock_is_running.return_value = False
+
+        result = checks_cleanup_orphaned_processing()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.ERROR
+        assert "orphaned" in check.error_message.lower()
+        assert check.celery_worker_pid is None
+        assert check.celery_worker_hostname == ""
+        assert result["orphaned"] == 1
+        assert result["verified"] == 0
+        mock_is_running.assert_called_once_with(check)
+
+    @patch("wafer_space.projects.tasks.is_check_task_actively_running")
+    def test_leaves_valid_running_checks_alone(self, mock_is_running):
+        """Test RUNNING checks with valid PIDs are not touched."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="task-456",
+            celery_worker_pid=TEST_WORKER_PID,
+            celery_worker_hostname="worker1",
+        )
+
+        # Task IS actively running (valid)
+        mock_is_running.return_value = True
+
+        result = checks_cleanup_orphaned_processing()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.RUNNING
+        assert check.celery_worker_pid == TEST_WORKER_PID
+        assert check.celery_worker_hostname == "worker1"
+        assert result["orphaned"] == 0
+        assert result["verified"] == 1
+        mock_is_running.assert_called_once_with(check)
+
+    @patch("wafer_space.projects.tasks.is_check_task_actively_running")
+    def test_handles_mixed_checks(self, mock_is_running):
+        """Test handles both orphaned and valid checks correctly."""
+        project2 = Project.objects.create(
+            user=self.user,
+            name="Test Project 2",
+        )
+        project_file2 = ProjectFile.objects.create(
+            project=project2,
+            original_filename="test2.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+        orphaned_check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="task-orphaned",
+            celery_worker_pid=99999,
+            celery_worker_hostname="dead-worker",
+        )
+        valid_check = ManufacturabilityCheck.objects.create(
+            project=project2,
+            project_file=project_file2,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="task-valid",
+            celery_worker_pid=TEST_WORKER_PID,
+            celery_worker_hostname="live-worker",
+        )
+
+        # First check is orphaned, second is valid
+        mock_is_running.side_effect = [False, True]
+
+        result = checks_cleanup_orphaned_processing()
+
+        orphaned_check.refresh_from_db()
+        valid_check.refresh_from_db()
+        assert orphaned_check.status == ManufacturabilityCheck.Status.ERROR
+        assert orphaned_check.celery_worker_pid is None
+        assert orphaned_check.celery_worker_hostname == ""
+        assert valid_check.status == ManufacturabilityCheck.Status.RUNNING
+        assert valid_check.celery_worker_pid == TEST_WORKER_PID
+        assert result["orphaned"] == 1
+        assert result["verified"] == 1
+
+    @patch("wafer_space.projects.tasks.is_check_task_actively_running")
+    def test_ignores_non_running_checks(self, mock_is_running):
+        """Test only processes RUNNING checks."""
+        project2 = Project.objects.create(
+            user=self.user,
+            name="Test Project 2",
+        )
+        project_file2 = ProjectFile.objects.create(
+            project=project2,
+            original_filename="test2.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+        ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        ManufacturabilityCheck.objects.create(
+            project=project2,
+            project_file=project_file2,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+        )
+
+        result = checks_cleanup_orphaned_processing()
+
+        assert result["orphaned"] == 0
+        assert result["verified"] == 0
+        mock_is_running.assert_not_called()
