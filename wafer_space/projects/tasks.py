@@ -3277,3 +3277,91 @@ def cleanup_orphaned_precheck_containers(_self):
         "removed": removed_count,
         "failed": failed_count,
     }
+
+
+@shared_task(queue="default")
+def checks_dispatch() -> dict:
+    """Dispatch PENDING checks to Celery queue (respecting concurrent limit).
+
+    CANCELLING checks count toward the limit because their Docker containers
+    may still be running.
+
+    Returns:
+        dict with 'dispatched' and 'waiting' counts
+    """
+    concurrent_limit = getattr(settings, "PRECHECK_CONCURRENT_LIMIT", 4)
+
+    # CANCELLING counts because Docker container may still be running
+    active_count = ManufacturabilityCheck.objects.filter(
+        status__in=[
+            ManufacturabilityCheck.Status.DISPATCHED,
+            ManufacturabilityCheck.Status.RUNNING,
+            ManufacturabilityCheck.Status.CANCELLING,
+        ],
+    ).count()
+
+    pending = ManufacturabilityCheck.objects.filter(
+        status=ManufacturabilityCheck.Status.PENDING,
+    ).order_by("created_at")
+
+    dispatched = 0
+    for check in pending:
+        if active_count >= concurrent_limit:
+            break
+        task = check_process_job.delay(check.id)
+        check.mark_dispatched(celery_job_id=task.id)
+        active_count += 1
+        dispatched += 1
+
+    return {"dispatched": dispatched, "waiting": pending.count() - dispatched}
+
+
+@shared_task(queue="default")
+def checks_retry() -> dict:
+    """Move retryable ERROR checks back to PENDING state.
+
+    Returns:
+        dict with 'retried' and 'exhausted' counts
+    """
+    retried = 0
+    exhausted = 0
+
+    error_checks = ManufacturabilityCheck.objects.filter(
+        status=ManufacturabilityCheck.Status.ERROR,
+    )
+    for check in error_checks:
+        if check.can_retry():
+            check.reset_for_retry(reason="Automatic retry after error")
+            retried += 1
+        else:
+            exhausted += 1
+
+    return {"retried": retried, "exhausted": exhausted}
+
+
+@shared_task(queue="default")
+def checks_create() -> dict:
+    """Create ManufacturabilityChecks for verified downloads that need them.
+
+    Returns:
+        dict with 'created' count
+    """
+    created = 0
+
+    # Find active, verified files without a check
+    files_needing_checks = ProjectFile.objects.filter(
+        is_active=True,
+        hash_verified=True,
+    ).exclude(
+        manufacturability_check__isnull=False,
+    )
+
+    for project_file in files_needing_checks:
+        ManufacturabilityCheck.objects.create(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        created += 1
+
+    return {"created": created}

@@ -19,6 +19,7 @@ from unittest.mock import patch
 from unittest.mock import patch as mock_patch
 
 import pytest
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
 from django.test import TestCase
@@ -37,6 +38,9 @@ from wafer_space.projects.tasks import _prepare_download_request
 from wafer_space.projects.tasks import _process_and_save_content
 from wafer_space.projects.tasks import _safe_urlopen
 from wafer_space.projects.tasks import check_process_job
+from wafer_space.projects.tasks import checks_create
+from wafer_space.projects.tasks import checks_dispatch
+from wafer_space.projects.tasks import checks_retry
 from wafer_space.projects.tasks import download_project_file
 from wafer_space.projects.tasks import process_manufacturability_check_queue
 
@@ -1449,3 +1453,241 @@ class TestProcessManufacturabilityCheckQueue(TestCase):
         assert check.status == ManufacturabilityCheck.Status.RUNNING
         assert check.celery_job_started_at is not None
         mock_check_task.assert_not_called()
+
+
+@pytest.mark.django_db
+class TestChecksDispatch(TestCase):
+    """Test checks_dispatch task."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+
+    def test_dispatches_pending_checks_under_limit(self):
+        """Test pending checks are dispatched when under concurrent limit."""
+        # Create a pending check
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+
+        with patch("wafer_space.projects.tasks.check_process_job") as mock_task:
+            mock_task.delay.return_value = Mock(id="task-123")
+            result = checks_dispatch()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.DISPATCHED
+        assert check.celery_job_id == "task-123"
+        assert result["dispatched"] == 1
+
+    def test_respects_concurrent_limit(self):
+        """Test dispatch respects concurrent limit."""
+        # Create checks already at limit (each needs its own project+file)
+        for i in range(settings.PRECHECK_CONCURRENT_LIMIT):
+            proj = Project.objects.create(
+                user=self.user,
+                name=f"Running Project {i}",
+            )
+            pf = ProjectFile.objects.create(
+                project=proj,
+                original_filename=f"test{i}.gds",
+                is_active=True,
+                hash_verified=True,
+            )
+            ManufacturabilityCheck.objects.create(
+                project=proj,
+                project_file=pf,
+                status=ManufacturabilityCheck.Status.RUNNING,
+            )
+        # Create pending check with its own project+file
+        pending = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+
+        with patch("wafer_space.projects.tasks.check_process_job") as mock_task:
+            result = checks_dispatch()
+
+        pending.refresh_from_db()
+        assert pending.status == ManufacturabilityCheck.Status.PENDING
+        assert result["dispatched"] == 0
+        mock_task.delay.assert_not_called()
+
+    def test_cancelling_counts_toward_limit(self):
+        """Test CANCELLING checks count toward concurrent limit."""
+        # Create checks in CANCELLING state (Docker still running)
+        for i in range(settings.PRECHECK_CONCURRENT_LIMIT):
+            proj = Project.objects.create(
+                user=self.user,
+                name=f"Cancelling Project {i}",
+            )
+            pf = ProjectFile.objects.create(
+                project=proj,
+                original_filename=f"cancelling{i}.gds",
+                is_active=True,
+                hash_verified=True,
+            )
+            ManufacturabilityCheck.objects.create(
+                project=proj,
+                project_file=pf,
+                status=ManufacturabilityCheck.Status.CANCELLING,
+            )
+        pending = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+
+        with patch("wafer_space.projects.tasks.check_process_job"):
+            result = checks_dispatch()
+
+        pending.refresh_from_db()
+        assert pending.status == ManufacturabilityCheck.Status.PENDING
+        assert result["dispatched"] == 0
+
+
+@pytest.mark.django_db
+class TestChecksRetry(TestCase):
+    """Test checks_retry task."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+
+    def test_retries_error_checks_under_limit(self):
+        """Test ERROR checks are retried when under retry limit."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+            retry_count=0,
+            max_retries=3,
+        )
+
+        result = checks_retry()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.PENDING
+        assert check.retry_count == 1
+        assert result["retried"] == 1
+
+    def test_does_not_retry_exhausted_checks(self):
+        """Test ERROR checks at retry limit are not retried."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+            retry_count=3,
+            max_retries=3,
+        )
+
+        result = checks_retry()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.ERROR
+        assert result["exhausted"] == 1
+
+
+@pytest.mark.django_db
+class TestChecksCreate(TestCase):
+    """Test checks_create task."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+        )
+
+    def test_creates_check_for_verified_file(self):
+        """Test check is created for verified file without existing check."""
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+        # Create completed download attempt
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
+        )
+        # Ensure no check exists
+        assert not hasattr(project_file, "manufacturability_check")
+
+        result = checks_create()
+
+        assert result["created"] == 1
+        project_file.refresh_from_db()
+        assert hasattr(project_file, "manufacturability_check")
+        assert (
+            project_file.manufacturability_check.status
+            == ManufacturabilityCheck.Status.PENDING
+        )
+
+    def test_does_not_create_for_unverified_file(self):
+        """Test no check created for unverified file."""
+        ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test.gds",
+            is_active=True,
+            hash_verified=False,
+        )
+
+        result = checks_create()
+
+        assert result["created"] == 0
+
+    def test_does_not_create_duplicate_check(self):
+        """Test no duplicate check created if one exists."""
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+        ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+
+        result = checks_create()
+
+        assert result["created"] == 0
