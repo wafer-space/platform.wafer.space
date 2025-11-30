@@ -3,6 +3,7 @@ import json
 import urllib.parse
 import uuid
 from datetime import timedelta
+from typing import ClassVar
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -1035,6 +1036,22 @@ class ManufacturabilityCheck(models.Model):
         ERROR = "error", "Error"  # System/processing failure
         CANCELLED = "cancelled", "Cancelled"  # User cancelled
 
+    # State machine: defines valid transitions
+    # PENDING: waiting for capacity to dispatch to Celery
+    # DISPATCHED: job sent to Celery, waiting for worker
+    # RUNNING: Celery worker executing analysis
+    # FINISHED: analysis complete (terminal)
+    # ERROR: system failure, can retry
+    # CANCELLED: user cancelled (terminal)
+    ALLOWED_TRANSITIONS: ClassVar[dict[Status, set[Status]]] = {
+        Status.PENDING: {Status.DISPATCHED, Status.ERROR, Status.CANCELLED},
+        Status.DISPATCHED: {Status.RUNNING, Status.ERROR, Status.CANCELLED},
+        Status.RUNNING: {Status.FINISHED, Status.ERROR, Status.CANCELLED},
+        Status.FINISHED: set(),  # Terminal - no transitions
+        Status.ERROR: {Status.PENDING},  # Can retry
+        Status.CANCELLED: set(),  # Terminal - no transitions
+    }
+
     # Maximum characters of processing logs to include in GitHub issue body
     GITHUB_ISSUE_LOG_CHARS = 5000
 
@@ -1216,6 +1233,21 @@ class ManufacturabilityCheck(models.Model):
     def can_retry(self):
         """Check if this check can be retried."""
         return self.retry_count < self.max_retries
+
+    def can_transition_to(self, new_status: Status) -> bool:
+        """Check if transition from current status to new_status is valid.
+
+        Args:
+            new_status: The status to transition to
+
+        Returns:
+            True if transition is allowed, False otherwise
+
+        """
+        # Cast string status to Status enum for lookup
+        current_status = self.Status(self.status)
+        allowed = self.ALLOWED_TRANSITIONS.get(current_status, set())
+        return new_status in allowed
 
     def cancel(self, reason: str = "Cancelled by user") -> str | None:
         """Cancel the check if it's still running.

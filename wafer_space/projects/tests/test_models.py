@@ -1034,6 +1034,142 @@ class TestManufacturabilityCheckResultDisplay(TestCase):
 
 
 @pytest.mark.django_db
+class TestManufacturabilityCheckStateTransitions(TestCase):
+    """Tests for state machine transitions."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_can_transition_pending_to_dispatched(self):
+        """PENDING can transition to DISPATCHED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.DISPATCHED) is True
+
+    def test_can_transition_pending_to_error(self):
+        """PENDING can transition to ERROR."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.ERROR) is True
+
+    def test_can_transition_pending_to_cancelled(self):
+        """PENDING can transition to CANCELLED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.CANCELLED) is True
+
+    def test_cannot_transition_pending_to_running(self):
+        """PENDING cannot transition directly to RUNNING."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.RUNNING) is False
+
+    def test_cannot_transition_pending_to_finished(self):
+        """PENDING cannot transition to FINISHED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.FINISHED) is False
+
+    def test_can_transition_dispatched_to_running(self):
+        """DISPATCHED can transition to RUNNING."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.RUNNING) is True
+
+    def test_can_transition_running_to_finished(self):
+        """RUNNING can transition to FINISHED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.FINISHED) is True
+
+    def test_can_transition_running_to_error(self):
+        """RUNNING can transition to ERROR."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.ERROR) is True
+
+    def test_cannot_transition_finished_to_anything(self):
+        """FINISHED is terminal - no transitions allowed."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+        for status in ManufacturabilityCheck.Status:
+            assert check.can_transition_to(status) is False
+
+    def test_cannot_transition_cancelled_to_anything(self):
+        """CANCELLED is terminal - no transitions allowed."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLED,
+        )
+        for status in ManufacturabilityCheck.Status:
+            assert check.can_transition_to(status) is False
+
+    def test_can_transition_error_to_pending(self):
+        """ERROR can transition to PENDING (retry)."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.PENDING) is True
+
+    def test_cannot_transition_error_to_dispatched(self):
+        """ERROR cannot transition directly to DISPATCHED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+        )
+        result = check.can_transition_to(ManufacturabilityCheck.Status.DISPATCHED)
+        assert result is False
+
+
+@pytest.mark.django_db
 class TestProjectSlotSize(TestCase):
     """Test Project.slot_size field and SlotSize choices."""
 
