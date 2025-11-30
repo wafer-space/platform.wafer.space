@@ -1099,6 +1099,19 @@ class ManufacturabilityCheck(models.Model):
         help_text="Hostname of Celery worker executing this check",
     )
 
+    # Docker container tracking
+    docker_container_id = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="ID of Docker container running the analysis",
+    )
+    docker_container_started_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When Docker container started",
+    )
+
     # Results
     is_manufacturable = models.BooleanField(null=True, blank=True)
     errors = models.JSONField(default=list, blank=True)  # Manufacturing errors
