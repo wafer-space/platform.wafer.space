@@ -6,6 +6,7 @@ from unittest.mock import patch
 import pytest
 from django.test import TestCase
 
+from wafer_space.projects.exceptions import InvalidStateTransitionError
 from wafer_space.projects.file_type_utils import detect_file_type_from_data
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
@@ -675,8 +676,6 @@ class TestManufacturabilityService(TestCase):
         )
 
         # Attempting to queue again should raise error
-        from wafer_space.projects.exceptions import InvalidStateTransitionError
-
         with pytest.raises(InvalidStateTransitionError):
             ManufacturabilityService.queue_check(self.project, self.project_file)
 
