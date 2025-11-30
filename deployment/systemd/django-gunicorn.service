@@ -34,11 +34,12 @@ LogsDirectoryMode=0750
 
 # Security hardening
 # Gunicorn needs media write for file uploads via Django
+# RuntimeDirectory and LogsDirectory are auto-excluded from ProtectSystem
 NoNewPrivileges=true
 PrivateDevices=true
 ProtectSystem=strict
 ReadOnlyPaths=/home/django/platform.wafer.space
-ReadWritePaths=/var/log/platform.wafer.space-gunicorn /run/platform.wafer.space-gunicorn /home/django/platform.wafer.space/wafer_space/media
+ReadWritePaths=/home/django/platform.wafer.space/wafer_space/media
 
 # Restart policy
 Restart=on-failure

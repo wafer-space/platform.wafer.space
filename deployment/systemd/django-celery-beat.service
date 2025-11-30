@@ -26,13 +26,13 @@ LogsDirectory=platform.wafer.space-celery-beat
 LogsDirectoryMode=0750
 
 # Security hardening
-# Beat only schedules tasks - no filesystem or Docker access needed
+# Beat only schedules tasks - no additional filesystem writes needed
+# RuntimeDirectory and LogsDirectory are auto-excluded from ProtectSystem
 NoNewPrivileges=true
 PrivateDevices=true
 PrivateTmp=true
 ProtectSystem=strict
 ReadOnlyPaths=/home/django/platform.wafer.space
-ReadWritePaths=/var/log/platform.wafer.space-celery-beat /run/platform.wafer.space-celery-beat
 
 # Restart policy
 Restart=on-failure

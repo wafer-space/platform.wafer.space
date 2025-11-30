@@ -37,11 +37,11 @@ LogsDirectoryMode=0750
 # Security hardening
 # NOTE: This service requires Docker socket access for container cleanup.
 # No media write needed - orchestration and cleanup tasks only (DB + Docker API).
+# RuntimeDirectory and LogsDirectory are auto-excluded from ProtectSystem.
 # The celery-mfg user must be in the 'docker' group.
 NoNewPrivileges=true
 PrivateTmp=true
 ReadOnlyPaths=/home/django/platform.wafer.space
-ReadWritePaths=/var/log/platform.wafer.space-celery-maintenance /run/platform.wafer.space-celery-maintenance
 
 # Docker socket access
 SupplementaryGroups=docker

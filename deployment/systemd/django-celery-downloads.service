@@ -35,12 +35,13 @@ LogsDirectoryMode=0750
 
 # Security hardening
 # Media write needed: downloads save files via project_file.file.save()
+# RuntimeDirectory and LogsDirectory are auto-excluded from ProtectSystem
 NoNewPrivileges=true
 PrivateDevices=true
 PrivateTmp=true
 ProtectSystem=strict
 ReadOnlyPaths=/home/django/platform.wafer.space
-ReadWritePaths=/var/log/platform.wafer.space-celery-downloads /run/platform.wafer.space-celery-downloads /home/django/platform.wafer.space/wafer_space/media
+ReadWritePaths=/home/django/platform.wafer.space/wafer_space/media
 
 # Restart policy
 Restart=on-failure

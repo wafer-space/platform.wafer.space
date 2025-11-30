@@ -35,13 +35,13 @@ LogsDirectory=platform.wafer.space-celery
 LogsDirectoryMode=0750
 
 # Security hardening
-# This worker handles email tasks only - no filesystem writes needed (except logs)
+# This worker handles email tasks only - no additional filesystem writes needed
+# RuntimeDirectory and LogsDirectory are auto-excluded from ProtectSystem
 NoNewPrivileges=true
 PrivateDevices=true
 PrivateTmp=true
 ProtectSystem=strict
 ReadOnlyPaths=/home/django/platform.wafer.space
-ReadWritePaths=/var/log/platform.wafer.space-celery /run/platform.wafer.space-celery
 
 # Restart policy
 Restart=on-failure

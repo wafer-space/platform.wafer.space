@@ -37,11 +37,12 @@ LogsDirectoryMode=0750
 # Security hardening
 # NOTE: This service requires Docker socket access, which is root-equivalent.
 # Media write needed: saves check.log_file and check.runs_archive after container run.
+# RuntimeDirectory and LogsDirectory are auto-excluded from ProtectSystem.
 # The celery-mfg user must be in the 'docker' group.
 NoNewPrivileges=true
 PrivateTmp=true
 ReadOnlyPaths=/home/django/platform.wafer.space
-ReadWritePaths=/var/log/platform.wafer.space-celery-manufacturability /run/platform.wafer.space-celery-manufacturability /home/django/platform.wafer.space/wafer_space/media
+ReadWritePaths=/home/django/platform.wafer.space/wafer_space/media
 
 # Docker socket access
 SupplementaryGroups=docker
