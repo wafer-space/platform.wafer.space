@@ -50,6 +50,7 @@ User = get_user_model()
 TEST_PASSWORD = "testpass123"  # noqa: S105 - Test password constant
 TEST_GITHUB_TOKEN = "test_token"  # noqa: S105 - Test token constant
 TEST_WORKER_PID = 12345  # Test worker process ID constant
+DEAD_WORKER_PID = 99999  # Test dead worker process ID constant
 
 
 class URLValidationSecurityTests(TestCase):
@@ -285,6 +286,7 @@ class TestManufacturabilityCheckTask(TestCase):
 
         # Mock container with manufacturable result
         mock_container = MagicMock()
+        mock_container.id = "test-container-123"
         # logs(stream=True) returns iterator, logs() returns bytes
         mock_container.logs.side_effect = lambda *args, **kwargs: (
             [b"Precheck successfully completed."]
@@ -302,11 +304,11 @@ class TestManufacturabilityCheckTask(TestCase):
         mock_docker.errors.APIError = Exception
         mock_docker.errors.NotFound = Exception
 
-        # Create a check
+        # Create check in DISPATCHED state (required for mark_running())
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=project_file,
-            status=ManufacturabilityCheck.Status.PENDING,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
             celery_job_id="test-task-123",
         )
 
@@ -361,6 +363,7 @@ WARNING: Minor DRC violation at (100, 200)
 INFO: Check completed
 """
         mock_container = MagicMock()
+        mock_container.id = "test-container-123"  # Must be a string for DB storage
         # logs(stream=True) returns iterator, logs() returns bytes
         mock_container.logs.side_effect = lambda *args, **kwargs: (
             [mock_logs] if kwargs.get("stream") else mock_logs
@@ -376,11 +379,11 @@ INFO: Check completed
         mock_docker.errors.APIError = Exception
         mock_docker.errors.NotFound = Exception
 
-        # Create a check
+        # Create check in DISPATCHED state (required for mark_running())
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=project_file,
-            status=ManufacturabilityCheck.Status.PENDING,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
             celery_job_id="test-task-123",
         )
 
@@ -443,6 +446,7 @@ ERROR: Metal spacing violation
 FATAL: Design has critical errors
 """
         mock_container = MagicMock()
+        mock_container.id = "test-container-123"
         # logs(stream=True) returns iterator, logs() returns bytes
         mock_container.logs.side_effect = lambda *args, **kwargs: (
             [mock_logs] if kwargs.get("stream") else mock_logs
@@ -458,11 +462,11 @@ FATAL: Design has critical errors
         mock_docker.errors.APIError = Exception
         mock_docker.errors.NotFound = Exception
 
-        # Create a check
+        # Create check in DISPATCHED state (required for mark_running())
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=project_file,
-            status=ManufacturabilityCheck.Status.PENDING,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
             celery_job_id="test-task-123",
         )
 
@@ -591,6 +595,7 @@ FATAL: Design has critical errors
 
         # Mock container with manufacturable result
         mock_container = MagicMock()
+        mock_container.id = "test-container-123"
         # logs(stream=True) returns iterator, logs() returns bytes
         mock_container.logs.side_effect = lambda *args, **kwargs: (
             [b"Precheck successfully completed."]
@@ -612,11 +617,11 @@ FATAL: Design has critical errors
         self.project.status = Project.Status.SUBMITTED
         self.project.save()
 
-        # Create a check
+        # Create check in DISPATCHED state (required for mark_running())
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=project_file,
-            status=ManufacturabilityCheck.Status.PENDING,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
             celery_job_id="test-task-456",
         )
 
@@ -743,6 +748,7 @@ class TestDockerIntegration(TestCase):
 
         # Mock container
         mock_container = MagicMock()
+        mock_container.id = "test-container-123"  # Must be a string for DB storage
         # logs(stream=True) returns iterator, logs() returns bytes
         mock_container.logs.side_effect = lambda *args, **kwargs: (
             [b"Precheck successfully completed."]
@@ -760,10 +766,11 @@ class TestDockerIntegration(TestCase):
         mock_docker.errors.APIError = Exception
         mock_docker.errors.NotFound = Exception
 
-        # Create check
+        # Create check in DISPATCHED state (required for mark_running())
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
         )
 
         # Bind the function to the mock task
@@ -815,6 +822,7 @@ class TestDockerIntegration(TestCase):
 
         # Mock container
         mock_container = MagicMock()
+        mock_container.id = "test-container-123"  # Must be a string for DB storage
         mock_container.logs.side_effect = lambda *args, **kwargs: (
             [b"Precheck successfully completed."]
             if kwargs.get("stream")
@@ -831,10 +839,11 @@ class TestDockerIntegration(TestCase):
         mock_docker.errors.APIError = Exception
         mock_docker.errors.NotFound = Exception
 
-        # Create check
+        # Create check in DISPATCHED state (required for mark_running())
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
         )
 
         # Run the task
@@ -1913,7 +1922,7 @@ class TestChecksCleanupOrphanedProcessing(TestCase):
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.RUNNING,
             celery_job_id="task-orphaned",
-            celery_worker_pid=99999,
+            celery_worker_pid=DEAD_WORKER_PID,
             celery_worker_hostname="dead-worker",
         )
         valid_check = ManufacturabilityCheck.objects.create(
@@ -1934,7 +1943,7 @@ class TestChecksCleanupOrphanedProcessing(TestCase):
         valid_check.refresh_from_db()
         assert orphaned_check.status == ManufacturabilityCheck.Status.ERROR
         # mark_error() preserves tracking fields for debugging
-        assert orphaned_check.celery_worker_pid == 99999
+        assert orphaned_check.celery_worker_pid == DEAD_WORKER_PID
         assert orphaned_check.celery_worker_hostname == "dead-worker"
         assert valid_check.status == ManufacturabilityCheck.Status.RUNNING
         assert valid_check.celery_worker_pid == TEST_WORKER_PID

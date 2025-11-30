@@ -831,6 +831,19 @@ def _setup_docker_context(check, project_file, task_instance, logger):
     )
 
 
+def _mark_check_error_if_exists(
+    check: ManufacturabilityCheck | None,
+    error_message: str,
+) -> None:
+    """Mark check as ERROR if it exists.
+
+    Helper to safely mark a check as failed during exception handling,
+    when check might not have been loaded yet.
+    """
+    if check is not None:
+        check.mark_error(error_message=error_message)
+
+
 @shared_task(
     bind=True,
     queue="docker-persistent",
@@ -933,29 +946,25 @@ def check_process_job(self, check_id):
             "Docker image not found: %s",
             settings.PRECHECK_DOCKER_IMAGE,
         )
-        if check is not None:
-            error_msg = f"Docker image not found: {settings.PRECHECK_DOCKER_IMAGE}"
-            check.mark_error(error_message=error_msg)
+        error_msg = f"Docker image not found: {settings.PRECHECK_DOCKER_IMAGE}"
+        _mark_check_error_if_exists(check, error_msg)
         return {"status": "failed", "message": "Docker image not found"}
 
     except (docker.errors.ContainerError, docker.errors.APIError) as exc:
         is_container = isinstance(exc, docker.errors.ContainerError)
         error_type = "Container" if is_container else "Docker API"
         logger.exception("%s error during precheck execution", error_type)
-        if check is not None:
-            check.mark_error(error_message=str(exc))
+        _mark_check_error_if_exists(check, str(exc))
         return {"status": "failed", "message": f"{error_type} error: {exc!s}"}
 
     except ValueError as exc:
         logger.warning("Validation error in manufacturability check: %s", exc)
-        if check is not None:
-            check.mark_error(error_message=str(exc))
+        _mark_check_error_if_exists(check, str(exc))
         return {"status": "failed", "message": str(exc)}
 
     except Exception as exc:
         logger.exception("Unexpected error in manufacturability check task")
-        if check is not None:
-            check.mark_error(error_message=str(exc))
+        _mark_check_error_if_exists(check, str(exc))
         return {
             "status": "failed",
             "message": str(exc),
@@ -3109,8 +3118,8 @@ def checks_cleanup_stale_files() -> dict:
     """Cancel checks on project files that are no longer active.
 
     When a user uploads a new file to a project, the old file's is_active
-    flag is set to False. Any in-progress checks (PENDING, DISPATCHED, RUNNING)
-    on inactive files should be cancelled since they're no longer relevant.
+    flag is set to False. Any in-progress checks on inactive files should
+    be cancelled since they're no longer relevant.
 
     This task finds such checks and marks them as CANCELLING, which will
     then be processed by the checks_cancelling task.
@@ -3119,12 +3128,11 @@ def checks_cleanup_stale_files() -> dict:
         dict with 'cancelled' count of checks marked for cancellation
     """
     logger = logging.getLogger(__name__)
-    status_enum = ManufacturabilityCheck.Status
     cancelled = 0
 
-    # Find checks in active states on inactive project files
+    # Find checks in progress on inactive project files
     stale_checks = ManufacturabilityCheck.objects.filter(
-        status__in=[status_enum.PENDING, status_enum.DISPATCHED, status_enum.RUNNING],
+        status__in=ManufacturabilityCheck.IN_PROGRESS_STATUSES,
         project_file__is_active=False,
     )
 

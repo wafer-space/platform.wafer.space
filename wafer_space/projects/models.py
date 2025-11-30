@@ -1078,6 +1078,14 @@ class ManufacturabilityCheck(models.Model):
     # Maximum concurrent checks allowed (DISPATCHED + RUNNING)
     MAX_CONCURRENT_CHECKS = 4
 
+    # Statuses representing checks that are in progress and should be
+    # cancelled when the project file is replaced
+    IN_PROGRESS_STATUSES: ClassVar[list[Status]] = [
+        Status.PENDING,
+        Status.DISPATCHED,
+        Status.RUNNING,
+    ]
+
     project = models.ForeignKey(
         Project,
         on_delete=models.CASCADE,
