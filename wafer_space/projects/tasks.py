@@ -892,6 +892,7 @@ def _setup_docker_context(check, project_file, task_instance, logger):
 
 @shared_task(
     bind=True,
+    queue="manufacturability",
     time_limit=settings.PRECHECK_TIMEOUT_SECONDS,
     soft_time_limit=(
         settings.PRECHECK_TIMEOUT_SECONDS - settings.PRECHECK_SOFT_TIMEOUT_BUFFER
