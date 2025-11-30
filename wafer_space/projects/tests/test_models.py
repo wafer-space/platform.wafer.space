@@ -1604,3 +1604,153 @@ class TestManufacturabilityCheckMarkFinished(TestCase):
                 warnings=[],
                 processing_logs="Should fail",
             )
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckMarkError(TestCase):
+    """Tests for mark_error() method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_mark_error_from_pending(self):
+        """Can mark PENDING check as ERROR."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        check.mark_error(
+            error_message="Docker container failed to start",
+            processing_logs="Error starting container\nExit code: 1",
+        )
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.ERROR
+        assert check.error_message == "Docker container failed to start"
+        assert check.processing_logs == "Error starting container\nExit code: 1"
+        assert check.celery_job_finished_at is not None
+
+    def test_mark_error_from_dispatched(self):
+        """Can mark DISPATCHED check as ERROR."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+        )
+        check.mark_error(
+            error_message="Worker crashed during startup",
+        )
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.ERROR
+        assert check.error_message == "Worker crashed during startup"
+
+    def test_mark_error_from_running(self):
+        """Can mark RUNNING check as ERROR."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        check.mark_error(
+            error_message="Timeout after 30 minutes",
+            processing_logs="Processing started\nStep 1 completed\nTimeout",
+        )
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.ERROR
+        assert check.error_message == "Timeout after 30 minutes"
+        assert check.processing_logs == "Processing started\nStep 1 completed\nTimeout"
+
+    def test_mark_error_sets_all_fields(self):
+        """mark_error() sets all required fields."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+
+        test_error = "System error: out of memory"
+        test_logs = "Started processing\nMemory usage: 95%\nOOM kill"
+
+        before = timezone.now()
+        check.mark_error(
+            error_message=test_error,
+            processing_logs=test_logs,
+        )
+        after = timezone.now()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.ERROR
+        assert check.error_message == test_error
+        assert check.processing_logs == test_logs
+        assert check.celery_job_finished_at is not None
+        assert before <= check.celery_job_finished_at <= after
+
+    def test_mark_error_with_default_logs(self):
+        """mark_error() uses empty string as default for processing_logs."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+
+        # Don't provide processing_logs - should use default empty string
+        check.mark_error(error_message="Quick failure")
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.ERROR
+        assert check.error_message == "Quick failure"
+        assert check.processing_logs == ""
+
+    def test_mark_error_from_finished_raises(self):
+        """Cannot mark FINISHED check as ERROR (terminal state)."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+        with pytest.raises(InvalidStateTransitionError) as exc_info:
+            check.mark_error(error_message="Should not work")
+
+        assert "finished" in str(exc_info.value).lower()
+        assert "error" in str(exc_info.value).lower()
+
+    def test_mark_error_from_error_raises(self):
+        """Cannot mark ERROR check as ERROR again."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+            error_message="First error",
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_error(error_message="Second error")
+
+    def test_mark_error_from_cancelled_raises(self):
+        """Cannot mark CANCELLED check as ERROR (terminal state)."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLED,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_error(error_message="Should not work")

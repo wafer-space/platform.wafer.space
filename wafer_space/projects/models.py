@@ -1377,6 +1377,36 @@ class ManufacturabilityCheck(models.Model):
             ]
         )
 
+    def mark_error(
+        self,
+        *,
+        error_message: str,
+        processing_logs: str = "",
+    ) -> None:
+        """Mark check as errored due to system failure.
+
+        Pathways 5/6: PENDING/DISPATCHED/RUNNING → ERROR
+
+        Args:
+            error_message: System error message describing the failure
+            processing_logs: Full log output from processing (optional, defaults
+                to empty string)
+
+        Raises:
+            InvalidStateTransitionError: If transition is not allowed
+        """
+        if not self.can_transition_to(self.Status.ERROR):
+            raise InvalidStateTransitionError(
+                from_status=self.status,
+                to_status=self.Status.ERROR,
+            )
+
+        self.status = self.Status.ERROR
+        self.error_message = error_message
+        self.processing_logs = processing_logs
+        self.celery_job_finished_at = timezone.now()
+        self.save()
+
     def cancel(self, reason: str = "Cancelled by user") -> str | None:
         """Cancel the check if it's still running.
 
