@@ -892,6 +892,7 @@ def _setup_docker_context(check, project_file, task_instance, logger):
 
 @shared_task(
     bind=True,
+    queue="manufacturability",
     time_limit=settings.PRECHECK_TIMEOUT_SECONDS,
     soft_time_limit=(
         settings.PRECHECK_TIMEOUT_SECONDS - settings.PRECHECK_SOFT_TIMEOUT_BUFFER
@@ -1007,7 +1008,7 @@ def check_project_manufacturability(self, check_id):
             _cleanup_container(container, logger)
 
 
-@shared_task
+@shared_task(queue="maintenance")
 def cleanup_old_task_results():
     """
     Periodic task to clean up old Celery task results.
@@ -2438,6 +2439,7 @@ def _log_download_completion(
 
 @shared_task(
     bind=True,
+    queue="downloads",
     max_retries=settings.DOWNLOAD_TASK_MAX_RETRIES,
     default_retry_delay=settings.DOWNLOAD_TASK_RETRY_BASE_DELAY_SECONDS,
 )
@@ -2706,7 +2708,7 @@ def download_project_file(self, project_id):  # noqa: PLR0915, C901
 # This eliminates duplicate retry logic (18 attempts → 3 attempts).
 
 
-@shared_task
+@shared_task(queue="maintenance")
 def ensure_download_tasks_queued():
     """Ensure all active files have download tasks queued (fallback recovery).
 
@@ -2854,38 +2856,6 @@ def ensure_download_tasks_queued():
         "requeued": requeued_count,
         "verified": verified_count,
     }
-
-
-@shared_task
-def update_project_status(project_id, new_status):
-    """
-    Update a project's status.
-
-    Args:
-        project_id: UUID of the project
-        new_status: New status to set
-
-    Returns:
-        dict: Result data
-    """
-    try:
-        project = Project.objects.get(id=project_id)
-        old_status = project.status
-        project.status = new_status
-        project.save()
-
-        return {
-            "status": "completed",
-            "project_id": str(project_id),
-            "old_status": old_status,
-            "new_status": new_status,
-        }
-
-    except Project.DoesNotExist:
-        return {
-            "status": "error",
-            "message": f"Project with id {project_id} not found",
-        }
 
 
 def _count_files_by_check_status(ready_files) -> dict:
@@ -3115,7 +3085,7 @@ def _handle_queued_checks(logger, concurrent_limit: int) -> tuple[int, int]:
     return dispatched, waiting
 
 
-@shared_task
+@shared_task(queue="maintenance")
 def process_manufacturability_check_queue():
     """Process manufacturability check queue with state machine transitions.
 

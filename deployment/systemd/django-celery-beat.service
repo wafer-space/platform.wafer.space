@@ -11,25 +11,29 @@ WorkingDirectory=/home/django/platform.wafer.space
 # DJANGO_SETTINGS_MODULE is set in .env file (auto-detected: stage or prod)
 EnvironmentFile=/home/django/platform.wafer.space/.env
 
+# Isolated runtime and log directories (created automatically)
+# Sets $RUNTIME_DIRECTORY and $LOGS_DIRECTORY environment variables
+RuntimeDirectory=platform.wafer.space-celery-beat
+RuntimeDirectoryMode=0750
+LogsDirectory=platform.wafer.space-celery-beat
+LogsDirectoryMode=0750
+
 ExecStart=/home/django/platform.wafer.space/.venv/bin/celery \
     -A config \
     beat \
     --loglevel=info \
-    --logfile=/var/log/platform.wafer.space/celery-beat.log \
-    --pidfile=/run/platform.wafer.space/celery-beat.pid \
-    --schedule=/run/platform.wafer.space/celerybeat-schedule
-
-# Runtime directory (automatically created on boot)
-RuntimeDirectory=platform.wafer.space
-RuntimeDirectoryMode=0755
+    --logfile=${LOGS_DIRECTORY}/beat.log \
+    --pidfile=${RUNTIME_DIRECTORY}/beat.pid \
+    --schedule=${RUNTIME_DIRECTORY}/celerybeat-schedule
 
 # Security hardening
+# Beat only schedules tasks - no additional filesystem writes needed
+# RuntimeDirectory and LogsDirectory are auto-excluded from ProtectSystem
 NoNewPrivileges=true
 PrivateDevices=true
 PrivateTmp=true
 ProtectSystem=strict
 ReadOnlyPaths=/home/django/platform.wafer.space
-ReadWritePaths=/var/log/platform.wafer.space /run/platform.wafer.space /home/django/platform.wafer.space/wafer_space/media
 
 # Restart policy
 Restart=on-failure

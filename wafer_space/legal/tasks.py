@@ -28,7 +28,7 @@ def _validate_site_url() -> str:
     return settings.SITE_URL
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=300)
+@shared_task(bind=True, queue="default", max_retries=3, default_retry_delay=300)
 def send_tos_update_email(self, notification_id: int) -> dict[str, str]:
     """Send TOS update notification email to a user.
 
@@ -133,7 +133,7 @@ def send_tos_update_email(self, notification_id: int) -> dict[str, str]:
         }
 
 
-@shared_task
+@shared_task(queue="default")
 def send_bulk_tos_notifications(
     tos_version_id: int,
     user_ids: list[int] | None = None,

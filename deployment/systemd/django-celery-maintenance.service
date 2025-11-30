@@ -10,14 +10,22 @@ Group=celery-mfg
 WorkingDirectory=/home/django/platform.wafer.space
 Environment="DJANGO_SETTINGS_MODULE=config.settings.production"
 EnvironmentFile=/home/django/platform.wafer.space/.env
-PIDFile=/run/platform.wafer.space/celery-maintenance.pid
+
+# Isolated runtime and log directories (created automatically)
+# Sets $RUNTIME_DIRECTORY and $LOGS_DIRECTORY environment variables
+RuntimeDirectory=platform.wafer.space-celery-maintenance
+RuntimeDirectoryMode=0750
+LogsDirectory=platform.wafer.space-celery-maintenance
+LogsDirectoryMode=0750
+
+PIDFile=${RUNTIME_DIRECTORY}/worker.pid
 
 ExecStart=/home/django/platform.wafer.space/.venv/bin/celery \
     -A config \
     worker \
     --loglevel=info \
-    --logfile=/var/log/platform.wafer.space/celery-maintenance.log \
-    --pidfile=/run/platform.wafer.space/celery-maintenance.pid \
+    --logfile=${LOGS_DIRECTORY}/worker.log \
+    --pidfile=${RUNTIME_DIRECTORY}/worker.pid \
     --detach \
     --queues=maintenance \
     --hostname=maintenance@%h
@@ -28,16 +36,20 @@ ExecReload=/bin/kill -s HUP $MAINPID
 # Startup timeout - give celery time to write PID file
 TimeoutStartSec=30s
 
-# Security hardening (minimal - Docker access requires elevated privileges)
+# Security hardening
 # NOTE: This service requires Docker socket access for container cleanup.
+# No media write needed - orchestration and cleanup tasks only (DB + Docker API).
+# RuntimeDirectory and LogsDirectory are auto-excluded from ProtectSystem.
 # The celery-mfg user must be in the 'docker' group.
 NoNewPrivileges=true
+PrivateDevices=true
 PrivateTmp=true
+ProtectSystem=strict
 ReadOnlyPaths=/home/django/platform.wafer.space
-ReadWritePaths=/var/log/platform.wafer.space /run/platform.wafer.space /home/django/platform.wafer.space/wafer_space/media
 
-# Docker socket access
+# Docker socket access - BindPaths ensures socket is accessible despite ProtectSystem=strict
 SupplementaryGroups=docker
+BindPaths=/var/run/docker.sock
 
 # Restart policy
 Restart=on-failure
