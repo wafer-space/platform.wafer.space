@@ -2295,12 +2295,13 @@ def _create_manufacturability_check(
             logger.info("  ✓ Cancelled old check %s", old_check.id)
 
     # Create manufacturability check in PENDING state
+    # Note: celery_job_dispatched_at is set by mark_dispatched() when the check
+    # is actually dispatched to Celery by the periodic queue processor
     logger.info("Step 9.5: Creating manufacturability check...")
     check = ManufacturabilityCheck.objects.create(
         project=project_file.project,
         project_file=project_file,
         status=ManufacturabilityCheck.Status.PENDING,
-        celery_job_dispatched_at=timezone.now(),
     )
     logger.info("  ✓ Manufacturability check created (ID: %s)", check.id)
     logger.info("  ✓ File ready for manufacturability checking")

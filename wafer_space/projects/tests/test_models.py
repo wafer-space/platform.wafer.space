@@ -1,6 +1,5 @@
 """Tests for project models."""
 
-from datetime import timedelta
 from unittest.mock import Mock
 from unittest.mock import patch
 
@@ -907,41 +906,36 @@ class TestManufacturabilityCheckQueueProperties(TestCase):
             is_active=True,
         )
 
-    def test_queue_position_returns_none_when_not_queued(self):
-        """Test queue_position returns None for non-queued checks."""
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.RUNNING,
-            celery_job_dispatched_at=timezone.now(),
-        )
-
-        assert check.queue_position is None
-
-    def test_queue_position_returns_none_when_no_queued_at(self):
-        """Test queue_position returns None when queued_at is not set."""
+    def test_queue_position_returns_none_when_not_pending(self):
+        """Test queue_position returns None for non-PENDING checks."""
+        # Create check and transition to RUNNING using state machine
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.PENDING,
-            celery_job_dispatched_at=None,
+        )
+        check.mark_dispatched(celery_job_id="test-job-1")
+        check.mark_running(
+            celery_worker_pid=12345,
+            celery_worker_hostname="test-worker",
+            docker_container_id="container-123",
         )
 
         assert check.queue_position is None
 
     def test_queue_position_returns_1_when_first_in_queue(self):
         """Test queue_position returns 1 when first in queue."""
+        # PENDING checks should have queue position based on pk ordering
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.PENDING,
-            celery_job_dispatched_at=timezone.now(),
         )
 
         assert check.queue_position == 1
 
-    def test_checks_ahead_counts_earlier_queued_checks(self):
-        """Test checks_ahead counts checks queued before this one."""
+    def test_checks_ahead_counts_earlier_pending_checks(self):
+        """Test checks_ahead counts PENDING checks with lower pk."""
         # Create another project with file for second check
         project2 = Project.objects.create(user=self.user, name="Project 2")
         file2 = ProjectFile.objects.create(
@@ -952,27 +946,25 @@ class TestManufacturabilityCheckQueueProperties(TestCase):
             is_active=True,
         )
 
-        # Create first check (ahead)
+        # Create first check (will have lower pk, so ahead in queue)
         ManufacturabilityCheck.objects.create(
             project=project2,
             project_file=file2,
             status=ManufacturabilityCheck.Status.PENDING,
-            celery_job_dispatched_at=timezone.now() - timedelta(minutes=5),
         )
 
-        # Create our check (behind)
+        # Create our check (higher pk, so behind in queue)
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.PENDING,
-            celery_job_dispatched_at=timezone.now(),
         )
 
         assert check.checks_ahead == 1
         assert check.queue_position == 2  # noqa: PLR2004
 
-    def test_checks_running_counts_starting_and_processing(self):
-        """Test checks_running counts STARTING and PROCESSING checks."""
+    def test_checks_running_counts_dispatched_and_running(self):
+        """Test checks_running counts DISPATCHED and RUNNING checks."""
         # Create another project with files for additional checks
         project2 = Project.objects.create(user=self.user, name="Project 2")
         file2 = ProjectFile.objects.create(
@@ -991,47 +983,35 @@ class TestManufacturabilityCheckQueueProperties(TestCase):
             is_active=True,
         )
 
-        # Create STARTING check
-        ManufacturabilityCheck.objects.create(
+        # Create DISPATCHED check using state machine
+        check2 = ManufacturabilityCheck.objects.create(
             project=project2,
             project_file=file2,
-            status=ManufacturabilityCheck.Status.DISPATCHED,
+            status=ManufacturabilityCheck.Status.PENDING,
         )
+        check2.mark_dispatched(celery_job_id="test-job-2")
 
-        # Create PROCESSING check
-        ManufacturabilityCheck.objects.create(
+        # Create RUNNING check using state machine
+        check3 = ManufacturabilityCheck.objects.create(
             project=project3,
             project_file=file3,
-            status=ManufacturabilityCheck.Status.RUNNING,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        check3.mark_dispatched(celery_job_id="test-job-3")
+        check3.mark_running(
+            celery_worker_pid=12345,
+            celery_worker_hostname="test-worker",
+            docker_container_id="container-123",
         )
 
-        # Create our QUEUED check
+        # Create our PENDING check
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.PENDING,
-            celery_job_dispatched_at=timezone.now(),
         )
 
         assert check.checks_running == 2  # noqa: PLR2004
-
-    def test_queue_wait_duration_returns_timedelta(self):
-        """Test queue_wait_duration returns correct timedelta."""
-        wait_minutes = 10
-        queued_time = timezone.now() - timedelta(minutes=wait_minutes)
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PENDING,
-            celery_job_dispatched_at=queued_time,
-        )
-
-        duration = check.queue_wait_duration
-        assert duration is not None
-        # Should be approximately 10 minutes (allow some margin)
-        expected_seconds = wait_minutes * 60
-        assert duration.total_seconds() >= expected_seconds
-        assert duration.total_seconds() < expected_seconds + 100
 
 
 class TestManufacturabilityCheckResultDisplay(TestCase):

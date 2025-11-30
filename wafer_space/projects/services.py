@@ -14,8 +14,6 @@ from urllib.parse import unquote
 from urllib.parse import urlparse
 
 from celery.result import AsyncResult
-from django.conf import settings
-from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from config import celery_app
@@ -560,110 +558,6 @@ class ProjectFileService:
 
 class ManufacturabilityService:
     """Service for handling manufacturability check operations."""
-
-    @classmethod
-    def queue_check(
-        cls,
-        project: Project,
-        project_file: "ProjectFile",
-        *,
-        force: bool = False,
-    ) -> ManufacturabilityCheck:
-        """Queue a manufacturability check for a specific project file.
-
-        This method only handles the database state for queueing. The actual
-        dispatch to Celery is handled by the periodic scheduler task
-        (scan_and_queue_manufacturability_checks).
-
-        State Transitions Allowed:
-        - New check creation → PENDING
-        - ERROR → PENDING (retry via reset_for_retry)
-
-        Terminal States (Cannot Queue):
-        - FINISHED: Analysis complete, no re-queueing
-        - CANCELLED: User cancelled, no re-queueing
-
-        Args:
-            project: The project to check
-            project_file: The specific file to check (required)
-            force: If True, skip concurrent limit check (for admin use)
-
-        Returns:
-            ManufacturabilityCheck instance
-
-        Raises:
-            ValidationError: If global concurrent limit reached
-            InvalidStateTransitionError: If check is in terminal state
-        """
-        # Use transaction for database operations only
-        with transaction.atomic():
-            # Get or create the check FIRST (within transaction)
-            # Each check is tied to a specific project_file
-            check, created = ManufacturabilityCheck.objects.get_or_create(
-                project=project,
-                project_file=project_file,
-                defaults={"status": ManufacturabilityCheck.Status.PENDING},
-            )
-
-            # If already in active states, return immediately (idempotent)
-            if not created and check.status in [
-                ManufacturabilityCheck.Status.PENDING,
-                ManufacturabilityCheck.Status.DISPATCHED,
-                ManufacturabilityCheck.Status.RUNNING,
-            ]:
-                return check
-
-            # Terminal states cannot be re-queued
-            if not created and check.status in [
-                ManufacturabilityCheck.Status.FINISHED,
-                ManufacturabilityCheck.Status.CANCELLED,
-            ]:
-                msg = (
-                    f"Cannot re-queue check in terminal state: {check.status}. "
-                    f"Terminal states (FINISHED, CANCELLED) cannot be re-queued."
-                )
-                raise InvalidStateTransitionError(
-                    from_status=check.status,
-                    to_status=ManufacturabilityCheck.Status.PENDING,
-                )
-
-            # Handle ERROR state - use reset_for_retry
-            if not created and check.status == ManufacturabilityCheck.Status.ERROR:
-                # Use the state machine's reset_for_retry method
-                check.reset_for_retry(reason="Manual retry requested")
-                return check
-
-            # Check global concurrent limit (unless forced)
-            if not force:
-                active_checks_qs = ManufacturabilityCheck.objects.select_for_update()
-                active_count = (
-                    active_checks_qs.filter(
-                        status__in=[
-                            ManufacturabilityCheck.Status.PENDING,
-                            ManufacturabilityCheck.Status.DISPATCHED,
-                            ManufacturabilityCheck.Status.RUNNING,
-                        ],
-                    )
-                    .exclude(id=check.id)
-                    .count()
-                )
-
-                concurrent_limit = getattr(settings, "PRECHECK_CONCURRENT_LIMIT", 4)
-                if active_count >= concurrent_limit:
-                    # If we just created this check, delete it before raising
-                    if created:
-                        check.delete()
-                    msg = (
-                        f"System is at capacity ({active_count} checks running). "
-                        "Please try again later."
-                    )
-                    raise ValidationError(msg)
-
-        # Note: We do NOT dispatch to Celery here. The periodic scheduler task
-        # (scan_and_queue_manufacturability_checks) will pick up PENDING checks
-        # and dispatch them to Celery when capacity is available.
-
-        return check
 
     @classmethod
     def get_check_status_for_file(cls, project_file: "ProjectFile") -> dict | None:

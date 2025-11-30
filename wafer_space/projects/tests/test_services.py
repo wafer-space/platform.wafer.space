@@ -6,7 +6,6 @@ from unittest.mock import patch
 import pytest
 from django.test import TestCase
 
-from wafer_space.projects.exceptions import InvalidStateTransitionError
 from wafer_space.projects.file_type_utils import detect_file_type_from_data
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
@@ -637,80 +636,6 @@ class TestManufacturabilityService(TestCase):
             source_url="https://example.com/test.gds",
             is_active=True,
         )
-
-    def test_queue_check_creates_new_check(self):
-        """Test that queue_check creates a new check in PENDING state.
-
-        Note: queue_check no longer directly dispatches to Celery.
-        Dispatching is handled by the periodic scanner task.
-        """
-        # Queue the check
-        check = ManufacturabilityService.queue_check(self.project, self.project_file)
-
-        # Verify check was created
-        assert check is not None
-        assert check.project == self.project
-        assert check.project_file == self.project_file
-        assert check.status == ManufacturabilityCheck.Status.PENDING
-        # celery_job_id is empty until dispatch
-        assert check.celery_job_id == ""
-
-        # Verify check exists in database
-        check_count = ManufacturabilityCheck.objects.filter(
-            project_file=self.project_file
-        ).count()
-        assert check_count == 1
-
-    def test_queue_check_rejects_finished_check(self):
-        """Test that queue_check raises error for FINISHED (terminal) check."""
-        # Create an existing FINISHED check (terminal state)
-        ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.FINISHED,
-            is_manufacturable=True,
-            errors=["Old error"],
-            warnings=["Old warning"],
-            processing_logs="Old logs",
-            retry_count=2,
-        )
-
-        # Attempting to queue again should raise error
-        with pytest.raises(InvalidStateTransitionError):
-            ManufacturabilityService.queue_check(self.project, self.project_file)
-
-        # Verify only one check exists
-        check_count = ManufacturabilityCheck.objects.filter(
-            project_file=self.project_file
-        ).count()
-        assert check_count == 1
-
-    @patch("wafer_space.projects.tasks.celery_job_run.delay")
-    def test_queue_check_does_not_reset_queued_check(self, mock_task):
-        """Test that queue_check doesn't reset/re-queue a check already QUEUED."""
-        # Create an existing queued check
-        existing_check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PENDING,
-            celery_job_id="existing-task-id",
-        )
-
-        # Mock the Celery task
-        mock_task.return_value = Mock(id="task-789")
-
-        # Queue the check again
-        check = ManufacturabilityService.queue_check(self.project, self.project_file)
-
-        # Verify it's the same check instance and unchanged
-        assert check.id == existing_check.id
-        assert check.status == ManufacturabilityCheck.Status.PENDING
-
-        # Task should NOT be called again (already queued)
-        mock_task.assert_not_called()
-
-        # celery_job_id should remain unchanged
-        assert check.celery_job_id == "existing-task-id"
 
     def test_get_check_status_returns_correct_data(self):
         """Test that get_check_status returns correct status information."""

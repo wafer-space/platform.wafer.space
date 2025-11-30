@@ -1233,7 +1233,6 @@ class DownloadTaskTests(TestCase):
             temp_path.unlink(missing_ok=True)
 
     @patch("wafer_space.projects.tasks.extract_top_cell")
-    @patch("wafer_space.projects.services.ManufacturabilityService.queue_check")
     @patch("wafer_space.projects.tasks._apply_content_pipeline")
     @patch("wafer_space.projects.tasks.detect_file_type_from_data")
     @patch("wafer_space.projects.tasks._download_with_progress")
@@ -1242,7 +1241,6 @@ class DownloadTaskTests(TestCase):
         mock_download,
         mock_detect,
         mock_pipeline,
-        mock_queue_check,
         mock_extract_top_cell,
     ):
         """Test that hashes are calculated on extracted GDS, not downloaded ZIP."""

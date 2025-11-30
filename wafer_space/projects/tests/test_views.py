@@ -1194,7 +1194,8 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
         assert check_status is not None
         assert check_status["status"] == ManufacturabilityCheck.Status.FINISHED
         assert check_status["is_manufacturable"] is False
-        assert check_status["errors"] == [{"message": "Error 1"}, {"message": "Error 2"}]
+        expected_errors = [{"message": "Error 1"}, {"message": "Error 2"}]
+        assert check_status["errors"] == expected_errors
         assert check_status["warnings"] == [{"message": "Warning 1"}]
 
 

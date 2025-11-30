@@ -2,7 +2,6 @@ import hashlib
 import json
 import urllib.parse
 import uuid
-from datetime import timedelta
 from typing import ClassVar
 
 from django.conf import settings
@@ -1057,6 +1056,9 @@ class ManufacturabilityCheck(models.Model):
     # Maximum characters of processing logs to include in GitHub issue body
     GITHUB_ISSUE_LOG_CHARS = 5000
 
+    # Maximum concurrent checks allowed (DISPATCHED + RUNNING)
+    MAX_CONCURRENT_CHECKS = 4
+
     project = models.ForeignKey(
         Project,
         on_delete=models.CASCADE,
@@ -1236,12 +1238,33 @@ class ManufacturabilityCheck(models.Model):
             celery_job_id: The ID returned by celery_task.delay()
 
         Raises:
-            InvalidStateTransitionError: If transition is not allowed
+            InvalidStateTransitionError: If transition is not allowed or
+                concurrent limit exceeded
         """
         if not self.can_transition_to(self.Status.DISPATCHED):
             raise InvalidStateTransitionError(
                 from_status=self.status,
                 to_status=self.Status.DISPATCHED,
+            )
+
+        # Check concurrent limit (DISPATCHED + RUNNING)
+        active_count = (
+            ManufacturabilityCheck.objects.filter(
+                status__in=[self.Status.DISPATCHED, self.Status.RUNNING],
+            )
+            .exclude(pk=self.pk)
+            .count()
+        )
+
+        if active_count >= self.MAX_CONCURRENT_CHECKS:
+            msg = (
+                f"Cannot dispatch: concurrent limit ({self.MAX_CONCURRENT_CHECKS}) "
+                f"reached ({active_count} checks already active)"
+            )
+            raise InvalidStateTransitionError(
+                from_status=self.status,
+                to_status=self.Status.DISPATCHED,
+                model_name=msg,
             )
 
         self.status = self.Status.DISPATCHED
@@ -1423,24 +1446,23 @@ class ManufacturabilityCheck(models.Model):
             InvalidStateTransitionError: If transition is not allowed or max
                 retries exceeded
         """
-        # Check retry limit first (max_retries field default is 3)
-        max_retry_limit = 3
-        if self.retry_count >= max_retry_limit:
+        # Check state transition is valid FIRST
+        if not self.can_transition_to(self.Status.PENDING):
+            raise InvalidStateTransitionError(
+                from_status=self.status,
+                to_status=self.Status.PENDING,
+            )
+
+        # Then check retry limit using can_retry() and self.max_retries
+        if not self.can_retry():
             msg = (
-                f"Cannot retry: maximum retry limit (3) reached "
+                f"Cannot retry: maximum retry limit ({self.max_retries}) reached "
                 f"(current retry_count: {self.retry_count})"
             )
             raise InvalidStateTransitionError(
                 from_status=self.status,
                 to_status=self.Status.PENDING,
                 model_name=msg,
-            )
-
-        # Check state transition is valid
-        if not self.can_transition_to(self.Status.PENDING):
-            raise InvalidStateTransitionError(
-                from_status=self.status,
-                to_status=self.Status.PENDING,
             )
 
         # Reset to PENDING state
@@ -1493,66 +1515,53 @@ class ManufacturabilityCheck(models.Model):
 
     @property
     def queue_position(self) -> int | None:
-        """Get position in the queue (1-indexed).
+        """Get position in the pending queue (1-indexed).
 
         Returns None if not in PENDING state.
+        Queue order is determined by pk (creation order).
         """
-        if self.status != self.Status.PENDING or not self.celery_job_dispatched_at:
+        if self.status != self.Status.PENDING:
             return None
 
-        # Count checks queued before this one (lower celery_job_dispatched_at = ahead)
+        # Count PENDING checks created before this one (lower pk = ahead)
         ahead = ManufacturabilityCheck.objects.filter(
             status=self.Status.PENDING,
-            celery_job_dispatched_at__lt=self.celery_job_dispatched_at,
+            pk__lt=self.pk,
         ).count()
 
         return ahead + 1  # 1-indexed position
 
     @property
     def checks_ahead(self) -> int:
-        """Get number of checks ahead in the queue.
+        """Get number of checks ahead in the pending queue.
 
-        Returns 0 if not in PENDING state or no celery_job_dispatched_at.
+        Returns 0 if not in PENDING state.
         """
-        if self.status != self.Status.PENDING or not self.celery_job_dispatched_at:
+        position = self.queue_position
+        if position is None:
             return 0
-
-        return ManufacturabilityCheck.objects.filter(
-            status=self.Status.PENDING,
-            celery_job_dispatched_at__lt=self.celery_job_dispatched_at,
-        ).count()
+        return position - 1  # position is 1-indexed, so subtract 1
 
     @property
     def checks_behind(self) -> int:
-        """Get number of checks behind in the queue (admin info).
+        """Get number of checks behind in the pending queue (admin info).
 
-        Returns 0 if not in PENDING state or no celery_job_dispatched_at.
+        Returns 0 if not in PENDING state.
         """
-        if self.status != self.Status.PENDING or not self.celery_job_dispatched_at:
+        if self.status != self.Status.PENDING:
             return 0
 
         return ManufacturabilityCheck.objects.filter(
             status=self.Status.PENDING,
-            celery_job_dispatched_at__gt=self.celery_job_dispatched_at,
+            pk__gt=self.pk,
         ).count()
 
     @property
     def checks_running(self) -> int:
-        """Get number of checks currently running (DISPATCHED or RUNNING)."""
+        """Get number of checks currently active (DISPATCHED or RUNNING)."""
         return ManufacturabilityCheck.objects.filter(
             status__in=[self.Status.DISPATCHED, self.Status.RUNNING],
         ).count()
-
-    @property
-    def queue_wait_duration(self) -> timedelta | None:
-        """Get how long this check has been waiting in queue.
-
-        Returns None if not in PENDING state or no celery_job_dispatched_at.
-        """
-        if self.status != self.Status.PENDING or not self.celery_job_dispatched_at:
-            return None
-
-        return timezone.now() - self.celery_job_dispatched_at
 
     def get_reproduction_instructions(self) -> str:
         """Generate markdown instructions for reproducing check locally."""
