@@ -137,8 +137,8 @@ class TaskActivelyRunningTests(TestCase):
             project_file=project_file,
             attempt_number=1,
             status=DownloadAttempt.Status.DOWNLOADING,
-            celery_worker_pid=12345,
-            celery_worker_hostname="worker-01",
+            worker_pid=12345,
+            worker_hostname="worker-01",
         )
 
         # Mock Celery inspect
@@ -177,8 +177,8 @@ class TaskActivelyRunningTests(TestCase):
             project_file=project_file,
             attempt_number=1,
             status=DownloadAttempt.Status.DOWNLOADING,
-            celery_worker_pid=99999,
-            celery_worker_hostname="worker-01",
+            worker_pid=99999,
+            worker_hostname="worker-01",
         )
 
         # Mock Celery inspect (task shows as active)

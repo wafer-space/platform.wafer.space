@@ -110,10 +110,10 @@ def is_task_actively_running(project_file: ProjectFile) -> bool:
         return True
 
     # Verify PID exists (if available)
-    if latest_attempt.celery_worker_pid and latest_attempt.celery_worker_hostname:
+    if latest_attempt.worker_pid and latest_attempt.worker_hostname:
         return _verify_worker_process(
-            latest_attempt.celery_worker_pid,
-            latest_attempt.celery_worker_hostname,
+            latest_attempt.worker_pid,
+            latest_attempt.worker_hostname,
         )
 
     return True
