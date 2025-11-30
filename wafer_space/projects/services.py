@@ -20,6 +20,7 @@ from django.db import transaction
 
 from config import celery_app
 
+from .exceptions import InvalidStateTransitionError
 from .models import ManufacturabilityCheck
 from .models import Project
 from .models import ProjectFile
@@ -709,10 +710,13 @@ class ManufacturabilityService:
         Returns:
             bool: True if cancelled, False if not cancellable
         """
-        task_id = check.cancel(reason=reason)
-        if task_id is None:
+        try:
+            task_id = check.mark_cancelled(reason=reason)
+        except InvalidStateTransitionError:
             return False
 
-        # Revoke the Celery task
-        celery_app.control.revoke(task_id, terminate=True)
+        # Revoke the Celery task if one exists
+        if task_id:
+            celery_app.control.revoke(task_id, terminate=True)
+
         return True

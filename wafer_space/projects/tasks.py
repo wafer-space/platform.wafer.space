@@ -2274,7 +2274,7 @@ def _queue_manufacturability_check(project_file: ProjectFile) -> Manufacturabili
     ).exclude(project_file=project_file)
 
     for old_check in old_checks:
-        task_id = old_check.cancel(reason="Cancelled due to new file upload")
+        task_id = old_check.mark_cancelled(reason="Cancelled due to new file upload")
         if task_id:
             logger.info("  ✓ Cancelled old check %s (task: %s)", old_check.id, task_id)
         else:

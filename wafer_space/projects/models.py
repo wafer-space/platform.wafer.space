@@ -1407,41 +1407,46 @@ class ManufacturabilityCheck(models.Model):
         self.celery_job_finished_at = timezone.now()
         self.save()
 
-    def cancel(self, reason: str = "Cancelled by user") -> str | None:
-        """Cancel the check if it's still running.
+    def mark_cancelled(self, *, reason: str) -> str | None:
+        """Mark check as cancelled by user.
 
-        Updates the check status to CANCELLED and returns the task_id
-        so the caller can revoke the Celery task if needed.
+        Pathway 8: PENDING/DISPATCHED/RUNNING → CANCELLED
 
         Args:
-            reason: Why the check was cancelled
+            reason: Description of why the check was cancelled
 
         Returns:
-            str | None: The task_id to revoke if cancelled, None if not cancellable
-        """
-        if self.status not in [
-            self.Status.QUEUED,
-            self.Status.STARTING,
-            self.Status.PROCESSING,
-        ]:
-            return None
+            str | None: celery_job_id if one exists (for revocation), None otherwise
 
-        task_id = self.task_id  # Capture before state change
+        Raises:
+            InvalidStateTransitionError: If transition is not allowed
+        """
+        if not self.can_transition_to(self.Status.CANCELLED):
+            raise InvalidStateTransitionError(
+                from_status=self.status,
+                to_status=self.Status.CANCELLED,
+            )
+
+        # Capture celery_job_id before changing state
+        job_id = self.celery_job_id if self.celery_job_id else None
+
         self.status = self.Status.CANCELLED
-        self.completed_at = timezone.now()
-        self.processing_logs += f"\n\nCANCELLED: {reason}"
+        self.celery_job_finished_at = timezone.now()
+
+        # Append reason to processing_logs
+        if self.processing_logs:
+            self.processing_logs += f"\n\nCANCELLED: {reason}"
+        else:
+            self.processing_logs = f"CANCELLED: {reason}"
+
         self.save()
 
-        return task_id
+        return job_id
 
     @property
     def is_cancellable(self) -> bool:
         """Check if this check can be cancelled."""
-        return self.status in [
-            self.Status.QUEUED,
-            self.Status.STARTING,
-            self.Status.PROCESSING,
-        ]
+        return self.can_transition_to(self.Status.CANCELLED)
 
     @property
     def result_display(self) -> str:
