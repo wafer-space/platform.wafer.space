@@ -351,11 +351,11 @@ class ProjectFileService:
             try:
                 check = active_file.manufacturability_check
                 if check.is_cancellable:
-                    ManufacturabilityService.cancel_check(
-                        check, reason="Cancelled: new file submitted"
-                    )
+                    check.mark_cancelling(reason="Cancelled: new file submitted")
             except ManufacturabilityCheck.DoesNotExist:
                 pass  # No check to cancel
+            except InvalidStateTransitionError:
+                pass  # Check was not in a cancellable state
 
             # Mark as inactive (the new file will be marked active)
             active_file.is_active = False
@@ -552,33 +552,3 @@ class ProjectFileService:
 
         handler = state_handlers.get(task.state, cls._handle_unknown_state)
         return handler(task, project_file)
-
-
-class ManufacturabilityService:
-    """Service for handling manufacturability check operations."""
-
-    @classmethod
-    def cancel_check(
-        cls,
-        check: ManufacturabilityCheck,
-        *,
-        reason: str = "Cancelled by user",
-    ) -> bool:
-        """Request cancellation of a manufacturability check.
-
-        This transitions the check to CANCELLING state. The cleanup task
-        will complete the transition to CANCELLED after cleanup.
-
-        Args:
-            check: The check to cancel
-            reason: Why the check was cancelled
-
-        Returns:
-            bool: True if cancellation requested, False if not cancellable
-        """
-        try:
-            check.mark_cancelling(reason=reason)
-        except InvalidStateTransitionError:
-            return False
-
-        return True

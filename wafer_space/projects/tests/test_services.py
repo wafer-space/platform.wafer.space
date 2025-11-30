@@ -12,7 +12,6 @@ from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.security import SecurityValidationError
-from wafer_space.projects.services import ManufacturabilityService
 from wafer_space.projects.services import ProjectFileService
 from wafer_space.users.models import User
 
@@ -612,97 +611,6 @@ class TestDetectFileType(TestCase):
         pdf_data = b"%PDF-1.4" + b"\x00" * 100
         with pytest.raises(ValueError, match="Unsupported file type"):
             detect_file_type_from_data(pdf_data)
-
-
-@pytest.mark.django_db
-class TestManufacturabilityService(TestCase):
-    """Test ManufacturabilityService class."""
-
-    def setUp(self):
-        """Set up test fixtures."""
-        self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
-        )
-        self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            description="Test project for manufacturability checks",
-        )
-        self.project_file = ProjectFile.objects.create(
-            project=self.project,
-            original_filename="test.gds",
-            source_url="https://example.com/test.gds",
-            is_active=True,
-        )
-
-    def test_cancel_check_cancels_queued_check(self):
-        """Test cancel_check requests cancellation for a queued check."""
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PENDING,
-            celery_job_id="celery-task-123",
-        )
-
-        result = ManufacturabilityService.cancel_check(
-            check, reason="Test cancellation"
-        )
-
-        assert result is True
-        check.refresh_from_db()
-        # Should be CANCELLING, not CANCELLED (cleanup task will complete it)
-        assert check.status == ManufacturabilityCheck.Status.CANCELLING
-        assert "CANCELLATION REQUESTED: Test cancellation" in check.processing_logs
-
-    def test_cancel_check_cancels_processing_check(self):
-        """Test cancel_check requests cancellation for a processing check."""
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.RUNNING,
-            celery_job_id="celery-task-456",
-        )
-
-        result = ManufacturabilityService.cancel_check(
-            check, reason="User requested cancellation"
-        )
-
-        assert result is True
-        check.refresh_from_db()
-        # Should be CANCELLING, not CANCELLED (cleanup task will complete it)
-        assert check.status == ManufacturabilityCheck.Status.CANCELLING
-
-    def test_cancel_check_returns_false_for_completed(self):
-        """Test cancel_check returns False for completed check."""
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.FINISHED,
-            is_manufacturable=True,
-        )
-
-        result = ManufacturabilityService.cancel_check(check, reason="Should fail")
-
-        assert result is False
-        check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.FINISHED
-
-    def test_cancel_check_returns_false_for_failed(self):
-        """Test cancel_check returns False for failed check."""
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.ERROR,
-            error_message="Previous failure",
-        )
-
-        result = ManufacturabilityService.cancel_check(check, reason="Should fail")
-
-        assert result is False
-        check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.ERROR
 
 
 @pytest.mark.django_db

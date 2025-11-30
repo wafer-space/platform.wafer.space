@@ -349,7 +349,7 @@
     </script>
   {% endif %}
   {# Auto-update logs when manufacturability check is processing #}
-  {% if check_status and check_status.status in 'processing,queued' %}
+  {% if check and check.status in 'pending,dispatched,running' %}
     <script>
       // Poll for updated logs every 5 seconds while check is processing
       (function() {
