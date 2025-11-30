@@ -19,6 +19,7 @@ from urllib.request import Request
 from urllib.request import urlopen
 
 import docker
+import docker.errors
 import requests
 from celery import shared_task
 from celery.utils.log import get_task_logger
@@ -29,6 +30,7 @@ from django.db import transaction
 from django.utils import timezone
 from django_celery_results.models import TaskResult
 
+from config.celery import app as celery_app
 from wafer_space.notifications.services import NotificationService
 
 from .content_pipeline import ContentPipeline
@@ -3365,3 +3367,53 @@ def checks_create() -> dict:
         created += 1
 
     return {"created": created}
+
+
+@shared_task(queue="docker-ephemeral")
+def checks_cancelling() -> dict:
+    """Complete cancellation for checks in CANCELLING state.
+
+    This task performs all cleanup before transitioning to CANCELLED,
+    ensuring Docker containers are stopped before releasing the slot.
+
+    Returns:
+        dict with 'completed' and 'failed' counts
+    """
+    logger = logging.getLogger(__name__)
+    status_enum = ManufacturabilityCheck.Status
+    completed = 0
+    failed = 0
+
+    client = docker.from_env()
+
+    for check in ManufacturabilityCheck.objects.filter(status=status_enum.CANCELLING):
+        try:
+            # Step 1: Revoke Celery task
+            if check.celery_job_id:
+                celery_app.control.revoke(check.celery_job_id, terminate=True)
+                check.celery_job_id = ""
+                check.save(update_fields=["celery_job_id"])
+
+            # Step 2: Stop and remove Docker container
+            if check.docker_container_id:
+                try:
+                    container = client.containers.get(check.docker_container_id)
+                    if container.status == "running":
+                        container.stop(timeout=10)
+                    container.remove(force=True)
+                except docker.errors.NotFound:
+                    pass  # Already gone
+
+                check.docker_container_id = ""
+                check.save(update_fields=["docker_container_id"])
+
+            # Step 3: Complete the transition
+            check.mark_cancelled()
+            completed += 1
+
+        except Exception as exc:
+            msg = f"Failed to complete cancellation for check {check.id}: {exc}"
+            logger.exception(msg)
+            failed += 1
+
+    return {"completed": completed, "failed": failed}

@@ -18,6 +18,7 @@ from unittest.mock import Mock
 from unittest.mock import patch
 from unittest.mock import patch as mock_patch
 
+import docker.errors
 import pytest
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -38,6 +39,7 @@ from wafer_space.projects.tasks import _prepare_download_request
 from wafer_space.projects.tasks import _process_and_save_content
 from wafer_space.projects.tasks import _safe_urlopen
 from wafer_space.projects.tasks import check_process_job
+from wafer_space.projects.tasks import checks_cancelling
 from wafer_space.projects.tasks import checks_create
 from wafer_space.projects.tasks import checks_dispatch
 from wafer_space.projects.tasks import checks_retry
@@ -1691,3 +1693,145 @@ class TestChecksCreate(TestCase):
         result = checks_create()
 
         assert result["created"] == 0
+
+
+@pytest.mark.django_db
+class TestChecksCancelling(TestCase):
+    """Test checks_cancelling task."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+
+    @patch("wafer_space.projects.tasks.docker")
+    @patch("wafer_space.projects.tasks.celery_app")
+    def test_completes_cancellation_with_cleanup(self, mock_celery, mock_docker):
+        """Test CANCELLING check completes after cleanup."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLING,
+            celery_job_id="task-123",
+            docker_container_id="container-abc",
+        )
+
+        mock_container = Mock()
+        mock_container.status = "running"
+        mock_docker.from_env.return_value.containers.get.return_value = mock_container
+
+        result = checks_cancelling()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+        assert check.celery_job_id == ""
+        assert check.docker_container_id == ""
+        mock_celery.control.revoke.assert_called_once_with("task-123", terminate=True)
+        mock_container.stop.assert_called_once()
+        mock_container.remove.assert_called_once()
+        assert result["completed"] == 1
+
+    @patch("wafer_space.projects.tasks.celery_app")
+    def test_handles_missing_container(self, mock_celery):
+        """Test cleanup handles already-removed container."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLING,
+            docker_container_id="gone-container",
+        )
+
+        # Mock docker client to raise NotFound - keep docker.errors intact
+        with patch("wafer_space.projects.tasks.docker.from_env") as mock_from_env:
+            mock_client = Mock()
+            mock_from_env.return_value = mock_client
+            mock_client.containers.get.side_effect = docker.errors.NotFound("not found")
+
+            result = checks_cancelling()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+        assert result["completed"] == 1
+
+    @patch("wafer_space.projects.tasks.docker")
+    @patch("wafer_space.projects.tasks.celery_app")
+    def test_only_clears_fields_when_cleanup_done(self, mock_celery, mock_docker):
+        """Test celery_job_id and docker_container_id cleared incrementally."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLING,
+            celery_job_id="task-123",
+            docker_container_id="container-abc",
+        )
+
+        mock_container = Mock()
+        mock_container.status = "running"
+        mock_docker.from_env.return_value.containers.get.return_value = mock_container
+
+        checks_cancelling()
+
+        check.refresh_from_db()
+        # Both should be cleared after successful cleanup
+        assert check.celery_job_id == ""
+        assert check.docker_container_id == ""
+
+    @patch("wafer_space.projects.tasks.docker")
+    @patch("wafer_space.projects.tasks.celery_app")
+    def test_handles_only_celery_task(self, mock_celery, mock_docker):
+        """Test cleanup when only Celery task exists."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLING,
+            celery_job_id="task-123",
+            docker_container_id="",
+        )
+
+        result = checks_cancelling()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+        mock_celery.control.revoke.assert_called_once_with("task-123", terminate=True)
+        # Docker operations not called
+        mock_docker.from_env.return_value.containers.get.assert_not_called()
+        assert result["completed"] == 1
+
+    @patch("wafer_space.projects.tasks.docker")
+    @patch("wafer_space.projects.tasks.celery_app")
+    def test_handles_only_docker_container(self, mock_celery, mock_docker):
+        """Test cleanup when only Docker container exists."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLING,
+            celery_job_id="",
+            docker_container_id="container-abc",
+        )
+
+        mock_container = Mock()
+        mock_container.status = "running"
+        mock_docker.from_env.return_value.containers.get.return_value = mock_container
+
+        result = checks_cancelling()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+        # Celery revoke not called (no job ID)
+        mock_celery.control.revoke.assert_not_called()
+        mock_container.stop.assert_called_once()
+        mock_container.remove.assert_called_once()
+        assert result["completed"] == 1
