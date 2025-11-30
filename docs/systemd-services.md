@@ -85,8 +85,14 @@ Default Celery worker for email notifications and referral processing.
 - **ProtectSystem:** strict
 
 **Tasks:**
-- `send_tos_update_email` - Send TOS notification email
-- `send_bulk_tos_notifications` - Queue bulk TOS notifications
+
+`send_tos_update_email` - Send TOS notification email
+- Defined: `wafer_space/legal/tasks.py:31`
+- Called from: `wafer_space/legal/tasks.py:199` (bulk notifications), `wafer_space/legal/admin.py:251` (admin action)
+
+`send_bulk_tos_notifications` - Queue bulk TOS notifications
+- Defined: `wafer_space/legal/tasks.py:136`
+- Called from: Django admin interface
 
 ---
 
@@ -101,9 +107,11 @@ Dedicated worker for downloading large files (up to 100GB) from external URLs.
 - **ReadWritePaths:** `.../wafer_space/media` (for saving downloaded files)
 
 **Tasks:**
-- `download_project_file` - Chunked transfer with resume support and hash verification
 
-**Media files written:** `project_file.file.save()` saves downloaded files
+`download_project_file` - Chunked transfer with resume support and hash verification
+- Defined: `wafer_space/projects/tasks.py:2440`
+- Called from: `wafer_space/projects/services.py:417` (queue_download_task), `wafer_space/projects/tasks.py:2741` and `:2832` (ensure_download_tasks_queued recovery)
+- Writes: `project_file.file.save()` saves downloaded files to media
 
 ---
 
@@ -119,11 +127,11 @@ Runs manufacturability checks in Docker containers (gf180mcu-precheck).
 - **ReadWritePaths:** `.../wafer_space/media` (for saving check results)
 
 **Tasks:**
-- `check_project_manufacturability` - Run gf180mcu-precheck in Docker container
 
-**Media files written:**
-- `check.log_file` - Container stdout/stderr logs
-- `check.runs_archive` - Detailed run directory as tar archive
+`check_project_manufacturability` - Run gf180mcu-precheck in Docker container
+- Defined: `wafer_space/projects/tasks.py:893`
+- Called from: `wafer_space/projects/services.py:649` (queue_manufacturability_check), `wafer_space/projects/tasks.py:3075` (process_manufacturability_check_queue)
+- Writes: `check.log_file` (container logs), `check.runs_archive` (run directory tar)
 
 ---
 
@@ -138,10 +146,22 @@ Orchestration tasks that manage other tasks and clean up resources.
 - **SupplementaryGroups:** docker
 
 **Tasks:**
-- `ensure_download_tasks_queued` - Recover lost download tasks
-- `process_manufacturability_check_queue` - Orchestrate check scheduling
-- `cleanup_old_task_results` - Remove old Celery TaskResult records
-- `cleanup_orphaned_precheck_containers` - Remove orphaned Docker containers
+
+`ensure_download_tasks_queued` - Recover lost download tasks
+- Defined: `wafer_space/projects/tasks.py:2711`
+- Called from: Celery Beat scheduler (periodic)
+
+`process_manufacturability_check_queue` - Orchestrate check scheduling
+- Defined: `wafer_space/projects/tasks.py:3088`
+- Called from: Celery Beat scheduler (periodic)
+
+`cleanup_old_task_results` - Remove old Celery TaskResult records
+- Defined: `wafer_space/projects/tasks.py:1011`
+- Called from: Celery Beat scheduler (periodic)
+
+`cleanup_orphaned_precheck_containers` - Remove orphaned Docker containers
+- Defined: `wafer_space/projects/tasks.py:3155`
+- Called from: Celery Beat scheduler (periodic)
 
 ---
 
@@ -186,93 +206,6 @@ Celery Beat scheduler that triggers periodic tasks.
 | maintenance       | `process_manufacturability_check_queue` | Orchestrate check scheduling                              |
 | maintenance       | `cleanup_old_task_results`              | Remove old Celery TaskResult records                      |
 | maintenance       | `cleanup_orphaned_precheck_containers`  | Remove orphaned Docker containers                         |
-
----
-
-## Code References
-
-### Default Queue Tasks
-
-**`send_tos_update_email`**
-- **Defined:** `wafer_space/legal/tasks.py:31`
-- **Called from:**
-  - `wafer_space/legal/tasks.py:199` - `send_bulk_tos_notifications()` queues individual emails
-  - `wafer_space/legal/admin.py:251` - Admin action to resend TOS notification
-
-**`send_bulk_tos_notifications`**
-- **Defined:** `wafer_space/legal/tasks.py:136`
-- **Called from:** Admin actions via Django admin interface
-
-### Downloads Queue Tasks
-
-**`download_project_file`**
-- **Defined:** `wafer_space/projects/tasks.py:2440`
-- **Called from:**
-  - `wafer_space/projects/services.py:417` - `queue_download_task()` service function
-  - `wafer_space/projects/tasks.py:2741` - `ensure_download_tasks_queued()` recovery task
-  - `wafer_space/projects/tasks.py:2832` - `ensure_download_tasks_queued()` recovery task (different code path)
-
-### Manufacturability Queue Tasks
-
-**`check_project_manufacturability`**
-- **Defined:** `wafer_space/projects/tasks.py:893`
-- **Called from:**
-  - `wafer_space/projects/services.py:649` - `queue_manufacturability_check()` service function
-  - `wafer_space/projects/tasks.py:3075` - `process_manufacturability_check_queue()` orchestration task
-
-### Maintenance Queue Tasks
-
-**`cleanup_old_task_results`**
-- **Defined:** `wafer_space/projects/tasks.py:1011`
-- **Called from:** Celery Beat scheduler (periodic task)
-
-**`ensure_download_tasks_queued`**
-- **Defined:** `wafer_space/projects/tasks.py:2711`
-- **Called from:** Celery Beat scheduler (periodic task)
-
-**`process_manufacturability_check_queue`**
-- **Defined:** `wafer_space/projects/tasks.py:3088`
-- **Called from:** Celery Beat scheduler (periodic task)
-
-**`cleanup_orphaned_precheck_containers`**
-- **Defined:** `wafer_space/projects/tasks.py:3155`
-- **Called from:** Celery Beat scheduler (periodic task)
-
----
-
-## Directory Structure
-
-```text
-/run/
-├── platform.wafer.space-gunicorn/
-│   └── gunicorn.sock
-├── platform.wafer.space-celery/
-│   └── worker.pid
-├── platform.wafer.space-celery-downloads/
-│   └── worker.pid
-├── platform.wafer.space-celery-manufacturability/
-│   └── worker.pid
-├── platform.wafer.space-celery-maintenance/
-│   └── worker.pid
-└── platform.wafer.space-celery-beat/
-    ├── beat.pid
-    └── celerybeat-schedule
-
-/var/log/
-├── platform.wafer.space-gunicorn/
-│   ├── access.log
-│   └── error.log
-├── platform.wafer.space-celery/
-│   └── worker.log
-├── platform.wafer.space-celery-downloads/
-│   └── worker.log
-├── platform.wafer.space-celery-manufacturability/
-│   └── worker.log
-├── platform.wafer.space-celery-maintenance/
-│   └── worker.log
-└── platform.wafer.space-celery-beat/
-    └── beat.log
-```
 
 ---
 
