@@ -9,6 +9,7 @@ from django.test import Client
 from django.test import TestCase
 from django.urls import reverse
 
+from wafer_space.projects.models import CheckExecutionContext
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
@@ -1170,11 +1171,15 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
             status=ManufacturabilityCheck.Status.PENDING,
         )
         check.mark_dispatched(celery_job_id="test-job-id")
-        check.mark_running(
+        exec_context = CheckExecutionContext(
             celery_worker_pid=12345,
             celery_worker_hostname="test-worker",
             docker_container_id="test-container-id",
+            docker_image="test-image:latest",
+            docker_image_digest="sha256:test",
+            docker_command="docker run ...",
         )
+        check.mark_running(context=exec_context)
         check.mark_finished(
             is_manufacturable=False,
             errors=[{"message": "Error 1"}, {"message": "Error 2"}],

@@ -39,6 +39,7 @@ from .content_pipeline import get_temp_dir_for_file
 from .content_processors import _processor_registry
 from .file_type_utils import detect_file_type_from_data
 from .format_validators import validate_output_format
+from .models import CheckExecutionContext
 from .models import DownloadAttempt
 from .models import FileProcessingError
 from .models import ManufacturabilityCheck
@@ -394,16 +395,17 @@ class _CheckContext:
     gds_path: str
     task_instance: "shared_task"
     logger: logging.Logger
+    container: Any = None  # Set by _start_container()
 
 
-def _pull_and_record_image(context: _CheckContext):
-    """Pull Docker image and record metadata.
+def _pull_and_record_image(context: _CheckContext) -> tuple[str, str]:
+    """Pull Docker image and return metadata (does not save to database).
 
     Args:
         context: Check execution context
 
     Returns:
-        Docker image object
+        Tuple of (docker_image tag, docker_image_digest)
     """
     image_name = settings.PRECHECK_DOCKER_IMAGE
     context.logger.info("Step 3: Pulling Docker image: %s", image_name)
@@ -446,19 +448,18 @@ def _pull_and_record_image(context: _CheckContext):
 
     # Get the pulled image
     image = context.client.images.get(image_name)
-    context.check.docker_image = image.tags[0] if image.tags else image_name
-    context.check.docker_image_digest = image.id
-    context.check.save(update_fields=["docker_image", "docker_image_digest"])
+    docker_image = image.tags[0] if image.tags else image_name
+    docker_image_digest = image.id
 
     # Log image details
     image_size = image.attrs.get("Size", 0)
     context.logger.info(
         "  ✓ Image ready: %s (digest: %s, size: %s)",
-        context.check.docker_image,
-        context.check.docker_image_digest[:12],
+        docker_image,
+        docker_image_digest[:12],
         _format_bytes(image_size),
     )
-    return image
+    return docker_image, docker_image_digest
 
 
 def _stream_logs_with_checkpoints(context: _CheckContext, container, container_start):
@@ -492,10 +493,8 @@ def _stream_logs_with_checkpoints(context: _CheckContext, container, container_s
             if log_line:
                 context.logger.info("  [container] %s", log_line)
 
-        # Update last activity and logs
-        context.check.last_activity = timezone.now()
-        context.check.processing_logs = logs
-        context.check.save(update_fields=["last_activity", "processing_logs"])
+        # Update logs using model method (the only allowed update during RUNNING)
+        context.check.update_processing_logs(logs)
 
         now = timezone.now()
 
@@ -529,14 +528,16 @@ def _stream_logs_with_checkpoints(context: _CheckContext, container, container_s
     return logs, line_count, checkpoint_number
 
 
-def _run_container_and_stream_logs(context: _CheckContext):
-    """Run Docker container and stream logs with progress updates.
+def _start_container(context: _CheckContext) -> tuple[str, str]:
+    """Build docker command and start container.
 
     Args:
         context: Check execution context
 
     Returns:
-        tuple: (logs string, exit_code int, container object)
+        tuple: (docker_command string for reproducibility, container_id string)
+
+    Note: The container object is stored in context.container for later use.
     """
     context.logger.info("Step 4: Creating Docker container...")
     context.logger.info("  Input file: %s", context.gds_path)
@@ -544,8 +545,6 @@ def _run_container_and_stream_logs(context: _CheckContext):
     context.logger.info("  Project ID: %s", context.project.id)
     context.logger.info("  Slot size: %s", context.project.slot_size)
     context.logger.info("  Memory limit: 64GB")
-
-    container_start = timezone.now()
 
     # Build the precheck command to run inside nix-shell
     if not context.project_file.top_cell:
@@ -557,7 +556,7 @@ def _run_container_and_stream_logs(context: _CheckContext):
 
     # Build command - the container's dev-shell entrypoint handles nix develop --offline
     slot_size = context.project.slot_size
-    docker_command = [
+    docker_command_list = [
         "python3",
         "precheck.py",
         "--input",
@@ -573,7 +572,7 @@ def _run_container_and_stream_logs(context: _CheckContext):
         f"python3 precheck.py --input /input/design.gds "
         f'--top "{top_cell}" --slot {slot_size}'
     )
-    docker_run_cmd = (
+    docker_command = (
         f"docker run --rm --network=none "
         f"-e COLUMNS=200 -e TERM=xterm-256color "
         f"-v {context.gds_path}:/input/design.gds:ro "
@@ -583,15 +582,11 @@ def _run_container_and_stream_logs(context: _CheckContext):
         f"{precheck_cmd}"
     )
     context.logger.info("  Docker run command:")
-    context.logger.info("  %s", docker_run_cmd)
-
-    # Save docker command to check record for reproducibility
-    context.check.docker_command = docker_run_cmd
-    context.check.save(update_fields=["docker_command"])
+    context.logger.info("  %s", docker_command)
 
     container = context.client.containers.run(
         image=settings.PRECHECK_DOCKER_IMAGE,
-        command=docker_command,
+        command=docker_command_list,
         volumes={context.gds_path: {"bind": "/input/design.gds", "mode": "ro"}},
         working_dir="/workspace",
         detach=True,
@@ -607,6 +602,26 @@ def _run_container_and_stream_logs(context: _CheckContext):
         },
     )
     context.logger.info("  ✓ Container started: %s", container.id[:12])
+
+    # Store container in context for later use
+    context.container = container
+
+    return docker_command, container.id
+
+
+def _run_container_to_completion(context: _CheckContext):
+    """Stream logs and wait for container completion.
+
+    Must be called after mark_running() - requires check to be in RUNNING state.
+
+    Args:
+        context: Check execution context (must have context.container set)
+
+    Returns:
+        tuple: (logs string, exit_code int)
+    """
+    container = context.container
+    container_start = timezone.now()
 
     context.logger.info("Step 5: Running precheck analysis...")
     context.logger.info("  Streaming container logs...")
@@ -633,9 +648,8 @@ def _run_container_and_stream_logs(context: _CheckContext):
             len(complete_logs) - len(logs),
         )
         logs = complete_logs
-        # Update the check with complete logs
-        context.check.processing_logs = logs
-        context.check.save(update_fields=["processing_logs"])
+        # Final log update before transitioning out of RUNNING
+        context.check.update_processing_logs(logs)
 
     # Record final checkpoint
     _record_checkpoint(
@@ -652,7 +666,7 @@ def _run_container_and_stream_logs(context: _CheckContext):
         checkpoint_number,
     )
 
-    return logs, exit_code, container
+    return logs, exit_code
 
 
 def _handle_check_result(check, logs, exit_code, logger):
@@ -665,20 +679,19 @@ def _handle_check_result(check, logs, exit_code, logger):
         logger: Logger instance
 
     Returns:
-        dict: Result data with status and details
+        str or tuple: "success", "design", or ("system", error_message)
     """
     logger.info("Step 7: Parsing check results...")
 
     # Save logs to filesystem (before parsing, so we always have them)
     _save_logs_to_file(check, logs, logger)
 
-    # Extract version information
-    check.tool_versions = {
+    # Collect version information (will be passed to mark_finished)
+    tool_versions = {
         "pdk": "gf180mcuD",  # Will extract from logs
         "magic": "unknown",  # Will extract from logs
         "klayout": "unknown",  # Will extract from logs
     }
-    check.save(update_fields=["tool_versions"])
 
     # Parse logs
     logger.info("  Parsing %d bytes of logs...", len(logs))
@@ -706,12 +719,14 @@ def _handle_check_result(check, logs, exit_code, logger):
             return "system", error_summary
 
     # Mark finished - either success or design failure
+    # Pass tool_versions atomically with the state transition
     is_manufacturable = exit_code == 0
     check.mark_finished(
         is_manufacturable=is_manufacturable,
         errors=[] if is_manufacturable else parsed.get("errors", []),
         warnings=parsed.get("warnings", []),
         processing_logs=logs,
+        tool_versions=tool_versions,
     )
 
     if is_manufacturable:
@@ -864,42 +879,17 @@ def _log_task_complete(logger, task_start, check):
     logger.info("=" * 60)
 
 
-def _initialize_check_for_processing(check, task_request_id, logger):
-    """Initialize check with task tracking info and transition to RUNNING.
-
-    Sets celery_job_id, worker tracking info, and transitions status to RUNNING.
+def _log_project_info(check, project_file, logger):
+    """Log project and file information.
 
     Args:
         check: ManufacturabilityCheck instance
-        task_request_id: Celery task request ID
+        project_file: ProjectFile instance
         logger: Logger instance
-
-    Returns:
-        ProjectFile instance for the check
     """
-    logger.info("Step 1: Loading check and project data...")
-    check.celery_job_id = task_request_id or "test-task"
-    # Set worker tracking info for orphan detection
-    check.celery_worker_pid = os.getpid()
-    check.celery_worker_hostname = socket.gethostname()
-    check.save(
-        update_fields=[
-            "celery_job_id",
-            "celery_worker_pid",
-            "celery_worker_hostname",
-        ]
-    )
-    # Transition DISPATCHED -> RUNNING
-    check.status = ManufacturabilityCheck.Status.RUNNING
-    check.celery_job_started_at = timezone.now()
-    check.save(update_fields=["status", "celery_job_started_at"])
-
-    project_file = _validate_project_file(check)
     logger.info("  ✓ Project: %s (ID: %s)", check.project.name, check.project.id)
     logger.info("  ✓ File: %s", project_file.original_filename)
     logger.info("  ✓ File size: %s", _format_bytes(project_file.file_size or 0))
-
-    return project_file
 
 
 def _setup_docker_context(check, project_file, task_instance, logger):
@@ -937,7 +927,13 @@ def check_process_job(self, check_id):
     """Run manufacturability check in Docker container for a single check.
 
     This task performs manufacturability analysis using the gf180mcu-precheck
-    tool running in a Docker container. It replaces the previous mock implementation.
+    tool running in a Docker container.
+
+    The task follows a strict data collection pattern:
+    1. Collect all data needed for state transitions
+    2. Call mark_running() atomically with all collected data
+    3. Execute processing (with only log updates allowed during RUNNING)
+    4. Call mark_finished() or mark_error() with results
 
     Args:
         check_id: The ID of the ManufacturabilityCheck instance
@@ -946,24 +942,45 @@ def check_process_job(self, check_id):
         dict: Result data with status and details
     """
     logger = logging.getLogger(__name__)
-    container = None
     task_start = timezone.now()
+    context = None
 
     try:
         _log_task_start(logger, check_id, self.request.id)
 
-        # Step 1: Get check, initialize tracking, transition to RUNNING
+        # Step 1: Load check and validate project file
+        logger.info("Step 1: Loading check and project data...")
         check = ManufacturabilityCheck.objects.get(id=check_id)
-        project_file = _initialize_check_for_processing(check, self.request.id, logger)
+        project_file = _validate_project_file(check)
+        _log_project_info(check, project_file, logger)
 
-        # Step 2: Connect to Docker (in helper)
+        # Step 2: Connect to Docker
         context = _setup_docker_context(check, project_file, self, logger)
 
-        # Steps 3-6: Pull image and run container (in helpers)
-        _pull_and_record_image(context)
-        logs, exit_code, container = _run_container_and_stream_logs(context)
+        # Step 3: Pull Docker image and collect metadata (no DB writes)
+        docker_image, docker_image_digest = _pull_and_record_image(context)
 
-        # Step 7: Handle results (in helper)
+        # Step 4: Start container and collect metadata (no DB writes yet)
+        docker_command, container_id = _start_container(context)
+
+        # Step 5: ATOMIC STATE TRANSITION - mark_running() with all collected data
+        # This is the single point where we transition DISPATCHED -> RUNNING
+        logger.info("Step 5: Transitioning to RUNNING state...")
+        exec_context = CheckExecutionContext(
+            celery_worker_pid=os.getpid(),
+            celery_worker_hostname=socket.gethostname(),
+            docker_container_id=container_id,
+            docker_image=docker_image,
+            docker_image_digest=docker_image_digest,
+            docker_command=docker_command,
+        )
+        check.mark_running(context=exec_context)
+        logger.info("  ✓ Check is now RUNNING")
+
+        # Step 6: Run container to completion (only log updates allowed)
+        logs, exit_code = _run_container_to_completion(context)
+
+        # Step 7: Handle results and transition to FINISHED or ERROR
         result = _handle_check_result(check, logs, exit_code, logger)
 
         # Handle system failures
@@ -972,9 +989,7 @@ def check_process_job(self, check_id):
 
         # Step 8: Extract detailed run logs before cleanup
         logger.info("Step 8: Extracting detailed run logs...")
-        _extract_runs_archive(check, container, logger)
-
-        # Note: Container cleanup is now handled in finally block
+        _extract_runs_archive(check, context.container, logger)
 
         # Final summary
         _log_task_complete(logger, task_start, check)
@@ -1027,9 +1042,9 @@ def check_process_job(self, check_id):
     finally:
         # Always cleanup container, even if exceptions occur
         # This prevents Docker resource leaks on failures or timeouts
-        if container is not None:
+        if context is not None and context.container is not None:
             logger.info("Cleaning up container in finally block...")
-            _cleanup_container(container, logger)
+            _cleanup_container(context.container, logger)
 
 
 @shared_task(queue="maintenance")
@@ -3093,6 +3108,9 @@ def checks_cleanup_orphaned_processing() -> dict:
     Orphaned checks are those in RUNNING state whose worker process
     has died or is no longer actively executing the task.
 
+    mark_error() preserves all tracking fields for debugging purposes.
+    Fields are cleared by reset_for_retry() if/when the check is retried.
+
     Returns:
         dict with 'orphaned' and 'verified' counts
     """
@@ -3112,10 +3130,6 @@ def checks_cleanup_orphaned_processing() -> dict:
                 f"on {check.celery_worker_hostname} is dead or task not active"
             )
             check.mark_error(error_message=error_msg)
-            # Clear worker tracking fields
-            check.celery_worker_pid = None
-            check.celery_worker_hostname = ""
-            check.save(update_fields=["celery_worker_pid", "celery_worker_hostname"])
             orphaned += 1
 
     return {"orphaned": orphaned, "verified": verified}
@@ -3125,8 +3139,9 @@ def checks_cleanup_orphaned_processing() -> dict:
 def checks_cancelling() -> dict:
     """Complete cancellation for checks in CANCELLING state.
 
-    This task performs all cleanup before transitioning to CANCELLED,
-    ensuring Docker containers are stopped before releasing the slot.
+    This task performs cleanup (revoke Celery task, stop Docker container)
+    before calling mark_cancelled() which handles the state transition
+    and clears tracking fields atomically.
 
     Returns:
         dict with 'completed' and 'failed' counts
@@ -3140,13 +3155,11 @@ def checks_cancelling() -> dict:
 
     for check in ManufacturabilityCheck.objects.filter(status=status_enum.CANCELLING):
         try:
-            # Step 1: Revoke Celery task
+            # Step 1: Revoke Celery task (cleanup only, don't modify DB)
             if check.celery_job_id:
                 celery_app.control.revoke(check.celery_job_id, terminate=True)
-                check.celery_job_id = ""
-                check.save(update_fields=["celery_job_id"])
 
-            # Step 2: Stop and remove Docker container
+            # Step 2: Stop and remove Docker container (cleanup only, don't modify DB)
             if check.docker_container_id:
                 try:
                     container = client.containers.get(check.docker_container_id)
@@ -3156,10 +3169,7 @@ def checks_cancelling() -> dict:
                 except docker.errors.NotFound:
                     pass  # Already gone
 
-                check.docker_container_id = ""
-                check.save(update_fields=["docker_container_id"])
-
-            # Step 3: Complete the transition
+            # Step 3: Complete transition - mark_cancelled() clears fields atomically
             check.mark_cancelled()
             completed += 1
 

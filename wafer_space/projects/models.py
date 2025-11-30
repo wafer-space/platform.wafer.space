@@ -2,6 +2,7 @@ import hashlib
 import json
 import urllib.parse
 import uuid
+from dataclasses import dataclass
 from typing import ClassVar
 
 from django.conf import settings
@@ -11,6 +12,22 @@ from django.db import models
 from django.utils import timezone
 
 from wafer_space.projects.exceptions import InvalidStateTransitionError
+
+
+@dataclass
+class CheckExecutionContext:
+    """Context data for transitioning a check to RUNNING state.
+
+    Groups worker and docker info to avoid too many function parameters.
+    """
+
+    celery_worker_pid: int
+    celery_worker_hostname: str
+    docker_container_id: str
+    docker_image: str
+    docker_image_digest: str
+    docker_command: str
+
 
 # Byte conversion constant
 _BYTES_PER_KB = 1024.0
@@ -1280,21 +1297,13 @@ class ManufacturabilityCheck(models.Model):
         self.celery_job_dispatched_at = timezone.now()
         self.save(update_fields=["status", "celery_job_id", "celery_job_dispatched_at"])
 
-    def mark_running(
-        self,
-        *,
-        celery_worker_pid: int,
-        celery_worker_hostname: str,
-        docker_container_id: str,
-    ) -> None:
+    def mark_running(self, *, context: CheckExecutionContext) -> None:
         """Mark check as running in Celery worker.
 
         Pathway 3: DISPATCHED → RUNNING
 
         Args:
-            celery_worker_pid: Process ID of the Celery worker
-            celery_worker_hostname: Hostname of the Celery worker
-            docker_container_id: Docker container ID running the analysis
+            context: CheckExecutionContext with worker and docker info
 
         Raises:
             InvalidStateTransitionError: If transition is not allowed
@@ -1306,11 +1315,14 @@ class ManufacturabilityCheck(models.Model):
             )
 
         self.status = self.Status.RUNNING
-        self.celery_worker_pid = celery_worker_pid
-        self.celery_worker_hostname = celery_worker_hostname
-        self.docker_container_id = docker_container_id
+        self.celery_worker_pid = context.celery_worker_pid
+        self.celery_worker_hostname = context.celery_worker_hostname
+        self.docker_container_id = context.docker_container_id
         self.docker_container_started_at = timezone.now()
         self.celery_job_started_at = timezone.now()
+        self.docker_image = context.docker_image
+        self.docker_image_digest = context.docker_image_digest
+        self.docker_command = context.docker_command
         self.save(
             update_fields=[
                 "status",
@@ -1319,6 +1331,9 @@ class ManufacturabilityCheck(models.Model):
                 "docker_container_id",
                 "docker_container_started_at",
                 "celery_job_started_at",
+                "docker_image",
+                "docker_image_digest",
+                "docker_command",
             ]
         )
 
@@ -1329,6 +1344,7 @@ class ManufacturabilityCheck(models.Model):
         errors: list[dict],
         warnings: list[dict],
         processing_logs: str,
+        tool_versions: dict | None = None,
     ) -> None:
         """Mark check as finished with results.
 
@@ -1339,6 +1355,7 @@ class ManufacturabilityCheck(models.Model):
             errors: List of error dicts (manufacturing issues)
             warnings: List of warning dicts (manufacturing warnings)
             processing_logs: Full log output from processing
+            tool_versions: Dict of tool versions used (pdk, magic, klayout, etc.)
 
         Raises:
             InvalidStateTransitionError: If transition is not allowed
@@ -1355,16 +1372,20 @@ class ManufacturabilityCheck(models.Model):
         self.warnings = warnings
         self.processing_logs = processing_logs
         self.celery_job_finished_at = timezone.now()
-        self.save(
-            update_fields=[
-                "status",
-                "is_manufacturable",
-                "errors",
-                "warnings",
-                "processing_logs",
-                "celery_job_finished_at",
-            ]
-        )
+        if tool_versions is not None:
+            self.tool_versions = tool_versions
+
+        update_fields = [
+            "status",
+            "is_manufacturable",
+            "errors",
+            "warnings",
+            "processing_logs",
+            "celery_job_finished_at",
+        ]
+        if tool_versions is not None:
+            update_fields.append("tool_versions")
+        self.save(update_fields=update_fields)
 
         # Update project status
         if is_manufacturable:
@@ -1386,6 +1407,9 @@ class ManufacturabilityCheck(models.Model):
 
         Pathways 5/6: PENDING/DISPATCHED/RUNNING → ERROR
 
+        Preserves tracking fields (celery_job_id, docker_container_id, worker info)
+        for debugging. These are only cleared by reset_for_retry() when retrying.
+
         Args:
             error_message: System error message describing the failure
             processing_logs: Full log output from processing (optional, defaults
@@ -1402,9 +1426,17 @@ class ManufacturabilityCheck(models.Model):
 
         self.status = self.Status.ERROR
         self.error_message = error_message
-        self.processing_logs = processing_logs
+        if processing_logs:
+            self.processing_logs = processing_logs
         self.celery_job_finished_at = timezone.now()
-        self.save()
+        self.save(
+            update_fields=[
+                "status",
+                "error_message",
+                "processing_logs",
+                "celery_job_finished_at",
+            ]
+        )
 
     def mark_cancelling(self, *, reason: str) -> None:
         """Request cancellation - transitions to CANCELLING state.
@@ -1440,7 +1472,7 @@ class ManufacturabilityCheck(models.Model):
 
         This method should only be called from CANCELLING state, after the
         checks_cancelling task has revoked the Celery task and stopped any
-        Docker container.
+        Docker container. It clears all task/container tracking fields.
 
         Raises:
             InvalidStateTransitionError: If transition is not allowed
@@ -1453,7 +1485,21 @@ class ManufacturabilityCheck(models.Model):
 
         self.status = self.Status.CANCELLED
         self.celery_job_finished_at = timezone.now()
-        self.save()
+        # Clear task and container tracking fields (cleanup already done)
+        self.celery_job_id = ""
+        self.docker_container_id = ""
+        self.celery_worker_pid = None
+        self.celery_worker_hostname = ""
+        self.save(
+            update_fields=[
+                "status",
+                "celery_job_finished_at",
+                "celery_job_id",
+                "docker_container_id",
+                "celery_worker_pid",
+                "celery_worker_hostname",
+            ]
+        )
 
     def reset_for_retry(self, *, reason: str = "") -> None:
         """Reset check to PENDING state for retry after error.
@@ -1509,6 +1555,29 @@ class ManufacturabilityCheck(models.Model):
                 self.processing_logs = f"RETRY #{self.retry_count}: {reason}"
 
         self.save()
+
+    def update_processing_logs(self, logs: str) -> None:
+        """Update processing logs during RUNNING state.
+
+        This is the ONLY field update allowed outside of mark_* state transitions.
+        It enables real-time progress visibility during long-running checks.
+
+        Args:
+            logs: Current processing log output
+
+        Raises:
+            ValueError: If check is not in RUNNING state
+        """
+        if self.status != self.Status.RUNNING:
+            msg = (
+                f"Cannot update processing_logs: check must be in RUNNING state, "
+                f"not {self.status}"
+            )
+            raise ValueError(msg)
+
+        self.processing_logs = logs
+        self.last_activity = timezone.now()
+        self.save(update_fields=["processing_logs", "last_activity"])
 
     @property
     def is_cancellable(self) -> bool:

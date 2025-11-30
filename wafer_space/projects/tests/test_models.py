@@ -9,6 +9,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from wafer_space.projects.exceptions import InvalidStateTransitionError
+from wafer_space.projects.models import CheckExecutionContext
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
@@ -18,6 +19,20 @@ from wafer_space.users.models import User
 from .constants import PROGRESS_COMPLETE
 from .constants import TEST_PASSWORD
 from .constants import TEST_WORKER_PID
+
+
+def _make_exec_context(**kwargs) -> CheckExecutionContext:
+    """Create a CheckExecutionContext for tests with sensible defaults."""
+    defaults = {
+        "celery_worker_pid": TEST_WORKER_PID,
+        "celery_worker_hostname": "worker-01",
+        "docker_container_id": "abc123def456",
+        "docker_image": "test-image:latest",
+        "docker_image_digest": "sha256:test",
+        "docker_command": "docker run ...",
+    }
+    defaults.update(kwargs)
+    return CheckExecutionContext(**defaults)
 
 
 @pytest.mark.django_db
@@ -1067,11 +1082,7 @@ class TestManufacturabilityCheckQueueProperties(TestCase):
             status=ManufacturabilityCheck.Status.PENDING,
         )
         check.mark_dispatched(celery_job_id="test-job-1")
-        check.mark_running(
-            celery_worker_pid=12345,
-            celery_worker_hostname="test-worker",
-            docker_container_id="container-123",
-        )
+        check.mark_running(context=_make_exec_context(celery_worker_pid=12345))
 
         assert check.queue_position is None
 
@@ -1150,11 +1161,7 @@ class TestManufacturabilityCheckQueueProperties(TestCase):
             status=ManufacturabilityCheck.Status.PENDING,
         )
         check3.mark_dispatched(celery_job_id="test-job-3")
-        check3.mark_running(
-            celery_worker_pid=12345,
-            celery_worker_hostname="test-worker",
-            docker_container_id="container-123",
-        )
+        check3.mark_running(context=_make_exec_context(celery_worker_pid=12345))
 
         # Create our PENDING check
         check = ManufacturabilityCheck.objects.create(
@@ -1491,11 +1498,7 @@ class TestManufacturabilityCheckMarkRunning(TestCase):
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.DISPATCHED,
         )
-        check.mark_running(
-            celery_worker_pid=TEST_WORKER_PID,
-            celery_worker_hostname="worker-01",
-            docker_container_id="abc123def456",
-        )
+        check.mark_running(context=_make_exec_context())
 
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.RUNNING
@@ -1509,11 +1512,7 @@ class TestManufacturabilityCheckMarkRunning(TestCase):
         )
 
         before = timezone.now()
-        check.mark_running(
-            celery_worker_pid=TEST_WORKER_PID,
-            celery_worker_hostname="worker-01",
-            docker_container_id="abc123def456",
-        )
+        check.mark_running(context=_make_exec_context())
         after = timezone.now()
 
         check.refresh_from_db()
@@ -1534,11 +1533,7 @@ class TestManufacturabilityCheckMarkRunning(TestCase):
             status=ManufacturabilityCheck.Status.PENDING,
         )
         with pytest.raises(InvalidStateTransitionError) as exc_info:
-            check.mark_running(
-                celery_worker_pid=TEST_WORKER_PID,
-                celery_worker_hostname="worker-01",
-                docker_container_id="abc123def456",
-            )
+            check.mark_running(context=_make_exec_context())
 
         assert "pending" in str(exc_info.value).lower()
         assert "running" in str(exc_info.value).lower()
@@ -1551,11 +1546,7 @@ class TestManufacturabilityCheckMarkRunning(TestCase):
             status=ManufacturabilityCheck.Status.RUNNING,
         )
         with pytest.raises(InvalidStateTransitionError):
-            check.mark_running(
-                celery_worker_pid=TEST_WORKER_PID,
-                celery_worker_hostname="worker-01",
-                docker_container_id="abc123def456",
-            )
+            check.mark_running(context=_make_exec_context())
 
     def test_mark_running_from_finished_raises(self):
         """Cannot mark FINISHED check as RUNNING."""
@@ -1565,11 +1556,7 @@ class TestManufacturabilityCheckMarkRunning(TestCase):
             status=ManufacturabilityCheck.Status.FINISHED,
         )
         with pytest.raises(InvalidStateTransitionError) as exc_info:
-            check.mark_running(
-                celery_worker_pid=TEST_WORKER_PID,
-                celery_worker_hostname="worker-01",
-                docker_container_id="abc123def456",
-            )
+            check.mark_running(context=_make_exec_context())
 
         assert "finished" in str(exc_info.value).lower()
         assert "running" in str(exc_info.value).lower()
@@ -1582,11 +1569,7 @@ class TestManufacturabilityCheckMarkRunning(TestCase):
             status=ManufacturabilityCheck.Status.ERROR,
         )
         with pytest.raises(InvalidStateTransitionError):
-            check.mark_running(
-                celery_worker_pid=TEST_WORKER_PID,
-                celery_worker_hostname="worker-01",
-                docker_container_id="abc123def456",
-            )
+            check.mark_running(context=_make_exec_context())
 
     def test_mark_running_from_cancelled_raises(self):
         """Cannot mark CANCELLED check as RUNNING."""
@@ -1596,11 +1579,7 @@ class TestManufacturabilityCheckMarkRunning(TestCase):
             status=ManufacturabilityCheck.Status.CANCELLED,
         )
         with pytest.raises(InvalidStateTransitionError):
-            check.mark_running(
-                celery_worker_pid=TEST_WORKER_PID,
-                celery_worker_hostname="worker-01",
-                docker_container_id="abc123def456",
-            )
+            check.mark_running(context=_make_exec_context())
 
 
 @pytest.mark.django_db
