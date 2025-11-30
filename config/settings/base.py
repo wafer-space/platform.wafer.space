@@ -449,9 +449,8 @@ PRECHECK_DOCKER_IMAGE = env(
     default="ghcr.io/wafer-space/gf180mcu-precheck:latest",
 )
 PRECHECK_CONCURRENT_LIMIT = env.int("PRECHECK_CONCURRENT_LIMIT", default=4)
-PRECHECK_TIMEOUT_SECONDS = env.int(
-    "PRECHECK_TIMEOUT_SECONDS", default=43200
-)  # 12 hours
+PRECHECK_TIMEOUT_SECONDS = 12 * 60 * 60  # 12 hours hard limit
+PRECHECK_SOFT_TIMEOUT_BUFFER = 60 * 60  # 1 hour buffer before hard limit
 PRECHECK_SCAN_INTERVAL_SECONDS = 30.0  # Scan for files ready to check every 30s
 
 # Celery Beat periodic tasks
