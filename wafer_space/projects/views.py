@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import TYPE_CHECKING
 from typing import cast
@@ -22,6 +23,7 @@ from django.views.generic import ListView
 from django.views.generic import UpdateView
 from django.views.generic import View
 
+from .exceptions import InvalidStateTransitionError
 from .forms import ProjectFileURLSubmitForm
 from .forms import ProjectForm
 from .mixins import ProjectOwnerOrStaffMixin
@@ -30,7 +32,6 @@ from .models import ManufacturabilityCheck
 from .models import Project
 from .models import ProjectFile
 from .security import SecurityValidationError
-from .services import ManufacturabilityService
 from .services import ProjectFileService
 
 logger = logging.getLogger(__name__)
@@ -160,9 +161,13 @@ class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView
         )
         context["history_files"] = history_files
 
-        # Add manufacturability check status
-        check_status = ManufacturabilityService.get_check_status(project)
-        context["check_status"] = check_status
+        # Add manufacturability check (from active file if it exists)
+        check = None
+        active_file = in_progress_file or submitted_file
+        if active_file:
+            with contextlib.suppress(ManufacturabilityCheck.DoesNotExist):
+                check = active_file.manufacturability_check
+        context["check"] = check
 
         return context
 
@@ -480,9 +485,10 @@ class ManufacturabilityCheckCancelView(LoginRequiredMixin, UserPassesTestMixin, 
             messages.error(request, "No manufacturability check found.")
             return redirect("projects:detail", pk=pk)
 
-        if ManufacturabilityService.cancel_check(check, reason="Cancelled by user"):
-            messages.success(request, "Manufacturability check cancelled.")
-        else:
+        try:
+            check.mark_cancelling(reason="Cancelled by user")
+            messages.success(request, "Cancellation requested. Cleanup in progress...")
+        except InvalidStateTransitionError:
             msg = "Check could not be cancelled (already finished or in error state)."
             messages.warning(request, msg)
 
