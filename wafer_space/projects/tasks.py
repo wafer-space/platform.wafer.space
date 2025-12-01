@@ -37,6 +37,7 @@ from .content_pipeline import ContentPipeline
 from .content_pipeline import cleanup_temp_dir
 from .content_pipeline import get_temp_dir_for_file
 from .content_processors import _processor_registry
+from .exceptions import InvalidStateTransitionError
 from .file_type_utils import detect_file_type_from_data
 from .format_validators import validate_output_format
 from .models import CheckExecutionContext
@@ -3209,7 +3210,7 @@ def checks_cancelling() -> dict:
             logger.info("[checks_cancelling] Check %s marked CANCELLED", check.id)
             completed += 1
 
-        except Exception as exc:
+        except (docker.errors.DockerException, InvalidStateTransitionError) as exc:
             msg = f"Failed to complete cancellation for check {check.id}: {exc}"
             logger.exception(msg)
             failed += 1
@@ -3255,7 +3256,7 @@ def checks_cleanup_stale_files() -> dict:
             )
             check.mark_cancelling(reason="Project file replaced with newer version")
             cancelled += 1
-        except Exception:
+        except InvalidStateTransitionError:
             logger.exception(
                 "Failed to mark check %s as cancelling",
                 check.id,
