@@ -18,6 +18,39 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _check_inspect_result(
+    inspect_result: dict | None,
+    task_id: str,
+    operation_name: str,
+) -> bool | None:
+    """Check inspect result for task, handling None (unsupported broker).
+
+    Args:
+        inspect_result: Result from inspect.reserved() or inspect.active()
+        task_id: Task ID to search for
+        operation_name: Name of operation for logging (e.g., "reserved", "active")
+
+    Returns:
+        True if task found, False if not found, None if unable to verify
+    """
+    # If result is None, broker doesn't support this operation (PostgreSQL)
+    if inspect_result is None:
+        logger.warning(
+            "inspect.%s() returned None (unsupported broker) - "
+            "cannot verify task %s",
+            operation_name,
+            task_id,
+        )
+        return None  # Cannot verify
+
+    # Check all worker queues for this task
+    for tasks in inspect_result.values():
+        if any(t["id"] == task_id for t in tasks):
+            return True
+
+    return False
+
+
 def _is_task_in_broker_queue(task_id: str | None) -> bool:
     """Check if a task exists in the Celery broker queue (kombu_message table).
 
@@ -85,22 +118,18 @@ def is_task_queued(project_file: ProjectFile) -> bool:
     if _is_task_in_broker_queue(task_id):
         return True
 
-    # Check reserved queue (tasks fetched by worker but not started)
+    # Check reserved and active queues using inspect API
     inspect = current_app.control.inspect()
-    reserved = inspect.reserved()
-    if reserved:
-        for tasks in reserved.values():
-            if any(t["id"] == task_id for t in tasks):
-                return True
 
-    # Check if task started (actively running)
-    active = inspect.active()
-    if active:
-        for tasks in active.values():
-            if any(t["id"] == task_id for t in tasks):
-                return True
+    # Check reserved queue (tasks fetched by worker but not started)
+    reserved_result = _check_inspect_result(inspect.reserved(), task_id, "reserved")
+    if reserved_result is None or reserved_result:
+        return True  # Cannot verify or found - assume queued
 
-    return False
+    # Check active queue (tasks currently executing)
+    active_result = _check_inspect_result(inspect.active(), task_id, "active")
+    # Return True if unable to verify (None) or if found, False otherwise
+    return active_result is None or bool(active_result)
 
 
 def _verify_worker_process(worker_pid: int, worker_hostname: str) -> bool:
@@ -147,16 +176,10 @@ def is_task_actively_running(project_file: ProjectFile) -> bool:
     inspect = current_app.control.inspect()
 
     # Check task in active list
-    active = inspect.active()
-    task_in_active = False
-
-    if active:
-        for tasks in active.values():
-            if any(t["id"] == task_id for t in tasks):
-                task_in_active = True
-                break
-
-    if not task_in_active:
+    active_result = _check_inspect_result(inspect.active(), task_id, "active")
+    if active_result is None:
+        return True  # Cannot verify - assume still active to be safe
+    if not active_result:
         return False
 
     # Get worker info from latest DownloadAttempt
@@ -197,22 +220,18 @@ def is_check_task_queued(check: ManufacturabilityCheck) -> bool:
     if _is_task_in_broker_queue(task_id):
         return True
 
-    # Check reserved queue (tasks fetched by worker but not started)
+    # Check reserved and active queues using inspect API
     inspect = current_app.control.inspect()
-    reserved = inspect.reserved()
-    if reserved:
-        for tasks in reserved.values():
-            if any(t["id"] == task_id for t in tasks):
-                return True
 
-    # Check if task started (actively running)
-    active = inspect.active()
-    if active:
-        for tasks in active.values():
-            if any(t["id"] == task_id for t in tasks):
-                return True
+    # Check reserved queue (tasks fetched by worker but not started)
+    reserved_result = _check_inspect_result(inspect.reserved(), task_id, "reserved")
+    if reserved_result is None or reserved_result:
+        return True  # Cannot verify or found - assume queued
 
-    return False
+    # Check active queue (tasks currently executing)
+    active_result = _check_inspect_result(inspect.active(), task_id, "active")
+    # Return True if unable to verify (None) or if found, False otherwise
+    return active_result is None or bool(active_result)
 
 
 def is_check_task_actively_running(check: ManufacturabilityCheck) -> bool:
@@ -231,16 +250,10 @@ def is_check_task_actively_running(check: ManufacturabilityCheck) -> bool:
     inspect = current_app.control.inspect()
 
     # Check task in active list
-    active = inspect.active()
-    task_in_active = False
-
-    if active:
-        for tasks in active.values():
-            if any(t["id"] == task_id for t in tasks):
-                task_in_active = True
-                break
-
-    if not task_in_active:
+    active_result = _check_inspect_result(inspect.active(), task_id, "active")
+    if active_result is None:
+        return True  # Cannot verify - assume still active to be safe
+    if not active_result:
         return False
 
     # Verify PID exists (if available)
