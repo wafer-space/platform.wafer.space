@@ -1,19 +1,16 @@
 """Tests for download and check verification functions."""
 
-from datetime import timedelta
 from unittest.mock import Mock
 from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
 from django.test import TestCase
-from django.utils import timezone
 
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
-from wafer_space.projects.verification import TASK_QUEUE_GRACE_PERIOD_SECONDS
 from wafer_space.projects.verification import is_check_task_actively_running
 from wafer_space.projects.verification import is_check_task_queued
 from wafer_space.projects.verification import is_task_actively_running
@@ -92,18 +89,13 @@ class TaskQueuedVerificationTests(TestCase):
 
     @patch("wafer_space.projects.verification.current_app")
     def test_task_not_found_returns_false(self, mock_app):
-        """Test that missing task returns False after grace period."""
+        """Test that missing task returns False."""
         project_file = ProjectFile.objects.create(
             project=self.project,
             source_url="http://example.com/test.gds",
             download_task_id="task-789",
             is_active=False,
         )
-        # Set uploaded_at to be older than grace period
-        grace_seconds = TASK_QUEUE_GRACE_PERIOD_SECONDS + 60
-        old_time = timezone.now() - timedelta(seconds=grace_seconds)
-        ProjectFile.objects.filter(pk=project_file.pk).update(uploaded_at=old_time)
-        project_file.refresh_from_db()
 
         # Mock Celery inspect to return empty
         mock_inspect = Mock()
@@ -300,18 +292,13 @@ class CheckTaskQueuedVerificationTests(TestCase):
 
     @patch("wafer_space.projects.verification.current_app")
     def test_check_task_not_found_returns_false(self, mock_app):
-        """Test that missing check task returns False after grace period."""
+        """Test that missing check task returns False."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.DISPATCHED,
             celery_job_id="check-task-789",
         )
-        # Set created_at to be older than grace period
-        grace_seconds = TASK_QUEUE_GRACE_PERIOD_SECONDS + 60
-        old_time = timezone.now() - timedelta(seconds=grace_seconds)
-        ManufacturabilityCheck.objects.filter(pk=check.pk).update(created_at=old_time)
-        check.refresh_from_db()
 
         # Mock Celery inspect to return empty
         mock_inspect = Mock()

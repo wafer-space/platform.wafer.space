@@ -3,28 +3,14 @@
 from __future__ import annotations
 
 import socket
-from datetime import timedelta
 from typing import TYPE_CHECKING
 
 import psutil
 from celery import current_app
-from django.conf import settings
-from django.utils import timezone
 
 if TYPE_CHECKING:
     from wafer_space.projects.models import ManufacturabilityCheck
     from wafer_space.projects.models import ProjectFile
-
-# Grace period for newly queued tasks before marking as orphaned.
-# Tasks in the broker queue are invisible to inspect.reserved()/active()
-# until a worker picks them up. This grace period prevents false orphan
-# detection for tasks that are legitimately waiting in the broker queue.
-# Default: 5 minutes (longer than the 60s orphan check interval)
-TASK_QUEUE_GRACE_PERIOD_SECONDS = getattr(
-    settings,
-    "TASK_QUEUE_GRACE_PERIOD_SECONDS",
-    300,
-)
 
 
 def is_task_queued(project_file: ProjectFile) -> bool:
@@ -40,35 +26,25 @@ def is_task_queued(project_file: ProjectFile) -> bool:
         Download status is now derived from DownloadAttempt records.
         Auto-transition to DOWNLOADING happens when DownloadAttempt is created
         in the task execution, not here.
-
-        This function checks both Celery's inspect API (reserved/active) and
-        applies a grace period for recently created files. Tasks sitting in
-        the broker queue (not yet picked up by a worker) are invisible to
-        Celery's inspect API, so we give them time to be picked up.
     """
     task_id = project_file.download_task_id
     inspect = current_app.control.inspect()
 
-    # Check reserved queue (tasks fetched by worker but not started)
+    # Check reserved queue
     reserved = inspect.reserved()
     if reserved:
         for tasks in reserved.values():
             if any(t["id"] == task_id for t in tasks):
                 return True
 
-    # Check if task started (actively running)
+    # Check if task started
     active = inspect.active()
     if active:
         for tasks in active.values():
             if any(t["id"] == task_id for t in tasks):
                 return True
 
-    # Grace period: tasks in broker queue are invisible to inspect API.
-    # If the file was created recently, assume task is still in broker queue.
-    grace_period = timedelta(seconds=TASK_QUEUE_GRACE_PERIOD_SECONDS)
-    if not project_file.uploaded_at:
-        return False
-    return timezone.now() - project_file.uploaded_at < grace_period
+    return False
 
 
 def _verify_worker_process(worker_pid: int, worker_hostname: str) -> bool:
@@ -151,12 +127,6 @@ def is_check_task_queued(check: ManufacturabilityCheck) -> bool:
 
     Returns:
         True if task is queued or started, False if missing
-
-    Note:
-        This function checks both Celery's inspect API (reserved/active) and
-        applies a grace period for recently dispatched tasks. Tasks sitting in
-        the broker queue (not yet picked up by a worker) are invisible to
-        Celery's inspect API, so we give them time to be picked up.
     """
     task_id = check.celery_job_id
     if not task_id:
@@ -164,27 +134,21 @@ def is_check_task_queued(check: ManufacturabilityCheck) -> bool:
 
     inspect = current_app.control.inspect()
 
-    # Check reserved queue (tasks fetched by worker but not started)
+    # Check reserved queue
     reserved = inspect.reserved()
     if reserved:
         for tasks in reserved.values():
             if any(t["id"] == task_id for t in tasks):
                 return True
 
-    # Check if task started (actively running)
+    # Check if task started
     active = inspect.active()
     if active:
         for tasks in active.values():
             if any(t["id"] == task_id for t in tasks):
                 return True
 
-    # Grace period: tasks in broker queue are invisible to inspect API.
-    # If the task was dispatched recently, assume it's still in broker queue.
-    grace_period = timedelta(seconds=TASK_QUEUE_GRACE_PERIOD_SECONDS)
-    dispatched_at = check.celery_job_dispatched_at or check.created_at
-    if not dispatched_at:
-        return False
-    return timezone.now() - dispatched_at < grace_period
+    return False
 
 
 def is_check_task_actively_running(check: ManufacturabilityCheck) -> bool:
