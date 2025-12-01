@@ -28,6 +28,28 @@ This document describes the systemd service units for platform.wafer.space, thei
 - **celery-docker-persistent**: Can ONLY write manufacturability check outputs. Cannot modify downloads.
 - **celery-docker-ephemeral**: Read-only filesystem access. Docker API for cleanup only.
 
+## File Handling Architecture
+
+**CRITICAL: NO FILE UPLOADS OCCUR IN THE DJANGO WEB APPLICATION.**
+
+The platform does NOT accept direct file uploads through the web interface. All file acquisition happens via background download tasks:
+
+1. **User submits URL** - Users provide a URL to their GDS file (GitHub release, external URL, etc.)
+2. **Django creates download task** - Web application (gunicorn) creates a database record and queues a Celery task
+3. **celery-downloads fetches file** - Background worker downloads the file from the external URL
+4. **Django reads results** - Web application reads download status and file metadata from database
+
+**Why this architecture:**
+- **Security**: No direct file upload vulnerabilities (upload bombs, malicious filenames, etc.)
+- **Performance**: Large files (up to 100GB) don't block web requests
+- **Reliability**: Automatic retry with exponential backoff for failed downloads
+- **Traceability**: Full audit trail of file sources and download attempts
+
+**Service responsibilities:**
+- **gunicorn** (Django web app): Database operations ONLY. NO file handling.
+- **celery-downloads**: File acquisition ONLY. Downloads from external URLs to media directory.
+- **celery-docker-persistent**: Reads downloaded files (read-only). Writes check outputs only.
+
 ## Task to Queue Mapping
 
 | Queue             | Task                                | Description                                               |
