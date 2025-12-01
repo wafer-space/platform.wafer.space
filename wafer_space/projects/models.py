@@ -1074,10 +1074,10 @@ class ManufacturabilityCheck(models.Model):
     }
 
     # Maximum characters of processing logs to include in GitHub issue body
-    GITHUB_ISSUE_LOG_CHARS = 5000
+    GITHUB_ISSUE_LOG_CHARS: ClassVar[int] = 5000
 
     # Maximum concurrent checks allowed (DISPATCHED + RUNNING)
-    MAX_CONCURRENT_CHECKS = 4
+    MAX_CONCURRENT_CHECKS: ClassVar[int] = 4
 
     # Statuses representing checks that are in progress and should be
     # cancelled when the project file is replaced
