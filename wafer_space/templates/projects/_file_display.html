@@ -156,10 +156,10 @@
               <i class="bi bi-play-circle"></i>
               <strong>{{ check.checks_running }}</strong> check{{ check.checks_running|pluralize }} currently running
             </p>
-            {% if check.queued_at %}
+            {% if check.created_at %}
               <p class="mb-0 small text-muted">
                 <i class="bi bi-hourglass-split"></i>
-                Waiting for {{ check.queued_at|timesince }}
+                Waiting for {{ check.created_at|timesince }}
               </p>
             {% endif %}
           </div>
