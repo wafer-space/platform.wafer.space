@@ -24,14 +24,14 @@ if [ ! -d "$SECRETS_DIR" ]; then
 fi
 
 # Read E2E test password from secrets repository
-E2E_SECRET_FILE="$SECRETS_DIR/e2e-test-password"
+E2E_SECRET_FILE="$SECRETS_DIR/test-user"
 if [ ! -f "$E2E_SECRET_FILE" ]; then
     echo "Error: E2E test password file not found: $E2E_SECRET_FILE"
     echo ""
     echo "To create the secret file in the secrets repository:"
     echo "  1. cd /home/django/.secrets"
-    echo "  2. echo 'your-secure-password' > e2e-test-password"
-    echo "  3. git add e2e-test-password"
+    echo "  2. echo 'your-secure-password' > test-user"
+    echo "  3. git add test-user"
     echo "  4. git commit -m 'Add E2E test user password'"
     echo "  5. git push"
     echo ""
