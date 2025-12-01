@@ -124,7 +124,7 @@
                   <form action="{% url 'projects:submit' pk=project.pk %}"
                         method="post"
                         style="display: inline"
-                        onsubmit="return confirm('Are you sure you want to submit this project for manufacturing? This action cannot be undone.');">
+                        onsubmit="return confirm('Are you sure you want to submit this project for manufacturing?{% if project.submitted_file %} This will replace the previously submitted file.{% endif %}');">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-success">
                       <i class="bi bi-send"></i> Submit for Manufacturing
