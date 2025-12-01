@@ -678,8 +678,9 @@ class TestProjectSubmissionIntegration(TestCase):
         Note: Manufacturability checks are created by the checks_create()
         periodic task for verified files, not during submission.
         """
-        # Mark as manufacturable (simulating completed check from earlier workflow)
+        # Mark as manufacturable (simulates completed check via mark_finished)
         self.project.is_manufacturable = True
+        self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
 
         # Submit the project

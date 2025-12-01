@@ -182,8 +182,9 @@ class TestProjectCanSubmit(TestCase):
             attempt_number=1,
             status=DownloadAttempt.Status.COMPLETED,
         )
-        # Mark as manufacturable
+        # Mark as manufacturable (simulates completed check via mark_finished)
         self.project.is_manufacturable = True
+        self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
 
         can_submit, reason = self.project.can_submit()
@@ -258,8 +259,9 @@ class TestProjectSubmit(TestCase):
             status=DownloadAttempt.Status.COMPLETED,
         )
 
-        # Mark as manufacturable
+        # Mark as manufacturable (simulates completed check via mark_finished)
         self.project.is_manufacturable = True
+        self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
 
         self.project.submit()
@@ -284,8 +286,9 @@ class TestProjectSubmit(TestCase):
             status=DownloadAttempt.Status.COMPLETED,
         )
 
-        # Mark as manufacturable
+        # Mark as manufacturable (simulates completed check via mark_finished)
         self.project.is_manufacturable = True
+        self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
 
         before = timezone.now()
@@ -318,8 +321,9 @@ class TestProjectSubmit(TestCase):
             status=DownloadAttempt.Status.COMPLETED,
         )
 
-        # Mark as manufacturable (simulating completed check from earlier workflow)
+        # Mark as manufacturable (simulates completed check via mark_finished)
         self.project.is_manufacturable = True
+        self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
 
         # Verify no check exists before submission
@@ -355,8 +359,9 @@ class TestProjectSubmit(TestCase):
             status=DownloadAttempt.Status.COMPLETED,
         )
 
-        # Mark as manufacturable
+        # Mark as manufacturable (simulates completed check via mark_finished)
         self.project.is_manufacturable = True
+        self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
 
         # Create existing check
@@ -393,8 +398,9 @@ class TestProjectSubmit(TestCase):
             status=DownloadAttempt.Status.COMPLETED,
         )
 
-        # Mark as manufacturable
+        # Mark as manufacturable (simulates completed check via mark_finished)
         self.project.is_manufacturable = True
+        self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
 
         # First submission should succeed

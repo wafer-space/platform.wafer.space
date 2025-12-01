@@ -626,8 +626,9 @@ class TestProjectSubmitView(TestCase):
             status=DownloadAttempt.Status.COMPLETED,
         )
 
-        # Mark as manufacturable
+        # Mark as manufacturable (simulates completed check via mark_finished)
         self.project.is_manufacturable = True
+        self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -779,8 +780,9 @@ class TestProjectSubmitView(TestCase):
             status=DownloadAttempt.Status.COMPLETED,
         )
 
-        # Mark as manufacturable
+        # Mark as manufacturable (simulates completed check via mark_finished)
         self.project.is_manufacturable = True
+        self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
 
         # Submit once
@@ -824,8 +826,9 @@ class TestProjectSubmitView(TestCase):
             status=DownloadAttempt.Status.COMPLETED,
         )
 
-        # Mark as manufacturable
+        # Mark as manufacturable (simulates completed check via mark_finished)
         self.project.is_manufacturable = True
+        self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
