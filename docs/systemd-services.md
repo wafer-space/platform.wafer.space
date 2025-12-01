@@ -118,12 +118,13 @@ The media directory structure must support the principle of least privilege:
 /mnt/user-files/                     root:root              drwxr-xr-x
 ├── docker/                          root:docker            drwxr-x---  (Docker daemon storage ONLY)
 ├── projects/                        root:platform-media    drwxrwxr-x
-│   ├── <uuid>/                      root:platform-media    drwxrwxr-x
-│   │   ├── downloads/               www-data:platform-media drwxrwxr-x  (celery-downloads writes here)
-│   │   └── outputs/                 celery-mfg:platform-media drwxrwxr-x  (celery-docker-persistent writes here)
-├── designs/                         root:platform-media    drwxrwxr-x
-├── temp/                            root:platform-media    drwxrwxr-x
-└── uploads/                         root:platform-media    drwxrwxr-x
+│   └── <uuid>/                      root:platform-media    drwxrwxr-x
+│       ├── *.gds                    www-data:platform-media (celery-downloads writes)
+│       ├── *.precheck.*.log         celery-mfg:platform-media (celery-docker-persistent writes)
+│       └── *.precheck.*.runs.tar    celery-mfg:platform-media (celery-docker-persistent writes)
+└── temp/                            root:platform-media    drwxrwxr-x  (temporary extraction, auto-cleaned)
+    └── task_<id>/                   (per-task isolation for content extraction)
+        └── file_<id>/
 ```
 
 **Key Requirements:**
@@ -133,15 +134,19 @@ The media directory structure must support the principle of least privilege:
    - **Permissions**: `drwxr-x---` (750) - ONLY Docker daemon can write
    - **WHY**: Docker storage must not be accessible to www-data or other services
 
-2. **projects/<uuid>/downloads/** subdirectory:
-   - **Owner**: `www-data:platform-media`
-   - **Permissions**: `drwxrwxr-x` (775) - www-data creates, platform-media group can read
-   - **WHY**: celery-downloads (www-data) saves downloaded GDS files
+2. **projects/<uuid>/** directory:
+   - **Owner**: `root:platform-media`
+   - **Permissions**: `drwxrwxr-x` (775) - Both www-data and celery-mfg can write
+   - **Contents**:
+     - `*.gds` files created by celery-downloads (www-data)
+     - `*.precheck.*.log` files created by celery-docker-persistent (celery-mfg)
+     - `*.precheck.*.runs.tar` archives created by celery-docker-persistent (celery-mfg)
+   - **WHY**: Shared project directory allows both workers to write their respective outputs
 
-3. **projects/<uuid>/outputs/** subdirectory:
-   - **Owner**: `celery-mfg:platform-media`
-   - **Permissions**: `drwxrwxr-x` (775) - celery-mfg creates, platform-media group can read
-   - **WHY**: celery-docker-persistent saves check logs and outputs
+3. **temp/** directory:
+   - **Owner**: `root:platform-media`
+   - **Permissions**: `drwxrwxr-x` (775) with setgid bit
+   - **WHY**: Content extraction pipeline needs temporary workspace (auto-cleaned)
 
 4. **Application code** (`/home/django/platform.wafer.space/`):
    - **Owner**: `django:django`
@@ -158,19 +163,19 @@ sudo groupadd platform-media
 sudo usermod -aG platform-media www-data
 sudo usermod -aG platform-media celery-mfg
 
-# Set up media directory structure
-sudo mkdir -p /mnt/user-files/{docker,projects,designs,temp,uploads}
+# Set up media directory structure (only directories actually used by code)
+sudo mkdir -p /mnt/user-files/{docker,projects,temp}
 
 # Docker storage - root:docker only (NO www-data access)
 sudo chown root:docker /mnt/user-files/docker
 sudo chmod 750 /mnt/user-files/docker
 
 # Media directories - root:platform-media with group write
-sudo chown -R root:platform-media /mnt/user-files/{projects,designs,temp,uploads}
-sudo chmod -R 775 /mnt/user-files/{projects,designs,temp,uploads}
+sudo chown -R root:platform-media /mnt/user-files/{projects,temp}
+sudo chmod -R 775 /mnt/user-files/{projects,temp}
 
 # Set setgid bit so new files inherit group
-sudo chmod g+s /mnt/user-files/{projects,designs,temp,uploads}
+sudo chmod g+s /mnt/user-files/{projects,temp}
 
 # Verify permissions
 ls -la /mnt/user-files/
