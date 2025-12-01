@@ -43,6 +43,10 @@ SITE_ID = 1
 # Must be set in each environment (dev, pytest, stage, prod)
 SITE_URL: str | None = None
 
+# Deploy target identifier displayed in page footer (alongside hostname and git commit)
+# Set via DEPLOY_TARGET in .env file (optional, e.g., "staging", "prod-us-east-1")
+DEPLOY_TARGET: str | None = env("DEPLOY_TARGET", default=None)
+
 # https://docs.djangoproject.com/en/dev/ref/settings/#use-i18n
 USE_I18N = True
 

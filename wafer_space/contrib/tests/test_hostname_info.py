@@ -124,6 +124,35 @@ class TestHostnameInfoContextProcessor:
 
         assert result["SERVER_HOSTNAME"] is None
 
+    def test_provides_deploy_target_in_context(self) -> None:
+        """Test that context processor provides DEPLOY_TARGET."""
+        request = MagicMock()
+
+        result = hostname_info(request)
+
+        assert "DEPLOY_TARGET" in result
+
+    @patch("wafer_space.contrib.hostname_info.settings")
+    def test_deploy_target_from_settings(self, mock_settings: MagicMock) -> None:
+        """Test that DEPLOY_TARGET comes from settings."""
+        mock_settings.DEPLOY_TARGET = "staging-cluster-01"
+        request = MagicMock()
+
+        result = hostname_info(request)
+
+        assert result["DEPLOY_TARGET"] == "staging-cluster-01"
+
+    @patch("wafer_space.contrib.hostname_info.settings")
+    def test_deploy_target_none_when_not_set(self, mock_settings: MagicMock) -> None:
+        """Test that DEPLOY_TARGET is None when not configured."""
+        # Simulate settings without DEPLOY_TARGET attribute
+        del mock_settings.DEPLOY_TARGET
+        request = MagicMock()
+
+        result = hostname_info(request)
+
+        assert result["DEPLOY_TARGET"] is None
+
 
 @pytest.mark.django_db
 class TestHostnameInfoIntegration:

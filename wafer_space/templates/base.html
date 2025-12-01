@@ -155,10 +155,12 @@
     <!-- /container -->
     {% block modal %}
     {% endblock modal %}
-    {% if GIT_COMMIT_URL or SERVER_HOSTNAME %}
+    {% if GIT_COMMIT_URL or SERVER_HOSTNAME or DEPLOY_TARGET %}
       <footer class="text-center text-muted py-2" style="font-size: 0.7rem;">
         {% if SERVER_HOSTNAME %}<span class="text-muted">{{ SERVER_HOSTNAME }}</span>{% endif %}
-        {% if SERVER_HOSTNAME and GIT_COMMIT_URL %}<span class="text-muted mx-1">|</span>{% endif %}
+        {% if SERVER_HOSTNAME and DEPLOY_TARGET %}<span class="text-muted mx-1">|</span>{% endif %}
+        {% if DEPLOY_TARGET %}<span class="text-muted">{{ DEPLOY_TARGET }}</span>{% endif %}
+        {% if SERVER_HOSTNAME and GIT_COMMIT_URL or DEPLOY_TARGET and GIT_COMMIT_URL %}<span class="text-muted mx-1">|</span>{% endif %}
         {% if GIT_COMMIT_URL %}
           <a href="{{ GIT_COMMIT_URL }}"
              target="_blank"
