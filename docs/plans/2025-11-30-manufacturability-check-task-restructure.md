@@ -405,7 +405,7 @@ def checks_cleanup_orphaned_docker():
             continue
 
         # Check exists - is it in an active state?
-        # CANCELLING containers are handled by checks_cleanup_cancelling, not here
+        # CANCELLING containers are handled by checks_cancelling, not here
         if check.status not in [Status.DISPATCHED, Status.RUNNING, Status.CANCELLING]:
             # Check is FINISHED/ERROR/CANCELLED but container still exists
             _stop_and_remove(container)
