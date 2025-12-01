@@ -114,7 +114,29 @@ Configures passwordless sudo for the django user to manage services.
 - Run `./restart.sh` without sudo
 - Manage services: `sudo systemctl restart django-gunicorn.service` (no password)
 
-### 7. Systemd Services Setup
+### 7. E2E Test User Setup (Optional)
+```bash
+sudo ./07-setup-e2e-test-user.sh
+```
+Creates or updates a test user for the E2E verification script.
+
+**Prerequisites:**
+- Secrets repository must be set up (02a-setup-secrets.sh)
+- Secret file must exist: `/home/django/.secrets/e2e-test-password`
+
+**What it does:**
+- Creates user `e2e-test-user` with email `e2e-test@wafer.space`
+- Sets password from secrets repository
+- Marks email as verified (required for login)
+
+**To add the secret:**
+```bash
+cd /home/django/.secrets
+echo 'your-secure-password' > e2e-test-password
+git add e2e-test-password && git commit -m 'Add E2E test user password' && git push
+```
+
+### 8. Systemd Services Setup
 ```bash
 sudo ../systemd/install.sh
 ```
