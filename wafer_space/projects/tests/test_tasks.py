@@ -1603,8 +1603,7 @@ class TestChecksCancelling(TestCase):
         mock_container.remove.assert_called_once()
         assert result["completed"] == 1
 
-    @patch("wafer_space.projects.tasks.celery_app")
-    def test_handles_missing_container(self, mock_celery):
+    def test_handles_missing_container(self):
         """Test cleanup handles already-removed container."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
@@ -1614,6 +1613,7 @@ class TestChecksCancelling(TestCase):
         )
 
         # Mock docker client to raise NotFound - keep docker.errors intact
+        # No celery_job_id set, so celery_app mock not needed
         with patch("wafer_space.projects.tasks.docker.from_env") as mock_from_env:
             mock_client = Mock()
             mock_from_env.return_value = mock_client
