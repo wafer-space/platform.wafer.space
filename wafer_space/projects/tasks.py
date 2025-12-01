@@ -488,11 +488,6 @@ def _stream_logs_with_checkpoints(context: _CheckContext, container, container_s
         logs += line_text
         line_count += 1
 
-        # Log the actual container output
-        for log_line in line_text.strip().split("\n"):
-            if log_line:
-                context.logger.info("  [container] %s", log_line)
-
         # Update logs using model method (the only allowed update during RUNNING)
         context.check.update_processing_logs(logs)
 
@@ -2878,6 +2873,9 @@ def checks_dispatch() -> dict:
     Returns:
         dict with 'dispatched' and 'waiting' counts
     """
+    logger = logging.getLogger(__name__)
+    logger.info("[checks_dispatch] Starting dispatch cycle")
+
     concurrent_limit = getattr(settings, "PRECHECK_CONCURRENT_LIMIT", 4)
 
     # CANCELLING counts because Docker container may still be running
@@ -2893,16 +2891,42 @@ def checks_dispatch() -> dict:
         status=ManufacturabilityCheck.Status.PENDING,
     ).order_by("created_at")
 
+    pending_count = pending.count()
+    logger.info(
+        "[checks_dispatch] Active: %d/%d, Pending: %d",
+        active_count,
+        concurrent_limit,
+        pending_count,
+    )
+
     dispatched = 0
     for check in pending:
         if active_count >= concurrent_limit:
+            logger.info(
+                "[checks_dispatch] Concurrent limit reached (%d/%d), stopping",
+                active_count,
+                concurrent_limit,
+            )
             break
         task = check_process_job.delay(check.id)
         check.mark_dispatched(celery_job_id=task.id)
+        logger.info(
+            "[checks_dispatch] Dispatched check %s (project: %s, file: %s) -> task %s",
+            check.id,
+            check.project.name,
+            check.project_file.original_filename,
+            task.id,
+        )
         active_count += 1
         dispatched += 1
 
-    return {"dispatched": dispatched, "waiting": pending.count() - dispatched}
+    waiting = pending_count - dispatched
+    logger.info(
+        "[checks_dispatch] Complete: dispatched=%d, waiting=%d",
+        dispatched,
+        waiting,
+    )
+    return {"dispatched": dispatched, "waiting": waiting}
 
 
 @shared_task(queue="default")
@@ -2912,19 +2936,43 @@ def checks_retry() -> dict:
     Returns:
         dict with 'retried' and 'exhausted' counts
     """
+    logger = logging.getLogger(__name__)
+    logger.info("[checks_retry] Starting retry cycle")
+
     retried = 0
     exhausted = 0
 
     error_checks = ManufacturabilityCheck.objects.filter(
         status=ManufacturabilityCheck.Status.ERROR,
     )
+    error_count = error_checks.count()
+    logger.info("[checks_retry] Found %d checks in ERROR state", error_count)
+
     for check in error_checks:
         if check.can_retry():
+            logger.info(
+                "[checks_retry] Retrying check %s (project: %s, attempt %d/%d)",
+                check.id,
+                check.project.name,
+                check.retry_count + 1,
+                check.max_retries,
+            )
             check.reset_for_retry(reason="Automatic retry after error")
             retried += 1
         else:
+            logger.info(
+                "[checks_retry] Check %s exhausted retries (%d/%d)",
+                check.id,
+                check.retry_count,
+                check.max_retries,
+            )
             exhausted += 1
 
+    logger.info(
+        "[checks_retry] Complete: retried=%d, exhausted=%d",
+        retried,
+        exhausted,
+    )
     return {"retried": retried, "exhausted": exhausted}
 
 
@@ -2935,6 +2983,9 @@ def checks_create() -> dict:
     Returns:
         dict with 'created' count
     """
+    logger = logging.getLogger(__name__)
+    logger.info("[checks_create] Starting check creation cycle")
+
     created = 0
 
     # Find active, verified files without a check
@@ -2945,14 +2996,24 @@ def checks_create() -> dict:
         manufacturability_check__isnull=False,
     )
 
+    files_count = files_needing_checks.count()
+    logger.info("[checks_create] Found %d verified files needing checks", files_count)
+
     for project_file in files_needing_checks:
-        ManufacturabilityCheck.objects.create(
+        check = ManufacturabilityCheck.objects.create(
             project=project_file.project,
             project_file=project_file,
             status=ManufacturabilityCheck.Status.PENDING,
         )
+        logger.info(
+            "[checks_create] Created check %s for project %s, file %s",
+            check.id,
+            project_file.project.name,
+            project_file.original_filename,
+        )
         created += 1
 
+    logger.info("[checks_create] Complete: created=%d", created)
     return {"created": created}
 
 
@@ -2967,24 +3028,50 @@ def checks_cleanup_orphaned_dispatch() -> dict:
     Returns:
         dict with 'orphaned' and 'verified' counts
     """
+    logger = logging.getLogger(__name__)
+    logger.info("[checks_cleanup_orphaned_dispatch] Starting orphan check")
+
     orphaned = 0
     verified = 0
 
     dispatched_checks = ManufacturabilityCheck.objects.filter(
         status=ManufacturabilityCheck.Status.DISPATCHED,
     )
+    dispatched_count = dispatched_checks.count()
+    logger.info(
+        "[checks_cleanup_orphaned_dispatch] Found %d DISPATCHED checks",
+        dispatched_count,
+    )
 
     for check in dispatched_checks:
         if is_check_task_queued(check):
+            logger.debug(
+                "[checks_cleanup_orphaned_dispatch] Check %s verified "
+                "(task %s in queue)",
+                check.id,
+                check.celery_job_id,
+            )
             verified += 1
         else:
             error_msg = (
                 f"Orphaned DISPATCHED check: Celery task {check.celery_job_id} "
                 f"not found in queue"
             )
+            logger.warning(
+                "[checks_cleanup_orphaned_dispatch] Orphaned check %s "
+                "(project: %s): %s",
+                check.id,
+                check.project.name,
+                error_msg,
+            )
             check.mark_error(error_message=error_msg)
             orphaned += 1
 
+    logger.info(
+        "[checks_cleanup_orphaned_dispatch] Complete: verified=%d, orphaned=%d",
+        verified,
+        orphaned,
+    )
     return {"orphaned": orphaned, "verified": verified}
 
 
@@ -3001,24 +3088,51 @@ def checks_cleanup_orphaned_processing() -> dict:
     Returns:
         dict with 'orphaned' and 'verified' counts
     """
+    logger = logging.getLogger(__name__)
+    logger.info("[checks_cleanup_orphaned_processing] Starting orphan check")
+
     orphaned = 0
     verified = 0
 
     running_checks = ManufacturabilityCheck.objects.filter(
         status=ManufacturabilityCheck.Status.RUNNING,
     )
+    running_count = running_checks.count()
+    logger.info(
+        "[checks_cleanup_orphaned_processing] Found %d RUNNING checks",
+        running_count,
+    )
 
     for check in running_checks:
         if is_check_task_actively_running(check):
+            logger.debug(
+                "[checks_cleanup_orphaned_processing] Check %s verified "
+                "(PID %s on %s is active)",
+                check.id,
+                check.celery_worker_pid,
+                check.celery_worker_hostname,
+            )
             verified += 1
         else:
             error_msg = (
                 f"Orphaned RUNNING check: Worker PID {check.celery_worker_pid} "
                 f"on {check.celery_worker_hostname} is dead or task not active"
             )
+            logger.warning(
+                "[checks_cleanup_orphaned_processing] Orphaned check %s "
+                "(project: %s): %s",
+                check.id,
+                check.project.name,
+                error_msg,
+            )
             check.mark_error(error_message=error_msg)
             orphaned += 1
 
+    logger.info(
+        "[checks_cleanup_orphaned_processing] Complete: verified=%d, orphaned=%d",
+        verified,
+        orphaned,
+    )
     return {"orphaned": orphaned, "verified": verified}
 
 
@@ -3034,16 +3148,39 @@ def checks_cancelling() -> dict:
         dict with 'completed' and 'failed' counts
     """
     logger = logging.getLogger(__name__)
+    logger.info("[checks_cancelling] Starting cancellation processing")
+
     status_enum = ManufacturabilityCheck.Status
     completed = 0
     failed = 0
 
+    cancelling_checks = ManufacturabilityCheck.objects.filter(
+        status=status_enum.CANCELLING
+    )
+    cancelling_count = cancelling_checks.count()
+    logger.info(
+        "[checks_cancelling] Found %d checks in CANCELLING state",
+        cancelling_count,
+    )
+
     client = docker.from_env()
 
-    for check in ManufacturabilityCheck.objects.filter(status=status_enum.CANCELLING):
+    for check in cancelling_checks:
+        logger.info(
+            "[checks_cancelling] Processing check %s "
+            "(project: %s, task: %s, container: %s)",
+            check.id,
+            check.project.name,
+            check.celery_job_id,
+            check.docker_container_id,
+        )
         try:
             # Step 1: Revoke Celery task (cleanup only, don't modify DB)
             if check.celery_job_id:
+                logger.info(
+                    "[checks_cancelling] Revoking Celery task %s",
+                    check.celery_job_id,
+                )
                 celery_app.control.revoke(check.celery_job_id, terminate=True)
 
             # Step 2: Stop and remove Docker container (cleanup only, don't modify DB)
@@ -3051,13 +3188,25 @@ def checks_cancelling() -> dict:
                 try:
                     container = client.containers.get(check.docker_container_id)
                     if container.status == "running":
+                        logger.info(
+                            "[checks_cancelling] Stopping container %s",
+                            check.docker_container_id,
+                        )
                         container.stop(timeout=10)
+                    logger.info(
+                        "[checks_cancelling] Removing container %s",
+                        check.docker_container_id,
+                    )
                     container.remove(force=True)
                 except docker.errors.NotFound:
-                    pass  # Already gone
+                    logger.info(
+                        "[checks_cancelling] Container %s already gone",
+                        check.docker_container_id,
+                    )
 
             # Step 3: Complete transition - mark_cancelled() clears fields atomically
             check.mark_cancelled()
+            logger.info("[checks_cancelling] Check %s marked CANCELLED", check.id)
             completed += 1
 
         except Exception as exc:
@@ -3065,6 +3214,11 @@ def checks_cancelling() -> dict:
             logger.exception(msg)
             failed += 1
 
+    logger.info(
+        "[checks_cancelling] Complete: completed=%d, failed=%d",
+        completed,
+        failed,
+    )
     return {"completed": completed, "failed": failed}
 
 
