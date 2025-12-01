@@ -87,6 +87,12 @@ createsuperuser: ## Create Django superuser
 	@echo "$(BLUE)Creating superuser...$(NC)"
 	@$(MANAGE) createsuperuser
 
+.PHONY: setup-test-user
+setup-test-user: ## Create E2E test user (username: e2e-test-user, password: test)
+	@echo "$(BLUE)Creating E2E test user...$(NC)"
+	@$(MANAGE) create_e2e_test_user --password test
+	@echo "$(GREEN)✓ Test user created (username: e2e-test-user, password: test)$(NC)"
+
 .PHONY: collectstatic
 collectstatic: ## Collect static files
 	@echo "$(BLUE)Collecting static files...$(NC)"
