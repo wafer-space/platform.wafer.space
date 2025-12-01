@@ -36,8 +36,7 @@ def _check_inspect_result(
     # If result is None, broker doesn't support this operation (PostgreSQL)
     if inspect_result is None:
         logger.warning(
-            "inspect.%s() returned None (unsupported broker) - "
-            "cannot verify task %s",
+            "inspect.%s() returned None (unsupported broker) - cannot verify task %s",
             operation_name,
             task_id,
         )
@@ -90,8 +89,8 @@ def _is_task_in_broker_queue(task_id: str | None) -> bool:
         return False
 
 
-def is_task_queued(project_file: ProjectFile) -> bool:
-    """Verify task is in Celery queue or broker queue.
+def is_download_task_queued(project_file: ProjectFile) -> bool:
+    """Verify download task is in Celery queue or broker queue.
 
     This function checks three places for the task:
     1. Broker queue (kombu_message table) - tasks waiting to be picked up
@@ -159,8 +158,8 @@ def _verify_worker_process(worker_pid: int, worker_hostname: str) -> bool:
         return is_celery
 
 
-def is_task_actively_running(project_file: ProjectFile) -> bool:
-    """Verify task is executing AND process exists.
+def is_download_task_actively_running(project_file: ProjectFile) -> bool:
+    """Verify download task is executing AND process exists.
 
     Args:
         project_file: ProjectFile to check

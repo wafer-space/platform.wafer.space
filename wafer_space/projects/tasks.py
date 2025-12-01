@@ -56,8 +56,8 @@ from .url_handlers import GoogleSourceHandler
 from .url_handlers import URLHandlerRegistry
 from .verification import is_check_task_actively_running
 from .verification import is_check_task_queued
-from .verification import is_task_actively_running
-from .verification import is_task_queued
+from .verification import is_download_task_actively_running
+from .verification import is_download_task_queued
 
 # HTTP status codes
 HTTP_PARTIAL_CONTENT = 206  # Server supports range requests
@@ -2661,7 +2661,7 @@ def ensure_download_tasks_queued():
     )
 
     for project_file in queued_files:
-        if is_task_queued(project_file):
+        if is_download_task_queued(project_file):
             verified_count += 1
         else:
             error_msg = "Task not found in Celery queue (worker may be down)"
@@ -2694,7 +2694,7 @@ def ensure_download_tasks_queued():
         # Only check if this is the latest attempt
         latest = project_file.latest_attempt
         if latest and latest.status == DownloadAttempt.Status.DOWNLOADING:
-            if is_task_actively_running(project_file):
+            if is_download_task_actively_running(project_file):
                 verified_count += 1
             else:
                 logger.warning("Orphaned downloading file %s", project_file.id)

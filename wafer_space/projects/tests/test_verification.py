@@ -15,8 +15,8 @@ from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.verification import _is_task_in_broker_queue
 from wafer_space.projects.verification import is_check_task_actively_running
 from wafer_space.projects.verification import is_check_task_queued
-from wafer_space.projects.verification import is_task_actively_running
-from wafer_space.projects.verification import is_task_queued
+from wafer_space.projects.verification import is_download_task_actively_running
+from wafer_space.projects.verification import is_download_task_queued
 
 User = get_user_model()
 TEST_PASSWORD = "testpass123"  # noqa: S105 - Test password constant
@@ -120,8 +120,8 @@ class BrokerQueueTests(TestCase):
 
 
 @pytest.mark.django_db
-class TaskQueuedVerificationTests(TestCase):
-    """Tests for is_task_queued() function."""
+class DownloadTaskQueuedVerificationTests(TestCase):
+    """Tests for is_download_task_queued() function."""
 
     def setUp(self):
         """Set up test fixtures."""
@@ -156,7 +156,7 @@ class TaskQueuedVerificationTests(TestCase):
         mock_inspect.active.return_value = {}
         mock_app.control.inspect.return_value = mock_inspect
 
-        result = is_task_queued(project_file)
+        result = is_download_task_queued(project_file)
 
         assert result is True
         project_file.refresh_from_db()
@@ -187,7 +187,7 @@ class TaskQueuedVerificationTests(TestCase):
         }
         mock_app.control.inspect.return_value = mock_inspect
 
-        result = is_task_queued(project_file)
+        result = is_download_task_queued(project_file)
 
         assert result is True
         project_file.refresh_from_db()
@@ -214,7 +214,7 @@ class TaskQueuedVerificationTests(TestCase):
         mock_inspect.active.return_value = {}
         mock_app.control.inspect.return_value = mock_inspect
 
-        result = is_task_queued(project_file)
+        result = is_download_task_queued(project_file)
 
         assert result is False
 
@@ -232,7 +232,7 @@ class TaskQueuedVerificationTests(TestCase):
         # Mock broker queue check to return True (found in broker)
         mock_broker_check.return_value = True
 
-        result = is_task_queued(project_file)
+        result = is_download_task_queued(project_file)
 
         assert result is True
         # Should not even call inspect when broker check returns True
@@ -240,8 +240,8 @@ class TaskQueuedVerificationTests(TestCase):
 
 
 @pytest.mark.django_db
-class TaskActivelyRunningTests(TestCase):
-    """Tests for is_task_actively_running() function."""
+class DownloadTaskActivelyRunningTests(TestCase):
+    """Tests for is_download_task_actively_running() function."""
 
     def setUp(self):
         """Set up test fixtures."""
@@ -288,7 +288,7 @@ class TaskActivelyRunningTests(TestCase):
         mock_proc.cmdline.return_value = ["python", "-m", "celery", "worker"]
         mock_psutil.Process.return_value = mock_proc
 
-        result = is_task_actively_running(project_file)
+        result = is_download_task_actively_running(project_file)
 
         assert result is True
 
@@ -325,7 +325,7 @@ class TaskActivelyRunningTests(TestCase):
         # Mock psutil (PID does NOT exist)
         mock_psutil.pid_exists.return_value = False
 
-        result = is_task_actively_running(project_file)
+        result = is_download_task_actively_running(project_file)
 
         assert result is False
 
@@ -349,7 +349,7 @@ class TaskActivelyRunningTests(TestCase):
         mock_inspect.active.return_value = {}
         mock_app.control.inspect.return_value = mock_inspect
 
-        result = is_task_actively_running(project_file)
+        result = is_download_task_actively_running(project_file)
 
         assert result is False
 
