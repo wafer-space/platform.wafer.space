@@ -14,18 +14,14 @@ from urllib.parse import unquote
 from urllib.parse import urlparse
 
 from celery.result import AsyncResult
-from django.conf import settings
-from django.core.exceptions import ValidationError
 from django.db import transaction
 
-from config import celery_app
-
+from .exceptions import InvalidStateTransitionError
 from .models import ManufacturabilityCheck
 from .models import Project
 from .models import ProjectFile
 from .security import SecurityValidationError
 from .security import URLValidator
-from .tasks import check_project_manufacturability
 from .tasks import download_project_file
 from .url_handlers import GitHubArtifactHandler
 from .url_handlers import GoogleSourceHandler
@@ -355,11 +351,11 @@ class ProjectFileService:
             try:
                 check = active_file.manufacturability_check
                 if check.is_cancellable:
-                    ManufacturabilityService.cancel_check(
-                        check, reason="Cancelled: new file submitted"
-                    )
+                    check.mark_cancelling(reason="Cancelled: new file submitted")
             except ManufacturabilityCheck.DoesNotExist:
                 pass  # No check to cancel
+            except InvalidStateTransitionError:
+                pass  # Check was not in a cancellable state
 
             # Mark as inactive (the new file will be marked active)
             active_file.is_active = False
@@ -556,163 +552,3 @@ class ProjectFileService:
 
         handler = state_handlers.get(task.state, cls._handle_unknown_state)
         return handler(task, project_file)
-
-
-class ManufacturabilityService:
-    """Service for handling manufacturability check operations."""
-
-    @classmethod
-    def queue_check(
-        cls,
-        project: Project,
-        project_file: "ProjectFile",
-        *,
-        force: bool = False,
-    ) -> ManufacturabilityCheck:
-        """Queue a manufacturability check for a specific project file.
-
-        Note: Normally checks are queued automatically by the periodic
-        scan_and_queue_manufacturability_checks task. This method is for
-        manual queueing from admin or other code paths.
-
-        Thread-safe: Uses database transaction to ensure global
-        concurrency limits are enforced atomically.
-
-        Args:
-            project: The project to check
-            project_file: The specific file to check (required)
-            force: If True, skip concurrent limit check (for admin use)
-
-        Returns:
-            ManufacturabilityCheck instance
-
-        Raises:
-            ValidationError: If global concurrent limit reached
-        """
-        # Use transaction for database operations only
-        with transaction.atomic():
-            # Get or create the check FIRST (within transaction)
-            # Each check is tied to a specific project_file
-            check, created = ManufacturabilityCheck.objects.get_or_create(
-                project=project,
-                project_file=project_file,
-                defaults={"status": ManufacturabilityCheck.Status.QUEUED},
-            )
-
-            # If already queued/processing, return immediately (idempotent)
-            if not created and check.status in [
-                ManufacturabilityCheck.Status.QUEUED,
-                ManufacturabilityCheck.Status.PROCESSING,
-            ]:
-                return check
-
-            # Check global concurrent limit (unless forced)
-            if not force:
-                active_checks_qs = ManufacturabilityCheck.objects.select_for_update()
-                active_count = (
-                    active_checks_qs.filter(
-                        status__in=[
-                            ManufacturabilityCheck.Status.QUEUED,
-                            ManufacturabilityCheck.Status.PROCESSING,
-                        ],
-                    )
-                    .exclude(id=check.id)
-                    .count()
-                )
-
-                concurrent_limit = getattr(settings, "PRECHECK_CONCURRENT_LIMIT", 4)
-                if active_count >= concurrent_limit:
-                    # If we just created this check, delete it before raising
-                    if created:
-                        check.delete()
-                    msg = (
-                        f"System is at capacity ({active_count} checks running). "
-                        "Please try again later."
-                    )
-                    raise ValidationError(msg)
-
-            # Reset for new run (including ALL fields)
-            check.status = ManufacturabilityCheck.Status.QUEUED
-            check.is_manufacturable = None  # Reset manufacturability
-            check.errors = []
-            check.warnings = []
-            check.error_message = ""
-            check.processing_logs = ""
-            check.retry_count = 0  # Reset retry count
-            check.started_at = None
-            check.completed_at = None
-            check.save()
-
-        # Queue task OUTSIDE transaction to avoid SQLite broker issues
-        # The check is now committed to the database, so the task can safely
-        # reference it by ID
-        task = check_project_manufacturability.delay(check.id)
-        check.task_id = task.id
-        check.save(update_fields=["task_id"])
-
-        return check
-
-    @classmethod
-    def get_check_status_for_file(cls, project_file: "ProjectFile") -> dict | None:
-        """Get check status information for a specific file.
-
-        Args:
-            project_file: The project file to get check status for
-
-        Returns:
-            dict with check status information, or None if no check exists.
-        """
-        try:
-            check = project_file.manufacturability_check
-        except ManufacturabilityCheck.DoesNotExist:
-            return None
-        else:
-            return {
-                "status": check.status,
-                "is_manufacturable": check.is_manufacturable,
-                "errors": check.errors,
-                "warnings": check.warnings,
-                "started_at": check.started_at,
-                "completed_at": check.completed_at,
-            }
-
-    @classmethod
-    def get_check_status(cls, project: Project) -> dict | None:
-        """Get check status for the project's active file.
-
-        Args:
-            project: The project to get check status for
-
-        Returns:
-            dict with check status information, or None if no active file
-            or no check exists for the active file.
-        """
-        active_file = project.files.filter(is_active=True).first()
-        if not active_file:
-            return None
-
-        return cls.get_check_status_for_file(active_file)
-
-    @classmethod
-    def cancel_check(
-        cls,
-        check: ManufacturabilityCheck,
-        *,
-        reason: str = "Cancelled by user",
-    ) -> bool:
-        """Cancel a manufacturability check and revoke its Celery task.
-
-        Args:
-            check: The check to cancel
-            reason: Why the check was cancelled
-
-        Returns:
-            bool: True if cancelled, False if not cancellable
-        """
-        task_id = check.cancel(reason=reason)
-        if task_id is None:
-            return False
-
-        # Revoke the Celery task
-        celery_app.control.revoke(task_id, terminate=True)
-        return True

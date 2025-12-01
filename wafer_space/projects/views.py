@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import TYPE_CHECKING
 from typing import cast
@@ -22,6 +23,7 @@ from django.views.generic import ListView
 from django.views.generic import UpdateView
 from django.views.generic import View
 
+from .exceptions import InvalidStateTransitionError
 from .forms import ProjectFileURLSubmitForm
 from .forms import ProjectForm
 from .mixins import ProjectOwnerOrStaffMixin
@@ -30,7 +32,6 @@ from .models import ManufacturabilityCheck
 from .models import Project
 from .models import ProjectFile
 from .security import SecurityValidationError
-from .services import ManufacturabilityService
 from .services import ProjectFileService
 
 logger = logging.getLogger(__name__)
@@ -110,7 +111,7 @@ class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView
             # Get full download attempt history (all attempts, newest first)
             download_attempts = DownloadAttempt.objects.filter(
                 project_file=in_progress_file,
-            ).order_by("-started_at")
+            ).order_by("-task_started_at")
             context["download_attempts"] = download_attempts
 
             # Always set show_progress and show_error flags (tests expect them)
@@ -119,7 +120,7 @@ class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView
 
             # Show progress if:
             # 1. There's an attempt in PENDING/DOWNLOADING status, OR
-            # 2. There's a download_task_id (task queued but attempt not created yet)
+            # 2. There's a download_task_id (task pending but attempt not created yet)
             if latest_attempt and latest_attempt.status in [
                 DownloadAttempt.Status.PENDING,
                 DownloadAttempt.Status.DOWNLOADING,
@@ -128,7 +129,7 @@ class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView
                 progress = ProjectFileService.get_download_progress(in_progress_file)
                 context["progress"] = progress
             elif in_progress_file.download_task_id and not latest_attempt:
-                # Task is queued but DownloadAttempt not created yet
+                # Task is pending but DownloadAttempt not created yet
                 # This happens immediately after URL submission
                 show_progress = True
                 progress = ProjectFileService.get_download_progress(in_progress_file)
@@ -160,9 +161,13 @@ class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView
         )
         context["history_files"] = history_files
 
-        # Add manufacturability check status
-        check_status = ManufacturabilityService.get_check_status(project)
-        context["check_status"] = check_status
+        # Add manufacturability check (from active file if it exists)
+        check = None
+        active_file = in_progress_file or submitted_file
+        if active_file:
+            with contextlib.suppress(ManufacturabilityCheck.DoesNotExist):
+                check = active_file.manufacturability_check
+        context["check"] = check
 
         return context
 
@@ -402,10 +407,10 @@ class ManufacturabilityCheckStatusView(LoginRequiredMixin, UserPassesTestMixin, 
 
         Returns:
             JsonResponse: Check status data containing:
-                - status: Current check status (queued, processing, completed, failed)
+                - status: Current check status (pending, running, finished, error)
                 - processing_logs: Raw logs from the check
                 - is_manufacturable: Boolean or null
-                - error_message: Error message if failed
+                - error_message: Error message if error occurred
         """
         project = get_object_or_404(Project, pk=pk)
 
@@ -429,8 +434,16 @@ class ManufacturabilityCheckStatusView(LoginRequiredMixin, UserPassesTestMixin, 
                 {"error": "No manufacturability check found"}, status=404
             )
 
-        started = check.started_at.isoformat() if check.started_at else None
-        completed = check.completed_at.isoformat() if check.completed_at else None
+        started = (
+            check.celery_job_started_at.isoformat()
+            if check.celery_job_started_at
+            else None
+        )
+        finished = (
+            check.celery_job_finished_at.isoformat()
+            if check.celery_job_finished_at
+            else None
+        )
 
         return JsonResponse(
             {
@@ -439,7 +452,7 @@ class ManufacturabilityCheckStatusView(LoginRequiredMixin, UserPassesTestMixin, 
                 "is_manufacturable": check.is_manufacturable,
                 "error_message": check.error_message or "",
                 "started_at": started,
-                "completed_at": completed,
+                "completed_at": finished,
             }
         )
 
@@ -472,12 +485,12 @@ class ManufacturabilityCheckCancelView(LoginRequiredMixin, UserPassesTestMixin, 
             messages.error(request, "No manufacturability check found.")
             return redirect("projects:detail", pk=pk)
 
-        if ManufacturabilityService.cancel_check(check, reason="Cancelled by user"):
-            messages.success(request, "Manufacturability check cancelled.")
-        else:
-            messages.warning(
-                request, "Check could not be cancelled (already completed or failed)."
-            )
+        try:
+            check.mark_cancelling(reason="Cancelled by user")
+            messages.success(request, "Cancellation requested. Cleanup in progress...")
+        except InvalidStateTransitionError:
+            msg = "Check could not be cancelled (already finished or in error state)."
+            messages.warning(request, msg)
 
         return redirect("projects:detail", pk=pk)
 
@@ -509,23 +522,23 @@ class ManufacturabilityCheckAdminStatusView(
             "project_file",
         ).order_by("-id")[:50]
 
-        # Get currently processing checks
-        processing_checks = (
+        # Get currently running checks
+        running_checks = (
             ManufacturabilityCheck.objects.filter(
-                status=ManufacturabilityCheck.Status.PROCESSING,
+                status=ManufacturabilityCheck.Status.RUNNING,
             )
             .select_related(
                 "project",
                 "project__user",
                 "project_file",
             )
-            .order_by("-started_at")
+            .order_by("-celery_job_started_at")
         )
 
-        # Get queued checks
-        queued_checks = (
+        # Get pending checks
+        pending_checks = (
             ManufacturabilityCheck.objects.filter(
-                status=ManufacturabilityCheck.Status.QUEUED,
+                status=ManufacturabilityCheck.Status.PENDING,
             )
             .select_related(
                 "project",
@@ -541,8 +554,8 @@ class ManufacturabilityCheckAdminStatusView(
             {
                 "status_counts": status_counts,
                 "recent_checks": recent_checks,
-                "processing_checks": processing_checks,
-                "queued_checks": queued_checks,
+                "running_checks": running_checks,
+                "pending_checks": pending_checks,
             },
         )
 

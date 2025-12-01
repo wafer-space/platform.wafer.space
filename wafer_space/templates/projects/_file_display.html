@@ -68,11 +68,11 @@
         </h6>
         <p class="mb-2">
           <strong>Status:</strong>
-          {% if check.status == 'queued' %}
+          {% if check.status == 'pending' %}
             <span class="badge bg-secondary">
-              <i class="bi bi-clock"></i> Queued
+              <i class="bi bi-clock"></i> Pending
             </span>
-            {# Cancel button for queued checks #}
+            {# Cancel button for pending checks #}
             <form method="post"
                   action="{% url 'projects:cancel_check' pk=file.project.pk %}"
                   class="d-inline ms-2"
@@ -82,11 +82,11 @@
                 <i class="bi bi-x-circle"></i> Cancel
               </button>
             </form>
-          {% elif check.status == 'starting' %}
+          {% elif check.status == 'dispatched' %}
             <span class="badge bg-info">
-              <i class="bi bi-hourglass-split"></i> Starting...
+              <i class="bi bi-hourglass-split"></i> Dispatched
             </span>
-            {# Cancel button for starting checks #}
+            {# Cancel button for dispatched checks #}
             <form method="post"
                   action="{% url 'projects:cancel_check' pk=file.project.pk %}"
                   class="d-inline ms-2"
@@ -96,14 +96,14 @@
                 <i class="bi bi-x-circle"></i> Cancel
               </button>
             </form>
-          {% elif check.status == 'processing' %}
+          {% elif check.status == 'running' %}
             <span id="check-status-badge" class="badge bg-primary">
               <span class="spinner-border spinner-border-sm"
                     role="status"
                     aria-hidden="true"></span>
               <span id="check-status-text">Checking manufacturability...</span>
             </span>
-            {# Cancel button for processing checks #}
+            {# Cancel button for running checks #}
             <form method="post"
                   action="{% url 'projects:cancel_check' pk=file.project.pk %}"
                   class="d-inline ms-2"
@@ -113,7 +113,7 @@
                 <i class="bi bi-x-circle"></i> Cancel
               </button>
             </form>
-          {% elif check.status == 'completed' %}
+          {% elif check.status == 'finished' %}
             {# 3-tier result display: Clean, Warnings, or Not Manufacturable #}
             {% if check.is_manufacturable %}
               {% if check.warnings %}
@@ -130,9 +130,13 @@
                 <i class="bi bi-x-circle"></i> Not Manufacturable
               </span>
             {% endif %}
-          {% elif check.status == 'failed' %}
+          {% elif check.status == 'error' %}
             <span class="badge bg-danger">
               <i class="bi bi-exclamation-triangle"></i> Check Failed
+            </span>
+          {% elif check.status == 'cancelling' %}
+            <span class="badge bg-warning text-dark">
+              <i class="bi bi-hourglass-split"></i> Cancelling...
             </span>
           {% elif check.status == 'cancelled' %}
             <span class="badge bg-secondary">
@@ -140,8 +144,8 @@
             </span>
           {% endif %}
         </p>
-        {# Queue position and wait time info for queued checks #}
-        {% if check.status == 'queued' %}
+        {# Queue position and wait time info for pending checks #}
+        {% if check.status == 'pending' %}
           <div class="mt-2 p-2 bg-white rounded border">
             <p class="mb-1 small">
               <i class="bi bi-list-ol"></i>
@@ -152,22 +156,22 @@
               <i class="bi bi-play-circle"></i>
               <strong>{{ check.checks_running }}</strong> check{{ check.checks_running|pluralize }} currently running
             </p>
-            {% if check.queued_at %}
+            {% if check.created_at %}
               <p class="mb-0 small text-muted">
                 <i class="bi bi-hourglass-split"></i>
-                Waiting for {{ check.queued_at|timesince }}
+                Waiting for {{ check.created_at|timesince }}
               </p>
             {% endif %}
           </div>
         {% endif %}
-        {% if check.started_at %}
+        {% if check.celery_job_started_at %}
           <p class="mb-2">
-            <strong>Started:</strong> {{ check.started_at|date:"Y-m-d H:i:s" }}
+            <strong>Started:</strong> {{ check.celery_job_started_at|date:"Y-m-d H:i:s" }}
           </p>
         {% endif %}
-        {% if check.completed_at %}
+        {% if check.celery_job_finished_at %}
           <p class="mb-2">
-            <strong>Completed:</strong> {{ check.completed_at|date:"Y-m-d H:i:s" }}
+            <strong>Completed:</strong> {{ check.celery_job_finished_at|date:"Y-m-d H:i:s" }}
           </p>
         {% endif %}
         {# Log file download link #}
@@ -246,8 +250,8 @@
             {% endif %}
           </details>
         </div>
-        {# Display processing logs if available or if check is processing #}
-        {% if check.processing_logs or check.status == 'processing' or check.status == 'queued' %}
+        {# Display processing logs if available or if check is running #}
+        {% if check.processing_logs or check.status == 'running' or check.status == 'pending' or check.status == 'dispatched' %}
           <div class="mt-3" id="processing-logs-container">
             <h6>
               <i class="bi bi-terminal"></i> Processing Logs
@@ -259,8 +263,8 @@
                         font-size: 0.85rem">{{ check.processing_logs|default:"Waiting for logs..." }}</pre>
           </div>
         {% endif %}
-        {# Display errors if check completed with errors #}
-        {% if check.status == 'completed' and check.errors %}
+        {# Display errors if check finished with errors #}
+        {% if check.status == 'finished' and check.errors %}
           <div class="mt-3">
             <h6 class="text-danger">
               <i class="bi bi-exclamation-triangle"></i> Errors
@@ -269,7 +273,7 @@
           </div>
         {% endif %}
         {# Display warnings if any #}
-        {% if check.status == 'completed' and check.warnings %}
+        {% if check.status == 'finished' and check.warnings %}
           <div class="mt-3">
             <h6 class="text-warning">
               <i class="bi bi-exclamation-circle"></i> Warnings

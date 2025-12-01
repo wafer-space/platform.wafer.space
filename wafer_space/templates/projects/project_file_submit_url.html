@@ -23,10 +23,12 @@
             <p class="mb-0">
               A manufacturability check is currently
               <strong>
-                {% if running_check.status == 'processing' %}
+                {% if running_check.status == 'running' %}
                   running
+                {% elif running_check.status == 'dispatched' %}
+                  starting
                 {% else %}
-                  queued
+                  pending
                 {% endif %}
               </strong>
               for your existing file. Submitting a new file will <strong>cancel</strong> this check

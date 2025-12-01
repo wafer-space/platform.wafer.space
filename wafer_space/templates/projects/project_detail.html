@@ -124,7 +124,7 @@
                   <form action="{% url 'projects:submit' pk=project.pk %}"
                         method="post"
                         style="display: inline"
-                        onsubmit="return confirm('Are you sure you want to submit this project for manufacturing? This action cannot be undone.');">
+                        onsubmit="return confirm('Are you sure you want to submit this project for manufacturing?{% if project.submitted_file %} This will replace the previously submitted file.{% endif %}');">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-success">
                       <i class="bi bi-send"></i> Submit for Manufacturing
@@ -349,7 +349,7 @@
     </script>
   {% endif %}
   {# Auto-update logs when manufacturability check is processing #}
-  {% if check_status and check_status.status in 'processing,queued' %}
+  {% if check and check.status in 'pending,dispatched,running' %}
     <script>
       // Poll for updated logs every 5 seconds while check is processing
       (function() {
@@ -372,7 +372,7 @@
               }
 
               // If check is complete, reload page once to update UI
-              if (data.status === 'completed' || data.status === 'failed') {
+              if (data.status === 'finished' || data.status === 'error' || data.status === 'cancelled') {
                 clearInterval(pollInterval);
                 location.reload();
               }

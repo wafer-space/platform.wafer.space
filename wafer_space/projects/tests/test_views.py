@@ -9,6 +9,7 @@ from django.test import Client
 from django.test import TestCase
 from django.urls import reverse
 
+from wafer_space.projects.models import CheckExecutionContext
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
@@ -605,7 +606,7 @@ class TestProjectSubmitView(TestCase):
         # Should return 403 Forbidden
         assert response.status_code == HTTP_FORBIDDEN
 
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    @patch("wafer_space.projects.tasks.check_process_job.delay")
     def test_successful_submission(self, mock_task):
         """Test successful project submission."""
         mock_task.return_value = Mock(id="task-123")
@@ -625,8 +626,9 @@ class TestProjectSubmitView(TestCase):
             status=DownloadAttempt.Status.COMPLETED,
         )
 
-        # Mark as manufacturable
+        # Mark as manufacturable (simulates completed check via mark_finished)
         self.project.is_manufacturable = True
+        self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -778,8 +780,9 @@ class TestProjectSubmitView(TestCase):
             status=DownloadAttempt.Status.COMPLETED,
         )
 
-        # Mark as manufacturable
+        # Mark as manufacturable (simulates completed check via mark_finished)
         self.project.is_manufacturable = True
+        self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
 
         # Submit once
@@ -803,7 +806,7 @@ class TestProjectSubmitView(TestCase):
         assert len(messages) == 1
         assert "already" in str(messages[0]).lower()
 
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    @patch("wafer_space.projects.tasks.check_process_job.delay")
     def test_prevents_double_submission_race_condition(self, mock_task):
         """Test that double submission is prevented even with race condition."""
         mock_task.return_value = Mock(id="task-123")
@@ -823,8 +826,9 @@ class TestProjectSubmitView(TestCase):
             status=DownloadAttempt.Status.COMPLETED,
         )
 
-        # Mark as manufacturable
+        # Mark as manufacturable (simulates completed check via mark_finished)
         self.project.is_manufacturable = True
+        self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -934,7 +938,7 @@ class TestEnhancedProgressDashboard(TestCase):
             source_url="https://example.com/file.gds",
             original_filename="file.gds",
             is_active=True,
-            download_task_id="celery-task-123",  # Task queued
+            download_task_id="celery-task-123",  # Task dispatched
         )
         # Intentionally NOT creating DownloadAttempt to simulate race condition
 
@@ -1130,13 +1134,13 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
             is_active=True,
         )
 
-    def test_detail_view_includes_check_status_when_check_exists(self):
-        """Test that detail view includes check status in context."""
+    def test_detail_view_includes_check_when_check_exists(self):
+        """Test that detail view includes check in context."""
         # Create a manufacturability check
         ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
+            status=ManufacturabilityCheck.Status.PENDING,
         )
 
         # Log in and access detail view
@@ -1145,37 +1149,45 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
         response = self.client.get(url)
 
         assert response.status_code == HTTP_OK
-        assert "check_status" in response.context
-        assert response.context["check_status"] is not None
-        assert (
-            response.context["check_status"]["status"]
-            == ManufacturabilityCheck.Status.QUEUED
-        )
+        assert "check" in response.context
+        check = response.context["check"]
+        assert check is not None
+        assert check.status == ManufacturabilityCheck.Status.PENDING
 
-    def test_detail_view_check_status_none_when_no_check(self):
-        """Test that check_status is None when no check exists."""
+    def test_detail_view_check_none_when_no_check(self):
+        """Test that check is None when no check exists."""
         # Log in and access detail view
         self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:detail", kwargs={"pk": self.project.pk})
         response = self.client.get(url)
 
         assert response.status_code == HTTP_OK
-        assert "check_status" in response.context
-        assert response.context["check_status"] is None
+        assert "check" in response.context
+        assert response.context["check"] is None
 
-    def test_detail_view_shows_completed_check_status(self):
+    def test_detail_view_shows_completed_check(self):
         """Test that detail view shows completed check with results."""
         # Create a completed check
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
+            status=ManufacturabilityCheck.Status.PENDING,
         )
-        check.start_processing()
-        check.complete(
+        check.mark_dispatched(celery_job_id="test-job-id")
+        exec_context = CheckExecutionContext(
+            celery_worker_pid=12345,
+            celery_worker_hostname="test-worker",
+            docker_container_id="test-container-id",
+            docker_image="test-image:latest",
+            docker_image_digest="sha256:test",
+            docker_command="docker run ...",
+        )
+        check.mark_running(context=exec_context)
+        check.mark_finished(
             is_manufacturable=False,
-            errors=["Error 1", "Error 2"],
-            warnings=["Warning 1"],
+            errors=[{"message": "Error 1"}, {"message": "Error 2"}],
+            warnings=[{"message": "Warning 1"}],
+            processing_logs="Test processing logs",
         )
 
         # Log in and access detail view
@@ -1184,12 +1196,13 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
         response = self.client.get(url)
 
         assert response.status_code == HTTP_OK
-        check_status = response.context["check_status"]
-        assert check_status is not None
-        assert check_status["status"] == ManufacturabilityCheck.Status.COMPLETED
-        assert check_status["is_manufacturable"] is False
-        assert check_status["errors"] == ["Error 1", "Error 2"]
-        assert check_status["warnings"] == ["Warning 1"]
+        check = response.context["check"]
+        assert check is not None
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
+        assert check.is_manufacturable is False
+        expected_errors = [{"message": "Error 1"}, {"message": "Error 2"}]
+        assert check.errors == expected_errors
+        assert check.warnings == [{"message": "Warning 1"}]
 
 
 @pytest.mark.django_db
@@ -1221,14 +1234,13 @@ class TestManufacturabilityCheckCancelView(TestCase):
             is_active=True,
         )
 
-    @patch("wafer_space.projects.services.celery_app")
-    def test_cancel_check_success(self, mock_celery_app):
-        """Test successfully cancelling a check."""
+    def test_cancel_check_success(self):
+        """Test successfully requesting cancellation of a check."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            task_id="celery-task-123",
+            status=ManufacturabilityCheck.Status.PENDING,
+            celery_job_id="celery-task-123",
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -1237,17 +1249,16 @@ class TestManufacturabilityCheckCancelView(TestCase):
 
         assert response.status_code == HTTP_FOUND
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.CANCELLED
-        mock_celery_app.control.revoke.assert_called_once()
+        # Should be CANCELLING, not CANCELLED (cleanup task will complete it)
+        assert check.status == ManufacturabilityCheck.Status.CANCELLING
 
-    @patch("wafer_space.projects.services.celery_app")
-    def test_cancel_check_processing_success(self, mock_celery_app):
-        """Test successfully cancelling a processing check."""
+    def test_cancel_check_processing_success(self):
+        """Test successfully requesting cancellation of a processing check."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PROCESSING,
-            task_id="celery-task-456",
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="celery-task-456",
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -1256,14 +1267,15 @@ class TestManufacturabilityCheckCancelView(TestCase):
 
         assert response.status_code == HTTP_FOUND
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+        # Should be CANCELLING, not CANCELLED (cleanup task will complete it)
+        assert check.status == ManufacturabilityCheck.Status.CANCELLING
 
     def test_cancel_check_already_completed(self):
         """Test cancelling already completed check shows warning."""
         ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.COMPLETED,
+            status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=True,
         )
 
@@ -1314,7 +1326,7 @@ class TestManufacturabilityCheckCancelView(TestCase):
         ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
+            status=ManufacturabilityCheck.Status.PENDING,
         )
 
         # Log in as other user
@@ -1330,7 +1342,7 @@ class TestManufacturabilityCheckCancelView(TestCase):
         ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
+            status=ManufacturabilityCheck.Status.PENDING,
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -1370,7 +1382,7 @@ class TestProjectFileSubmitURLViewWarning(TestCase):
         ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
+            status=ManufacturabilityCheck.Status.PENDING,
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -1389,7 +1401,7 @@ class TestProjectFileSubmitURLViewWarning(TestCase):
         ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PROCESSING,
+            status=ManufacturabilityCheck.Status.RUNNING,
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -1404,7 +1416,7 @@ class TestProjectFileSubmitURLViewWarning(TestCase):
         ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.COMPLETED,
+            status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=True,
         )
 

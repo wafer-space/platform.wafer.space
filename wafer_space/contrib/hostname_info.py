@@ -12,6 +12,8 @@ import logging
 import subprocess
 from typing import TYPE_CHECKING
 
+from django.conf import settings
+
 if TYPE_CHECKING:
     from django.http import HttpRequest
 
@@ -47,7 +49,9 @@ def hostname_info(_request: HttpRequest) -> dict[str, str | None]:
 
     Adds to template context:
         - SERVER_HOSTNAME: The FQDN of the server, or None if unavailable
+        - DEPLOY_TARGET: Deploy target identifier from settings (DEPLOY_TARGET env var)
     """
     return {
         "SERVER_HOSTNAME": get_hostname(),
+        "DEPLOY_TARGET": getattr(settings, "DEPLOY_TARGET", None),
     }

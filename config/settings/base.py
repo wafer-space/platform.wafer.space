@@ -43,6 +43,10 @@ SITE_ID = 1
 # Must be set in each environment (dev, pytest, stage, prod)
 SITE_URL: str | None = None
 
+# Deploy target identifier displayed in page footer (alongside hostname and git commit)
+# Set via DEPLOY_TARGET in .env file (optional, e.g., "staging", "prod-us-east-1")
+DEPLOY_TARGET: str | None = env("DEPLOY_TARGET", default=None)
+
 # https://docs.djangoproject.com/en/dev/ref/settings/#use-i18n
 USE_I18N = True
 
@@ -447,13 +451,47 @@ PRECHECK_SCAN_INTERVAL_SECONDS = 30.0  # Scan for files ready to check every 30s
 
 # Celery Beat periodic tasks
 CELERY_BEAT_SCHEDULE = {
+    # Download recovery
     "ensure-download-tasks-queued": {
         "task": "wafer_space.projects.tasks.ensure_download_tasks_queued",
         "schedule": DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS,
     },
-    "process-manufacturability-check-queue": {
-        "task": "wafer_space.projects.tasks.process_manufacturability_check_queue",
-        "schedule": PRECHECK_SCAN_INTERVAL_SECONDS,
+    # Manufacturability check lifecycle
+    "checks-create": {
+        "task": "wafer_space.projects.tasks.checks_create",
+        "schedule": 30.0,
+    },
+    "checks-dispatch": {
+        "task": "wafer_space.projects.tasks.checks_dispatch",
+        "schedule": 30.0,
+    },
+    "checks-retry": {
+        "task": "wafer_space.projects.tasks.checks_retry",
+        "schedule": 60.0,
+    },
+    # Cancellation cleanup (fast - critical for releasing slots)
+    "checks-cancelling": {
+        "task": "wafer_space.projects.tasks.checks_cancelling",
+        "schedule": 15.0,
+    },
+    # Orphan detection
+    # NOTE: checks-cleanup-orphaned-dispatch disabled - needs investigation on
+    # how to reliably verify task is still in broker queue. See issue #133.
+    # "checks-cleanup-orphaned-dispatch": {
+    #     "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_dispatch",
+    #     "schedule": 60.0,
+    # },
+    "checks-cleanup-orphaned-processing": {
+        "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_processing",
+        "schedule": 60.0,
+    },
+    "checks-cleanup-orphaned-docker": {
+        "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_docker",
+        "schedule": 300.0,
+    },
+    "checks-cleanup-stale-files": {
+        "task": "wafer_space.projects.tasks.checks_cleanup_stale_files",
+        "schedule": 60.0,
     },
 }
 

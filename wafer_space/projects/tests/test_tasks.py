@@ -18,11 +18,12 @@ from unittest.mock import Mock
 from unittest.mock import patch
 from unittest.mock import patch as mock_patch
 
+import docker.errors
 import pytest
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
 from django.test import TestCase
-from django.utils import timezone
 
 from wafer_space.projects import tasks
 from wafer_space.projects.models import DownloadAttempt
@@ -36,13 +37,20 @@ from wafer_space.projects.tasks import _log_download_start
 from wafer_space.projects.tasks import _prepare_download_request
 from wafer_space.projects.tasks import _process_and_save_content
 from wafer_space.projects.tasks import _safe_urlopen
-from wafer_space.projects.tasks import check_project_manufacturability
+from wafer_space.projects.tasks import check_process_job
+from wafer_space.projects.tasks import checks_cancelling
+from wafer_space.projects.tasks import checks_cleanup_orphaned_dispatch
+from wafer_space.projects.tasks import checks_cleanup_orphaned_processing
+from wafer_space.projects.tasks import checks_create
+from wafer_space.projects.tasks import checks_dispatch
+from wafer_space.projects.tasks import checks_retry
 from wafer_space.projects.tasks import download_project_file
-from wafer_space.projects.tasks import process_manufacturability_check_queue
 
 User = get_user_model()
 TEST_PASSWORD = "testpass123"  # noqa: S105 - Test password constant
 TEST_GITHUB_TOKEN = "test_token"  # noqa: S105 - Test token constant
+TEST_WORKER_PID = 12345  # Test worker process ID constant
+DEAD_WORKER_PID = 99999  # Test dead worker process ID constant
 
 
 class URLValidationSecurityTests(TestCase):
@@ -248,7 +256,7 @@ class TestManufacturabilityCheckTask(TestCase):
 
     @patch("wafer_space.projects.tasks.docker")
     def test_check_task_marks_processing(self, mock_docker):
-        """Test that task marks check as PROCESSING."""
+        """Test that task marks check as RUNNING."""
         # Create a temporary GDS file
         with tempfile.NamedTemporaryFile(suffix=".gds", delete=False) as tmp:
             tmp.write(b"Mock GDS content")
@@ -278,6 +286,7 @@ class TestManufacturabilityCheckTask(TestCase):
 
         # Mock container with manufacturable result
         mock_container = MagicMock()
+        mock_container.id = "test-container-123"
         # logs(stream=True) returns iterator, logs() returns bytes
         mock_container.logs.side_effect = lambda *args, **kwargs: (
             [b"Precheck successfully completed."]
@@ -295,24 +304,24 @@ class TestManufacturabilityCheckTask(TestCase):
         mock_docker.errors.APIError = Exception
         mock_docker.errors.NotFound = Exception
 
-        # Create a check
+        # Create check in DISPATCHED state (required for mark_running())
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            task_id="test-task-123",
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+            celery_job_id="test-task-123",
         )
 
         # Run task
         with mock_patch.object(
-            tasks.check_project_manufacturability,
+            tasks.check_process_job,
             "update_state",
         ):
-            result = check_project_manufacturability.run(check.id)
+            result = check_process_job.run(check.id)
 
-        # Verify check was marked as processing then completed
+        # Verify check was marked as running then completed
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.COMPLETED
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
         assert result["status"] == "completed"
 
         # Cleanup
@@ -354,6 +363,7 @@ WARNING: Minor DRC violation at (100, 200)
 INFO: Check completed
 """
         mock_container = MagicMock()
+        mock_container.id = "test-container-123"  # Must be a string for DB storage
         # logs(stream=True) returns iterator, logs() returns bytes
         mock_container.logs.side_effect = lambda *args, **kwargs: (
             [mock_logs] if kwargs.get("stream") else mock_logs
@@ -369,20 +379,20 @@ INFO: Check completed
         mock_docker.errors.APIError = Exception
         mock_docker.errors.NotFound = Exception
 
-        # Create a check
+        # Create check in DISPATCHED state (required for mark_running())
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            task_id="test-task-123",
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+            celery_job_id="test-task-123",
         )
 
         # Run task
         with mock_patch.object(
-            tasks.check_project_manufacturability,
+            tasks.check_process_job,
             "update_state",
         ):
-            result = check_project_manufacturability.run(check.id)
+            result = check_process_job.run(check.id)
 
         # Verify result
         assert result["status"] == "completed"
@@ -392,10 +402,10 @@ INFO: Check completed
 
         # Verify check was updated
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.COMPLETED
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
         assert check.is_manufacturable is True
         assert check.errors == []
-        assert check.completed_at is not None
+        assert check.celery_job_finished_at is not None
 
         # Cleanup
         tmp_path.unlink(missing_ok=True)
@@ -436,6 +446,7 @@ ERROR: Metal spacing violation
 FATAL: Design has critical errors
 """
         mock_container = MagicMock()
+        mock_container.id = "test-container-123"
         # logs(stream=True) returns iterator, logs() returns bytes
         mock_container.logs.side_effect = lambda *args, **kwargs: (
             [mock_logs] if kwargs.get("stream") else mock_logs
@@ -451,20 +462,20 @@ FATAL: Design has critical errors
         mock_docker.errors.APIError = Exception
         mock_docker.errors.NotFound = Exception
 
-        # Create a check
+        # Create check in DISPATCHED state (required for mark_running())
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            task_id="test-task-123",
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+            celery_job_id="test-task-123",
         )
 
         # Run task
         with mock_patch.object(
-            tasks.check_project_manufacturability,
+            tasks.check_process_job,
             "update_state",
         ):
-            result = check_project_manufacturability.run(check.id)
+            result = check_process_job.run(check.id)
 
         # Verify result - design is not manufacturable due to mock DRC violations
         assert result["status"] == "completed"
@@ -474,9 +485,9 @@ FATAL: Design has critical errors
 
         # Verify check was updated
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.COMPLETED
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
         assert check.is_manufacturable is False
-        assert check.completed_at is not None
+        assert check.celery_job_finished_at is not None
 
         # Cleanup
         tmp_path.unlink(missing_ok=True)
@@ -484,7 +495,7 @@ FATAL: Design has critical errors
     def test_check_task_handles_missing_check(self):
         """Test that task handles missing check gracefully."""
         # Run task with non-existent check ID
-        result = check_project_manufacturability(999999)
+        result = check_process_job(999999)
 
         # Verify error handling
         assert result["status"] == "error"
@@ -540,12 +551,12 @@ FATAL: Design has critical errors
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
+            status=ManufacturabilityCheck.Status.PENDING,
             max_retries=0,
         )
 
         # Run task directly (not via Celery) - should handle the exception
-        result = check_project_manufacturability.run(check.id)
+        result = check_process_job.run(check.id)
         assert result["status"] == "failed"
         assert "Test error" in result["message"]
 
@@ -584,6 +595,7 @@ FATAL: Design has critical errors
 
         # Mock container with manufacturable result
         mock_container = MagicMock()
+        mock_container.id = "test-container-123"
         # logs(stream=True) returns iterator, logs() returns bytes
         mock_container.logs.side_effect = lambda *args, **kwargs: (
             [b"Precheck successfully completed."]
@@ -605,24 +617,24 @@ FATAL: Design has critical errors
         self.project.status = Project.Status.SUBMITTED
         self.project.save()
 
-        # Create a check
+        # Create check in DISPATCHED state (required for mark_running())
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            task_id="test-task-456",
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+            celery_job_id="test-task-456",
         )
 
         # Run task
         with mock_patch.object(
-            tasks.check_project_manufacturability,
+            tasks.check_process_job,
             "update_state",
         ):
-            check_project_manufacturability.run(check.id)
+            check_process_job.run(check.id)
 
         # Verify check completed successfully
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.COMPLETED
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
         assert check.is_manufacturable is True
 
         # Cleanup
@@ -663,11 +675,12 @@ class TestProjectSubmissionIntegration(TestCase):
     def test_submit_updates_project_status(self):
         """Test that submitting a project updates its status to SUBMITTED.
 
-        Note: Manufacturability checks are created earlier in the workflow
-        (when file hash is verified), not during submission.
+        Note: Manufacturability checks are created by the checks_create()
+        periodic task for verified files, not during submission.
         """
-        # Mark as manufacturable (simulating completed check from earlier workflow)
+        # Mark as manufacturable (simulates completed check via mark_finished)
         self.project.is_manufacturable = True
+        self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
 
         # Submit the project
@@ -736,6 +749,7 @@ class TestDockerIntegration(TestCase):
 
         # Mock container
         mock_container = MagicMock()
+        mock_container.id = "test-container-123"  # Must be a string for DB storage
         # logs(stream=True) returns iterator, logs() returns bytes
         mock_container.logs.side_effect = lambda *args, **kwargs: (
             [b"Precheck successfully completed."]
@@ -753,19 +767,20 @@ class TestDockerIntegration(TestCase):
         mock_docker.errors.APIError = Exception
         mock_docker.errors.NotFound = Exception
 
-        # Create check
+        # Create check in DISPATCHED state (required for mark_running())
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
         )
 
         # Bind the function to the mock task
         with mock_patch.object(
-            tasks.check_project_manufacturability,
+            tasks.check_process_job,
             "update_state",
         ):
             # Call the task directly
-            result = tasks.check_project_manufacturability.run(check.id)
+            result = tasks.check_process_job.run(check.id)
 
         # Verify Docker operations
         mock_docker.from_env.assert_called_once()
@@ -808,6 +823,7 @@ class TestDockerIntegration(TestCase):
 
         # Mock container
         mock_container = MagicMock()
+        mock_container.id = "test-container-123"  # Must be a string for DB storage
         mock_container.logs.side_effect = lambda *args, **kwargs: (
             [b"Precheck successfully completed."]
             if kwargs.get("stream")
@@ -824,18 +840,19 @@ class TestDockerIntegration(TestCase):
         mock_docker.errors.APIError = Exception
         mock_docker.errors.NotFound = Exception
 
-        # Create check
+        # Create check in DISPATCHED state (required for mark_running())
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
         )
 
         # Run the task
         with mock_patch.object(
-            tasks.check_project_manufacturability,
+            tasks.check_process_job,
             "update_state",
         ):
-            tasks.check_project_manufacturability.run(check.id)
+            tasks.check_process_job.run(check.id)
 
         # Verify the docker command includes --slot with the project's slot_size
         call_args = mock_client.containers.run.call_args
@@ -1233,7 +1250,6 @@ class DownloadTaskTests(TestCase):
             temp_path.unlink(missing_ok=True)
 
     @patch("wafer_space.projects.tasks.extract_top_cell")
-    @patch("wafer_space.projects.services.ManufacturabilityService.queue_check")
     @patch("wafer_space.projects.tasks._apply_content_pipeline")
     @patch("wafer_space.projects.tasks.detect_file_type_from_data")
     @patch("wafer_space.projects.tasks._download_with_progress")
@@ -1242,7 +1258,6 @@ class DownloadTaskTests(TestCase):
         mock_download,
         mock_detect,
         mock_pipeline,
-        mock_queue_check,
         mock_extract_top_cell,
     ):
         """Test that hashes are calculated on extracted GDS, not downloaded ZIP."""
@@ -1303,8 +1318,8 @@ class DownloadTaskTests(TestCase):
 
 
 @pytest.mark.django_db
-class TestProcessManufacturabilityCheckQueue(TestCase):
-    """Test the process_manufacturability_check_queue periodic task (state machine)."""
+class TestChecksDispatch(TestCase):
+    """Test checks_dispatch task."""
 
     def setUp(self):
         """Set up test fixtures."""
@@ -1316,138 +1331,652 @@ class TestProcessManufacturabilityCheckQueue(TestCase):
         self.project = Project.objects.create(
             user=self.user,
             name="Test Project",
-            description="Test project",
         )
         self.project_file = ProjectFile.objects.create(
             project=self.project,
             original_filename="test.gds",
-            source_url="https://example.com/test.gds",
             is_active=True,
             hash_verified=True,
         )
-        # Create completed download attempt so file is "ready"
-        DownloadAttempt.objects.create(
+
+    def test_dispatches_pending_checks_under_limit(self):
+        """Test pending checks are dispatched when under concurrent limit."""
+        # Create a pending check
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
             project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+
+        with patch("wafer_space.projects.tasks.check_process_job") as mock_task:
+            mock_task.delay.return_value = Mock(id="task-123")
+            result = checks_dispatch()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.DISPATCHED
+        assert check.celery_job_id == "task-123"
+        assert result["dispatched"] == 1
+
+    def test_respects_concurrent_limit(self):
+        """Test dispatch respects concurrent limit."""
+        # Create checks already at limit (each needs its own project+file)
+        for i in range(settings.PRECHECK_CONCURRENT_LIMIT):
+            proj = Project.objects.create(
+                user=self.user,
+                name=f"Running Project {i}",
+            )
+            pf = ProjectFile.objects.create(
+                project=proj,
+                original_filename=f"test{i}.gds",
+                is_active=True,
+                hash_verified=True,
+            )
+            ManufacturabilityCheck.objects.create(
+                project=proj,
+                project_file=pf,
+                status=ManufacturabilityCheck.Status.RUNNING,
+            )
+        # Create pending check with its own project+file
+        pending = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+
+        with patch("wafer_space.projects.tasks.check_process_job") as mock_task:
+            result = checks_dispatch()
+
+        pending.refresh_from_db()
+        assert pending.status == ManufacturabilityCheck.Status.PENDING
+        assert result["dispatched"] == 0
+        mock_task.delay.assert_not_called()
+
+    def test_cancelling_counts_toward_limit(self):
+        """Test CANCELLING checks count toward concurrent limit."""
+        # Create checks in CANCELLING state (Docker still running)
+        for i in range(settings.PRECHECK_CONCURRENT_LIMIT):
+            proj = Project.objects.create(
+                user=self.user,
+                name=f"Cancelling Project {i}",
+            )
+            pf = ProjectFile.objects.create(
+                project=proj,
+                original_filename=f"cancelling{i}.gds",
+                is_active=True,
+                hash_verified=True,
+            )
+            ManufacturabilityCheck.objects.create(
+                project=proj,
+                project_file=pf,
+                status=ManufacturabilityCheck.Status.CANCELLING,
+            )
+        pending = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+
+        with patch("wafer_space.projects.tasks.check_process_job"):
+            result = checks_dispatch()
+
+        pending.refresh_from_db()
+        assert pending.status == ManufacturabilityCheck.Status.PENDING
+        assert result["dispatched"] == 0
+
+
+@pytest.mark.django_db
+class TestChecksRetry(TestCase):
+    """Test checks_retry task."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+
+    def test_retries_error_checks_under_limit(self):
+        """Test ERROR checks are retried when under retry limit."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+            retry_count=0,
+            max_retries=3,
+        )
+
+        result = checks_retry()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.PENDING
+        assert check.retry_count == 1
+        assert result["retried"] == 1
+
+    def test_does_not_retry_exhausted_checks(self):
+        """Test ERROR checks at retry limit are not retried."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+            retry_count=3,
+            max_retries=3,
+        )
+
+        result = checks_retry()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.ERROR
+        assert result["exhausted"] == 1
+
+
+@pytest.mark.django_db
+class TestChecksCreate(TestCase):
+    """Test checks_create task."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+        )
+
+    def test_creates_check_for_verified_file(self):
+        """Test check is created for verified file without existing check."""
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+        # Create completed download attempt
+        DownloadAttempt.objects.create(
+            project_file=project_file,
             attempt_number=1,
             status=DownloadAttempt.Status.COMPLETED,
         )
+        # Ensure no check exists
+        assert not hasattr(project_file, "manufacturability_check")
 
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
-    def test_cancelled_check_not_dispatched(self, mock_check_task):
-        """Test that cancelled checks are not dispatched."""
-        # Create a cancelled check
-        ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.CANCELLED,
+        result = checks_create()
+
+        assert result["created"] == 1
+        project_file.refresh_from_db()
+        assert hasattr(project_file, "manufacturability_check")
+        assert (
+            project_file.manufacturability_check.status
+            == ManufacturabilityCheck.Status.PENDING
         )
 
-        # Run the queue processing task
-        result = process_manufacturability_check_queue()
+    def test_does_not_create_for_unverified_file(self):
+        """Test no check created for unverified file."""
+        ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test.gds",
+            is_active=True,
+            hash_verified=False,
+        )
 
-        # Verify no checks were dispatched (cancelled checks are ignored)
-        assert result["queued_dispatched"] == 0
-        mock_check_task.assert_not_called()
+        result = checks_create()
 
-        # Verify the check is still cancelled
-        check = ManufacturabilityCheck.objects.get(project_file=self.project_file)
+        assert result["created"] == 0
+
+    def test_does_not_create_duplicate_check(self):
+        """Test no duplicate check created if one exists."""
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+        ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+
+        result = checks_create()
+
+        assert result["created"] == 0
+
+
+@pytest.mark.django_db
+class TestChecksCancelling(TestCase):
+    """Test checks_cancelling task."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+
+    @patch("wafer_space.projects.tasks.docker")
+    @patch("wafer_space.projects.tasks.celery_app")
+    def test_completes_cancellation_with_cleanup(self, mock_celery, mock_docker):
+        """Test CANCELLING check completes after cleanup."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLING,
+            celery_job_id="task-123",
+            docker_container_id="container-abc",
+        )
+
+        mock_container = Mock()
+        mock_container.status = "running"
+        mock_docker.from_env.return_value.containers.get.return_value = mock_container
+
+        result = checks_cancelling()
+
+        check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.CANCELLED
+        assert check.celery_job_id == ""
+        assert check.docker_container_id == ""
+        mock_celery.control.revoke.assert_called_once_with("task-123", terminate=True)
+        mock_container.stop.assert_called_once()
+        mock_container.remove.assert_called_once()
+        assert result["completed"] == 1
 
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
-    def test_completed_check_not_dispatched(self, mock_check_task):
-        """Test that completed checks are not dispatched."""
-        # Create a completed check
-        ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.COMPLETED,
-            is_manufacturable=True,
-        )
-
-        # Run the queue processing task
-        result = process_manufacturability_check_queue()
-
-        # Verify no checks were dispatched
-        assert result["queued_dispatched"] == 0
-        mock_check_task.assert_not_called()
-
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
-    def test_queued_check_gets_dispatched(self, mock_check_task):
-        """Test that QUEUED checks get dispatched to STARTING."""
-        mock_check_task.return_value = Mock(id="new-task-123")
-
-        # Create a queued check (as would be created by download completion)
+    def test_handles_missing_container(self):
+        """Test cleanup handles already-removed container."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            queued_at=timezone.now(),
+            status=ManufacturabilityCheck.Status.CANCELLING,
+            docker_container_id="gone-container",
         )
 
-        # Run the queue processing task
-        result = process_manufacturability_check_queue()
+        # Mock docker client to raise NotFound - keep docker.errors intact
+        # No celery_job_id set, so celery_app mock not needed
+        with patch("wafer_space.projects.tasks.docker.from_env") as mock_from_env:
+            mock_client = Mock()
+            mock_from_env.return_value = mock_client
+            mock_client.containers.get.side_effect = docker.errors.NotFound("not found")
 
-        # Verify check was dispatched
-        assert result["queued_dispatched"] == 1
-        mock_check_task.assert_called_once_with(check.id)
+            result = checks_cancelling()
 
-        # Verify check transitioned to STARTING
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.STARTING
-        assert check.task_id == "new-task-123"
+        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+        assert result["completed"] == 1
 
-    @patch("wafer_space.projects.tasks.is_check_task_actively_running")
+    @patch("wafer_space.projects.tasks.docker")
+    @patch("wafer_space.projects.tasks.celery_app")
+    def test_only_clears_fields_when_cleanup_done(self, mock_celery, mock_docker):
+        """Test celery_job_id and docker_container_id cleared incrementally."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLING,
+            celery_job_id="task-123",
+            docker_container_id="container-abc",
+        )
+
+        mock_container = Mock()
+        mock_container.status = "running"
+        mock_docker.from_env.return_value.containers.get.return_value = mock_container
+
+        checks_cancelling()
+
+        check.refresh_from_db()
+        # Both should be cleared after successful cleanup
+        assert check.celery_job_id == ""
+        assert check.docker_container_id == ""
+
+    @patch("wafer_space.projects.tasks.docker")
+    @patch("wafer_space.projects.tasks.celery_app")
+    def test_handles_only_celery_task(self, mock_celery, mock_docker):
+        """Test cleanup when only Celery task exists."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLING,
+            celery_job_id="task-123",
+            docker_container_id="",
+        )
+
+        result = checks_cancelling()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+        mock_celery.control.revoke.assert_called_once_with("task-123", terminate=True)
+        # Docker operations not called
+        mock_docker.from_env.return_value.containers.get.assert_not_called()
+        assert result["completed"] == 1
+
+    @patch("wafer_space.projects.tasks.docker")
+    @patch("wafer_space.projects.tasks.celery_app")
+    def test_handles_only_docker_container(self, mock_celery, mock_docker):
+        """Test cleanup when only Docker container exists."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLING,
+            celery_job_id="",
+            docker_container_id="container-abc",
+        )
+
+        mock_container = Mock()
+        mock_container.status = "running"
+        mock_docker.from_env.return_value.containers.get.return_value = mock_container
+
+        result = checks_cancelling()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+        # Celery revoke not called (no job ID)
+        mock_celery.control.revoke.assert_not_called()
+        mock_container.stop.assert_called_once()
+        mock_container.remove.assert_called_once()
+        assert result["completed"] == 1
+
+
+@pytest.mark.django_db
+class TestChecksCleanupOrphanedDispatch(TestCase):
+    """Test checks_cleanup_orphaned_dispatch task."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+
     @patch("wafer_space.projects.tasks.is_check_task_queued")
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
-    def test_starting_check_not_re_dispatched(
-        self, mock_check_task, mock_queued, mock_active
-    ):
-        """Test that STARTING checks are not re-dispatched."""
-        # Mock verification: task is in queue but not yet running
-        mock_active.return_value = False
-        mock_queued.return_value = True
-
-        # Create a check already in STARTING state
-        ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.STARTING,
-            task_id="existing-task",
-        )
-
-        # Run the queue processing task
-        result = process_manufacturability_check_queue()
-
-        # Verify no new dispatches (STARTING checks are verified, not dispatched)
-        assert result["queued_dispatched"] == 0
-        assert result["starting_verified"] == 1
-        assert result["starting_transitioned"] == 0
-        mock_check_task.assert_not_called()
-
-    @patch("wafer_space.projects.tasks.is_check_task_actively_running")
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
-    def test_starting_check_transitions_to_processing(
-        self, mock_check_task, mock_active
-    ):
-        """Test STARTING check transitions to PROCESSING when actively running."""
-        # Mock verification: task is actively running
-        mock_active.return_value = True
-
-        # Create a check in STARTING state
+    def test_marks_orphaned_dispatched_checks_as_error(self, mock_is_queued):
+        """Test DISPATCHED checks with missing Celery tasks are marked ERROR."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.STARTING,
-            task_id="running-task-123",
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+            celery_job_id="task-123",
         )
 
-        # Run the queue processing task
-        result = process_manufacturability_check_queue()
+        mock_is_queued.return_value = False
 
-        # Verify check transitioned to PROCESSING
-        assert result["starting_transitioned"] == 1
-        assert result["starting_verified"] == 0
+        result = checks_cleanup_orphaned_dispatch()
+
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.PROCESSING
-        assert check.started_at is not None
-        mock_check_task.assert_not_called()
+        assert check.status == ManufacturabilityCheck.Status.ERROR
+        assert "orphaned" in check.error_message.lower()
+        assert result["orphaned"] == 1
+        assert result["verified"] == 0
+        mock_is_queued.assert_called_once_with(check)
+
+    @patch("wafer_space.projects.tasks.is_check_task_queued")
+    def test_leaves_valid_dispatched_checks_alone(self, mock_is_queued):
+        """Test DISPATCHED checks with valid Celery tasks are not touched."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+            celery_job_id="task-456",
+        )
+
+        # Task IS in queue (valid)
+        mock_is_queued.return_value = True
+
+        result = checks_cleanup_orphaned_dispatch()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.DISPATCHED
+        assert result["orphaned"] == 0
+        assert result["verified"] == 1
+        mock_is_queued.assert_called_once_with(check)
+
+    @patch("wafer_space.projects.tasks.is_check_task_queued")
+    def test_handles_mixed_checks(self, mock_is_queued):
+        """Test handles both orphaned and valid checks correctly."""
+        project2 = Project.objects.create(
+            user=self.user,
+            name="Test Project 2",
+        )
+        project_file2 = ProjectFile.objects.create(
+            project=project2,
+            original_filename="test2.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+        orphaned_check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+            celery_job_id="task-orphaned",
+        )
+        valid_check = ManufacturabilityCheck.objects.create(
+            project=project2,
+            project_file=project_file2,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+            celery_job_id="task-valid",
+        )
+
+        # First check is orphaned, second is valid
+        mock_is_queued.side_effect = [False, True]
+
+        result = checks_cleanup_orphaned_dispatch()
+
+        orphaned_check.refresh_from_db()
+        valid_check.refresh_from_db()
+        assert orphaned_check.status == ManufacturabilityCheck.Status.ERROR
+        assert valid_check.status == ManufacturabilityCheck.Status.DISPATCHED
+        assert result["orphaned"] == 1
+        assert result["verified"] == 1
+
+    @patch("wafer_space.projects.tasks.is_check_task_queued")
+    def test_ignores_non_dispatched_checks(self, mock_is_queued):
+        """Test only processes DISPATCHED checks."""
+        project2 = Project.objects.create(
+            user=self.user,
+            name="Test Project 2",
+        )
+        project_file2 = ProjectFile.objects.create(
+            project=project2,
+            original_filename="test2.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+        ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        ManufacturabilityCheck.objects.create(
+            project=project2,
+            project_file=project_file2,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+
+        result = checks_cleanup_orphaned_dispatch()
+
+        assert result["orphaned"] == 0
+        assert result["verified"] == 0
+        mock_is_queued.assert_not_called()
+
+
+@pytest.mark.django_db
+class TestChecksCleanupOrphanedProcessing(TestCase):
+    """Test checks_cleanup_orphaned_processing task."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+
+    @patch("wafer_space.projects.tasks.is_check_task_actively_running")
+    def test_marks_orphaned_running_checks_as_error(self, mock_is_running):
+        """Test RUNNING checks with dead PIDs are marked ERROR."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="task-123",
+            celery_worker_pid=TEST_WORKER_PID,
+            celery_worker_hostname="worker1",
+        )
+
+        # Task is NOT actively running (orphaned)
+        mock_is_running.return_value = False
+
+        result = checks_cleanup_orphaned_processing()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.ERROR
+        assert "orphaned" in check.error_message.lower()
+        # mark_error() preserves tracking fields for debugging
+        # They are only cleared by reset_for_retry() when retrying
+        assert check.celery_worker_pid == TEST_WORKER_PID
+        assert check.celery_worker_hostname == "worker1"
+        assert result["orphaned"] == 1
+        assert result["verified"] == 0
+        mock_is_running.assert_called_once_with(check)
+
+    @patch("wafer_space.projects.tasks.is_check_task_actively_running")
+    def test_leaves_valid_running_checks_alone(self, mock_is_running):
+        """Test RUNNING checks with valid PIDs are not touched."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="task-456",
+            celery_worker_pid=TEST_WORKER_PID,
+            celery_worker_hostname="worker1",
+        )
+
+        # Task IS actively running (valid)
+        mock_is_running.return_value = True
+
+        result = checks_cleanup_orphaned_processing()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.RUNNING
+        assert check.celery_worker_pid == TEST_WORKER_PID
+        assert check.celery_worker_hostname == "worker1"
+        assert result["orphaned"] == 0
+        assert result["verified"] == 1
+        mock_is_running.assert_called_once_with(check)
+
+    @patch("wafer_space.projects.tasks.is_check_task_actively_running")
+    def test_handles_mixed_checks(self, mock_is_running):
+        """Test handles both orphaned and valid checks correctly."""
+        project2 = Project.objects.create(
+            user=self.user,
+            name="Test Project 2",
+        )
+        project_file2 = ProjectFile.objects.create(
+            project=project2,
+            original_filename="test2.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+        orphaned_check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="task-orphaned",
+            celery_worker_pid=DEAD_WORKER_PID,
+            celery_worker_hostname="dead-worker",
+        )
+        valid_check = ManufacturabilityCheck.objects.create(
+            project=project2,
+            project_file=project_file2,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="task-valid",
+            celery_worker_pid=TEST_WORKER_PID,
+            celery_worker_hostname="live-worker",
+        )
+
+        # First check is orphaned, second is valid
+        mock_is_running.side_effect = [False, True]
+
+        result = checks_cleanup_orphaned_processing()
+
+        orphaned_check.refresh_from_db()
+        valid_check.refresh_from_db()
+        assert orphaned_check.status == ManufacturabilityCheck.Status.ERROR
+        # mark_error() preserves tracking fields for debugging
+        assert orphaned_check.celery_worker_pid == DEAD_WORKER_PID
+        assert orphaned_check.celery_worker_hostname == "dead-worker"
+        assert valid_check.status == ManufacturabilityCheck.Status.RUNNING
+        assert valid_check.celery_worker_pid == TEST_WORKER_PID
+        assert result["orphaned"] == 1
+        assert result["verified"] == 1
+
+    @patch("wafer_space.projects.tasks.is_check_task_actively_running")
+    def test_ignores_non_running_checks(self, mock_is_running):
+        """Test only processes RUNNING checks."""
+        project2 = Project.objects.create(
+            user=self.user,
+            name="Test Project 2",
+        )
+        project_file2 = ProjectFile.objects.create(
+            project=project2,
+            original_filename="test2.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+        ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        ManufacturabilityCheck.objects.create(
+            project=project2,
+            project_file=project_file2,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+        )
+
+        result = checks_cleanup_orphaned_processing()
+
+        assert result["orphaned"] == 0
+        assert result["verified"] == 0
+        mock_is_running.assert_not_called()

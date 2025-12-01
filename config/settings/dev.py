@@ -84,17 +84,46 @@ PRECHECK_TIMEOUT_SECONDS = 5 * 60  # 5 minutes hard limit for local dev
 PRECHECK_SOFT_TIMEOUT_BUFFER = 60  # 1 minute buffer (4 min soft, 5 min hard)
 
 CELERY_BEAT_SCHEDULE = {
+    # Download recovery
     "ensure-download-tasks-queued": {
         "task": "wafer_space.projects.tasks.ensure_download_tasks_queued",
         "schedule": DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS,
     },
-    "process-manufacturability-check-queue": {
-        "task": "wafer_space.projects.tasks.process_manufacturability_check_queue",
-        "schedule": PRECHECK_SCAN_INTERVAL_SECONDS,
+    # Manufacturability check lifecycle
+    "checks-create": {
+        "task": "wafer_space.projects.tasks.checks_create",
+        "schedule": 15.0,  # Faster in dev (30s in prod)
     },
-    "cleanup-orphaned-precheck-containers": {
-        "task": "wafer_space.projects.tasks.cleanup_orphaned_precheck_containers",
+    "checks-dispatch": {
+        "task": "wafer_space.projects.tasks.checks_dispatch",
+        "schedule": 15.0,  # Faster in dev (30s in prod)
+    },
+    "checks-retry": {
+        "task": "wafer_space.projects.tasks.checks_retry",
+        "schedule": 30.0,  # Faster in dev (60s in prod)
+    },
+    # Cancellation cleanup (fast - critical for releasing slots)
+    "checks-cancelling": {
+        "task": "wafer_space.projects.tasks.checks_cancelling",
+        "schedule": 10.0,  # Faster in dev (15s in prod)
+    },
+    # Orphan detection
+    "checks-cleanup-orphaned-dispatch": {
+        "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_dispatch",
+        "schedule": 30.0,  # Faster in dev (60s in prod)
+    },
+    "checks-cleanup-orphaned-processing": {
+        "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_processing",
+        "schedule": 30.0,  # Faster in dev (60s in prod)
+    },
+    "checks-cleanup-orphaned-docker": {
+        "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_docker",
+        # 15s in dev (300s in prod)
         "schedule": PRECHECK_CONTAINER_CLEANUP_INTERVAL_SECONDS,
+    },
+    "checks-cleanup-stale-files": {
+        "task": "wafer_space.projects.tasks.checks_cleanup_stale_files",
+        "schedule": 30.0,  # Faster in dev (60s in prod)
     },
 }
 

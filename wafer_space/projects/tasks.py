@@ -19,6 +19,7 @@ from urllib.request import Request
 from urllib.request import urlopen
 
 import docker
+import docker.errors
 import requests
 from celery import shared_task
 from celery.utils.log import get_task_logger
@@ -29,14 +30,17 @@ from django.db import transaction
 from django.utils import timezone
 from django_celery_results.models import TaskResult
 
+from config.celery import app as celery_app
 from wafer_space.notifications.services import NotificationService
 
 from .content_pipeline import ContentPipeline
 from .content_pipeline import cleanup_temp_dir
 from .content_pipeline import get_temp_dir_for_file
 from .content_processors import _processor_registry
+from .exceptions import InvalidStateTransitionError
 from .file_type_utils import detect_file_type_from_data
 from .format_validators import validate_output_format
+from .models import CheckExecutionContext
 from .models import DownloadAttempt
 from .models import FileProcessingError
 from .models import ManufacturabilityCheck
@@ -52,8 +56,8 @@ from .url_handlers import GoogleSourceHandler
 from .url_handlers import URLHandlerRegistry
 from .verification import is_check_task_actively_running
 from .verification import is_check_task_queued
-from .verification import is_task_actively_running
-from .verification import is_task_queued
+from .verification import is_download_task_actively_running
+from .verification import is_download_task_queued
 
 # HTTP status codes
 HTTP_PARTIAL_CONTENT = 206  # Server supports range requests
@@ -242,7 +246,7 @@ def _save_logs_to_file(
         logger: Logger instance
     """
     try:
-        timestamp = check.started_at or timezone.now()
+        timestamp = check.celery_job_started_at or timezone.now()
         timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")
 
         # Get GDS filename
@@ -296,7 +300,7 @@ def _extract_runs_archive(
         logger.info("  Extracted runs archive: %d bytes", len(tar_data))
 
         # Generate filename
-        timestamp = check.started_at or timezone.now()
+        timestamp = check.celery_job_started_at or timezone.now()
         timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")
         gds_name = "design"
         if check.project_file and check.project_file.processed_filename:
@@ -392,16 +396,17 @@ class _CheckContext:
     gds_path: str
     task_instance: "shared_task"
     logger: logging.Logger
+    container: Any = None  # Set by _start_container()
 
 
-def _pull_and_record_image(context: _CheckContext):
-    """Pull Docker image and record metadata.
+def _pull_and_record_image(context: _CheckContext) -> tuple[str, str]:
+    """Pull Docker image and return metadata (does not save to database).
 
     Args:
         context: Check execution context
 
     Returns:
-        Docker image object
+        Tuple of (docker_image tag, docker_image_digest)
     """
     image_name = settings.PRECHECK_DOCKER_IMAGE
     context.logger.info("Step 3: Pulling Docker image: %s", image_name)
@@ -444,19 +449,18 @@ def _pull_and_record_image(context: _CheckContext):
 
     # Get the pulled image
     image = context.client.images.get(image_name)
-    context.check.docker_image = image.tags[0] if image.tags else image_name
-    context.check.docker_image_digest = image.id
-    context.check.save(update_fields=["docker_image", "docker_image_digest"])
+    docker_image = image.tags[0] if image.tags else image_name
+    docker_image_digest = image.id
 
     # Log image details
     image_size = image.attrs.get("Size", 0)
     context.logger.info(
         "  ✓ Image ready: %s (digest: %s, size: %s)",
-        context.check.docker_image,
-        context.check.docker_image_digest[:12],
+        docker_image,
+        docker_image_digest[:12],
         _format_bytes(image_size),
     )
-    return image
+    return docker_image, docker_image_digest
 
 
 def _stream_logs_with_checkpoints(context: _CheckContext, container, container_start):
@@ -485,15 +489,8 @@ def _stream_logs_with_checkpoints(context: _CheckContext, container, container_s
         logs += line_text
         line_count += 1
 
-        # Log the actual container output
-        for log_line in line_text.strip().split("\n"):
-            if log_line:
-                context.logger.info("  [container] %s", log_line)
-
-        # Update last activity and logs
-        context.check.last_activity = timezone.now()
-        context.check.processing_logs = logs
-        context.check.save(update_fields=["last_activity", "processing_logs"])
+        # Update logs using model method (the only allowed update during RUNNING)
+        context.check.update_processing_logs(logs)
 
         now = timezone.now()
 
@@ -527,14 +524,16 @@ def _stream_logs_with_checkpoints(context: _CheckContext, container, container_s
     return logs, line_count, checkpoint_number
 
 
-def _run_container_and_stream_logs(context: _CheckContext):
-    """Run Docker container and stream logs with progress updates.
+def _start_container(context: _CheckContext) -> tuple[str, str]:
+    """Build docker command and start container.
 
     Args:
         context: Check execution context
 
     Returns:
-        tuple: (logs string, exit_code int, container object)
+        tuple: (docker_command string for reproducibility, container_id string)
+
+    Note: The container object is stored in context.container for later use.
     """
     context.logger.info("Step 4: Creating Docker container...")
     context.logger.info("  Input file: %s", context.gds_path)
@@ -542,8 +541,6 @@ def _run_container_and_stream_logs(context: _CheckContext):
     context.logger.info("  Project ID: %s", context.project.id)
     context.logger.info("  Slot size: %s", context.project.slot_size)
     context.logger.info("  Memory limit: 64GB")
-
-    container_start = timezone.now()
 
     # Build the precheck command to run inside nix-shell
     if not context.project_file.top_cell:
@@ -555,7 +552,7 @@ def _run_container_and_stream_logs(context: _CheckContext):
 
     # Build command - the container's dev-shell entrypoint handles nix develop --offline
     slot_size = context.project.slot_size
-    docker_command = [
+    docker_command_list = [
         "python3",
         "precheck.py",
         "--input",
@@ -571,7 +568,7 @@ def _run_container_and_stream_logs(context: _CheckContext):
         f"python3 precheck.py --input /input/design.gds "
         f'--top "{top_cell}" --slot {slot_size}'
     )
-    docker_run_cmd = (
+    docker_command = (
         f"docker run --rm --network=none "
         f"-e COLUMNS=200 -e TERM=xterm-256color "
         f"-v {context.gds_path}:/input/design.gds:ro "
@@ -581,15 +578,11 @@ def _run_container_and_stream_logs(context: _CheckContext):
         f"{precheck_cmd}"
     )
     context.logger.info("  Docker run command:")
-    context.logger.info("  %s", docker_run_cmd)
-
-    # Save docker command to check record for reproducibility
-    context.check.docker_command = docker_run_cmd
-    context.check.save(update_fields=["docker_command"])
+    context.logger.info("  %s", docker_command)
 
     container = context.client.containers.run(
         image=settings.PRECHECK_DOCKER_IMAGE,
-        command=docker_command,
+        command=docker_command_list,
         volumes={context.gds_path: {"bind": "/input/design.gds", "mode": "ro"}},
         working_dir="/workspace",
         detach=True,
@@ -605,6 +598,26 @@ def _run_container_and_stream_logs(context: _CheckContext):
         },
     )
     context.logger.info("  ✓ Container started: %s", container.id[:12])
+
+    # Store container in context for later use
+    context.container = container
+
+    return docker_command, container.id
+
+
+def _run_container_to_completion(context: _CheckContext):
+    """Stream logs and wait for container completion.
+
+    Must be called after mark_running() - requires check to be in RUNNING state.
+
+    Args:
+        context: Check execution context (must have context.container set)
+
+    Returns:
+        tuple: (logs string, exit_code int)
+    """
+    container = context.container
+    container_start = timezone.now()
 
     context.logger.info("Step 5: Running precheck analysis...")
     context.logger.info("  Streaming container logs...")
@@ -631,9 +644,8 @@ def _run_container_and_stream_logs(context: _CheckContext):
             len(complete_logs) - len(logs),
         )
         logs = complete_logs
-        # Update the check with complete logs
-        context.check.processing_logs = logs
-        context.check.save(update_fields=["processing_logs"])
+        # Final log update before transitioning out of RUNNING
+        context.check.update_processing_logs(logs)
 
     # Record final checkpoint
     _record_checkpoint(
@@ -650,7 +662,7 @@ def _run_container_and_stream_logs(context: _CheckContext):
         checkpoint_number,
     )
 
-    return logs, exit_code, container
+    return logs, exit_code
 
 
 def _handle_check_result(check, logs, exit_code, logger):
@@ -663,20 +675,19 @@ def _handle_check_result(check, logs, exit_code, logger):
         logger: Logger instance
 
     Returns:
-        dict: Result data with status and details
+        str or tuple: "success", "design", or ("system", error_message)
     """
     logger.info("Step 7: Parsing check results...")
 
     # Save logs to filesystem (before parsing, so we always have them)
     _save_logs_to_file(check, logs, logger)
 
-    # Extract version information
-    check.tool_versions = {
+    # Collect version information (will be passed to mark_finished)
+    tool_versions = {
         "pdk": "gf180mcuD",  # Will extract from logs
         "magic": "unknown",  # Will extract from logs
         "klayout": "unknown",  # Will extract from logs
     }
-    check.save(update_fields=["tool_versions"])
 
     # Parse logs
     logger.info("  Parsing %d bytes of logs...", len(logs))
@@ -689,37 +700,34 @@ def _handle_check_result(check, logs, exit_code, logger):
     )
 
     # Handle results based on exit code
-    if exit_code == 0:
-        # Success
-        check.complete(
-            is_manufacturable=True,
-            errors=[],
-            warnings=parsed.get("warnings", []),
-            logs=logs,
-        )
+    if exit_code != 0:
+        # Failure - classify
+        failure_type = classify_failure(logs, exit_code)
+        logger.info("Check failed with type: %s", failure_type)
+
+        if failure_type == "system":
+            # System failure - prepare for retry (don't mark finished)
+            error_summary = (
+                parsed["errors"][0]["message"]
+                if parsed["errors"]
+                else "Unknown system error"
+            )
+            return "system", error_summary
+
+    # Mark finished - either success or design failure
+    # Pass tool_versions atomically with the state transition
+    is_manufacturable = exit_code == 0
+    check.mark_finished(
+        is_manufacturable=is_manufacturable,
+        errors=[] if is_manufacturable else parsed.get("errors", []),
+        warnings=parsed.get("warnings", []),
+        processing_logs=logs,
+        tool_versions=tool_versions,
+    )
+
+    if is_manufacturable:
         logger.info("Check completed successfully - project is manufacturable")
         return "success"
-
-    # Failure - classify
-    failure_type = classify_failure(logs, exit_code)
-    logger.info("Check failed with type: %s", failure_type)
-
-    if failure_type == "system":
-        # System failure - prepare for retry
-        error_summary = (
-            parsed["errors"][0]["message"]
-            if parsed["errors"]
-            else "Unknown system error"
-        )
-        return "system", error_summary
-
-    # Design failure - complete with errors
-    check.complete(
-        is_manufacturable=False,
-        errors=parsed.get("errors", []),
-        warnings=parsed.get("warnings", []),
-        logs=logs,
-    )
     logger.info("Design errors found - check completed with errors")
     return "design"
 
@@ -745,90 +753,6 @@ def _validate_project_file(check):
         raise ValueError(msg)
 
     return check.project_file
-
-
-def _handle_retry(check, error_summary, _task_instance, logger):
-    """Handle system failure - mark as FAILED for periodic retry.
-
-    Note: _task_instance is unused but kept for API compatibility with callers.
-
-    System failures (Docker errors, timeouts, etc.) are different from
-    manufacturing issues. System failures:
-    - Set status to FAILED
-    - Store error in error_message field
-    - Will be retried by the periodic scan task if retry_count < max_retries
-
-    We don't use Celery's built-in retry here because the periodic scan
-    provides better visibility and control over the retry queue.
-
-    Args:
-        check: ManufacturabilityCheck instance
-        error_summary: Error message string
-        task_instance: Celery task instance (unused, kept for API compatibility)
-        logger: Logger instance
-    """
-    logger.error("System failure detected: %s", error_summary)
-    check.fail(error_summary)
-    logger.info(
-        "  Check marked as FAILED (retry %d/%d available)",
-        check.retry_count,
-        check.max_retries,
-    )
-
-
-def _handle_validation_error(check_id, exc, logger):
-    """Handle validation errors as permanent failures (no retry).
-
-    Validation errors like missing GDS files are permanent - retrying won't help.
-    Mark check as failed immediately without retry.
-
-    Args:
-        check_id: ManufacturabilityCheck ID
-        exc: ValueError instance
-        logger: Logger instance
-
-    Returns:
-        Dict with failure status and message
-    """
-    logger.warning("Validation error in manufacturability check: %s", exc)
-    with contextlib.suppress(ManufacturabilityCheck.DoesNotExist):
-        check = ManufacturabilityCheck.objects.get(id=check_id)
-        check.fail(str(exc))
-    return {"status": "failed", "message": str(exc)}
-
-
-def _handle_exception_retry(check_id, exc, _task_instance, logger):
-    """Handle exception - mark as FAILED for periodic retry.
-
-    Note: _task_instance is unused but kept for API compatibility with callers.
-
-    System failures (Docker errors, timeouts, etc.) are different from
-    manufacturing issues. System failures:
-    - Set status to FAILED
-    - Store error in error_message field
-    - Will be retried by the periodic scan task if retry_count < max_retries
-
-    We don't use Celery's built-in retry here because the periodic scan
-    provides better visibility and control over the retry queue.
-
-    Args:
-        check_id: ManufacturabilityCheck ID
-        exc: Exception instance
-        task_instance: Celery task instance (unused, kept for API compatibility)
-        logger: Logger instance
-    """
-    try:
-        check = ManufacturabilityCheck.objects.get(id=check_id)
-        error_msg = str(exc)
-        logger.error("Exception during check: %s", error_msg)
-        check.fail(error_msg)
-        logger.info(
-            "  Check marked as FAILED (retry %d/%d available)",
-            check.retry_count,
-            check.max_retries,
-        )
-    except ManufacturabilityCheck.DoesNotExist:
-        logger.warning("Check %s not found when handling exception", check_id)
 
 
 def _cleanup_container(container, logger):
@@ -867,6 +791,19 @@ def _log_task_complete(logger, task_start, check):
     logger.info("=" * 60)
 
 
+def _log_project_info(check, project_file, logger):
+    """Log project and file information.
+
+    Args:
+        check: ManufacturabilityCheck instance
+        project_file: ProjectFile instance
+        logger: Logger instance
+    """
+    logger.info("  ✓ Project: %s (ID: %s)", check.project.name, check.project.id)
+    logger.info("  ✓ File: %s", project_file.original_filename)
+    logger.info("  ✓ File size: %s", _format_bytes(project_file.file_size or 0))
+
+
 def _setup_docker_context(check, project_file, task_instance, logger):
     """Set up Docker client and execution context.
 
@@ -890,19 +827,38 @@ def _setup_docker_context(check, project_file, task_instance, logger):
     )
 
 
+def _mark_check_error_if_exists(
+    check: ManufacturabilityCheck | None,
+    error_message: str,
+) -> None:
+    """Mark check as ERROR if it exists.
+
+    Helper to safely mark a check as failed during exception handling,
+    when check might not have been loaded yet.
+    """
+    if check is not None:
+        check.mark_error(error_message=error_message)
+
+
 @shared_task(
     bind=True,
-    queue="manufacturability",
+    queue="docker-persistent",
     time_limit=settings.PRECHECK_TIMEOUT_SECONDS,
     soft_time_limit=(
         settings.PRECHECK_TIMEOUT_SECONDS - settings.PRECHECK_SOFT_TIMEOUT_BUFFER
     ),
 )
-def check_project_manufacturability(self, check_id):
-    """Run manufacturability check in Docker container.
+def check_process_job(self, check_id):
+    """Run manufacturability check in Docker container for a single check.
 
     This task performs manufacturability analysis using the gf180mcu-precheck
-    tool running in a Docker container. It replaces the previous mock implementation.
+    tool running in a Docker container.
+
+    The task follows a strict data collection pattern:
+    1. Collect all data needed for state transitions
+    2. Call mark_running() atomically with all collected data
+    3. Execute processing (with only log updates allowed during RUNNING)
+    4. Call mark_finished() or mark_error() with results
 
     Args:
         check_id: The ID of the ManufacturabilityCheck instance
@@ -911,47 +867,57 @@ def check_project_manufacturability(self, check_id):
         dict: Result data with status and details
     """
     logger = logging.getLogger(__name__)
-    container = None
     task_start = timezone.now()
+    context = None
+    check: ManufacturabilityCheck | None = None
 
     try:
         _log_task_start(logger, check_id, self.request.id)
 
-        # Step 1: Get check and project
+        # Step 1: Load check and validate project file
         logger.info("Step 1: Loading check and project data...")
         check = ManufacturabilityCheck.objects.get(id=check_id)
-        check.task_id = self.request.id or "test-task"
-        # Set worker tracking info for orphan detection
-        check.worker_pid = os.getpid()
-        check.worker_hostname = socket.gethostname()
-        check.save(update_fields=["task_id", "worker_pid", "worker_hostname"])
-        # Transition STARTING -> PROCESSING (sets started_at)
-        check.start_processing()
-
         project_file = _validate_project_file(check)
-        logger.info("  ✓ Project: %s (ID: %s)", check.project.name, check.project.id)
-        logger.info("  ✓ File: %s", project_file.original_filename)
-        logger.info("  ✓ File size: %s", _format_bytes(project_file.file_size or 0))
+        _log_project_info(check, project_file, logger)
 
-        # Step 2: Connect to Docker (in helper)
+        # Step 2: Connect to Docker
         context = _setup_docker_context(check, project_file, self, logger)
 
-        # Steps 3-6: Pull image and run container (in helpers)
-        _pull_and_record_image(context)
-        logs, exit_code, container = _run_container_and_stream_logs(context)
+        # Step 3: Pull Docker image and collect metadata (no DB writes)
+        docker_image, docker_image_digest = _pull_and_record_image(context)
 
-        # Step 7: Handle results (in helper)
+        # Step 4: Start container and collect metadata (no DB writes yet)
+        docker_command, container_id = _start_container(context)
+
+        # Step 5: ATOMIC STATE TRANSITION - mark_running() with all collected data
+        # This is the single point where we transition DISPATCHED -> RUNNING
+        logger.info("Step 5: Transitioning to RUNNING state...")
+        exec_context = CheckExecutionContext(
+            celery_worker_pid=os.getpid(),
+            celery_worker_hostname=socket.gethostname(),
+            docker_container_id=container_id,
+            docker_image=docker_image,
+            docker_image_digest=docker_image_digest,
+            docker_command=docker_command,
+        )
+        check.mark_running(context=exec_context)
+        logger.info("  ✓ Check is now RUNNING")
+
+        # Step 6: Run container to completion (only log updates allowed)
+        logs, exit_code = _run_container_to_completion(context)
+
+        # Step 7: Handle results and transition to FINISHED or ERROR
         result = _handle_check_result(check, logs, exit_code, logger)
 
-        # Handle system failures
+        # Handle system failures - mark as ERROR for periodic retry
         if isinstance(result, tuple) and result[0] == "system":
-            _handle_retry(check, result[1], self, logger)
+            error_summary = result[1]
+            logger.error("System failure detected: %s", error_summary)
+            check.mark_error(error_message=error_summary)
 
         # Step 8: Extract detailed run logs before cleanup
         logger.info("Step 8: Extracting detailed run logs...")
-        _extract_runs_archive(check, container, logger)
-
-        # Note: Container cleanup is now handled in finally block
+        _extract_runs_archive(check, context.container, logger)
 
         # Final summary
         _log_task_complete(logger, task_start, check)
@@ -976,24 +942,25 @@ def check_project_manufacturability(self, check_id):
             "Docker image not found: %s",
             settings.PRECHECK_DOCKER_IMAGE,
         )
-        with contextlib.suppress(ManufacturabilityCheck.DoesNotExist):
-            check = ManufacturabilityCheck.objects.get(id=check_id)
-            check.fail(f"Docker image not found: {settings.PRECHECK_DOCKER_IMAGE}")
+        error_msg = f"Docker image not found: {settings.PRECHECK_DOCKER_IMAGE}"
+        _mark_check_error_if_exists(check, error_msg)
         return {"status": "failed", "message": "Docker image not found"}
 
     except (docker.errors.ContainerError, docker.errors.APIError) as exc:
         is_container = isinstance(exc, docker.errors.ContainerError)
         error_type = "Container" if is_container else "Docker API"
         logger.exception("%s error during precheck execution", error_type)
-        _handle_exception_retry(check_id, exc, self, logger)
+        _mark_check_error_if_exists(check, str(exc))
         return {"status": "failed", "message": f"{error_type} error: {exc!s}"}
 
     except ValueError as exc:
-        return _handle_validation_error(check_id, exc, logger)
+        logger.warning("Validation error in manufacturability check: %s", exc)
+        _mark_check_error_if_exists(check, str(exc))
+        return {"status": "failed", "message": str(exc)}
 
     except Exception as exc:
         logger.exception("Unexpected error in manufacturability check task")
-        _handle_exception_retry(check_id, exc, self, logger)
+        _mark_check_error_if_exists(check, str(exc))
         return {
             "status": "failed",
             "message": str(exc),
@@ -1003,9 +970,9 @@ def check_project_manufacturability(self, check_id):
     finally:
         # Always cleanup container, even if exceptions occur
         # This prevents Docker resource leaks on failures or timeouts
-        if container is not None:
+        if context is not None and context.container is not None:
             logger.info("Cleaning up container in finally block...")
-            _cleanup_container(container, logger)
+            _cleanup_container(context.container, logger)
 
 
 @shared_task(queue="maintenance")
@@ -1251,30 +1218,6 @@ def _download_github_artifact(
         "artifact_id": selected_artifact_id,
         "artifact_size": artifact_size,
     }
-
-
-def _save_file_to_django(project_file, file_content: bytes, temp_dir: Path) -> None:
-    """Save downloaded content to Django file field."""
-    # Create temporary file to store content
-    temp_filename = f"{project_file.id}_{project_file.original_filename}"
-    temp_path = temp_dir / temp_filename
-
-    # Write content to temp file
-    temp_path.write_bytes(file_content)
-
-    # Create Django file from the downloaded content
-    with temp_path.open("rb") as temp_file:
-        django_file = ContentFile(temp_file.read())
-        django_file.name = project_file.original_filename
-        project_file.file.save(
-            project_file.original_filename,
-            django_file,
-            save=False,
-        )
-
-    # Clean up temp file
-    with contextlib.suppress(OSError):
-        temp_path.unlink()
 
 
 def _prepare_download_request(
@@ -2249,51 +2192,6 @@ def _process_and_save_content(
     return processed_content, final_md5, final_sha1, final_sha256
 
 
-def _queue_manufacturability_check(project_file: ProjectFile) -> ManufacturabilityCheck:
-    """Cancel old checks and create new manufacturability check for the file.
-
-    When a new file is uploaded, any existing checks for other files in the
-    project should be cancelled, and a new check should be queued.
-
-    Args:
-        project_file: The newly verified project file
-
-    Returns:
-        The newly created ManufacturabilityCheck in QUEUED state
-    """
-    logger = logging.getLogger(__name__)
-
-    # Cancel any existing checks for other files in this project
-    old_checks = ManufacturabilityCheck.objects.filter(
-        project=project_file.project,
-        status__in=[
-            ManufacturabilityCheck.Status.QUEUED,
-            ManufacturabilityCheck.Status.STARTING,
-            ManufacturabilityCheck.Status.PROCESSING,
-        ],
-    ).exclude(project_file=project_file)
-
-    for old_check in old_checks:
-        task_id = old_check.cancel(reason="Cancelled due to new file upload")
-        if task_id:
-            logger.info("  ✓ Cancelled old check %s (task: %s)", old_check.id, task_id)
-        else:
-            logger.info("  ✓ Cancelled old check %s", old_check.id)
-
-    # Create manufacturability check in QUEUED state
-    logger.info("Step 9.5: Creating manufacturability check...")
-    check = ManufacturabilityCheck.objects.create(
-        project=project_file.project,
-        project_file=project_file,
-        status=ManufacturabilityCheck.Status.QUEUED,
-        queued_at=timezone.now(),
-    )
-    logger.info("  ✓ Manufacturability check created (ID: %s)", check.id)
-    logger.info("  ✓ File ready for manufacturability checking")
-
-    return check
-
-
 def _verify_and_notify(
     project_file: ProjectFile,
     hashes: HashResults,
@@ -2364,9 +2262,9 @@ def _verify_and_notify(
             project_file=project_file,
         )
         logger.info("  ✓ Checksum verified notification created")
-
-        # Cancel old checks and create new one
-        _queue_manufacturability_check(project_file)
+        # Note: ManufacturabilityCheck creation is handled by the periodic
+        # checks_create() task, not here. This avoids race conditions and
+        # ensures idempotent check creation.
     elif verification_errors:
         NotificationService.create_checksum_mismatch_notification(
             user=project_file.project.user,
@@ -2763,7 +2661,7 @@ def ensure_download_tasks_queued():
     )
 
     for project_file in queued_files:
-        if is_task_queued(project_file):
+        if is_download_task_queued(project_file):
             verified_count += 1
         else:
             error_msg = "Task not found in Celery queue (worker may be down)"
@@ -2796,7 +2694,7 @@ def ensure_download_tasks_queued():
         # Only check if this is the latest attempt
         latest = project_file.latest_attempt
         if latest and latest.status == DownloadAttempt.Status.DOWNLOADING:
-            if is_task_actively_running(project_file):
+            if is_download_task_actively_running(project_file):
                 verified_count += 1
             else:
                 logger.warning("Orphaned downloading file %s", project_file.id)
@@ -2858,325 +2756,36 @@ def ensure_download_tasks_queued():
     }
 
 
-def _count_files_by_check_status(ready_files) -> dict:
-    """Count files by their manufacturability check status.
-
-    Returns dict with counts for each status plus 'needs_check' for actionable files.
-    """
-    counts = {
-        "no_check": 0,
-        "queued": 0,
-        "processing": 0,
-        "completed": 0,
-        "cancelled": 0,
-        "failed": 0,
-        "needs_check": 0,
-    }
-
-    for pf in ready_files:
-        try:
-            check = pf.manufacturability_check
-            if check.status == ManufacturabilityCheck.Status.QUEUED:
-                counts["queued"] += 1
-            elif check.status == ManufacturabilityCheck.Status.PROCESSING:
-                counts["processing"] += 1
-            elif check.status == ManufacturabilityCheck.Status.COMPLETED:
-                counts["completed"] += 1
-            elif check.status == ManufacturabilityCheck.Status.CANCELLED:
-                counts["cancelled"] += 1
-            elif check.status == ManufacturabilityCheck.Status.FAILED:
-                counts["failed"] += 1
-                if check.can_retry():
-                    counts["needs_check"] += 1
-        except ManufacturabilityCheck.DoesNotExist:
-            counts["no_check"] += 1
-            counts["needs_check"] += 1
-
-    return counts
+def _stop_and_remove_container(container, logger) -> None:
+    """Stop and remove a Docker container safely."""
+    try:
+        if container.status == "running":
+            container.stop(timeout=10)
+        container.remove(force=True)
+    except docker.errors.DockerException:
+        logger.exception("Failed to remove container %s", container.id)
 
 
-def _log_file_status_counts(logger, file_count: int, counts: dict) -> None:
-    """Log the breakdown of files by their check status."""
-    logger.info("  Found %d files with completed verified downloads:", file_count)
-    logger.info("    - No check yet: %d", counts["no_check"])
-    logger.info("    - Queued: %d", counts["queued"])
-    logger.info("    - Processing: %d", counts["processing"])
-    logger.info("    - Completed: %d", counts["completed"])
-    logger.info("    - Cancelled: %d", counts["cancelled"])
-    logger.info("    - Failed: %d", counts["failed"])
-    logger.info("  Need checks: %d", counts["needs_check"])
+@shared_task(queue="docker-ephemeral")
+def checks_cleanup_orphaned_docker() -> dict:
+    """Remove Docker containers not linked to active checks (fallback cleanup).
 
+    Starts from Docker (source of truth) and validates against database.
+    Removes containers where the associated ManufacturabilityCheck is:
+    - Missing (deleted)
+    - FINISHED
+    - ERROR
+    - CANCELLED
 
-def _handle_starting_checks(logger) -> tuple[int, int, int]:
-    """Handle STARTING checks - verify task exists and transition if running.
+    CANCELLING containers are handled by checks_cancelling task, not here.
 
     Returns:
-        Tuple of (verified_count, transitioned_count, lost_count)
-    """
-    verified = 0
-    transitioned = 0
-    lost = 0
-
-    starting_checks = ManufacturabilityCheck.objects.filter(
-        status=ManufacturabilityCheck.Status.STARTING,
-    )
-
-    for check in starting_checks:
-        # First check if task has started running (should transition to PROCESSING)
-        if is_check_task_actively_running(check):
-            logger.info("  Check %s: Task started -> PROCESSING", check.id)
-            check.status = ManufacturabilityCheck.Status.PROCESSING
-            if not check.started_at:
-                check.started_at = timezone.now()
-            check.save(update_fields=["status", "started_at"])
-            transitioned += 1
-        elif is_check_task_queued(check):
-            # Still in queue (reserved but not started)
-            verified += 1
-            logger.debug("  Check %s: STARTING verified in queue", check.id)
-        else:
-            # Task lost - move back to QUEUED
-            logger.warning("  Check %s: STARTING task lost, requeuing", check.id)
-            check.status = ManufacturabilityCheck.Status.QUEUED
-            check.task_id = ""
-            check.queued_at = timezone.now()
-            check.save(update_fields=["status", "task_id", "queued_at"])
-            lost += 1
-
-    return verified, transitioned, lost
-
-
-def _reset_check_for_retry(check: ManufacturabilityCheck) -> None:
-    """Reset a check's fields for retry."""
-    check.status = ManufacturabilityCheck.Status.QUEUED
-    check.retry_count += 1
-    check.queued_at = timezone.now()
-    check.is_manufacturable = None
-    check.errors = []
-    check.warnings = []
-    check.error_message = ""
-    check.started_at = None
-    check.completed_at = None
-    check.save()
-
-
-def _handle_processing_checks(logger) -> tuple[int, int, int]:
-    """Handle PROCESSING checks - verify task running AND process exists.
-
-    Returns:
-        Tuple of (verified_count, orphaned_count, retried_count)
-    """
-    verified = 0
-    orphaned = 0
-    retried = 0
-
-    processing_checks = ManufacturabilityCheck.objects.filter(
-        status=ManufacturabilityCheck.Status.PROCESSING,
-    )
-
-    for check in processing_checks:
-        if is_check_task_actively_running(check):
-            verified += 1
-            logger.debug("  Check %s: PROCESSING verified running", check.id)
-        else:
-            # Task orphaned - mark FAILED
-            logger.warning("  Check %s: PROCESSING task orphaned", check.id)
-            check.status = ManufacturabilityCheck.Status.FAILED
-            check.error_message = "Task not running (worker crashed or task failed)"
-            check.completed_at = timezone.now()
-            check.worker_pid = None
-            check.worker_hostname = ""
-            check.save(
-                update_fields=[
-                    "status",
-                    "error_message",
-                    "completed_at",
-                    "worker_pid",
-                    "worker_hostname",
-                ]
-            )
-            orphaned += 1
-
-            # Check if we should retry
-            if check.can_retry():
-                logger.info(
-                    "  Check %s: requeuing for retry (attempt %d/%d)",
-                    check.id,
-                    check.retry_count + 1,
-                    check.max_retries,
-                )
-                _reset_check_for_retry(check)
-                retried += 1
-
-    return verified, orphaned, retried
-
-
-def _handle_failed_checks(logger) -> tuple[int, int]:
-    """Handle FAILED checks - retry if allowed.
-
-    Returns:
-        Tuple of (retried_count, exhausted_count)
-    """
-    retried = 0
-    exhausted = 0
-
-    failed_checks = ManufacturabilityCheck.objects.filter(
-        status=ManufacturabilityCheck.Status.FAILED,
-    )
-
-    for check in failed_checks:
-        if check.can_retry():
-            logger.info(
-                "  Check %s: FAILED, requeuing (attempt %d/%d)",
-                check.id,
-                check.retry_count + 1,
-                check.max_retries,
-            )
-            _reset_check_for_retry(check)
-            retried += 1
-        else:
-            exhausted += 1
-            logger.debug("  Check %s: FAILED, max retries exhausted", check.id)
-
-    return retried, exhausted
-
-
-def _handle_queued_checks(logger, concurrent_limit: int) -> tuple[int, int]:
-    """Handle QUEUED checks - dispatch if under limit.
-
-    Returns:
-        Tuple of (dispatched_count, waiting_count)
-    """
-    dispatched = 0
-    waiting = 0
-
-    # Count currently active checks (STARTING or PROCESSING)
-    active_count = ManufacturabilityCheck.objects.filter(
-        status__in=[
-            ManufacturabilityCheck.Status.STARTING,
-            ManufacturabilityCheck.Status.PROCESSING,
-        ]
-    ).count()
-
-    logger.info("  Active checks: %d / %d (limit)", active_count, concurrent_limit)
-
-    # Get QUEUED checks ordered by queued_at (FIFO)
-    queued_checks = ManufacturabilityCheck.objects.filter(
-        status=ManufacturabilityCheck.Status.QUEUED,
-    ).order_by("queued_at")
-
-    for check in queued_checks:
-        if active_count >= concurrent_limit:
-            waiting += 1
-            continue
-
-        # Dispatch the task
-        try:
-            task = check_project_manufacturability.delay(check.id)
-            check.status = ManufacturabilityCheck.Status.STARTING
-            check.task_id = task.id
-            check.save(update_fields=["status", "task_id"])
-            dispatched += 1
-            active_count += 1
-            logger.info("  Check %s: QUEUED -> STARTING (task: %s)", check.id, task.id)
-        except Exception:
-            logger.exception("Failed to dispatch check %s", check.id)
-
-    return dispatched, waiting
-
-
-@shared_task(queue="maintenance")
-def process_manufacturability_check_queue():
-    """Process manufacturability check queue with state machine transitions.
-
-    This periodic task manages the lifecycle of manufacturability checks:
-    - STARTING: Verify task in Celery queue, if not -> QUEUED (task lost)
-    - PROCESSING: Verify task running AND process exists, if not -> FAILED
-    - FAILED: If can_retry() -> QUEUED with retry_count++
-    - QUEUED: If under concurrent limit -> dispatch task, set STARTING
-
-    Respects global concurrent limit (PRECHECK_CONCURRENT_LIMIT setting).
-
-    Returns:
-        dict: Status with counts of transitions and verifications
-    """
-    logger = logging.getLogger(__name__)
-    logger.info("=" * 60)
-    logger.info("PROCESSING MANUFACTURABILITY CHECK QUEUE")
-    logger.info("=" * 60)
-
-    # Get concurrent limit from settings
-    concurrent_limit = getattr(settings, "PRECHECK_CONCURRENT_LIMIT", 4)
-
-    # Process each state
-    starting_verified, starting_transitioned, starting_lost = _handle_starting_checks(
-        logger
-    )
-    proc_verified, proc_orphaned, proc_retried = _handle_processing_checks(logger)
-    failed_retried, failed_exhausted = _handle_failed_checks(logger)
-    queued_dispatched, queued_waiting = _handle_queued_checks(logger, concurrent_limit)
-
-    # Summary
-    logger.info("=" * 60)
-    logger.info("QUEUE PROCESSING COMPLETE")
-    logger.info(
-        "  STARTING: %d verified, %d transitioned, %d lost",
-        starting_verified,
-        starting_transitioned,
-        starting_lost,
-    )
-    logger.info("  PROCESSING: %d verified, %d orphaned", proc_verified, proc_orphaned)
-    logger.info("  FAILED: %d retried, %d exhausted", failed_retried, failed_exhausted)
-    logger.info(
-        "  QUEUED: %d dispatched, %d waiting",
-        queued_dispatched,
-        queued_waiting,
-    )
-    logger.info("=" * 60)
-
-    return {
-        "status": "completed",
-        "starting_verified": starting_verified,
-        "starting_transitioned": starting_transitioned,
-        "starting_lost": starting_lost,
-        "processing_verified": proc_verified,
-        "processing_orphaned": proc_orphaned,
-        "failed_retried": failed_retried + proc_retried,
-        "failed_exhausted": failed_exhausted,
-        "queued_dispatched": queued_dispatched,
-        "queued_waiting": queued_waiting,
-    }
-
-
-# Keep old name as alias for backwards compatibility with Celery Beat config
-scan_and_queue_manufacturability_checks = process_manufacturability_check_queue
-
-
-@shared_task(bind=True, queue="maintenance")
-def cleanup_orphaned_precheck_containers(_self):
-    """Clean up orphaned Docker containers from cancelled/failed checks.
-
-    Note: _self is unused but bind=True is kept for Celery task introspection potential.
-
-    This periodic task finds containers with the wafer.space.service label that
-    don't have a corresponding active ManufacturabilityCheck (QUEUED or PROCESSING).
-
-    Orphaned containers can occur when:
-    - A Celery task is revoked/terminated (task cancel)
-    - The worker crashes during a check
-    - A check times out but container cleanup fails
-
-    Returns:
-        dict: Status with counts of found, stopped, removed, and failed containers
+        dict with 'containers_scanned' and 'removed' counts
     """
     logger = get_task_logger(__name__)
     logger.info("=" * 60)
-    logger.info("CLEANING UP ORPHANED PRECHECK CONTAINERS")
+    logger.info("CLEANING UP ORPHANED DOCKER CONTAINERS")
     logger.info("=" * 60)
-
-    stopped_count = 0
-    removed_count = 0
-    failed_count = 0
 
     try:
         client = docker.from_env()
@@ -3187,75 +2796,470 @@ def cleanup_orphaned_precheck_containers(_self):
             "error": str(exc),
         }
 
-    # Find all containers with our service label
+    # Get all containers with our label
     containers = client.containers.list(
-        all=True,  # Include stopped containers
+        all=True,
         filters={"label": "wafer.space.service=manufacturability-check"},
     )
 
-    logger.info("  Found %d precheck containers", len(containers))
+    logger.info("  Found %d containers with service label", len(containers))
 
-    # Get IDs of active checks (QUEUED or PROCESSING)
-    active_check_ids = set(
-        ManufacturabilityCheck.objects.filter(
-            status__in=[
-                ManufacturabilityCheck.Status.QUEUED,
-                ManufacturabilityCheck.Status.PROCESSING,
-            ]
-        ).values_list("id", flat=True)
-    )
-    active_check_ids_str = {str(check_id) for check_id in active_check_ids}
-
-    logger.info("  Active checks: %d", len(active_check_ids))
-
+    removed = 0
     for container in containers:
-        container_check_id = container.labels.get("wafer.space.check_id", "")
+        check_id = container.labels.get("wafer.space.check_id")
 
-        # Skip if this container belongs to an active check
-        if container_check_id in active_check_ids_str:
+        # No check_id label = definitely orphaned
+        if not check_id:
             logger.info(
-                "  Container %s: belongs to active check %s, skipping",
+                "  Container %s: no check_id label, removing",
                 container.short_id,
-                container_check_id,
             )
+            _stop_and_remove_container(container, logger)
+            removed += 1
             continue
 
-        # This container is orphaned - clean it up
-        logger.info(
-            "  Container %s: orphaned (check_id=%s, status=%s)",
-            container.short_id,
-            container_check_id or "none",
-            container.status,
-        )
-
+        # Look up the check
         try:
-            # Stop if running
-            if container.status == "running":
-                logger.info("    Stopping container...")
-                container.stop(timeout=10)
-                stopped_count += 1
+            check = ManufacturabilityCheck.objects.get(id=check_id)
+        except ManufacturabilityCheck.DoesNotExist:
+            logger.info(
+                "  Container %s: check %s not found, removing",
+                container.short_id,
+                check_id,
+            )
+            _stop_and_remove_container(container, logger)
+            removed += 1
+            continue
 
-            # Remove container
-            logger.info("    Removing container...")
-            container.remove(force=True)
-            removed_count += 1
-            logger.info("    ✓ Container removed")
-
-        except docker.errors.DockerException as exc:
-            logger.warning("    ⚠ Failed to clean up container: %s", exc)
-            failed_count += 1
+        # Check exists - is it in an active state?
+        # CANCELLING containers are handled by checks_cancelling, not here
+        active_states = [
+            ManufacturabilityCheck.Status.DISPATCHED,
+            ManufacturabilityCheck.Status.RUNNING,
+            ManufacturabilityCheck.Status.CANCELLING,
+        ]
+        if check.status not in active_states:
+            logger.info(
+                "  Container %s: check %s in %s state, removing",
+                container.short_id,
+                check_id,
+                check.status,
+            )
+            _stop_and_remove_container(container, logger)
+            removed += 1
+        else:
+            logger.debug(
+                "  Container %s: check %s in %s state, keeping",
+                container.short_id,
+                check_id,
+                check.status,
+            )
 
     logger.info("=" * 60)
     logger.info("CLEANUP COMPLETE")
-    logger.info("  Stopped: %d", stopped_count)
-    logger.info("  Removed: %d", removed_count)
-    logger.info("  Failed: %d", failed_count)
+    logger.info("  Scanned: %d", len(containers))
+    logger.info("  Removed: %d", removed)
     logger.info("=" * 60)
 
-    return {
-        "status": "completed",
-        "containers_found": len(containers),
-        "stopped": stopped_count,
-        "removed": removed_count,
-        "failed": failed_count,
-    }
+    return {"containers_scanned": len(containers), "removed": removed}
+
+
+@shared_task(queue="default")
+def checks_dispatch() -> dict:
+    """Dispatch PENDING checks to Celery queue (respecting concurrent limit).
+
+    CANCELLING checks count toward the limit because their Docker containers
+    may still be running.
+
+    Returns:
+        dict with 'dispatched' and 'waiting' counts
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("[checks_dispatch] Starting dispatch cycle")
+
+    concurrent_limit = getattr(settings, "PRECHECK_CONCURRENT_LIMIT", 4)
+
+    # CANCELLING counts because Docker container may still be running
+    active_count = ManufacturabilityCheck.objects.filter(
+        status__in=[
+            ManufacturabilityCheck.Status.DISPATCHED,
+            ManufacturabilityCheck.Status.RUNNING,
+            ManufacturabilityCheck.Status.CANCELLING,
+        ],
+    ).count()
+
+    pending = ManufacturabilityCheck.objects.filter(
+        status=ManufacturabilityCheck.Status.PENDING,
+    ).order_by("created_at")
+
+    pending_count = pending.count()
+    logger.info(
+        "[checks_dispatch] Active: %d/%d, Pending: %d",
+        active_count,
+        concurrent_limit,
+        pending_count,
+    )
+
+    dispatched = 0
+    for check in pending:
+        if active_count >= concurrent_limit:
+            logger.info(
+                "[checks_dispatch] Concurrent limit reached (%d/%d), stopping",
+                active_count,
+                concurrent_limit,
+            )
+            break
+        task = check_process_job.delay(check.id)
+        check.mark_dispatched(celery_job_id=task.id)
+        logger.info(
+            "[checks_dispatch] Dispatched check %s (project: %s, file: %s) -> task %s",
+            check.id,
+            check.project.name,
+            check.project_file.original_filename,
+            task.id,
+        )
+        active_count += 1
+        dispatched += 1
+
+    waiting = pending_count - dispatched
+    logger.info(
+        "[checks_dispatch] Complete: dispatched=%d, waiting=%d",
+        dispatched,
+        waiting,
+    )
+    return {"dispatched": dispatched, "waiting": waiting}
+
+
+@shared_task(queue="default")
+def checks_retry() -> dict:
+    """Move retryable ERROR checks back to PENDING state.
+
+    Returns:
+        dict with 'retried' and 'exhausted' counts
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("[checks_retry] Starting retry cycle")
+
+    retried = 0
+    exhausted = 0
+
+    error_checks = ManufacturabilityCheck.objects.filter(
+        status=ManufacturabilityCheck.Status.ERROR,
+    )
+    error_count = error_checks.count()
+    logger.info("[checks_retry] Found %d checks in ERROR state", error_count)
+
+    for check in error_checks:
+        if check.can_retry():
+            logger.info(
+                "[checks_retry] Retrying check %s (project: %s, attempt %d/%d)",
+                check.id,
+                check.project.name,
+                check.retry_count + 1,
+                check.max_retries,
+            )
+            check.reset_for_retry(reason="Automatic retry after error")
+            retried += 1
+        else:
+            logger.info(
+                "[checks_retry] Check %s exhausted retries (%d/%d)",
+                check.id,
+                check.retry_count,
+                check.max_retries,
+            )
+            exhausted += 1
+
+    logger.info(
+        "[checks_retry] Complete: retried=%d, exhausted=%d",
+        retried,
+        exhausted,
+    )
+    return {"retried": retried, "exhausted": exhausted}
+
+
+@shared_task(queue="default")
+def checks_create() -> dict:
+    """Create ManufacturabilityChecks for verified downloads that need them.
+
+    Returns:
+        dict with 'created' count
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("[checks_create] Starting check creation cycle")
+
+    created = 0
+
+    # Find active, verified files without a check
+    files_needing_checks = ProjectFile.objects.filter(
+        is_active=True,
+        hash_verified=True,
+    ).exclude(
+        manufacturability_check__isnull=False,
+    )
+
+    files_count = files_needing_checks.count()
+    logger.info("[checks_create] Found %d verified files needing checks", files_count)
+
+    for project_file in files_needing_checks:
+        check = ManufacturabilityCheck.objects.create(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        logger.info(
+            "[checks_create] Created check %s for project %s, file %s",
+            check.id,
+            project_file.project.name,
+            project_file.original_filename,
+        )
+        created += 1
+
+    logger.info("[checks_create] Complete: created=%d", created)
+    return {"created": created}
+
+
+@shared_task(queue="default")
+def checks_cleanup_orphaned_dispatch() -> dict:
+    """Find and mark DISPATCHED checks with missing Celery tasks as ERROR.
+
+    Orphaned checks are those in DISPATCHED state whose Celery task is
+    no longer in the queue (not reserved or active). This can happen if
+    workers crash or tasks are lost.
+
+    Returns:
+        dict with 'orphaned' and 'verified' counts
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("[checks_cleanup_orphaned_dispatch] Starting orphan check")
+
+    orphaned = 0
+    verified = 0
+
+    dispatched_checks = ManufacturabilityCheck.objects.filter(
+        status=ManufacturabilityCheck.Status.DISPATCHED,
+    )
+    dispatched_count = dispatched_checks.count()
+    logger.info(
+        "[checks_cleanup_orphaned_dispatch] Found %d DISPATCHED checks",
+        dispatched_count,
+    )
+
+    for check in dispatched_checks:
+        if is_check_task_queued(check):
+            logger.debug(
+                "[checks_cleanup_orphaned_dispatch] Check %s verified "
+                "(task %s in queue)",
+                check.id,
+                check.celery_job_id,
+            )
+            verified += 1
+        else:
+            error_msg = (
+                f"Orphaned DISPATCHED check: Celery task {check.celery_job_id} "
+                f"not found in queue"
+            )
+            logger.warning(
+                "[checks_cleanup_orphaned_dispatch] Orphaned check %s "
+                "(project: %s): %s",
+                check.id,
+                check.project.name,
+                error_msg,
+            )
+            check.mark_error(error_message=error_msg)
+            orphaned += 1
+
+    logger.info(
+        "[checks_cleanup_orphaned_dispatch] Complete: verified=%d, orphaned=%d",
+        verified,
+        orphaned,
+    )
+    return {"orphaned": orphaned, "verified": verified}
+
+
+@shared_task(queue="default")
+def checks_cleanup_orphaned_processing() -> dict:
+    """Find and mark RUNNING checks with dead workers as ERROR.
+
+    Orphaned checks are those in RUNNING state whose worker process
+    has died or is no longer actively executing the task.
+
+    mark_error() preserves all tracking fields for debugging purposes.
+    Fields are cleared by reset_for_retry() if/when the check is retried.
+
+    Returns:
+        dict with 'orphaned' and 'verified' counts
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("[checks_cleanup_orphaned_processing] Starting orphan check")
+
+    orphaned = 0
+    verified = 0
+
+    running_checks = ManufacturabilityCheck.objects.filter(
+        status=ManufacturabilityCheck.Status.RUNNING,
+    )
+    running_count = running_checks.count()
+    logger.info(
+        "[checks_cleanup_orphaned_processing] Found %d RUNNING checks",
+        running_count,
+    )
+
+    for check in running_checks:
+        if is_check_task_actively_running(check):
+            logger.debug(
+                "[checks_cleanup_orphaned_processing] Check %s verified "
+                "(PID %s on %s is active)",
+                check.id,
+                check.celery_worker_pid,
+                check.celery_worker_hostname,
+            )
+            verified += 1
+        else:
+            error_msg = (
+                f"Orphaned RUNNING check: Worker PID {check.celery_worker_pid} "
+                f"on {check.celery_worker_hostname} is dead or task not active"
+            )
+            logger.warning(
+                "[checks_cleanup_orphaned_processing] Orphaned check %s "
+                "(project: %s): %s",
+                check.id,
+                check.project.name,
+                error_msg,
+            )
+            check.mark_error(error_message=error_msg)
+            orphaned += 1
+
+    logger.info(
+        "[checks_cleanup_orphaned_processing] Complete: verified=%d, orphaned=%d",
+        verified,
+        orphaned,
+    )
+    return {"orphaned": orphaned, "verified": verified}
+
+
+@shared_task(queue="docker-ephemeral")
+def checks_cancelling() -> dict:
+    """Complete cancellation for checks in CANCELLING state.
+
+    This task performs cleanup (revoke Celery task, stop Docker container)
+    before calling mark_cancelled() which handles the state transition
+    and clears tracking fields atomically.
+
+    Returns:
+        dict with 'completed' and 'failed' counts
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("[checks_cancelling] Starting cancellation processing")
+
+    status_enum = ManufacturabilityCheck.Status
+    completed = 0
+    failed = 0
+
+    cancelling_checks = ManufacturabilityCheck.objects.filter(
+        status=status_enum.CANCELLING
+    )
+    cancelling_count = cancelling_checks.count()
+    logger.info(
+        "[checks_cancelling] Found %d checks in CANCELLING state",
+        cancelling_count,
+    )
+
+    client = docker.from_env()
+
+    for check in cancelling_checks:
+        logger.info(
+            "[checks_cancelling] Processing check %s "
+            "(project: %s, task: %s, container: %s)",
+            check.id,
+            check.project.name,
+            check.celery_job_id,
+            check.docker_container_id,
+        )
+        try:
+            # Step 1: Revoke Celery task (cleanup only, don't modify DB)
+            if check.celery_job_id:
+                logger.info(
+                    "[checks_cancelling] Revoking Celery task %s",
+                    check.celery_job_id,
+                )
+                celery_app.control.revoke(check.celery_job_id, terminate=True)
+
+            # Step 2: Stop and remove Docker container (cleanup only, don't modify DB)
+            if check.docker_container_id:
+                try:
+                    container = client.containers.get(check.docker_container_id)
+                    if container.status == "running":
+                        logger.info(
+                            "[checks_cancelling] Stopping container %s",
+                            check.docker_container_id,
+                        )
+                        container.stop(timeout=10)
+                    logger.info(
+                        "[checks_cancelling] Removing container %s",
+                        check.docker_container_id,
+                    )
+                    container.remove(force=True)
+                except docker.errors.NotFound:
+                    logger.info(
+                        "[checks_cancelling] Container %s already gone",
+                        check.docker_container_id,
+                    )
+
+            # Step 3: Complete transition - mark_cancelled() clears fields atomically
+            check.mark_cancelled()
+            logger.info("[checks_cancelling] Check %s marked CANCELLED", check.id)
+            completed += 1
+
+        except (docker.errors.DockerException, InvalidStateTransitionError) as exc:
+            msg = f"Failed to complete cancellation for check {check.id}: {exc}"
+            logger.exception(msg)
+            failed += 1
+
+    logger.info(
+        "[checks_cancelling] Complete: completed=%d, failed=%d",
+        completed,
+        failed,
+    )
+    return {"completed": completed, "failed": failed}
+
+
+@shared_task(queue="default")
+def checks_cleanup_stale_files() -> dict:
+    """Cancel checks on project files that are no longer active.
+
+    When a user uploads a new file to a project, the old file's is_active
+    flag is set to False. Any in-progress checks on inactive files should
+    be cancelled since they're no longer relevant.
+
+    This task finds such checks and marks them as CANCELLING, which will
+    then be processed by the checks_cancelling task.
+
+    Returns:
+        dict with 'cancelled' count of checks marked for cancellation
+    """
+    logger = logging.getLogger(__name__)
+    cancelled = 0
+
+    # Find checks in progress on inactive project files
+    stale_checks = ManufacturabilityCheck.objects.filter(
+        status__in=ManufacturabilityCheck.IN_PROGRESS_STATUSES,
+        project_file__is_active=False,
+    )
+
+    for check in stale_checks:
+        try:
+            logger.info(
+                "Cancelling stale check %s on inactive file %s (project %s)",
+                check.id,
+                check.project_file.original_filename,
+                check.project.name,
+            )
+            check.mark_cancelling(reason="Project file replaced with newer version")
+            cancelled += 1
+        except InvalidStateTransitionError:
+            logger.exception(
+                "Failed to mark check %s as cancelling",
+                check.id,
+            )
+
+    return {"cancelled": cancelled}

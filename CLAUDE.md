@@ -237,6 +237,25 @@ See `deployment/README.md` for full deployment guide.
 
 ---
 
+## GIT WORKTREES
+
+When using git worktrees for parallel development, **symlink the `.env` file** from the main repository to keep settings in one location:
+
+```bash
+# From within the worktree directory, get the main repo path and create symlink
+MAIN_REPO=$(git worktree list | head -1 | awk '{print $1}')
+ln -s "$MAIN_REPO/.env" .env
+```
+
+**Why:** This ensures all worktrees share the same secrets and development settings, avoiding:
+- Duplicated secrets across multiple `.env` files
+- Inconsistent configuration between worktrees
+- Forgotten updates when secrets change
+
+**Note:** The `.env` file is in `.gitignore`, so the symlink won't be committed.
+
+---
+
 ## CELERY DEBUGGING
 
 ### 5. WORKER RESTART IS NOT THE ISSUE

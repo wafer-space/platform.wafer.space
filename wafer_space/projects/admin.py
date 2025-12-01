@@ -74,8 +74,8 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
         "project",
         "status",
         "is_manufacturable",
-        "started_at",
-        "completed_at",
+        "celery_job_started_at",
+        "celery_job_finished_at",
         "docker_image_digest",
         "rerun_requested_by",
     ]
@@ -83,8 +83,8 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
     list_filter = [
         "status",
         "is_manufacturable",
-        "started_at",
-        "completed_at",
+        "celery_job_started_at",
+        "celery_job_finished_at",
     ]
 
     search_fields = [
@@ -95,15 +95,20 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
 
     readonly_fields = [
         "project",
-        "started_at",
-        "completed_at",
-        "task_id",
+        "celery_job_dispatched_at",
+        "celery_job_started_at",
+        "celery_job_finished_at",
+        "celery_job_id",
+        "celery_worker_pid",
+        "celery_worker_hostname",
         "is_manufacturable",
         "errors",
         "warnings",
         "processing_logs",
         "docker_image",
         "docker_image_digest",
+        "docker_container_id",
+        "docker_container_started_at",
         "tool_versions",
         "precheck_version",
         "last_activity",
@@ -130,12 +135,33 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
             },
         ),
         (
-            "Processing",
+            "Celery Job",
             {
                 "fields": [
-                    "started_at",
-                    "completed_at",
-                    "task_id",
+                    "celery_job_dispatched_at",
+                    "celery_job_started_at",
+                    "celery_job_finished_at",
+                    "celery_job_id",
+                    "celery_worker_pid",
+                    "celery_worker_hostname",
+                ],
+                "classes": ["collapse"],
+            },
+        ),
+        (
+            "Docker Container",
+            {
+                "fields": [
+                    "docker_container_id",
+                    "docker_container_started_at",
+                ],
+                "classes": ["collapse"],
+            },
+        ),
+        (
+            "Processing Logs",
+            {
+                "fields": [
                     "processing_logs",
                 ],
                 "classes": ["collapse"],

@@ -2,13 +2,34 @@ import hashlib
 import json
 import urllib.parse
 import uuid
-from datetime import timedelta
+from dataclasses import dataclass
+from typing import ClassVar
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.utils import timezone
+
+from wafer_space.projects.exceptions import ConcurrentLimitError
+from wafer_space.projects.exceptions import InvalidStateTransitionError
+from wafer_space.projects.exceptions import MaxRetriesExceededError
+
+
+@dataclass
+class CheckExecutionContext:
+    """Context data for transitioning a check to RUNNING state.
+
+    Groups worker and docker info to avoid too many function parameters.
+    """
+
+    celery_worker_pid: int
+    celery_worker_hostname: str
+    docker_container_id: str
+    docker_image: str
+    docker_image_digest: str
+    docker_command: str
+
 
 # Byte conversion constant
 _BYTES_PER_KB = 1024.0
@@ -123,18 +144,17 @@ class Project(models.Model):
         if not active_file.hash_verified:
             return False, "File hash has not been verified"
 
-        # Check project status
-        if self.status != self.Status.DRAFT:
-            return False, "Project has already been submitted (status must be DRAFT)"
+        # Check project status - only MANUFACTURABLE can be submitted
+        # (MANUFACTURABLE status guarantees is_manufacturable=True via mark_finished)
+        if self.status != self.Status.MANUFACTURABLE:
+            msg = (
+                "Manufacturability check must complete before submission"
+                if self.status == self.Status.DRAFT
+                else "Project has already been submitted"
+            )
+            return False, msg
 
-        # Check manufacturability (combined None and False check to reduce returns)
-        if self.is_manufacturable is None:
-            return False, "Manufacturability check has not been completed"
-        return (
-            (True, "")
-            if self.is_manufacturable
-            else (False, "File did not pass manufacturability checks")
-        )
+        return True, ""
 
     def submit(self):
         """Mark project as submitted and queue manufacturability check.
@@ -981,7 +1001,7 @@ def _get_check_file_prefix(instance) -> tuple[str, str, str]:
     Returns:
         tuple: (gds_name, top_cell, timestamp_str)
     """
-    timestamp = instance.started_at or timezone.now()
+    timestamp = instance.celery_job_started_at or timezone.now()
     timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")
 
     # Get GDS filename (without path)
@@ -1028,15 +1048,44 @@ class ManufacturabilityCheck(models.Model):
     """Track manufacturability checking process for projects."""
 
     class Status(models.TextChoices):
-        QUEUED = "queued", "Queued"
-        STARTING = "starting", "Starting"
-        PROCESSING = "processing", "Processing"
-        COMPLETED = "completed", "Completed"
-        FAILED = "failed", "Failed"
-        CANCELLED = "cancelled", "Cancelled"
+        PENDING = "pending", "Pending"  # Waiting for capacity
+        DISPATCHED = "dispatched", "Dispatched"  # Job sent to Celery
+        RUNNING = "running", "Running"  # Celery worker executing
+        FINISHED = "finished", "Finished"  # Analysis complete
+        ERROR = "error", "Error"  # System/processing failure
+        CANCELLING = "cancelling", "Cancelling"  # Cleanup in progress
+        CANCELLED = "cancelled", "Cancelled"  # User cancelled
+
+    # State machine: defines valid transitions
+    # PENDING: waiting for capacity to dispatch to Celery
+    # DISPATCHED: job sent to Celery, waiting for worker
+    # RUNNING: Celery worker executing analysis
+    # FINISHED: analysis complete (terminal)
+    # ERROR: system failure, can retry
+    # CANCELLED: user cancelled (terminal)
+    ALLOWED_TRANSITIONS: ClassVar[dict[Status, set[Status]]] = {
+        Status.PENDING: {Status.DISPATCHED, Status.ERROR, Status.CANCELLING},
+        Status.DISPATCHED: {Status.RUNNING, Status.ERROR, Status.CANCELLING},
+        Status.RUNNING: {Status.FINISHED, Status.ERROR, Status.CANCELLING},
+        Status.FINISHED: set(),  # Terminal - no transitions
+        Status.ERROR: {Status.PENDING},  # Can retry
+        Status.CANCELLING: {Status.CANCELLED},  # Only cleanup task can complete
+        Status.CANCELLED: set(),  # Terminal - no transitions
+    }
 
     # Maximum characters of processing logs to include in GitHub issue body
-    GITHUB_ISSUE_LOG_CHARS = 5000
+    GITHUB_ISSUE_LOG_CHARS: ClassVar[int] = 5000
+
+    # Maximum concurrent checks allowed (DISPATCHED + RUNNING)
+    MAX_CONCURRENT_CHECKS: ClassVar[int] = 4
+
+    # Statuses representing checks that are in progress and should be
+    # cancelled when the project file is replaced
+    IN_PROGRESS_STATUSES: ClassVar[list[Status]] = [
+        Status.PENDING,
+        Status.DISPATCHED,
+        Status.RUNNING,
+    ]
 
     project = models.ForeignKey(
         Project,
@@ -1051,30 +1100,54 @@ class ManufacturabilityCheck(models.Model):
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
-        default=Status.QUEUED,
+        default=Status.PENDING,
+    )
+
+    # Timestamps
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        help_text="When this check record was created",
     )
 
     # Processing details
-    started_at = models.DateTimeField(null=True, blank=True)
-    completed_at = models.DateTimeField(null=True, blank=True)
-    task_id = models.CharField(max_length=100, blank=True, default="")  # Celery task ID
-    queued_at = models.DateTimeField(
+    celery_job_started_at = models.DateTimeField(null=True, blank=True)
+    celery_job_finished_at = models.DateTimeField(null=True, blank=True)
+    celery_job_id = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        help_text="ID of the Celery job processing this check",
+    )
+    celery_job_dispatched_at = models.DateTimeField(
         null=True,
         blank=True,
-        help_text="When check entered/re-entered the QUEUED state",
+        help_text="When job was dispatched to Celery queue",
     )
 
     # Worker tracking (matching DownloadAttempt pattern)
-    worker_pid = models.IntegerField(
+    celery_worker_pid = models.IntegerField(
         null=True,
         blank=True,
-        help_text="Process ID of worker executing this check",
+        help_text="Process ID of Celery worker executing this check",
     )
-    worker_hostname = models.CharField(
+    celery_worker_hostname = models.CharField(
         max_length=255,
         blank=True,
         default="",
-        help_text="Hostname of worker executing this check",
+        help_text="Hostname of Celery worker executing this check",
+    )
+
+    # Docker container tracking
+    docker_container_id = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="ID of Docker container running the analysis",
+    )
+    docker_container_started_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When Docker container started",
     )
 
     # Results
@@ -1166,26 +1239,158 @@ class ManufacturabilityCheck(models.Model):
     class Meta:
         verbose_name = "Manufacturability Check"
         verbose_name_plural = "Manufacturability Checks"
-        ordering = ["-started_at"]
+        ordering = ["-celery_job_started_at"]
 
     def __str__(self):
         return f"Check for {self.project.name} - {self.get_status_display()}"
 
-    def start_processing(self):
-        """Mark check as started."""
-        self.status = self.Status.PROCESSING
-        self.started_at = timezone.now()
-        self.save()
+    def can_retry(self) -> bool:
+        """Check if this check can be retried."""
+        return self.retry_count < self.max_retries
 
-    def complete(self, is_manufacturable, errors=None, warnings=None, logs=""):
-        """Mark check as completed with results."""
-        self.status = self.Status.COMPLETED
-        self.completed_at = timezone.now()
+    def can_transition_to(self, new_status: Status) -> bool:
+        """Check if transition from current status to new_status is valid.
+
+        Args:
+            new_status: The status to transition to
+
+        Returns:
+            True if transition is allowed, False otherwise
+
+        """
+        # Cast string status to Status enum for lookup
+        current_status = self.Status(self.status)
+        allowed = self.ALLOWED_TRANSITIONS.get(current_status, set())
+        return new_status in allowed
+
+    def mark_dispatched(self, *, celery_job_id: str) -> None:
+        """Mark check as dispatched to Celery queue.
+
+        Pathway 2: PENDING → DISPATCHED
+
+        Args:
+            celery_job_id: The ID returned by celery_task.delay()
+
+        Raises:
+            InvalidStateTransitionError: If transition is not allowed
+            ConcurrentLimitError: If the concurrent DISPATCHED/RUNNING limit
+                would be exceeded
+        """
+        if not self.can_transition_to(self.Status.DISPATCHED):
+            raise InvalidStateTransitionError(
+                from_status=self.status,
+                to_status=self.Status.DISPATCHED,
+            )
+
+        # Check concurrent limit (DISPATCHED + RUNNING)
+        active_count = (
+            ManufacturabilityCheck.objects.filter(
+                status__in=[self.Status.DISPATCHED, self.Status.RUNNING],
+            )
+            .exclude(pk=self.pk)
+            .count()
+        )
+
+        if active_count >= self.MAX_CONCURRENT_CHECKS:
+            raise ConcurrentLimitError(
+                active_count=active_count,
+                max_concurrent=self.MAX_CONCURRENT_CHECKS,
+            )
+
+        self.status = self.Status.DISPATCHED
+        self.celery_job_id = celery_job_id
+        self.celery_job_dispatched_at = timezone.now()
+        self.save(update_fields=["status", "celery_job_id", "celery_job_dispatched_at"])
+
+    def mark_running(self, *, context: CheckExecutionContext) -> None:
+        """Mark check as running in Celery worker.
+
+        Pathway 3: DISPATCHED → RUNNING
+
+        Args:
+            context: CheckExecutionContext with worker and docker info
+
+        Raises:
+            InvalidStateTransitionError: If transition is not allowed
+        """
+        if not self.can_transition_to(self.Status.RUNNING):
+            raise InvalidStateTransitionError(
+                from_status=self.status,
+                to_status=self.Status.RUNNING,
+            )
+
+        self.status = self.Status.RUNNING
+        self.celery_worker_pid = context.celery_worker_pid
+        self.celery_worker_hostname = context.celery_worker_hostname
+        self.docker_container_id = context.docker_container_id
+        self.docker_container_started_at = timezone.now()
+        self.celery_job_started_at = timezone.now()
+        self.docker_image = context.docker_image
+        self.docker_image_digest = context.docker_image_digest
+        self.docker_command = context.docker_command
+        self.save(
+            update_fields=[
+                "status",
+                "celery_worker_pid",
+                "celery_worker_hostname",
+                "docker_container_id",
+                "docker_container_started_at",
+                "celery_job_started_at",
+                "docker_image",
+                "docker_image_digest",
+                "docker_command",
+            ]
+        )
+
+    def mark_finished(
+        self,
+        *,
+        is_manufacturable: bool,
+        errors: list[dict],
+        warnings: list[dict],
+        processing_logs: str,
+        tool_versions: dict | None = None,
+    ) -> None:
+        """Mark check as finished with results.
+
+        Pathway 4: RUNNING → FINISHED
+
+        Args:
+            is_manufacturable: Whether the design is manufacturable
+            errors: List of error dicts (manufacturing issues)
+            warnings: List of warning dicts (manufacturing warnings)
+            processing_logs: Full log output from processing
+            tool_versions: Dict of tool versions used (pdk, magic, klayout, etc.)
+
+        Raises:
+            InvalidStateTransitionError: If transition is not allowed
+        """
+        if not self.can_transition_to(self.Status.FINISHED):
+            raise InvalidStateTransitionError(
+                from_status=self.status,
+                to_status=self.Status.FINISHED,
+            )
+
+        self.status = self.Status.FINISHED
         self.is_manufacturable = is_manufacturable
-        self.errors = errors or []
-        self.warnings = warnings or []
-        self.processing_logs = logs
-        self.save()
+        self.errors = errors
+        self.warnings = warnings
+        self.processing_logs = processing_logs
+        self.celery_job_finished_at = timezone.now()
+        if tool_versions is not None:
+            self.tool_versions = tool_versions
+
+        update_fields = [
+            "status",
+            "is_manufacturable",
+            "errors",
+            "warnings",
+            "processing_logs",
+            "celery_job_finished_at",
+        ]
+        if tool_versions is not None:
+            update_fields.append("tool_versions")
+        self.save(update_fields=update_fields)
 
         # Update project status
         if is_manufacturable:
@@ -1194,64 +1399,214 @@ class ManufacturabilityCheck(models.Model):
             self.project.status = Project.Status.NOT_MANUFACTURABLE
         self.project.is_manufacturable = is_manufacturable
         self.project.manufacturability_errors = self.errors
-        self.project.check_completed_at = self.completed_at
+        self.project.check_completed_at = self.celery_job_finished_at
         self.project.save()
 
-    def fail(self, error_msg: str) -> None:
-        """Mark check as failed due to system error.
+    def mark_error(
+        self,
+        *,
+        error_message: str,
+        processing_logs: str = "",
+    ) -> None:
+        """Mark check as errored due to system failure.
 
-        System failures (Docker errors, timeouts, etc.) should be retried.
-        This is different from a check that ran successfully but found
-        manufacturing issues.
+        Pathways 5/6: PENDING/DISPATCHED/RUNNING → ERROR
 
-        Args:
-            error_msg: Description of the system error
-        """
-        self.status = self.Status.FAILED
-        self.completed_at = timezone.now()
-        self.error_message = error_msg
-        self.processing_logs += "\n\n=== SYSTEM FAILURE - See error details above ==="
-        self.save()
-
-    def can_retry(self):
-        """Check if this check can be retried."""
-        return self.retry_count < self.max_retries
-
-    def cancel(self, reason: str = "Cancelled by user") -> str | None:
-        """Cancel the check if it's still running.
-
-        Updates the check status to CANCELLED and returns the task_id
-        so the caller can revoke the Celery task if needed.
+        Preserves tracking fields (celery_job_id, docker_container_id, worker info)
+        for debugging. These are only cleared by reset_for_retry() when retrying.
 
         Args:
-            reason: Why the check was cancelled
+            error_message: System error message describing the failure
+            processing_logs: Full log output from processing (optional, defaults
+                to empty string)
 
-        Returns:
-            str | None: The task_id to revoke if cancelled, None if not cancellable
+        Raises:
+            InvalidStateTransitionError: If transition is not allowed
         """
-        if self.status not in [
-            self.Status.QUEUED,
-            self.Status.STARTING,
-            self.Status.PROCESSING,
-        ]:
-            return None
+        if not self.can_transition_to(self.Status.ERROR):
+            raise InvalidStateTransitionError(
+                from_status=self.status,
+                to_status=self.Status.ERROR,
+            )
 
-        task_id = self.task_id  # Capture before state change
+        self.status = self.Status.ERROR
+        self.error_message = error_message
+        self.celery_job_finished_at = timezone.now()
+
+        # Set initial logs if provided
+        if processing_logs:
+            self.processing_logs = processing_logs
+
+        self.save(
+            update_fields=[
+                "status",
+                "error_message",
+                "processing_logs",
+                "celery_job_finished_at",
+            ]
+        )
+
+        # Append error marker using helper (after save to ensure fresh data)
+        self.append_to_processing_logs("=== SYSTEM ERROR - See error_message field ===")
+
+    def mark_cancelling(self, *, reason: str) -> None:
+        """Request cancellation - transitions to CANCELLING state.
+
+        Cleanup task will complete the transition to CANCELLED after
+        revoking Celery task and stopping Docker container.
+
+        Args:
+            reason: Description of why the check is being cancelled
+
+        Raises:
+            InvalidStateTransitionError: If transition is not allowed
+        """
+        if not self.can_transition_to(self.Status.CANCELLING):
+            raise InvalidStateTransitionError(
+                from_status=self.status,
+                to_status=self.Status.CANCELLING,
+            )
+
+        self.status = self.Status.CANCELLING
+        self.save(update_fields=["status"])
+
+        # Append cancellation reason using helper
+        self.append_to_processing_logs(f"CANCELLATION REQUESTED: {reason}")
+
+    def mark_cancelled(self) -> None:
+        """Complete cancellation - only called by cleanup task after cleanup is done.
+
+        This method should only be called from CANCELLING state, after the
+        checks_cancelling task has revoked the Celery task and stopped any
+        Docker container. It clears all task/container tracking fields.
+
+        Raises:
+            InvalidStateTransitionError: If transition is not allowed
+        """
+        if not self.can_transition_to(self.Status.CANCELLED):
+            raise InvalidStateTransitionError(
+                from_status=self.status,
+                to_status=self.Status.CANCELLED,
+            )
+
         self.status = self.Status.CANCELLED
-        self.completed_at = timezone.now()
-        self.processing_logs += f"\n\nCANCELLED: {reason}"
+        self.celery_job_finished_at = timezone.now()
+        # Clear task and container tracking fields (cleanup already done)
+        self.celery_job_id = ""
+        self.docker_container_id = ""
+        self.celery_worker_pid = None
+        self.celery_worker_hostname = ""
+        self.save(
+            update_fields=[
+                "status",
+                "celery_job_finished_at",
+                "celery_job_id",
+                "docker_container_id",
+                "celery_worker_pid",
+                "celery_worker_hostname",
+            ]
+        )
+
+    def reset_for_retry(self, *, reason: str = "") -> None:
+        """Reset check to PENDING state for retry after error.
+
+        Pathway 7: ERROR → PENDING (retry)
+
+        Args:
+            reason: Optional description of why the check is being retried
+
+        Raises:
+            InvalidStateTransitionError: If transition is not allowed
+            MaxRetriesExceededError: If retry_count has reached max_retries
+        """
+        # Check state transition is valid FIRST
+        if not self.can_transition_to(self.Status.PENDING):
+            raise InvalidStateTransitionError(
+                from_status=self.status,
+                to_status=self.Status.PENDING,
+            )
+
+        # Then check retry limit using can_retry() and self.max_retries
+        if not self.can_retry():
+            raise MaxRetriesExceededError(
+                retry_count=self.retry_count,
+                max_retries=self.max_retries,
+            )
+
+        # Reset to PENDING state
+        self.status = self.Status.PENDING
+        self.retry_count += 1
+
+        # Clear all job-related fields
+        self.celery_job_id = ""
+        self.celery_job_dispatched_at = None
+        self.celery_job_started_at = None
+        self.celery_job_finished_at = None
+        self.celery_worker_pid = None
+        self.celery_worker_hostname = ""
+        self.docker_container_id = ""
+        self.docker_container_started_at = None
+        self.error_message = ""
+
         self.save()
 
-        return task_id
+        # Append retry reason using helper
+        if reason:
+            self.append_to_processing_logs(f"RETRY #{self.retry_count}: {reason}")
+
+    def append_to_processing_logs(self, text: str) -> None:
+        """Append text to processing logs (thread-safe, never overwrites).
+
+        This helper ensures logs are only ever appended to, never replaced.
+        Safely handles empty logs and adds appropriate separators.
+
+        Args:
+            text: Text to append to logs
+        """
+        if not text:
+            return
+
+        # Refresh from DB to get current logs (prevent overwrite race conditions)
+        self.refresh_from_db(fields=["processing_logs"])
+
+        if self.processing_logs:
+            self.processing_logs += f"\n\n{text}"
+        else:
+            self.processing_logs = text
+
+        self.last_activity = timezone.now()
+        self.save(update_fields=["processing_logs", "last_activity"])
+
+    def update_processing_logs(self, logs: str) -> None:
+        """Update processing logs during RUNNING state.
+
+        This is the ONLY field update allowed outside of mark_* state transitions.
+        It enables real-time progress visibility during long-running checks.
+
+        Args:
+            logs: Current processing log output
+
+        Raises:
+            ValueError: If check is not in RUNNING state
+        """
+        if self.status != self.Status.RUNNING:
+            msg = (
+                f"Cannot update processing_logs: check must be in RUNNING state, "
+                f"not {self.status}"
+            )
+            raise ValueError(msg)
+
+        self.processing_logs = logs
+        self.last_activity = timezone.now()
+        self.save(update_fields=["processing_logs", "last_activity"])
 
     @property
     def is_cancellable(self) -> bool:
-        """Check if this check can be cancelled."""
-        return self.status in [
-            self.Status.QUEUED,
-            self.Status.STARTING,
-            self.Status.PROCESSING,
-        ]
+        """Check if this check can be cancelled.
+
+        Returns True if check can transition to CANCELLING state.
+        """
+        return self.can_transition_to(self.Status.CANCELLING)
 
     @property
     def result_display(self) -> str:
@@ -1263,7 +1618,7 @@ class ManufacturabilityCheck(models.Model):
         - "Not Manufacturable" (failed checks)
         - "" (not yet completed)
         """
-        if self.status != self.Status.COMPLETED or self.is_manufacturable is None:
+        if self.status != self.Status.FINISHED or self.is_manufacturable is None:
             return ""
 
         if self.is_manufacturable:
@@ -1274,66 +1629,53 @@ class ManufacturabilityCheck(models.Model):
 
     @property
     def queue_position(self) -> int | None:
-        """Get position in the queue (1-indexed).
+        """Get position in the pending queue (1-indexed).
 
-        Returns None if not in QUEUED state.
+        Returns None if not in PENDING state.
+        Queue order is determined by pk (creation order).
         """
-        if self.status != self.Status.QUEUED or not self.queued_at:
+        if self.status != self.Status.PENDING:
             return None
 
-        # Count checks queued before this one (lower queued_at = ahead)
+        # Count PENDING checks created before this one (lower pk = ahead)
         ahead = ManufacturabilityCheck.objects.filter(
-            status=self.Status.QUEUED,
-            queued_at__lt=self.queued_at,
+            status=self.Status.PENDING,
+            pk__lt=self.pk,
         ).count()
 
         return ahead + 1  # 1-indexed position
 
     @property
     def checks_ahead(self) -> int:
-        """Get number of checks ahead in the queue.
+        """Get number of checks ahead in the pending queue.
 
-        Returns 0 if not in QUEUED state or no queued_at.
+        Returns 0 if not in PENDING state.
         """
-        if self.status != self.Status.QUEUED or not self.queued_at:
+        position = self.queue_position
+        if position is None:
             return 0
-
-        return ManufacturabilityCheck.objects.filter(
-            status=self.Status.QUEUED,
-            queued_at__lt=self.queued_at,
-        ).count()
+        return position - 1  # position is 1-indexed, so subtract 1
 
     @property
     def checks_behind(self) -> int:
-        """Get number of checks behind in the queue (admin info).
+        """Get number of checks behind in the pending queue (admin info).
 
-        Returns 0 if not in QUEUED state or no queued_at.
+        Returns 0 if not in PENDING state.
         """
-        if self.status != self.Status.QUEUED or not self.queued_at:
+        if self.status != self.Status.PENDING:
             return 0
 
         return ManufacturabilityCheck.objects.filter(
-            status=self.Status.QUEUED,
-            queued_at__gt=self.queued_at,
+            status=self.Status.PENDING,
+            pk__gt=self.pk,
         ).count()
 
     @property
     def checks_running(self) -> int:
-        """Get number of checks currently running (STARTING or PROCESSING)."""
+        """Get number of checks currently active (DISPATCHED or RUNNING)."""
         return ManufacturabilityCheck.objects.filter(
-            status__in=[self.Status.STARTING, self.Status.PROCESSING],
+            status__in=[self.Status.DISPATCHED, self.Status.RUNNING],
         ).count()
-
-    @property
-    def queue_wait_duration(self) -> timedelta | None:
-        """Get how long this check has been waiting in queue.
-
-        Returns None if not in QUEUED state or no queued_at.
-        """
-        if self.status != self.Status.QUEUED or not self.queued_at:
-            return None
-
-        return timezone.now() - self.queued_at
 
     def get_reproduction_instructions(self) -> str:
         """Generate markdown instructions for reproducing check locally."""

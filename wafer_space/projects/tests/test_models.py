@@ -1,6 +1,5 @@
 """Tests for project models."""
 
-from datetime import timedelta
 from unittest.mock import Mock
 from unittest.mock import patch
 
@@ -9,6 +8,9 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
 
+from wafer_space.projects.exceptions import InvalidStateTransitionError
+from wafer_space.projects.exceptions import MaxRetriesExceededError
+from wafer_space.projects.models import CheckExecutionContext
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
@@ -18,6 +20,18 @@ from wafer_space.users.models import User
 from .constants import PROGRESS_COMPLETE
 from .constants import TEST_PASSWORD
 from .constants import TEST_WORKER_PID
+
+
+def _make_exec_context(**kwargs) -> CheckExecutionContext:
+    """Create a CheckExecutionContext for tests with sensible defaults."""
+    return CheckExecutionContext(
+        celery_worker_pid=kwargs.get("celery_worker_pid", TEST_WORKER_PID),
+        celery_worker_hostname=kwargs.get("celery_worker_hostname", "worker-01"),
+        docker_container_id=kwargs.get("docker_container_id", "abc123def456"),
+        docker_image=kwargs.get("docker_image", "test-image:latest"),
+        docker_image_digest=kwargs.get("docker_image_digest", "sha256:test"),
+        docker_command=kwargs.get("docker_command", "docker run ..."),
+    )
 
 
 @pytest.mark.django_db
@@ -168,8 +182,9 @@ class TestProjectCanSubmit(TestCase):
             attempt_number=1,
             status=DownloadAttempt.Status.COMPLETED,
         )
-        # Mark as manufacturable
+        # Mark as manufacturable (simulates completed check via mark_finished)
         self.project.is_manufacturable = True
+        self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
 
         can_submit, reason = self.project.can_submit()
@@ -224,7 +239,7 @@ class TestProjectSubmit(TestCase):
 
         assert "hash" in str(exc_info.value).lower()
 
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    @patch("wafer_space.projects.tasks.check_process_job.delay")
     def test_submit_sets_status_to_submitted(self, mock_task):
         """Test that submit() sets status to SUBMITTED."""
         mock_task.return_value = Mock(id="task-123")
@@ -244,8 +259,9 @@ class TestProjectSubmit(TestCase):
             status=DownloadAttempt.Status.COMPLETED,
         )
 
-        # Mark as manufacturable
+        # Mark as manufacturable (simulates completed check via mark_finished)
         self.project.is_manufacturable = True
+        self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
 
         self.project.submit()
@@ -270,8 +286,9 @@ class TestProjectSubmit(TestCase):
             status=DownloadAttempt.Status.COMPLETED,
         )
 
-        # Mark as manufacturable
+        # Mark as manufacturable (simulates completed check via mark_finished)
         self.project.is_manufacturable = True
+        self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
 
         before = timezone.now()
@@ -304,8 +321,9 @@ class TestProjectSubmit(TestCase):
             status=DownloadAttempt.Status.COMPLETED,
         )
 
-        # Mark as manufacturable (simulating completed check from earlier workflow)
+        # Mark as manufacturable (simulates completed check via mark_finished)
         self.project.is_manufacturable = True
+        self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
 
         # Verify no check exists before submission
@@ -321,7 +339,7 @@ class TestProjectSubmit(TestCase):
         ).count()
         assert final_check_count == initial_check_count
 
-    @patch("wafer_space.projects.tasks.check_project_manufacturability.delay")
+    @patch("wafer_space.projects.tasks.check_process_job.delay")
     def test_submit_does_not_create_duplicate_check(self, mock_task):
         """Test that submit() does not create duplicate manufacturability check."""
         mock_task.return_value = Mock(id="task-123")
@@ -341,16 +359,17 @@ class TestProjectSubmit(TestCase):
             status=DownloadAttempt.Status.COMPLETED,
         )
 
-        # Mark as manufacturable
+        # Mark as manufacturable (simulates completed check via mark_finished)
         self.project.is_manufacturable = True
+        self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
 
         # Create existing check
         existing_check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=_pf,
-            status=ManufacturabilityCheck.Status.PROCESSING,
-            task_id="existing-task-123",
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="existing-task-123",
         )
 
         self.project.submit()
@@ -360,7 +379,7 @@ class TestProjectSubmit(TestCase):
         # Verify it's the original check (not replaced)
         check = ManufacturabilityCheck.objects.get(project_file=_pf)
         assert check.id == existing_check.id
-        assert check.status == ManufacturabilityCheck.Status.PROCESSING
+        assert check.status == ManufacturabilityCheck.Status.RUNNING
 
     def test_submit_prevents_double_submission(self):
         """Test that submit() prevents double submission."""
@@ -379,8 +398,9 @@ class TestProjectSubmit(TestCase):
             status=DownloadAttempt.Status.COMPLETED,
         )
 
-        # Mark as manufacturable
+        # Mark as manufacturable (simulates completed check via mark_finished)
         self.project.is_manufacturable = True
+        self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
 
         # First submission should succeed
@@ -625,8 +645,8 @@ class TestProjectFile(TestCase):
 
 
 @pytest.mark.django_db
-class TestManufacturabilityCheckCancel(TestCase):
-    """Test ManufacturabilityCheck.cancel() method."""
+class TestManufacturabilityCheckCancellingState(TestCase):
+    """Test CANCELLING state in ManufacturabilityCheck."""
 
     def setUp(self):
         """Set up test fixtures."""
@@ -648,130 +668,386 @@ class TestManufacturabilityCheckCancel(TestCase):
             is_active=True,
         )
 
-    def test_cancel_queued_check_returns_task_id(self):
-        """Test that cancelling a queued check returns the task_id."""
+    def test_cancelling_status_exists(self):
+        """Test CANCELLING is a valid status choice."""
+        assert hasattr(ManufacturabilityCheck.Status, "CANCELLING")
+        assert ManufacturabilityCheck.Status.CANCELLING.value == "cancelling"
+        assert ManufacturabilityCheck.Status.CANCELLING.label == "Cancelling"
+
+    def test_can_transition_to_cancelling_from_pending(self):
+        """Test PENDING can transition to CANCELLING."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            task_id="celery-task-123",
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.CANCELLING) is True
+
+    def test_can_transition_to_cancelling_from_dispatched(self):
+        """Test DISPATCHED can transition to CANCELLING."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.CANCELLING) is True
+
+    def test_can_transition_to_cancelling_from_running(self):
+        """Test RUNNING can transition to CANCELLING."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.CANCELLING) is True
+
+    def test_cancelling_can_only_transition_to_cancelled(self):
+        """Test CANCELLING can only transition to CANCELLED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.CANCELLED) is True
+        # Cannot transition to anything else
+        assert check.can_transition_to(ManufacturabilityCheck.Status.PENDING) is False
+        assert check.can_transition_to(ManufacturabilityCheck.Status.ERROR) is False
+        assert check.can_transition_to(ManufacturabilityCheck.Status.FINISHED) is False
+
+    def test_cannot_transition_to_cancelled_directly_from_running(self):
+        """Test RUNNING cannot skip CANCELLING and go directly to CANCELLED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        # Must go through CANCELLING first
+        assert check.can_transition_to(ManufacturabilityCheck.Status.CANCELLED) is False
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckMarkCancelling(TestCase):
+    """Test mark_cancelling method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
         )
 
-        result = check.cancel(reason="Test cancellation")
-
-        assert result == "celery-task-123"
-        check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.CANCELLED
-        assert "CANCELLED: Test cancellation" in check.processing_logs
-        assert check.completed_at is not None
-
-    def test_cancel_processing_check_returns_task_id(self):
-        """Test that cancelling a processing check returns the task_id."""
+    def test_mark_cancelling_from_pending(self):
+        """Test mark_cancelling transitions PENDING to CANCELLING."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PROCESSING,
-            task_id="celery-task-456",
-            started_at=timezone.now(),
+            status=ManufacturabilityCheck.Status.PENDING,
         )
 
-        result = check.cancel(reason="User requested cancellation")
+        check.mark_cancelling(reason="User requested cancellation")
 
-        assert result == "celery-task-456"
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.CANCELLED
-        assert "CANCELLED: User requested cancellation" in check.processing_logs
+        assert check.status == ManufacturabilityCheck.Status.CANCELLING
+        assert "User requested cancellation" in check.processing_logs
 
-    def test_cancel_completed_check_returns_none(self):
-        """Test that cancelling a completed check returns None."""
+    def test_mark_cancelling_from_dispatched(self):
+        """Test mark_cancelling transitions DISPATCHED to CANCELLING."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.COMPLETED,
-            task_id="celery-task-789",
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+            celery_job_id="test-job-123",
+        )
+
+        check.mark_cancelling(reason="New file submitted")
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLING
+        # Job ID preserved for cleanup task
+        assert check.celery_job_id == "test-job-123"
+
+    def test_mark_cancelling_from_running(self):
+        """Test mark_cancelling transitions RUNNING to CANCELLING."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            docker_container_id="abc123def",
+        )
+
+        check.mark_cancelling(reason="Admin cancelled")
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLING
+        # Container ID preserved for cleanup task
+        assert check.docker_container_id == "abc123def"
+
+    def test_mark_cancelling_appends_to_existing_logs(self):
+        """Test mark_cancelling appends reason to existing logs."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            processing_logs="Previous log output",
+        )
+
+        check.mark_cancelling(reason="Cancelled by user")
+
+        check.refresh_from_db()
+        assert "Previous log output" in check.processing_logs
+        assert "CANCELLATION REQUESTED: Cancelled by user" in check.processing_logs
+
+    def test_mark_cancelling_from_finished_raises(self):
+        """Test mark_cancelling raises for terminal FINISHED state."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_cancelling(reason="Should fail")
+
+    def test_mark_cancelling_from_cancelled_raises(self):
+        """Test mark_cancelling raises for terminal CANCELLED state."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLED,
+        )
+
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_cancelling(reason="Should fail")
+
+    def test_mark_cancelling_from_error_raises(self):
+        """Test mark_cancelling raises for ERROR state (should retry instead)."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+        )
+
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_cancelling(reason="Should fail")
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckMarkCancelled(TestCase):
+    """Test ManufacturabilityCheck.mark_cancelled() method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_mark_cancelled_from_cancelling_succeeds(self):
+        """Test mark_cancelled works from CANCELLING state."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLING,
+            processing_logs="CANCELLATION REQUESTED: User cancelled",
+        )
+
+        check.mark_cancelled()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+        assert check.celery_job_finished_at is not None
+
+    def test_mark_cancelled_sets_timestamp(self):
+        """Test mark_cancelled sets celery_job_finished_at timestamp."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLING,
+        )
+
+        before = timezone.now()
+        check.mark_cancelled()
+        after = timezone.now()
+
+        check.refresh_from_db()
+        assert check.celery_job_finished_at is not None
+        assert before <= check.celery_job_finished_at <= after
+
+    def test_mark_cancelled_from_pending_raises(self):
+        """Test mark_cancelled raises from PENDING.
+
+        Must use mark_cancelling first.
+        """
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_cancelled()
+
+    def test_mark_cancelled_from_dispatched_raises(self):
+        """Test mark_cancelled raises from DISPATCHED.
+
+        Must use mark_cancelling first.
+        """
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+        )
+
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_cancelled()
+
+    def test_mark_cancelled_from_running_raises(self):
+        """Test mark_cancelled raises from RUNNING.
+
+        Must use mark_cancelling first.
+        """
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_cancelled()
+
+    def test_mark_cancelled_from_finished_raises(self):
+        """Cannot mark FINISHED check as CANCELLED (terminal state)."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=True,
         )
 
-        result = check.cancel(reason="Should not work")
+        with pytest.raises(InvalidStateTransitionError) as exc_info:
+            check.mark_cancelled()
 
-        assert result is None
+        assert "finished" in str(exc_info.value).lower()
+        assert "cancelled" in str(exc_info.value).lower()
+
+        # Verify status unchanged
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.COMPLETED
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
 
-    def test_cancel_failed_check_returns_none(self):
-        """Test that cancelling a failed check returns None."""
+    def test_mark_cancelled_from_error_raises(self):
+        """Cannot mark ERROR check as CANCELLED."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.FAILED,
-            task_id="celery-task-999",
+            status=ManufacturabilityCheck.Status.ERROR,
             error_message="Previous failure",
         )
 
-        result = check.cancel(reason="Should not work")
+        with pytest.raises(InvalidStateTransitionError) as exc_info:
+            check.mark_cancelled()
 
-        assert result is None
+        assert "error" in str(exc_info.value).lower()
+        assert "cancelled" in str(exc_info.value).lower()
+
+        # Verify status unchanged
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.FAILED
+        assert check.status == ManufacturabilityCheck.Status.ERROR
 
-    def test_cancel_without_task_id_returns_empty_string(self):
-        """Test that cancelling a check without task_id returns empty string."""
+    def test_mark_cancelled_from_cancelled_raises(self):
+        """Cannot mark CANCELLED check as CANCELLED again (terminal state)."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            task_id="",  # No task ID
+            status=ManufacturabilityCheck.Status.CANCELLED,
         )
 
-        result = check.cancel(reason="No task")
+        with pytest.raises(InvalidStateTransitionError) as exc_info:
+            check.mark_cancelled()
 
-        # Should still be cancelled, just returns empty string
-        assert result == ""
+        assert "cancelled" in str(exc_info.value).lower()
+
+        # Verify status unchanged
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.CANCELLED
 
-    def test_is_cancellable_for_queued(self):
-        """Test is_cancellable returns True for queued checks."""
+    def test_is_cancellable_for_pending(self):
+        """Test is_cancellable returns True for PENDING checks."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
+            status=ManufacturabilityCheck.Status.PENDING,
         )
 
         assert check.is_cancellable is True
 
-    def test_is_cancellable_for_processing(self):
-        """Test is_cancellable returns True for processing checks."""
+    def test_is_cancellable_for_dispatched(self):
+        """Test is_cancellable returns True for DISPATCHED checks."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PROCESSING,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
         )
 
         assert check.is_cancellable is True
 
-    def test_is_not_cancellable_for_completed(self):
-        """Test is_cancellable returns False for completed checks."""
+    def test_is_cancellable_for_running(self):
+        """Test is_cancellable returns True for RUNNING checks."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.COMPLETED,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+
+        assert check.is_cancellable is True
+
+    def test_is_not_cancellable_for_finished(self):
+        """Test is_cancellable returns False for FINISHED checks."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
         )
 
         assert check.is_cancellable is False
 
-    def test_is_not_cancellable_for_failed(self):
-        """Test is_cancellable returns False for failed checks."""
+    def test_is_not_cancellable_for_error(self):
+        """Test is_cancellable returns False for ERROR checks."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.FAILED,
+            status=ManufacturabilityCheck.Status.ERROR,
         )
 
         assert check.is_cancellable is False
 
     def test_is_not_cancellable_for_cancelled(self):
-        """Test is_cancellable returns False for already cancelled checks."""
+        """Test is_cancellable returns False for already CANCELLED checks."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
@@ -779,16 +1055,6 @@ class TestManufacturabilityCheckCancel(TestCase):
         )
 
         assert check.is_cancellable is False
-
-    def test_is_cancellable_for_starting(self):
-        """Test is_cancellable returns True for starting checks."""
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.STARTING,
-        )
-
-        assert check.is_cancellable is True
 
 
 class TestManufacturabilityCheckQueueProperties(TestCase):
@@ -812,41 +1078,32 @@ class TestManufacturabilityCheckQueueProperties(TestCase):
             is_active=True,
         )
 
-    def test_queue_position_returns_none_when_not_queued(self):
-        """Test queue_position returns None for non-queued checks."""
+    def test_queue_position_returns_none_when_not_pending(self):
+        """Test queue_position returns None for non-PENDING checks."""
+        # Create check and transition to RUNNING using state machine
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PROCESSING,
-            queued_at=timezone.now(),
+            status=ManufacturabilityCheck.Status.PENDING,
         )
-
-        assert check.queue_position is None
-
-    def test_queue_position_returns_none_when_no_queued_at(self):
-        """Test queue_position returns None when queued_at is not set."""
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            queued_at=None,
-        )
+        check.mark_dispatched(celery_job_id="test-job-1")
+        check.mark_running(context=_make_exec_context(celery_worker_pid=12345))
 
         assert check.queue_position is None
 
     def test_queue_position_returns_1_when_first_in_queue(self):
         """Test queue_position returns 1 when first in queue."""
+        # PENDING checks should have queue position based on pk ordering
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            queued_at=timezone.now(),
+            status=ManufacturabilityCheck.Status.PENDING,
         )
 
         assert check.queue_position == 1
 
-    def test_checks_ahead_counts_earlier_queued_checks(self):
-        """Test checks_ahead counts checks queued before this one."""
+    def test_checks_ahead_counts_earlier_pending_checks(self):
+        """Test checks_ahead counts PENDING checks with lower pk."""
         # Create another project with file for second check
         project2 = Project.objects.create(user=self.user, name="Project 2")
         file2 = ProjectFile.objects.create(
@@ -857,27 +1114,25 @@ class TestManufacturabilityCheckQueueProperties(TestCase):
             is_active=True,
         )
 
-        # Create first check (ahead)
+        # Create first check (will have lower pk, so ahead in queue)
         ManufacturabilityCheck.objects.create(
             project=project2,
             project_file=file2,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            queued_at=timezone.now() - timedelta(minutes=5),
+            status=ManufacturabilityCheck.Status.PENDING,
         )
 
-        # Create our check (behind)
+        # Create our check (higher pk, so behind in queue)
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            queued_at=timezone.now(),
+            status=ManufacturabilityCheck.Status.PENDING,
         )
 
         assert check.checks_ahead == 1
         assert check.queue_position == 2  # noqa: PLR2004
 
-    def test_checks_running_counts_starting_and_processing(self):
-        """Test checks_running counts STARTING and PROCESSING checks."""
+    def test_checks_running_counts_dispatched_and_running(self):
+        """Test checks_running counts DISPATCHED and RUNNING checks."""
         # Create another project with files for additional checks
         project2 = Project.objects.create(user=self.user, name="Project 2")
         file2 = ProjectFile.objects.create(
@@ -896,47 +1151,31 @@ class TestManufacturabilityCheckQueueProperties(TestCase):
             is_active=True,
         )
 
-        # Create STARTING check
-        ManufacturabilityCheck.objects.create(
+        # Create DISPATCHED check using state machine
+        check2 = ManufacturabilityCheck.objects.create(
             project=project2,
             project_file=file2,
-            status=ManufacturabilityCheck.Status.STARTING,
+            status=ManufacturabilityCheck.Status.PENDING,
         )
+        check2.mark_dispatched(celery_job_id="test-job-2")
 
-        # Create PROCESSING check
-        ManufacturabilityCheck.objects.create(
+        # Create RUNNING check using state machine
+        check3 = ManufacturabilityCheck.objects.create(
             project=project3,
             project_file=file3,
-            status=ManufacturabilityCheck.Status.PROCESSING,
+            status=ManufacturabilityCheck.Status.PENDING,
         )
+        check3.mark_dispatched(celery_job_id="test-job-3")
+        check3.mark_running(context=_make_exec_context(celery_worker_pid=12345))
 
-        # Create our QUEUED check
+        # Create our PENDING check
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            queued_at=timezone.now(),
+            status=ManufacturabilityCheck.Status.PENDING,
         )
 
         assert check.checks_running == 2  # noqa: PLR2004
-
-    def test_queue_wait_duration_returns_timedelta(self):
-        """Test queue_wait_duration returns correct timedelta."""
-        wait_minutes = 10
-        queued_time = timezone.now() - timedelta(minutes=wait_minutes)
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.QUEUED,
-            queued_at=queued_time,
-        )
-
-        duration = check.queue_wait_duration
-        assert duration is not None
-        # Should be approximately 10 minutes (allow some margin)
-        expected_seconds = wait_minutes * 60
-        assert duration.total_seconds() >= expected_seconds
-        assert duration.total_seconds() < expected_seconds + 100
 
 
 class TestManufacturabilityCheckResultDisplay(TestCase):
@@ -963,10 +1202,10 @@ class TestManufacturabilityCheckResultDisplay(TestCase):
     def test_result_display_empty_when_not_completed(self):
         """Test result_display returns empty string for non-completed checks."""
         statuses = [
-            ManufacturabilityCheck.Status.QUEUED,
-            ManufacturabilityCheck.Status.STARTING,
-            ManufacturabilityCheck.Status.PROCESSING,
-            ManufacturabilityCheck.Status.FAILED,
+            ManufacturabilityCheck.Status.PENDING,
+            ManufacturabilityCheck.Status.DISPATCHED,
+            ManufacturabilityCheck.Status.RUNNING,
+            ManufacturabilityCheck.Status.ERROR,
             ManufacturabilityCheck.Status.CANCELLED,
         ]
         for status in statuses:
@@ -983,7 +1222,7 @@ class TestManufacturabilityCheckResultDisplay(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.COMPLETED,
+            status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=None,
         )
         assert check.result_display == ""
@@ -993,7 +1232,7 @@ class TestManufacturabilityCheckResultDisplay(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.COMPLETED,
+            status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=True,
             warnings=[],  # Empty list - no warnings
         )
@@ -1004,7 +1243,7 @@ class TestManufacturabilityCheckResultDisplay(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.COMPLETED,
+            status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=True,
             # warnings uses default empty list
         )
@@ -1015,7 +1254,7 @@ class TestManufacturabilityCheckResultDisplay(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.COMPLETED,
+            status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=True,
             warnings=["Some minor design issue", "Another warning"],
         )
@@ -1026,11 +1265,326 @@ class TestManufacturabilityCheckResultDisplay(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.COMPLETED,
+            status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=False,
             errors=["Critical design rule violation"],
         )
         assert check.result_display == "Not Manufacturable"
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckStateTransitions(TestCase):
+    """Tests for state machine transitions."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_can_transition_pending_to_dispatched(self):
+        """PENDING can transition to DISPATCHED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.DISPATCHED) is True
+
+    def test_can_transition_pending_to_error(self):
+        """PENDING can transition to ERROR."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.ERROR) is True
+
+    def test_can_transition_pending_to_cancelling(self):
+        """PENDING can transition to CANCELLING (not directly to CANCELLED)."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.CANCELLING) is True
+        # Cannot skip CANCELLING and go directly to CANCELLED
+        assert check.can_transition_to(ManufacturabilityCheck.Status.CANCELLED) is False
+
+    def test_cannot_transition_pending_to_running(self):
+        """PENDING cannot transition directly to RUNNING."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.RUNNING) is False
+
+    def test_cannot_transition_pending_to_finished(self):
+        """PENDING cannot transition to FINISHED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.FINISHED) is False
+
+    def test_can_transition_dispatched_to_running(self):
+        """DISPATCHED can transition to RUNNING."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.RUNNING) is True
+
+    def test_can_transition_running_to_finished(self):
+        """RUNNING can transition to FINISHED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.FINISHED) is True
+
+    def test_can_transition_running_to_error(self):
+        """RUNNING can transition to ERROR."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.ERROR) is True
+
+    def test_cannot_transition_finished_to_anything(self):
+        """FINISHED is terminal - no transitions allowed."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+        for status in ManufacturabilityCheck.Status:
+            assert check.can_transition_to(status) is False
+
+    def test_cannot_transition_cancelled_to_anything(self):
+        """CANCELLED is terminal - no transitions allowed."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLED,
+        )
+        for status in ManufacturabilityCheck.Status:
+            assert check.can_transition_to(status) is False
+
+    def test_can_transition_error_to_pending(self):
+        """ERROR can transition to PENDING (retry)."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.PENDING) is True
+
+    def test_cannot_transition_error_to_dispatched(self):
+        """ERROR cannot transition directly to DISPATCHED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+        )
+        result = check.can_transition_to(ManufacturabilityCheck.Status.DISPATCHED)
+        assert result is False
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckMarkDispatched(TestCase):
+    """Tests for mark_dispatched() method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_mark_dispatched_from_pending(self):
+        """Can mark PENDING check as DISPATCHED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        check.mark_dispatched(celery_job_id="test-job-123")
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.DISPATCHED
+        assert check.celery_job_id == "test-job-123"
+        assert check.celery_job_dispatched_at is not None
+
+    def test_mark_dispatched_from_invalid_state_raises(self):
+        """Cannot mark FINISHED check as DISPATCHED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+        with pytest.raises(InvalidStateTransitionError) as exc_info:
+            check.mark_dispatched(celery_job_id="test-job-123")
+
+        assert "finished" in str(exc_info.value).lower()
+        assert "dispatched" in str(exc_info.value).lower()
+
+    def test_mark_dispatched_from_cancelled_raises(self):
+        """Cannot mark CANCELLED check as DISPATCHED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLED,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_dispatched(celery_job_id="test-job-123")
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckMarkRunning(TestCase):
+    """Tests for mark_running() method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_mark_running_from_dispatched(self):
+        """Can mark DISPATCHED check as RUNNING."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+        )
+        check.mark_running(context=_make_exec_context())
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.RUNNING
+
+    def test_mark_running_sets_all_fields(self):
+        """mark_running() sets all required fields."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+        )
+
+        before = timezone.now()
+        check.mark_running(context=_make_exec_context())
+        after = timezone.now()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.RUNNING
+        assert check.celery_worker_pid == TEST_WORKER_PID
+        assert check.celery_worker_hostname == "worker-01"
+        assert check.docker_container_id == "abc123def456"
+        assert check.docker_container_started_at is not None
+        assert before <= check.docker_container_started_at <= after
+        assert check.celery_job_started_at is not None
+        assert before <= check.celery_job_started_at <= after
+
+    def test_mark_running_from_pending_raises(self):
+        """Cannot mark PENDING check as RUNNING."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        with pytest.raises(InvalidStateTransitionError) as exc_info:
+            check.mark_running(context=_make_exec_context())
+
+        assert "pending" in str(exc_info.value).lower()
+        assert "running" in str(exc_info.value).lower()
+
+    def test_mark_running_from_running_raises(self):
+        """Cannot mark RUNNING check as RUNNING again."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_running(context=_make_exec_context())
+
+    def test_mark_running_from_finished_raises(self):
+        """Cannot mark FINISHED check as RUNNING."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+        with pytest.raises(InvalidStateTransitionError) as exc_info:
+            check.mark_running(context=_make_exec_context())
+
+        assert "finished" in str(exc_info.value).lower()
+        assert "running" in str(exc_info.value).lower()
+
+    def test_mark_running_from_error_raises(self):
+        """Cannot mark ERROR check as RUNNING."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_running(context=_make_exec_context())
+
+    def test_mark_running_from_cancelled_raises(self):
+        """Cannot mark CANCELLED check as RUNNING."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLED,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_running(context=_make_exec_context())
 
 
 @pytest.mark.django_db
@@ -1100,3 +1654,517 @@ class TestProjectSlotSize(TestCase):
         project.refresh_from_db()
         assert project.slot_size == Project.SlotSize.QUARTER
         assert project.slot_size == "0p5x0p5"
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckMarkFinished(TestCase):
+    """Tests for mark_finished() method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_mark_finished_from_running(self):
+        """Can mark RUNNING check as FINISHED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        check.mark_finished(
+            is_manufacturable=True,
+            errors=[],
+            warnings=[],
+            processing_logs="Processing completed successfully",
+        )
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
+        assert check.is_manufacturable is True
+        assert check.celery_job_finished_at is not None
+
+    def test_mark_finished_sets_all_fields(self):
+        """mark_finished() sets all required fields."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+
+        test_errors = [
+            {"rule": "metal1.width", "message": "Width violation"},
+        ]
+        test_warnings = [
+            {"rule": "density", "message": "Low metal density"},
+        ]
+        test_logs = "Step 1: Loading GDS\nStep 2: Running checks\nComplete"
+
+        before = timezone.now()
+        check.mark_finished(
+            is_manufacturable=False,
+            errors=test_errors,
+            warnings=test_warnings,
+            processing_logs=test_logs,
+        )
+        after = timezone.now()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
+        assert check.is_manufacturable is False
+        assert check.errors == test_errors
+        assert check.warnings == test_warnings
+        assert check.processing_logs == test_logs
+        assert check.celery_job_finished_at is not None
+        assert before <= check.celery_job_finished_at <= after
+
+    def test_mark_finished_from_pending_raises(self):
+        """Cannot mark PENDING check as FINISHED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        with pytest.raises(InvalidStateTransitionError) as exc_info:
+            check.mark_finished(
+                is_manufacturable=True,
+                errors=[],
+                warnings=[],
+                processing_logs="Should fail",
+            )
+
+        assert "pending" in str(exc_info.value).lower()
+        assert "finished" in str(exc_info.value).lower()
+
+    def test_mark_finished_from_dispatched_raises(self):
+        """Cannot mark DISPATCHED check as FINISHED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+        )
+        with pytest.raises(InvalidStateTransitionError) as exc_info:
+            check.mark_finished(
+                is_manufacturable=True,
+                errors=[],
+                warnings=[],
+                processing_logs="Should fail",
+            )
+
+        assert "dispatched" in str(exc_info.value).lower()
+        assert "finished" in str(exc_info.value).lower()
+
+    def test_mark_finished_from_finished_raises(self):
+        """Cannot mark FINISHED check as FINISHED again (terminal state)."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_finished(
+                is_manufacturable=True,
+                errors=[],
+                warnings=[],
+                processing_logs="Should fail",
+            )
+
+    def test_mark_finished_from_error_raises(self):
+        """Cannot mark ERROR check as FINISHED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+        )
+        with pytest.raises(InvalidStateTransitionError) as exc_info:
+            check.mark_finished(
+                is_manufacturable=True,
+                errors=[],
+                warnings=[],
+                processing_logs="Should fail",
+            )
+
+        assert "error" in str(exc_info.value).lower()
+        assert "finished" in str(exc_info.value).lower()
+
+    def test_mark_finished_from_cancelled_raises(self):
+        """Cannot mark CANCELLED check as FINISHED."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLED,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_finished(
+                is_manufacturable=True,
+                errors=[],
+                warnings=[],
+                processing_logs="Should fail",
+            )
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckMarkError(TestCase):
+    """Tests for mark_error() method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_mark_error_from_pending(self):
+        """Can mark PENDING check as ERROR."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        check.mark_error(
+            error_message="Docker container failed to start",
+            processing_logs="Error starting container\nExit code: 1",
+        )
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.ERROR
+        assert check.error_message == "Docker container failed to start"
+        error_suffix = "\n\n=== SYSTEM ERROR - See error_message field ==="
+        expected_logs = "Error starting container\nExit code: 1" + error_suffix
+        assert check.processing_logs == expected_logs
+        assert check.celery_job_finished_at is not None
+
+    def test_mark_error_from_dispatched(self):
+        """Can mark DISPATCHED check as ERROR."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+        )
+        check.mark_error(
+            error_message="Worker crashed during startup",
+        )
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.ERROR
+        assert check.error_message == "Worker crashed during startup"
+
+    def test_mark_error_from_running(self):
+        """Can mark RUNNING check as ERROR."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        check.mark_error(
+            error_message="Timeout after 30 minutes",
+            processing_logs="Processing started\nStep 1 completed\nTimeout",
+        )
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.ERROR
+        assert check.error_message == "Timeout after 30 minutes"
+        error_suffix = "\n\n=== SYSTEM ERROR - See error_message field ==="
+        expected_logs = "Processing started\nStep 1 completed\nTimeout" + error_suffix
+        assert check.processing_logs == expected_logs
+
+    def test_mark_error_sets_all_fields(self):
+        """mark_error() sets all required fields."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+
+        test_error = "System error: out of memory"
+        test_logs = "Started processing\nMemory usage: 95%\nOOM kill"
+
+        before = timezone.now()
+        check.mark_error(
+            error_message=test_error,
+            processing_logs=test_logs,
+        )
+        after = timezone.now()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.ERROR
+        assert check.error_message == test_error
+        error_suffix = "\n\n=== SYSTEM ERROR - See error_message field ==="
+        assert check.processing_logs == test_logs + error_suffix
+        assert check.celery_job_finished_at is not None
+        assert before <= check.celery_job_finished_at <= after
+
+    def test_mark_error_with_default_logs(self):
+        """mark_error() appends error suffix even when no logs provided."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+
+        # Don't provide processing_logs - should still get error suffix
+        check.mark_error(error_message="Quick failure")
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.ERROR
+        assert check.error_message == "Quick failure"
+        # When logs are empty, append helper doesn't add leading newlines
+        error_suffix = "=== SYSTEM ERROR - See error_message field ==="
+        assert check.processing_logs == error_suffix
+
+    def test_mark_error_from_finished_raises(self):
+        """Cannot mark FINISHED check as ERROR (terminal state)."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+        with pytest.raises(InvalidStateTransitionError) as exc_info:
+            check.mark_error(error_message="Should not work")
+
+        assert "finished" in str(exc_info.value).lower()
+        assert "error" in str(exc_info.value).lower()
+
+    def test_mark_error_from_error_raises(self):
+        """Cannot mark ERROR check as ERROR again."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+            error_message="First error",
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_error(error_message="Second error")
+
+    def test_mark_error_from_cancelled_raises(self):
+        """Cannot mark CANCELLED check as ERROR (terminal state)."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLED,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_error(error_message="Should not work")
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckResetForRetry(TestCase):
+    """Test ManufacturabilityCheck.reset_for_retry() state machine method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            status=Project.Status.DRAFT,
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_reset_for_retry_from_error(self):
+        """Can reset ERROR check to PENDING for retry."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+            retry_count=0,
+            error_message="Initial error",
+        )
+        check.reset_for_retry(reason="Retrying after timeout")
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.PENDING
+        assert check.retry_count == 1
+
+    def test_reset_for_retry_increments_count(self):
+        """reset_for_retry() increments retry_count."""
+        initial_count = 1
+        expected_count = 2
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+            retry_count=initial_count,
+        )
+        check.reset_for_retry()
+
+        check.refresh_from_db()
+        assert check.retry_count == expected_count
+
+    def test_reset_for_retry_clears_job_fields(self):
+        """reset_for_retry() clears all Celery/Docker tracking fields."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+            retry_count=0,
+            celery_job_id="abc-123",
+            celery_job_dispatched_at=timezone.now(),
+            celery_job_started_at=timezone.now(),
+            celery_job_finished_at=timezone.now(),
+            celery_worker_pid=TEST_WORKER_PID,
+            celery_worker_hostname="worker-1",
+            docker_container_id="container-123",
+            docker_container_started_at=timezone.now(),
+            error_message="Previous error",
+        )
+        check.reset_for_retry()
+
+        check.refresh_from_db()
+        assert check.celery_job_id == ""
+        assert check.celery_job_dispatched_at is None
+        assert check.celery_job_started_at is None
+        assert check.celery_job_finished_at is None
+        assert check.celery_worker_pid is None
+        assert check.celery_worker_hostname == ""
+        assert check.docker_container_id == ""
+        assert check.docker_container_started_at is None
+        assert check.error_message == ""
+
+    def test_reset_for_retry_at_max_retries_raises(self):
+        """Cannot retry when retry_count >= max_retries."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+            retry_count=3,
+        )
+        with pytest.raises(MaxRetriesExceededError) as exc_info:
+            check.reset_for_retry()
+
+        # Verify error message mentions max retries
+        assert "maximum retry limit" in str(exc_info.value).lower()
+        assert exc_info.value.retry_count == check.retry_count
+        assert exc_info.value.max_retries == check.max_retries
+
+    def test_reset_for_retry_from_pending_raises(self):
+        """Cannot reset PENDING check (invalid transition)."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.reset_for_retry()
+
+    def test_reset_for_retry_from_dispatched_raises(self):
+        """Cannot reset DISPATCHED check (invalid transition)."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHED,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.reset_for_retry()
+
+    def test_reset_for_retry_from_running_raises(self):
+        """Cannot reset RUNNING check (invalid transition)."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.reset_for_retry()
+
+    def test_reset_for_retry_from_finished_raises(self):
+        """Cannot reset FINISHED check (terminal state)."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.reset_for_retry()
+
+    def test_reset_for_retry_from_cancelled_raises(self):
+        """Cannot reset CANCELLED check (terminal state)."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.CANCELLED,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.reset_for_retry()
+
+    def test_reset_for_retry_with_reason_appends_to_logs(self):
+        """reset_for_retry() appends reason to processing_logs."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+            retry_count=0,
+            processing_logs="Previous logs from error",
+        )
+        check.reset_for_retry(reason="Temporary network failure")
+
+        check.refresh_from_db()
+        assert "RETRY #1: Temporary network failure" in check.processing_logs
+        assert "Previous logs from error" in check.processing_logs
+
+    def test_reset_for_retry_with_reason_creates_logs_when_empty(self):
+        """reset_for_retry() creates processing_logs when empty."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+            retry_count=1,
+            processing_logs="",
+        )
+        check.reset_for_retry(reason="Docker timeout")
+
+        check.refresh_from_db()
+        assert check.processing_logs == "RETRY #2: Docker timeout"
+
+    def test_reset_for_retry_without_reason_does_not_modify_logs(self):
+        """reset_for_retry() without reason doesn't modify processing_logs."""
+        original_logs = "Error occurred at step 3"
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+            retry_count=0,
+            processing_logs=original_logs,
+        )
+        check.reset_for_retry()
+
+        check.refresh_from_db()
+        assert check.processing_logs == original_logs
