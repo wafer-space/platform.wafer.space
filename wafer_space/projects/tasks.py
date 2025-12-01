@@ -2761,12 +2761,12 @@ def _stop_and_remove_container(container, logger) -> None:
         if container.status == "running":
             container.stop(timeout=10)
         container.remove(force=True)
-    except Exception:
+    except docker.errors.DockerException:
         logger.exception("Failed to remove container %s", container.id)
 
 
-@shared_task(bind=True, queue="docker-ephemeral")
-def checks_cleanup_orphaned_docker(self) -> dict:
+@shared_task(queue="docker-ephemeral")
+def checks_cleanup_orphaned_docker() -> dict:
     """Remove Docker containers not linked to active checks (fallback cleanup).
 
     Starts from Docker (source of truth) and validates against database.
