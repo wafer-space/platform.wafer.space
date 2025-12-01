@@ -1434,8 +1434,9 @@ class ManufacturabilityCheck(models.Model):
 
         self.status = self.Status.ERROR
         self.error_message = error_message
-        if processing_logs:
-            self.processing_logs = processing_logs
+        # Append error marker to logs so it's clear the job failed
+        error_suffix = "\n\n=== SYSTEM ERROR - See error_message field ==="
+        self.processing_logs = (processing_logs or "") + error_suffix
         self.celery_job_finished_at = timezone.now()
         self.save(
             update_fields=[

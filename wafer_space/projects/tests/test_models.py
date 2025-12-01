@@ -1850,7 +1850,9 @@ class TestManufacturabilityCheckMarkError(TestCase):
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.ERROR
         assert check.error_message == "Docker container failed to start"
-        assert check.processing_logs == "Error starting container\nExit code: 1"
+        error_suffix = "\n\n=== SYSTEM ERROR - See error_message field ==="
+        expected_logs = "Error starting container\nExit code: 1" + error_suffix
+        assert check.processing_logs == expected_logs
         assert check.celery_job_finished_at is not None
 
     def test_mark_error_from_dispatched(self):
@@ -1883,7 +1885,9 @@ class TestManufacturabilityCheckMarkError(TestCase):
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.ERROR
         assert check.error_message == "Timeout after 30 minutes"
-        assert check.processing_logs == "Processing started\nStep 1 completed\nTimeout"
+        error_suffix = "\n\n=== SYSTEM ERROR - See error_message field ==="
+        expected_logs = "Processing started\nStep 1 completed\nTimeout" + error_suffix
+        assert check.processing_logs == expected_logs
 
     def test_mark_error_sets_all_fields(self):
         """mark_error() sets all required fields."""
@@ -1906,25 +1910,27 @@ class TestManufacturabilityCheckMarkError(TestCase):
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.ERROR
         assert check.error_message == test_error
-        assert check.processing_logs == test_logs
+        error_suffix = "\n\n=== SYSTEM ERROR - See error_message field ==="
+        assert check.processing_logs == test_logs + error_suffix
         assert check.celery_job_finished_at is not None
         assert before <= check.celery_job_finished_at <= after
 
     def test_mark_error_with_default_logs(self):
-        """mark_error() uses empty string as default for processing_logs."""
+        """mark_error() appends error suffix even when no logs provided."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.PENDING,
         )
 
-        # Don't provide processing_logs - should use default empty string
+        # Don't provide processing_logs - should still get error suffix
         check.mark_error(error_message="Quick failure")
 
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.ERROR
         assert check.error_message == "Quick failure"
-        assert check.processing_logs == ""
+        error_suffix = "\n\n=== SYSTEM ERROR - See error_message field ==="
+        assert check.processing_logs == error_suffix
 
     def test_mark_error_from_finished_raises(self):
         """Cannot mark FINISHED check as ERROR (terminal state)."""
