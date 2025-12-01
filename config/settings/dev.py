@@ -121,6 +121,10 @@ CELERY_BEAT_SCHEDULE = {
         # 15s in dev (300s in prod)
         "schedule": PRECHECK_CONTAINER_CLEANUP_INTERVAL_SECONDS,
     },
+    "checks-cleanup-stale-files": {
+        "task": "wafer_space.projects.tasks.checks_cleanup_stale_files",
+        "schedule": 30.0,  # Faster in dev (60s in prod)
+    },
 }
 
 # LOGGING

@@ -483,6 +483,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_docker",
         "schedule": 300.0,
     },
+    "checks-cleanup-stale-files": {
+        "task": "wafer_space.projects.tasks.checks_cleanup_stale_files",
+        "schedule": 60.0,
+    },
 }
 
 # File Download and Processing Configuration
