@@ -3,6 +3,42 @@
 from __future__ import annotations
 
 
+class MaxRetriesExceededError(Exception):
+    """Raised when a check has exceeded its maximum retry limit.
+
+    Attributes:
+        retry_count: Current number of retries attempted
+        max_retries: Maximum retries allowed
+    """
+
+    def __init__(self, retry_count: int, max_retries: int) -> None:
+        self.retry_count = retry_count
+        self.max_retries = max_retries
+        msg = (
+            f"Cannot retry: maximum retry limit ({max_retries}) reached "
+            f"(current retry_count: {retry_count})"
+        )
+        super().__init__(msg)
+
+
+class ConcurrentLimitError(Exception):
+    """Raised when the concurrent check limit would be exceeded.
+
+    Attributes:
+        active_count: Current number of active checks
+        max_concurrent: Maximum concurrent checks allowed
+    """
+
+    def __init__(self, active_count: int, max_concurrent: int) -> None:
+        self.active_count = active_count
+        self.max_concurrent = max_concurrent
+        msg = (
+            f"Cannot dispatch: concurrent limit ({max_concurrent}) "
+            f"reached ({active_count} checks already active)"
+        )
+        super().__init__(msg)
+
+
 class InvalidStateTransitionError(Exception):
     """Raised when an invalid state transition is attempted.
 

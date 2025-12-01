@@ -11,7 +11,9 @@ from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.utils import timezone
 
+from wafer_space.projects.exceptions import ConcurrentLimitError
 from wafer_space.projects.exceptions import InvalidStateTransitionError
+from wafer_space.projects.exceptions import MaxRetriesExceededError
 
 
 @dataclass
@@ -1290,14 +1292,9 @@ class ManufacturabilityCheck(models.Model):
         )
 
         if active_count >= self.MAX_CONCURRENT_CHECKS:
-            msg = (
-                f"Cannot dispatch: concurrent limit ({self.MAX_CONCURRENT_CHECKS}) "
-                f"reached ({active_count} checks already active)"
-            )
-            raise InvalidStateTransitionError(
-                from_status=self.status,
-                to_status=self.Status.DISPATCHED,
-                model_name=msg,
+            raise ConcurrentLimitError(
+                active_count=active_count,
+                max_concurrent=self.MAX_CONCURRENT_CHECKS,
             )
 
         self.status = self.Status.DISPATCHED
@@ -1531,14 +1528,9 @@ class ManufacturabilityCheck(models.Model):
 
         # Then check retry limit using can_retry() and self.max_retries
         if not self.can_retry():
-            msg = (
-                f"Cannot retry: maximum retry limit ({self.max_retries}) reached "
-                f"(current retry_count: {self.retry_count})"
-            )
-            raise InvalidStateTransitionError(
-                from_status=self.status,
-                to_status=self.Status.PENDING,
-                model_name=msg,
+            raise MaxRetriesExceededError(
+                retry_count=self.retry_count,
+                max_retries=self.max_retries,
             )
 
         # Reset to PENDING state

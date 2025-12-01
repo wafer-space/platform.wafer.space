@@ -9,6 +9,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from wafer_space.projects.exceptions import InvalidStateTransitionError
+from wafer_space.projects.exceptions import MaxRetriesExceededError
 from wafer_space.projects.models import CheckExecutionContext
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
@@ -2052,19 +2053,20 @@ class TestManufacturabilityCheckResetForRetry(TestCase):
         assert check.error_message == ""
 
     def test_reset_for_retry_at_max_retries_raises(self):
-        """Cannot retry when retry_count >= 3."""
+        """Cannot retry when retry_count >= max_retries."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.ERROR,
             retry_count=3,
         )
-        with pytest.raises(InvalidStateTransitionError) as exc_info:
+        with pytest.raises(MaxRetriesExceededError) as exc_info:
             check.reset_for_retry()
 
         # Verify error message mentions max retries
         assert "maximum retry limit" in str(exc_info.value).lower()
-        assert "3" in str(exc_info.value)
+        assert exc_info.value.retry_count == check.retry_count
+        assert exc_info.value.max_retries == check.max_retries
 
     def test_reset_for_retry_from_pending_raises(self):
         """Cannot reset PENDING check (invalid transition)."""
