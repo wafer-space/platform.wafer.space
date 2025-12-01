@@ -675,8 +675,8 @@ class TestProjectSubmissionIntegration(TestCase):
     def test_submit_updates_project_status(self):
         """Test that submitting a project updates its status to SUBMITTED.
 
-        Note: Manufacturability checks are created earlier in the workflow
-        (when file hash is verified), not during submission.
+        Note: Manufacturability checks are created by the checks_create()
+        periodic task for verified files, not during submission.
         """
         # Mark as manufacturable (simulating completed check from earlier workflow)
         self.project.is_manufacturable = True
