@@ -29,18 +29,26 @@ class BrokerQueueTests(TestCase):
     def setUp(self):
         """Ensure kombu tables exist for testing."""
         with connection.cursor() as cursor:
-            # Create kombu tables if they don't exist (pytest might not have them)
-            cursor.execute("""
+            # Create kombu tables using database-agnostic SQL
+            # SQLite uses AUTOINCREMENT, PostgreSQL uses SERIAL
+            vendor = connection.vendor
+            if vendor == "sqlite":
+                id_type = "INTEGER PRIMARY KEY AUTOINCREMENT"
+            else:
+                # PostgreSQL and others
+                id_type = "SERIAL PRIMARY KEY"
+
+            cursor.execute(f"""
                 CREATE TABLE IF NOT EXISTS kombu_queue (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id {id_type},
                     name VARCHAR(200) UNIQUE
                 )
             """)
-            cursor.execute("""
+            cursor.execute(f"""
                 CREATE TABLE IF NOT EXISTS kombu_message (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    visible BOOLEAN DEFAULT 1,
-                    timestamp DATETIME,
+                    id {id_type},
+                    visible BOOLEAN DEFAULT TRUE,
+                    timestamp TIMESTAMP,
                     payload TEXT NOT NULL,
                     version SMALLINT NOT NULL DEFAULT 1,
                     queue_id INTEGER REFERENCES kombu_queue(id)

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import psutil
 from celery import current_app
+from django.db import DatabaseError
 from django.db import connection
 
 if TYPE_CHECKING:
@@ -41,16 +42,17 @@ def _is_task_in_broker_queue(task_id: str | None) -> bool:
             # Query kombu_message for visible messages containing this task ID.
             # The task ID is in the JSON payload's headers.id field.
             # Using LIKE is safe here since task_id is a UUID we generated.
+            # Use TRUE for PostgreSQL compatibility (SQLite also accepts TRUE)
             cursor.execute(
                 """
                 SELECT COUNT(*) FROM kombu_message
-                WHERE visible = 1 AND payload LIKE %s
+                WHERE visible = TRUE AND payload LIKE %s
                 """,
                 [f'%"id": "{task_id}"%'],
             )
             count = cursor.fetchone()[0]
             return count > 0
-    except Exception:
+    except DatabaseError:
         logger.exception("Error checking broker queue for task %s", task_id)
         return False
 
