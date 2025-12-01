@@ -1936,7 +1936,8 @@ class TestManufacturabilityCheckMarkError(TestCase):
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.ERROR
         assert check.error_message == "Quick failure"
-        error_suffix = "\n\n=== SYSTEM ERROR - See error_message field ==="
+        # When logs are empty, append helper doesn't add leading newlines
+        error_suffix = "=== SYSTEM ERROR - See error_message field ==="
         assert check.processing_logs == error_suffix
 
     def test_mark_error_from_finished_raises(self):

@@ -1431,10 +1431,12 @@ class ManufacturabilityCheck(models.Model):
 
         self.status = self.Status.ERROR
         self.error_message = error_message
-        # Append error marker to logs so it's clear the job failed
-        error_suffix = "\n\n=== SYSTEM ERROR - See error_message field ==="
-        self.processing_logs = (processing_logs or "") + error_suffix
         self.celery_job_finished_at = timezone.now()
+
+        # Set initial logs if provided
+        if processing_logs:
+            self.processing_logs = processing_logs
+
         self.save(
             update_fields=[
                 "status",
@@ -1443,6 +1445,9 @@ class ManufacturabilityCheck(models.Model):
                 "celery_job_finished_at",
             ]
         )
+
+        # Append error marker using helper (after save to ensure fresh data)
+        self.append_to_processing_logs("=== SYSTEM ERROR - See error_message field ===")
 
     def mark_cancelling(self, *, reason: str) -> None:
         """Request cancellation - transitions to CANCELLING state.
@@ -1463,15 +1468,10 @@ class ManufacturabilityCheck(models.Model):
             )
 
         self.status = self.Status.CANCELLING
+        self.save(update_fields=["status"])
 
-        # Append reason to processing_logs
-        cancellation_msg = f"CANCELLATION REQUESTED: {reason}"
-        if self.processing_logs:
-            self.processing_logs += f"\n\n{cancellation_msg}"
-        else:
-            self.processing_logs = cancellation_msg
-
-        self.save()
+        # Append cancellation reason using helper
+        self.append_to_processing_logs(f"CANCELLATION REQUESTED: {reason}")
 
     def mark_cancelled(self) -> None:
         """Complete cancellation - only called by cleanup task after cleanup is done.
@@ -1548,14 +1548,34 @@ class ManufacturabilityCheck(models.Model):
         self.docker_container_started_at = None
         self.error_message = ""
 
-        # Append reason to processing_logs if provided
-        if reason:
-            if self.processing_logs:
-                self.processing_logs += f"\n\nRETRY #{self.retry_count}: {reason}"
-            else:
-                self.processing_logs = f"RETRY #{self.retry_count}: {reason}"
-
         self.save()
+
+        # Append retry reason using helper
+        if reason:
+            self.append_to_processing_logs(f"RETRY #{self.retry_count}: {reason}")
+
+    def append_to_processing_logs(self, text: str) -> None:
+        """Append text to processing logs (thread-safe, never overwrites).
+
+        This helper ensures logs are only ever appended to, never replaced.
+        Safely handles empty logs and adds appropriate separators.
+
+        Args:
+            text: Text to append to logs
+        """
+        if not text:
+            return
+
+        # Refresh from DB to get current logs (prevent overwrite race conditions)
+        self.refresh_from_db(fields=["processing_logs"])
+
+        if self.processing_logs:
+            self.processing_logs += f"\n\n{text}"
+        else:
+            self.processing_logs = text
+
+        self.last_activity = timezone.now()
+        self.save(update_fields=["processing_logs", "last_activity"])
 
     def update_processing_logs(self, logs: str) -> None:
         """Update processing logs during RUNNING state.
