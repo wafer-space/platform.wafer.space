@@ -458,7 +458,12 @@ def checks_cleanup_orphaned_dispatch():
 ```python
 @shared_task(queue="default")
 def checks_cleanup_orphaned_processing():
-    """Mark RUNNING checks with dead workers as ERROR."""
+    """Mark RUNNING checks with dead workers as ERROR.
+
+    Note: mark_error() preserves celery_worker_pid and celery_worker_hostname
+    for post-mortem debugging. These fields are only cleared when
+    reset_for_retry() is called by checks_retry task.
+    """
     orphaned = 0
     verified = 0
 
@@ -466,12 +471,10 @@ def checks_cleanup_orphaned_processing():
         if is_check_task_actively_running(check):
             verified += 1
         else:
+            # mark_error() preserves tracking fields for debugging
             check.mark_error(
                 error_message="Worker process died (will retry if allowed)"
             )
-            check.celery_worker_pid = None
-            check.celery_worker_hostname = ""
-            check.save(update_fields=["celery_worker_pid", "celery_worker_hostname"])
             orphaned += 1
 
     return {"orphaned": orphaned, "verified": verified}

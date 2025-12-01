@@ -1272,8 +1272,9 @@ class ManufacturabilityCheck(models.Model):
             celery_job_id: The ID returned by celery_task.delay()
 
         Raises:
-            InvalidStateTransitionError: If transition is not allowed or
-                concurrent limit exceeded
+            InvalidStateTransitionError: If transition is not allowed
+            ConcurrentLimitError: If the concurrent DISPATCHED/RUNNING limit
+                would be exceeded
         """
         if not self.can_transition_to(self.Status.DISPATCHED):
             raise InvalidStateTransitionError(
@@ -1515,8 +1516,8 @@ class ManufacturabilityCheck(models.Model):
             reason: Optional description of why the check is being retried
 
         Raises:
-            InvalidStateTransitionError: If transition is not allowed or max
-                retries exceeded
+            InvalidStateTransitionError: If transition is not allowed
+            MaxRetriesExceededError: If retry_count has reached max_retries
         """
         # Check state transition is valid FIRST
         if not self.can_transition_to(self.Status.PENDING):
