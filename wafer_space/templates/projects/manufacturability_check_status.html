@@ -19,7 +19,7 @@
     <div class="row mb-4">
       {% for status_key, status_info in status_counts.items %}
         <div class="col-md-2 mb-3">
-          <div class="card {% if status_key == 'processing' %}border-primary{% elif status_key == 'queued' %}border-warning{% elif status_key == 'completed' %}border-success{% elif status_key == 'failed' %}border-danger{% elif status_key == 'cancelled' %}border-secondary{% endif %}">
+          <div class="card {% if status_key == 'running' %}border-primary{% elif status_key == 'dispatched' %}border-info{% elif status_key == 'pending' %}border-warning{% elif status_key == 'finished' %}border-success{% elif status_key == 'error' %}border-danger{% elif status_key == 'cancelling' %}border-warning{% elif status_key == 'cancelled' %}border-secondary{% endif %}">
             <div class="card-body text-center">
               <h3 class="card-title mb-0">{{ status_info.count }}</h3>
               <p class="card-text text-muted mb-0">{{ status_info.label }}</p>
@@ -28,15 +28,15 @@
         </div>
       {% endfor %}
     </div>
-    {# Currently Processing Checks #}
-    {% if processing_checks %}
+    {# Currently Running Checks #}
+    {% if running_checks %}
       <div class="card mb-4 border-primary">
         <div class="card-header bg-primary text-white">
           <h5 class="mb-0">
             <span class="spinner-border spinner-border-sm me-2"
                   role="status"
                   aria-hidden="true"></span>
-            Currently Processing ({{ processing_checks|length }})
+            Currently Running ({{ running_checks|length }})
           </h5>
         </div>
         <div class="card-body">
@@ -53,7 +53,7 @@
                 </tr>
               </thead>
               <tbody>
-                {% for check in processing_checks %}
+                {% for check in running_checks %}
                   <tr>
                     <td>
                       <a href="{% url 'projects:detail' pk=check.project.pk %}">{{ check.project.name }}</a>
@@ -66,10 +66,10 @@
                         <span class="text-muted">-</span>
                       {% endif %}
                     </td>
-                    <td>{{ check.started_at|date:"Y-m-d H:i:s" }}</td>
+                    <td>{{ check.celery_job_started_at|date:"Y-m-d H:i:s" }}</td>
                     <td>
-                      {% if check.started_at %}
-                        {{ check.started_at|timesince }}
+                      {% if check.celery_job_started_at %}
+                        {{ check.celery_job_started_at|timesince }}
                       {% else %}
                         <span class="text-muted">-</span>
                       {% endif %}
@@ -88,12 +88,12 @@
         </div>
       </div>
     {% endif %}
-    {# Queued Checks #}
-    {% if queued_checks %}
+    {# Pending Checks #}
+    {% if pending_checks %}
       <div class="card mb-4 border-warning">
         <div class="card-header bg-warning">
           <h5 class="mb-0">
-            <i class="bi bi-hourglass-split"></i> Queued ({{ queued_checks|length }})
+            <i class="bi bi-hourglass-split"></i> Pending ({{ pending_checks|length }})
           </h5>
         </div>
         <div class="card-body">
@@ -104,12 +104,12 @@
                   <th>Project</th>
                   <th>User</th>
                   <th>File</th>
-                  <th>Task ID</th>
+                  <th>Created</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {% for check in queued_checks %}
+                {% for check in pending_checks %}
                   <tr>
                     <td>
                       <a href="{% url 'projects:detail' pk=check.project.pk %}">{{ check.project.name }}</a>
@@ -123,8 +123,8 @@
                       {% endif %}
                     </td>
                     <td>
-                      {% if check.task_id %}
-                        <code class="small">{{ check.task_id|truncatechars:20 }}</code>
+                      {% if check.created_at %}
+                        {{ check.created_at|date:"Y-m-d H:i:s" }}
                       {% else %}
                         <span class="text-muted">-</span>
                       {% endif %}
@@ -170,19 +170,23 @@
                 {% for check in recent_checks %}
                   <tr>
                     <td>
-                      {% if check.status == 'queued' %}
-                        <span class="badge bg-warning text-dark">Queued</span>
-                      {% elif check.status == 'processing' %}
+                      {% if check.status == 'pending' %}
+                        <span class="badge bg-warning text-dark">Pending</span>
+                      {% elif check.status == 'dispatched' %}
+                        <span class="badge bg-info">Dispatched</span>
+                      {% elif check.status == 'running' %}
                         <span class="badge bg-primary">
                           <span class="spinner-border spinner-border-sm"
                                 role="status"
                                 aria-hidden="true"></span>
-                          Processing
+                          Running
                         </span>
-                      {% elif check.status == 'completed' %}
-                        <span class="badge bg-success">Completed</span>
-                      {% elif check.status == 'failed' %}
-                        <span class="badge bg-danger">Failed</span>
+                      {% elif check.status == 'finished' %}
+                        <span class="badge bg-success">Finished</span>
+                      {% elif check.status == 'error' %}
+                        <span class="badge bg-danger">Error</span>
+                      {% elif check.status == 'cancelling' %}
+                        <span class="badge bg-warning text-dark">Cancelling</span>
                       {% elif check.status == 'cancelled' %}
                         <span class="badge bg-secondary">Cancelled</span>
                       {% else %}
@@ -201,7 +205,7 @@
                       {% endif %}
                     </td>
                     <td>
-                      {% if check.status == 'completed' %}
+                      {% if check.status == 'finished' %}
                         {% if check.is_manufacturable %}
                           <span class="badge bg-success">
                             <i class="bi bi-check-circle"></i> Yes
@@ -211,22 +215,22 @@
                             <i class="bi bi-x-circle"></i> No
                           </span>
                         {% endif %}
-                      {% elif check.status == 'failed' %}
+                      {% elif check.status == 'error' %}
                         <span class="text-danger small">{{ check.error_message|default:"Error"|truncatechars:30 }}</span>
                       {% else %}
                         <span class="text-muted">-</span>
                       {% endif %}
                     </td>
                     <td>
-                      {% if check.started_at %}
-                        <small>{{ check.started_at|date:"Y-m-d H:i" }}</small>
+                      {% if check.celery_job_started_at %}
+                        <small>{{ check.celery_job_started_at|date:"Y-m-d H:i" }}</small>
                       {% else %}
                         <span class="text-muted">-</span>
                       {% endif %}
                     </td>
                     <td>
-                      {% if check.completed_at %}
-                        <small>{{ check.completed_at|date:"Y-m-d H:i" }}</small>
+                      {% if check.celery_job_finished_at %}
+                        <small>{{ check.celery_job_finished_at|date:"Y-m-d H:i" }}</small>
                       {% else %}
                         <span class="text-muted">-</span>
                       {% endif %}

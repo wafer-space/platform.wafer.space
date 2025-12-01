@@ -372,7 +372,7 @@
               }
 
               // If check is complete, reload page once to update UI
-              if (data.status === 'completed' || data.status === 'failed') {
+              if (data.status === 'finished' || data.status === 'error' || data.status === 'cancelled') {
                 clearInterval(pollInterval);
                 location.reload();
               }

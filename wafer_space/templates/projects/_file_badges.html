@@ -9,28 +9,32 @@
       {# Manufacturability check status badge (most relevant) #}
       {% with check=file.manufacturability_check %}
         {% if check %}
-          {% if check.status == 'completed' and check.is_manufacturable %}
+          {% if check.status == 'finished' and check.is_manufacturable %}
             <span class="badge bg-success">
               <i class="bi bi-check-circle"></i> Manufacturable
             </span>
-          {% elif check.status == 'completed' and not check.is_manufacturable %}
+          {% elif check.status == 'finished' and not check.is_manufacturable %}
             <span class="badge bg-danger">
               <i class="bi bi-x-circle"></i> Not Manufacturable
             </span>
-          {% elif check.status == 'failed' %}
+          {% elif check.status == 'error' %}
             <span class="badge bg-danger">
               <i class="bi bi-exclamation-triangle"></i> Check Failed
             </span>
-          {% elif check.status == 'processing' or check.status == 'starting' %}
+          {% elif check.status == 'running' or check.status == 'dispatched' %}
             <span class="badge bg-primary">
               <span class="spinner-border spinner-border-sm" role="status"></span> Checking...
             </span>
-          {% elif check.status == 'queued' %}
+          {% elif check.status == 'pending' %}
             <span class="badge bg-secondary">
-              <i class="bi bi-hourglass-split"></i> Check Queued
+              <i class="bi bi-hourglass-split"></i> Check Pending
+            </span>
+          {% elif check.status == 'cancelling' %}
+            <span class="badge bg-warning text-dark">
+              <i class="bi bi-hourglass-split"></i> Cancelling...
             </span>
           {% elif check.status == 'cancelled' %}
-            <span class="badge bg-warning text-dark">
+            <span class="badge bg-secondary">
               <i class="bi bi-x-circle"></i> Check Cancelled
             </span>
           {% endif %}
