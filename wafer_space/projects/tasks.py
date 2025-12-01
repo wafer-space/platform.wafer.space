@@ -2196,51 +2196,6 @@ def _process_and_save_content(
     return processed_content, final_md5, final_sha1, final_sha256
 
 
-def _create_manufacturability_check(
-    project_file: ProjectFile,
-) -> ManufacturabilityCheck:
-    """Cancel old checks and create new manufacturability check for the file.
-
-    When a new file is uploaded, any existing checks for other files in the
-    project should be cancelled, and a new check should be queued.
-
-    Args:
-        project_file: The newly verified project file
-
-    Returns:
-        The newly created ManufacturabilityCheck in QUEUED state
-    """
-    logger = logging.getLogger(__name__)
-
-    # Cancel any existing checks for other files in this project
-    old_checks = ManufacturabilityCheck.objects.filter(
-        project=project_file.project,
-        status__in=[
-            ManufacturabilityCheck.Status.PENDING,
-            ManufacturabilityCheck.Status.DISPATCHED,
-            ManufacturabilityCheck.Status.RUNNING,
-        ],
-    ).exclude(project_file=project_file)
-
-    for old_check in old_checks:
-        old_check.mark_cancelling(reason="Cancelled due to new file upload")
-        logger.info("  ✓ Cancelling old check %s", old_check.id)
-
-    # Create manufacturability check in PENDING state
-    # Note: celery_job_dispatched_at is set by mark_dispatched() when the check
-    # is actually dispatched to Celery by the periodic queue processor
-    logger.info("Step 9.5: Creating manufacturability check...")
-    check = ManufacturabilityCheck.objects.create(
-        project=project_file.project,
-        project_file=project_file,
-        status=ManufacturabilityCheck.Status.PENDING,
-    )
-    logger.info("  ✓ Manufacturability check created (ID: %s)", check.id)
-    logger.info("  ✓ File ready for manufacturability checking")
-
-    return check
-
-
 def _verify_and_notify(
     project_file: ProjectFile,
     hashes: HashResults,
@@ -2311,9 +2266,9 @@ def _verify_and_notify(
             project_file=project_file,
         )
         logger.info("  ✓ Checksum verified notification created")
-
-        # Cancel old checks and create new one
-        _create_manufacturability_check(project_file)
+        # Note: ManufacturabilityCheck creation is handled by the periodic
+        # checks_create() task, not here. This avoids race conditions and
+        # ensures idempotent check creation.
     elif verification_errors:
         NotificationService.create_checksum_mismatch_notification(
             user=project_file.project.user,
