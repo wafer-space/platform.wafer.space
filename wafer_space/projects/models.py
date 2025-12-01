@@ -1245,7 +1245,7 @@ class ManufacturabilityCheck(models.Model):
     def __str__(self):
         return f"Check for {self.project.name} - {self.get_status_display()}"
 
-    def can_retry(self):
+    def can_retry(self) -> bool:
         """Check if this check can be retried."""
         return self.retry_count < self.max_retries
 
