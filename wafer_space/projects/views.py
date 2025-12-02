@@ -647,6 +647,15 @@ class ProjectIDCheckView(LoginRequiredMixin, View):
                 {"available": False, "message": "Project ID must be uppercase"},
             )
 
+        # Validate shuttle exists
+        try:
+            Shuttle.objects.get(pk=shuttle_id)
+        except (Shuttle.DoesNotExist, ValueError):
+            return JsonResponse(
+                {"available": False, "message": "Invalid shuttle"},
+                status=400,
+            )
+
         # Check if already exists for this shuttle
         exists = Project.objects.filter(
             shuttle_id=shuttle_id,

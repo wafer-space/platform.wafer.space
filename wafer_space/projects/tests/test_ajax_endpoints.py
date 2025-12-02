@@ -184,6 +184,20 @@ class TestProjectIDCheckView(TestCase):
         data = json.loads(response.content)
         assert data["available"] is True
 
+    def test_invalid_shuttle_id(self):
+        """Test that invalid shuttle ID returns 400 error."""
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+
+        response = self.client.get(
+            self.url,
+            {"shuttle": "99999", "project_id": "ABCD"},
+        )
+
+        assert response.status_code == HTTP_BAD_REQUEST
+        data = json.loads(response.content)
+        assert data["available"] is False
+        assert "invalid" in data["message"].lower()
+
 
 @pytest.mark.django_db
 class TestShuttleAvailableSizesView(TestCase):
