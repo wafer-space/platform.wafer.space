@@ -47,6 +47,22 @@
             <p>
               <strong>Slot Size:</strong> {{ project.get_slot_size_display }}
             </p>
+            {% if project.shuttle %}
+              <p>
+                <strong>Shuttle Run:</strong> {{ project.shuttle.name }} - {{ project.shuttle.description }}
+              </p>
+            {% endif %}
+            {% if project.project_id %}
+              <p>
+                <strong>Project ID:</strong> {{ project.project_id }}
+              </p>
+            {% endif %}
+            {% if project.full_id %}
+              <p>
+                <strong>Manufacturing ID:</strong>
+                <span class="badge bg-info">{{ project.full_id }}</span>
+              </p>
+            {% endif %}
             {% if project.submitted_at %}
               <p>
                 <strong>Submitted:</strong> {{ project.submitted_at|date:"F d, Y, g:i a" }}
