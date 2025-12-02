@@ -71,3 +71,34 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
         context["projects"] = projects
 
         return context
+
+
+class GridPreviewView(StaffRequiredMixin, DetailView):
+    """Read-only grid preview showing slot occupancy."""
+
+    model = Shuttle
+    template_name = "shuttles/grid_preview.html"
+    context_object_name = "shuttle"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        shuttle = self.object
+
+        # Get grid dimensions
+        num_rows, num_cols = shuttle.grid_dimensions
+
+        if num_rows == 0 or num_cols == 0:
+            context["grid"] = []
+            context["columns"] = []
+            return context
+
+        # Build grid as 2D array
+        grid = [[None for _ in range(num_cols)] for _ in range(num_rows)]
+
+        for slot in shuttle.slots.select_related("project"):
+            grid[slot.row][slot.column] = slot
+
+        context["grid"] = grid
+        context["columns"] = [chr(65 + i) for i in range(num_cols)]  # A, B, C, ...
+
+        return context
