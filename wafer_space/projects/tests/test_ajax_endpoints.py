@@ -52,7 +52,7 @@ class TestProjectIDCheckView(TestCase):
 
         response = self.client.get(
             self.url,
-            {"shuttle": self.shuttle.pk, "project_id": "ABCD"},
+            {"shuttle": str(self.shuttle.pk), "project_id": "ABCD"},
         )
 
         assert response.status_code == HTTP_OK
@@ -74,7 +74,7 @@ class TestProjectIDCheckView(TestCase):
 
         response = self.client.get(
             self.url,
-            {"shuttle": self.shuttle.pk, "project_id": "ABCD"},
+            {"shuttle": str(self.shuttle.pk), "project_id": "ABCD"},
         )
 
         assert response.status_code == HTTP_OK
@@ -97,7 +97,7 @@ class TestProjectIDCheckView(TestCase):
         # Query with lowercase (should be normalized to uppercase)
         response = self.client.get(
             self.url,
-            {"shuttle": self.shuttle.pk, "project_id": "abcd"},
+            {"shuttle": str(self.shuttle.pk), "project_id": "abcd"},
         )
 
         assert response.status_code == HTTP_OK
@@ -119,7 +119,7 @@ class TestProjectIDCheckView(TestCase):
         """Test error when project_id parameter is missing."""
         self.client.login(username="testuser", password=TEST_PASSWORD)
 
-        response = self.client.get(self.url, {"shuttle": self.shuttle.pk})
+        response = self.client.get(self.url, {"shuttle": str(self.shuttle.pk)})
 
         assert response.status_code == HTTP_BAD_REQUEST
         data = json.loads(response.content)
@@ -132,7 +132,7 @@ class TestProjectIDCheckView(TestCase):
 
         response = self.client.get(
             self.url,
-            {"shuttle": self.shuttle.pk, "project_id": "ABC"},
+            {"shuttle": str(self.shuttle.pk), "project_id": "ABC"},
         )
 
         assert response.status_code == HTTP_OK
@@ -146,7 +146,7 @@ class TestProjectIDCheckView(TestCase):
 
         response = self.client.get(
             self.url,
-            {"shuttle": self.shuttle.pk, "project_id": "AB-D"},
+            {"shuttle": str(self.shuttle.pk), "project_id": "AB-D"},
         )
 
         assert response.status_code == HTTP_OK
@@ -177,7 +177,7 @@ class TestProjectIDCheckView(TestCase):
         # Check if ABCD is available in second shuttle
         response = self.client.get(
             self.url,
-            {"shuttle": shuttle2.pk, "project_id": "ABCD"},
+            {"shuttle": str(shuttle2.pk), "project_id": "ABCD"},
         )
 
         assert response.status_code == HTTP_OK

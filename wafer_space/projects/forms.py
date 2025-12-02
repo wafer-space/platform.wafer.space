@@ -8,7 +8,6 @@ from wafer_space.shuttles.models import Shuttle
 from .models import PROJECT_ID_LENGTH
 from .models import Project
 from .models import ProjectComplianceCertification
-from .models import validate_project_id
 
 # Hash length constants
 MD5_HASH_LENGTH = 32
@@ -31,9 +30,8 @@ class ProjectForm(forms.ModelForm):
     )
 
     project_id = forms.CharField(
-        max_length=4,
-        min_length=4,
-        validators=[validate_project_id],
+        max_length=PROJECT_ID_LENGTH,
+        min_length=PROJECT_ID_LENGTH,
         widget=forms.TextInput(
             attrs={
                 "class": "form-control",
