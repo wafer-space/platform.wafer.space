@@ -9,6 +9,7 @@ from selenium.webdriver.support import expected_conditions
 from tests.browser.base import AuthenticatedBrowserTest
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectAccessLog
+from wafer_space.shuttles.models import Shuttle
 
 User = get_user_model()
 
@@ -40,12 +41,26 @@ def staff_user(db):
 
 
 @pytest.fixture
-def project(owner):
+def shuttle(db):
+    """Create test shuttle."""
+    return Shuttle.objects.create(
+        name="G800",
+        description="Test Shuttle",
+        status=Shuttle.Status.OPEN,
+        max_slots=10,
+        available_slots=10,
+    )
+
+
+@pytest.fixture
+def project(owner, shuttle):
     """Create test project."""
     return Project.objects.create(
         user=owner,
         name="Test Project",
         description="Test description",
+        shuttle=shuttle,
+        project_id="ABCD",
     )
 
 
@@ -128,7 +143,7 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
         assert len(banners) == 0
 
     def test_staff_user_sees_all_projects_in_list(
-        self, driver, staff_user, project, wait
+        self, driver, staff_user, project, shuttle, wait
     ):
         """Test that staff user sees all users' projects in list view."""
         # Create another project for staff user
@@ -136,6 +151,8 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
             user=staff_user,
             name="Admin Project",
             description="Admin description",
+            shuttle=shuttle,
+            project_id="WXYZ",
         )
 
         # Login as staff user
@@ -149,18 +166,24 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
         assert "Test Project" in page_text
         assert "Admin Project" in page_text
 
-    def test_regular_user_sees_only_own_projects(self, driver, owner, staff_user, wait):
+    def test_regular_user_sees_only_own_projects(
+        self, driver, owner, staff_user, shuttle, wait
+    ):
         """Test that regular user only sees their own projects in list."""
         # Create projects for both users
         Project.objects.create(
             user=owner,
             name="Owner Project",
             description="Owner description",
+            shuttle=shuttle,
+            project_id="OWNR",
         )
         Project.objects.create(
             user=staff_user,
             name="Admin Project",
             description="Admin description",
+            shuttle=shuttle,
+            project_id="ADMN",
         )
 
         # Login as owner
