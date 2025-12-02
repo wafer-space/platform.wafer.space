@@ -23,6 +23,9 @@ from django.views.generic import ListView
 from django.views.generic import UpdateView
 from django.views.generic import View
 
+from wafer_space.core.enums import SlotSize
+from wafer_space.shuttles.models import Shuttle
+
 from .exceptions import InvalidStateTransitionError
 from .forms import ProjectFileURLSubmitForm
 from .forms import ProjectForm
@@ -601,3 +604,87 @@ class ProjectSubmitView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
 
         # Always redirect back to project detail page
         return redirect("projects:detail", pk=pk)
+
+
+class ProjectIDCheckView(LoginRequiredMixin, View):
+    """AJAX endpoint to check if project ID is available within a shuttle."""
+
+    def get(self, request):
+        """Check if project_id is available for the given shuttle.
+
+        Query parameters:
+            shuttle: Shuttle primary key
+            project_id: 4-character project ID to check
+
+        Returns:
+            JSON response with availability status and message
+        """
+        shuttle_id = request.GET.get("shuttle")
+        project_id = request.GET.get("project_id", "").upper().strip()
+
+        if not shuttle_id or not project_id:
+            return JsonResponse(
+                {"available": False, "message": "Missing parameters"},
+                status=400,
+            )
+
+        # Validate project_id format
+        if len(project_id) != 4:
+            return JsonResponse(
+                {"available": False, "message": "Project ID must be 4 characters"},
+            )
+
+        if not project_id.isalnum():
+            return JsonResponse(
+                {"available": False, "message": "Project ID must be alphanumeric"},
+            )
+
+        # Check if already exists for this shuttle
+        exists = Project.objects.filter(
+            shuttle_id=shuttle_id,
+            project_id=project_id,
+        ).exists()
+
+        return JsonResponse(
+            {
+                "available": not exists,
+                "message": f"ID {project_id} is {'taken' if exists else 'available'}",
+            },
+        )
+
+
+class ShuttleAvailableSizesView(LoginRequiredMixin, View):
+    """AJAX endpoint to get available slot sizes for a shuttle.
+
+    For Phase A, returns all slot sizes from SlotSize enum.
+    For Phase B, will query shuttle's actual available sizes based on grid layout.
+    """
+
+    def get(self, request):
+        """Get available slot sizes for the given shuttle.
+
+        Query parameters:
+            shuttle: Shuttle primary key
+
+        Returns:
+            JSON response with list of available size options
+        """
+        shuttle_id = request.GET.get("shuttle")
+
+        if not shuttle_id:
+            return JsonResponse({"sizes": []})
+
+        try:
+            # Verify shuttle exists
+            Shuttle.objects.get(pk=shuttle_id)
+
+            # Phase A: Return all slot sizes
+            # Phase B will query shuttle.get_available_slot_sizes()
+            size_options = [
+                {"value": value, "label": label}
+                for value, label in SlotSize.choices
+            ]
+
+            return JsonResponse({"sizes": size_options})
+        except Shuttle.DoesNotExist:
+            return JsonResponse({"sizes": []}, status=404)
