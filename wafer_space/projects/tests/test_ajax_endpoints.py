@@ -221,7 +221,7 @@ class TestShuttleAvailableSizesView(TestCase):
         assert response.status_code == HTTP_OK
         data = json.loads(response.content)
         assert "sizes" in data
-        assert len(data["sizes"]) == 4  # All four slot sizes
+        assert len(data["sizes"]) == len(SlotSize.choices)
 
         # Verify all slot sizes are present
         size_values = [size["value"] for size in data["sizes"]]

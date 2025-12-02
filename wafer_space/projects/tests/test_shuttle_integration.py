@@ -1,9 +1,12 @@
 """Tests for Project shuttle integration properties and methods."""
 
 import pytest
+from django.db import IntegrityError
 from django.test import TestCase
 
+from wafer_space.projects.models import PROJECT_ID_LENGTH
 from wafer_space.projects.models import Project
+from wafer_space.shuttles.models import SHUTTLE_ID_LENGTH
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.models import ShuttleSlot
 from wafer_space.users.models import User
@@ -39,7 +42,7 @@ class TestProjectShuttleProperties(TestCase):
             project_id="ABCD",
         )
         assert project.full_id == "G801ABCD"
-        assert len(project.full_id) == 8
+        assert len(project.full_id) == SHUTTLE_ID_LENGTH + PROJECT_ID_LENGTH
 
     def test_full_id_without_shuttle_returns_empty(self):
         """Test full_id returns empty string when shuttle is None."""
@@ -112,7 +115,8 @@ class TestProjectShuttleProperties(TestCase):
 
         # Get shuttle positions
         positions = project.shuttle_positions
-        assert positions.count() == 2
+        expected_slot_count = 2  # We created slot1 and slot2
+        assert positions.count() == expected_slot_count
         assert slot1 in positions
         assert slot2 in positions
 
@@ -138,8 +142,6 @@ class TestProjectShuttleProperties(TestCase):
         )
 
         # Try to create second project with same shuttle and project_id
-        from django.db import IntegrityError
-
         with pytest.raises(IntegrityError):
             Project.objects.create(
                 user=self.user,

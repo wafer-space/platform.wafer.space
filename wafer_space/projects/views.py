@@ -621,7 +621,8 @@ class ProjectIDCheckView(LoginRequiredMixin, View):
             JSON response with availability status and message
         """
         shuttle_id = request.GET.get("shuttle")
-        project_id = request.GET.get("project_id", "").upper().strip()
+        project_id_raw = request.GET.get("project_id", "").strip()
+        project_id = project_id_raw.upper()
 
         if not shuttle_id or not project_id:
             return JsonResponse(
@@ -638,6 +639,12 @@ class ProjectIDCheckView(LoginRequiredMixin, View):
         if not project_id.isalnum():
             return JsonResponse(
                 {"available": False, "message": "Project ID must be alphanumeric"},
+            )
+
+        # Check uppercase requirement (matches model validator)
+        if project_id != project_id_raw:
+            return JsonResponse(
+                {"available": False, "message": "Project ID must be uppercase"},
             )
 
         # Check if already exists for this shuttle

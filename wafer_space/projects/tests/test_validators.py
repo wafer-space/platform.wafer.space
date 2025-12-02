@@ -61,7 +61,6 @@ class TestValidateProjectId:
 
     def test_uses_project_id_length_constant(self):
         """Test that validator uses PROJECT_ID_LENGTH constant."""
-        assert PROJECT_ID_LENGTH == 4
         # If constant changes, validator should reflect it
         test_id = "A" * PROJECT_ID_LENGTH
         validate_project_id(test_id)  # Should not raise

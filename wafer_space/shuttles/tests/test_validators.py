@@ -3,7 +3,6 @@
 import pytest
 from django.core.exceptions import ValidationError
 
-from wafer_space.shuttles.models import SHUTTLE_ID_LENGTH
 from wafer_space.shuttles.models import SHUTTLE_ID_MAX_NUMBER
 from wafer_space.shuttles.models import SHUTTLE_ID_MIN_NUMBER
 from wafer_space.shuttles.models import validate_shuttle_id
@@ -81,10 +80,6 @@ class TestValidateShuttleId:
 
     def test_uses_shuttle_id_constants(self):
         """Test that validator uses shuttle ID constants."""
-        assert SHUTTLE_ID_LENGTH == 4
-        assert SHUTTLE_ID_MIN_NUMBER == 0
-        assert SHUTTLE_ID_MAX_NUMBER == 99
-
         # Test boundaries using constants
         min_id = f"G8{SHUTTLE_ID_MIN_NUMBER:02d}"
         max_id = f"G8{SHUTTLE_ID_MAX_NUMBER:02d}"
