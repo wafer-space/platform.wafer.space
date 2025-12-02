@@ -44,6 +44,17 @@ urlpatterns = [
         views.ManufacturabilityCheckCancelView.as_view(),
         name="cancel_check",
     ),
+    # AJAX endpoints for project form validation
+    path(
+        "check-project-id/",
+        views.ProjectIDCheckView.as_view(),
+        name="check_project_id",
+    ),
+    path(
+        "shuttle-available-sizes/",
+        views.ShuttleAvailableSizesView.as_view(),
+        name="shuttle_available_sizes",
+    ),
     # Compliance certification
     path(
         "<uuid:pk>/compliance/certify/",
