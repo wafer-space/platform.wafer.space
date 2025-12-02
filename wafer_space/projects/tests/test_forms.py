@@ -2,7 +2,6 @@
 
 import pytest
 from django.test import TestCase
-from django.utils import timezone
 
 from wafer_space.projects.forms import ProjectFileURLSubmitForm
 from wafer_space.projects.forms import ProjectForm
@@ -21,7 +20,7 @@ class TestProjectForm(TestCase):
         """Set up test fixtures."""
         # Create a test shuttle for form tests
         self.shuttle = Shuttle.objects.create(
-            name="TEST01",
+            name="G800",
             description="Test Shuttle",
             status=Shuttle.Status.OPEN,
             max_slots=10,
