@@ -65,7 +65,7 @@
             {% endif %}
             {% if project.submitted_at %}
               <p>
-                <strong>Submitted:</strong> {{ project.submitted_at|date:"F d, Y, g:i a" }}
+                <strong>Submitted:</strong> {{ project.submitted_at|date:"Y-m-d H:i" }}
               </p>
             {% endif %}
           </div>
@@ -222,10 +222,10 @@
         <div class="card">
           <div class="card-body">
             <p class="text-muted mb-0">
-              <small>Created: {{ project.created_at|date:"F d, Y, g:i a" }}</small>
+              <small>Created: {{ project.created_at|date:"Y-m-d H:i" }}</small>
               {% if project.updated_at != project.created_at %}
                 <br />
-                <small>Last modified: {{ project.updated_at|date:"F d, Y, g:i a" }}</small>
+                <small>Last modified: {{ project.updated_at|date:"Y-m-d H:i" }}</small>
               {% endif %}
             </p>
           </div>

@@ -25,7 +25,7 @@ class ProjectForm(forms.ModelForm):
     shuttle = forms.ModelChoiceField(
         queryset=Shuttle.objects.filter(
             status__in=[Shuttle.Status.PLANNING, Shuttle.Status.OPEN],
-        ),
+        ).order_by("name"),
         widget=forms.Select(attrs={"class": "form-control", "id": "id_shuttle"}),
         help_text="Select the shuttle run for this project",
     )
