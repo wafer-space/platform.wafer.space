@@ -3,8 +3,11 @@
 from django import forms
 from django.core.exceptions import ValidationError
 
+from wafer_space.shuttles.models import Shuttle
+
 from .models import Project
 from .models import ProjectComplianceCertification
+from .models import validate_project_id
 
 # Hash length constants
 MD5_HASH_LENGTH = 32
@@ -18,9 +21,43 @@ MIN_END_USE_STATEMENT_LENGTH = 10
 class ProjectForm(forms.ModelForm):
     """Form for creating and editing projects."""
 
+    shuttle = forms.ModelChoiceField(
+        queryset=Shuttle.objects.filter(
+            status__in=[Shuttle.Status.PLANNING, Shuttle.Status.OPEN],
+        ),
+        widget=forms.Select(attrs={"class": "form-control", "id": "id_shuttle"}),
+        help_text="Select the shuttle run for this project",
+    )
+
+    project_id = forms.CharField(
+        max_length=4,
+        min_length=4,
+        validators=[validate_project_id],
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control",
+                "id": "id_project_id",
+                "placeholder": "ABCD",
+                "maxlength": "4",
+                "minlength": "4",
+                "pattern": "[A-Z0-9]{4}",
+                "style": "text-transform: uppercase;",
+                "data-bs-toggle": "popover",
+                "data-bs-trigger": "focus",
+                "data-bs-placement": "right",
+                "data-bs-content": (
+                    "Enter a unique 4-character project ID using uppercase letters "
+                    "(A-Z) and numbers (0-9). Example: ABCD, TEST, 1234, A1B2"
+                ),
+                "title": "Project ID Requirements",
+            },
+        ),
+        help_text="4-character alphanumeric identifier (A-Z, 0-9)",
+    )
+
     class Meta:
         model = Project
-        fields = ["name", "description", "slot_size"]
+        fields = ["name", "description", "shuttle", "project_id", "slot_size"]
         widgets = {
             "name": forms.TextInput(
                 attrs={
@@ -38,6 +75,7 @@ class ProjectForm(forms.ModelForm):
             "slot_size": forms.Select(
                 attrs={
                     "class": "form-control",
+                    "id": "id_slot_size",
                 },
             ),
         }
@@ -46,6 +84,40 @@ class ProjectForm(forms.ModelForm):
             "description": "Optional details about your design",
             "slot_size": "Select the die slot size for your design",
         }
+
+    def clean_project_id(self):
+        """Validate and normalize project_id field."""
+        project_id = self.cleaned_data.get("project_id", "").upper().strip()
+
+        # Validate format (backup to model validator)
+        if not project_id:
+            msg = "Project ID is required"
+            raise ValidationError(msg)
+
+        if not project_id.isalnum():
+            msg = "Project ID must be alphanumeric (A-Z, 0-9)"
+            raise ValidationError(msg)
+
+        if len(project_id) != 4:
+            msg = "Project ID must be exactly 4 characters"
+            raise ValidationError(msg)
+
+        # Check uniqueness within shuttle
+        shuttle = self.cleaned_data.get("shuttle")
+        if shuttle:
+            # Exclude current instance if editing
+            queryset = Project.objects.filter(
+                shuttle=shuttle,
+                project_id=project_id,
+            )
+            if self.instance and self.instance.pk:
+                queryset = queryset.exclude(pk=self.instance.pk)
+
+            if queryset.exists():
+                msg = f"Project ID '{project_id}' is already used in shuttle {shuttle.name}"
+                raise ValidationError(msg)
+
+        return project_id
 
 
 class ProjectFileURLSubmitForm(forms.Form):
