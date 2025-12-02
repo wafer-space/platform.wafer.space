@@ -36,6 +36,19 @@ class CheckExecutionContext:
 _BYTES_PER_KB = 1024.0
 
 
+def validate_project_id(value: str) -> None:
+    """Validate project ID is 4 alphanumeric uppercase characters."""
+    if len(value) != 4:
+        msg = "Project ID must be exactly 4 characters"
+        raise ValidationError(msg)
+    if not value.isalnum():
+        msg = "Project ID must be alphanumeric (A-Z, 0-9)"
+        raise ValidationError(msg)
+    if not value.isupper():
+        msg = "Project ID must be uppercase"
+        raise ValidationError(msg)
+
+
 class Project(models.Model):
     """User-submitted design projects for manufacturing."""
 
@@ -78,6 +91,7 @@ class Project(models.Model):
         max_length=4,
         null=True,
         blank=True,
+        validators=[validate_project_id],
         help_text="4-character alphanumeric project identifier (A-Z, 0-9)",
         db_index=True,
     )
@@ -132,6 +146,31 @@ class Project(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.user.username})"
+
+    @property
+    def full_id(self) -> str:
+        """Return full 8-character manufacturing ID (shuttle code + project ID).
+
+        Example: "G801ABCD"
+        """
+        if self.shuttle and self.project_id:
+            return f"{self.shuttle.name}{self.project_id}"
+        return ""
+
+    @property
+    def shuttle_positions(self):
+        """Return all shuttle slots assigned to this project."""
+        return self.shuttle_slots.all()
+
+    @property
+    def shuttle_run_display(self) -> str:
+        """Return descriptive shuttle name.
+
+        Example: "GF180MCU Shuttle 1: G801"
+        """
+        if self.shuttle:
+            return f"{self.shuttle.description}: {self.shuttle.name}"
+        return ""
 
     def can_submit(self) -> tuple[bool, str]:
         """Check if project can be submitted.
