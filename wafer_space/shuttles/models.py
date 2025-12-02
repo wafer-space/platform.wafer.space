@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator
@@ -5,12 +7,16 @@ from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils import timezone
 
+from wafer_space.core.enums import SlotSize
 from wafer_space.projects.models import Project
 
 # Shuttle ID format constants
 SHUTTLE_ID_LENGTH = 4
 SHUTTLE_ID_MIN_NUMBER = 0
 SHUTTLE_ID_MAX_NUMBER = 99
+
+# Grid positioning constants
+ALPHABET_SIZE = 26  # Number of letters in alphabet (A-Z)
 
 
 def validate_shuttle_id(value: str) -> None:
@@ -82,6 +88,13 @@ class Shuttle(models.Model):
     )
     reserved_slots = models.PositiveIntegerField(default=0)
     available_slots = models.PositiveIntegerField(default=0)
+
+    # Grid configuration
+    grid_config_file = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Path to YAML grid configuration (e.g., shuttles/G801-layout.yaml)",
+    )
 
     # Important dates
     created_at = models.DateTimeField(auto_now_add=True)
@@ -180,6 +193,15 @@ class Shuttle(models.Model):
             )
         )
 
+    @property
+    def grid_dimensions(self) -> tuple[int, int]:
+        """Get grid dimensions as (num_rows, num_columns)."""
+        if not self.slots.exists():
+            return (0, 0)
+        max_row = self.slots.aggregate(models.Max("row"))["row__max"]
+        max_col = self.slots.aggregate(models.Max("column"))["column__max"]
+        return (max_row + 1, max_col + 1)
+
     def generate_manifest(self) -> dict[str, str | int | list[dict[str, str | None]]]:
         """Generate manifest data for production."""
         slots = self.slots.filter(status=ShuttleSlot.Status.RESERVED).select_related(
@@ -203,11 +225,14 @@ class Shuttle(models.Model):
             if not slot.project:
                 continue
 
+            user_name = (
+                slot.project.user.username if hasattr(slot.project, "user") else None
+            )
             project_data: dict[str, str | None] = {
-                "slot_number": str(slot.slot_number),
+                "grid_position": slot.grid_position,
                 "project_id": str(slot.project.id),
                 "project_name": slot.project.name,
-                "user": slot.project.user.username,
+                "user": user_name,
                 "reserved_at": slot.reserved_at.isoformat()
                 if slot.reserved_at
                 else None,
@@ -232,9 +257,6 @@ class ShuttleSlot(models.Model):
         on_delete=models.CASCADE,
         related_name="slots",
     )
-    slot_number = models.PositiveIntegerField(
-        validators=[MinValueValidator(1)],
-    )
     project = models.ForeignKey(
         Project,
         on_delete=models.SET_NULL,
@@ -258,82 +280,116 @@ class ShuttleSlot(models.Model):
         related_name="reserved_slots",
     )
 
-    # Slot positioning (for layout purposes)
-    position_x = models.FloatField(null=True, blank=True)
-    position_y = models.FloatField(null=True, blank=True)
-    width = models.FloatField(null=True, blank=True)
-    height = models.FloatField(null=True, blank=True)
+    # Grid positioning
+    row = models.PositiveIntegerField(
+        validators=[MinValueValidator(0)],
+        help_text="Grid row index (0-based)",
+        default=0,
+    )
+    column = models.PositiveIntegerField(
+        validators=[MinValueValidator(0)],
+        help_text="Grid column index (0-based)",
+        default=0,
+    )
+    slot_size = models.CharField(
+        max_length=20,
+        choices=SlotSize.choices,
+        help_text="Physical size of this grid cell",
+        default=SlotSize.FULL,
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
 
     class Meta:
         verbose_name = "Shuttle Slot"
         verbose_name_plural = "Shuttle Slots"
-        ordering = ["shuttle", "slot_number"]
-        unique_together = ["shuttle", "slot_number"]
+        ordering = ["shuttle", "row", "column"]
+        unique_together = [("shuttle", "row", "column")]
         indexes = [
             models.Index(fields=["shuttle", "status"]),
-            models.Index(fields=["project", "status"]),
+            models.Index(fields=["shuttle", "row", "column"]),
         ]
 
     def __str__(self):
         project_name = self.project.name if self.project else "Empty"
-        return f"{self.shuttle.name} Slot {self.slot_number} - {project_name}"
+        return f"{self.shuttle.name} {self.grid_position} - {project_name}"
+
+    @property
+    def grid_position(self) -> str:
+        """Return spreadsheet-style position (A1, B2, etc.)."""
+        if self.column < ALPHABET_SIZE:
+            column_letter = chr(65 + self.column)
+        else:
+            column_letter = self._column_to_letters(self.column)
+        return f"{column_letter}{self.row + 1}"
+
+    @staticmethod
+    def _column_to_letters(column: int) -> str:
+        """Convert column index to letters for columns > 25 (AA, AB, etc.)."""
+        result = ""
+        while column >= 0:
+            result = chr(65 + (column % 26)) + result
+            column = column // 26 - 1
+        return result
 
     def reserve(self, project, user):
-        """Reserve this slot for a project."""
+        """Reserve this slot for a project with size validation."""
         if self.status != self.Status.AVAILABLE:
-            msg = "Slot is not available for reservation"
+            msg = "Slot is not available"
             raise ValueError(msg)
 
         if not self.shuttle.can_accept_projects():
-            msg = "Shuttle is not accepting new projects"
+            msg = "Shuttle is not accepting projects"
             raise ValueError(msg)
 
-        # NEW: Check compliance certification
-        if not hasattr(project, "compliance_certification"):
+        # Check compliance certification
+        try:
+            cert = project.compliance_certification
+            if not cert:
+                msg = (
+                    "Project must have compliance certification "
+                    "before shuttle assignment"
+                )
+                raise ValueError(msg)
+
+            # Verify attestations are complete
+            if not cert.export_control_compliant or not cert.not_restricted_entity:
+                msg = "Compliance certification is incomplete"
+                raise ValueError(msg)
+
+            # Verify end-use statement is present and non-empty
+            if not cert.end_use_statement or not cert.end_use_statement.strip():
+                msg = "End-use statement is required"
+                raise ValueError(msg)
+        except Project.compliance_certification.RelatedObjectDoesNotExist as exc:
             msg = "Project must have compliance certification before shuttle assignment"
-            raise ValueError(msg)
+            raise ValueError(msg) from exc
 
-        cert = project.compliance_certification
-        if not (cert.export_control_compliant and cert.not_restricted_entity):
-            msg = "Compliance certification is incomplete"
-            raise ValueError(msg)
+        # Check for size mismatch (warning only, not blocking)
+        size_mismatch = None
+        if hasattr(project, "slot_size") and project.slot_size != self.slot_size:
+            size_mismatch = (
+                f"⚠️ Size mismatch: Project is {project.slot_size} "
+                f"but slot is {self.slot_size}"
+            )
 
-        if not cert.end_use_statement.strip():
-            msg = "End-use statement is required"
-            raise ValueError(msg)
-
+        # Assign project (no status change on project)
         self.project = project
         self.reserved_by = user
         self.status = self.Status.RESERVED
         self.reserved_at = timezone.now()
         self.save()
 
-        # Update project status
-        project.status = Project.Status.ASSIGNED_TO_SHUTTLE
-        project.save()
-
-        # Update shuttle slot counts
-        self.shuttle.update_slot_counts()
+        return size_mismatch
 
     def cancel_reservation(self):
-        """Cancel the reservation for this slot."""
-        if self.status != self.Status.RESERVED:
-            msg = "Slot is not currently reserved"
-            raise ValueError(msg)
-
-        # Update project status back to manufacturable
-        if self.project:
-            self.project.status = Project.Status.MANUFACTURABLE
-            self.project.save()
-
+        """Cancel this slot's reservation."""
         self.project = None
         self.reserved_by = None
-        self.status = self.Status.AVAILABLE
         self.reserved_at = None
+        self.status = self.Status.AVAILABLE
         self.save()
-
-        # Update shuttle slot counts
-        self.shuttle.update_slot_counts()
 
 
 class ShuttleManifest(models.Model):

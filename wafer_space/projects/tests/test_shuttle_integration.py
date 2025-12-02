@@ -4,6 +4,7 @@ import pytest
 from django.db import IntegrityError
 from django.test import TestCase
 
+from wafer_space.core.enums import SlotSize
 from wafer_space.projects.models import PROJECT_ID_LENGTH
 from wafer_space.projects.models import Project
 from wafer_space.shuttles.models import SHUTTLE_ID_LENGTH
@@ -102,13 +103,17 @@ class TestProjectShuttleProperties(TestCase):
         # Create some shuttle slots for this project
         slot1 = ShuttleSlot.objects.create(
             shuttle=self.shuttle,
-            slot_number=1,
+            row=0,
+            column=0,
+            slot_size=SlotSize.FULL,
             project=project,
             status=ShuttleSlot.Status.RESERVED,
         )
         slot2 = ShuttleSlot.objects.create(
             shuttle=self.shuttle,
-            slot_number=2,
+            row=0,
+            column=1,
+            slot_size=SlotSize.FULL,
             project=project,
             status=ShuttleSlot.Status.RESERVED,
         )

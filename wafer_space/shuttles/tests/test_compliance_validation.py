@@ -2,6 +2,7 @@
 
 import pytest
 
+from wafer_space.core.enums import SlotSize
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectComplianceCertification
 from wafer_space.shuttles.models import Shuttle
@@ -19,8 +20,8 @@ class TestShuttleReserveComplianceValidation:
         """Test that reserve() fails if project has no compliance certification."""
         # Arrange: Create shuttle slot and project WITHOUT compliance cert
         user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
+            username="testuser1",
+            email="test1@example.com",
             password=TEST_PASSWORD,
         )
         shuttle = Shuttle.objects.create(
@@ -32,7 +33,9 @@ class TestShuttleReserveComplianceValidation:
         )
         slot = ShuttleSlot.objects.create(
             shuttle=shuttle,
-            slot_number=1,
+            row=0,
+            column=0,
+            slot_size=SlotSize.FULL,
             status=ShuttleSlot.Status.AVAILABLE,
         )
         project = Project.objects.create(
@@ -56,8 +59,8 @@ class TestShuttleReserveComplianceValidation:
         """Test that reserve() fails if compliance attestations are incomplete."""
         # Arrange: Create project with incomplete compliance (missing attestation)
         user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
+            username="testuser2",
+            email="test2@example.com",
             password=TEST_PASSWORD,
         )
         shuttle = Shuttle.objects.create(
@@ -69,7 +72,9 @@ class TestShuttleReserveComplianceValidation:
         )
         slot = ShuttleSlot.objects.create(
             shuttle=shuttle,
-            slot_number=1,
+            row=0,
+            column=0,
+            slot_size=SlotSize.FULL,
             status=ShuttleSlot.Status.AVAILABLE,
         )
         project = Project.objects.create(
@@ -100,8 +105,8 @@ class TestShuttleReserveComplianceValidation:
         """Test that reserve() fails if end-use statement is missing."""
         # Arrange: Create project with empty end-use statement
         user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
+            username="testuser3",
+            email="test3@example.com",
             password=TEST_PASSWORD,
         )
         shuttle = Shuttle.objects.create(
@@ -113,7 +118,9 @@ class TestShuttleReserveComplianceValidation:
         )
         slot = ShuttleSlot.objects.create(
             shuttle=shuttle,
-            slot_number=1,
+            row=0,
+            column=0,
+            slot_size=SlotSize.FULL,
             status=ShuttleSlot.Status.AVAILABLE,
         )
         project = Project.objects.create(
@@ -144,8 +151,8 @@ class TestShuttleReserveComplianceValidation:
         """Test that reserve() succeeds when compliance is valid."""
         # Arrange: Create project with valid compliance certification
         user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
+            username="testuser4",
+            email="test4@example.com",
             password=TEST_PASSWORD,
         )
         shuttle = Shuttle.objects.create(
@@ -157,7 +164,9 @@ class TestShuttleReserveComplianceValidation:
         )
         slot = ShuttleSlot.objects.create(
             shuttle=shuttle,
-            slot_number=1,
+            row=0,
+            column=0,
+            slot_size=SlotSize.FULL,
             status=ShuttleSlot.Status.AVAILABLE,
         )
         project = Project.objects.create(
