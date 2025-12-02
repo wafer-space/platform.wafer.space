@@ -78,11 +78,10 @@
         const projectId = projectIdField.value;
         const shuttleId = shuttleField.value;
 
-        // Remove old feedback
-        const existingFeedback = projectIdField.parentElement.querySelector('.invalid-feedback');
-        if (existingFeedback) {
-          existingFeedback.remove();
-        }
+        // Remove old feedback (both valid and invalid) and reset state
+        projectIdField.parentElement
+          .querySelectorAll('.valid-feedback, .invalid-feedback')
+          .forEach((el) => el.remove());
         projectIdField.classList.remove('is-valid', 'is-invalid');
 
         // Check length first
@@ -114,6 +113,12 @@
             fetch(`{% url 'projects:check_project_id' %}?shuttle=${shuttleId}&project_id=${projectId}`)
               .then(response => response.json())
               .then(data => {
+                // Clear any existing feedback before adding new
+                projectIdField.parentElement
+                  .querySelectorAll('.valid-feedback, .invalid-feedback')
+                  .forEach((el) => el.remove());
+                projectIdField.classList.remove('is-valid', 'is-invalid');
+
                 const feedback = document.createElement('div');
                 feedback.className = data.available ? 'valid-feedback d-block' : 'invalid-feedback d-block';
                 feedback.textContent = data.message;
