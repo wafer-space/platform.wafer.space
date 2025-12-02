@@ -16,4 +16,14 @@ urlpatterns = [
         views.GridPreviewView.as_view(),
         name="grid_preview",
     ),
+    path(
+        "<int:pk>/assign-project/",
+        views.AssignProjectView.as_view(),
+        name="assign_project",
+    ),
+    path(
+        "<int:pk>/remove-assignment/<int:slot_id>/",
+        views.RemoveAssignmentView.as_view(),
+        name="remove_assignment",
+    ),
 ]
