@@ -11,6 +11,7 @@ from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.utils import timezone
 
+from wafer_space.core.enums import SlotSize
 from wafer_space.projects.exceptions import ConcurrentLimitError
 from wafer_space.projects.exceptions import InvalidStateTransitionError
 from wafer_space.projects.exceptions import MaxRetriesExceededError
@@ -49,21 +50,6 @@ class Project(models.Model):
         COMPLETED = "completed", "Completed"
         CANCELLED = "cancelled", "Cancelled"
 
-    class SlotSize(models.TextChoices):
-        """Available slot sizes for manufacturing.
-
-        Each slot represents a portion of the die area:
-        - 1x1: Full slot (3.88mm x 5.07mm = 19.67mm²)
-        - 0p5x1: Half width (1.94mm x 5.07mm = 9.84mm²)
-        - 1x0p5: Half height (3.88mm x 2.535mm = 9.84mm²)
-        - 0p5x0p5: Quarter slot (1.94mm x 2.535mm = 4.92mm²)
-        """
-
-        FULL = "1x1", "1×1 - Full Slot (3.88mm × 5.07mm = 19.67mm²)"
-        HALF_WIDTH = "0p5x1", "0.5×1 - Half Width (1.94mm × 5.07mm = 9.84mm²)"
-        HALF_HEIGHT = "1x0p5", "1×0.5 - Half Height (3.88mm × 2.535mm = 9.84mm²)"
-        QUARTER = "0p5x0p5", "0.5×0.5 - Quarter Slot (1.94mm × 2.535mm = 4.92mm²)"
-
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -78,6 +64,24 @@ class Project(models.Model):
         default=SlotSize.FULL,
         help_text="Die slot size for manufacturing",
     )
+
+    # Shuttle assignment fields
+    shuttle = models.ForeignKey(
+        "shuttles.Shuttle",
+        on_delete=models.PROTECT,
+        related_name="projects",
+        null=True,
+        blank=True,
+        help_text="Shuttle run this project is assigned to",
+    )
+    project_id = models.CharField(
+        max_length=4,
+        null=True,
+        blank=True,
+        help_text="4-character alphanumeric project identifier (A-Z, 0-9)",
+        db_index=True,
+    )
+
     status = models.CharField(
         max_length=30,
         choices=Status.choices,
@@ -117,6 +121,13 @@ class Project(models.Model):
         indexes = [
             models.Index(fields=["user", "status"]),
             models.Index(fields=["status", "created_at"]),
+            models.Index(fields=["shuttle", "project_id"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["shuttle", "project_id"],
+                name="unique_project_id_per_shuttle",
+            ),
         ]
 
     def __str__(self):

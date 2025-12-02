@@ -25,6 +25,7 @@ from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
 from django.test import TestCase
 
+from wafer_space.core.enums import SlotSize
 from wafer_space.projects import tasks
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
@@ -808,7 +809,7 @@ class TestDockerIntegration(TestCase):
             self.project_file.file.save("test.gds", ContentFile(f.read()), save=True)
 
         # Set a non-default slot size on the project
-        self.project.slot_size = Project.SlotSize.QUARTER  # 0p5x0p5
+        self.project.slot_size = SlotSize.QUARTER  # 0p5x0p5
         self.project.save()
 
         # Setup mock

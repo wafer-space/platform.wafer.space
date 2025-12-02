@@ -8,6 +8,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
 
+from wafer_space.core.enums import SlotSize
 from wafer_space.projects.exceptions import InvalidStateTransitionError
 from wafer_space.projects.exceptions import MaxRetriesExceededError
 from wafer_space.projects.models import CheckExecutionContext
@@ -1606,12 +1607,12 @@ class TestProjectSlotSize(TestCase):
             name="Test Project",
         )
 
-        assert project.slot_size == Project.SlotSize.FULL
+        assert project.slot_size == SlotSize.FULL
         assert project.slot_size == "1x1"
 
     def test_slot_size_choices_exist(self):
         """Test that all expected slot size choices exist."""
-        choices = [choice[0] for choice in Project.SlotSize.choices]
+        choices = [choice[0] for choice in SlotSize.choices]
         assert "1x1" in choices
         assert "0p5x1" in choices
         assert "1x0p5" in choices
@@ -1619,7 +1620,7 @@ class TestProjectSlotSize(TestCase):
 
     def test_can_create_project_with_each_slot_size(self):
         """Test that projects can be created with each slot size."""
-        for slot_size, _label in Project.SlotSize.choices:
+        for slot_size, _label in SlotSize.choices:
             project = Project.objects.create(
                 user=self.user,
                 name=f"Test Project {slot_size}",
@@ -1632,27 +1633,27 @@ class TestProjectSlotSize(TestCase):
         """Test that slot size display values are correct."""
         # Test that the display labels match expected format with mm dimensions and area
         expected_full = "1×1 - Full Slot (3.88mm × 5.07mm = 19.67mm²)"
-        assert Project.SlotSize.FULL.label == expected_full
+        assert SlotSize.FULL.label == expected_full
         expected_half_width = "0.5×1 - Half Width (1.94mm × 5.07mm = 9.84mm²)"
-        assert Project.SlotSize.HALF_WIDTH.label == expected_half_width
+        assert SlotSize.HALF_WIDTH.label == expected_half_width
         expected_half_height = "1×0.5 - Half Height (3.88mm × 2.535mm = 9.84mm²)"
-        assert Project.SlotSize.HALF_HEIGHT.label == expected_half_height
+        assert SlotSize.HALF_HEIGHT.label == expected_half_height
         expected_quarter = "0.5×0.5 - Quarter Slot (1.94mm × 2.535mm = 4.92mm²)"
-        assert Project.SlotSize.QUARTER.label == expected_quarter
+        assert SlotSize.QUARTER.label == expected_quarter
 
     def test_slot_size_can_be_updated(self):
         """Test that slot_size can be updated after creation."""
         project = Project.objects.create(
             user=self.user,
             name="Test Project",
-            slot_size=Project.SlotSize.FULL,
+            slot_size=SlotSize.FULL,
         )
 
-        project.slot_size = Project.SlotSize.QUARTER
+        project.slot_size = SlotSize.QUARTER
         project.save()
 
         project.refresh_from_db()
-        assert project.slot_size == Project.SlotSize.QUARTER
+        assert project.slot_size == SlotSize.QUARTER
         assert project.slot_size == "0p5x0p5"
 
 
