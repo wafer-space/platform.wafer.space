@@ -5,6 +5,7 @@ from django.core.exceptions import ValidationError
 
 from wafer_space.shuttles.models import Shuttle
 
+from .models import PROJECT_ID_LENGTH
 from .models import Project
 from .models import ProjectComplianceCertification
 from .models import validate_project_id
@@ -98,7 +99,7 @@ class ProjectForm(forms.ModelForm):
             msg = "Project ID must be alphanumeric (A-Z, 0-9)"
             raise ValidationError(msg)
 
-        if len(project_id) != 4:
+        if len(project_id) != PROJECT_ID_LENGTH:
             msg = "Project ID must be exactly 4 characters"
             raise ValidationError(msg)
 
@@ -114,7 +115,10 @@ class ProjectForm(forms.ModelForm):
                 queryset = queryset.exclude(pk=self.instance.pk)
 
             if queryset.exists():
-                msg = f"Project ID '{project_id}' is already used in shuttle {shuttle.name}"
+                msg = (
+                    f"Project ID '{project_id}' is already used in "
+                    f"shuttle {shuttle.name}"
+                )
                 raise ValidationError(msg)
 
         return project_id

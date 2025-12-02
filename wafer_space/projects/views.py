@@ -30,6 +30,7 @@ from .exceptions import InvalidStateTransitionError
 from .forms import ProjectFileURLSubmitForm
 from .forms import ProjectForm
 from .mixins import ProjectOwnerOrStaffMixin
+from .models import PROJECT_ID_LENGTH
 from .models import DownloadAttempt
 from .models import ManufacturabilityCheck
 from .models import Project
@@ -629,7 +630,7 @@ class ProjectIDCheckView(LoginRequiredMixin, View):
             )
 
         # Validate project_id format
-        if len(project_id) != 4:
+        if len(project_id) != PROJECT_ID_LENGTH:
             return JsonResponse(
                 {"available": False, "message": "Project ID must be 4 characters"},
             )
@@ -681,8 +682,7 @@ class ShuttleAvailableSizesView(LoginRequiredMixin, View):
             # Phase A: Return all slot sizes
             # Phase B will query shuttle.get_available_slot_sizes()
             size_options = [
-                {"value": value, "label": label}
-                for value, label in SlotSize.choices
+                {"value": value, "label": label} for value, label in SlotSize.choices
             ]
 
             return JsonResponse({"sizes": size_options})

@@ -35,10 +35,13 @@ class CheckExecutionContext:
 # Byte conversion constant
 _BYTES_PER_KB = 1024.0
 
+# Project ID validation constant
+PROJECT_ID_LENGTH = 4
+
 
 def validate_project_id(value: str) -> None:
     """Validate project ID is 4 alphanumeric uppercase characters."""
-    if len(value) != 4:
+    if len(value) != PROJECT_ID_LENGTH:
         msg = "Project ID must be exactly 4 characters"
         raise ValidationError(msg)
     if not value.isalnum():
@@ -88,9 +91,9 @@ class Project(models.Model):
         help_text="Shuttle run this project is assigned to",
     )
     project_id = models.CharField(
-        max_length=4,
-        null=True,
+        max_length=PROJECT_ID_LENGTH,
         blank=True,
+        default="",
         validators=[validate_project_id],
         help_text="4-character alphanumeric project identifier (A-Z, 0-9)",
         db_index=True,
