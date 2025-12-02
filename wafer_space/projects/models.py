@@ -1758,7 +1758,7 @@ docker run --rm \\
   python3 /precheck/precheck.py \\
     --input /input/design.gds \\
     --top "{self.project.name}" \\
-    --id {self.project.id}
+    --id {self.project.full_id}
 ```
 
 ### 3. Verify file hash
