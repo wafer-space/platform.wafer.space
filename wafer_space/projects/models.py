@@ -47,7 +47,8 @@ def validate_project_id(value: str) -> None:
     if not value.isalnum():
         msg = "Project ID must be alphanumeric (A-Z, 0-9)"
         raise ValidationError(msg)
-    if not value.isupper():
+    # Check that any letters present are uppercase (digits are okay)
+    if value != value.upper():
         msg = "Project ID must be uppercase"
         raise ValidationError(msg)
 
