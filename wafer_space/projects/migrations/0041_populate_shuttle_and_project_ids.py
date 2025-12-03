@@ -12,7 +12,7 @@ def populate_shuttle_and_project_ids(apps, _schema_editor):
     """Populate shuttle and project_id fields for existing projects.
 
     Assigns all projects without a shuttle to the G801 shuttle and generates
-    unique 4-character project IDs for projects that don't have one.
+    unique project IDs (P001, P002, etc.) for each migrated project.
     """
     Project = apps.get_model("projects", "Project")
     Shuttle = apps.get_model("shuttles", "Shuttle")
