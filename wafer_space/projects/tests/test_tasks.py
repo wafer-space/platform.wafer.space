@@ -250,10 +250,19 @@ class TestManufacturabilityCheckTask(TestCase):
             email="test@example.com",
             password=TEST_PASSWORD,
         )
+        self.shuttle = Shuttle.objects.create(
+            name="G800",
+            description="Test Shuttle",
+            status=Shuttle.Status.OPEN,
+            max_slots=10,
+            available_slots=10,
+        )
         self.project = Project.objects.create(
             user=self.user,
             name="Test Project",
             description="Test Description",
+            shuttle=self.shuttle,
+            project_id="ABCD",
         )
 
     @patch("wafer_space.projects.tasks.docker")
