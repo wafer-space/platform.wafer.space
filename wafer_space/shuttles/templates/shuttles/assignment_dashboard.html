@@ -78,11 +78,11 @@
                         {% if slot.project %}
                           <strong>{{ slot.project.project_id }}</strong>
                           <br />
-                          <small class="text-muted">{{ slot.get_slot_size_display }}</small>
+                          <small class="text-muted">{{ slot.slot_size }}</small>
                         {% else %}
                           <span class="text-muted">{{ slot.grid_position }}</span>
                           <br />
-                          <small class="text-muted">{{ slot.get_slot_size_display }}</small>
+                          <small class="text-muted">{{ slot.slot_size }}</small>
                         {% endif %}
                       </td>
                     {% endfor %}
