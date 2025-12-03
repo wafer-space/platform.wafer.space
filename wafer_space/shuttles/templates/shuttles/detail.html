@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}{{ shuttle.name }} - Shuttle Details{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="{% url 'shuttles:list' %}">Shuttles</a></li>
+      <li class="breadcrumb-item active" aria-current="page">{{ shuttle.name }}</li>
+    </ol>
+  </nav>
+
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>{{ shuttle.name }}</h1>
+    <span class="badge bg-{% if shuttle.status == 'open' %}success{% elif shuttle.status == 'closed' %}secondary{% else %}info{% endif %} fs-6">
+      {{ shuttle.get_status_display }}
+    </span>
+  </div>
+
+  <p class="lead">{{ shuttle.description }}</p>
+
+  <div class="row">
+    <!-- Capacity Card -->
+    <div class="col-md-6 mb-4">
+      <div class="card h-100">
+        <div class="card-header">
+          <h5 class="mb-0">Capacity</h5>
+        </div>
+        <div class="card-body">
+          <dl class="row mb-0">
+            <dt class="col-sm-6">Max Slots</dt>
+            <dd class="col-sm-6">{{ shuttle.max_slots }}</dd>
+            <dt class="col-sm-6">Reserved</dt>
+            <dd class="col-sm-6">{{ shuttle.reserved_slots }}</dd>
+            <dt class="col-sm-6">Available</dt>
+            <dd class="col-sm-6">{{ shuttle.available_slots }}</dd>
+          </dl>
+          <div class="progress mt-3" style="height: 20px;">
+            <div class="progress-bar bg-success" role="progressbar"
+                 style="width: {% if shuttle.max_slots > 0 %}{% widthratio shuttle.reserved_slots shuttle.max_slots 100 %}{% else %}0{% endif %}%"
+                 aria-valuenow="{{ shuttle.reserved_slots }}" aria-valuemin="0" aria-valuemax="{{ shuttle.max_slots }}">
+              {{ shuttle.reserved_slots }} reserved
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dates Card -->
+    <div class="col-md-6 mb-4">
+      <div class="card h-100">
+        <div class="card-header">
+          <h5 class="mb-0">Important Dates</h5>
+        </div>
+        <div class="card-body">
+          <dl class="row mb-0">
+            {% if shuttle.submission_deadline %}
+            <dt class="col-sm-6">Submission Deadline</dt>
+            <dd class="col-sm-6">{{ shuttle.submission_deadline|date:"Y-m-d" }}</dd>
+            {% endif %}
+            {% if shuttle.production_start_date %}
+            <dt class="col-sm-6">Production Start</dt>
+            <dd class="col-sm-6">{{ shuttle.production_start_date|date:"Y-m-d" }}</dd>
+            {% endif %}
+            {% if shuttle.estimated_completion_date %}
+            <dt class="col-sm-6">Est. Completion</dt>
+            <dd class="col-sm-6">{{ shuttle.estimated_completion_date|date:"Y-m-d" }}</dd>
+            {% endif %}
+            {% if shuttle.actual_completion_date %}
+            <dt class="col-sm-6">Actual Completion</dt>
+            <dd class="col-sm-6">{{ shuttle.actual_completion_date|date:"Y-m-d" }}</dd>
+            {% endif %}
+            <dt class="col-sm-6">Created</dt>
+            <dd class="col-sm-6">{{ shuttle.created_at|date:"Y-m-d" }}</dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+
+    <!-- Manufacturing Card -->
+    <div class="col-md-6 mb-4">
+      <div class="card h-100">
+        <div class="card-header">
+          <h5 class="mb-0">Manufacturing Details</h5>
+        </div>
+        <div class="card-body">
+          <dl class="row mb-0">
+            {% if shuttle.technology_node %}
+            <dt class="col-sm-6">Technology Node</dt>
+            <dd class="col-sm-6">{{ shuttle.technology_node }}</dd>
+            {% endif %}
+            {% if shuttle.foundry %}
+            <dt class="col-sm-6">Foundry</dt>
+            <dd class="col-sm-6">{{ shuttle.foundry }}</dd>
+            {% endif %}
+            {% if shuttle.wafer_size %}
+            <dt class="col-sm-6">Wafer Size</dt>
+            <dd class="col-sm-6">{{ shuttle.wafer_size }}</dd>
+            {% endif %}
+          </dl>
+        </div>
+      </div>
+    </div>
+
+    <!-- Cost Card -->
+    {% if shuttle.total_cost or shuttle.cost_per_slot %}
+    <div class="col-md-6 mb-4">
+      <div class="card h-100">
+        <div class="card-header">
+          <h5 class="mb-0">Cost Information</h5>
+        </div>
+        <div class="card-body">
+          <dl class="row mb-0">
+            {% if shuttle.total_cost %}
+            <dt class="col-sm-6">Total Cost</dt>
+            <dd class="col-sm-6">${{ shuttle.total_cost }}</dd>
+            {% endif %}
+            {% if shuttle.cost_per_slot %}
+            <dt class="col-sm-6">Cost per Slot</dt>
+            <dd class="col-sm-6">${{ shuttle.cost_per_slot }}</dd>
+            {% endif %}
+          </dl>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Actions -->
+  <div class="mt-4">
+    <a href="{% url 'shuttles:assignment' shuttle.name %}" class="btn btn-primary">Manage Slot Assignments</a>
+    <a href="{% url 'shuttles:grid_preview' shuttle.name %}" class="btn btn-outline-secondary">View Grid Layout</a>
+    <a href="{% url 'shuttles:list' %}" class="btn btn-outline-secondary">Back to List</a>
+  </div>
+</div>
+{% endblock %}

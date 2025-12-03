@@ -238,7 +238,7 @@
                   </li>
                 {% endfor %}
               </ul>
-              <a href="{% url 'shuttles:assignment' pk=project.shuttle.pk %}"
+              <a href="{% url 'shuttles:assignment' project.shuttle.name %}"
                  class="btn btn-sm btn-outline-primary mt-3">
                 <i class="bi bi-box-arrow-up-right"></i> View Shuttle Layout
               </a>

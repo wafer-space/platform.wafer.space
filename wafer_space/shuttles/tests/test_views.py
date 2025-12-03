@@ -22,17 +22,17 @@ class TestShuttleAssignmentView:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="G801",
+            name="G810",
             description="Test shuttle",
             status=Shuttle.Status.OPEN,
             max_slots=100,
         )
 
-        url = reverse("shuttles:assignment", kwargs={"pk": shuttle.pk})
+        url = reverse("shuttles:assignment", kwargs={"name": shuttle.name})
         response = client.get(url)
 
         assert response.status_code == HTTPStatus.OK
-        assert "G801" in response.content.decode()
+        assert "G810" in response.content.decode()
 
     def test_regular_user_cannot_access(self, client):
         """Regular users should be denied access."""
@@ -46,7 +46,7 @@ class TestShuttleAssignmentView:
             max_slots=100,
         )
 
-        url = reverse("shuttles:assignment", kwargs={"pk": shuttle.pk})
+        url = reverse("shuttles:assignment", kwargs={"name": shuttle.name})
         response = client.get(url)
 
         assert response.status_code == HTTPStatus.FORBIDDEN
@@ -91,7 +91,7 @@ class TestShuttleAssignmentView:
         assigned_slot.project = project
         assigned_slot.save()
 
-        url = reverse("shuttles:assignment", kwargs={"pk": shuttle.pk})
+        url = reverse("shuttles:assignment", kwargs={"name": shuttle.name})
         response = client.get(url)
 
         assert response.status_code == HTTPStatus.OK
@@ -121,7 +121,7 @@ class TestShuttleAssignmentView:
         project1 = ProjectFactory(shuttle=shuttle, name="Project One")
         project2 = ProjectFactory(shuttle=shuttle, name="Project Two")
 
-        url = reverse("shuttles:assignment", kwargs={"pk": shuttle.pk})
+        url = reverse("shuttles:assignment", kwargs={"name": shuttle.name})
         response = client.get(url)
 
         assert response.status_code == HTTPStatus.OK
@@ -142,7 +142,7 @@ class TestGridPreviewView:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="G801",
+            name="G811",
             description="Test shuttle",
             status=Shuttle.Status.OPEN,
             max_slots=100,
@@ -183,7 +183,7 @@ class TestGridPreviewView:
         assigned_slot.project = project
         assigned_slot.save()
 
-        url = reverse("shuttles:grid_preview", kwargs={"pk": shuttle.pk})
+        url = reverse("shuttles:grid_preview", kwargs={"name": shuttle.name})
         response = client.get(url)
 
         assert response.status_code == HTTPStatus.OK
@@ -214,7 +214,7 @@ class TestGridPreviewView:
             status=ShuttleSlot.Status.AVAILABLE,
         )
 
-        url = reverse("shuttles:grid_preview", kwargs={"pk": shuttle.pk})
+        url = reverse("shuttles:grid_preview", kwargs={"name": shuttle.name})
         response = client.get(url)
 
         assert response.status_code == HTTPStatus.OK
@@ -232,7 +232,7 @@ class TestAssignProjectView:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="G801",
+            name="G812",
             description="Test shuttle",
             status=Shuttle.Status.OPEN,
             max_slots=100,
@@ -256,7 +256,7 @@ class TestAssignProjectView:
             user_agent="Test Browser",
         )
 
-        url = reverse("shuttles:assign_project", kwargs={"pk": shuttle.pk})
+        url = reverse("shuttles:assign_project", kwargs={"name": shuttle.name})
         response = client.post(
             url,
             data=json.dumps({"project_id": str(project.pk), "slot_id": slot.pk}),
@@ -303,7 +303,7 @@ class TestAssignProjectView:
             user_agent="Test Browser",
         )
 
-        url = reverse("shuttles:assign_project", kwargs={"pk": shuttle.pk})
+        url = reverse("shuttles:assign_project", kwargs={"name": shuttle.name})
         response = client.post(
             url,
             data=json.dumps({"project_id": str(project.pk), "slot_id": slot.pk}),
@@ -339,7 +339,7 @@ class TestAssignProjectView:
 
         new_project = ProjectFactory(shuttle=shuttle)
 
-        url = reverse("shuttles:assign_project", kwargs={"pk": shuttle.pk})
+        url = reverse("shuttles:assign_project", kwargs={"name": shuttle.name})
         response = client.post(
             url,
             data=json.dumps({"project_id": str(new_project.pk), "slot_id": slot.pk}),
@@ -362,7 +362,7 @@ class TestRemoveAssignmentView:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="G801",
+            name="G813",
             description="Test shuttle",
             status=Shuttle.Status.OPEN,
             max_slots=100,
@@ -380,7 +380,8 @@ class TestRemoveAssignmentView:
         slot.save()
 
         url = reverse(
-            "shuttles:remove_assignment", kwargs={"pk": shuttle.pk, "slot_id": slot.pk}
+            "shuttles:remove_assignment",
+            kwargs={"name": shuttle.name, "slot_id": slot.pk},
         )
         response = client.post(url)
 

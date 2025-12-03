@@ -10,6 +10,7 @@ from django.db import transaction
 from django.http import JsonResponse
 from django.views import View
 from django.views.generic import DetailView
+from django.views.generic import ListView
 
 from wafer_space.core.enums import SlotSize
 from wafer_space.projects.models import Project
@@ -29,12 +30,23 @@ class StaffRequiredMixin(UserPassesTestMixin):
         return self.request.user.is_staff
 
 
+class ShuttleListView(StaffRequiredMixin, ListView):
+    """List all shuttles."""
+
+    model = Shuttle
+    template_name = "shuttles/list.html"
+    context_object_name = "shuttles"
+    ordering = ["-created_at"]
+
+
 class ShuttleDetailView(StaffRequiredMixin, DetailView):
     """Detail view for a shuttle."""
 
     model = Shuttle
     template_name = "shuttles/detail.html"
     context_object_name = "shuttle"
+    slug_field = "name"
+    slug_url_kwarg = "name"
 
 
 class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
@@ -43,6 +55,8 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
     model = Shuttle
     template_name = "shuttles/assignment_dashboard.html"
     context_object_name = "shuttle"
+    slug_field = "name"
+    slug_url_kwarg = "name"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -84,6 +98,8 @@ class GridPreviewView(StaffRequiredMixin, DetailView):
     model = Shuttle
     template_name = "shuttles/grid_preview.html"
     context_object_name = "shuttle"
+    slug_field = "name"
+    slug_url_kwarg = "name"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -112,8 +128,11 @@ class GridPreviewView(StaffRequiredMixin, DetailView):
 class AssignProjectView(StaffRequiredMixin, View):
     """Assign a project to a slot."""
 
-    def post(self, request, pk):
+    def post(self, request, name):
         try:
+            # Look up shuttle by name
+            shuttle = Shuttle.objects.get(name=name)
+
             data = json.loads(request.body)
             project_id = data.get("project_id")
             slot_id = data.get("slot_id")
@@ -127,9 +146,9 @@ class AssignProjectView(StaffRequiredMixin, View):
             with transaction.atomic():
                 # Get objects with row locking
                 slot = ShuttleSlot.objects.select_for_update().get(
-                    pk=slot_id, shuttle_id=pk
+                    pk=slot_id, shuttle=shuttle
                 )
-                project = Project.objects.get(pk=project_id, shuttle_id=pk)
+                project = Project.objects.get(pk=project_id, shuttle=shuttle)
 
                 # Attempt reservation
                 try:
@@ -143,6 +162,10 @@ class AssignProjectView(StaffRequiredMixin, View):
                         {"success": False, "error": str(exc)}, status=400
                     )
 
+        except Shuttle.DoesNotExist:
+            return JsonResponse(
+                {"success": False, "error": "Shuttle not found"}, status=404
+            )
         except (ShuttleSlot.DoesNotExist, Project.DoesNotExist):
             return JsonResponse(
                 {"success": False, "error": "Slot or project not found"}, status=404
@@ -154,14 +177,21 @@ class AssignProjectView(StaffRequiredMixin, View):
 class RemoveAssignmentView(StaffRequiredMixin, View):
     """Remove a project from a slot."""
 
-    def post(self, request, pk, slot_id):
+    def post(self, request, name, slot_id):
         try:
+            # Look up shuttle by name
+            shuttle = Shuttle.objects.get(name=name)
+
             with transaction.atomic():
                 slot = ShuttleSlot.objects.select_for_update().get(
-                    pk=slot_id, shuttle_id=pk
+                    pk=slot_id, shuttle=shuttle
                 )
                 slot.cancel_reservation()
                 return JsonResponse({"success": True})
+        except Shuttle.DoesNotExist:
+            return JsonResponse(
+                {"success": False, "error": "Shuttle not found"}, status=404
+            )
         except ShuttleSlot.DoesNotExist:
             return JsonResponse(
                 {"success": False, "error": "Slot not found"}, status=404
