@@ -167,7 +167,7 @@
         <tbody>
           {% for project in projects %}
             <tr>
-              <td>{{ project.full_id|default:"-" }}</td>
+              <td class="font-monospace">{{ project.full_id|default:"-" }}</td>
               <td>{{ project.slot_size }}</td>
               <td>{{ project.name }}</td>
               <td>{{ project.user.username }}</td>
