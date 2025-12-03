@@ -44,19 +44,21 @@ def populate_shuttle_and_project_ids(apps, schema_editor):
 
     # Generate sequential project IDs starting from P001
     # Format: P001, P002, P003, etc.
-    for index, project in enumerate(projects_to_migrate, start=1):
-        project_id = f"P{index:03d}"  # P001, P002, P003...
+    next_id = 1
+    for project in projects_to_migrate:
+        project_id = f"P{next_id:03d}"  # P001, P002, P003...
 
         # Ensure uniqueness within the shuttle
         while Project.objects.filter(shuttle=g801, project_id=project_id).exists():
-            index += 1
-            project_id = f"P{index:03d}"
+            next_id += 1
+            project_id = f"P{next_id:03d}"
 
         project.shuttle = g801
         project.project_id = project_id
         project.save(update_fields=["shuttle", "project_id"])
 
         logger.info("  Migrated: %s -> G801:%s", project.name, project_id)
+        next_id += 1
 
     logger.info("Successfully migrated %d projects to G801", count)
 
