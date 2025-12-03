@@ -809,12 +809,15 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
                 {"label": "No Check", "count": status_counts["no_check"]}
             )
 
-        # Build size breakdowns with display labels
-        size_labels = {choice.value: choice.label for choice in SlotSize}
+        # Build size breakdowns with short display labels
+        # Extract short name from label (e.g., "1×1 - Full Slot..." → "1×1")
+        short_size_labels = {
+            choice.value: choice.label.split(" - ")[0] for choice in SlotSize
+        }
 
         def build_size_breakdown(counter):
             return [
-                {"size": size_labels.get(size, size), "count": count}
+                {"size": short_size_labels.get(size, size), "count": count}
                 for size, count in sorted(counter.items())
                 if count > 0
             ]

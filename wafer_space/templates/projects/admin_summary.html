@@ -16,38 +16,32 @@
             <strong>Manufacturability</strong>
           </div>
           <div class="card-body">
-            <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="d-flex justify-content-between align-items-center mb-1">
               <span class="text-success fw-bold">
                 <i class="bi bi-check-circle"></i> Manufacturable
               </span>
               <span class="badge bg-success">{{ summary.manufacturable_total }}</span>
             </div>
             {% if summary.manufacturable_by_size %}
-              <ul class="list-unstyled ms-3 small text-muted mb-2">
-                {% for item in summary.manufacturable_by_size %}<li>{{ item.size }}: {{ item.count }}</li>{% endfor %}
-              </ul>
+              <div class="small text-muted mb-2 ms-3">{% for item in summary.manufacturable_by_size %}{{ item.size }}: {{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
             {% endif %}
-            <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="d-flex justify-content-between align-items-center mb-1">
               <span class="text-danger fw-bold">
                 <i class="bi bi-x-circle"></i> Non-Manufacturable
               </span>
               <span class="badge bg-danger">{{ summary.non_manufacturable_total }}</span>
             </div>
             {% if summary.non_manufacturable_by_size %}
-              <ul class="list-unstyled ms-3 small text-muted mb-2">
-                {% for item in summary.non_manufacturable_by_size %}<li>{{ item.size }}: {{ item.count }}</li>{% endfor %}
-              </ul>
+              <div class="small text-muted mb-2 ms-3">{% for item in summary.non_manufacturable_by_size %}{{ item.size }}: {{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
             {% endif %}
-            <div class="d-flex justify-content-between align-items-center">
+            <div class="d-flex justify-content-between align-items-center mb-1">
               <span class="text-secondary fw-bold">
                 <i class="bi bi-hourglass"></i> Pending/Unknown
               </span>
               <span class="badge bg-secondary">{{ summary.pending_total }}</span>
             </div>
             {% if summary.pending_by_size %}
-              <ul class="list-unstyled ms-3 small text-muted mb-0">
-                {% for item in summary.pending_by_size %}<li>{{ item.size }}: {{ item.count }}</li>{% endfor %}
-              </ul>
+              <div class="small text-muted mb-0 ms-3">{% for item in summary.pending_by_size %}{{ item.size }}: {{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
             {% endif %}
           </div>
         </div>
