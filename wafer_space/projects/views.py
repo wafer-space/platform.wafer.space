@@ -636,7 +636,10 @@ class ProjectIDCheckView(LoginRequiredMixin, View):
         # Validate project_id format
         if len(project_id) != PROJECT_ID_LENGTH:
             return JsonResponse(
-                {"available": False, "message": "Project ID must be 4 characters"},
+                {
+                    "available": False,
+                    "message": f"Project ID must be {PROJECT_ID_LENGTH} characters",
+                },
             )
 
         if not project_id.isalnum():
@@ -705,7 +708,7 @@ class ShuttleAvailableSizesView(LoginRequiredMixin, View):
             ]
 
             return JsonResponse({"sizes": size_options})
-        except Shuttle.DoesNotExist:
+        except (Shuttle.DoesNotExist, ValueError):
             return JsonResponse({"sizes": []}, status=404)
 
 
