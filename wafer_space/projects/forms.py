@@ -32,7 +32,8 @@ class ProjectForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Set default shuttle to oldest open shuttle (by created_at)
-        if not self.instance.pk:  # Only for new projects
+        # Note: Use _state.adding because UUID pk is auto-generated even for unsaved instances
+        if self.instance._state.adding:  # Only for new projects
             default_shuttle = (
                 Shuttle.objects.filter(
                     status=Shuttle.Status.OPEN,
