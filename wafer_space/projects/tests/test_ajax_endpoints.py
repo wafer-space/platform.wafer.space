@@ -151,7 +151,7 @@ class TestProjectIDCheckView(TestCase):
     def test_same_id_available_in_different_shuttle(self):
         """Test that same project_id is available in different shuttle."""
         shuttle2 = Shuttle.objects.create(
-            name="G801",
+            name="G802",
             description="Another Shuttle",
             status=Shuttle.Status.OPEN,
             max_slots=10,
