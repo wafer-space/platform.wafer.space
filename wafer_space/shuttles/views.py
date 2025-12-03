@@ -109,7 +109,9 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
             for slot in shuttle.slots.select_related("project"):
                 grid[slot.row][slot.column] = slot
             context["grid"] = grid
-            context["columns"] = [chr(65 + i) for i in range(num_cols)]  # A, B, C...
+            context["columns"] = [
+                ShuttleSlot.column_to_letters(i) for i in range(num_cols)
+            ]
         else:
             context["grid"] = []
             context["columns"] = []
@@ -145,7 +147,7 @@ class GridPreviewView(StaffRequiredMixin, DetailView):
             grid[slot.row][slot.column] = slot
 
         context["grid"] = grid
-        context["columns"] = [chr(65 + i) for i in range(num_cols)]  # A, B, C, ...
+        context["columns"] = [ShuttleSlot.column_to_letters(i) for i in range(num_cols)]
 
         return context
 

@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils import timezone
 
@@ -297,12 +296,10 @@ class ShuttleSlot(models.Model):
 
     # Grid positioning
     row = models.PositiveIntegerField(
-        validators=[MinValueValidator(0)],
         help_text="Grid row index (0-based)",
         default=0,
     )
     column = models.PositiveIntegerField(
-        validators=[MinValueValidator(0)],
         help_text="Grid column index (0-based)",
         default=0,
     )
@@ -313,8 +310,8 @@ class ShuttleSlot(models.Model):
         default=SlotSize.FULL,
     )
 
-    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
-    updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = "Shuttle Slot"
@@ -336,11 +333,11 @@ class ShuttleSlot(models.Model):
         if self.column < ALPHABET_SIZE:
             column_letter = chr(65 + self.column)
         else:
-            column_letter = self._column_to_letters(self.column)
+            column_letter = self.column_to_letters(self.column)
         return f"{column_letter}{self.row + 1}"
 
     @staticmethod
-    def _column_to_letters(column: int) -> str:
+    def column_to_letters(column: int) -> str:
         """Convert column index to letters for columns > 25 (AA, AB, etc.)."""
         result = ""
         while column >= 0:

@@ -2,6 +2,7 @@ from io import StringIO
 
 import pytest
 from django.core.management import call_command
+from django.core.management.base import CommandError
 
 from wafer_space.core.enums import SlotSize
 from wafer_space.projects.tests.factories import ProjectFactory
@@ -91,19 +92,14 @@ column_widths: [1.0]
 """)
 
         # Try update without --force
-        out = StringIO()
-        with pytest.raises(SystemExit):
+        with pytest.raises(CommandError, match="assigned projects.*Use --force"):
             call_command(
                 "generate_shuttle_grid",
                 "G851",
                 f"--config-dir={tmp_path}",
                 "--update",
-                stdout=out,
+                stdout=StringIO(),
             )
-
-        output = out.getvalue()
-        assert "assigned projects" in output
-        assert "Use --force" in output
 
     def test_dry_run_mode(self, tmp_path):
         """Should preview without creating slots in dry-run mode."""

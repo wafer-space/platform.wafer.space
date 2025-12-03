@@ -6,6 +6,7 @@ from io import StringIO
 
 import pytest
 from django.core.management import call_command
+from django.core.management.base import CommandError
 
 from wafer_space.core.enums import SlotSize
 from wafer_space.projects.tests.factories import ProjectFactory
@@ -121,7 +122,7 @@ row_heights: [1.0, 1.0]
 column_widths: [1.0, 1.0]
 """)
 
-        with pytest.raises(SystemExit):
+        with pytest.raises(CommandError, match="assigned projects"):
             call_command(
                 "generate_shuttle_grid",
                 "G851",

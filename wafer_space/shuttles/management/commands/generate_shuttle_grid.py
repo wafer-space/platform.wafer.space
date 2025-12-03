@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 from django.core.management.base import BaseCommand
@@ -128,16 +127,13 @@ class Command(BaseCommand):
                     identifier = proj.project_id if proj.project_id else proj.name
                     project_identifiers.append(identifier)
             project_names = ", ".join(project_identifiers)
-            self.stdout.write(
-                self.style.WARNING(
-                    f"\nShuttle {shuttle_name} has {assigned_slots.count()} "
-                    f"assigned projects:\n{project_names}\n\n"
-                    "These projects will remain on the shuttle but lose their "
-                    "slot positions.\n"
-                    "Use --force to proceed with deletion.\n"
-                )
+            msg = (
+                f"Shuttle {shuttle_name} has {assigned_slots.count()} "
+                f"assigned projects: {project_names}. "
+                "These projects will remain on the shuttle but lose their "
+                "slot positions. Use --force to proceed."
             )
-            sys.exit(1)
+            raise CommandError(msg)
 
     def _generate_grid(
         self,
