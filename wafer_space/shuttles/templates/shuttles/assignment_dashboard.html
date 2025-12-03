@@ -19,14 +19,14 @@
           <div class="card-body p-2">
             {% if grid %}
               <style>
-                #grid-table { border-collapse: collapse; }
-                #grid-table th, #grid-table td { border: 2px solid #333 !important; }
+                #grid-table { border-collapse: collapse; font-size: 0.8rem; }
+                #grid-table th, #grid-table td { border: 1px solid #333 !important; padding: 2px 4px !important; }
               </style>
               <table class="table table-bordered table-sm mb-0" id="grid-table">
                 <thead>
                   <tr>
-                    <th class="text-center bg-light" style="width: 30px;"></th>
-                    {% for col in columns %}<th class="text-center bg-light" style="width: 50px;">{{ col }}</th>{% endfor %}
+                    <th class="text-center bg-light" style="width: 20px;"></th>
+                    {% for col in columns %}<th class="text-center bg-light" style="width: 40px;">{{ col }}</th>{% endfor %}
                   </tr>
                 </thead>
                 <tbody>
@@ -34,7 +34,7 @@
                     <tr>
                       <th class="text-center bg-light">{{ forloop.counter }}</th>
                       {% for slot in row %}
-                        <td class="text-center p-1 {% if slot.project %}table-success{% else %}table-secondary{% endif %}"
+                        <td class="text-center {% if slot.project %}table-success{% else %}table-secondary{% endif %}"
                             style="cursor: pointer; vertical-align: middle"
                             data-slot-id="{{ slot.pk }}"
                             data-slot-position="{{ slot.grid_position }}"
