@@ -85,6 +85,12 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
 
         context["stats"] = stats
 
+        # Build size labels dict for JavaScript (avoids duplicating in JS)
+        context["size_labels"] = {
+            size.value: f"{size.label} - {size.name.replace('_', ' ').title()}"
+            for size in SlotSize
+        }
+
         # Get all projects on this shuttle with their slot assignments
         projects = shuttle.projects.all().prefetch_related("shuttle_slots")
         context["projects"] = projects

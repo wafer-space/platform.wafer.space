@@ -262,10 +262,16 @@
     </div>
   </div>
   {{ slots_by_project|json_script:"slots-data" }}
+  {{ size_labels|json_script:"size-labels-data" }}
   <script>
     // Slot data for looking up project assignments
     const slotsByProject = JSON.parse(
       document.getElementById('slots-data').textContent
+    );
+
+    // Size labels from server (avoids duplicating enum labels in JS)
+    const sizeLabels = JSON.parse(
+      document.getElementById('size-labels-data').textContent
     );
 
     // State for current modal context
@@ -509,15 +515,9 @@
         });
     }
 
-    // Helper to get human-readable size label
+    // Helper to get human-readable size label (uses server-provided labels)
     function getSizeLabel(size) {
-      const labels = {
-        '1x1': '1×1 - Full Slot',
-        '0p5x1': '0.5×1 - Half Width',
-        '1x0p5': '1×0.5 - Half Height',
-        '0p5x0p5': '0.5×0.5 - Quarter Slot'
-      };
-      return labels[size] || size;
+      return sizeLabels[size] || size;
     }
   </script>
 {% endblock content %}
