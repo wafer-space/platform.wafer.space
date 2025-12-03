@@ -74,7 +74,7 @@ class GridConfig:
         try:
             with config_path.open() as f:
                 data = yaml.safe_load(f)
-        except Exception as exc:
+        except (OSError, yaml.YAMLError) as exc:
             msg = f"Failed to read config file: {exc}"
             raise GridConfigError(msg) from exc
 
