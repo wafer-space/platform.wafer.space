@@ -54,6 +54,10 @@
       <div class="card-body">
         {% if grid %}
           <div class="table-responsive">
+            <style>
+              #grid-table { border-collapse: collapse; }
+              #grid-table th, #grid-table td { border: 2px solid #333 !important; }
+            </style>
             <table class="table table-bordered table-sm mb-0" id="grid-table">
               <thead>
                 <tr>
@@ -77,12 +81,8 @@
                           onclick="showSlotModal(this)">
                         {% if slot.project %}
                           <strong>{{ slot.project.project_id }}</strong>
-                          <br />
-                          <small class="text-muted">{{ slot.short_size_display }}</small>
                         {% else %}
                           <span class="text-muted">{{ slot.grid_position }}</span>
-                          <br />
-                          <small class="text-muted">{{ slot.short_size_display }}</small>
                         {% endif %}
                       </td>
                     {% endfor %}
