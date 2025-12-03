@@ -264,14 +264,14 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
 
         driver.get(f"{self.live_server_url}/shuttles/{shuttle.name}/assign/")
 
-        # Wait for page to load
+        # Wait for page to load - look for the Summary card header
         wait.until(
             expected_conditions.presence_of_element_located(
-                (By.XPATH, "//*[contains(text(), 'Assignment Summary')]")
+                (By.XPATH, "//strong[text()='Summary']")
             )
         )
 
-        # Check for statistics content (projects and slots info)
+        # Check for statistics table headers (Proj and Slots columns)
         page_source = driver.page_source
-        assert "Projects:" in page_source
-        assert "Slots:" in page_source
+        assert ">Proj<" in page_source
+        assert ">Slots<" in page_source
