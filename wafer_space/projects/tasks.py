@@ -547,6 +547,13 @@ def _start_container(context: _CheckContext) -> tuple[str, str]:
         msg = "Cannot run manufacturability check: top_cell not extracted from file"
         raise ValueError(msg)
 
+    if not context.project.full_id:
+        msg = (
+            "Cannot run manufacturability check: "
+            "project must be assigned to shuttle with project ID"
+        )
+        raise ValueError(msg)
+
     top_cell = context.project_file.top_cell
     context.logger.info("  Top cell: %s", top_cell)
 
