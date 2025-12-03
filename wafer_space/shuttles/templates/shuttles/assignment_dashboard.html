@@ -215,7 +215,13 @@
           <p>
             <strong>Project Size:</strong> <span id="assign-modal-project-size"></span>
           </p>
-          <label for="assign-modal-slot-select" class="form-label">Select Slot:</label>
+          <!-- Current assignments section -->
+          <div id="assign-modal-current-slots" class="mb-3" style="display: none;">
+            <label class="form-label">Current Assignments:</label>
+            <div id="assign-modal-slots-list"></div>
+          </div>
+          <hr />
+          <label for="assign-modal-slot-select" class="form-label">Add New Assignment:</label>
           <select class="form-select mb-3" id="assign-modal-slot-select">
             <option value="">-- Select a slot --</option>
             {% for row in grid %}
@@ -237,6 +243,17 @@
     </div>
   </div>
   <script>
+    // Slot data for looking up project assignments
+    const slotsByProject = {
+      {% for project in projects %}
+        '{{ project.pk }}': [
+          {% for slot in project.shuttle_slots.all %}
+            { id: {{ slot.pk }}, position: '{{ slot.grid_position }}', size: '{{ slot.slot_size }}' },
+          {% endfor %}
+        ],
+      {% endfor %}
+    };
+
     // State for current modal context
     let currentSlotId = null;
     let currentSlotSize = null;
@@ -300,6 +317,27 @@
       document.getElementById('assign-modal-project-size').textContent = getSizeLabel(slotSize);
       document.getElementById('assign-modal-slot-select').value = '';
       document.getElementById('assign-size-mismatch-warning').style.display = 'none';
+
+      // Show current slot assignments
+      const currentSlotsSection = document.getElementById('assign-modal-current-slots');
+      const slotsList = document.getElementById('assign-modal-slots-list');
+      const projectSlots = slotsByProject[projectId] || [];
+
+      if (projectSlots.length > 0) {
+        currentSlotsSection.style.display = 'block';
+        slotsList.innerHTML = projectSlots.map(slot =>
+          `<div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="badge bg-success">${slot.position}</span>
+            <span class="text-muted small">${getSizeLabel(slot.size)}</span>
+            <button class="btn btn-sm btn-outline-danger" onclick="removeSlotFromProject(${slot.id})">
+              Remove
+            </button>
+          </div>`
+        ).join('');
+      } else {
+        currentSlotsSection.style.display = 'none';
+        slotsList.innerHTML = '';
+      }
 
       const modal = new bootstrap.Modal(document.getElementById('assignModal'));
       modal.show();
@@ -386,13 +424,38 @@
         });
     }
 
-    // Remove assignment from slot
+    // Remove assignment from slot (called from grid modal)
     function removeAssignment() {
       if (!confirm('Are you sure you want to remove this assignment?')) {
         return;
       }
 
       fetch('{% url "shuttles:remove_assignment" shuttle.name 0 %}'.replace('/0/', '/' + currentSlotId + '/'), {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': '{{ csrf_token }}'
+          }
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            location.reload();
+          } else {
+            alert('Error: ' + data.error);
+          }
+        })
+        .catch(error => {
+          alert('Error: ' + error);
+        });
+    }
+
+    // Remove assignment from project (called from project modal)
+    function removeSlotFromProject(slotId) {
+      if (!confirm('Are you sure you want to remove this slot assignment?')) {
+        return;
+      }
+
+      fetch('{% url "shuttles:remove_assignment" shuttle.name 0 %}'.replace('/0/', '/' + slotId + '/'), {
           method: 'POST',
           headers: {
             'X-CSRFToken': '{{ csrf_token }}'
