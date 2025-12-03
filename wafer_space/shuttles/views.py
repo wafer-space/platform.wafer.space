@@ -89,6 +89,19 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
         projects = shuttle.projects.all().prefetch_related("shuttle_slots")
         context["projects"] = projects
 
+        # Build slots_by_project data for JavaScript
+        slots_by_project = {}
+        for project in projects:
+            slots_by_project[str(project.pk)] = [
+                {
+                    "id": slot.pk,
+                    "position": slot.grid_position,
+                    "size": slot.slot_size,
+                }
+                for slot in project.shuttle_slots.all()
+            ]
+        context["slots_by_project"] = slots_by_project
+
         # Build grid for visualization
         num_rows, num_cols = shuttle.grid_dimensions
         if num_rows > 0 and num_cols > 0:

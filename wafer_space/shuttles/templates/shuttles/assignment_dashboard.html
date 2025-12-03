@@ -257,18 +257,12 @@
       </div>
     </div>
   </div>
-  {# djlint:off #}
+  {{ slots_by_project|json_script:"slots-data" }}
   <script>
     // Slot data for looking up project assignments
-    const slotsByProject = {
-      {% for project in projects %}
-        '{{ project.pk }}': [
-          {% for slot in project.shuttle_slots.all %}
-            { id: {{ slot.pk }}, position: '{{ slot.grid_position }}', size: '{{ slot.slot_size }}' },
-          {% endfor %}
-        ],
-      {% endfor %}
-    };
+    const slotsByProject = JSON.parse(
+      document.getElementById('slots-data').textContent
+    );
 
     // State for current modal context
     let currentSlotId = null;
@@ -500,6 +494,5 @@
       };
       return labels[size] || size;
     }
-</script>
-  {# djlint:on #}
+  </script>
 {% endblock content %}
