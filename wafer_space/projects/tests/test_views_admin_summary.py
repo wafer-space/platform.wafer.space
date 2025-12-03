@@ -148,5 +148,6 @@ class TestProjectAdminSummaryView:
         response = client.get(reverse("projects:admin_summary") + "?sort=name")
 
         content = response.content.decode()
-        # Should have ascending indicator on name column
-        assert "▲" in content or "sort=-name" in content
+        # Should have ascending indicator on name column and toggle link
+        assert "▲" in content, "Sort indicator should be visible"
+        assert "sort=-name" in content, "Toggle link should point to descending sort"
