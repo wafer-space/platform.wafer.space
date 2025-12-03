@@ -19,8 +19,17 @@
           <div class="card-body p-2">
             {% if grid %}
               <style>
-                #grid-table { border-collapse: collapse; font-size: 0.8rem; width: auto !important; }
-                #grid-table th, #grid-table td { border: 1px solid #333 !important; padding: 2px 6px !important; }
+                #grid-table {
+                  border-collapse: collapse;
+                  font-size: 0.8rem;
+                  width: auto !important;
+                }
+
+                #grid-table th,
+                #grid-table td {
+                  border: 1px solid #333 !important;
+                  padding: 2px 6px !important;
+                }
               </style>
               <table class="table table-bordered table-sm mb-0" id="grid-table">
                 <thead>
@@ -35,7 +44,8 @@
                       <th class="text-center bg-light">{{ forloop.counter }}</th>
                       {% for slot in row %}
                         <td class="text-center {% if slot.project %}table-success{% else %}table-secondary{% endif %}"
-                            style="cursor: pointer; vertical-align: middle"
+                            style="cursor: pointer;
+                                   vertical-align: middle"
                             data-slot-id="{{ slot.pk }}"
                             data-slot-position="{{ slot.grid_position }}"
                             data-slot-size="{{ slot.slot_size }}"
@@ -96,7 +106,9 @@
       <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0">Project Assignment</h5>
         <div class="d-flex gap-2 align-items-center">
-          <select class="form-select form-select-sm" style="width: auto;" id="size-filter">
+          <select class="form-select form-select-sm"
+                  style="width: auto"
+                  id="size-filter">
             <option value="">All Sizes</option>
             {% for slot_size in stats.keys %}<option value="{{ slot_size.value }}">{{ slot_size.label }}</option>{% endfor %}
           </select>
@@ -245,6 +257,7 @@
       </div>
     </div>
   </div>
+  {# djlint:off #}
   <script>
     // Slot data for looking up project assignments
     const slotsByProject = {
@@ -487,5 +500,6 @@
       };
       return labels[size] || size;
     }
-  </script>
+</script>
+  {# djlint:on #}
 {% endblock content %}
