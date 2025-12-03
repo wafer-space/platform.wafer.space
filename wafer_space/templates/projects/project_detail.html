@@ -219,6 +219,37 @@
             </div>
           </div>
         {% endif %}
+        {% if request.user.is_staff and project.shuttle_slots.exists %}
+          <div class="card mb-3">
+            <div class="card-header">
+              <h5 class="mb-0">
+                <i class="bi bi-grid-3x3"></i> Assigned Slots (Staff Only)
+              </h5>
+            </div>
+            <div class="card-body">
+              <p class="mb-2">This project is assigned to the following grid positions:</p>
+              <ul class="list-group">
+                {% for slot in project.shuttle_slots.all %}
+                  <li class="list-group-item">
+                    <strong>{{ slot.grid_position }}</strong> ({{ slot.get_slot_size_display }})
+                    <span class="text-muted ms-2">
+                      {% if slot.reserved_by %}
+                        — Assigned by {{ slot.reserved_by.username }}
+                      {% else %}
+                        — Assigned
+                      {% endif %}
+                      {% if slot.reserved_at %}on {{ slot.reserved_at|date:"Y-m-d H:i" }}{% endif %}
+                    </span>
+                  </li>
+                {% endfor %}
+              </ul>
+              <a href="{% url 'shuttles:assignment' project.shuttle.name %}"
+                 class="btn btn-sm btn-outline-primary mt-3">
+                <i class="bi bi-box-arrow-up-right"></i> View Shuttle Layout
+              </a>
+            </div>
+          </div>
+        {% endif %}
         <div class="card">
           <div class="card-body">
             <p class="text-muted mb-0">

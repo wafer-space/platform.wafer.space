@@ -9,14 +9,18 @@ from django.test import Client
 from django.test import TestCase
 from django.urls import reverse
 
+from wafer_space.core.enums import SlotSize
 from wafer_space.projects.models import CheckExecutionContext
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.security import SecurityValidationError
+from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.shuttles.models import Shuttle
+from wafer_space.shuttles.models import ShuttleSlot
 from wafer_space.users.models import User
+from wafer_space.users.tests.factories import UserFactory
 
 from .constants import EXPECTED_USER_PROJECTS
 from .constants import FIVE_MB
@@ -39,26 +43,18 @@ class TestProjectListView(TestCase):
         """Set up test fixtures."""
         self.client = Client()
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.other_user = User.objects.create_user(
-            username="otheruser",
-            email="other@example.com",
-            password=TEST_PASSWORD,
+            username="otheruser", email="other@example.com", password=TEST_PASSWORD
         )
 
         # Create projects for both users
         self.project1 = Project.objects.create(
-            user=self.user,
-            name="Project 1",
-            description="First project",
+            user=self.user, name="Project 1", description="First project"
         )
         self.project2 = Project.objects.create(
-            user=self.user,
-            name="Project 2",
-            description="Second project",
+            user=self.user, name="Project 2", description="Second project"
         )
         self.other_project = Project.objects.create(
             user=self.other_user,
@@ -101,19 +97,13 @@ class TestProjectDetailView(TestCase):
         """Set up test fixtures."""
         self.client = Client()
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.other_user = User.objects.create_user(
-            username="otheruser",
-            email="other@example.com",
-            password=TEST_PASSWORD,
+            username="otheruser", email="other@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            description="Test project",
+            user=self.user, name="Test Project", description="Test project"
         )
 
     def test_requires_login(self):
@@ -179,7 +169,7 @@ class TestProjectDetailView(TestCase):
         self.client.force_login(staff_user)
 
         response = self.client.get(
-            reverse("projects:detail", kwargs={"pk": self.project.pk}),
+            reverse("projects:detail", kwargs={"pk": self.project.pk})
         )
         assert response.status_code == HTTP_OK
         assert response.context["project"] == self.project
@@ -194,16 +184,10 @@ class TestProjectCreateView(TestCase):
         """Set up test fixtures."""
         self.client = Client()
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.shuttle = Shuttle.objects.create(
-            name="G800",
-            description="Test Shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=10,
-            available_slots=10,
+            name="G800", description="Test Shuttle", status=Shuttle.Status.OPEN
         )
 
     def test_requires_login(self):
@@ -267,21 +251,13 @@ class TestProjectUpdateView(TestCase):
         """Set up test fixtures."""
         self.client = Client()
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.other_user = User.objects.create_user(
-            username="otheruser",
-            email="other@example.com",
-            password=TEST_PASSWORD,
+            username="otheruser", email="other@example.com", password=TEST_PASSWORD
         )
         self.shuttle = Shuttle.objects.create(
-            name="G800",
-            description="Test Shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=10,
-            available_slots=10,
+            name="G800", description="Test Shuttle", status=Shuttle.Status.OPEN
         )
         self.project = Project.objects.create(
             user=self.user,
@@ -342,19 +318,13 @@ class TestProjectDeleteView(TestCase):
         """Set up test fixtures."""
         self.client = Client()
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.other_user = User.objects.create_user(
-            username="otheruser",
-            email="other@example.com",
-            password=TEST_PASSWORD,
+            username="otheruser", email="other@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            description="Test project",
+            user=self.user, name="Test Project", description="Test project"
         )
 
     def test_requires_login(self):
@@ -398,19 +368,13 @@ class TestProjectFileSubmitURLView(TestCase):
         """Set up test fixtures."""
         self.client = Client()
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.other_user = User.objects.create_user(
-            username="otheruser",
-            email="other@example.com",
-            password=TEST_PASSWORD,
+            username="otheruser", email="other@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            description="Test project",
+            user=self.user, name="Test Project", description="Test project"
         )
 
     def test_requires_login(self):
@@ -501,19 +465,13 @@ class TestProjectFileProgressView(TestCase):
         """Set up test fixtures."""
         self.client = Client()
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.other_user = User.objects.create_user(
-            username="otheruser",
-            email="other@example.com",
-            password=TEST_PASSWORD,
+            username="otheruser", email="other@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            description="Test project",
+            user=self.user, name="Test Project", description="Test project"
         )
 
     def test_requires_login(self):
@@ -594,14 +552,10 @@ class TestProjectSubmitView(TestCase):
         """Set up test fixtures."""
         self.client = Client()
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.other_user = User.objects.create_user(
-            username="otheruser",
-            email="other@example.com",
-            password=TEST_PASSWORD,
+            username="otheruser", email="other@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
             user=self.user,
@@ -882,14 +836,10 @@ class TestEnhancedProgressDashboard(TestCase):
         """Set up test fixtures."""
         self.client = Client()
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            description="Test project",
+            user=self.user, name="Test Project", description="Test project"
         )
 
     def test_detail_view_shows_progress_flag_when_downloading(self):
@@ -1141,14 +1091,10 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
     def setUp(self):
         """Set up test data."""
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            description="Test Description",
+            user=self.user, name="Test Project", description="Test Description"
         )
         self.project_file = ProjectFile.objects.create(
             project=self.project,
@@ -1283,19 +1229,13 @@ class TestManufacturabilityCheckCancelView(TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.other_user = User.objects.create_user(
-            username="otheruser",
-            email="other@example.com",
-            password=TEST_PASSWORD,
+            username="otheruser", email="other@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            description="Test project",
+            user=self.user, name="Test Project", description="Test project"
         )
         self.project_file = ProjectFile.objects.create(
             project=self.project,
@@ -1431,14 +1371,10 @@ class TestProjectFileSubmitURLViewWarning(TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            description="Test project",
+            user=self.user, name="Test Project", description="Test project"
         )
         self.project_file = ProjectFile.objects.create(
             project=self.project,
@@ -1509,6 +1445,87 @@ class TestProjectFileSubmitURLViewWarning(TestCase):
 
 
 @pytest.mark.django_db
+class TestProjectDetailSlotVisibility:
+    """Test slot assignment visibility on project detail page."""
+
+    def test_staff_sees_slot_assignments(self, client):
+        """Staff should see slot assignments on project detail."""
+        user = UserFactory(is_staff=True)
+        client.force_login(user)
+
+        shuttle = Shuttle.objects.create(
+            name="G810", description="Test shuttle", status=Shuttle.Status.OPEN
+        )
+        project = ProjectFactory(shuttle=shuttle)
+
+        # Assign to two slots
+        slot1 = ShuttleSlot.objects.create(
+            shuttle=shuttle,
+            row=0,
+            column=0,
+            slot_size=SlotSize.FULL,
+            status=ShuttleSlot.Status.RESERVED,
+        )
+        slot1.project = project
+        slot1.reserved_by = user
+        slot1.save()
+
+        slot2 = ShuttleSlot.objects.create(
+            shuttle=shuttle,
+            row=1,
+            column=2,
+            slot_size=SlotSize.FULL,
+            status=ShuttleSlot.Status.RESERVED,
+        )
+        slot2.project = project
+        slot2.reserved_by = user
+        slot2.save()
+
+        url = reverse("projects:detail", kwargs={"pk": project.pk})
+        response = client.get(url)
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+
+        # Should show slot assignments
+        assert "Assigned Slots" in content or "Grid Position" in content
+        assert "A1" in content  # slot1 position
+        assert "C2" in content  # slot2 position
+
+    def test_regular_user_does_not_see_slots(self, client):
+        """Regular users should not see slot assignments."""
+        user = UserFactory(is_staff=False)
+        project = ProjectFactory(user=user)
+        client.force_login(user)
+
+        shuttle = Shuttle.objects.create(
+            name="G811", description="Test shuttle", status=Shuttle.Status.OPEN
+        )
+        project.shuttle = shuttle
+        project.save()
+
+        slot = ShuttleSlot.objects.create(
+            shuttle=shuttle,
+            row=0,
+            column=0,
+            slot_size=SlotSize.FULL,
+            status=ShuttleSlot.Status.RESERVED,
+        )
+        slot.project = project
+        slot.save()
+
+        url = reverse("projects:detail", kwargs={"pk": project.pk})
+        response = client.get(url)
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+
+        # Should NOT show slot section
+        assert "Assigned Slots" not in content
+        assert "Grid Position" not in content
+
+
+@pytest.mark.django_db
 class TestProjectListViewStaff(TestCase):
     """Test ProjectListView with staff user access."""
 
@@ -1516,28 +1533,20 @@ class TestProjectListViewStaff(TestCase):
         """Set up test fixtures."""
         self.client = Client()
         self.owner = User.objects.create_user(
-            username="owner",
-            email="owner@example.com",
-            password=TEST_PASSWORD,
+            username="owner", email="owner@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.owner,
-            name="Owner Project",
-            description="Owner description",
+            user=self.owner, name="Owner Project", description="Owner description"
         )
 
     def test_project_list_shows_only_own_projects_for_regular_user(self):
         """Test that regular users only see their own projects in list."""
         # Create another user with a project
         other_user = User.objects.create_user(
-            username="other",
-            email="other@example.com",
-            password=TEST_PASSWORD,
+            username="other", email="other@example.com", password=TEST_PASSWORD
         )
         other_project = Project.objects.create(
-            user=other_user,
-            name="Other Project",
-            description="Other description",
+            user=other_user, name="Other Project", description="Other description"
         )
 
         self.client.force_login(self.owner)
@@ -1552,14 +1561,10 @@ class TestProjectListViewStaff(TestCase):
         """Test that staff users see all users' projects in list."""
         # Create another user with a project
         other_user = User.objects.create_user(
-            username="other",
-            email="other@example.com",
-            password=TEST_PASSWORD,
+            username="other", email="other@example.com", password=TEST_PASSWORD
         )
         other_project = Project.objects.create(
-            user=other_user,
-            name="Other Project",
-            description="Other description",
+            user=other_user, name="Other Project", description="Other description"
         )
 
         staff_user = User.objects.create_user(
@@ -1586,14 +1591,10 @@ class TestProjectUpdateViewStaff(TestCase):
         """Set up test fixtures."""
         self.client = Client()
         self.owner = User.objects.create_user(
-            username="owner",
-            email="owner@example.com",
-            password=TEST_PASSWORD,
+            username="owner", email="owner@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.owner,
-            name="Test Project",
-            description="Test description",
+            user=self.owner, name="Test Project", description="Test description"
         )
 
     def test_project_update_staff_access(self):
@@ -1621,14 +1622,10 @@ class TestProjectDeleteViewStaff(TestCase):
         """Set up test fixtures."""
         self.client = Client()
         self.owner = User.objects.create_user(
-            username="owner",
-            email="owner@example.com",
-            password=TEST_PASSWORD,
+            username="owner", email="owner@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.owner,
-            name="Test Project",
-            description="Test description",
+            user=self.owner, name="Test Project", description="Test description"
         )
 
     def test_project_delete_staff_access(self):

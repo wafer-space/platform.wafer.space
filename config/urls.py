@@ -22,6 +22,7 @@ urlpatterns = [
     path("legal/", include("wafer_space.legal.urls", namespace="legal")),
     # Your stuff: custom urls includes go here
     path("projects/", include("wafer_space.projects.urls", namespace="projects")),
+    path("shuttles/", include("wafer_space.shuttles.urls", namespace="shuttles")),
     path(
         "notifications/",
         include("wafer_space.notifications.urls", namespace="notifications"),

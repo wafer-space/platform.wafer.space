@@ -18,13 +18,16 @@ def populate_shuttle_and_project_ids(apps, _schema_editor):
     Shuttle = apps.get_model("shuttles", "Shuttle")
 
     # Get or create G801 shuttle
+    # Note: Provide max_slots/reserved_slots/available_slots for compatibility
+    # with older database schema (these fields are removed in a later migration)
     g801, created = Shuttle.objects.get_or_create(
         name="G801",
         defaults={
             "description": "Initial shuttle run for wafer.space",
             "status": "open",
-            "max_slots": 100,
-            "available_slots": 100,
+            "max_slots": 40,
+            "reserved_slots": 0,
+            "available_slots": 40,
         },
     )
 

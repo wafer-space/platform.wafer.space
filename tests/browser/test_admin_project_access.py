@@ -44,11 +44,9 @@ def staff_user(db):
 def shuttle(db):
     """Create test shuttle."""
     return Shuttle.objects.create(
-        name="G800",
+        name="G893",
         description="Test Shuttle",
         status=Shuttle.Status.OPEN,
-        max_slots=10,
-        available_slots=10,
     )
 
 

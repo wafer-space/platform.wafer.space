@@ -1,0 +1,23 @@
+# G802 Shuttle Grid Layout Configuration
+# GF180MCU Shuttle Run 2
+#
+# Grid: 5 rows x 8 columns = 40 slots
+# Same layout as G801:
+# - Row 1 (top): half-height (0.5)
+# - Rows 2-5: full-height (1.0)
+# - Columns A-G: full-width (1.0)
+# - Column H (rightmost): half-width (0.5)
+#
+# Resulting slot sizes:
+# - Row 1, Cols A-G: HALF_WIDTH (1x0.5)
+# - Row 1, Col H: QUARTER (0.5x0.5)
+# - Rows 2-5, Cols A-G: FULL (1x1)
+# - Rows 2-5, Col H: HALF_HEIGHT (0.5x1)
+
+shuttle: G802
+
+# 5 rows: Row 1 is half-height, Rows 2-5 are full-height
+row_heights: [0.5, 1.0, 1.0, 1.0, 1.0]
+
+# 8 columns: Columns A-G are full-width, Column H is half-width
+column_widths: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5]

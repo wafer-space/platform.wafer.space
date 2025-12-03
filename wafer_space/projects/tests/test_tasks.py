@@ -101,8 +101,7 @@ class URLValidationSecurityTests(TestCase):
     def test_custom_scheme_blocked(self):
         """Test that custom schemes are blocked."""
         with pytest.raises(
-            ValueError,
-            match="Unsupported URL scheme: custom",
+            ValueError, match="Unsupported URL scheme: custom"
         ) as excinfo:
             _safe_urlopen("custom://malicious/payload")
 
@@ -111,8 +110,7 @@ class URLValidationSecurityTests(TestCase):
     def test_javascript_scheme_blocked(self):
         """Test that javascript: URLs are blocked."""
         with pytest.raises(
-            ValueError,
-            match="Unsupported URL scheme: javascript",
+            ValueError, match="Unsupported URL scheme: javascript"
         ) as excinfo:
             _safe_urlopen("javascript:alert('xss')")
 
@@ -169,8 +167,7 @@ class URLValidationSecurityTests(TestCase):
             mock_urlopen.return_value.__enter__.return_value = mock_response
 
             content, headers = _safe_urlopen(
-                "https://example.com/file.zip",
-                headers=custom_headers,
+                "https://example.com/file.zip", headers=custom_headers
             )
             assert content == b"test content"
             assert headers["Content-Type"] == "text/plain"
@@ -193,8 +190,7 @@ class URLValidationBehaviorTests(TestCase):
         for url, expected_scheme in test_cases:
             with self.subTest(url=url):
                 with pytest.raises(
-                    ValueError,
-                    match=r"(?i)unsupported url scheme",
+                    ValueError, match=r"(?i)unsupported url scheme"
                 ) as excinfo:
                     _safe_urlopen(url)
 
@@ -216,9 +212,7 @@ class URLValidationBehaviorTests(TestCase):
         for url in valid_cases:
             with (
                 self.subTest(url=url),
-                patch(
-                    "wafer_space.projects.tasks.urlopen",
-                ) as mock_urlopen,
+                patch("wafer_space.projects.tasks.urlopen") as mock_urlopen,
             ):
                 mock_response = Mock()
                 mock_response.read.return_value = b"test"
@@ -233,10 +227,7 @@ class URLValidationBehaviorTests(TestCase):
         for url in invalid_cases:
             with (
                 self.subTest(url=url),
-                pytest.raises(
-                    ValueError,
-                    match=r".*(file|ftp).*",
-                ),
+                pytest.raises(ValueError, match=r".*(file|ftp).*"),
             ):
                 _safe_urlopen(url)
 
@@ -246,16 +237,12 @@ class TestManufacturabilityCheckTask(TestCase):
     def setUp(self):
         """Set up test data."""
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.shuttle = Shuttle.objects.create(
             name="G800",
             description="Test Shuttle",
             status=Shuttle.Status.OPEN,
-            max_slots=10,
-            available_slots=10,
         )
         self.project = Project.objects.create(
             user=self.user,
@@ -324,10 +311,7 @@ class TestManufacturabilityCheckTask(TestCase):
         )
 
         # Run task
-        with mock_patch.object(
-            tasks.check_process_job,
-            "update_state",
-        ):
+        with mock_patch.object(tasks.check_process_job, "update_state"):
             result = check_process_job.run(check.id)
 
         # Verify check was marked as running then completed
@@ -399,10 +383,7 @@ INFO: Check completed
         )
 
         # Run task
-        with mock_patch.object(
-            tasks.check_process_job,
-            "update_state",
-        ):
+        with mock_patch.object(tasks.check_process_job, "update_state"):
             result = check_process_job.run(check.id)
 
         # Verify result
@@ -482,10 +463,7 @@ FATAL: Design has critical errors
         )
 
         # Run task
-        with mock_patch.object(
-            tasks.check_process_job,
-            "update_state",
-        ):
+        with mock_patch.object(tasks.check_process_job, "update_state"):
             result = check_process_job.run(check.id)
 
         # Verify result - design is not manufacturable due to mock DRC violations
@@ -523,9 +501,7 @@ FATAL: Design has critical errors
         # Save the file to the project's submitted_file
         with tmp_path.open("rb") as f:
             project_file = ProjectFile.objects.create(
-                project=self.project,
-                original_filename="test.gds",
-                is_active=True,
+                project=self.project, original_filename="test.gds", is_active=True
             )
             project_file.file.save("test.gds", ContentFile(f.read()), save=True)
             self.project.submitted_file = project_file
@@ -637,10 +613,7 @@ FATAL: Design has critical errors
         )
 
         # Run task
-        with mock_patch.object(
-            tasks.check_process_job,
-            "update_state",
-        ):
+        with mock_patch.object(tasks.check_process_job, "update_state"):
             check_process_job.run(check.id)
 
         # Verify check completed successfully
@@ -659,14 +632,10 @@ class TestProjectSubmissionIntegration(TestCase):
     def setUp(self):
         """Set up test data."""
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            description="Test Description",
+            user=self.user, name="Test Project", description="Test Description"
         )
         # Create a completed file for submission
         self.project_file = ProjectFile.objects.create(
@@ -710,17 +679,13 @@ class TestDockerIntegration(TestCase):
     def setUp(self):
         """Set up test data."""
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.shuttle, _ = Shuttle.objects.get_or_create(
             name="G801",
             defaults={
                 "description": "Test Shuttle",
                 "status": Shuttle.Status.OPEN,
-                "max_slots": 10,
-                "available_slots": 10,
             },
         )
         self.project = Project.objects.create(
@@ -797,10 +762,7 @@ class TestDockerIntegration(TestCase):
         )
 
         # Bind the function to the mock task
-        with mock_patch.object(
-            tasks.check_process_job,
-            "update_state",
-        ):
+        with mock_patch.object(tasks.check_process_job, "update_state"):
             # Call the task directly
             result = tasks.check_process_job.run(check.id)
 
@@ -870,10 +832,7 @@ class TestDockerIntegration(TestCase):
         )
 
         # Run the task
-        with mock_patch.object(
-            tasks.check_process_job,
-            "update_state",
-        ):
+        with mock_patch.object(tasks.check_process_job, "update_state"):
             tasks.check_process_job.run(check.id)
 
         # Verify the docker command includes --slot with the project's slot_size
@@ -903,14 +862,10 @@ class TestDownloadLogging(TestCase):
     def setUp(self):
         """Set up test data."""
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            description="Test Description",
+            user=self.user, name="Test Project", description="Test Description"
         )
         self.project_file = ProjectFile.objects.create(
             project=self.project,
@@ -924,8 +879,7 @@ class TestDownloadLogging(TestCase):
         """Test that download start log includes user information."""
         # Capture log output
         with self.assertLogs(
-            "wafer_space.projects.tasks",
-            level=logging.INFO,
+            "wafer_space.projects.tasks", level=logging.INFO
         ) as log_context:
             _log_download_start(str(self.project.id), self.project_file)
 
@@ -941,23 +895,15 @@ class TestContentPipelineIntegration(TestCase):
     def setUp(self):
         """Set up test data."""
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            description="Test Description",
+            user=self.user, name="Test Project", description="Test Description"
         )
 
     @patch("wafer_space.projects.tasks._download_with_progress")
     @patch("wafer_space.projects.tasks._apply_content_pipeline")
-    def test_download_with_zip_extraction(
-        self,
-        mock_pipeline,
-        mock_download,
-    ):
+    def test_download_with_zip_extraction(self, mock_pipeline, mock_download):
         """Test download with ZIP extraction through pipeline."""
         # Create project file
         project_file = ProjectFile.objects.create(
@@ -990,10 +936,7 @@ class TestContentPipelineIntegration(TestCase):
             temp_path = Path(temp_file.name)
             try:
                 _process_and_save_content(
-                    project_file,
-                    attempt,
-                    b"fake_zip_content",
-                    temp_path,
+                    project_file, attempt, b"fake_zip_content", temp_path
                 )
 
                 # Verify pipeline was called
@@ -1030,10 +973,7 @@ class TestContentPipelineIntegration(TestCase):
             temp_path = Path(temp_file.name)
             try:
                 _process_and_save_content(
-                    project_file,
-                    attempt,
-                    b"fake_compressed_content",
-                    temp_path,
+                    project_file, attempt, b"fake_compressed_content", temp_path
                 )
 
                 # Verify pipeline was called
@@ -1070,10 +1010,7 @@ class TestContentPipelineIntegration(TestCase):
             try:
                 with pytest.raises(ValueError, match="not a valid GDS or OASIS"):
                     _process_and_save_content(
-                        project_file,
-                        attempt,
-                        b"fake_invalid_content",
-                        temp_path,
+                        project_file, attempt, b"fake_invalid_content", temp_path
                     )
 
                 # Verify file was marked as failed
@@ -1090,14 +1027,9 @@ class DownloadTaskTests(TestCase):
     def setUp(self):
         """Set up test user and project."""
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
-        self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-        )
+        self.project = Project.objects.create(user=self.user, name="Test Project")
 
     @patch("wafer_space.projects.tasks.requests.get")
     @patch("django.conf.settings.GITHUB_TOKEN", TEST_GITHUB_TOKEN)
@@ -1140,10 +1072,7 @@ class DownloadTaskTests(TestCase):
 
     def test_prepare_download_request_with_github_artifact(self):
         """Test that GitHub artifacts get authenticated URL and headers."""
-        project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-        )
+        project = Project.objects.create(user=self.user, name="Test Project")
 
         project_file = ProjectFile.objects.create(
             project=project,
@@ -1173,8 +1102,7 @@ class DownloadTaskTests(TestCase):
                 }
 
                 url, headers, resume_pos = _prepare_download_request(
-                    project_file=project_file,
-                    temp_path=temp_path,
+                    project_file=project_file, temp_path=temp_path
                 )
 
                 # Should return authenticated URL and headers
@@ -1199,10 +1127,7 @@ class DownloadTaskTests(TestCase):
             "requires_github_auth": True,
         }
 
-        result = _build_github_artifact_filename(
-            metadata,
-            "tt-gf_wrapper.gds",
-        )
+        result = _build_github_artifact_filename(metadata, "tt-gf_wrapper.gds")
 
         expected = (
             "TinyTapeout.tinytapeout-gf-0p2."
@@ -1220,10 +1145,7 @@ class DownloadTaskTests(TestCase):
             "run_id": "123",
         }
 
-        result = _build_github_artifact_filename(
-            metadata,
-            "design.gds",
-        )
+        result = _build_github_artifact_filename(metadata, "design.gds")
 
         # Should use defaults for missing fields
         expected = "owner.repo.r123-a0.artifact.design.gds"
@@ -1264,12 +1186,7 @@ class DownloadTaskTests(TestCase):
             mock_task.update_state = Mock()
 
             # Should return None (no hashes)
-            _download_with_progress(
-                mock_task,
-                project_file,
-                attempt,
-                temp_path,
-            )
+            _download_with_progress(mock_task, project_file, attempt, temp_path)
 
             # Function returns None implicitly, verify file downloaded
             assert temp_path.exists()
@@ -1282,11 +1199,7 @@ class DownloadTaskTests(TestCase):
     @patch("wafer_space.projects.tasks.detect_file_type_from_data")
     @patch("wafer_space.projects.tasks._download_with_progress")
     def test_hash_calculated_on_extracted_file_not_zip(
-        self,
-        mock_download,
-        mock_detect,
-        mock_pipeline,
-        mock_extract_top_cell,
+        self, mock_download, mock_detect, mock_pipeline, mock_extract_top_cell
     ):
         """Test that hashes are calculated on extracted GDS, not downloaded ZIP."""
         project = Project.objects.create(user=self.user, name="Test")
@@ -1352,14 +1265,9 @@ class TestChecksDispatch(TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
-        self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-        )
+        self.project = Project.objects.create(user=self.user, name="Test Project")
         self.project_file = ProjectFile.objects.create(
             project=self.project,
             original_filename="test.gds",
@@ -1389,10 +1297,7 @@ class TestChecksDispatch(TestCase):
         """Test dispatch respects concurrent limit."""
         # Create checks already at limit (each needs its own project+file)
         for i in range(settings.PRECHECK_CONCURRENT_LIMIT):
-            proj = Project.objects.create(
-                user=self.user,
-                name=f"Running Project {i}",
-            )
+            proj = Project.objects.create(user=self.user, name=f"Running Project {i}")
             pf = ProjectFile.objects.create(
                 project=proj,
                 original_filename=f"test{i}.gds",
@@ -1424,8 +1329,7 @@ class TestChecksDispatch(TestCase):
         # Create checks in CANCELLING state (Docker still running)
         for i in range(settings.PRECHECK_CONCURRENT_LIMIT):
             proj = Project.objects.create(
-                user=self.user,
-                name=f"Cancelling Project {i}",
+                user=self.user, name=f"Cancelling Project {i}"
             )
             pf = ProjectFile.objects.create(
                 project=proj,
@@ -1459,14 +1363,9 @@ class TestChecksRetry(TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
-        self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-        )
+        self.project = Project.objects.create(user=self.user, name="Test Project")
         self.project_file = ProjectFile.objects.create(
             project=self.project,
             original_filename="test.gds",
@@ -1515,14 +1414,9 @@ class TestChecksCreate(TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
-        self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-        )
+        self.project = Project.objects.create(user=self.user, name="Test Project")
 
     def test_creates_check_for_verified_file(self):
         """Test check is created for verified file without existing check."""
@@ -1590,14 +1484,9 @@ class TestChecksCancelling(TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
-        self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-        )
+        self.project = Project.objects.create(user=self.user, name="Test Project")
         self.project_file = ProjectFile.objects.create(
             project=self.project,
             original_filename="test.gds",
@@ -1732,14 +1621,9 @@ class TestChecksCleanupOrphanedDispatch(TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
-        self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-        )
+        self.project = Project.objects.create(user=self.user, name="Test Project")
         self.project_file = ProjectFile.objects.create(
             project=self.project,
             original_filename="test.gds",
@@ -1792,10 +1676,7 @@ class TestChecksCleanupOrphanedDispatch(TestCase):
     @patch("wafer_space.projects.tasks.is_check_task_queued")
     def test_handles_mixed_checks(self, mock_is_queued):
         """Test handles both orphaned and valid checks correctly."""
-        project2 = Project.objects.create(
-            user=self.user,
-            name="Test Project 2",
-        )
+        project2 = Project.objects.create(user=self.user, name="Test Project 2")
         project_file2 = ProjectFile.objects.create(
             project=project2,
             original_filename="test2.gds",
@@ -1830,10 +1711,7 @@ class TestChecksCleanupOrphanedDispatch(TestCase):
     @patch("wafer_space.projects.tasks.is_check_task_queued")
     def test_ignores_non_dispatched_checks(self, mock_is_queued):
         """Test only processes DISPATCHED checks."""
-        project2 = Project.objects.create(
-            user=self.user,
-            name="Test Project 2",
-        )
+        project2 = Project.objects.create(user=self.user, name="Test Project 2")
         project_file2 = ProjectFile.objects.create(
             project=project2,
             original_filename="test2.gds",
@@ -1865,14 +1743,9 @@ class TestChecksCleanupOrphanedProcessing(TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
-        self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-        )
+        self.project = Project.objects.create(user=self.user, name="Test Project")
         self.project_file = ProjectFile.objects.create(
             project=self.project,
             original_filename="test.gds",
@@ -1936,10 +1809,7 @@ class TestChecksCleanupOrphanedProcessing(TestCase):
     @patch("wafer_space.projects.tasks.is_check_task_actively_running")
     def test_handles_mixed_checks(self, mock_is_running):
         """Test handles both orphaned and valid checks correctly."""
-        project2 = Project.objects.create(
-            user=self.user,
-            name="Test Project 2",
-        )
+        project2 = Project.objects.create(user=self.user, name="Test Project 2")
         project_file2 = ProjectFile.objects.create(
             project=project2,
             original_filename="test2.gds",
@@ -1982,10 +1852,7 @@ class TestChecksCleanupOrphanedProcessing(TestCase):
     @patch("wafer_space.projects.tasks.is_check_task_actively_running")
     def test_ignores_non_running_checks(self, mock_is_running):
         """Test only processes RUNNING checks."""
-        project2 = Project.objects.create(
-            user=self.user,
-            name="Test Project 2",
-        )
+        project2 = Project.objects.create(user=self.user, name="Test Project 2")
         project_file2 = ProjectFile.objects.create(
             project=project2,
             original_filename="test2.gds",

@@ -8,7 +8,6 @@ from wafer_space.shuttles.models import SHUTTLE_ID_MIN_NUMBER
 from wafer_space.shuttles.models import validate_shuttle_id
 
 
-@pytest.mark.django_db
 class TestValidateShuttleId:
     """Test validate_shuttle_id function."""
 

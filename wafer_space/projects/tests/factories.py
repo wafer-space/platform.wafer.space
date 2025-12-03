@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from factory import Faker
+from factory import Sequence
 from factory import SubFactory
 from factory.django import DjangoModelFactory
 
@@ -18,6 +19,8 @@ class ProjectFactory(DjangoModelFactory[Project]):
     name = Faker("catch_phrase")
     description = Faker("text", max_nb_chars=200)
     slot_size = "1x1"
+    status = Project.Status.DRAFT
+    project_id = Sequence(lambda n: f"T{n:03d}")
 
     class Meta:
         model = Project

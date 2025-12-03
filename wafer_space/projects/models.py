@@ -76,7 +76,7 @@ class Project(models.Model):
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     slot_size = models.CharField(
-        max_length=10,
+        max_length=20,
         choices=SlotSize.choices,
         default=SlotSize.FULL,
         help_text="Die slot size for manufacturing",
