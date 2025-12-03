@@ -152,7 +152,9 @@
                 </td>
                 <td>
                   {% if project.shuttle_slots.exists %}
-                    {% for slot in project.shuttle_slots.all %}<span class="badge {% if slot.slot_size != project.slot_size %}bg-warning{% else %}bg-success{% endif %}">{{ slot.grid_position }}</span>{% endfor %}
+                    {% for slot in project.shuttle_slots.all %}
+                      <span class="badge {% if slot.slot_size != project.slot_size %}bg-warning{% else %}bg-success{% endif %}">{{ slot.grid_position }}</span>
+                    {% endfor %}
                   {% else %}
                     <span class="text-muted">-</span>
                   {% endif %}
