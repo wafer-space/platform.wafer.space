@@ -5,7 +5,6 @@ import pytest
 from django.urls import reverse
 
 from wafer_space.core.enums import SlotSize
-from wafer_space.projects.models import ProjectComplianceCertification
 from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.models import ShuttleSlot
@@ -224,15 +223,6 @@ class TestAssignProjectView:
             status=ShuttleSlot.Status.AVAILABLE,
         )
         project = ProjectFactory(shuttle=shuttle, slot_size=SlotSize.FULL)
-        ProjectComplianceCertification.objects.create(
-            project=project,
-            certified_by=user,
-            export_control_compliant=True,
-            not_restricted_entity=True,
-            end_use_statement="Test end use statement",
-            ip_address="192.168.1.1",
-            user_agent="Test Browser",
-        )
 
         url = reverse("shuttles:assign_project", kwargs={"name": shuttle.name})
         response = client.post(
@@ -267,15 +257,6 @@ class TestAssignProjectView:
             status=ShuttleSlot.Status.AVAILABLE,
         )
         project = ProjectFactory(shuttle=shuttle, slot_size=SlotSize.QUARTER)
-        ProjectComplianceCertification.objects.create(
-            project=project,
-            certified_by=user,
-            export_control_compliant=True,
-            not_restricted_entity=True,
-            end_use_statement="Test end use statement",
-            ip_address="192.168.1.1",
-            user_agent="Test Browser",
-        )
 
         url = reverse("shuttles:assign_project", kwargs={"name": shuttle.name})
         response = client.post(

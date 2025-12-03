@@ -8,26 +8,10 @@ import pytest
 from django.core.management import call_command
 
 from wafer_space.core.enums import SlotSize
-from wafer_space.projects.models import ProjectComplianceCertification
 from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.models import ShuttleSlot
 from wafer_space.users.tests.factories import UserFactory
-
-
-def create_compliant_project(shuttle, slot_size, project_id, user):
-    """Helper to create a project with valid compliance certification."""
-    project = ProjectFactory(
-        shuttle=shuttle, slot_size=slot_size, project_id=project_id
-    )
-    ProjectComplianceCertification.objects.create(
-        project=project,
-        certified_by=user,
-        export_control_compliant=True,
-        not_restricted_entity=True,
-        end_use_statement="Test project for automated testing purposes",
-    )
-    return project
 
 
 @pytest.mark.django_db
@@ -76,11 +60,13 @@ column_widths: [1.0, 0.5, 1.0]
         assert slots[3].slot_size == SlotSize.HALF_WIDTH  # 0.5 x 1.0
         assert slots[4].slot_size == SlotSize.QUARTER  # 0.5 x 0.5
 
-        # Step 4: Create projects with compliance certifications
+        # Step 4: Create projects
         user = UserFactory(is_staff=True)
-        project_full = create_compliant_project(shuttle, SlotSize.FULL, "FULL", user)
-        project_quarter = create_compliant_project(
-            shuttle, SlotSize.QUARTER, "QRTR", user
+        project_full = ProjectFactory(
+            shuttle=shuttle, slot_size=SlotSize.FULL, project_id="FULL"
+        )
+        project_quarter = ProjectFactory(
+            shuttle=shuttle, slot_size=SlotSize.QUARTER, project_id="QRTR"
         )
 
         # Step 5: Assign projects to slots
@@ -123,10 +109,12 @@ column_widths: [1.0]
             stdout=StringIO(),
         )
 
-        # Assign project with compliance certification
+        # Assign project to slot
         slot = ShuttleSlot.objects.get(shuttle=shuttle)
         user = UserFactory()
-        project = create_compliant_project(shuttle, SlotSize.FULL, "TEST", user)
+        project = ProjectFactory(
+            shuttle=shuttle, slot_size=SlotSize.FULL, project_id="TEST"
+        )
         slot.reserve(project, user)
 
         # Try to update without --force

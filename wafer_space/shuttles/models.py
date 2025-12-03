@@ -353,29 +353,6 @@ class ShuttleSlot(models.Model):
             msg = "Shuttle is not accepting projects"
             raise ValueError(msg)
 
-        # Check compliance certification
-        try:
-            cert = project.compliance_certification
-            if not cert:
-                msg = (
-                    "Project must have compliance certification "
-                    "before shuttle assignment"
-                )
-                raise ValueError(msg)
-
-            # Verify attestations are complete
-            if not cert.export_control_compliant or not cert.not_restricted_entity:
-                msg = "Compliance certification is incomplete"
-                raise ValueError(msg)
-
-            # Verify end-use statement is present and non-empty
-            if not cert.end_use_statement or not cert.end_use_statement.strip():
-                msg = "End-use statement is required"
-                raise ValueError(msg)
-        except Project.compliance_certification.RelatedObjectDoesNotExist as exc:
-            msg = "Project must have compliance certification before shuttle assignment"
-            raise ValueError(msg) from exc
-
         # Check for size mismatch (warning only, not blocking)
         size_mismatch = None
         if hasattr(project, "slot_size") and project.slot_size != self.slot_size:
