@@ -11,6 +11,7 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.mixins import UserPassesTestMixin
 from django.core.exceptions import ValidationError
+from django.db.models import Prefetch
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.shortcuts import redirect
@@ -718,4 +719,12 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
 
     def get_queryset(self):
         """Return all projects with optimized queries."""
-        return Project.objects.select_related("user", "shuttle").all()
+        return Project.objects.select_related("user", "shuttle").prefetch_related(
+            Prefetch(
+                "files",
+                queryset=ProjectFile.objects.filter(is_active=True).select_related(
+                    "manufacturability_check"
+                ),
+                to_attr="active_files",
+            )
+        )

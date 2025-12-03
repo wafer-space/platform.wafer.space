@@ -3,12 +3,14 @@
 import pytest
 from django.urls import reverse
 
+from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.users.tests.factories import UserFactory
 
 from .constants import HTTP_FORBIDDEN
 from .constants import HTTP_FOUND
 from .constants import HTTP_OK
 from .factories import ProjectFactory
+from .factories import ProjectFileFactory
 
 
 @pytest.mark.django_db
@@ -74,3 +76,22 @@ class TestProjectAdminSummaryView:
         content = response.content.decode()
         assert "Staff Project" in content
         assert "Other Project" in content
+
+    def test_displays_precheck_status(self, client):
+        """Summary page displays manufacturability check status."""
+        staff_user = UserFactory(is_staff=True)
+        project = ProjectFactory(name="Checked Project")
+        # Create active file with manufacturability check
+        project_file = ProjectFileFactory(project=project, is_active=True)
+        ManufacturabilityCheck.objects.create(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
+        client.force_login(staff_user)
+
+        response = client.get(reverse("projects:admin_summary"))
+
+        content = response.content.decode()
+        assert "Finished" in content
