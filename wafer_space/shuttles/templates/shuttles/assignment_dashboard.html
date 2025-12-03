@@ -61,8 +61,8 @@
             <table class="table table-bordered table-sm mb-0" id="grid-table">
               <thead>
                 <tr>
-                  <th class="text-center bg-light" style="width: 40px;"></th>
-                  {% for col in columns %}<th class="text-center bg-light" style="width: 80px;">{{ col }}</th>{% endfor %}
+                  <th class="text-center bg-light" style="width: 30px;"></th>
+                  {% for col in columns %}<th class="text-center bg-light" style="width: 50px;">{{ col }}</th>{% endfor %}
                 </tr>
               </thead>
               <tbody>
@@ -70,10 +70,8 @@
                   <tr>
                     <th class="text-center bg-light">{{ forloop.counter }}</th>
                     {% for slot in row %}
-                      <td class="text-center p-2 {% if slot.project %}table-success{% else %}table-secondary{% endif %}"
-                          style="cursor: pointer;
-                                 height: 60px;
-                                 vertical-align: middle"
+                      <td class="text-center p-1 {% if slot.project %}table-success{% else %}table-secondary{% endif %}"
+                          style="cursor: pointer; vertical-align: middle"
                           data-slot-id="{{ slot.pk }}"
                           data-slot-position="{{ slot.grid_position }}"
                           data-slot-size="{{ slot.slot_size }}"
