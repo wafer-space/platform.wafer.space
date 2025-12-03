@@ -142,7 +142,7 @@
                 </td>
                 <td>
                   <button class="btn btn-sm btn-primary"
-                          onclick="assignSlot({{ project.pk }}, '{{ project.manufacturing_id|default:project.project_id }}', '{{ project.slot_size }}')">
+                          onclick="assignSlot('{{ project.pk }}', '{{ project.manufacturing_id|default:project.project_id|escapejs }}', '{{ project.slot_size|escapejs }}')">
                     {% if project.shuttle_slots.exists %}
                       Edit
                     {% else %}
