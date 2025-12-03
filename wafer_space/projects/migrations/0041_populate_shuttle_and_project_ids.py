@@ -33,8 +33,8 @@ def populate_shuttle_and_project_ids(apps, _schema_editor):
     else:
         logger.info("Using existing G801 shuttle: %s", g801.id)
 
-    # Get projects without a shuttle
-    projects_to_migrate = Project.objects.filter(shuttle__isnull=True)
+    # Get projects without a shuttle, ordered by pk for deterministic ID assignment
+    projects_to_migrate = Project.objects.filter(shuttle__isnull=True).order_by("pk")
     count = projects_to_migrate.count()
 
     if count == 0:
