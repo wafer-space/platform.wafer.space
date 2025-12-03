@@ -41,14 +41,55 @@
     </div>
   </div>
 
-  <!-- Grid Preview (placeholder for Task 5) -->
+  <!-- Grid Layout Preview -->
   <div class="card mb-4">
     <div class="card-header">
-      <h5 class="mb-0">Grid Layout Preview</h5>
-      <small class="text-muted">Not to scale - for reference only</small>
+      <h5 class="mb-0">Grid Layout</h5>
+      <small class="text-muted">Click a slot to assign a project</small>
     </div>
     <div class="card-body">
-      <p class="text-muted">Grid preview will be implemented in Task 5.</p>
+      {% if grid %}
+      <div class="table-responsive">
+        <table class="table table-bordered table-sm mb-0" id="grid-table">
+          <thead>
+            <tr>
+              <th class="text-center bg-light" style="width: 40px;"></th>
+              {% for col in columns %}
+              <th class="text-center bg-light" style="width: 80px;">{{ col }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in grid %}
+            <tr>
+              <th class="text-center bg-light">{{ forloop.counter }}</th>
+              {% for slot in row %}
+              <td class="text-center p-2 {% if slot.project %}table-success{% else %}table-secondary{% endif %}"
+                  style="cursor: pointer; height: 60px; vertical-align: middle;"
+                  data-slot-id="{{ slot.pk }}"
+                  data-slot-position="{{ slot.grid_position }}"
+                  data-slot-size="{{ slot.slot_size }}"
+                  data-project-id="{% if slot.project %}{{ slot.project.pk }}{% endif %}"
+                  onclick="showSlotModal(this)">
+                {% if slot.project %}
+                  <strong>{{ slot.project.project_id }}</strong>
+                  <br><small class="text-muted">{{ slot.get_slot_size_display }}</small>
+                {% else %}
+                  <span class="text-muted">{{ slot.grid_position }}</span>
+                  <br><small class="text-muted">{{ slot.get_slot_size_display }}</small>
+                {% endif %}
+              </td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="alert alert-info mb-0">
+        No grid configured. Run <code>python manage.py generate_shuttle_grid {{ shuttle.name }}</code> to create the grid.
+      </div>
+      {% endif %}
     </div>
   </div>
 
@@ -108,23 +149,88 @@
   </div>
 </div>
 
-<!-- Assignment Modal (placeholder) -->
+<!-- Slot Assignment Modal -->
+<div class="modal fade" id="slotModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Slot <span id="modal-slot-position"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p><strong>Slot Size:</strong> <span id="modal-slot-size"></span></p>
+
+        <div id="modal-current-project" class="mb-3" style="display: none;">
+          <div class="alert alert-success">
+            <strong>Currently assigned:</strong> <span id="modal-current-project-id"></span>
+          </div>
+          <button class="btn btn-danger btn-sm" onclick="removeAssignment()">Remove Assignment</button>
+        </div>
+
+        <div id="modal-assign-section">
+          <label for="modal-project-select" class="form-label">Assign Project:</label>
+          <select class="form-select mb-3" id="modal-project-select">
+            <option value="">-- Select a project --</option>
+            {% for project in projects %}
+            <option value="{{ project.pk }}"
+                    data-size="{{ project.slot_size }}"
+                    data-assigned="{% if project.shuttle_slots.exists %}true{% else %}false{% endif %}">
+              {{ project.project_id }} - {{ project.name }} ({{ project.get_slot_size_display }})
+              {% if project.shuttle_slots.exists %} [Already assigned]{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+          <div id="size-mismatch-warning" class="alert alert-warning" style="display: none;">
+            Size mismatch: Project size does not match slot size. Assignment will proceed but may cause manufacturing issues.
+          </div>
+          <button class="btn btn-primary" onclick="assignProject()">Assign</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Project Assignment Modal (from table) -->
 <div class="modal fade" id="assignModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">Assign Project to Slot</h5>
+        <h5 class="modal-title">Assign <span id="assign-modal-project-name"></span></h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <p>Assignment interface will be implemented in next task.</p>
+        <p><strong>Project Size:</strong> <span id="assign-modal-project-size"></span></p>
+
+        <label for="assign-modal-slot-select" class="form-label">Select Slot:</label>
+        <select class="form-select mb-3" id="assign-modal-slot-select">
+          <option value="">-- Select a slot --</option>
+          {% for row in grid %}
+          {% for slot in row %}
+          {% if not slot.project %}
+          <option value="{{ slot.pk }}" data-size="{{ slot.slot_size }}">
+            {{ slot.grid_position }} ({{ slot.get_slot_size_display }})
+          </option>
+          {% endif %}
+          {% endfor %}
+          {% endfor %}
+        </select>
+        <div id="assign-size-mismatch-warning" class="alert alert-warning" style="display: none;">
+          Size mismatch: Slot size does not match project size.
+        </div>
+        <button class="btn btn-primary" onclick="assignFromTable()">Assign</button>
       </div>
     </div>
   </div>
 </div>
 
 <script>
-// Basic filtering (will be enhanced in next task)
+// State for current modal context
+let currentSlotId = null;
+let currentSlotSize = null;
+let currentProjectIdForAssign = null;
+let currentProjectSize = null;
+
+// Table filtering
 document.getElementById('size-filter').addEventListener('change', filterTable);
 document.getElementById('unassigned-only').addEventListener('change', filterTable);
 
@@ -145,10 +251,162 @@ function filterTable() {
   });
 }
 
+// Show modal when clicking on a grid slot
+function showSlotModal(cell) {
+  currentSlotId = cell.dataset.slotId;
+  currentSlotSize = cell.dataset.slotSize;
+  const position = cell.dataset.slotPosition;
+  const projectId = cell.dataset.projectId;
+
+  document.getElementById('modal-slot-position').textContent = position;
+  document.getElementById('modal-slot-size').textContent = getSizeLabel(currentSlotSize);
+
+  // Show/hide current project section
+  const currentProjectSection = document.getElementById('modal-current-project');
+  if (projectId) {
+    currentProjectSection.style.display = 'block';
+    document.getElementById('modal-current-project-id').textContent = cell.querySelector('strong')?.textContent || projectId;
+  } else {
+    currentProjectSection.style.display = 'none';
+  }
+
+  // Reset project select and warning
+  document.getElementById('modal-project-select').value = '';
+  document.getElementById('size-mismatch-warning').style.display = 'none';
+
+  const modal = new bootstrap.Modal(document.getElementById('slotModal'));
+  modal.show();
+}
+
+// Show modal when clicking assign button in table
 function assignSlot(projectId, projectName, slotSize) {
-  // Placeholder - will be implemented in next task
+  currentProjectIdForAssign = projectId;
+  currentProjectSize = slotSize;
+
+  document.getElementById('assign-modal-project-name').textContent = projectName;
+  document.getElementById('assign-modal-project-size').textContent = getSizeLabel(slotSize);
+  document.getElementById('assign-modal-slot-select').value = '';
+  document.getElementById('assign-size-mismatch-warning').style.display = 'none';
+
   const modal = new bootstrap.Modal(document.getElementById('assignModal'));
   modal.show();
+}
+
+// Check for size mismatch when selecting a project in slot modal
+document.getElementById('modal-project-select').addEventListener('change', function() {
+  const selectedOption = this.options[this.selectedIndex];
+  const projectSize = selectedOption.dataset.size;
+  const warning = document.getElementById('size-mismatch-warning');
+
+  if (projectSize && projectSize !== currentSlotSize) {
+    warning.style.display = 'block';
+  } else {
+    warning.style.display = 'none';
+  }
+});
+
+// Check for size mismatch when selecting a slot in assign modal
+document.getElementById('assign-modal-slot-select').addEventListener('change', function() {
+  const selectedOption = this.options[this.selectedIndex];
+  const slotSize = selectedOption.dataset.size;
+  const warning = document.getElementById('assign-size-mismatch-warning');
+
+  if (slotSize && slotSize !== currentProjectSize) {
+    warning.style.display = 'block';
+  } else {
+    warning.style.display = 'none';
+  }
+});
+
+// Assign project to slot (from grid click)
+function assignProject() {
+  const projectSelect = document.getElementById('modal-project-select');
+  const projectId = projectSelect.value;
+
+  if (!projectId) {
+    alert('Please select a project');
+    return;
+  }
+
+  doAssignment(projectId, currentSlotId);
+}
+
+// Assign project to slot (from table click)
+function assignFromTable() {
+  const slotSelect = document.getElementById('assign-modal-slot-select');
+  const slotId = slotSelect.value;
+
+  if (!slotId) {
+    alert('Please select a slot');
+    return;
+  }
+
+  doAssignment(currentProjectIdForAssign, slotId);
+}
+
+// Perform the assignment API call
+function doAssignment(projectId, slotId) {
+  fetch('{% url "shuttles:assign_project" shuttle.name %}', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': '{{ csrf_token }}'
+    },
+    body: JSON.stringify({
+      project_id: projectId,
+      slot_id: slotId
+    })
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      if (data.warning) {
+        alert(data.warning);
+      }
+      location.reload();
+    } else {
+      alert('Error: ' + data.error);
+    }
+  })
+  .catch(error => {
+    alert('Error: ' + error);
+  });
+}
+
+// Remove assignment from slot
+function removeAssignment() {
+  if (!confirm('Are you sure you want to remove this assignment?')) {
+    return;
+  }
+
+  fetch('{% url "shuttles:remove_assignment" shuttle.name 0 %}'.replace('/0/', '/' + currentSlotId + '/'), {
+    method: 'POST',
+    headers: {
+      'X-CSRFToken': '{{ csrf_token }}'
+    }
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      location.reload();
+    } else {
+      alert('Error: ' + data.error);
+    }
+  })
+  .catch(error => {
+    alert('Error: ' + error);
+  });
+}
+
+// Helper to get human-readable size label
+function getSizeLabel(size) {
+  const labels = {
+    '1x1': '1×1 - Full Slot',
+    '0p5x1': '0.5×1 - Half Width',
+    '1x0p5': '1×0.5 - Half Height',
+    '0p5x0p5': '0.5×0.5 - Quarter Slot'
+  };
+  return labels[size] || size;
 }
 </script>
 {% endblock %}

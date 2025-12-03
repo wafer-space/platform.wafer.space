@@ -89,6 +89,18 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
         projects = shuttle.projects.all().prefetch_related("shuttle_slots")
         context["projects"] = projects
 
+        # Build grid for visualization
+        num_rows, num_cols = shuttle.grid_dimensions
+        if num_rows > 0 and num_cols > 0:
+            grid = [[None for _ in range(num_cols)] for _ in range(num_rows)]
+            for slot in shuttle.slots.select_related("project"):
+                grid[slot.row][slot.column] = slot
+            context["grid"] = grid
+            context["columns"] = [chr(65 + i) for i in range(num_cols)]  # A, B, C...
+        else:
+            context["grid"] = []
+            context["columns"] = []
+
         return context
 
 
