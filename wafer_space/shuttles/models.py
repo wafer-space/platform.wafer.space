@@ -194,6 +194,20 @@ class Shuttle(models.Model):
             )
         )
 
+    def get_available_slot_sizes(self) -> list[str]:
+        """Get list of slot sizes that have available slots.
+
+        Returns:
+            List of SlotSize values (e.g., ['1x1', '0p5x1']) that have at least
+            one available slot on this shuttle.
+        """
+        available_sizes = (
+            self.slots.filter(status=ShuttleSlot.Status.AVAILABLE)
+            .values_list("slot_size", flat=True)
+            .distinct()
+        )
+        return list(available_sizes)
+
     @property
     def grid_dimensions(self) -> tuple[int, int]:
         """Get grid dimensions as (num_rows, num_columns)."""
