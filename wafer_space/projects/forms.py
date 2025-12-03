@@ -55,21 +55,22 @@ class ProjectForm(forms.ModelForm):
                 "class": "form-control",
                 "id": "id_project_id",
                 "placeholder": "ABCD",
-                "maxlength": "4",
-                "minlength": "4",
-                "pattern": "[A-Z0-9]{4}",
+                "maxlength": str(PROJECT_ID_LENGTH),
+                "minlength": str(PROJECT_ID_LENGTH),
+                "pattern": f"[A-Z0-9]{{{PROJECT_ID_LENGTH}}}",
                 "style": "text-transform: uppercase;",
                 "data-bs-toggle": "popover",
                 "data-bs-trigger": "focus",
                 "data-bs-placement": "right",
                 "data-bs-content": (
-                    "Enter a unique 4-character project ID using uppercase letters "
-                    "(A-Z) and numbers (0-9). Example: ABCD, TEST, 1234, A1B2"
+                    f"Enter a unique {PROJECT_ID_LENGTH}-character project ID using "
+                    "uppercase letters (A-Z) and numbers (0-9). "
+                    "Example: ABCD, TEST, 1234, A1B2"
                 ),
                 "title": "Project ID Requirements",
             },
         ),
-        help_text="4-character alphanumeric identifier (A-Z, 0-9)",
+        help_text=f"{PROJECT_ID_LENGTH}-character alphanumeric identifier (A-Z, 0-9)",
     )
 
     class Meta:
@@ -116,7 +117,7 @@ class ProjectForm(forms.ModelForm):
             raise ValidationError(msg)
 
         if len(project_id) != PROJECT_ID_LENGTH:
-            msg = "Project ID must be exactly 4 characters"
+            msg = f"Project ID must be exactly {PROJECT_ID_LENGTH} characters"
             raise ValidationError(msg)
 
         # Check uniqueness within shuttle
