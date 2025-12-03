@@ -52,9 +52,7 @@
                             data-project-id="{% if slot.project %}{{ slot.project.pk }}{% endif %}"
                             tabindex="0"
                             role="button"
-                            aria-label="Slot {{ slot.grid_position }}{% if slot.project %}, assigned to {{ slot.project.project_id }}{% else %}, empty{% endif %}"
-                            onclick="showSlotModal(this)"
-                            onkeydown="if(event.key==='Enter'||event.key===' '){showSlotModal(this);event.preventDefault();}">
+                            aria-label="Slot {{ slot.grid_position }}{% if slot.project %}, assigned to {{ slot.project.project_id }}{% else %}, empty{% endif %}">
                           {% if slot.project %}
                             <strong class="font-monospace">{{ slot.project.project_id }}</strong>
                           {% else %}
@@ -161,7 +159,9 @@
                 </td>
                 <td>
                   <button class="btn btn-sm btn-primary"
-                          onclick="assignSlot('{{ project.pk }}', '{{ project.full_id|default:project.project_id|escapejs }}', '{{ project.slot_size|escapejs }}')">
+                          data-assign-project="{{ project.pk }}"
+                          data-project-name="{{ project.full_id|default:project.project_id|escapejs }}"
+                          data-project-size="{{ project.slot_size|escapejs }}">
                     {% if project.shuttle_slots.exists %}
                       Edit
                     {% else %}
@@ -194,7 +194,7 @@
             <div class="alert alert-success">
               <strong>Currently assigned:</strong> <span id="modal-current-project-id"></span>
             </div>
-            <button class="btn btn-danger btn-sm" onclick="removeAssignment()">Remove Assignment</button>
+            <button class="btn btn-danger btn-sm" id="remove-assignment-btn">Remove Assignment</button>
           </div>
           <div id="modal-assign-section">
             <label for="modal-project-select" class="form-label">Assign Project:</label>
@@ -214,7 +214,7 @@
                  style="display: none">
               Size mismatch: Project size does not match slot size. Assignment will proceed but may cause manufacturing issues.
             </div>
-            <button class="btn btn-primary" onclick="assignProject()">Assign</button>
+            <button class="btn btn-primary" id="assign-project-btn">Assign</button>
           </div>
         </div>
       </div>
@@ -256,268 +256,18 @@
           <div id="assign-size-mismatch-warning"
                class="alert alert-warning"
                style="display: none">Size mismatch: Slot size does not match project size.</div>
-          <button class="btn btn-primary" onclick="assignFromTable()">Assign</button>
+          <button class="btn btn-primary" id="assign-from-table-btn">Assign</button>
         </div>
       </div>
     </div>
   </div>
+  <!-- Configuration for JavaScript -->
+  <div id="assignment-config"
+       data-assign-url="{% url 'shuttles:assign_project' shuttle.name %}"
+       data-remove-url-template="{% url 'shuttles:remove_assignment' shuttle.name 0 %}"
+       data-csrf-token="{{ csrf_token }}"
+       style="display: none;"></div>
   {{ slots_by_project|json_script:"slots-data" }}
   {{ size_labels|json_script:"size-labels-data" }}
-  <script>
-    // Slot data for looking up project assignments
-    const slotsByProject = JSON.parse(
-      document.getElementById('slots-data').textContent
-    );
-
-    // Size labels from server (avoids duplicating enum labels in JS)
-    const sizeLabels = JSON.parse(
-      document.getElementById('size-labels-data').textContent
-    );
-
-    // State for current modal context
-    let currentSlotId = null;
-    let currentSlotSize = null;
-    let currentProjectIdForAssign = null;
-    let currentProjectSize = null;
-
-    // Table filtering
-    document.getElementById('size-filter').addEventListener('change', filterTable);
-    document.getElementById('unassigned-only').addEventListener('change', filterTable);
-
-    function filterTable() {
-      const sizeFilter = document.getElementById('size-filter').value;
-      const unassignedOnly = document.getElementById('unassigned-only').checked;
-      const rows = document.querySelectorAll('#projects-table tbody tr');
-
-      rows.forEach(row => {
-        const size = row.dataset.size;
-        const assigned = row.dataset.assigned === 'true';
-
-        let show = true;
-        if (sizeFilter && size !== sizeFilter) show = false;
-        if (unassignedOnly && assigned) show = false;
-
-        row.style.display = show ? '' : 'none';
-      });
-    }
-
-    // Show modal when clicking on a grid slot
-    function showSlotModal(cell) {
-      currentSlotId = cell.dataset.slotId;
-      currentSlotSize = cell.dataset.slotSize;
-      const position = cell.dataset.slotPosition;
-      const projectId = cell.dataset.projectId;
-
-      document.getElementById('modal-slot-position').textContent = position;
-      document.getElementById('modal-slot-size').textContent = getSizeLabel(currentSlotSize);
-
-      // Show/hide current project section
-      const currentProjectSection = document.getElementById('modal-current-project');
-      if (projectId) {
-        currentProjectSection.style.display = 'block';
-        document.getElementById('modal-current-project-id').textContent = cell.querySelector('strong')?.textContent || projectId;
-      } else {
-        currentProjectSection.style.display = 'none';
-      }
-
-      // Reset project select and warning
-      document.getElementById('modal-project-select').value = '';
-      document.getElementById('size-mismatch-warning').style.display = 'none';
-
-      const modal = new bootstrap.Modal(document.getElementById('slotModal'));
-      modal.show();
-    }
-
-    // Show modal when clicking assign button in table
-    function assignSlot(projectId, projectName, slotSize) {
-      currentProjectIdForAssign = projectId;
-      currentProjectSize = slotSize;
-
-      document.getElementById('assign-modal-project-name').textContent = projectName;
-      document.getElementById('assign-modal-project-size').textContent = getSizeLabel(slotSize);
-      document.getElementById('assign-modal-slot-select').value = '';
-      document.getElementById('assign-size-mismatch-warning').style.display = 'none';
-
-      // Show current slot assignments
-      const currentSlotsSection = document.getElementById('assign-modal-current-slots');
-      const slotsList = document.getElementById('assign-modal-slots-list');
-      const projectSlots = slotsByProject[projectId] || [];
-
-      if (projectSlots.length > 0) {
-        currentSlotsSection.style.display = 'block';
-        slotsList.innerHTML = projectSlots.map(slot =>
-          `<div class="d-flex justify-content-between align-items-center mb-2">
-            <span class="badge bg-success">${slot.position}</span>
-            <span class="text-muted small">${getSizeLabel(slot.size)}</span>
-            <button class="btn btn-sm btn-outline-danger" onclick="removeSlotFromProject(${slot.id})">
-              Remove
-            </button>
-          </div>`
-        ).join('');
-      } else {
-        currentSlotsSection.style.display = 'none';
-        slotsList.innerHTML = '';
-      }
-
-      const modal = new bootstrap.Modal(document.getElementById('assignModal'));
-      modal.show();
-    }
-
-    // Check for size mismatch when selecting a project in slot modal
-    document.getElementById('modal-project-select').addEventListener('change', function() {
-      const selectedOption = this.options[this.selectedIndex];
-      const projectSize = selectedOption.dataset.size;
-      const warning = document.getElementById('size-mismatch-warning');
-
-      if (projectSize && projectSize !== currentSlotSize) {
-        warning.style.display = 'block';
-      } else {
-        warning.style.display = 'none';
-      }
-    });
-
-    // Check for size mismatch when selecting a slot in assign modal
-    document.getElementById('assign-modal-slot-select').addEventListener('change', function() {
-      const selectedOption = this.options[this.selectedIndex];
-      const slotSize = selectedOption.dataset.size;
-      const warning = document.getElementById('assign-size-mismatch-warning');
-
-      if (slotSize && slotSize !== currentProjectSize) {
-        warning.style.display = 'block';
-      } else {
-        warning.style.display = 'none';
-      }
-    });
-
-    // Assign project to slot (from grid click)
-    function assignProject() {
-      const projectSelect = document.getElementById('modal-project-select');
-      const projectId = projectSelect.value;
-
-      if (!projectId) {
-        alert('Please select a project');
-        return;
-      }
-
-      doAssignment(projectId, currentSlotId);
-    }
-
-    // Assign project to slot (from table click)
-    function assignFromTable() {
-      const slotSelect = document.getElementById('assign-modal-slot-select');
-      const slotId = slotSelect.value;
-
-      if (!slotId) {
-        alert('Please select a slot');
-        return;
-      }
-
-      doAssignment(currentProjectIdForAssign, slotId);
-    }
-
-    // Perform the assignment API call
-    function doAssignment(projectId, slotId) {
-      fetch('{% url "shuttles:assign_project" shuttle.name %}', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': '{{ csrf_token }}'
-          },
-          body: JSON.stringify({
-            project_id: projectId,
-            slot_id: slotId
-          })
-        })
-        .then(response => {
-          if (!response.ok) {
-            return response.text().then(text => {
-              throw new Error(`HTTP ${response.status}: ${text}`);
-            });
-          }
-          return response.json();
-        })
-        .then(data => {
-          if (data.success) {
-            if (data.warning) {
-              alert(data.warning);
-            }
-            location.reload();
-          } else {
-            alert('Error: ' + data.error);
-          }
-        })
-        .catch(error => {
-          alert('Error: ' + error);
-        });
-    }
-
-    // Remove assignment from slot (called from grid modal)
-    function removeAssignment() {
-      if (!confirm('Are you sure you want to remove this assignment?')) {
-        return;
-      }
-
-      fetch('{% url "shuttles:remove_assignment" shuttle.name 0 %}'.replace('/0/', '/' + currentSlotId + '/'), {
-          method: 'POST',
-          headers: {
-            'X-CSRFToken': '{{ csrf_token }}'
-          }
-        })
-        .then(response => {
-          if (!response.ok) {
-            return response.text().then(text => {
-              throw new Error(`HTTP ${response.status}: ${text}`);
-            });
-          }
-          return response.json();
-        })
-        .then(data => {
-          if (data.success) {
-            location.reload();
-          } else {
-            alert('Error: ' + data.error);
-          }
-        })
-        .catch(error => {
-          alert('Error: ' + error);
-        });
-    }
-
-    // Remove assignment from project (called from project modal)
-    function removeSlotFromProject(slotId) {
-      if (!confirm('Are you sure you want to remove this slot assignment?')) {
-        return;
-      }
-
-      fetch('{% url "shuttles:remove_assignment" shuttle.name 0 %}'.replace('/0/', '/' + slotId + '/'), {
-          method: 'POST',
-          headers: {
-            'X-CSRFToken': '{{ csrf_token }}'
-          }
-        })
-        .then(response => {
-          if (!response.ok) {
-            return response.text().then(text => {
-              throw new Error(`HTTP ${response.status}: ${text}`);
-            });
-          }
-          return response.json();
-        })
-        .then(data => {
-          if (data.success) {
-            location.reload();
-          } else {
-            alert('Error: ' + data.error);
-          }
-        })
-        .catch(error => {
-          alert('Error: ' + error);
-        });
-    }
-
-    // Helper to get human-readable size label (uses server-provided labels)
-    function getSizeLabel(size) {
-      return sizeLabels[size] || size;
-    }
-  </script>
+  <script src="{% static 'shuttles/js/assignment_dashboard.js' %}"></script>
 {% endblock content %}
