@@ -346,10 +346,7 @@ class ShuttleSlot(models.Model):
     @property
     def short_size_display(self) -> str:
         """Return short human-readable size (e.g., '1×1', '0.5×1')."""
-        # Extract just the dimensions from the full label
-        # e.g., "1×1 - Full Slot (3.88mm × 5.07mm = 19.67mm²)" -> "1×1"
-        full_label = self.get_slot_size_display()
-        return full_label.split(" - ")[0] if " - " in full_label else full_label
+        return self.get_slot_size_display()
 
     def reserve(self, project, user):
         """Reserve this slot for a project with size validation."""

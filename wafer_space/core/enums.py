@@ -13,7 +13,18 @@ class SlotSize(models.TextChoices):
     - 0p5x0p5: Quarter slot (1.94mm x 2.535mm = 4.92mm²)
     """
 
-    FULL = "1x1", "1×1 - Full Slot (3.88mm × 5.07mm = 19.67mm²)"
-    HALF_WIDTH = "0p5x1", "0.5×1 - Half Width (1.94mm × 5.07mm = 9.84mm²)"
-    HALF_HEIGHT = "1x0p5", "1×0.5 - Half Height (3.88mm × 2.535mm = 9.84mm²)"
-    QUARTER = "0p5x0p5", "0.5×0.5 - Quarter Slot (1.94mm × 2.535mm = 4.92mm²)"
+    FULL = "1x1", "1×1"
+    HALF_WIDTH = "0p5x1", "0.5×1"
+    HALF_HEIGHT = "1x0p5", "1×0.5"
+    QUARTER = "0p5x0p5", "0.5×0.5"
+
+    @property
+    def full_label(self) -> str:
+        """Return full label with dimensions (for project creation page)."""
+        full_labels = {
+            "1x1": "1×1 - Full Slot (3.88mm × 5.07mm = 19.67mm²)",
+            "0p5x1": "0.5×1 - Half Width (1.94mm × 5.07mm = 9.84mm²)",
+            "1x0p5": "1×0.5 - Half Height (3.88mm × 2.535mm = 9.84mm²)",
+            "0p5x0p5": "0.5×0.5 - Quarter Slot (1.94mm × 2.535mm = 4.92mm²)",
+        }
+        return full_labels.get(self.value, self.label)
