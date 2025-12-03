@@ -22,10 +22,7 @@ class TestShuttleAssignmentView:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="G810",
-            description="Test shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=100,
+            name="G810", description="Test shuttle", status=Shuttle.Status.OPEN
         )
 
         url = reverse("shuttles:assignment", kwargs={"name": shuttle.name})
@@ -40,10 +37,7 @@ class TestShuttleAssignmentView:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="G802",
-            description="Test shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=100,
+            name="G802", description="Test shuttle", status=Shuttle.Status.OPEN
         )
 
         url = reverse("shuttles:assignment", kwargs={"name": shuttle.name})
@@ -57,10 +51,7 @@ class TestShuttleAssignmentView:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="G803",
-            description="Test shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=100,
+            name="G803", description="Test shuttle", status=Shuttle.Status.OPEN
         )
 
         # Create slots
@@ -112,10 +103,7 @@ class TestShuttleAssignmentView:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="G804",
-            description="Test shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=100,
+            name="G804", description="Test shuttle", status=Shuttle.Status.OPEN
         )
 
         project1 = ProjectFactory(shuttle=shuttle, name="Project One")
@@ -142,10 +130,7 @@ class TestGridPreviewView:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="G811",
-            description="Test shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=100,
+            name="G811", description="Test shuttle", status=Shuttle.Status.OPEN
         )
 
         # Create 2x2 grid
@@ -200,10 +185,7 @@ class TestGridPreviewView:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="G802",
-            description="Test shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=100,
+            name="G802", description="Test shuttle", status=Shuttle.Status.OPEN
         )
 
         ShuttleSlot.objects.create(
@@ -232,11 +214,7 @@ class TestAssignProjectView:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="G812",
-            description="Test shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=100,
-            available_slots=100,
+            name="G812", description="Test shuttle", status=Shuttle.Status.OPEN
         )
         slot = ShuttleSlot.objects.create(
             shuttle=shuttle,
@@ -279,11 +257,7 @@ class TestAssignProjectView:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="G802",
-            description="Test shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=100,
-            available_slots=100,
+            name="G802", description="Test shuttle", status=Shuttle.Status.OPEN
         )
         slot = ShuttleSlot.objects.create(
             shuttle=shuttle,
@@ -322,10 +296,7 @@ class TestAssignProjectView:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="G803",
-            description="Test shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=100,
+            name="G803", description="Test shuttle", status=Shuttle.Status.OPEN
         )
         slot = ShuttleSlot.objects.create(
             shuttle=shuttle,
@@ -362,10 +333,7 @@ class TestRemoveAssignmentView:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="G813",
-            description="Test shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=100,
+            name="G813", description="Test shuttle", status=Shuttle.Status.OPEN
         )
         slot = ShuttleSlot.objects.create(
             shuttle=shuttle,

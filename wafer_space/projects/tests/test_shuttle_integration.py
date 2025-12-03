@@ -22,82 +22,56 @@ class TestProjectShuttleProperties(TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.shuttle = Shuttle.objects.create(
-            name="G801",
-            description="Test Shuttle Run",
-            status=Shuttle.Status.OPEN,
-            max_slots=10,
-            available_slots=10,
+            name="G891", description="Test Shuttle Run", status=Shuttle.Status.OPEN
         )
 
     def test_full_id_with_shuttle_and_project_id(self):
         """Test full_id property returns 8-character manufacturing ID."""
         project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            shuttle=self.shuttle,
-            project_id="ABCD",
+            user=self.user, name="Test Project", shuttle=self.shuttle, project_id="ABCD"
         )
-        assert project.full_id == "G801ABCD"
+        assert project.full_id == "G891ABCD"
         assert len(project.full_id) == SHUTTLE_ID_LENGTH + PROJECT_ID_LENGTH
 
     def test_full_id_without_shuttle_returns_empty(self):
         """Test full_id returns empty string when shuttle is None."""
         project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            project_id="ABCD",
+            user=self.user, name="Test Project", project_id="ABCD"
         )
         assert project.full_id == ""
 
     def test_full_id_without_project_id_returns_empty(self):
         """Test full_id returns empty string when project_id is empty."""
         project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            shuttle=self.shuttle,
-            project_id="",
+            user=self.user, name="Test Project", shuttle=self.shuttle, project_id=""
         )
         assert project.full_id == ""
 
     def test_full_id_without_both_returns_empty(self):
         """Test full_id returns empty string when both are None/empty."""
-        project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-        )
+        project = Project.objects.create(user=self.user, name="Test Project")
         assert project.full_id == ""
 
     def test_shuttle_run_display_with_shuttle(self):
         """Test shuttle_run_display property returns formatted string."""
         project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            shuttle=self.shuttle,
-            project_id="ABCD",
+            user=self.user, name="Test Project", shuttle=self.shuttle, project_id="ABCD"
         )
-        expected = "Test Shuttle Run: G801"
+        expected = "Test Shuttle Run: G891"
         assert project.shuttle_run_display == expected
 
     def test_shuttle_run_display_without_shuttle(self):
         """Test shuttle_run_display returns empty string when no shuttle."""
-        project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-        )
+        project = Project.objects.create(user=self.user, name="Test Project")
         assert project.shuttle_run_display == ""
 
     def test_shuttle_positions_returns_queryset(self):
         """Test shuttle_positions property returns related shuttle slots."""
         project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            shuttle=self.shuttle,
-            project_id="ABCD",
+            user=self.user, name="Test Project", shuttle=self.shuttle, project_id="ABCD"
         )
 
         # Create some shuttle slots for this project
@@ -128,10 +102,7 @@ class TestProjectShuttleProperties(TestCase):
     def test_shuttle_positions_empty_when_no_slots(self):
         """Test shuttle_positions returns empty queryset when no slots."""
         project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            shuttle=self.shuttle,
-            project_id="ABCD",
+            user=self.user, name="Test Project", shuttle=self.shuttle, project_id="ABCD"
         )
         positions = project.shuttle_positions
         assert positions.count() == 0
@@ -158,27 +129,20 @@ class TestProjectShuttleProperties(TestCase):
     def test_same_project_id_allowed_in_different_shuttles(self):
         """Test that same project_id can be used in different shuttles."""
         shuttle2 = Shuttle.objects.create(
-            name="G802",
-            description="Another Shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=10,
-            available_slots=10,
+            name="G892", description="Another Shuttle", status=Shuttle.Status.OPEN
         )
 
         # Create projects with same project_id in different shuttles
         project1 = Project.objects.create(
             user=self.user,
-            name="Project in G801",
+            name="Project in G891",
             shuttle=self.shuttle,
             project_id="TEST",
         )
         project2 = Project.objects.create(
-            user=self.user,
-            name="Project in G802",
-            shuttle=shuttle2,
-            project_id="TEST",
+            user=self.user, name="Project in G892", shuttle=shuttle2, project_id="TEST"
         )
 
         # Both should succeed
-        assert project1.full_id == "G801TEST"
-        assert project2.full_id == "G802TEST"
+        assert project1.full_id == "G891TEST"
+        assert project2.full_id == "G892TEST"

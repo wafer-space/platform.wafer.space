@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import MaxValueValidator
 from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils import timezone
@@ -82,13 +81,6 @@ class Shuttle(models.Model):
         default=Status.PLANNING,
     )
 
-    # Capacity and scheduling
-    max_slots = models.PositiveIntegerField(
-        validators=[MinValueValidator(1), MaxValueValidator(1000)],
-    )
-    reserved_slots = models.PositiveIntegerField(default=0)
-    available_slots = models.PositiveIntegerField(default=0)
-
     # Grid configuration
     grid_config_file = models.CharField(
         max_length=255,
@@ -167,20 +159,29 @@ class Shuttle(models.Model):
         self.full_clean()
         super().save(*args, **kwargs)
 
-    def update_slot_counts(self):
-        """Update reserved and available slot counts."""
-        self.reserved_slots = self.slots.filter(
-            status=ShuttleSlot.Status.RESERVED,
-        ).count()
-        self.available_slots = self.max_slots - self.reserved_slots
+    @property
+    def max_slots(self) -> int:
+        """Total number of slots derived from ShuttleSlot records."""
+        return self.slots.count()
 
-        # Update status based on capacity
+    @property
+    def reserved_slots(self) -> int:
+        """Number of reserved slots."""
+        return self.slots.filter(status=ShuttleSlot.Status.RESERVED).count()
+
+    @property
+    def available_slots(self) -> int:
+        """Number of available slots."""
+        return self.slots.filter(status=ShuttleSlot.Status.AVAILABLE).count()
+
+    def update_status_from_capacity(self):
+        """Update status based on slot capacity."""
         if self.available_slots == 0 and self.status == self.Status.OPEN:
             self.status = self.Status.FULL
+            self.save()
         elif self.available_slots > 0 and self.status == self.Status.FULL:
             self.status = self.Status.OPEN
-
-        self.save()
+            self.save()
 
     def can_accept_projects(self):
         """Check if shuttle can accept new projects."""

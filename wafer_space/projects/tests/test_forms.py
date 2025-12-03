@@ -20,11 +20,7 @@ class TestProjectForm(TestCase):
         """Set up test fixtures."""
         # Create a test shuttle for form tests
         self.shuttle = Shuttle.objects.create(
-            name="G800",
-            description="Test Shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=10,
-            available_slots=10,
+            name="G800", description="Test Shuttle", status=Shuttle.Status.OPEN
         )
 
     def test_form_valid_with_all_fields(self):
@@ -83,9 +79,7 @@ class TestProjectForm(TestCase):
     def test_form_saves_correctly(self):
         """Test form saves project correctly."""
         user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
 
         form_data = {

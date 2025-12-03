@@ -23,13 +23,9 @@ class ShuttleAdmin(admin.ModelAdmin):
     ]
     list_filter = ["status", "technology_node", "foundry"]
     search_fields = ["name", "description", "technology_node", "foundry"]
-    readonly_fields = ["created_at", "reserved_slots", "available_slots"]
+    readonly_fields = ["created_at"]
     fieldsets = [
         (None, {"fields": ["name", "description", "status"]}),
-        (
-            "Capacity",
-            {"fields": ["max_slots", "reserved_slots", "available_slots"]},
-        ),
         (
             "Grid Configuration",
             {

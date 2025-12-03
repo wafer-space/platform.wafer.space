@@ -13,10 +13,7 @@ class TestGridPositioning:
     def test_grid_position_single_letter(self):
         """Grid position should return spreadsheet-style notation (A1, B2, etc.)."""
         shuttle = Shuttle.objects.create(
-            name="G820",
-            description="Test shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=100,
+            name="G820", description="Test shuttle", status=Shuttle.Status.OPEN
         )
         slot = ShuttleSlot.objects.create(
             shuttle=shuttle,
@@ -30,10 +27,7 @@ class TestGridPositioning:
     def test_grid_position_various_coordinates(self):
         """Test various row/column combinations."""
         shuttle = Shuttle.objects.create(
-            name="G821",
-            description="Test shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=100,
+            name="G821", description="Test shuttle", status=Shuttle.Status.OPEN
         )
 
         test_cases = [
@@ -57,10 +51,7 @@ class TestGridPositioning:
     def test_unique_together_constraint(self):
         """Each (shuttle, row, column) combination must be unique."""
         shuttle = Shuttle.objects.create(
-            name="G822",
-            description="Test shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=100,
+            name="G822", description="Test shuttle", status=Shuttle.Status.OPEN
         )
         ShuttleSlot.objects.create(
             shuttle=shuttle,
@@ -83,10 +74,7 @@ class TestGridPositioning:
     def test_slots_ordered_by_position(self):
         """Slots should be ordered by shuttle, row, then column."""
         shuttle = Shuttle.objects.create(
-            name="G823",
-            description="Test shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=100,
+            name="G823", description="Test shuttle", status=Shuttle.Status.OPEN
         )
 
         # Create slots in random order

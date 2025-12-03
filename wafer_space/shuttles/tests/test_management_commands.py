@@ -19,10 +19,7 @@ class TestGenerateShuttleGrid:
         """Should generate grid from YAML config."""
         # Create shuttle
         shuttle = Shuttle.objects.create(
-            name="G850",
-            description="Test shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=100,
+            name="G850", description="Test shuttle", status=Shuttle.Status.OPEN
         )
 
         # Create config file
@@ -36,10 +33,7 @@ column_widths: [1.0, 0.5]
         # Run command
         out = StringIO()
         call_command(
-            "generate_shuttle_grid",
-            "G850",
-            f"--config-dir={tmp_path}",
-            stdout=out,
+            "generate_shuttle_grid", "G850", f"--config-dir={tmp_path}", stdout=out
         )
 
         # Verify slots created
@@ -74,11 +68,7 @@ column_widths: [1.0, 0.5]
         """Should require --force flag if slots have assignments."""
         # Create shuttle with slots
         shuttle = Shuttle.objects.create(
-            name="G851",
-            description="Test shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=100,
-            available_slots=100,
+            name="G851", description="Test shuttle", status=Shuttle.Status.OPEN
         )
         slot = ShuttleSlot.objects.create(
             shuttle=shuttle,
@@ -90,9 +80,7 @@ column_widths: [1.0, 0.5]
 
         # Create user and project
         user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         project = Project.objects.create(
             user=user,
@@ -134,10 +122,7 @@ column_widths: [1.0]
     def test_dry_run_mode(self, tmp_path):
         """Should preview without creating slots in dry-run mode."""
         shuttle = Shuttle.objects.create(
-            name="G852",
-            description="Test shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=100,
+            name="G852", description="Test shuttle", status=Shuttle.Status.OPEN
         )
 
         config_file = tmp_path / "G852-layout.yaml"

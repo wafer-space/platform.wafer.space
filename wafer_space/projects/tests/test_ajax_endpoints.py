@@ -27,16 +27,10 @@ class TestProjectIDCheckView(TestCase):
         """Set up test fixtures."""
         self.client = Client()
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.shuttle = Shuttle.objects.create(
-            name="G800",
-            description="Test Shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=10,
-            available_slots=10,
+            name="G800", description="Test Shuttle", status=Shuttle.Status.OPEN
         )
         self.url = reverse("projects:check_project_id")
 
@@ -51,8 +45,7 @@ class TestProjectIDCheckView(TestCase):
         self.client.login(username="testuser", password=TEST_PASSWORD)
 
         response = self.client.get(
-            self.url,
-            {"shuttle": str(self.shuttle.pk), "project_id": "ABCD"},
+            self.url, {"shuttle": str(self.shuttle.pk), "project_id": "ABCD"}
         )
 
         assert response.status_code == HTTP_OK
@@ -73,8 +66,7 @@ class TestProjectIDCheckView(TestCase):
         self.client.login(username="testuser", password=TEST_PASSWORD)
 
         response = self.client.get(
-            self.url,
-            {"shuttle": str(self.shuttle.pk), "project_id": "ABCD"},
+            self.url, {"shuttle": str(self.shuttle.pk), "project_id": "ABCD"}
         )
 
         assert response.status_code == HTTP_OK
@@ -88,8 +80,7 @@ class TestProjectIDCheckView(TestCase):
 
         # Query with lowercase - view requires uppercase input
         response = self.client.get(
-            self.url,
-            {"shuttle": str(self.shuttle.pk), "project_id": "abcd"},
+            self.url, {"shuttle": str(self.shuttle.pk), "project_id": "abcd"}
         )
 
         assert response.status_code == HTTP_OK
@@ -125,8 +116,7 @@ class TestProjectIDCheckView(TestCase):
         self.client.login(username="testuser", password=TEST_PASSWORD)
 
         response = self.client.get(
-            self.url,
-            {"shuttle": str(self.shuttle.pk), "project_id": "ABC"},
+            self.url, {"shuttle": str(self.shuttle.pk), "project_id": "ABC"}
         )
 
         assert response.status_code == HTTP_OK
@@ -139,8 +129,7 @@ class TestProjectIDCheckView(TestCase):
         self.client.login(username="testuser", password=TEST_PASSWORD)
 
         response = self.client.get(
-            self.url,
-            {"shuttle": str(self.shuttle.pk), "project_id": "AB-D"},
+            self.url, {"shuttle": str(self.shuttle.pk), "project_id": "AB-D"}
         )
 
         assert response.status_code == HTTP_OK
@@ -151,11 +140,9 @@ class TestProjectIDCheckView(TestCase):
     def test_same_id_available_in_different_shuttle(self):
         """Test that same project_id is available in different shuttle."""
         shuttle2 = Shuttle.objects.create(
-            name="G802",
+            name="G890",
             description="Another Shuttle",
             status=Shuttle.Status.OPEN,
-            max_slots=10,
-            available_slots=10,
         )
 
         # Use ABCD in first shuttle
@@ -170,8 +157,7 @@ class TestProjectIDCheckView(TestCase):
 
         # Check if ABCD is available in second shuttle
         response = self.client.get(
-            self.url,
-            {"shuttle": str(shuttle2.pk), "project_id": "ABCD"},
+            self.url, {"shuttle": str(shuttle2.pk), "project_id": "ABCD"}
         )
 
         assert response.status_code == HTTP_OK
@@ -182,10 +168,7 @@ class TestProjectIDCheckView(TestCase):
         """Test that invalid shuttle ID returns 400 error."""
         self.client.login(username="testuser", password=TEST_PASSWORD)
 
-        response = self.client.get(
-            self.url,
-            {"shuttle": "99999", "project_id": "ABCD"},
-        )
+        response = self.client.get(self.url, {"shuttle": "99999", "project_id": "ABCD"})
 
         assert response.status_code == HTTP_BAD_REQUEST
         data = json.loads(response.content)
@@ -201,16 +184,10 @@ class TestShuttleAvailableSizesView(TestCase):
         """Set up test fixtures."""
         self.client = Client()
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.shuttle = Shuttle.objects.create(
-            name="G800",
-            description="Test Shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=10,
-            available_slots=10,
+            name="G800", description="Test Shuttle", status=Shuttle.Status.OPEN
         )
         self.url = reverse("projects:shuttle_available_sizes")
 

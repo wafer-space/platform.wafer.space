@@ -38,11 +38,7 @@ class TestGridWorkflow:
         """Test complete workflow from config to assignment."""
         # Step 1: Create shuttle
         shuttle = Shuttle.objects.create(
-            name="G850",
-            description="Production shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=20,
-            available_slots=20,
+            name="G850", description="Production shuttle", status=Shuttle.Status.OPEN
         )
 
         # Step 2: Create grid configuration
@@ -56,10 +52,7 @@ column_widths: [1.0, 0.5, 1.0]
         # Step 3: Generate grid
         out = StringIO()
         call_command(
-            "generate_shuttle_grid",
-            "G850",
-            f"--config-dir={tmp_path}",
-            stdout=out,
+            "generate_shuttle_grid", "G850", f"--config-dir={tmp_path}", stdout=out
         )
 
         # Verify grid created
@@ -112,11 +105,7 @@ column_widths: [1.0, 0.5, 1.0]
     def test_grid_regeneration_safety(self, tmp_path):
         """Test that grid regeneration protects assigned projects."""
         shuttle = Shuttle.objects.create(
-            name="G851",
-            description="Test shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=10,
-            available_slots=10,
+            name="G851", description="Test shuttle", status=Shuttle.Status.OPEN
         )
 
         # Create initial grid

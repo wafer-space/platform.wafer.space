@@ -43,26 +43,18 @@ class TestProjectListView(TestCase):
         """Set up test fixtures."""
         self.client = Client()
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.other_user = User.objects.create_user(
-            username="otheruser",
-            email="other@example.com",
-            password=TEST_PASSWORD,
+            username="otheruser", email="other@example.com", password=TEST_PASSWORD
         )
 
         # Create projects for both users
         self.project1 = Project.objects.create(
-            user=self.user,
-            name="Project 1",
-            description="First project",
+            user=self.user, name="Project 1", description="First project"
         )
         self.project2 = Project.objects.create(
-            user=self.user,
-            name="Project 2",
-            description="Second project",
+            user=self.user, name="Project 2", description="Second project"
         )
         self.other_project = Project.objects.create(
             user=self.other_user,
@@ -105,19 +97,13 @@ class TestProjectDetailView(TestCase):
         """Set up test fixtures."""
         self.client = Client()
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.other_user = User.objects.create_user(
-            username="otheruser",
-            email="other@example.com",
-            password=TEST_PASSWORD,
+            username="otheruser", email="other@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            description="Test project",
+            user=self.user, name="Test Project", description="Test project"
         )
 
     def test_requires_login(self):
@@ -183,7 +169,7 @@ class TestProjectDetailView(TestCase):
         self.client.force_login(staff_user)
 
         response = self.client.get(
-            reverse("projects:detail", kwargs={"pk": self.project.pk}),
+            reverse("projects:detail", kwargs={"pk": self.project.pk})
         )
         assert response.status_code == HTTP_OK
         assert response.context["project"] == self.project
@@ -198,16 +184,10 @@ class TestProjectCreateView(TestCase):
         """Set up test fixtures."""
         self.client = Client()
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.shuttle = Shuttle.objects.create(
-            name="G800",
-            description="Test Shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=10,
-            available_slots=10,
+            name="G800", description="Test Shuttle", status=Shuttle.Status.OPEN
         )
 
     def test_requires_login(self):
@@ -271,21 +251,13 @@ class TestProjectUpdateView(TestCase):
         """Set up test fixtures."""
         self.client = Client()
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.other_user = User.objects.create_user(
-            username="otheruser",
-            email="other@example.com",
-            password=TEST_PASSWORD,
+            username="otheruser", email="other@example.com", password=TEST_PASSWORD
         )
         self.shuttle = Shuttle.objects.create(
-            name="G800",
-            description="Test Shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=10,
-            available_slots=10,
+            name="G800", description="Test Shuttle", status=Shuttle.Status.OPEN
         )
         self.project = Project.objects.create(
             user=self.user,
@@ -346,19 +318,13 @@ class TestProjectDeleteView(TestCase):
         """Set up test fixtures."""
         self.client = Client()
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.other_user = User.objects.create_user(
-            username="otheruser",
-            email="other@example.com",
-            password=TEST_PASSWORD,
+            username="otheruser", email="other@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            description="Test project",
+            user=self.user, name="Test Project", description="Test project"
         )
 
     def test_requires_login(self):
@@ -402,19 +368,13 @@ class TestProjectFileSubmitURLView(TestCase):
         """Set up test fixtures."""
         self.client = Client()
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.other_user = User.objects.create_user(
-            username="otheruser",
-            email="other@example.com",
-            password=TEST_PASSWORD,
+            username="otheruser", email="other@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            description="Test project",
+            user=self.user, name="Test Project", description="Test project"
         )
 
     def test_requires_login(self):
@@ -505,19 +465,13 @@ class TestProjectFileProgressView(TestCase):
         """Set up test fixtures."""
         self.client = Client()
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.other_user = User.objects.create_user(
-            username="otheruser",
-            email="other@example.com",
-            password=TEST_PASSWORD,
+            username="otheruser", email="other@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            description="Test project",
+            user=self.user, name="Test Project", description="Test project"
         )
 
     def test_requires_login(self):
@@ -598,14 +552,10 @@ class TestProjectSubmitView(TestCase):
         """Set up test fixtures."""
         self.client = Client()
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.other_user = User.objects.create_user(
-            username="otheruser",
-            email="other@example.com",
-            password=TEST_PASSWORD,
+            username="otheruser", email="other@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
             user=self.user,
@@ -886,14 +836,10 @@ class TestEnhancedProgressDashboard(TestCase):
         """Set up test fixtures."""
         self.client = Client()
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            description="Test project",
+            user=self.user, name="Test Project", description="Test project"
         )
 
     def test_detail_view_shows_progress_flag_when_downloading(self):
@@ -1145,14 +1091,10 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
     def setUp(self):
         """Set up test data."""
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            description="Test Description",
+            user=self.user, name="Test Project", description="Test Description"
         )
         self.project_file = ProjectFile.objects.create(
             project=self.project,
@@ -1239,19 +1181,13 @@ class TestManufacturabilityCheckCancelView(TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.other_user = User.objects.create_user(
-            username="otheruser",
-            email="other@example.com",
-            password=TEST_PASSWORD,
+            username="otheruser", email="other@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            description="Test project",
+            user=self.user, name="Test Project", description="Test project"
         )
         self.project_file = ProjectFile.objects.create(
             project=self.project,
@@ -1387,14 +1323,10 @@ class TestProjectFileSubmitURLViewWarning(TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            description="Test project",
+            user=self.user, name="Test Project", description="Test project"
         )
         self.project_file = ProjectFile.objects.create(
             project=self.project,
@@ -1474,11 +1406,7 @@ class TestProjectDetailSlotVisibility:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="G810",
-            description="Test shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=10,
-            available_slots=10,
+            name="G810", description="Test shuttle", status=Shuttle.Status.OPEN
         )
         project = ProjectFactory(shuttle=shuttle)
 
@@ -1523,11 +1451,7 @@ class TestProjectDetailSlotVisibility:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="G811",
-            description="Test shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=10,
-            available_slots=10,
+            name="G811", description="Test shuttle", status=Shuttle.Status.OPEN
         )
         project.shuttle = shuttle
         project.save()
@@ -1561,28 +1485,20 @@ class TestProjectListViewStaff(TestCase):
         """Set up test fixtures."""
         self.client = Client()
         self.owner = User.objects.create_user(
-            username="owner",
-            email="owner@example.com",
-            password=TEST_PASSWORD,
+            username="owner", email="owner@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.owner,
-            name="Owner Project",
-            description="Owner description",
+            user=self.owner, name="Owner Project", description="Owner description"
         )
 
     def test_project_list_shows_only_own_projects_for_regular_user(self):
         """Test that regular users only see their own projects in list."""
         # Create another user with a project
         other_user = User.objects.create_user(
-            username="other",
-            email="other@example.com",
-            password=TEST_PASSWORD,
+            username="other", email="other@example.com", password=TEST_PASSWORD
         )
         other_project = Project.objects.create(
-            user=other_user,
-            name="Other Project",
-            description="Other description",
+            user=other_user, name="Other Project", description="Other description"
         )
 
         self.client.force_login(self.owner)
@@ -1597,14 +1513,10 @@ class TestProjectListViewStaff(TestCase):
         """Test that staff users see all users' projects in list."""
         # Create another user with a project
         other_user = User.objects.create_user(
-            username="other",
-            email="other@example.com",
-            password=TEST_PASSWORD,
+            username="other", email="other@example.com", password=TEST_PASSWORD
         )
         other_project = Project.objects.create(
-            user=other_user,
-            name="Other Project",
-            description="Other description",
+            user=other_user, name="Other Project", description="Other description"
         )
 
         staff_user = User.objects.create_user(
@@ -1631,14 +1543,10 @@ class TestProjectUpdateViewStaff(TestCase):
         """Set up test fixtures."""
         self.client = Client()
         self.owner = User.objects.create_user(
-            username="owner",
-            email="owner@example.com",
-            password=TEST_PASSWORD,
+            username="owner", email="owner@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.owner,
-            name="Test Project",
-            description="Test description",
+            user=self.owner, name="Test Project", description="Test description"
         )
 
     def test_project_update_staff_access(self):
@@ -1666,14 +1574,10 @@ class TestProjectDeleteViewStaff(TestCase):
         """Set up test fixtures."""
         self.client = Client()
         self.owner = User.objects.create_user(
-            username="owner",
-            email="owner@example.com",
-            password=TEST_PASSWORD,
+            username="owner", email="owner@example.com", password=TEST_PASSWORD
         )
         self.project = Project.objects.create(
-            user=self.owner,
-            name="Test Project",
-            description="Test description",
+            user=self.owner, name="Test Project", description="Test description"
         )
 
     def test_project_delete_staff_access(self):

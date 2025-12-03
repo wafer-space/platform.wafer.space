@@ -20,16 +20,10 @@ class TestShuttleReserveComplianceValidation:
         """Test that reserve() fails if project has no compliance certification."""
         # Arrange: Create shuttle slot and project WITHOUT compliance cert
         user = User.objects.create_user(
-            username="testuser1",
-            email="test1@example.com",
-            password=TEST_PASSWORD,
+            username="testuser1", email="test1@example.com", password=TEST_PASSWORD
         )
         shuttle = Shuttle.objects.create(
-            name="G831",
-            description="Test Shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=10,
-            available_slots=10,
+            name="G831", description="Test Shuttle", status=Shuttle.Status.OPEN
         )
         slot = ShuttleSlot.objects.create(
             shuttle=shuttle,
@@ -39,9 +33,7 @@ class TestShuttleReserveComplianceValidation:
             status=ShuttleSlot.Status.AVAILABLE,
         )
         project = Project.objects.create(
-            user=user,
-            name="Test Project",
-            description="Test project description",
+            user=user, name="Test Project", description="Test project description"
         )
 
         # Act & Assert: reserve() should raise ValueError
@@ -59,16 +51,10 @@ class TestShuttleReserveComplianceValidation:
         """Test that reserve() fails if compliance attestations are incomplete."""
         # Arrange: Create project with incomplete compliance (missing attestation)
         user = User.objects.create_user(
-            username="testuser2",
-            email="test2@example.com",
-            password=TEST_PASSWORD,
+            username="testuser2", email="test2@example.com", password=TEST_PASSWORD
         )
         shuttle = Shuttle.objects.create(
-            name="G832",
-            description="Test Shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=10,
-            available_slots=10,
+            name="G832", description="Test Shuttle", status=Shuttle.Status.OPEN
         )
         slot = ShuttleSlot.objects.create(
             shuttle=shuttle,
@@ -78,9 +64,7 @@ class TestShuttleReserveComplianceValidation:
             status=ShuttleSlot.Status.AVAILABLE,
         )
         project = Project.objects.create(
-            user=user,
-            name="Test Project",
-            description="Test project description",
+            user=user, name="Test Project", description="Test project description"
         )
         ProjectComplianceCertification.objects.create(
             project=project,
@@ -105,16 +89,10 @@ class TestShuttleReserveComplianceValidation:
         """Test that reserve() fails if end-use statement is missing."""
         # Arrange: Create project with empty end-use statement
         user = User.objects.create_user(
-            username="testuser3",
-            email="test3@example.com",
-            password=TEST_PASSWORD,
+            username="testuser3", email="test3@example.com", password=TEST_PASSWORD
         )
         shuttle = Shuttle.objects.create(
-            name="G833",
-            description="Test Shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=10,
-            available_slots=10,
+            name="G833", description="Test Shuttle", status=Shuttle.Status.OPEN
         )
         slot = ShuttleSlot.objects.create(
             shuttle=shuttle,
@@ -124,9 +102,7 @@ class TestShuttleReserveComplianceValidation:
             status=ShuttleSlot.Status.AVAILABLE,
         )
         project = Project.objects.create(
-            user=user,
-            name="Test Project",
-            description="Test project description",
+            user=user, name="Test Project", description="Test project description"
         )
         ProjectComplianceCertification.objects.create(
             project=project,
@@ -151,16 +127,10 @@ class TestShuttleReserveComplianceValidation:
         """Test that reserve() succeeds when compliance is valid."""
         # Arrange: Create project with valid compliance certification
         user = User.objects.create_user(
-            username="testuser4",
-            email="test4@example.com",
-            password=TEST_PASSWORD,
+            username="testuser4", email="test4@example.com", password=TEST_PASSWORD
         )
         shuttle = Shuttle.objects.create(
-            name="G834",
-            description="Test Shuttle",
-            status=Shuttle.Status.OPEN,
-            max_slots=10,
-            available_slots=10,
+            name="G834", description="Test Shuttle", status=Shuttle.Status.OPEN
         )
         slot = ShuttleSlot.objects.create(
             shuttle=shuttle,
@@ -170,9 +140,7 @@ class TestShuttleReserveComplianceValidation:
             status=ShuttleSlot.Status.AVAILABLE,
         )
         project = Project.objects.create(
-            user=user,
-            name="Test Project",
-            description="Test project description",
+            user=user, name="Test Project", description="Test project description"
         )
         ProjectComplianceCertification.objects.create(
             project=project,
