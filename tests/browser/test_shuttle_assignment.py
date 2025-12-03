@@ -110,7 +110,7 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
         """Set up test fixtures."""
         self.live_server_url = live_server.url
 
-    def perform_login(self, driver, username, password, wait):
+    def perform_login(self, driver, username, password):
         """Perform login using Django test client."""
         client = Client()
         login_successful = client.login(username=username, password=password)
@@ -136,7 +136,7 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
         self, driver, wait, staff_user, shuttle
     ):
         """Test that staff users can access the assignment dashboard."""
-        self.perform_login(driver, staff_user.username, TEST_PASSWORD, wait)
+        self.perform_login(driver, staff_user.username, TEST_PASSWORD)
 
         # Navigate to assignment dashboard
         driver.get(f"{self.live_server_url}/shuttles/{shuttle.name}/assign/")
@@ -158,7 +158,7 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
         self, driver, wait, regular_user, shuttle
     ):
         """Test that regular users cannot access the assignment dashboard."""
-        self.perform_login(driver, regular_user.username, TEST_PASSWORD, wait)
+        self.perform_login(driver, regular_user.username, TEST_PASSWORD)
 
         # Try to navigate to assignment dashboard
         driver.get(f"{self.live_server_url}/shuttles/{shuttle.name}/assign/")
@@ -174,7 +174,7 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
 
     def test_grid_shows_available_slots(self, driver, wait, staff_user, shuttle):
         """Test that grid displays available slots."""
-        self.perform_login(driver, staff_user.username, TEST_PASSWORD, wait)
+        self.perform_login(driver, staff_user.username, TEST_PASSWORD)
 
         driver.get(f"{self.live_server_url}/shuttles/{shuttle.name}/assign/")
 
@@ -196,7 +196,7 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
         slot = shuttle.slots.first()
         slot.reserve(project_with_compliance, staff_user)
 
-        self.perform_login(driver, staff_user.username, TEST_PASSWORD, wait)
+        self.perform_login(driver, staff_user.username, TEST_PASSWORD)
 
         driver.get(f"{self.live_server_url}/shuttles/{shuttle.name}/assign/")
 
@@ -218,7 +218,7 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
         self, driver, wait, staff_user, shuttle, project_with_compliance
     ):
         """Test that projects table shows unassigned projects."""
-        self.perform_login(driver, staff_user.username, TEST_PASSWORD, wait)
+        self.perform_login(driver, staff_user.username, TEST_PASSWORD)
 
         driver.get(f"{self.live_server_url}/shuttles/{shuttle.name}/assign/")
 
@@ -234,7 +234,7 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
         self, driver, wait, staff_user, shuttle, project_with_compliance
     ):
         """Test that clicking a slot opens the assignment modal."""
-        self.perform_login(driver, staff_user.username, TEST_PASSWORD, wait)
+        self.perform_login(driver, staff_user.username, TEST_PASSWORD)
 
         driver.get(f"{self.live_server_url}/shuttles/{shuttle.name}/assign/")
 
@@ -260,7 +260,7 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
         self, driver, wait, staff_user, shuttle, project_with_compliance
     ):
         """Test that assignment summary shows correct statistics."""
-        self.perform_login(driver, staff_user.username, TEST_PASSWORD, wait)
+        self.perform_login(driver, staff_user.username, TEST_PASSWORD)
 
         driver.get(f"{self.live_server_url}/shuttles/{shuttle.name}/assign/")
 
