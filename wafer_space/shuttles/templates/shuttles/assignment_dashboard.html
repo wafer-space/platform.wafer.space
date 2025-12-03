@@ -10,7 +10,7 @@
     <h1>Shuttle {{ shuttle.name }} Assignment Status</h1>
     <div class="row mb-4">
       <!-- Grid Layout -->
-      <div class="col-lg-8">
+      <div class="col-lg-10">
         <div class="card h-100">
           <div class="card-header py-2">
             <strong>Grid Layout</strong>
@@ -61,27 +61,27 @@
         </div>
       </div>
       <!-- Summary Statistics -->
-      <div class="col-lg-4">
+      <div class="col-lg-2">
         <div class="card h-100">
-          <div class="card-header py-2">
+          <div class="card-header py-1">
             <strong>Summary</strong>
           </div>
-          <div class="card-body p-2">
-            <table class="table table-sm mb-0">
+          <div class="card-body p-1">
+            <table class="table table-sm mb-0" style="font-size: 0.85rem;">
               <thead>
                 <tr>
-                  <th>Size</th>
-                  <th class="text-end">Projects</th>
-                  <th class="text-end">Slots</th>
+                  <th class="py-1">Size</th>
+                  <th class="py-1 text-end">Proj</th>
+                  <th class="py-1 text-end">Slots</th>
                 </tr>
               </thead>
               <tbody>
                 {% for slot_size, stat in stats.items %}
                   {% if stat.total_slots > 0 %}
                     <tr>
-                      <td>{{ slot_size.label }}</td>
-                      <td class="text-end">{{ stat.assigned_count }}/{{ stat.projects_count }}</td>
-                      <td class="text-end">{{ stat.available_slots }}/{{ stat.total_slots }}</td>
+                      <td class="py-1">{{ slot_size.label }}</td>
+                      <td class="py-1 text-end">{{ stat.assigned_count }}/{{ stat.projects_count }}</td>
+                      <td class="py-1 text-end">{{ stat.available_slots }}/{{ stat.total_slots }}</td>
                     </tr>
                   {% endif %}
                 {% endfor %}
