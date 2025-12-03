@@ -50,7 +50,13 @@ class TestClassifyFailure:
         assert result == "success"
 
     def test_classify_system_error_traceback(self):
-        """Test system error detection via traceback."""
+        """Test system error detection via traceback.
+
+        Note: This is classified as system error because no DRC tool results
+        are present (neither Magic nor KLayout reported errors or clear).
+        The traceback pattern itself doesn't drive classification - the
+        absence of DRC completion does.
+        """
         logs = (
             "Error: The precheck failed with the following exception:\n"
             "Traceback (most recent call last):"
@@ -59,7 +65,13 @@ class TestClassifyFailure:
         assert result == "system"
 
     def test_classify_system_error_memory(self):
-        """Test system error detection via MemoryError."""
+        """Test system error detection via MemoryError.
+
+        Note: This is classified as system error because no DRC tool results
+        are present (neither Magic nor KLayout reported errors or clear).
+        The MemoryError pattern itself doesn't drive classification - the
+        absence of DRC completion does.
+        """
         logs = "MemoryError: cannot allocate memory"
         result = classify_failure(logs, exit_code=1)
         assert result == "system"
@@ -117,8 +129,10 @@ class TestParseDeferredDRCErrors:
 
     def test_parse_deferred_drc_errors_extracts_counts(self):
         """Test that DRC error counts are extracted from deferred errors."""
+        # Note: Real precheck output may contain duplicate DRC lines (once during
+        # execution and again in summary), but this test uses a simplified log
+        # with exactly one line per tool to verify extraction logic.
         logs = """
-[11:19:06] ERROR    6 KLayout DRC errors found. - deferred
 PrecheckFlow - Stage 13 - Write the layout ━━━━━━━━━ 13/13 1:27:46
 Error: The precheck failed with the following exception:
 One or more deferred errors were encountered:
@@ -139,11 +153,10 @@ One or more deferred errors were encountered:
         assert has_magic, f"Missing Magic DRC error in: {messages}"
         assert has_klayout, f"Missing KLayout DRC error in: {messages}"
 
-        # Check DRC errors have DRC category (also captures generic "Error:" lines)
+        # Check DRC errors have DRC category - exactly one per tool (Magic + KLayout)
         drc_errors = [e for e in result["errors"] if e["category"] == "DRC"]
-        # At least Magic + KLayout DRC errors (one per tool)
-        expected_min_drc_errors = 2
-        assert len(drc_errors) >= expected_min_drc_errors
+        expected_drc_errors = 2  # One per tool: Magic + KLayout
+        assert len(drc_errors) == expected_drc_errors
 
     def test_parse_single_drc_error_type(self):
         """Test parsing when only one type of DRC error is present."""
