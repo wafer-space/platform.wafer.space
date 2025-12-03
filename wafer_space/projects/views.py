@@ -713,13 +713,32 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
     template_name = "projects/admin_summary.html"
     context_object_name = "projects"
 
+    SORT_FIELDS = {
+        "full_id": ("shuttle__name", "project_id"),
+        "size": ("slot_size",),
+        "name": ("name",),
+        "owner": ("user__username",),
+        "email": ("user__email",),
+    }
+    DEFAULT_SORT = "name"
+
     def test_func(self):
         """Only staff users can access this view."""
         return self.request.user.is_staff
 
+    def get_sort_params(self):
+        """Parse sort parameter and return (field, descending)."""
+        sort = self.request.GET.get("sort", self.DEFAULT_SORT)
+        descending = sort.startswith("-")
+        field = sort.lstrip("-")
+        if field not in self.SORT_FIELDS:
+            field = self.DEFAULT_SORT
+            descending = False
+        return field, descending
+
     def get_queryset(self):
-        """Return all projects with optimized queries."""
-        return Project.objects.select_related("user", "shuttle").prefetch_related(
+        """Return all projects with optimized queries and sorting."""
+        qs = Project.objects.select_related("user", "shuttle").prefetch_related(
             Prefetch(
                 "files",
                 queryset=ProjectFile.objects.filter(is_active=True).select_related(
@@ -728,3 +747,17 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
                 to_attr="active_files",
             )
         )
+
+        field, descending = self.get_sort_params()
+        order_fields = self.SORT_FIELDS[field]
+        if descending:
+            order_fields = tuple(f"-{f}" for f in order_fields)
+        return qs.order_by(*order_fields)
+
+    def get_context_data(self, **kwargs):
+        """Add sort information to context."""
+        context = super().get_context_data(**kwargs)
+        field, descending = self.get_sort_params()
+        context["current_sort"] = field
+        context["sort_descending"] = descending
+        return context
