@@ -1,81 +1,114 @@
 {% extends "base.html" %}
 
 {% block title %}Project Summary{% endblock %}
-
 {% block content %}
-<div class="container-fluid mt-4">
-  <h1>Project Summary</h1>
-  <p class="text-muted">{{ projects|length }} project{{ projects|length|pluralize }}</p>
-
-  <table class="table table-striped table-hover">
-    <thead class="table-light">
-      <tr>
-        <th>
-          <a href="?sort={% if current_sort == 'full_id' and not sort_descending %}-{% endif %}full_id" class="text-decoration-none text-dark">
-            Project ID
-            {% if current_sort == 'full_id' %}{% if sort_descending %}▼{% else %}▲{% endif %}{% endif %}
-          </a>
-        </th>
-        <th>
-          <a href="?sort={% if current_sort == 'size' and not sort_descending %}-{% endif %}size" class="text-decoration-none text-dark">
-            Size
-            {% if current_sort == 'size' %}{% if sort_descending %}▼{% else %}▲{% endif %}{% endif %}
-          </a>
-        </th>
-        <th>
-          <a href="?sort={% if current_sort == 'name' and not sort_descending %}-{% endif %}name" class="text-decoration-none text-dark">
-            Name
-            {% if current_sort == 'name' %}{% if sort_descending %}▼{% else %}▲{% endif %}{% endif %}
-          </a>
-        </th>
-        <th>
-          <a href="?sort={% if current_sort == 'owner' and not sort_descending %}-{% endif %}owner" class="text-decoration-none text-dark">
-            Owner
-            {% if current_sort == 'owner' %}{% if sort_descending %}▼{% else %}▲{% endif %}{% endif %}
-          </a>
-        </th>
-        <th>
-          <a href="?sort={% if current_sort == 'email' and not sort_descending %}-{% endif %}email" class="text-decoration-none text-dark">
-            Email
-            {% if current_sort == 'email' %}{% if sort_descending %}▼{% else %}▲{% endif %}{% endif %}
-          </a>
-        </th>
-        <th>Precheck Status</th>
-        <th>Manufacturable</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for project in projects %}
-      <tr>
-        <td>{{ project.full_id|default:"-" }}</td>
-        <td>{{ project.slot_size }}</td>
-        <td>{{ project.name }}</td>
-        <td>{{ project.user.username }}</td>
-        <td>{{ project.user.email }}</td>
-        {% with active_file=project.active_files.0 %}
-          {% if active_file and active_file.manufacturability_check %}
-            <td>{{ active_file.manufacturability_check.get_status_display }}</td>
-            <td>
-              {% if active_file.manufacturability_check.is_manufacturable is True %}
-                <span class="text-success">✓</span>
-              {% elif active_file.manufacturability_check.is_manufacturable is False %}
-                <span class="text-danger">✗</span>
-              {% else %}
-                -
+  <div class="container-fluid mt-4">
+    <h1>Project Summary</h1>
+    <p class="text-muted">{{ projects|length }} project{{ projects|length|pluralize }}</p>
+    <table class="table table-striped table-hover">
+      <thead class="table-light">
+        <tr>
+          <th>
+            <a href="?sort={% if current_sort == 'full_id' and not sort_descending %}-{% endif %}full_id"
+               class="text-decoration-none text-dark">
+              Project ID
+              {% if current_sort == 'full_id' %}
+                {% if sort_descending %}
+                  ▼
+                {% else %}
+                  ▲
+                {% endif %}
               {% endif %}
-            </td>
-          {% else %}
-            <td>-</td>
-            <td>-</td>
-          {% endif %}
-        {% endwith %}
-      </tr>
-      {% empty %}
-      <tr>
-        <td colspan="7" class="text-center text-muted">No projects found.</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+            </a>
+          </th>
+          <th>
+            <a href="?sort={% if current_sort == 'size' and not sort_descending %}-{% endif %}size"
+               class="text-decoration-none text-dark">
+              Size
+              {% if current_sort == 'size' %}
+                {% if sort_descending %}
+                  ▼
+                {% else %}
+                  ▲
+                {% endif %}
+              {% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="?sort={% if current_sort == 'name' and not sort_descending %}-{% endif %}name"
+               class="text-decoration-none text-dark">
+              Name
+              {% if current_sort == 'name' %}
+                {% if sort_descending %}
+                  ▼
+                {% else %}
+                  ▲
+                {% endif %}
+              {% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="?sort={% if current_sort == 'owner' and not sort_descending %}-{% endif %}owner"
+               class="text-decoration-none text-dark">
+              Owner
+              {% if current_sort == 'owner' %}
+                {% if sort_descending %}
+                  ▼
+                {% else %}
+                  ▲
+                {% endif %}
+              {% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="?sort={% if current_sort == 'email' and not sort_descending %}-{% endif %}email"
+               class="text-decoration-none text-dark">
+              Email
+              {% if current_sort == 'email' %}
+                {% if sort_descending %}
+                  ▼
+                {% else %}
+                  ▲
+                {% endif %}
+              {% endif %}
+            </a>
+          </th>
+          <th>Precheck Status</th>
+          <th>Manufacturable</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for project in projects %}
+          <tr>
+            <td>{{ project.full_id|default:"-" }}</td>
+            <td>{{ project.slot_size }}</td>
+            <td>{{ project.name }}</td>
+            <td>{{ project.user.username }}</td>
+            <td>{{ project.user.email }}</td>
+            {% with active_file=project.active_files.0 %}
+              {% if active_file and active_file.manufacturability_check %}
+                <td>{{ active_file.manufacturability_check.get_status_display }}</td>
+                <td>
+                  {% if active_file.manufacturability_check.is_manufacturable is True %}
+                    <span class="text-success">✓</span>
+                  {% elif active_file.manufacturability_check.is_manufacturable is False %}
+                    <span class="text-danger">✗</span>
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+              {% else %}
+                <td>-</td>
+                <td>-</td>
+              {% endif %}
+            {% endwith %}
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="7" class="text-center text-muted">No projects found.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 {% endblock %}
