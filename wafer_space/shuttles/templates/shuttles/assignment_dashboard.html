@@ -6,94 +6,89 @@
   {{ shuttle.name }} Assignment
 {% endblock title %}
 {% block content %}
-  <div class="container mt-4">
+  <div class="container-fluid mt-4 px-4">
     <h1>Shuttle {{ shuttle.name }} Assignment Status</h1>
-    <!-- Summary Statistics -->
-    <div class="card mb-4">
-      <div class="card-header">
-        <h5 class="mb-0">Assignment Summary</h5>
-      </div>
-      <div class="card-body">
-        <div class="row">
-          {% for slot_size, stat in stats.items %}
-            {% if stat.total_slots > 0 %}
-              <div class="col-md-6 col-lg-3 mb-3">
-                <div class="border rounded p-3">
-                  <h6 class="text-muted">{{ slot_size.label }}</h6>
-                  <div class="mt-2">
-                    <strong>Projects:</strong> {{ stat.assigned_count }}/{{ stat.projects_count }} assigned
-                    <div class="progress mt-1" style="height: 5px;">
-                      <div class="progress-bar bg-success"
-                           role="progressbar"
-                           style="width: {% if stat.projects_count > 0 %}{% widthratio stat.assigned_count stat.projects_count 100 %}{% else %}0{% endif %}%">
-                      </div>
-                    </div>
-                  </div>
-                  <div class="mt-2">
-                    <strong>Slots:</strong> {{ stat.available_slots }}/{{ stat.total_slots }} available
-                    <div class="progress mt-1" style="height: 5px;">
-                      <div class="progress-bar bg-info"
-                           role="progressbar"
-                           style="width: {% if stat.total_slots > 0 %}{% widthratio stat.available_slots stat.total_slots 100 %}{% else %}0{% endif %}%">
-                      </div>
-                    </div>
-                  </div>
-                </div>
+    <div class="row mb-4">
+      <!-- Grid Layout -->
+      <div class="col-lg-8">
+        <div class="card h-100">
+          <div class="card-header py-2">
+            <strong>Grid Layout</strong>
+            <small class="text-muted ms-2">Click a slot to assign</small>
+          </div>
+          <div class="card-body p-2">
+            {% if grid %}
+              <style>
+                #grid-table { border-collapse: collapse; }
+                #grid-table th, #grid-table td { border: 2px solid #333 !important; }
+              </style>
+              <table class="table table-bordered table-sm mb-0" id="grid-table">
+                <thead>
+                  <tr>
+                    <th class="text-center bg-light" style="width: 30px;"></th>
+                    {% for col in columns %}<th class="text-center bg-light" style="width: 50px;">{{ col }}</th>{% endfor %}
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in grid %}
+                    <tr>
+                      <th class="text-center bg-light">{{ forloop.counter }}</th>
+                      {% for slot in row %}
+                        <td class="text-center p-1 {% if slot.project %}table-success{% else %}table-secondary{% endif %}"
+                            style="cursor: pointer; vertical-align: middle"
+                            data-slot-id="{{ slot.pk }}"
+                            data-slot-position="{{ slot.grid_position }}"
+                            data-slot-size="{{ slot.slot_size }}"
+                            data-project-id="{% if slot.project %}{{ slot.project.pk }}{% endif %}"
+                            onclick="showSlotModal(this)">
+                          {% if slot.project %}
+                            <strong>{{ slot.project.project_id }}</strong>
+                          {% else %}
+                            <span class="text-muted">{{ slot.grid_position }}</span>
+                          {% endif %}
+                        </td>
+                      {% endfor %}
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            {% else %}
+              <div class="alert alert-info mb-0">
+                No grid configured. Run <code>python manage.py generate_shuttle_grid {{ shuttle.name }}</code>
               </div>
             {% endif %}
-          {% endfor %}
+          </div>
         </div>
       </div>
-    </div>
-    <!-- Grid Layout Preview -->
-    <div class="card mb-4">
-      <div class="card-header">
-        <h5 class="mb-0">Grid Layout</h5>
-        <small class="text-muted">Click a slot to assign a project</small>
-      </div>
-      <div class="card-body">
-        {% if grid %}
-          <div class="table-responsive">
-            <style>
-              #grid-table { border-collapse: collapse; }
-              #grid-table th, #grid-table td { border: 2px solid #333 !important; }
-            </style>
-            <table class="table table-bordered table-sm mb-0" id="grid-table">
+      <!-- Summary Statistics -->
+      <div class="col-lg-4">
+        <div class="card h-100">
+          <div class="card-header py-2">
+            <strong>Summary</strong>
+          </div>
+          <div class="card-body p-2">
+            <table class="table table-sm mb-0">
               <thead>
                 <tr>
-                  <th class="text-center bg-light" style="width: 30px;"></th>
-                  {% for col in columns %}<th class="text-center bg-light" style="width: 50px;">{{ col }}</th>{% endfor %}
+                  <th>Size</th>
+                  <th class="text-end">Projects</th>
+                  <th class="text-end">Slots</th>
                 </tr>
               </thead>
               <tbody>
-                {% for row in grid %}
-                  <tr>
-                    <th class="text-center bg-light">{{ forloop.counter }}</th>
-                    {% for slot in row %}
-                      <td class="text-center p-1 {% if slot.project %}table-success{% else %}table-secondary{% endif %}"
-                          style="cursor: pointer; vertical-align: middle"
-                          data-slot-id="{{ slot.pk }}"
-                          data-slot-position="{{ slot.grid_position }}"
-                          data-slot-size="{{ slot.slot_size }}"
-                          data-project-id="{% if slot.project %}{{ slot.project.pk }}{% endif %}"
-                          onclick="showSlotModal(this)">
-                        {% if slot.project %}
-                          <strong>{{ slot.project.project_id }}</strong>
-                        {% else %}
-                          <span class="text-muted">{{ slot.grid_position }}</span>
-                        {% endif %}
-                      </td>
-                    {% endfor %}
-                  </tr>
+                {% for slot_size, stat in stats.items %}
+                  {% if stat.total_slots > 0 %}
+                    <tr>
+                      <td>{{ slot_size.label }}</td>
+                      <td class="text-end">{{ stat.assigned_count }}/{{ stat.projects_count }}</td>
+                      <td class="text-end">{{ stat.available_slots }}/{{ stat.total_slots }}</td>
+                    </tr>
+                  {% endif %}
                 {% endfor %}
               </tbody>
             </table>
           </div>
-        {% else %}
-          <div class="alert alert-info mb-0">
-            No grid configured. Run <code>python manage.py generate_shuttle_grid {{ shuttle.name }}</code> to create the grid.
-          </div>
-        {% endif %}
+        </div>
       </div>
     </div>
     <!-- Project Assignment Table -->
