@@ -49,7 +49,7 @@ class CouponAdmin(admin.ModelAdmin):
         ),
         (
             "Metadata",
-            {"fields": ["created_at", "created_by"]},
+            {"fields": ["created_at", "created_by", "status"]},
         ),
     ]
 
@@ -57,9 +57,11 @@ class CouponAdmin(admin.ModelAdmin):
     def discount_display(self, obj):
         """Display discount value based on coupon type."""
         if obj.coupon_type == Coupon.CouponType.FIXED_AMOUNT:
-            return f"${obj.discount_amount}"
+            amount = obj.discount_amount if obj.discount_amount is not None else 0
+            return f"${amount}"
         if obj.coupon_type == Coupon.CouponType.PERCENTAGE:
-            return f"{obj.discount_percentage}%"
+            pct = obj.discount_percentage if obj.discount_percentage is not None else 0
+            return f"{pct}%"
         if obj.coupon_type == Coupon.CouponType.FREE_SLOT:
             return "Free Slot"
         return "-"
