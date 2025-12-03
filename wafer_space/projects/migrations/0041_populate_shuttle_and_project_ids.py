@@ -8,7 +8,7 @@ from django.db import migrations
 logger = logging.getLogger(__name__)
 
 
-def populate_shuttle_and_project_ids(apps, schema_editor):
+def populate_shuttle_and_project_ids(apps, _schema_editor):
     """Populate shuttle and project_id fields for existing projects.
 
     Assigns all projects without a shuttle to the G801 shuttle and generates
@@ -64,7 +64,7 @@ def populate_shuttle_and_project_ids(apps, schema_editor):
     logger.info("Successfully migrated %d projects to G801", count)
 
 
-def reverse_migration(apps, schema_editor):
+def reverse_migration(apps, _schema_editor):
     """Reverse the data migration by clearing shuttle and project_id."""
     Project = apps.get_model("projects", "Project")
 
