@@ -36,7 +36,7 @@ class ShuttleListView(StaffRequiredMixin, ListView):
     model = Shuttle
     template_name = "shuttles/list.html"
     context_object_name = "shuttles"
-    ordering = ["-created_at"]
+    ordering = ("-created_at",)
 
 
 class ShuttleDetailView(StaffRequiredMixin, DetailView):
@@ -189,7 +189,7 @@ class AssignProjectView(StaffRequiredMixin, View):
 class RemoveAssignmentView(StaffRequiredMixin, View):
     """Remove a project from a slot."""
 
-    def post(self, request, name, slot_id):
+    def post(self, _request, name, slot_id):
         try:
             # Look up shuttle by name
             shuttle = Shuttle.objects.get(name=name)

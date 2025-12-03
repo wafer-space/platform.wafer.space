@@ -63,8 +63,8 @@
             <tr>
               <th class="row-header">{{ forloop.counter }}</th>
               {% for slot in row %}
-                <td class="grid-cell {% if slot.project %}occupied{% else %}empty{% endif %}">
-                  {% if slot.project %}
+                <td class="grid-cell {% if slot and slot.project %}occupied{% else %}empty{% endif %}">
+                  {% if slot and slot.project %}
                     {{ slot.project.project_id }}
                   {% else %}
                     —
