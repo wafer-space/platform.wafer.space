@@ -44,3 +44,130 @@
     </div>
   </div>
 {% endblock content %}
+{% block inline_javascript %}
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Initialize Bootstrap popovers for help text
+      const popoverTriggerList = document.querySelectorAll('[data-bs-toggle="popover"]');
+      const popoverList = [...popoverTriggerList].map(popoverTriggerEl => new bootstrap.Popover(popoverTriggerEl));
+
+      const shuttleField = document.getElementById('id_shuttle');
+      const projectIdField = document.getElementById('id_project_id');
+      const slotSizeField = document.getElementById('id_slot_size');
+
+      if (!projectIdField || !shuttleField) {
+        return; // Fields not present (e.g., compliance form)
+      }
+
+      // Force uppercase and alphanumeric only on project_id
+      projectIdField.addEventListener('input', function(e) {
+        let value = e.target.value.toUpperCase();
+        // Remove any non-alphanumeric characters
+        value = value.replace(/[^A-Z0-9]/g, '');
+        e.target.value = value;
+
+        validateProjectId();
+      });
+
+      // Real-time project ID validation
+      let validationTimeout;
+
+      function validateProjectId() {
+        clearTimeout(validationTimeout);
+
+        const projectId = projectIdField.value;
+        const shuttleId = shuttleField.value;
+
+        // Remove old feedback (both valid and invalid) and reset state
+        projectIdField.parentElement
+          .querySelectorAll('.valid-feedback, .invalid-feedback')
+          .forEach((el) => el.remove());
+        projectIdField.classList.remove('is-valid', 'is-invalid');
+
+        // Check length first
+        if (projectId.length === 0) {
+          return; // Don't validate empty field
+        }
+
+        if (projectId.length < 4) {
+          projectIdField.classList.add('is-invalid');
+          const feedback = document.createElement('div');
+          feedback.className = 'invalid-feedback d-block';
+          feedback.textContent = `${projectId.length}/4 characters - need ${4 - projectId.length} more`;
+          projectIdField.parentElement.appendChild(feedback);
+          return;
+        }
+
+        if (projectId.length > 4) {
+          projectIdField.classList.add('is-invalid');
+          const feedback = document.createElement('div');
+          feedback.className = 'invalid-feedback d-block';
+          feedback.textContent = `Too long - ${projectId.length}/4 characters`;
+          projectIdField.parentElement.appendChild(feedback);
+          return;
+        }
+
+        // Check availability with AJAX
+        if (shuttleId && projectId.length === 4) {
+          validationTimeout = setTimeout(() => {
+            fetch(`{% url 'projects:check_project_id' %}?shuttle=${shuttleId}&project_id=${projectId}`)
+              .then(response => response.json())
+              .then(data => {
+                // Clear any existing feedback before adding new
+                projectIdField.parentElement
+                  .querySelectorAll('.valid-feedback, .invalid-feedback')
+                  .forEach((el) => el.remove());
+                projectIdField.classList.remove('is-valid', 'is-invalid');
+
+                const feedback = document.createElement('div');
+                feedback.className = data.available ? 'valid-feedback d-block' : 'invalid-feedback d-block';
+                feedback.textContent = data.message;
+                projectIdField.parentElement.appendChild(feedback);
+                projectIdField.classList.add(data.available ? 'is-valid' : 'is-invalid');
+              })
+              .catch(error => {
+                console.error('Error checking project ID:', error);
+              });
+          }, 300); // Debounce AJAX calls
+        }
+      }
+
+      // Validate when shuttle changes
+      if (shuttleField) {
+        shuttleField.addEventListener('change', function() {
+          validateProjectId();
+
+          // Update available slot sizes based on selected shuttle
+          if (slotSizeField && this.value) {
+            fetch(`{% url 'projects:shuttle_available_sizes' %}?shuttle=${this.value}`)
+              .then(response => response.json())
+              .then(data => {
+                // Store current selection
+                const currentValue = slotSizeField.value;
+
+                // Clear and repopulate slot size options
+                slotSizeField.innerHTML = '';
+                data.sizes.forEach(size => {
+                  const option = document.createElement('option');
+                  option.value = size.value;
+                  option.textContent = size.label;
+                  if (size.value === currentValue) {
+                    option.selected = true;
+                  }
+                  slotSizeField.appendChild(option);
+                });
+              })
+              .catch(error => {
+                console.error('Error fetching slot sizes:', error);
+              });
+          }
+        });
+      }
+
+      // Initial validation if editing existing project
+      if (projectIdField.value) {
+        validateProjectId();
+      }
+    });
+  </script>
+{% endblock inline_javascript %}

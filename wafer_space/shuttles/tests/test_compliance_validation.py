@@ -24,7 +24,8 @@ class TestShuttleReserveComplianceValidation:
             password=TEST_PASSWORD,
         )
         shuttle = Shuttle.objects.create(
-            name="Test Shuttle",
+            name="G831",
+            description="Test Shuttle",
             status=Shuttle.Status.OPEN,
             max_slots=10,
             available_slots=10,
@@ -60,7 +61,8 @@ class TestShuttleReserveComplianceValidation:
             password=TEST_PASSWORD,
         )
         shuttle = Shuttle.objects.create(
-            name="Test Shuttle",
+            name="G832",
+            description="Test Shuttle",
             status=Shuttle.Status.OPEN,
             max_slots=10,
             available_slots=10,
@@ -103,7 +105,8 @@ class TestShuttleReserveComplianceValidation:
             password=TEST_PASSWORD,
         )
         shuttle = Shuttle.objects.create(
-            name="Test Shuttle",
+            name="G833",
+            description="Test Shuttle",
             status=Shuttle.Status.OPEN,
             max_slots=10,
             available_slots=10,
@@ -146,7 +149,8 @@ class TestShuttleReserveComplianceValidation:
             password=TEST_PASSWORD,
         )
         shuttle = Shuttle.objects.create(
-            name="Test Shuttle",
+            name="G834",
+            description="Test Shuttle",
             status=Shuttle.Status.OPEN,
             max_slots=10,
             available_slots=10,

@@ -5,6 +5,7 @@ from datetime import datetime
 
 import frontmatter
 from factory import Faker
+from factory import Sequence
 from factory import SubFactory
 from factory.django import DjangoModelFactory
 
@@ -18,7 +19,8 @@ from wafer_space.users.tests.factories import UserFactory
 class TermsOfServiceFactory(DjangoModelFactory):
     """Factory for TermsOfService model."""
 
-    version = Faker("numerify", text="#.#.#")
+    # Use sequence to ensure unique versions (1.0.0, 1.0.1, 1.0.2, ...)
+    version = Sequence(lambda n: f"1.0.{n}")
     is_active = False
     created_by = SubFactory(UserFactory)
 
@@ -33,11 +35,8 @@ class TermsOfServiceFactory(DjangoModelFactory):
         mock_tos_filesystem fixture in conftest.py, so no actual files
         are created on disk.
         """
-        # Generate or use provided version
-        version = kwargs.get(
-            "version", cls.version.evaluate(None, None, {"locale": None})
-        )
-        kwargs["version"] = version
+        # Version is already populated by factory_boy before _create is called
+        version = kwargs["version"]
 
         # Create markdown file with test content
         base_dir = get_tos_versions_directory()

@@ -11,6 +11,7 @@ from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.utils import timezone
 
+from wafer_space.core.enums import SlotSize
 from wafer_space.projects.exceptions import ConcurrentLimitError
 from wafer_space.projects.exceptions import InvalidStateTransitionError
 from wafer_space.projects.exceptions import MaxRetriesExceededError
@@ -34,6 +35,23 @@ class CheckExecutionContext:
 # Byte conversion constant
 _BYTES_PER_KB = 1024.0
 
+# Project ID validation constant
+PROJECT_ID_LENGTH = 4
+
+
+def validate_project_id(value: str) -> None:
+    """Validate project ID is 4 alphanumeric uppercase characters."""
+    if len(value) != PROJECT_ID_LENGTH:
+        msg = "Project ID must be exactly 4 characters"
+        raise ValidationError(msg)
+    if not value.isalnum():
+        msg = "Project ID must be alphanumeric (A-Z, 0-9)"
+        raise ValidationError(msg)
+    # Check that any letters present are uppercase (digits are okay)
+    if value != value.upper():
+        msg = "Project ID must be uppercase"
+        raise ValidationError(msg)
+
 
 class Project(models.Model):
     """User-submitted design projects for manufacturing."""
@@ -49,21 +67,6 @@ class Project(models.Model):
         COMPLETED = "completed", "Completed"
         CANCELLED = "cancelled", "Cancelled"
 
-    class SlotSize(models.TextChoices):
-        """Available slot sizes for manufacturing.
-
-        Each slot represents a portion of the die area:
-        - 1x1: Full slot (3.88mm x 5.07mm = 19.67mm²)
-        - 0p5x1: Half width (1.94mm x 5.07mm = 9.84mm²)
-        - 1x0p5: Half height (3.88mm x 2.535mm = 9.84mm²)
-        - 0p5x0p5: Quarter slot (1.94mm x 2.535mm = 4.92mm²)
-        """
-
-        FULL = "1x1", "1×1 - Full Slot (3.88mm × 5.07mm = 19.67mm²)"
-        HALF_WIDTH = "0p5x1", "0.5×1 - Half Width (1.94mm × 5.07mm = 9.84mm²)"
-        HALF_HEIGHT = "1x0p5", "1×0.5 - Half Height (3.88mm × 2.535mm = 9.84mm²)"
-        QUARTER = "0p5x0p5", "0.5×0.5 - Quarter Slot (1.94mm × 2.535mm = 4.92mm²)"
-
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -78,6 +81,25 @@ class Project(models.Model):
         default=SlotSize.FULL,
         help_text="Die slot size for manufacturing",
     )
+
+    # Shuttle assignment fields
+    shuttle = models.ForeignKey(
+        "shuttles.Shuttle",
+        on_delete=models.PROTECT,
+        related_name="projects",
+        null=True,
+        blank=True,
+        help_text="Shuttle run this project is assigned to",
+    )
+    project_id = models.CharField(
+        max_length=PROJECT_ID_LENGTH,
+        blank=True,
+        default="",
+        validators=[validate_project_id],
+        help_text="4-character alphanumeric project identifier (A-Z, 0-9)",
+        db_index=True,
+    )
+
     status = models.CharField(
         max_length=30,
         choices=Status.choices,
@@ -117,10 +139,42 @@ class Project(models.Model):
         indexes = [
             models.Index(fields=["user", "status"]),
             models.Index(fields=["status", "created_at"]),
+            models.Index(fields=["shuttle", "project_id"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["shuttle", "project_id"],
+                name="unique_project_id_per_shuttle",
+            ),
         ]
 
     def __str__(self):
         return f"{self.name} ({self.user.username})"
+
+    @property
+    def full_id(self) -> str:
+        """Return full 8-character manufacturing ID (shuttle code + project ID).
+
+        Example: "G801ABCD"
+        """
+        if self.shuttle and self.project_id:
+            return f"{self.shuttle.name}{self.project_id}"
+        return ""
+
+    @property
+    def shuttle_positions(self):
+        """Return all shuttle slots assigned to this project."""
+        return self.shuttle_slots.all()
+
+    @property
+    def shuttle_run_display(self) -> str:
+        """Return descriptive shuttle name.
+
+        Example: "GF180MCU Shuttle 1: G801"
+        """
+        if self.shuttle:
+            return f"{self.shuttle.description}: {self.shuttle.name}"
+        return ""
 
     def can_submit(self) -> tuple[bool, str]:
         """Check if project can be submitted.
@@ -1704,7 +1758,7 @@ docker run --rm \\
   python3 /precheck/precheck.py \\
     --input /input/design.gds \\
     --top "{self.project.name}" \\
-    --id {self.project.id}
+    --id {self.project.full_id}
 ```
 
 ### 3. Verify file hash

@@ -25,6 +25,7 @@ from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
 from django.test import TestCase
 
+from wafer_space.core.enums import SlotSize
 from wafer_space.projects import tasks
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
@@ -45,6 +46,7 @@ from wafer_space.projects.tasks import checks_create
 from wafer_space.projects.tasks import checks_dispatch
 from wafer_space.projects.tasks import checks_retry
 from wafer_space.projects.tasks import download_project_file
+from wafer_space.shuttles.models import Shuttle
 
 User = get_user_model()
 TEST_PASSWORD = "testpass123"  # noqa: S105 - Test password constant
@@ -248,10 +250,19 @@ class TestManufacturabilityCheckTask(TestCase):
             email="test@example.com",
             password=TEST_PASSWORD,
         )
+        self.shuttle = Shuttle.objects.create(
+            name="G800",
+            description="Test Shuttle",
+            status=Shuttle.Status.OPEN,
+            max_slots=10,
+            available_slots=10,
+        )
         self.project = Project.objects.create(
             user=self.user,
             name="Test Project",
             description="Test Description",
+            shuttle=self.shuttle,
+            project_id="ABCD",
         )
 
     @patch("wafer_space.projects.tasks.docker")
@@ -703,10 +714,21 @@ class TestDockerIntegration(TestCase):
             email="test@example.com",
             password=TEST_PASSWORD,
         )
+        self.shuttle, _ = Shuttle.objects.get_or_create(
+            name="G801",
+            defaults={
+                "description": "Test Shuttle",
+                "status": Shuttle.Status.OPEN,
+                "max_slots": 10,
+                "available_slots": 10,
+            },
+        )
         self.project = Project.objects.create(
             user=self.user,
             name="Test Project",
             description="Test Description",
+            shuttle=self.shuttle,
+            project_id="TEST",
         )
         # Create a verified file for manufacturability checking
         self.project_file = ProjectFile.objects.create(
@@ -808,7 +830,7 @@ class TestDockerIntegration(TestCase):
             self.project_file.file.save("test.gds", ContentFile(f.read()), save=True)
 
         # Set a non-default slot size on the project
-        self.project.slot_size = Project.SlotSize.QUARTER  # 0p5x0p5
+        self.project.slot_size = SlotSize.QUARTER  # 0p5x0p5
         self.project.save()
 
         # Setup mock
@@ -861,9 +883,15 @@ class TestDockerIntegration(TestCase):
         slot_index = command.index("--slot")
         assert command[slot_index + 1] == "0p5x0p5"
 
-        # Verify docker_command in check record also includes --slot
+        # Verify the docker command includes --id with the project's manufacturing ID
+        assert "--id" in command
+        id_index = command.index("--id")
+        assert command[id_index + 1] == self.project.full_id
+
+        # Verify docker_command in check record also includes --slot and --id
         check.refresh_from_db()
         assert "--slot 0p5x0p5" in check.docker_command
+        assert f"--id {self.project.full_id}" in check.docker_command
 
         # Cleanup
         tmp_path.unlink(missing_ok=True)

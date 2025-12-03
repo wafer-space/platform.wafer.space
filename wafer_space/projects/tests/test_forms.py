@@ -6,6 +6,7 @@ from django.test import TestCase
 from wafer_space.projects.forms import ProjectFileURLSubmitForm
 from wafer_space.projects.forms import ProjectForm
 from wafer_space.projects.models import Project
+from wafer_space.shuttles.models import Shuttle
 from wafer_space.users.models import User
 
 from .constants import TEST_PASSWORD
@@ -15,11 +16,24 @@ from .constants import TEST_PASSWORD
 class TestProjectForm(TestCase):
     """Test ProjectForm."""
 
+    def setUp(self):
+        """Set up test fixtures."""
+        # Create a test shuttle for form tests
+        self.shuttle = Shuttle.objects.create(
+            name="G800",
+            description="Test Shuttle",
+            status=Shuttle.Status.OPEN,
+            max_slots=10,
+            available_slots=10,
+        )
+
     def test_form_valid_with_all_fields(self):
         """Test form is valid with name, description, and slot_size."""
         form_data = {
             "name": "Test Project",
             "description": "This is a test project",
+            "shuttle": self.shuttle.pk,
+            "project_id": "TEST",
             "slot_size": "1x1",
         }
         form = ProjectForm(data=form_data)
@@ -27,12 +41,16 @@ class TestProjectForm(TestCase):
         assert form.is_valid()
         assert form.cleaned_data["name"] == "Test Project"
         assert form.cleaned_data["description"] == "This is a test project"
+        assert form.cleaned_data["shuttle"] == self.shuttle
+        assert form.cleaned_data["project_id"] == "TEST"
         assert form.cleaned_data["slot_size"] == "1x1"
 
     def test_form_valid_without_description(self):
         """Test form is valid without description (optional field)."""
         form_data = {
             "name": "Test Project",
+            "shuttle": self.shuttle.pk,
+            "project_id": "ABCD",
             "slot_size": "1x1",
         }
         form = ProjectForm(data=form_data)
@@ -73,6 +91,8 @@ class TestProjectForm(TestCase):
         form_data = {
             "name": "My Project",
             "description": "My description",
+            "shuttle": self.shuttle.pk,
+            "project_id": "SAVE",
             "slot_size": "0p5x0p5",
         }
         form = ProjectForm(data=form_data)

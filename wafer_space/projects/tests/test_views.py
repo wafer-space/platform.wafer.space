@@ -15,6 +15,7 @@ from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.security import SecurityValidationError
+from wafer_space.shuttles.models import Shuttle
 from wafer_space.users.models import User
 
 from .constants import EXPECTED_USER_PROJECTS
@@ -197,6 +198,13 @@ class TestProjectCreateView(TestCase):
             email="test@example.com",
             password=TEST_PASSWORD,
         )
+        self.shuttle = Shuttle.objects.create(
+            name="G800",
+            description="Test Shuttle",
+            status=Shuttle.Status.OPEN,
+            max_slots=10,
+            available_slots=10,
+        )
 
     def test_requires_login(self):
         """Test that view requires login."""
@@ -225,6 +233,8 @@ class TestProjectCreateView(TestCase):
         form_data = {
             "name": "New Project",
             "description": "New project description",
+            "shuttle": self.shuttle.pk,
+            "project_id": "TEST",
             "slot_size": "1x1",
         }
         response = self.client.post(url, form_data)
@@ -239,6 +249,8 @@ class TestProjectCreateView(TestCase):
         assert project.name == "New Project"
         assert project.description == "New project description"
         assert project.user == self.user
+        assert project.shuttle == self.shuttle
+        assert project.project_id == "TEST"
         assert project.slot_size == "1x1"
 
         # Verify success message
@@ -264,10 +276,19 @@ class TestProjectUpdateView(TestCase):
             email="other@example.com",
             password=TEST_PASSWORD,
         )
+        self.shuttle = Shuttle.objects.create(
+            name="G800",
+            description="Test Shuttle",
+            status=Shuttle.Status.OPEN,
+            max_slots=10,
+            available_slots=10,
+        )
         self.project = Project.objects.create(
             user=self.user,
             name="Test Project",
             description="Test project",
+            shuttle=self.shuttle,
+            project_id="ABCD",
         )
 
     def test_requires_login(self):
@@ -288,6 +309,8 @@ class TestProjectUpdateView(TestCase):
         form_data = {
             "name": "Updated Project",
             "description": "Updated description",
+            "shuttle": self.shuttle.pk,
+            "project_id": "ABCD",
             "slot_size": "0p5x1",
         }
         response = self.client.post(url, form_data)

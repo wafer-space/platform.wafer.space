@@ -1,10 +1,52 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator
 from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils import timezone
 
 from wafer_space.projects.models import Project
+
+# Shuttle ID format constants
+SHUTTLE_ID_LENGTH = 4
+SHUTTLE_ID_MIN_NUMBER = 0
+SHUTTLE_ID_MAX_NUMBER = 99
+
+
+def validate_shuttle_id(value: str) -> None:
+    """Validate shuttle ID format (G8XX where XX are two digits).
+
+    Valid examples: G800, G801, G802, ..., G899
+    """
+    if len(value) != SHUTTLE_ID_LENGTH:
+        msg = "Shuttle ID must be exactly 4 characters"
+        raise ValidationError(msg)
+
+    if not value.startswith("G8"):
+        msg = "Shuttle ID must start with 'G8'"
+        raise ValidationError(msg)
+
+    # Check last two characters are digits
+    suffix = value[2:]
+    if not suffix.isdigit():
+        msg = (
+            f"Shuttle ID must end with two digits "
+            f"({SHUTTLE_ID_MIN_NUMBER:02d}-{SHUTTLE_ID_MAX_NUMBER:02d})"
+        )
+        raise ValidationError(msg)
+
+    # Validate range 00-99
+    try:
+        number = int(suffix)
+        if not SHUTTLE_ID_MIN_NUMBER <= number <= SHUTTLE_ID_MAX_NUMBER:
+            msg = (
+                f"Shuttle ID suffix must be between "
+                f"{SHUTTLE_ID_MIN_NUMBER:02d} and {SHUTTLE_ID_MAX_NUMBER:02d}"
+            )
+            raise ValidationError(msg)
+    except ValueError as e:
+        msg = "Shuttle ID must end with valid two-digit number"
+        raise ValidationError(msg) from e
 
 
 class Shuttle(models.Model):
@@ -19,8 +61,15 @@ class Shuttle(models.Model):
         COMPLETED = "completed", "Completed"
         CANCELLED = "cancelled", "Cancelled"
 
-    name = models.CharField(max_length=100, unique=True)
-    description = models.TextField(blank=True)
+    name = models.CharField(
+        max_length=SHUTTLE_ID_LENGTH,
+        unique=True,
+        validators=[validate_shuttle_id],
+        help_text="Shuttle ID (format: G8XX where XX are two digits, e.g., G801)",
+    )
+    description = models.TextField(
+        help_text="Human-readable description (e.g., 'GF180MCU Shuttle Run 1')",
+    )
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
@@ -98,7 +147,12 @@ class Shuttle(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.name} ({self.get_status_display()})"
+        return f"{self.name} - {self.description}"
+
+    def save(self, *args, **kwargs):
+        """Save with validation - ensures shuttle ID format is always enforced."""
+        self.full_clean()
+        super().save(*args, **kwargs)
 
     def update_slot_counts(self):
         """Update reserved and available slot counts."""

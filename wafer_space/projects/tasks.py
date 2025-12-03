@@ -547,6 +547,13 @@ def _start_container(context: _CheckContext) -> tuple[str, str]:
         msg = "Cannot run manufacturability check: top_cell not extracted from file"
         raise ValueError(msg)
 
+    if not context.project.full_id:
+        msg = (
+            "Cannot run manufacturability check: "
+            "project must be assigned to shuttle with project ID"
+        )
+        raise ValueError(msg)
+
     top_cell = context.project_file.top_cell
     context.logger.info("  Top cell: %s", top_cell)
 
@@ -561,12 +568,14 @@ def _start_container(context: _CheckContext) -> tuple[str, str]:
         top_cell,
         "--slot",
         slot_size,
+        "--id",
+        context.project.full_id,
     ]
 
     # Log equivalent docker run command for easy reproduction
     precheck_cmd = (
         f"python3 precheck.py --input /input/design.gds "
-        f'--top "{top_cell}" --slot {slot_size}'
+        f'--top "{top_cell}" --slot {slot_size} --id {context.project.full_id}'
     )
     docker_command = (
         f"docker run --rm --network=none "

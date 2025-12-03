@@ -3,6 +3,9 @@
 from django import forms
 from django.core.exceptions import ValidationError
 
+from wafer_space.shuttles.models import Shuttle
+
+from .models import PROJECT_ID_LENGTH
 from .models import Project
 from .models import ProjectComplianceCertification
 
@@ -18,9 +21,61 @@ MIN_END_USE_STATEMENT_LENGTH = 10
 class ProjectForm(forms.ModelForm):
     """Form for creating and editing projects."""
 
+    shuttle = forms.ModelChoiceField(
+        queryset=Shuttle.objects.filter(
+            status=Shuttle.Status.OPEN,
+        ).order_by("name"),
+        widget=forms.Select(attrs={"class": "form-control", "id": "id_shuttle"}),
+        help_text="Select the shuttle run for this project",
+        empty_label=None,  # Remove "--------" option since we always have a default
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # Set default shuttle to oldest open shuttle (by created_at)
+        # Use _state.adding because UUID pk is auto-generated for unsaved instances
+        is_new_instance = getattr(self.instance, "_state", None)
+        if is_new_instance and is_new_instance.adding:
+            default_shuttle = (
+                Shuttle.objects.filter(
+                    status=Shuttle.Status.OPEN,
+                )
+                .order_by("created_at")
+                .first()
+            )
+            if default_shuttle:
+                self.fields["shuttle"].initial = default_shuttle
+
+    project_id = forms.CharField(
+        max_length=PROJECT_ID_LENGTH,
+        min_length=PROJECT_ID_LENGTH,
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control",
+                "id": "id_project_id",
+                "placeholder": "ABCD",
+                "maxlength": str(PROJECT_ID_LENGTH),
+                "minlength": str(PROJECT_ID_LENGTH),
+                "pattern": f"[A-Z0-9]{{{PROJECT_ID_LENGTH}}}",
+                "style": "text-transform: uppercase;",
+                "data-bs-toggle": "popover",
+                "data-bs-trigger": "focus",
+                "data-bs-placement": "right",
+                "data-bs-content": (
+                    f"Enter a unique {PROJECT_ID_LENGTH}-character project ID using "
+                    "uppercase letters (A-Z) and numbers (0-9). "
+                    "Example: ABCD, TEST, 1234, A1B2"
+                ),
+                "title": "Project ID Requirements",
+            },
+        ),
+        help_text=f"{PROJECT_ID_LENGTH}-character alphanumeric identifier (A-Z, 0-9)",
+    )
+
     class Meta:
         model = Project
-        fields = ["name", "description", "slot_size"]
+        fields = ["name", "description", "shuttle", "project_id", "slot_size"]
         widgets = {
             "name": forms.TextInput(
                 attrs={
@@ -38,6 +93,7 @@ class ProjectForm(forms.ModelForm):
             "slot_size": forms.Select(
                 attrs={
                     "class": "form-control",
+                    "id": "id_slot_size",
                 },
             ),
         }
@@ -46,6 +102,43 @@ class ProjectForm(forms.ModelForm):
             "description": "Optional details about your design",
             "slot_size": "Select the die slot size for your design",
         }
+
+    def clean_project_id(self):
+        """Validate and normalize project_id field."""
+        project_id = self.cleaned_data.get("project_id", "").upper().strip()
+
+        # Validate format (backup to model validator)
+        if not project_id:
+            msg = "Project ID is required"
+            raise ValidationError(msg)
+
+        if not project_id.isalnum():
+            msg = "Project ID must be alphanumeric (A-Z, 0-9)"
+            raise ValidationError(msg)
+
+        if len(project_id) != PROJECT_ID_LENGTH:
+            msg = f"Project ID must be exactly {PROJECT_ID_LENGTH} characters"
+            raise ValidationError(msg)
+
+        # Check uniqueness within shuttle
+        shuttle = self.cleaned_data.get("shuttle")
+        if shuttle:
+            # Exclude current instance if editing
+            queryset = Project.objects.filter(
+                shuttle=shuttle,
+                project_id=project_id,
+            )
+            if self.instance and self.instance.pk:
+                queryset = queryset.exclude(pk=self.instance.pk)
+
+            if queryset.exists():
+                msg = (
+                    f"Project ID '{project_id}' is already used in "
+                    f"shuttle {shuttle.name}"
+                )
+                raise ValidationError(msg)
+
+        return project_id
 
 
 class ProjectFileURLSubmitForm(forms.Form):
