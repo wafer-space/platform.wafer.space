@@ -18,6 +18,7 @@ from django.db import IntegrityError
 from django.db.models import OuterRef
 from django.db.models import Prefetch
 from django.db.models import Subquery
+from django.http import Http404
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.shortcuts import redirect
@@ -32,6 +33,7 @@ from django.views.generic import UpdateView
 from django.views.generic import View
 
 from wafer_space.core.enums import SlotSize
+from wafer_space.shuttles.models import SHUTTLE_ID_LENGTH
 from wafer_space.shuttles.models import Shuttle
 
 from .exceptions import InvalidStateTransitionError
@@ -76,6 +78,36 @@ class ProjectListView(LoginRequiredMixin, ListView):
 
         # Regular users see only their own projects
         return Project.objects.filter(user=user).order_by("-created_at")
+
+
+class ProjectFullIdRedirectView(LoginRequiredMixin, View):
+    """Redirect from full_id URL to project detail page.
+
+    Accepts 8-character manufacturing ID (e.g., "G801ABCD") and redirects
+    to the project's detail page using its UUID primary key.
+    """
+
+    def get(self, request, full_id: str):
+        """Look up project by full_id and redirect to detail page."""
+        # Validate full_id length
+        expected_length = SHUTTLE_ID_LENGTH + PROJECT_ID_LENGTH
+        if len(full_id) != expected_length:
+            msg = f"Invalid project ID format: expected {expected_length} characters"
+            raise Http404(msg)
+
+        # Parse full_id into shuttle name and project_id
+        shuttle_name = full_id[:SHUTTLE_ID_LENGTH]
+        project_id = full_id[SHUTTLE_ID_LENGTH:]
+
+        # Look up the project
+        project = get_object_or_404(
+            Project,
+            shuttle__name=shuttle_name,
+            project_id=project_id,
+        )
+
+        # Redirect to detail view with UUID pk
+        return redirect("projects:detail", pk=project.pk)
 
 
 class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView):
