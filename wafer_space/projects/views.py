@@ -6,6 +6,7 @@ import contextlib
 import logging
 from collections import Counter
 from typing import TYPE_CHECKING
+from typing import ClassVar
 from typing import cast
 
 from django.contrib import messages
@@ -714,20 +715,20 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
     template_name = "projects/admin_summary.html"
     context_object_name = "projects"
 
-    SORT_FIELDS = {
+    SORT_FIELDS: ClassVar[dict[str, tuple[str, ...]]] = {
         "full_id": ("shuttle__name", "project_id"),
         "size": ("slot_size",),
         "name": ("name",),
         "owner": ("user__username",),
         "email": ("user__email",),
     }
-    DEFAULT_SORT = "name"
+    DEFAULT_SORT: ClassVar[str] = "name"
 
-    def test_func(self):
+    def test_func(self) -> bool:
         """Only staff users can access this view."""
         return self.request.user.is_staff
 
-    def get_sort_params(self):
+    def get_sort_params(self) -> tuple[str, bool]:
         """Parse sort parameter and return (field, descending)."""
         sort = self.request.GET.get("sort", self.DEFAULT_SORT)
         descending = sort.startswith("-")
