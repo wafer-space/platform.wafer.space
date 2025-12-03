@@ -238,9 +238,7 @@
                       {% else %}
                         — Assigned
                       {% endif %}
-                      {% if slot.reserved_at %}
-                        on {{ slot.reserved_at|date:"Y-m-d H:i" }}
-                      {% endif %}
+                      {% if slot.reserved_at %}on {{ slot.reserved_at|date:"Y-m-d H:i" }}{% endif %}
                     </span>
                   </li>
                 {% endfor %}
