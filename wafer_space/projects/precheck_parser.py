@@ -51,9 +51,90 @@ DRC_ERROR_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# DRC completion patterns - each tool must have ONE of these to be "complete"
+# Matches error counts like "18 Magic DRC errors found."
+MAGIC_DRC_ERRORS_PATTERN = re.compile(
+    r"\d+\s+Magic\s+DRC\s+errors?\s+found",
+    re.IGNORECASE,
+)
+KLAYOUT_DRC_ERRORS_PATTERN = re.compile(
+    r"\d+\s+KLayout\s+DRC\s+errors?\s+found",
+    re.IGNORECASE,
+)
+
+# Matches success messages like "Check for Magic DRC errors clear."
+MAGIC_DRC_CLEAR_PATTERN = re.compile(
+    r"Check\s+for\s+Magic\s+DRC\s+errors\s+clear",
+    re.IGNORECASE,
+)
+KLAYOUT_DRC_CLEAR_PATTERN = re.compile(
+    r"Check\s+for\s+KLayout\s+DRC\s+errors\s+clear",
+    re.IGNORECASE,
+)
+
+# DRC incomplete patterns - these indicate a tool didn't run properly
+MAGIC_DRC_INCOMPLETE_PATTERNS = [
+    re.compile(r"Magic\s+DRC\s+errors\s+metric\s+was\s+not\s+found", re.IGNORECASE),
+    re.compile(
+        r"Threshold\s+for\s+Magic\s+DRC\s+errors\s+is\s+not\s+set", re.IGNORECASE
+    ),
+]
+KLAYOUT_DRC_INCOMPLETE_PATTERNS = [
+    re.compile(r"KLayout\s+DRC\s+errors\s+metric\s+was\s+not\s+found", re.IGNORECASE),
+    re.compile(
+        r"Threshold\s+for\s+KLayout\s+DRC\s+errors\s+is\s+not\s+set", re.IGNORECASE
+    ),
+]
+
+
+def has_drc_result(logs: str, tool: str) -> bool:
+    """Check if a DRC tool has reported a result (errors or clear).
+
+    Args:
+        logs: Raw output from precheck
+        tool: Either "magic" or "klayout"
+
+    Returns:
+        True if the tool reported either errors or clear, False otherwise.
+    """
+    if tool.lower() == "magic":
+        errors_pattern = MAGIC_DRC_ERRORS_PATTERN
+        clear_pattern = MAGIC_DRC_CLEAR_PATTERN
+        incomplete_patterns = MAGIC_DRC_INCOMPLETE_PATTERNS
+    elif tool.lower() == "klayout":
+        errors_pattern = KLAYOUT_DRC_ERRORS_PATTERN
+        clear_pattern = KLAYOUT_DRC_CLEAR_PATTERN
+        incomplete_patterns = KLAYOUT_DRC_INCOMPLETE_PATTERNS
+    else:
+        return False
+
+    # Check for incomplete indicators first - these mean the tool didn't run
+    for pattern in incomplete_patterns:
+        if pattern.search(logs):
+            return False
+
+    # Check for either errors or clear
+    return bool(errors_pattern.search(logs) or clear_pattern.search(logs))
+
+
+def both_drc_tools_completed(logs: str) -> bool:
+    """Check if both Magic and KLayout DRC tools reported results.
+
+    Args:
+        logs: Raw output from precheck
+
+    Returns:
+        True if both tools reported either errors or clear, False otherwise.
+    """
+    return has_drc_result(logs, "magic") and has_drc_result(logs, "klayout")
+
 
 def classify_failure(logs: str, exit_code: int) -> str:
     """Classify failure as 'system', 'design', or 'success'.
+
+    The precheck is only considered successfully completed if BOTH Magic and
+    KLayout DRC tools reported results (either errors or clear). If either
+    tool is missing its result, it's a system error (precheck didn't complete).
 
     Args:
         logs: Raw output from precheck
@@ -61,23 +142,20 @@ def classify_failure(logs: str, exit_code: int) -> str:
 
     Returns:
         'success' if exit code 0
-        'system' if infrastructure failure (should retry)
+        'system' if infrastructure failure (should retry) or DRC tools incomplete
         'design' if user's design has errors (no retry)
     """
     if exit_code == 0:
         return "success"
 
-    # Check for deferred DRC errors FIRST - these look like system errors
-    # but are actually design errors (DRC violations from Magic/KLayout tools)
-    if DEFERRED_ERRORS_PATTERN.search(logs):
-        return "design"
+    # Check if both DRC tools completed - if not, it's a system error
+    # Both Magic AND KLayout must report either "errors found" or "clear"
+    if not both_drc_tools_completed(logs):
+        return "system"
 
-    # Check for system error patterns
-    for pattern in SYSTEM_ERROR_PATTERNS:
-        if re.search(pattern, logs, re.IGNORECASE):
-            return "system"
-
-    # Default to design error (user must fix)
+    # Both DRC tools reported results - classify based on content
+    # If we got here with exit_code != 0 and both tools completed,
+    # at least one tool has errors → design error
     return "design"
 
 
