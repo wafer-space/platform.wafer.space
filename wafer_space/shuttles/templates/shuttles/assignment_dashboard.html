@@ -78,11 +78,11 @@
                         {% if slot.project %}
                           <strong>{{ slot.project.project_id }}</strong>
                           <br />
-                          <small class="text-muted">{{ slot.slot_size }}</small>
+                          <small class="text-muted">{{ slot.short_size_display }}</small>
                         {% else %}
                           <span class="text-muted">{{ slot.grid_position }}</span>
                           <br />
-                          <small class="text-muted">{{ slot.slot_size }}</small>
+                          <small class="text-muted">{{ slot.short_size_display }}</small>
                         {% endif %}
                       </td>
                     {% endfor %}
@@ -120,6 +120,7 @@
               <th>Project ID</th>
               <th>Name</th>
               <th>Size</th>
+              <th>Status</th>
               <th>Slots</th>
               <th>Actions</th>
             </tr>
@@ -132,6 +133,15 @@
                 <td>{{ project.name }}</td>
                 <td>
                   <span class="badge bg-secondary">{{ project.get_slot_size_display }}</span>
+                </td>
+                <td>
+                  {% if project.is_manufacturable %}
+                    <span class="badge bg-success">Ready</span>
+                  {% elif project.is_manufacturable is None %}
+                    <span class="badge bg-warning">Pending</span>
+                  {% else %}
+                    <span class="badge bg-danger">Failed</span>
+                  {% endif %}
                 </td>
                 <td>
                   {% if project.shuttle_slots.exists %}
