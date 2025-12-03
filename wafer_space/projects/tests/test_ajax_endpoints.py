@@ -82,19 +82,11 @@ class TestProjectIDCheckView(TestCase):
         assert data["available"] is False
         assert "taken" in data["message"].lower()
 
-    def test_case_insensitive_matching(self):
-        """Test that project ID matching is case-insensitive."""
-        # Create project with uppercase ID
-        Project.objects.create(
-            user=self.user,
-            name="Existing Project",
-            shuttle=self.shuttle,
-            project_id="ABCD",
-        )
-
+    def test_lowercase_project_id_rejected(self):
+        """Test that lowercase project IDs are rejected with validation error."""
         self.client.login(username="testuser", password=TEST_PASSWORD)
 
-        # Query with lowercase (should be normalized to uppercase)
+        # Query with lowercase - view requires uppercase input
         response = self.client.get(
             self.url,
             {"shuttle": str(self.shuttle.pk), "project_id": "abcd"},
@@ -103,6 +95,8 @@ class TestProjectIDCheckView(TestCase):
         assert response.status_code == HTTP_OK
         data = json.loads(response.content)
         assert data["available"] is False
+        # Rejected due to uppercase requirement, not duplicate detection
+        assert "uppercase" in data["message"].lower()
 
     def test_missing_shuttle_parameter(self):
         """Test error when shuttle parameter is missing."""
