@@ -1,46 +1,50 @@
 {% extends "base.html" %}
 
-{% block title %}Shuttles{% endblock %}
-
+{% block title %}Shuttles{% endblock title %}
 {% block content %}
-<div class="container mt-4">
-  <h1>Shuttle Runs</h1>
-
-  <div class="row">
-    {% for shuttle in shuttles %}
-    <div class="col-md-6 col-lg-4 mb-4">
-      <div class="card h-100">
-        <div class="card-header">
-          <h5 class="mb-0">{{ shuttle.name }}</h5>
+  <div class="container mt-4">
+    <h1>Shuttle Runs</h1>
+    <div class="row">
+      {% for shuttle in shuttles %}
+        <div class="col-md-6 col-lg-4 mb-4">
+          <div class="card h-100">
+            <div class="card-header">
+              <h5 class="mb-0">{{ shuttle.name }}</h5>
+            </div>
+            <div class="card-body">
+              <p class="card-text">{{ shuttle.description }}</p>
+              <dl class="row mb-0">
+                <dt class="col-sm-6">Status</dt>
+                <dd class="col-sm-6">
+                  <span class="badge bg-{% if shuttle.status == 'open' %}success{% elif shuttle.status == 'closed' %}secondary{% else %}info{% endif %}">
+                    {{ shuttle.get_status_display }}
+                  </span>
+                </dd>
+                <dt class="col-sm-6">Slots</dt>
+                <dd class="col-sm-6">
+                  {{ shuttle.reserved_slots }}/{{ shuttle.max_slots }}
+                </dd>
+                {% if shuttle.submission_deadline %}
+                  <dt class="col-sm-6">Deadline</dt>
+                  <dd class="col-sm-6">
+                    {{ shuttle.submission_deadline|date:"Y-m-d" }}
+                  </dd>
+                {% endif %}
+              </dl>
+            </div>
+            <div class="card-footer">
+              <a href="{% url 'shuttles:detail' shuttle.name %}"
+                 class="btn btn-outline-primary btn-sm">View Details</a>
+              <a href="{% url 'shuttles:assignment' shuttle.name %}"
+                 class="btn btn-primary btn-sm">Manage Slots</a>
+            </div>
+          </div>
         </div>
-        <div class="card-body">
-          <p class="card-text">{{ shuttle.description }}</p>
-          <dl class="row mb-0">
-            <dt class="col-sm-6">Status</dt>
-            <dd class="col-sm-6">
-              <span class="badge bg-{% if shuttle.status == 'open' %}success{% elif shuttle.status == 'closed' %}secondary{% else %}info{% endif %}">
-                {{ shuttle.get_status_display }}
-              </span>
-            </dd>
-            <dt class="col-sm-6">Slots</dt>
-            <dd class="col-sm-6">{{ shuttle.reserved_slots }}/{{ shuttle.max_slots }}</dd>
-            {% if shuttle.submission_deadline %}
-            <dt class="col-sm-6">Deadline</dt>
-            <dd class="col-sm-6">{{ shuttle.submission_deadline|date:"Y-m-d" }}</dd>
-            {% endif %}
-          </dl>
+      {% empty %}
+        <div class="col-12">
+          <div class="alert alert-info">No shuttle runs available.</div>
         </div>
-        <div class="card-footer">
-          <a href="{% url 'shuttles:detail' shuttle.name %}" class="btn btn-outline-primary btn-sm">View Details</a>
-          <a href="{% url 'shuttles:assignment' shuttle.name %}" class="btn btn-primary btn-sm">Manage Slots</a>
-        </div>
-      </div>
+      {% endfor %}
     </div>
-    {% empty %}
-    <div class="col-12">
-      <div class="alert alert-info">No shuttle runs available.</div>
-    </div>
-    {% endfor %}
   </div>
-</div>
-{% endblock %}
+{% endblock content %}

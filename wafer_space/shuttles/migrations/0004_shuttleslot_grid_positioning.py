@@ -9,7 +9,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("projects", "0041_populate_shuttle_and_project_ids"),
-        ("shuttles", "0002_alter_shuttle_name"),
+        ("shuttles", "0003_alter_shuttle_description"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

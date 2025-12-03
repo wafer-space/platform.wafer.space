@@ -6,7 +6,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("shuttles", "0004_alter_shuttle_description"),
+        ("shuttles", "0004_shuttleslot_grid_positioning"),
     ]
 
     operations = [
