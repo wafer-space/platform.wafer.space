@@ -266,7 +266,7 @@
        data-assign-url="{% url 'shuttles:assign_project' shuttle.name %}"
        data-remove-url-template="{% url 'shuttles:remove_assignment' shuttle.name 0 %}"
        data-csrf-token="{{ csrf_token }}"
-       style="display: none;"></div>
+       style="display: none"></div>
   {{ slots_by_project|json_script:"slots-data" }}
   {{ size_labels|json_script:"size-labels-data" }}
   <script src="{% static 'shuttles/js/assignment_dashboard.js' %}"></script>
