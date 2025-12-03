@@ -4,11 +4,10 @@ import pytest
 from django.core.management import call_command
 
 from wafer_space.core.enums import SlotSize
-from wafer_space.projects.models import Project
-from wafer_space.projects.tests.constants import TEST_PASSWORD
-from wafer_space.shuttles.models import Shuttle
+from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.shuttles.models import ShuttleSlot
-from wafer_space.users.models import User
+from wafer_space.shuttles.tests.factories import ShuttleFactory
+from wafer_space.users.tests.factories import UserFactory
 
 
 @pytest.mark.django_db
@@ -18,9 +17,7 @@ class TestGenerateShuttleGrid:
     def test_generate_new_grid(self, tmp_path):
         """Should generate grid from YAML config."""
         # Create shuttle
-        shuttle = Shuttle.objects.create(
-            name="G850", description="Test shuttle", status=Shuttle.Status.OPEN
-        )
+        shuttle = ShuttleFactory(name="G850")
 
         # Create config file
         config_file = tmp_path / "G850-layout.yaml"
@@ -67,9 +64,7 @@ column_widths: [1.0, 0.5]
     def test_update_requires_force_if_assigned(self, tmp_path):
         """Should require --force flag if slots have assignments."""
         # Create shuttle with slots
-        shuttle = Shuttle.objects.create(
-            name="G851", description="Test shuttle", status=Shuttle.Status.OPEN
-        )
+        shuttle = ShuttleFactory(name="G851")
         slot = ShuttleSlot.objects.create(
             shuttle=shuttle,
             row=0,
@@ -79,17 +74,8 @@ column_widths: [1.0, 0.5]
         )
 
         # Create user and project
-        user = User.objects.create_user(
-            username="testuser", email="test@example.com", password=TEST_PASSWORD
-        )
-        project = Project.objects.create(
-            user=user,
-            name="Test Project",
-            description="Test project",
-            status=Project.Status.DRAFT,
-            shuttle=shuttle,
-            slot_size=SlotSize.FULL,
-        )
+        user = UserFactory()
+        project = ProjectFactory(shuttle=shuttle, slot_size=SlotSize.FULL)
         # Assign project to slot (bypassing reserve validation for test)
         slot.project = project
         slot.reserved_by = user
@@ -121,9 +107,7 @@ column_widths: [1.0]
 
     def test_dry_run_mode(self, tmp_path):
         """Should preview without creating slots in dry-run mode."""
-        shuttle = Shuttle.objects.create(
-            name="G852", description="Test shuttle", status=Shuttle.Status.OPEN
-        )
+        shuttle = ShuttleFactory(name="G852")
 
         config_file = tmp_path / "G852-layout.yaml"
         config_file.write_text("""

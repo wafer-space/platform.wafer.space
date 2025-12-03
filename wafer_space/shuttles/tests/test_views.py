@@ -6,8 +6,8 @@ from django.urls import reverse
 
 from wafer_space.core.enums import SlotSize
 from wafer_space.projects.tests.factories import ProjectFactory
-from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.models import ShuttleSlot
+from wafer_space.shuttles.tests.factories import ShuttleFactory
 from wafer_space.users.tests.factories import UserFactory
 
 
@@ -20,9 +20,7 @@ class TestShuttleAssignmentView:
         user = UserFactory(is_staff=True)
         client.force_login(user)
 
-        shuttle = Shuttle.objects.create(
-            name="G810", description="Test shuttle", status=Shuttle.Status.OPEN
-        )
+        shuttle = ShuttleFactory(name="G810")
 
         url = reverse("shuttles:assignment", kwargs={"name": shuttle.name})
         response = client.get(url)
@@ -35,9 +33,7 @@ class TestShuttleAssignmentView:
         user = UserFactory(is_staff=False)
         client.force_login(user)
 
-        shuttle = Shuttle.objects.create(
-            name="G802", description="Test shuttle", status=Shuttle.Status.OPEN
-        )
+        shuttle = ShuttleFactory(name="G802")
 
         url = reverse("shuttles:assignment", kwargs={"name": shuttle.name})
         response = client.get(url)
@@ -49,9 +45,7 @@ class TestShuttleAssignmentView:
         user = UserFactory(is_staff=True)
         client.force_login(user)
 
-        shuttle = Shuttle.objects.create(
-            name="G803", description="Test shuttle", status=Shuttle.Status.OPEN
-        )
+        shuttle = ShuttleFactory(name="G803")
 
         # Create slots
         ShuttleSlot.objects.create(
@@ -101,9 +95,7 @@ class TestShuttleAssignmentView:
         user = UserFactory(is_staff=True)
         client.force_login(user)
 
-        shuttle = Shuttle.objects.create(
-            name="G804", description="Test shuttle", status=Shuttle.Status.OPEN
-        )
+        shuttle = ShuttleFactory(name="G804")
 
         project1 = ProjectFactory(shuttle=shuttle, name="Project One")
         project2 = ProjectFactory(shuttle=shuttle, name="Project Two")
@@ -128,9 +120,7 @@ class TestGridPreviewView:
         user = UserFactory(is_staff=True)
         client.force_login(user)
 
-        shuttle = Shuttle.objects.create(
-            name="G811", description="Test shuttle", status=Shuttle.Status.OPEN
-        )
+        shuttle = ShuttleFactory(name="G811")
 
         # Create 2x2 grid
         ShuttleSlot.objects.create(
@@ -183,9 +173,7 @@ class TestGridPreviewView:
         user = UserFactory(is_staff=True)
         client.force_login(user)
 
-        shuttle = Shuttle.objects.create(
-            name="G802", description="Test shuttle", status=Shuttle.Status.OPEN
-        )
+        shuttle = ShuttleFactory(name="G805")
 
         ShuttleSlot.objects.create(
             shuttle=shuttle,
@@ -212,9 +200,7 @@ class TestAssignProjectView:
         user = UserFactory(is_staff=True)
         client.force_login(user)
 
-        shuttle = Shuttle.objects.create(
-            name="G812", description="Test shuttle", status=Shuttle.Status.OPEN
-        )
+        shuttle = ShuttleFactory(name="G812")
         slot = ShuttleSlot.objects.create(
             shuttle=shuttle,
             row=0,
@@ -246,9 +232,7 @@ class TestAssignProjectView:
         user = UserFactory(is_staff=True)
         client.force_login(user)
 
-        shuttle = Shuttle.objects.create(
-            name="G802", description="Test shuttle", status=Shuttle.Status.OPEN
-        )
+        shuttle = ShuttleFactory(name="G802")
         slot = ShuttleSlot.objects.create(
             shuttle=shuttle,
             row=0,
@@ -276,9 +260,7 @@ class TestAssignProjectView:
         user = UserFactory(is_staff=True)
         client.force_login(user)
 
-        shuttle = Shuttle.objects.create(
-            name="G803", description="Test shuttle", status=Shuttle.Status.OPEN
-        )
+        shuttle = ShuttleFactory(name="G803")
         slot = ShuttleSlot.objects.create(
             shuttle=shuttle,
             row=0,
@@ -313,9 +295,7 @@ class TestRemoveAssignmentView:
         user = UserFactory(is_staff=True)
         client.force_login(user)
 
-        shuttle = Shuttle.objects.create(
-            name="G813", description="Test shuttle", status=Shuttle.Status.OPEN
-        )
+        shuttle = ShuttleFactory(name="G813")
         slot = ShuttleSlot.objects.create(
             shuttle=shuttle,
             row=0,

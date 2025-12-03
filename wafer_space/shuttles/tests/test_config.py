@@ -51,15 +51,16 @@ row_heights: [1.0]
         with pytest.raises(GridConfigError, match="Missing required field"):
             GridConfig.from_file(config_file)
 
-    def test_calculate_slot_size(self):
+    @pytest.mark.parametrize(
+        ("row_h", "col_w", "expected"),
+        [
+            (1.0, 1.0, SlotSize.FULL),
+            (0.5, 0.5, SlotSize.QUARTER),
+            (1.0, 0.5, SlotSize.HALF_HEIGHT),
+            (0.5, 1.0, SlotSize.HALF_WIDTH),
+        ],
+    )
+    def test_calculate_slot_size(self, row_h, col_w, expected):
         """Should calculate correct SlotSize from dimensions."""
-        test_cases = [
-            ((1.0, 1.0), SlotSize.FULL),
-            ((0.5, 0.5), SlotSize.QUARTER),
-            ((1.0, 0.5), SlotSize.HALF_HEIGHT),
-            ((0.5, 1.0), SlotSize.HALF_WIDTH),
-        ]
-
-        for (row_h, col_w), expected in test_cases:
-            result = GridConfig.calculate_slot_size(row_h, col_w)
-            assert result == expected, f"Failed for ({row_h}, {col_w})"
+        result = GridConfig.calculate_slot_size(row_h, col_w)
+        assert result == expected

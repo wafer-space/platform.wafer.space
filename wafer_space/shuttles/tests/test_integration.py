@@ -9,8 +9,8 @@ from django.core.management import call_command
 
 from wafer_space.core.enums import SlotSize
 from wafer_space.projects.tests.factories import ProjectFactory
-from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.models import ShuttleSlot
+from wafer_space.shuttles.tests.factories import ShuttleFactory
 from wafer_space.users.tests.factories import UserFactory
 
 
@@ -21,9 +21,7 @@ class TestGridWorkflow:
     def test_complete_workflow(self, tmp_path):
         """Test complete workflow from config to assignment."""
         # Step 1: Create shuttle
-        shuttle = Shuttle.objects.create(
-            name="G850", description="Production shuttle", status=Shuttle.Status.OPEN
-        )
+        shuttle = ShuttleFactory(name="G850", description="Production shuttle")
 
         # Step 2: Create grid configuration
         config_file = tmp_path / "G850-layout.yaml"
@@ -90,9 +88,7 @@ column_widths: [1.0, 0.5, 1.0]
 
     def test_grid_regeneration_safety(self, tmp_path):
         """Test that grid regeneration protects assigned projects."""
-        shuttle = Shuttle.objects.create(
-            name="G851", description="Test shuttle", status=Shuttle.Status.OPEN
-        )
+        shuttle = ShuttleFactory(name="G851")
 
         # Create initial grid
         config_v1 = tmp_path / "G851-layout.yaml"
