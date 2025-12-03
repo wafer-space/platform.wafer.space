@@ -56,6 +56,11 @@ class ProjectOwnerOrStaffMixin(UserPassesTestMixin):
     request: HttpRequest
     _accessed_project: Project | None
 
+    # Views may set this per-request to suppress the success audit log, e.g.
+    # the pk->full_id canonical redirect leg, where the follow-up canonical
+    # request creates the log; logging both would record one access twice.
+    skip_success_audit_log: bool = False
+
     def test_func(self) -> bool:
         """Check if user can access this project.
 
@@ -108,7 +113,11 @@ class ProjectOwnerOrStaffMixin(UserPassesTestMixin):
             is_admin_access = (
                 user.is_authenticated and user.is_staff and project.user != user
             )
-            if is_admin_access and not is_delete_operation:
+            if (
+                is_admin_access
+                and not is_delete_operation
+                and not self.skip_success_audit_log
+            ):
                 # Cast is safe: is_admin_access check confirms user.is_authenticated
                 self._create_audit_log(project, cast("User", user), request)
 

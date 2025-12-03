@@ -2212,7 +2212,7 @@ class TestProjectDetailSlotVisibility:
         slot2.save()
 
         url = reverse("projects:detail", kwargs={"pk": project.pk})
-        response = client.get(url)
+        response = client.get(url, follow=True)  # follow redirect to full_id URL
 
         assert response.status_code == HTTP_OK
         content = response.content.decode()
@@ -2243,7 +2243,7 @@ class TestProjectDetailSlotVisibility:
         slot.save()
 
         url = reverse("projects:detail", kwargs={"pk": project.pk})
-        response = client.get(url)
+        response = client.get(url, follow=True)  # follow redirect to full_id URL
 
         assert response.status_code == HTTP_OK
         content = response.content.decode()

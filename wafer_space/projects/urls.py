@@ -20,10 +20,10 @@ urlpatterns = [
     # Project CRUD
     path("", views.ProjectListView.as_view(), name="list"),
     path("<uuid:pk>/", views.ProjectDetailView.as_view(), name="detail"),
-    # Alternative URL using 8-character manufacturing ID (e.g., G801ABCD)
+    # Canonical URL using 8-character manufacturing ID (e.g., G801ABCD)
     re_path(
         r"^(?P<full_id>[A-Z0-9]{8})/$",
-        views.ProjectFullIdRedirectView.as_view(),
+        views.ProjectDetailByFullIdView.as_view(),
         name="detail_by_full_id",
     ),
     path("create/", views.ProjectCreateView.as_view(), name="create"),

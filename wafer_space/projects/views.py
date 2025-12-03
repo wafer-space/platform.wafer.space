@@ -39,6 +39,7 @@ from wafer_space.shuttles.models import Shuttle
 from .exceptions import InvalidStateTransitionError
 from .forms import ProjectFileURLSubmitForm
 from .forms import ProjectForm
+from .mixins import HTTP_SUCCESS_THRESHOLD
 from .mixins import ProjectOwnerOrStaffMixin
 from .models import PROJECT_ID_LENGTH
 from .models import DownloadAttempt
@@ -80,42 +81,35 @@ class ProjectListView(LoginRequiredMixin, ListView):
         return Project.objects.filter(user=user).order_by("-created_at")
 
 
-class ProjectFullIdRedirectView(LoginRequiredMixin, View):
-    """Redirect from full_id URL to project detail page.
-
-    Accepts 8-character manufacturing ID (e.g., "G801ABCD") and redirects
-    to the project's detail page using its UUID primary key.
-    """
-
-    def get(self, request, full_id: str):
-        """Look up project by full_id and redirect to detail page."""
-        # Validate full_id length
-        expected_length = SHUTTLE_ID_LENGTH + PROJECT_ID_LENGTH
-        if len(full_id) != expected_length:
-            msg = f"Invalid project ID format: expected {expected_length} characters"
-            raise Http404(msg)
-
-        # Parse full_id into shuttle name and project_id
-        shuttle_name = full_id[:SHUTTLE_ID_LENGTH]
-        project_id = full_id[SHUTTLE_ID_LENGTH:]
-
-        # Look up the project
-        project = get_object_or_404(
-            Project,
-            shuttle__name=shuttle_name,
-            project_id=project_id,
-        )
-
-        # Redirect to detail view with UUID pk
-        return redirect("projects:detail", pk=project.pk)
-
-
 class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView):
-    """View a single project with its files."""
+    """View a single project with its files.
+
+    When accessed by UUID pk, redirects to the canonical full_id URL
+    if the project has been assigned to a shuttle.
+    """
 
     model = Project
     template_name = "projects/project_detail.html"
     context_object_name = "project"
+
+    def dispatch(self, request, *args, **kwargs):
+        """Redirect to full_id URL if project has one and accessed by pk."""
+        # Only redirect if accessed by pk (not full_id)
+        if "pk" in kwargs:
+            project = self.get_object()
+            if project.full_id:
+                # Call parent dispatch first so login/permission checks run,
+                # but leave audit logging to the canonical request that
+                # follows the redirect.
+                self.skip_success_audit_log = True
+                parent_response = super().dispatch(request, *args, **kwargs)
+                # Only redirect if parent dispatch succeeded (not 403/404)
+                if parent_response.status_code < HTTP_SUCCESS_THRESHOLD:
+                    return redirect(
+                        "projects:detail_by_full_id", full_id=project.full_id
+                    )
+                return parent_response
+        return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         """Add project files and status to context."""
@@ -216,6 +210,41 @@ class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView
         context["check"] = check
 
         return context
+
+
+class ProjectDetailByFullIdView(ProjectDetailView):
+    """View a project by its 8-character manufacturing ID (e.g., G801ABCD).
+
+    This is the canonical URL for projects that have been assigned to a shuttle.
+    Inherits all functionality from ProjectDetailView, including login,
+    permission checks, and audit logging. The parent's pk-redirect logic
+    does not trigger here because the URL provides ``full_id``, not ``pk``.
+    """
+
+    def get_object(self, queryset=None):
+        """Look up project by full_id from URL."""
+        if queryset is None:
+            queryset = self.get_queryset()
+
+        full_id = self.kwargs.get("full_id")
+        if not full_id:
+            msg = "No project ID provided"
+            raise Http404(msg)
+
+        # Parse full_id into shuttle name and project_id
+        expected_length = SHUTTLE_ID_LENGTH + PROJECT_ID_LENGTH
+        if len(full_id) != expected_length:
+            msg = f"Invalid project ID format: expected {expected_length} characters"
+            raise Http404(msg)
+
+        shuttle_name = full_id[:SHUTTLE_ID_LENGTH]
+        project_id = full_id[SHUTTLE_ID_LENGTH:]
+
+        return get_object_or_404(
+            queryset,
+            shuttle__name=shuttle_name,
+            project_id=project_id,
+        )
 
 
 class ProjectCreateView(LoginRequiredMixin, CreateView):
