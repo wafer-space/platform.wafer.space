@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+from collections import Counter
 from typing import TYPE_CHECKING
 from typing import cast
 
@@ -755,9 +756,78 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
         return qs.order_by(*order_fields)
 
     def get_context_data(self, **kwargs):
-        """Add sort information to context."""
+        """Add sort information and summary statistics to context."""
         context = super().get_context_data(**kwargs)
         field, descending = self.get_sort_params()
         context["current_sort"] = field
         context["sort_descending"] = descending
+
+        # Compute summary statistics from the projects list
+        projects = context["projects"]
+        context["summary"] = self._compute_summary_stats(projects)
         return context
+
+    def _compute_summary_stats(self, projects):
+        """Compute summary statistics for the projects list."""
+        # Initialize counters
+        status_counts: Counter[str] = Counter()
+        manufacturable_by_size: Counter[str] = Counter()
+        non_manufacturable_by_size: Counter[str] = Counter()
+        pending_by_size: Counter[str] = Counter()  # No result yet
+
+        for project in projects:
+            size = project.slot_size
+            active_file = project.active_files[0] if project.active_files else None
+            check = (
+                active_file.manufacturability_check
+                if active_file and hasattr(active_file, "manufacturability_check")
+                else None
+            )
+
+            if check:
+                status_counts[check.status] += 1
+                if check.is_manufacturable is True:
+                    manufacturable_by_size[size] += 1
+                elif check.is_manufacturable is False:
+                    non_manufacturable_by_size[size] += 1
+                else:
+                    # Has check but no result yet
+                    pending_by_size[size] += 1
+            else:
+                # No check at all
+                status_counts["no_check"] += 1
+                pending_by_size[size] += 1
+
+        # Build status summary with display names
+        status_summary = []
+        for status in ManufacturabilityCheck.Status:
+            count = status_counts.get(status.value, 0)
+            if count > 0:
+                status_summary.append({"label": status.label, "count": count})
+        if status_counts.get("no_check", 0) > 0:
+            status_summary.append(
+                {"label": "No Check", "count": status_counts["no_check"]}
+            )
+
+        # Build size breakdowns with display labels
+        size_labels = {choice.value: choice.label for choice in SlotSize}
+
+        def build_size_breakdown(counter):
+            return [
+                {"size": size_labels.get(size, size), "count": count}
+                for size, count in sorted(counter.items())
+                if count > 0
+            ]
+
+        return {
+            "total": len(projects),
+            "manufacturable_total": sum(manufacturable_by_size.values()),
+            "manufacturable_by_size": build_size_breakdown(manufacturable_by_size),
+            "non_manufacturable_total": sum(non_manufacturable_by_size.values()),
+            "non_manufacturable_by_size": build_size_breakdown(
+                non_manufacturable_by_size
+            ),
+            "pending_total": sum(pending_by_size.values()),
+            "pending_by_size": build_size_breakdown(pending_by_size),
+            "status_counts": status_summary,
+        }
