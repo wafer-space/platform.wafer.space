@@ -50,7 +50,11 @@
                             data-slot-position="{{ slot.grid_position }}"
                             data-slot-size="{{ slot.slot_size }}"
                             data-project-id="{% if slot.project %}{{ slot.project.pk }}{% endif %}"
-                            onclick="showSlotModal(this)">
+                            tabindex="0"
+                            role="button"
+                            aria-label="Slot {{ slot.grid_position }}{% if slot.project %}, assigned to {{ slot.project.project_id }}{% else %}, empty{% endif %}"
+                            onclick="showSlotModal(this)"
+                            onkeydown="if(event.key==='Enter'||event.key===' '){showSlotModal(this);event.preventDefault();}">
                           {% if slot.project %}
                             <strong class="font-monospace">{{ slot.project.project_id }}</strong>
                           {% else %}
