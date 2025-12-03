@@ -95,12 +95,12 @@
     <div class="card">
       <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0">Project Assignment</h5>
-        <div class="d-flex gap-2">
-          <select class="form-select form-select-sm" id="size-filter">
+        <div class="d-flex gap-2 align-items-center">
+          <select class="form-select form-select-sm" style="width: auto;" id="size-filter">
             <option value="">All Sizes</option>
             {% for slot_size in stats.keys %}<option value="{{ slot_size.value }}">{{ slot_size.label }}</option>{% endfor %}
           </select>
-          <div class="form-check">
+          <div class="form-check mb-0 text-nowrap">
             <input class="form-check-input" type="checkbox" id="unassigned-only" />
             <label class="form-check-label" for="unassigned-only">Unassigned only</label>
           </div>
