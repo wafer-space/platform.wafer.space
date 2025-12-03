@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
@@ -8,6 +10,9 @@ from django.utils import timezone
 
 from wafer_space.core.enums import SlotSize
 from wafer_space.projects.models import Project
+
+if TYPE_CHECKING:
+    from wafer_space.users.models import User
 
 # Shuttle ID format constants
 SHUTTLE_ID_LENGTH = 4
@@ -348,7 +353,7 @@ class ShuttleSlot(models.Model):
         """Return short human-readable size (e.g., '1×1', '0.5×1')."""
         return self.get_slot_size_display()
 
-    def reserve(self, project, user):
+    def reserve(self, project: Project, user: User) -> str | None:
         """Reserve this slot for a project with size validation."""
         if self.status != self.Status.AVAILABLE:
             msg = "Slot is not available"
@@ -375,7 +380,7 @@ class ShuttleSlot(models.Model):
 
         return size_mismatch
 
-    def cancel_reservation(self):
+    def cancel_reservation(self) -> None:
         """Cancel this slot's reservation."""
         self.project = None
         self.reserved_by = None

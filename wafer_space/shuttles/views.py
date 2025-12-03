@@ -178,7 +178,7 @@ class AssignProjectView(StaffRequiredMixin, View):
                 # Attempt reservation
                 try:
                     warning = slot.reserve(project, request.user)
-                    response_data = {"success": True}
+                    response_data: dict[str, bool | str] = {"success": True}
                     if warning:
                         response_data["warning"] = warning
                     return JsonResponse(response_data)
