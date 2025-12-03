@@ -22,7 +22,7 @@ class TestShuttleAssignmentView:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="TEST01",
+            name="G801",
             description="Test shuttle",
             status=Shuttle.Status.OPEN,
             max_slots=100,
@@ -32,7 +32,7 @@ class TestShuttleAssignmentView:
         response = client.get(url)
 
         assert response.status_code == HTTPStatus.OK
-        assert "TEST01" in response.content.decode()
+        assert "G801" in response.content.decode()
 
     def test_regular_user_cannot_access(self, client):
         """Regular users should be denied access."""
@@ -40,7 +40,7 @@ class TestShuttleAssignmentView:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="TEST02",
+            name="G802",
             description="Test shuttle",
             status=Shuttle.Status.OPEN,
             max_slots=100,
@@ -57,7 +57,7 @@ class TestShuttleAssignmentView:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="TEST03",
+            name="G803",
             description="Test shuttle",
             status=Shuttle.Status.OPEN,
             max_slots=100,
@@ -112,7 +112,7 @@ class TestShuttleAssignmentView:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="TEST04",
+            name="G804",
             description="Test shuttle",
             status=Shuttle.Status.OPEN,
             max_slots=100,
@@ -142,7 +142,7 @@ class TestGridPreviewView:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="TEST01",
+            name="G801",
             description="Test shuttle",
             status=Shuttle.Status.OPEN,
             max_slots=100,
@@ -200,7 +200,7 @@ class TestGridPreviewView:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="TEST02",
+            name="G802",
             description="Test shuttle",
             status=Shuttle.Status.OPEN,
             max_slots=100,
@@ -232,7 +232,7 @@ class TestAssignProjectView:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="TEST01",
+            name="G801",
             description="Test shuttle",
             status=Shuttle.Status.OPEN,
             max_slots=100,
@@ -279,7 +279,7 @@ class TestAssignProjectView:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="TEST02",
+            name="G802",
             description="Test shuttle",
             status=Shuttle.Status.OPEN,
             max_slots=100,
@@ -322,7 +322,7 @@ class TestAssignProjectView:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="TEST03",
+            name="G803",
             description="Test shuttle",
             status=Shuttle.Status.OPEN,
             max_slots=100,
@@ -362,7 +362,7 @@ class TestRemoveAssignmentView:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="TEST01",
+            name="G801",
             description="Test shuttle",
             status=Shuttle.Status.OPEN,
             max_slots=100,

@@ -1474,7 +1474,7 @@ class TestProjectDetailSlotVisibility:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="SLOT-STAFF",
+            name="G810",
             description="Test shuttle",
             status=Shuttle.Status.OPEN,
             max_slots=10,
@@ -1523,7 +1523,7 @@ class TestProjectDetailSlotVisibility:
         client.force_login(user)
 
         shuttle = Shuttle.objects.create(
-            name="SLOT-USER",
+            name="G811",
             description="Test shuttle",
             status=Shuttle.Status.OPEN,
             max_slots=10,
