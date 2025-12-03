@@ -38,6 +38,19 @@ SYSTEM_ERROR_PATTERNS = [
     r"Container.*failed",
 ]
 
+# Pattern for deferred DRC errors (design errors, NOT system errors)
+# Matches output like: One or more deferred errors were encountered...
+DEFERRED_ERRORS_PATTERN = re.compile(
+    r"One or more deferred errors were encountered:",
+    re.IGNORECASE,
+)
+
+# Pattern to extract DRC error counts from deferred errors
+DRC_ERROR_PATTERN = re.compile(
+    r"(\d+)\s+(Magic|KLayout)\s+DRC\s+errors?\s+found",
+    re.IGNORECASE,
+)
+
 
 def classify_failure(logs: str, exit_code: int) -> str:
     """Classify failure as 'system', 'design', or 'success'.
@@ -53,6 +66,11 @@ def classify_failure(logs: str, exit_code: int) -> str:
     """
     if exit_code == 0:
         return "success"
+
+    # Check for deferred DRC errors FIRST - these look like system errors
+    # but are actually design errors (DRC violations from Magic/KLayout tools)
+    if DEFERRED_ERRORS_PATTERN.search(logs):
+        return "design"
 
     # Check for system error patterns
     for pattern in SYSTEM_ERROR_PATTERNS:
@@ -96,16 +114,29 @@ class PrecheckLogParser:
                 detected_checks=detected_checks,
             )
 
-        # Simple error detection - find "Error:" lines
-        for line_num, line in enumerate(logs.split("\n"), 1):
-            if line.strip().startswith("Error:"):
+        # Check for deferred DRC errors first - extract individual DRC counts
+        if DEFERRED_ERRORS_PATTERN.search(logs):
+            drc_matches = DRC_ERROR_PATTERN.findall(logs)
+            for count, tool in drc_matches:
                 errors.append(
                     ErrorDict(
-                        message=line.strip(),
-                        line=line_num,
-                        category="Unknown",
+                        message=f"{count} {tool} DRC errors found",
+                        line=0,
+                        category="DRC",
                     )
                 )
+
+        # Simple error detection - find "Error:" lines (skip if we found DRC errors)
+        if not errors:
+            for line_num, line in enumerate(logs.split("\n"), 1):
+                if line.strip().startswith("Error:"):
+                    errors.append(
+                        ErrorDict(
+                            message=line.strip(),
+                            line=line_num,
+                            category="Unknown",
+                        )
+                    )
 
         # If exit code != 0 but no errors found, treat whole output as error
         if exit_code != 0 and not errors:

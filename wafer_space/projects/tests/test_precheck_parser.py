@@ -69,3 +69,96 @@ class TestClassifyFailure:
         logs = "DRC violation at layer metal1"
         result = classify_failure(logs, exit_code=1)
         assert result == "design"
+
+    def test_classify_deferred_drc_errors_as_design(self):
+        """Test deferred DRC errors classified as design, not system.
+
+        This is a critical fix: when precheck runs DRC checks and finds violations
+        through the "deferred errors" mechanism, it outputs an exception pattern
+        that looks like a system error but is actually a design error.
+        See GitHub issue #146.
+        """
+        logs = """
+[11:19:06] ERROR    6 KLayout DRC errors found. - deferred
+PrecheckFlow - Stage 13 - Write the layout ━━━━━━━━━ 13/13 1:27:46
+Error: The precheck failed with the following exception:
+One or more deferred errors were encountered:
+18 Magic DRC errors found.
+6 KLayout DRC errors found.
+
+
+=== SYSTEM ERROR - See error_message field ===
+"""
+        result = classify_failure(logs, exit_code=1)
+        # Must be "design" not "system" - DRC errors are user-fixable
+        assert result == "design"
+
+    def test_classify_real_system_error_with_traceback(self):
+        """Test that real system errors with tracebacks are still caught."""
+        logs = """
+Error: The precheck failed with the following exception:
+Traceback (most recent call last):
+  File "/app/precheck.py", line 100, in run
+    raise RuntimeError("Docker container failed")
+RuntimeError: Docker container failed
+"""
+        result = classify_failure(logs, exit_code=1)
+        # Real exception with traceback should still be system error
+        assert result == "system"
+
+
+class TestParseDeferredDRCErrors:
+    """Test parsing of deferred DRC errors."""
+
+    def test_parse_deferred_drc_errors_extracts_counts(self):
+        """Test that DRC error counts are extracted from deferred errors."""
+        logs = """
+[11:19:06] ERROR    6 KLayout DRC errors found. - deferred
+PrecheckFlow - Stage 13 - Write the layout ━━━━━━━━━ 13/13 1:27:46
+Error: The precheck failed with the following exception:
+One or more deferred errors were encountered:
+18 Magic DRC errors found.
+6 KLayout DRC errors found.
+
+
+=== SYSTEM ERROR - See error_message field ===
+"""
+        result = PrecheckLogParser.parse_logs(logs, exit_code=1)
+
+        assert result["success"] is False
+
+        # Check error messages contain the counts (should have Magic + KLayout)
+        messages = [e["message"] for e in result["errors"]]
+        has_magic = any("18" in m and "Magic" in m for m in messages)
+        has_klayout = any("6" in m and "KLayout" in m for m in messages)
+        assert has_magic, f"Missing Magic DRC error in: {messages}"
+        assert has_klayout, f"Missing KLayout DRC error in: {messages}"
+
+        # Check category is DRC
+        categories = [e["category"] for e in result["errors"]]
+        assert all(c == "DRC" for c in categories)
+
+    def test_parse_single_drc_error_type(self):
+        """Test parsing when only one type of DRC error is present."""
+        logs = """
+One or more deferred errors were encountered:
+5 Magic DRC errors found.
+"""
+        result = PrecheckLogParser.parse_logs(logs, exit_code=1)
+
+        assert result["success"] is False
+        assert len(result["errors"]) == 1
+        assert "5" in result["errors"][0]["message"]
+        assert "Magic" in result["errors"][0]["message"]
+        assert result["errors"][0]["category"] == "DRC"
+
+    def test_parse_singular_drc_error(self):
+        """Test parsing singular 'error' vs plural 'errors'."""
+        logs = """
+One or more deferred errors were encountered:
+1 Magic DRC error found.
+"""
+        result = PrecheckLogParser.parse_logs(logs, exit_code=1)
+
+        assert len(result["errors"]) == 1
+        assert "1" in result["errors"][0]["message"]
