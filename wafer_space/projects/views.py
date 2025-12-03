@@ -704,3 +704,18 @@ class ShuttleAvailableSizesView(LoginRequiredMixin, View):
             return JsonResponse({"sizes": size_options})
         except Shuttle.DoesNotExist:
             return JsonResponse({"sizes": []}, status=404)
+
+
+class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView):
+    """Staff-only summary of all projects with sortable columns."""
+
+    template_name = "projects/admin_summary.html"
+    context_object_name = "projects"
+
+    def test_func(self):
+        """Only staff users can access this view."""
+        return self.request.user.is_staff
+
+    def get_queryset(self):
+        """Return all projects with optimized queries."""
+        return Project.objects.select_related("user", "shuttle").all()
