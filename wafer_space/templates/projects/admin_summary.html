@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+
+{% block title %}
+  Project Summary
+{% endblock title %}
+{% block content %}
+  <div class="container-fluid mt-4">
+    <h1>Project Summary</h1>
+    <p class="text-muted">{{ summary.total }} project{{ summary.total|pluralize }}</p>
+    <!-- Summary Statistics -->
+    <div class="row mb-4">
+      <!-- Manufacturability Summary -->
+      <div class="col-md-4">
+        <div class="card">
+          <div class="card-header">
+            <strong>Manufacturability</strong>
+          </div>
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <span class="text-success fw-bold">
+                <i class="bi bi-check-circle"></i> Manufacturable
+              </span>
+              <span class="badge bg-success">{{ summary.manufacturable_total }}</span>
+            </div>
+            {% if summary.manufacturable_by_size %}
+              <div class="small text-muted mb-2 ms-3">
+                {% for item in summary.manufacturable_by_size %}
+                  {{ item.size }}: {{ item.count }}
+                  {% if not forloop.last %},{% endif %}
+                {% endfor %}
+              </div>
+            {% endif %}
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <span class="text-danger fw-bold">
+                <i class="bi bi-x-circle"></i> Non-Manufacturable
+              </span>
+              <span class="badge bg-danger">{{ summary.non_manufacturable_total }}</span>
+            </div>
+            {% if summary.non_manufacturable_by_size %}
+              <div class="small text-muted mb-2 ms-3">
+                {% for item in summary.non_manufacturable_by_size %}
+                  {{ item.size }}: {{ item.count }}
+                  {% if not forloop.last %},{% endif %}
+                {% endfor %}
+              </div>
+            {% endif %}
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <span class="text-secondary fw-bold">
+                <i class="bi bi-hourglass"></i> Pending/Unknown
+              </span>
+              <span class="badge bg-secondary">{{ summary.pending_total }}</span>
+            </div>
+            {% if summary.pending_by_size %}
+              <div class="small text-muted mb-0 ms-3">
+                {% for item in summary.pending_by_size %}
+                  {{ item.size }}: {{ item.count }}
+                  {% if not forloop.last %},{% endif %}
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      <!-- Precheck Status Summary -->
+      <div class="col-md-4">
+        <div class="card">
+          <div class="card-header">
+            <strong>Precheck Status</strong>
+          </div>
+          <div class="card-body">
+            {% if summary.status_counts %}
+              {% for status in summary.status_counts %}
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                  <span>{{ status.label }}</span>
+                  <span class="badge bg-primary">{{ status.count }}</span>
+                </div>
+              {% endfor %}
+            {% else %}
+              <p class="text-muted mb-0">No precheck data</p>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- Projects Table -->
+    <div class="d-flex justify-content-end mb-2">
+      <button type="button"
+              class="btn btn-sm btn-outline-secondary"
+              id="copy-table-btn"
+              title="Copy table to clipboard (for Google Sheets)">
+        <i class="bi bi-clipboard"></i> Copy Table
+      </button>
+    </div>
+    <div class="table-responsive" style="max-height: 70vh; overflow-y: auto;">
+      <table class="table table-striped table-hover" id="projects-table">
+        <thead class="table-light sticky-top" style="top: 0; z-index: 1;">
+          <tr>
+            <th>
+              <a href="?sort={% if current_sort == 'full_id' and not sort_descending %}-{% endif %}full_id"
+                 class="text-decoration-none text-dark">
+                Project ID
+                {% if current_sort == 'full_id' %}
+                  {% if sort_descending %}
+                    ▼
+                  {% else %}
+                    ▲
+                  {% endif %}
+                {% endif %}
+              </a>
+            </th>
+            <th>
+              <a href="?sort={% if current_sort == 'size' and not sort_descending %}-{% endif %}size"
+                 class="text-decoration-none text-dark">
+                Size
+                {% if current_sort == 'size' %}
+                  {% if sort_descending %}
+                    ▼
+                  {% else %}
+                    ▲
+                  {% endif %}
+                {% endif %}
+              </a>
+            </th>
+            <th>
+              <a href="?sort={% if current_sort == 'name' and not sort_descending %}-{% endif %}name"
+                 class="text-decoration-none text-dark">
+                Name
+                {% if current_sort == 'name' %}
+                  {% if sort_descending %}
+                    ▼
+                  {% else %}
+                    ▲
+                  {% endif %}
+                {% endif %}
+              </a>
+            </th>
+            <th>
+              <a href="?sort={% if current_sort == 'owner' and not sort_descending %}-{% endif %}owner"
+                 class="text-decoration-none text-dark">
+                Owner
+                {% if current_sort == 'owner' %}
+                  {% if sort_descending %}
+                    ▼
+                  {% else %}
+                    ▲
+                  {% endif %}
+                {% endif %}
+              </a>
+            </th>
+            <th>
+              <a href="?sort={% if current_sort == 'email' and not sort_descending %}-{% endif %}email"
+                 class="text-decoration-none text-dark">
+                Email
+                {% if current_sort == 'email' %}
+                  {% if sort_descending %}
+                    ▼
+                  {% else %}
+                    ▲
+                  {% endif %}
+                {% endif %}
+              </a>
+            </th>
+            <th>Precheck Status</th>
+            <th>Manufacturable</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for project in projects %}
+            <tr>
+              <td class="font-monospace">{{ project.full_id|default:"-" }}</td>
+              <td>{{ project.slot_size }}</td>
+              <td>{{ project.name }}</td>
+              <td>{{ project.user.username }}</td>
+              <td>{{ project.user.email }}</td>
+              {% with active_file=project.active_files.0 %}
+                {% if active_file and active_file.manufacturability_check %}
+                  <td>{{ active_file.manufacturability_check.get_status_display }}</td>
+                  <td>
+                    {% if active_file.manufacturability_check.is_manufacturable is True %}
+                      <span class="text-success">✓</span>
+                    {% elif active_file.manufacturability_check.is_manufacturable is False %}
+                      <span class="text-danger">✗</span>
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
+                {% else %}
+                  <td>-</td>
+                  <td>-</td>
+                {% endif %}
+              {% endwith %}
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="7" class="text-center text-muted">No projects found.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endblock content %}
+{% block inline_javascript %}
+  <script>
+    document.getElementById('copy-table-btn').addEventListener('click', function() {
+      const table = document.getElementById('projects-table');
+      const rows = table.querySelectorAll('tr');
+      let tsv = '';
+
+      rows.forEach(function(row) {
+        const cells = row.querySelectorAll('th, td');
+        const rowData = [];
+        cells.forEach(function(cell) {
+          // Get text content, clean up whitespace
+          let text = cell.textContent.trim().replace(/\s+/g, ' ');
+          // Remove sort arrows
+          text = text.replace(/[▲▼]/g, '').trim();
+          rowData.push(text);
+        });
+        tsv += rowData.join('\t') + '\n';
+      });
+
+      navigator.clipboard.writeText(tsv).then(function() {
+        // Show feedback
+        const btn = document.getElementById('copy-table-btn');
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="bi bi-check"></i> Copied!';
+        btn.classList.remove('btn-outline-secondary');
+        btn.classList.add('btn-success');
+        setTimeout(function() {
+          btn.innerHTML = originalHtml;
+          btn.classList.remove('btn-success');
+          btn.classList.add('btn-outline-secondary');
+        }, 2000);
+      });
+    });
+  </script>
+{% endblock inline_javascript %}

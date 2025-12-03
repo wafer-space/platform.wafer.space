@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import contextlib
 import logging
+from collections import Counter
 from typing import TYPE_CHECKING
+from typing import ClassVar
 from typing import cast
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.mixins import UserPassesTestMixin
 from django.core.exceptions import ValidationError
+from django.db.models import Prefetch
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.shortcuts import redirect
@@ -704,3 +707,131 @@ class ShuttleAvailableSizesView(LoginRequiredMixin, View):
             return JsonResponse({"sizes": size_options})
         except Shuttle.DoesNotExist:
             return JsonResponse({"sizes": []}, status=404)
+
+
+class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView):
+    """Staff-only summary of all projects with sortable columns."""
+
+    template_name = "projects/admin_summary.html"
+    context_object_name = "projects"
+
+    SORT_FIELDS: ClassVar[dict[str, tuple[str, ...]]] = {
+        "full_id": ("shuttle__name", "project_id"),
+        "size": ("slot_size",),
+        "name": ("name",),
+        "owner": ("user__username",),
+        "email": ("user__email",),
+    }
+    DEFAULT_SORT: ClassVar[str] = "name"
+
+    def test_func(self) -> bool:
+        """Only staff users can access this view."""
+        return self.request.user.is_staff
+
+    def get_sort_params(self) -> tuple[str, bool]:
+        """Parse sort parameter and return (field, descending)."""
+        sort = self.request.GET.get("sort", self.DEFAULT_SORT)
+        descending = sort.startswith("-")
+        field = sort.lstrip("-")
+        if field not in self.SORT_FIELDS:
+            field = self.DEFAULT_SORT
+            descending = False
+        return field, descending
+
+    def get_queryset(self):
+        """Return all projects with optimized queries and sorting."""
+        qs = Project.objects.select_related("user", "shuttle").prefetch_related(
+            Prefetch(
+                "files",
+                queryset=ProjectFile.objects.filter(is_active=True).select_related(
+                    "manufacturability_check"
+                ),
+                to_attr="active_files",
+            )
+        )
+
+        field, descending = self.get_sort_params()
+        order_fields = self.SORT_FIELDS[field]
+        if descending:
+            order_fields = tuple(f"-{f}" for f in order_fields)
+        return qs.order_by(*order_fields)
+
+    def get_context_data(self, **kwargs):
+        """Add sort information and summary statistics to context."""
+        context = super().get_context_data(**kwargs)
+        field, descending = self.get_sort_params()
+        context["current_sort"] = field
+        context["sort_descending"] = descending
+
+        # Compute summary statistics from the projects list
+        projects = context["projects"]
+        context["summary"] = self._compute_summary_stats(projects)
+        return context
+
+    def _compute_summary_stats(self, projects):
+        """Compute summary statistics for the projects list."""
+        # Initialize counters
+        status_counts: Counter[str] = Counter()
+        manufacturable_by_size: Counter[str] = Counter()
+        non_manufacturable_by_size: Counter[str] = Counter()
+        pending_by_size: Counter[str] = Counter()  # No result yet
+
+        for project in projects:
+            size = project.slot_size
+            active_file = project.active_files[0] if project.active_files else None
+            check = (
+                active_file.manufacturability_check
+                if active_file and hasattr(active_file, "manufacturability_check")
+                else None
+            )
+
+            if check:
+                status_counts[check.status] += 1
+                if check.is_manufacturable is True:
+                    manufacturable_by_size[size] += 1
+                elif check.is_manufacturable is False:
+                    non_manufacturable_by_size[size] += 1
+                else:
+                    # Has check but no result yet
+                    pending_by_size[size] += 1
+            else:
+                # No check at all
+                status_counts["no_check"] += 1
+                pending_by_size[size] += 1
+
+        # Build status summary with display names
+        status_summary = []
+        for status in ManufacturabilityCheck.Status:
+            count = status_counts.get(status.value, 0)
+            if count > 0:
+                status_summary.append({"label": status.label, "count": count})
+        if status_counts.get("no_check", 0) > 0:
+            status_summary.append(
+                {"label": "No Check", "count": status_counts["no_check"]}
+            )
+
+        # Build size breakdowns with short display labels
+        # Extract short name from label (e.g., "1×1 - Full Slot..." → "1×1")
+        short_size_labels = {
+            choice.value: choice.label.split(" - ")[0] for choice in SlotSize
+        }
+
+        def build_size_breakdown(counter):
+            return [
+                {"size": short_size_labels.get(size, size), "count": count}
+                for size, count in sorted(counter.items())
+                if count > 0
+            ]
+
+        return {
+            "total": len(projects),
+            "manufacturable_total": sum(manufacturable_by_size.values()),
+            "manufacturable_by_size": build_size_breakdown(manufacturable_by_size),
+            "non_manufacturable_total": sum(non_manufacturable_by_size.values()),
+            "non_manufacturable_by_size": build_size_breakdown(
+                non_manufacturable_by_size
+            ),
+            "pending_total": sum(pending_by_size.values()),
+            "pending_by_size": build_size_breakdown(pending_by_size),
+            "status_counts": status_summary,
+        }

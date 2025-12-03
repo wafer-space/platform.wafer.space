@@ -162,7 +162,7 @@ class Project(models.Model):
         return ""
 
     @property
-    def shuttle_positions(self):
+    def shuttle_positions(self) -> models.QuerySet:
         """Return all shuttle slots assigned to this project."""
         return self.shuttle_slots.all()
 

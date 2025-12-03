@@ -3,6 +3,7 @@
 from django.urls import path
 
 from . import views
+from .views import ProjectAdminSummaryView
 from .views_compliance import compliance_certification_create
 
 app_name = "projects"
@@ -14,6 +15,7 @@ urlpatterns = [
         views.ManufacturabilityCheckAdminStatusView.as_view(),
         name="admin_check_status",
     ),
+    path("admin/summary/", ProjectAdminSummaryView.as_view(), name="admin_summary"),
     # Project CRUD
     path("", views.ProjectListView.as_view(), name="list"),
     path("<uuid:pk>/", views.ProjectDetailView.as_view(), name="detail"),

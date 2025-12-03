@@ -16,6 +16,13 @@
              role="button">
             <i class="bi bi-plus-circle"></i> Create New Project
           </a>
+          {% if request.user.is_staff %}
+            <a class="btn btn-outline-secondary ms-2"
+               href="{% url 'projects:admin_summary' %}"
+               role="button">
+              <i class="bi bi-table"></i> Admin Summary
+            </a>
+          {% endif %}
         </div>
         {% if projects %}
           <div class="list-group">
