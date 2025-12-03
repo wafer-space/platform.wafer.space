@@ -128,7 +128,7 @@
             {% for project in projects %}
               <tr data-size="{{ project.slot_size }}"
                   data-assigned="{% if project.shuttle_slots.exists %}true{% else %}false{% endif %}">
-                <td>{{ project.manufacturing_id|default:project.project_id }}</td>
+                <td>{{ project.full_id|default:project.project_id }}</td>
                 <td>{{ project.name }}</td>
                 <td>
                   <span class="badge bg-secondary">{{ project.get_slot_size_display }}</span>
@@ -142,7 +142,7 @@
                 </td>
                 <td>
                   <button class="btn btn-sm btn-primary"
-                          onclick="assignSlot('{{ project.pk }}', '{{ project.manufacturing_id|default:project.project_id|escapejs }}', '{{ project.slot_size|escapejs }}')">
+                          onclick="assignSlot('{{ project.pk }}', '{{ project.full_id|default:project.project_id|escapejs }}', '{{ project.slot_size|escapejs }}')">
                     {% if project.shuttle_slots.exists %}
                       Edit
                     {% else %}
