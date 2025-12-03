@@ -22,7 +22,7 @@ class Migration(migrations.Migration):
                 ],
                 default="1x1",
                 help_text="Die slot size for manufacturing",
-                max_length=10,
+                max_length=20,
             ),
         ),
     ]
