@@ -95,3 +95,58 @@ class TestProjectAdminSummaryView:
 
         content = response.content.decode()
         assert "Finished" in content
+
+    def test_default_sort_by_name(self, client):
+        """Default sort is by name ascending."""
+        staff_user = UserFactory(is_staff=True)
+        ProjectFactory(name="Zebra Project")
+        ProjectFactory(name="Alpha Project")
+        client.force_login(staff_user)
+
+        response = client.get(reverse("projects:admin_summary"))
+
+        content = response.content.decode()
+        alpha_pos = content.find("Alpha Project")
+        zebra_pos = content.find("Zebra Project")
+        assert alpha_pos < zebra_pos, "Alpha should appear before Zebra"
+
+    def test_sort_by_name_descending(self, client):
+        """Sort by name descending with -name parameter."""
+        staff_user = UserFactory(is_staff=True)
+        ProjectFactory(name="Zebra Project")
+        ProjectFactory(name="Alpha Project")
+        client.force_login(staff_user)
+
+        response = client.get(reverse("projects:admin_summary") + "?sort=-name")
+
+        content = response.content.decode()
+        alpha_pos = content.find("Alpha Project")
+        zebra_pos = content.find("Zebra Project")
+        assert zebra_pos < alpha_pos, "Zebra should appear before Alpha"
+
+    def test_sort_by_owner(self, client):
+        """Sort by owner username."""
+        staff_user = UserFactory(is_staff=True)
+        user_a = UserFactory(username="alice")
+        user_z = UserFactory(username="zack")
+        ProjectFactory(name="Zack Project", user=user_z)
+        ProjectFactory(name="Alice Project", user=user_a)
+        client.force_login(staff_user)
+
+        response = client.get(reverse("projects:admin_summary") + "?sort=owner")
+
+        content = response.content.decode()
+        alice_pos = content.find("Alice Project")
+        zack_pos = content.find("Zack Project")
+        assert alice_pos < zack_pos, "Alice's project should appear first"
+
+    def test_sort_indicator_in_header(self, client):
+        """Current sort column shows indicator."""
+        staff_user = UserFactory(is_staff=True)
+        client.force_login(staff_user)
+
+        response = client.get(reverse("projects:admin_summary") + "?sort=name")
+
+        content = response.content.decode()
+        # Should have ascending indicator on name column
+        assert "▲" in content or "sort=-name" in content
