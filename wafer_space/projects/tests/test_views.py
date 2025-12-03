@@ -9,14 +9,18 @@ from django.test import Client
 from django.test import TestCase
 from django.urls import reverse
 
+from wafer_space.core.enums import SlotSize
 from wafer_space.projects.models import CheckExecutionContext
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.security import SecurityValidationError
+from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.shuttles.models import Shuttle
+from wafer_space.shuttles.models import ShuttleSlot
 from wafer_space.users.models import User
+from wafer_space.users.tests.factories import UserFactory
 
 from .constants import EXPECTED_USER_PROJECTS
 from .constants import FIVE_MB
@@ -1458,6 +1462,95 @@ class TestProjectFileSubmitURLViewWarning(TestCase):
 
         assert response.status_code == HTTP_OK
         assert response.context["running_check"] is None
+
+
+@pytest.mark.django_db
+class TestProjectDetailSlotVisibility:
+    """Test slot assignment visibility on project detail page."""
+
+    def test_staff_sees_slot_assignments(self, client):
+        """Staff should see slot assignments on project detail."""
+        user = UserFactory(is_staff=True)
+        client.force_login(user)
+
+        shuttle = Shuttle.objects.create(
+            name="SLOT-STAFF",
+            description="Test shuttle",
+            status=Shuttle.Status.OPEN,
+            max_slots=10,
+            available_slots=10,
+        )
+        project = ProjectFactory(shuttle=shuttle)
+
+        # Assign to two slots
+        slot1 = ShuttleSlot.objects.create(
+            shuttle=shuttle,
+            row=0,
+            column=0,
+            slot_size=SlotSize.FULL,
+            status=ShuttleSlot.Status.RESERVED,
+        )
+        slot1.project = project
+        slot1.reserved_by = user
+        slot1.save()
+
+        slot2 = ShuttleSlot.objects.create(
+            shuttle=shuttle,
+            row=1,
+            column=2,
+            slot_size=SlotSize.FULL,
+            status=ShuttleSlot.Status.RESERVED,
+        )
+        slot2.project = project
+        slot2.reserved_by = user
+        slot2.save()
+
+        url = reverse("projects:detail", kwargs={"pk": project.pk})
+        response = client.get(url)
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+
+        # Should show slot assignments
+        assert "Assigned Slots" in content or "Grid Position" in content
+        assert "A1" in content  # slot1 position
+        assert "C2" in content  # slot2 position
+
+    def test_regular_user_does_not_see_slots(self, client):
+        """Regular users should not see slot assignments."""
+        user = UserFactory(is_staff=False)
+        project = ProjectFactory(user=user)
+        client.force_login(user)
+
+        shuttle = Shuttle.objects.create(
+            name="SLOT-USER",
+            description="Test shuttle",
+            status=Shuttle.Status.OPEN,
+            max_slots=10,
+            available_slots=10,
+        )
+        project.shuttle = shuttle
+        project.save()
+
+        slot = ShuttleSlot.objects.create(
+            shuttle=shuttle,
+            row=0,
+            column=0,
+            slot_size=SlotSize.FULL,
+            status=ShuttleSlot.Status.RESERVED,
+        )
+        slot.project = project
+        slot.save()
+
+        url = reverse("projects:detail", kwargs={"pk": project.pk})
+        response = client.get(url)
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+
+        # Should NOT show slot section
+        assert "Assigned Slots" not in content
+        assert "Grid Position" not in content
 
 
 @pytest.mark.django_db
