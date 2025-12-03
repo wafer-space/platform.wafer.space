@@ -23,7 +23,12 @@
               <span class="badge bg-success">{{ summary.manufacturable_total }}</span>
             </div>
             {% if summary.manufacturable_by_size %}
-              <div class="small text-muted mb-2 ms-3">{% for item in summary.manufacturable_by_size %}{{ item.size }}: {{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
+              <div class="small text-muted mb-2 ms-3">
+                {% for item in summary.manufacturable_by_size %}
+                  {{ item.size }}: {{ item.count }}
+                  {% if not forloop.last %},{% endif %}
+                {% endfor %}
+              </div>
             {% endif %}
             <div class="d-flex justify-content-between align-items-center mb-1">
               <span class="text-danger fw-bold">
@@ -32,7 +37,12 @@
               <span class="badge bg-danger">{{ summary.non_manufacturable_total }}</span>
             </div>
             {% if summary.non_manufacturable_by_size %}
-              <div class="small text-muted mb-2 ms-3">{% for item in summary.non_manufacturable_by_size %}{{ item.size }}: {{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
+              <div class="small text-muted mb-2 ms-3">
+                {% for item in summary.non_manufacturable_by_size %}
+                  {{ item.size }}: {{ item.count }}
+                  {% if not forloop.last %},{% endif %}
+                {% endfor %}
+              </div>
             {% endif %}
             <div class="d-flex justify-content-between align-items-center mb-1">
               <span class="text-secondary fw-bold">
@@ -41,7 +51,12 @@
               <span class="badge bg-secondary">{{ summary.pending_total }}</span>
             </div>
             {% if summary.pending_by_size %}
-              <div class="small text-muted mb-0 ms-3">{% for item in summary.pending_by_size %}{{ item.size }}: {{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
+              <div class="small text-muted mb-0 ms-3">
+                {% for item in summary.pending_by_size %}
+                  {{ item.size }}: {{ item.count }}
+                  {% if not forloop.last %},{% endif %}
+                {% endfor %}
+              </div>
             {% endif %}
           </div>
         </div>
@@ -68,8 +83,17 @@
       </div>
     </div>
     <!-- Projects Table -->
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <span></span>
+      <button type="button"
+              class="btn btn-sm btn-outline-secondary"
+              id="copy-table-btn"
+              title="Copy table to clipboard (for Google Sheets)">
+        <i class="bi bi-clipboard"></i> Copy Table
+      </button>
+    </div>
     <div class="table-responsive" style="max-height: 70vh; overflow-y: auto;">
-      <table class="table table-striped table-hover">
+      <table class="table table-striped table-hover" id="projects-table">
         <thead class="table-light sticky-top" style="top: 0; z-index: 1;">
           <tr>
             <th>
@@ -177,3 +201,39 @@
     </div>
   </div>
 {% endblock content %}
+{% block inline_javascript %}
+  <script>
+    document.getElementById('copy-table-btn').addEventListener('click', function() {
+      const table = document.getElementById('projects-table');
+      const rows = table.querySelectorAll('tr');
+      let tsv = '';
+
+      rows.forEach(function(row) {
+        const cells = row.querySelectorAll('th, td');
+        const rowData = [];
+        cells.forEach(function(cell) {
+          // Get text content, clean up whitespace
+          let text = cell.textContent.trim().replace(/\s+/g, ' ');
+          // Remove sort arrows
+          text = text.replace(/[▲▼]/g, '').trim();
+          rowData.push(text);
+        });
+        tsv += rowData.join('\t') + '\n';
+      });
+
+      navigator.clipboard.writeText(tsv).then(function() {
+        // Show feedback
+        const btn = document.getElementById('copy-table-btn');
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="bi bi-check"></i> Copied!';
+        btn.classList.remove('btn-outline-secondary');
+        btn.classList.add('btn-success');
+        setTimeout(function() {
+          btn.innerHTML = originalHtml;
+          btn.classList.remove('btn-success');
+          btn.classList.add('btn-outline-secondary');
+        }, 2000);
+      });
+    });
+  </script>
+{% endblock inline_javascript %}
