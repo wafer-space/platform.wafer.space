@@ -29,6 +29,20 @@ class ProjectForm(forms.ModelForm):
         help_text="Select the shuttle run for this project",
     )
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Set default shuttle to oldest open shuttle (by created_at)
+        if not self.instance.pk:  # Only for new projects
+            default_shuttle = (
+                Shuttle.objects.filter(
+                    status=Shuttle.Status.OPEN,
+                )
+                .order_by("created_at")
+                .first()
+            )
+            if default_shuttle:
+                self.fields["shuttle"].initial = default_shuttle
+
     project_id = forms.CharField(
         max_length=PROJECT_ID_LENGTH,
         min_length=PROJECT_ID_LENGTH,
