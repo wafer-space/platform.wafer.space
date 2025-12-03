@@ -19,14 +19,14 @@
           <div class="card-body p-2">
             {% if grid %}
               <style>
-                #grid-table { border-collapse: collapse; font-size: 0.8rem; }
-                #grid-table th, #grid-table td { border: 1px solid #333 !important; padding: 2px 4px !important; }
+                #grid-table { border-collapse: collapse; font-size: 0.8rem; width: auto !important; }
+                #grid-table th, #grid-table td { border: 1px solid #333 !important; padding: 2px 6px !important; }
               </style>
               <table class="table table-bordered table-sm mb-0" id="grid-table">
                 <thead>
                   <tr>
-                    <th class="text-center bg-light" style="width: 20px;"></th>
-                    {% for col in columns %}<th class="text-center bg-light" style="width: 40px;">{{ col }}</th>{% endfor %}
+                    <th class="text-center bg-light"></th>
+                    {% for col in columns %}<th class="text-center bg-light">{{ col }}</th>{% endfor %}
                   </tr>
                 </thead>
                 <tbody>
