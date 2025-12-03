@@ -43,7 +43,7 @@
                     <tr>
                       <th class="text-center bg-light">{{ forloop.counter }}</th>
                       {% for slot in row %}
-                        <td class="text-center {% if slot.project %}table-success{% else %}table-secondary{% endif %}"
+                        <td class="text-center {% if slot.project %}{% if slot.project.slot_size != slot.slot_size %}table-warning{% else %}table-success{% endif %}{% else %}table-secondary{% endif %}"
                             style="cursor: pointer;
                                    vertical-align: middle"
                             data-slot-id="{{ slot.pk }}"
@@ -52,7 +52,7 @@
                             data-project-id="{% if slot.project %}{{ slot.project.pk }}{% endif %}"
                             tabindex="0"
                             role="button"
-                            aria-label="Slot {{ slot.grid_position }}{% if slot.project %}, assigned to {{ slot.project.project_id }}{% else %}, empty{% endif %}">
+                            aria-label="Slot {{ slot.grid_position }}{% if slot.project %}, assigned to {{ slot.project.project_id }}{% if slot.project.slot_size != slot.slot_size %} (size mismatch){% endif %}{% else %}, empty{% endif %}">
                           {% if slot.project %}
                             <strong class="font-monospace">{{ slot.project.project_id }}</strong>
                           {% else %}
@@ -152,7 +152,7 @@
                 </td>
                 <td>
                   {% if project.shuttle_slots.exists %}
-                    {% for slot in project.shuttle_slots.all %}<span class="badge bg-success">{{ slot.grid_position }}</span>{% endfor %}
+                    {% for slot in project.shuttle_slots.all %}<span class="badge {% if slot.slot_size != project.slot_size %}bg-warning{% else %}bg-success{% endif %}">{{ slot.grid_position }}</span>{% endfor %}
                   {% else %}
                     <span class="text-muted">-</span>
                   {% endif %}

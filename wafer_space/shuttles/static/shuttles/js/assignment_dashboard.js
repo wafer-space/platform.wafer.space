@@ -100,9 +100,12 @@
     if (projectSlots.length > 0) {
       currentSlotsSection.style.display = 'block';
       slotsList.innerHTML = projectSlots.map(function(slot) {
+        var isMismatch = slot.size !== slotSize;
+        var badgeClass = isMismatch ? 'bg-warning' : 'bg-success';
         return '<div class="d-flex justify-content-between align-items-center mb-2">' +
-          '<span class="badge bg-success">' + slot.position + '</span>' +
-          '<span class="text-muted small">' + getSizeLabel(slot.size) + '</span>' +
+          '<span class="badge ' + badgeClass + '">' + slot.position + '</span>' +
+          '<span class="text-muted small">' + getSizeLabel(slot.size) +
+          (isMismatch ? ' (mismatch)' : '') + '</span>' +
           '<button class="btn btn-sm btn-outline-danger" data-remove-slot-id="' + slot.id + '">' +
           'Remove</button></div>';
       }).join('');
