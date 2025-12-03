@@ -29,7 +29,7 @@ class ProjectFileFactory(DjangoModelFactory[ProjectFile]):
     project = SubFactory(ProjectFactory)
     file = Faker("file_name", extension="gds")
     original_filename = Faker("file_name", extension="gds")
-    size = Faker("random_int", min=1000, max=10000000)
+    file_size = Faker("random_int", min=1000, max=10000000)
 
     class Meta:
         model = ProjectFile
