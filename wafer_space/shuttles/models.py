@@ -174,15 +174,6 @@ class Shuttle(models.Model):
         """Number of available slots."""
         return self.slots.filter(status=ShuttleSlot.Status.AVAILABLE).count()
 
-    def update_status_from_capacity(self):
-        """Update status based on slot capacity."""
-        if self.available_slots == 0 and self.status == self.Status.OPEN:
-            self.status = self.Status.FULL
-            self.save()
-        elif self.available_slots > 0 and self.status == self.Status.FULL:
-            self.status = self.Status.OPEN
-            self.save()
-
     def can_accept_projects(self):
         """Check if shuttle can accept new projects."""
         return (
@@ -211,10 +202,14 @@ class Shuttle(models.Model):
     @property
     def grid_dimensions(self) -> tuple[int, int]:
         """Get grid dimensions as (num_rows, num_columns)."""
-        if not self.slots.exists():
+        aggregates = self.slots.aggregate(
+            max_row=models.Max("row"),
+            max_col=models.Max("column"),
+        )
+        max_row = aggregates["max_row"]
+        max_col = aggregates["max_col"]
+        if max_row is None or max_col is None:
             return (0, 0)
-        max_row = self.slots.aggregate(models.Max("row"))["row__max"]
-        max_col = self.slots.aggregate(models.Max("column"))["column__max"]
         return (max_row + 1, max_col + 1)
 
     def generate_manifest(self) -> dict[str, str | int | list[dict[str, str | None]]]:
