@@ -27,6 +27,7 @@ class ProjectForm(forms.ModelForm):
         ).order_by("name"),
         widget=forms.Select(attrs={"class": "form-control", "id": "id_shuttle"}),
         help_text="Select the shuttle run for this project",
+        empty_label=None,  # Remove "--------" option since we always have a default
     )
 
     def __init__(self, *args, **kwargs):
