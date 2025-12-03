@@ -120,6 +120,7 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
         "is_manufacturable",
         "errors",
         "warnings",
+        "error_message",
         "processing_logs",
         "docker_image",
         "docker_image_digest",
@@ -147,6 +148,7 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
                     "is_manufacturable",
                     "errors",
                     "warnings",
+                    "error_message",
                 ]
             },
         ),

@@ -1227,6 +1227,54 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
         assert check.errors == expected_errors
         assert check.warnings == [{"message": "Warning 1"}]
 
+    def test_detail_view_shows_error_message_to_staff(self):
+        """Test that staff users can see system error messages."""
+        # Create a check with error status and error_message
+        ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+            error_message="Docker container failed to start: OOM killed",
+        )
+
+        # Create staff user and log in
+        User.objects.create_user(
+            username="staffuser",
+            email="staff@example.com",
+            password=TEST_PASSWORD,
+            is_staff=True,
+        )
+        self.client.login(username="staffuser", password=TEST_PASSWORD)
+
+        url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        assert b"System Error (Staff Only)" in response.content
+        assert b"Docker container failed to start: OOM killed" in response.content
+
+    def test_detail_view_hides_error_message_from_non_staff(self):
+        """Test that non-staff users cannot see system error messages."""
+        # Create a check with error status and error_message
+        ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+            error_message="Docker container failed to start: OOM killed",
+        )
+
+        # Log in as the regular project owner (non-staff)
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+
+        url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        # The error message section should not be visible to non-staff
+        assert b"System Error (Staff Only)" not in response.content
+        # The actual error message content should not be visible either
+        assert b"Docker container failed to start: OOM killed" not in response.content
+
 
 @pytest.mark.django_db
 class TestManufacturabilityCheckCancelView(TestCase):
