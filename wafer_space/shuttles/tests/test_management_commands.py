@@ -92,7 +92,7 @@ column_widths: [1.0]
 """)
 
         # Try update without --force
-        with pytest.raises(CommandError, match="assigned projects.*Use --force"):
+        with pytest.raises(CommandError, match=r"assigned projects.*Use --force"):
             call_command(
                 "generate_shuttle_grid",
                 "G851",
