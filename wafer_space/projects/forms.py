@@ -23,7 +23,7 @@ class ProjectForm(forms.ModelForm):
 
     shuttle = forms.ModelChoiceField(
         queryset=Shuttle.objects.filter(
-            status__in=[Shuttle.Status.PLANNING, Shuttle.Status.OPEN],
+            status=Shuttle.Status.OPEN,
         ).order_by("name"),
         widget=forms.Select(attrs={"class": "form-control", "id": "id_shuttle"}),
         help_text="Select the shuttle run for this project",
@@ -32,6 +32,12 @@ class ProjectForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        # Customize shuttle label to show "name - description"
+        self.fields["shuttle"].label_from_instance = (
+            lambda obj: f"{obj.name} - {obj.description}" if obj.description else obj.name
+        )
+
         # Set default shuttle to oldest open shuttle (by created_at)
         # Note: Use _state.adding because UUID pk is auto-generated even for unsaved instances
         if self.instance._state.adding:  # Only for new projects
