@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 from typing import TYPE_CHECKING
+from typing import Any
+from typing import cast
 
 from django.contrib.auth.mixins import UserPassesTestMixin
 from django.db import transaction
@@ -19,6 +21,8 @@ from wafer_space.shuttles.models import ShuttleSlot
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
+
+    from wafer_space.users.models import User
 
 
 class StaffRequiredMixin(UserPassesTestMixin):
@@ -58,7 +62,7 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
     slug_field = "name"
     slug_url_kwarg = "name"
 
-    def get_context_data(self, **kwargs):
+    def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         context = super().get_context_data(**kwargs)
         shuttle = self.object
 
@@ -134,7 +138,7 @@ class GridPreviewView(StaffRequiredMixin, DetailView):
     slug_field = "name"
     slug_url_kwarg = "name"
 
-    def get_context_data(self, **kwargs):
+    def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         context = super().get_context_data(**kwargs)
         shuttle = self.object
 
@@ -161,7 +165,7 @@ class GridPreviewView(StaffRequiredMixin, DetailView):
 class AssignProjectView(StaffRequiredMixin, View):
     """Assign a project to a slot."""
 
-    def post(self, request, name):
+    def post(self, request: HttpRequest, name: str) -> JsonResponse:
         try:
             # Look up shuttle by name
             shuttle = Shuttle.objects.get(name=name)
@@ -185,7 +189,8 @@ class AssignProjectView(StaffRequiredMixin, View):
 
                 # Attempt reservation
                 try:
-                    warning = slot.reserve(project, request.user)
+                    # Cast is safe - StaffRequiredMixin ensures authenticated user
+                    warning = slot.reserve(project, cast("User", request.user))
                     response_data: dict[str, bool | str] = {"success": True}
                     if warning:
                         response_data["warning"] = warning
@@ -210,7 +215,7 @@ class AssignProjectView(StaffRequiredMixin, View):
 class RemoveAssignmentView(StaffRequiredMixin, View):
     """Remove a project from a slot."""
 
-    def post(self, _request, name, slot_id):
+    def post(self, _request: HttpRequest, name: str, slot_id: int) -> JsonResponse:
         try:
             # Look up shuttle by name
             shuttle = Shuttle.objects.get(name=name)
