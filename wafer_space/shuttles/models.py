@@ -67,7 +67,9 @@ class Shuttle(models.Model):
         validators=[validate_shuttle_id],
         help_text="Shuttle ID (format: G8XX where XX are two digits, e.g., G801)",
     )
-    description = models.TextField(blank=True)
+    description = models.TextField(
+        help_text="Human-readable description (e.g., 'GF180MCU Shuttle Run 1')",
+    )
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
@@ -145,7 +147,7 @@ class Shuttle(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.name} ({self.get_status_display()})"
+        return f"{self.name} - {self.description}"
 
     def save(self, *args, **kwargs):
         """Save with validation - ensures shuttle ID format is always enforced."""
