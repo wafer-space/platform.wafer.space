@@ -42,7 +42,7 @@
                             data-project-id="{% if slot.project %}{{ slot.project.pk }}{% endif %}"
                             onclick="showSlotModal(this)">
                           {% if slot.project %}
-                            <strong>{{ slot.project.project_id }}</strong>
+                            <strong class="font-monospace">{{ slot.project.project_id }}</strong>
                           {% else %}
                             <span class="text-muted">{{ slot.grid_position }}</span>
                           {% endif %}
@@ -122,7 +122,7 @@
             {% for project in projects %}
               <tr data-size="{{ project.slot_size }}"
                   data-assigned="{% if project.shuttle_slots.exists %}true{% else %}false{% endif %}">
-                <td>{{ project.full_id|default:project.project_id }}</td>
+                <td class="font-monospace">{{ project.full_id|default:project.project_id }}</td>
                 <td>{{ project.name }}</td>
                 <td>
                   <span class="badge bg-secondary">{{ project.get_slot_size_display }}</span>
