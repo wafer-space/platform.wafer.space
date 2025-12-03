@@ -167,11 +167,6 @@ class Shuttle(models.Model):
         self.full_clean()
         super().save(*args, **kwargs)
 
-    def save(self, *args, **kwargs):
-        """Save with validation - ensures shuttle ID format is always enforced."""
-        self.full_clean()
-        super().save(*args, **kwargs)
-
     def update_slot_counts(self):
         """Update reserved and available slot counts."""
         self.reserved_slots = self.slots.filter(
