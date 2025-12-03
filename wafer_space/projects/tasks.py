@@ -554,6 +554,7 @@ def _start_container(context: _CheckContext) -> tuple[str, str]:
         )
         raise ValueError(msg)
 
+    full_id = context.project.full_id
     top_cell = context.project_file.top_cell
     context.logger.info("  Top cell: %s", top_cell)
 
@@ -569,13 +570,13 @@ def _start_container(context: _CheckContext) -> tuple[str, str]:
         "--slot",
         slot_size,
         "--id",
-        context.project.full_id,
+        full_id,
     ]
 
     # Log equivalent docker run command for easy reproduction
     precheck_cmd = (
         f"python3 precheck.py --input /input/design.gds "
-        f'--top "{top_cell}" --slot {slot_size} --id {context.project.full_id}'
+        f'--top "{top_cell}" --slot {slot_size} --id {full_id}'
     )
     docker_command = (
         f"docker run --rm --network=none "
