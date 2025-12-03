@@ -169,7 +169,9 @@
             <tr>
               <td class="font-monospace">{{ project.full_id|default:"-" }}</td>
               <td>{{ project.slot_size }}</td>
-              <td>{{ project.name }}</td>
+              <td>
+                <a href="{% url 'projects:detail' pk=project.pk %}">{{ project.name }}</a>
+              </td>
               <td>{{ project.user.username }}</td>
               <td>{{ project.user.email }}</td>
               {% with active_file=project.active_files.0 %}
