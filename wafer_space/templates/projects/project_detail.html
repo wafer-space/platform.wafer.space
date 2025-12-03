@@ -233,7 +233,14 @@
                   <li class="list-group-item">
                     <strong>{{ slot.grid_position }}</strong> ({{ slot.get_slot_size_display }})
                     <span class="text-muted ms-2">
-                      — Assigned by {{ slot.reserved_by.username }} on {{ slot.reserved_at|date:"Y-m-d H:i" }}
+                      {% if slot.reserved_by %}
+                        — Assigned by {{ slot.reserved_by.username }}
+                      {% else %}
+                        — Assigned
+                      {% endif %}
+                      {% if slot.reserved_at %}
+                        on {{ slot.reserved_at|date:"Y-m-d H:i" }}
+                      {% endif %}
                     </span>
                   </li>
                 {% endfor %}
