@@ -500,7 +500,7 @@ class ManufacturabilityCheckCancelView(LoginRequiredMixin, UserPassesTestMixin, 
             if project.user == request.user:
                 reason = "Cancelled by owner"
             else:
-                reason = f"Cancelled by admin ({request.user.email})"
+                reason = f"Cancelled by admin ({request.user.username})"
             check.mark_cancelling(reason=reason)
             messages.success(request, "Cancellation requested. Cleanup in progress...")
         except InvalidStateTransitionError:

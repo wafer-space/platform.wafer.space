@@ -1333,7 +1333,7 @@ class TestManufacturabilityCheckCancelView(TestCase):
         assert "/accounts/login/" in response["Location"]
 
     def test_cancel_check_requires_ownership(self):
-        """Test that only project owner can cancel check."""
+        """Test that non-owner, non-staff users cannot cancel check."""
         ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
@@ -1385,7 +1385,7 @@ class TestManufacturabilityCheckCancelView(TestCase):
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.CANCELLING
         # Verify admin cancellation is logged
-        assert f"Cancelled by admin ({staff_user.email})" in check.processing_logs
+        assert f"Cancelled by admin ({staff_user.username})" in check.processing_logs
 
     def test_superuser_can_cancel_any_check(self):
         """Test that superusers can cancel any project's check."""
@@ -1408,7 +1408,7 @@ class TestManufacturabilityCheckCancelView(TestCase):
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.CANCELLING
         # Verify admin cancellation is logged
-        assert f"Cancelled by admin ({superuser.email})" in check.processing_logs
+        assert f"Cancelled by admin ({superuser.username})" in check.processing_logs
 
     def test_owner_cancel_logs_correct_reason(self):
         """Test that owner cancellation logs 'Cancelled by owner'."""
