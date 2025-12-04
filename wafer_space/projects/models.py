@@ -1272,18 +1272,34 @@ class ManufacturabilityCheck(models.Model):
 
     # State machine: defines valid transitions
     # PENDING: waiting for capacity to dispatch to Celery
-    # DISPATCHED: job sent to Celery, waiting for worker
+    # DISPATCHING: image being pulled
+    # STARTING: container being created
+    # DISPATCHED: job sent to Celery (legacy, being phased out)
     # RUNNING: Celery worker executing analysis
+    # ANALYZING: logs being analyzed
     # FINISHED: analysis complete (terminal)
     # ERROR: system failure, can retry
     # CANCELLED: user cancelled (terminal)
     ALLOWED_TRANSITIONS: ClassVar[dict[Status, set[Status]]] = {
-        Status.PENDING: {Status.DISPATCHED, Status.ERROR, Status.CANCELLING},
+        Status.PENDING: {
+            Status.DISPATCHING,
+            Status.DISPATCHED,
+            Status.ERROR,
+            Status.CANCELLING,
+        },
+        Status.DISPATCHING: {Status.STARTING, Status.ERROR, Status.CANCELLING},
+        Status.STARTING: {Status.RUNNING, Status.ERROR, Status.CANCELLING},
         Status.DISPATCHED: {Status.RUNNING, Status.ERROR, Status.CANCELLING},
-        Status.RUNNING: {Status.FINISHED, Status.ERROR, Status.CANCELLING},
+        Status.RUNNING: {
+            Status.ANALYZING,
+            Status.FINISHED,
+            Status.ERROR,
+            Status.CANCELLING,
+        },
+        Status.ANALYZING: {Status.FINISHED, Status.ERROR, Status.CANCELLING},
         Status.FINISHED: set(),  # Terminal - no transitions
         Status.ERROR: {Status.PENDING},  # Can retry
-        Status.CANCELLING: {Status.CANCELLED},  # Only cleanup task can complete
+        Status.CANCELLING: {Status.CANCELLED},
         Status.CANCELLED: set(),  # Terminal - no transitions
     }
 
