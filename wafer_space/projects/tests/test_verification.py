@@ -551,10 +551,13 @@ class CheckTaskActivelyRunningTests(TestCase):
 
         assert result is True
 
+    @patch("wafer_space.projects.verification.docker.from_env")
     @patch("wafer_space.projects.verification.psutil")
     @patch("wafer_space.projects.verification.socket")
     @patch("wafer_space.projects.verification.current_app")
-    def test_check_task_active_but_pid_dead(self, mock_app, mock_socket, mock_psutil):
+    def test_check_task_active_but_pid_dead(
+        self, mock_app, mock_socket, mock_psutil, mock_from_env
+    ):
         """Test check task in active but PID doesn't exist returns False."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
@@ -564,6 +567,11 @@ class CheckTaskActivelyRunningTests(TestCase):
             celery_worker_pid=99999,
             celery_worker_hostname="worker-01",
         )
+
+        # Mock Docker - no containers (to test PID fallback)
+        mock_client = Mock()
+        mock_client.containers.list.return_value = []
+        mock_from_env.return_value = mock_client
 
         # Mock Celery inspect (task shows as active)
         mock_inspect = Mock()
@@ -582,8 +590,9 @@ class CheckTaskActivelyRunningTests(TestCase):
 
         assert result is False
 
+    @patch("wafer_space.projects.verification.docker.from_env")
     @patch("wafer_space.projects.verification.current_app")
-    def test_check_task_not_in_active(self, mock_app):
+    def test_check_task_not_in_active(self, mock_app, mock_from_env):
         """Test check task not in active list returns False."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
@@ -591,6 +600,11 @@ class CheckTaskActivelyRunningTests(TestCase):
             status=ManufacturabilityCheck.Status.RUNNING,
             celery_job_id="check-task-789",
         )
+
+        # Mock Docker - no containers (to test Celery fallback)
+        mock_client = Mock()
+        mock_client.containers.list.return_value = []
+        mock_from_env.return_value = mock_client
 
         # Mock Celery inspect (empty)
         mock_inspect = Mock()
@@ -730,9 +744,7 @@ class CheckContainerRunningTests(TestCase):
         )
 
         # Mock Docker connection failure
-        mock_from_env.side_effect = docker.errors.DockerException(
-            "Cannot connect"
-        )
+        mock_from_env.side_effect = docker.errors.DockerException("Cannot connect")
 
         result = is_check_container_running(check)
 
@@ -866,9 +878,7 @@ class CheckTaskActivelyRunningEnhancedTests(TestCase):
         )
 
         # Mock Docker connection failure
-        mock_from_env.side_effect = docker.errors.DockerException(
-            "Cannot connect"
-        )
+        mock_from_env.side_effect = docker.errors.DockerException("Cannot connect")
 
         # Mock socket (same hostname)
         mock_socket.gethostname.return_value = "worker-01"
@@ -902,9 +912,7 @@ class CheckTaskActivelyRunningEnhancedTests(TestCase):
         )
 
         # Mock Docker connection failure
-        mock_from_env.side_effect = docker.errors.DockerException(
-            "Cannot connect"
-        )
+        mock_from_env.side_effect = docker.errors.DockerException("Cannot connect")
 
         # Mock socket (same hostname)
         mock_socket.gethostname.return_value = "worker-01"
@@ -930,9 +938,7 @@ class CheckTaskActivelyRunningEnhancedTests(TestCase):
         )
 
         # Mock Docker connection failure
-        mock_from_env.side_effect = docker.errors.DockerException(
-            "Cannot connect"
-        )
+        mock_from_env.side_effect = docker.errors.DockerException("Cannot connect")
 
         # Mock Celery inspect - task in active list
         mock_inspect = Mock()
@@ -961,9 +967,7 @@ class CheckTaskActivelyRunningEnhancedTests(TestCase):
         )
 
         # Mock Docker connection failure
-        mock_from_env.side_effect = docker.errors.DockerException(
-            "Cannot connect"
-        )
+        mock_from_env.side_effect = docker.errors.DockerException("Cannot connect")
 
         # Mock Celery inspect - task NOT in active list
         mock_inspect = Mock()
@@ -988,9 +992,7 @@ class CheckTaskActivelyRunningEnhancedTests(TestCase):
         )
 
         # Mock Docker connection failure
-        mock_from_env.side_effect = docker.errors.DockerException(
-            "Cannot connect"
-        )
+        mock_from_env.side_effect = docker.errors.DockerException("Cannot connect")
 
         # Mock Celery inspect - returns None (unsupported broker)
         mock_inspect = Mock()
