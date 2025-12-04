@@ -80,11 +80,22 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
             assigned_projects = projects.filter(shuttle_slots__isnull=False).distinct()
             assigned_count = assigned_projects.count()
 
+            # Count manufacturable projects (is_manufacturable=True)
+            manufacturable_projects = projects.filter(is_manufacturable=True)
+            manufacturable_total = manufacturable_projects.count()
+            manufacturable_assigned = (
+                manufacturable_projects.filter(shuttle_slots__isnull=False)
+                .distinct()
+                .count()
+            )
+
             stats[slot_size] = {
                 "total_slots": total_slots,
                 "available_slots": available_slots,
                 "projects_count": projects_count,
                 "assigned_count": assigned_count,
+                "manufacturable_total": manufacturable_total,
+                "manufacturable_assigned": manufacturable_assigned,
             }
 
         context["stats"] = stats

@@ -296,3 +296,26 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
 
         # Check that the owner username is shown in the table
         assert staff_user.username in projects_table.text
+
+    def test_summary_shows_manufacturable_column(
+        self, driver, wait, staff_user, shuttle, project_with_compliance
+    ):
+        """Test that summary table shows manufacturable column."""
+        # Mark project as manufacturable
+        project_with_compliance.is_manufacturable = True
+        project_with_compliance.save()
+
+        self.perform_login(driver, staff_user.username, TEST_PASSWORD)
+
+        driver.get(f"{self.live_server_url}/shuttles/{shuttle.name}/assign/")
+
+        # Wait for page to load
+        wait.until(
+            expected_conditions.presence_of_element_located(
+                (By.XPATH, "//strong[text()='Summary']")
+            )
+        )
+
+        # Check for Mfg column header in summary table
+        page_source = driver.page_source
+        assert ">Mfg<" in page_source or "Mfg</th>" in page_source

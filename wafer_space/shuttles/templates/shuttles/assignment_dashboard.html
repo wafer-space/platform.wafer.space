@@ -84,6 +84,7 @@
                 <tr>
                   <th class="py-1">Size</th>
                   <th class="py-1 text-end">Proj</th>
+                  <th class="py-1 text-end">Mfg</th>
                   <th class="py-1 text-end">Slots</th>
                 </tr>
               </thead>
@@ -93,6 +94,7 @@
                     <tr>
                       <td class="py-1">{{ slot_size.label }}</td>
                       <td class="py-1 text-end">{{ stat.assigned_count }}/{{ stat.projects_count }}</td>
+                      <td class="py-1 text-end">{{ stat.manufacturable_assigned }}/{{ stat.manufacturable_total }}</td>
                       <td class="py-1 text-end">{{ stat.available_slots }}/{{ stat.total_slots }}</td>
                     </tr>
                   {% endif %}
