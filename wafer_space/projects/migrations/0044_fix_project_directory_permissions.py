@@ -71,13 +71,26 @@ def fix_project_directory_permissions(apps, _schema_editor):
             if current_perms != target_perms:
                 # Change permissions to 775
                 os.chmod(project_path, target_perms)
-                logger.info(
-                    "Fixed permissions for %s: %03o -> %03o",
-                    project_path,
-                    current_perms,
-                    target_perms,
-                )
-                fixed_count += 1
+
+                # Verify the change was applied (catches ACLs, read-only mounts, etc.)
+                new_perms = project_path.stat().st_mode & 0o777
+                if new_perms == target_perms:
+                    logger.info(
+                        "Fixed permissions for %s: %03o -> %03o",
+                        project_path,
+                        current_perms,
+                        target_perms,
+                    )
+                    fixed_count += 1
+                else:
+                    logger.warning(
+                        "chmod succeeded but permissions not applied for %s: "
+                        "expected %03o, got %03o",
+                        project_path,
+                        target_perms,
+                        new_perms,
+                    )
+                    error_count += 1
             else:
                 # Already correct
                 already_correct_count += 1
