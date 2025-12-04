@@ -985,10 +985,9 @@ def check_process_job(self, check_id):
         }
 
     finally:
-        # Container cleanup is handled by periodic orphaned container cleanup
-        # This ensures cleanup happens even when finally doesn't run
-        # (e.g., worker killed by OOM, SIGKILL) and prevents cleanup failures
-        # from affecting long-running tasks
+        # Cleanup is now handled by a separate periodic task, so container
+        # removal no longer depends on this finally block running (e.g., in
+        # OOM/SIGKILL cases) and cannot block long-running tasks.
         pass
 
 
