@@ -1,0 +1,37 @@
+/* Grid table styling */
+#grid-table {
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  width: auto !important;
+}
+
+#grid-table th,
+#grid-table td {
+  border: 1px solid #333 !important;
+  padding: 2px 6px !important;
+}
+
+/* Manufacturing status indicators for grid cells */
+.slot-cell {
+  position: relative;
+}
+
+.mfg-indicator {
+  position: absolute;
+  top: 1px;
+  right: 2px;
+  font-size: 0.65em;
+  line-height: 1;
+}
+
+.mfg-pass {
+  color: #198754; /* Bootstrap success green */
+}
+
+.mfg-fail {
+  color: #dc3545; /* Bootstrap danger red */
+}
+
+.mfg-pending {
+  color: #ffc107; /* Bootstrap warning yellow */
+}

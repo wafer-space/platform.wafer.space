@@ -319,3 +319,30 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
         # Check for Mfg column header in summary table
         page_source = driver.page_source
         assert ">Mfg<" in page_source or "Mfg</th>" in page_source
+
+    def test_grid_shows_manufacturing_indicators(
+        self, driver, wait, staff_user, shuttle, project_with_compliance
+    ):
+        """Test that grid cells show manufacturing status indicators."""
+        # Mark project as manufacturable and assign to slot
+        project_with_compliance.is_manufacturable = True
+        project_with_compliance.save()
+        slot = shuttle.slots.first()
+        slot.reserve(project_with_compliance, staff_user)
+
+        self.perform_login(driver, staff_user.username, TEST_PASSWORD)
+
+        driver.get(f"{self.live_server_url}/shuttles/{shuttle.name}/assign/")
+
+        # Wait for grid to load
+        grid_table = wait.until(
+            expected_conditions.presence_of_element_located((By.ID, "grid-table"))
+        )
+
+        # Find the assigned slot and check for manufacturing indicator
+        assigned_slot = grid_table.find_element(
+            By.CSS_SELECTOR, "td.table-success[data-slot-id]"
+        )
+        indicator = assigned_slot.find_element(By.CSS_SELECTOR, ".mfg-indicator")
+        assert indicator is not None
+        assert "✓" in indicator.text or "mfg-pass" in indicator.get_attribute("class")
