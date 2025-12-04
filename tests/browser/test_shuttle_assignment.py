@@ -442,3 +442,32 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
         autocomplete_input = modal.find_element(By.ID, "project-search")
         assert autocomplete_input.get_attribute("type") == "text"
         assert autocomplete_input.get_attribute("autocomplete") == "off"
+
+    def test_assign_modal_shows_grid_picker(
+        self, driver, wait, staff_user, shuttle, project_with_compliance
+    ):
+        """Test that assign modal shows grid instead of dropdown."""
+        self.perform_login(driver, staff_user.username, TEST_PASSWORD)
+
+        driver.get(f"{self.live_server_url}/shuttles/{shuttle.name}/assign/")
+
+        # Wait for projects table and click assign button
+        wait.until(
+            expected_conditions.presence_of_element_located((By.ID, "projects-table"))
+        )
+
+        assign_btn = driver.find_element(By.CSS_SELECTOR, "[data-assign-project]")
+        assign_btn.click()
+
+        # Wait for assign modal
+        modal = wait.until(
+            expected_conditions.visibility_of_element_located((By.ID, "assignModal"))
+        )
+
+        # Check for grid in modal (not a select dropdown)
+        grid_in_modal = modal.find_element(By.ID, "assign-modal-grid")
+        assert grid_in_modal is not None
+
+        # Grid should have slot cells
+        slot_cells = grid_in_modal.find_elements(By.CSS_SELECTOR, "td[data-slot-id]")
+        assert len(slot_cells) > 0

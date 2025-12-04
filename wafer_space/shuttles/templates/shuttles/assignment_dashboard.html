@@ -18,7 +18,7 @@
             <small class="text-muted ms-2">Click a slot to assign</small>
           </div>
           <div class="card-body p-2">
-            {% include "shuttles/_grid.html" with grid=grid columns=columns click_handler="showSlotModal" %}
+            {% include "shuttles/_grid.html" with grid=grid columns=columns click_handler="showSlotModal" grid_id="grid-table" %}
           </div>
         </div>
       </div>
@@ -198,23 +198,13 @@
             <div id="assign-modal-slots-list"></div>
           </div>
           <hr />
-          <label for="assign-modal-slot-select" class="form-label">Add New Assignment:</label>
-          <select class="form-select mb-3" id="assign-modal-slot-select">
-            <option value="">-- Select a slot --</option>
-            {% for row in grid %}
-              {% for slot in row %}
-                {% if not slot.project %}
-                  <option value="{{ slot.pk }}" data-size="{{ slot.slot_size }}">
-                    {{ slot.grid_position }} ({{ slot.get_slot_size_display }})
-                  </option>
-                {% endif %}
-              {% endfor %}
-            {% endfor %}
-          </select>
+          <label class="form-label">Select Slot:</label>
+          <div id="assign-modal-grid">
+            {% include "shuttles/_grid.html" with grid=grid columns=columns click_handler="selectSlotAndSubmit" grid_id="assign-modal-grid-table" %}
+          </div>
           <div id="assign-size-mismatch-warning"
                class="alert alert-warning"
                style="display: none">Size mismatch: Slot size does not match project size.</div>
-          <button class="btn btn-primary" id="assign-from-table-btn">Assign</button>
         </div>
       </div>
     </div>

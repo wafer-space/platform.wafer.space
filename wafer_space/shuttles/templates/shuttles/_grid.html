@@ -3,9 +3,10 @@
 {#   grid - 2D list of ShuttleSlot objects #}
 {#   columns - list of column letters ['A', 'B', ...] #}
 {#   click_handler - JavaScript function name to call on click #}
+{#   grid_id - HTML id for the table (default: "grid-table") #}
 
 {% if grid %}
-  <table class="table table-bordered table-sm mb-0" id="grid-table">
+  <table class="table table-bordered table-sm mb-0 grid-table" id="{{ grid_id|default:'grid-table' }}">
     <thead>
       <tr>
         <th class="text-center bg-light"></th>

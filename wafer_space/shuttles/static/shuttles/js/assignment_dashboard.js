@@ -307,6 +307,27 @@
     });
   }
 
+  // Select slot and submit assignment (used by grid picker in assign modal)
+  function selectSlotAndSubmit(cell) {
+    const slotId = cell.dataset.slotId;
+    const slotSize = cell.dataset.slotSize;
+
+    // Check if slot is already occupied
+    if (cell.dataset.projectId) {
+      alert('This slot is already assigned. Please choose an empty slot.');
+      return;
+    }
+
+    // Show size mismatch warning if applicable
+    if (slotSize !== currentProjectSize) {
+      if (!confirm('Size mismatch: Slot size does not match project size. Continue anyway?')) {
+        return;
+      }
+    }
+
+    doAssignment(currentProjectIdForAssign, slotId);
+  }
+
   // Show modal when clicking on a grid slot
   function showSlotModal(cell) {
     currentSlotId = cell.dataset.slotId;
@@ -350,8 +371,6 @@
 
     document.getElementById('assign-modal-project-name').textContent = projectName;
     document.getElementById('assign-modal-project-size').textContent = getSizeLabel(slotSize);
-    document.getElementById('assign-modal-slot-select').value = '';
-    document.getElementById('assign-size-mismatch-warning').style.display = 'none';
 
     // Show current slot assignments
     const currentSlotsSection = document.getElementById('assign-modal-current-slots');
@@ -380,6 +399,27 @@
     } else {
       currentSlotsSection.style.display = 'none';
       slotsList.innerHTML = '';
+    }
+
+    // Reinitialize grid click handlers for the modal grid
+    const modalGrid = document.getElementById('assign-modal-grid');
+    if (modalGrid) {
+      modalGrid.querySelectorAll('td[data-slot-id]').forEach(function(cell) {
+        // Remove old listeners by cloning
+        var newCell = cell.cloneNode(true);
+        cell.parentNode.replaceChild(newCell, cell);
+
+        // Add new listener
+        newCell.addEventListener('click', function() {
+          selectSlotAndSubmit(this);
+        });
+        newCell.addEventListener('keydown', function(event) {
+          if (event.key === 'Enter' || event.key === ' ') {
+            selectSlotAndSubmit(this);
+            event.preventDefault();
+          }
+        });
+      });
     }
 
     const modal = new bootstrap.Modal(document.getElementById('assignModal'));
@@ -432,19 +472,6 @@
     }
 
     doAssignment(projectId, currentSlotId);
-  }
-
-  // Assign project to slot (from table click)
-  function assignFromTable() {
-    const slotSelect = document.getElementById('assign-modal-slot-select');
-    const slotId = slotSelect.value;
-
-    if (!slotId) {
-      alert('Please select a slot');
-      return;
-    }
-
-    doAssignment(currentProjectIdForAssign, slotId);
   }
 
   // Remove assignment from slot
@@ -568,32 +595,10 @@
       }
     });
 
-    // Size mismatch warning in assign modal
-    const assignSlotSelect = document.getElementById('assign-modal-slot-select');
-    if (assignSlotSelect) {
-      assignSlotSelect.addEventListener('change', function() {
-        const selectedOption = this.options[this.selectedIndex];
-        const slotSize = selectedOption.dataset.size;
-        const warning = document.getElementById('assign-size-mismatch-warning');
-
-        if (slotSize && slotSize !== currentProjectSize) {
-          warning.style.display = 'block';
-        } else {
-          warning.style.display = 'none';
-        }
-      });
-    }
-
     // Assign button in slot modal
     const assignProjectBtn = document.getElementById('assign-project-btn');
     if (assignProjectBtn) {
       assignProjectBtn.addEventListener('click', assignProject);
-    }
-
-    // Assign button in project modal
-    const assignFromTableBtn = document.getElementById('assign-from-table-btn');
-    if (assignFromTableBtn) {
-      assignFromTableBtn.addEventListener('click', assignFromTable);
     }
 
     // Remove assignment button in slot modal
@@ -612,4 +617,5 @@
 
   // Expose functions for grid click handlers
   window.showSlotModal = showSlotModal;
+  window.selectSlotAndSubmit = selectSlotAndSubmit;
 })();

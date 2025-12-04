@@ -1,12 +1,12 @@
 /* Grid table styling */
-#grid-table {
+.grid-table {
   border-collapse: collapse;
   font-size: 0.8rem;
   width: auto !important;
 }
 
-#grid-table th,
-#grid-table td {
+.grid-table th,
+.grid-table td {
   border: 1px solid #333 !important;
   padding: 2px 6px !important;
 }
