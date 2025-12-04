@@ -2348,3 +2348,19 @@ class TestProjectLicenseFields:
         assert project.proprietary_terms_url == ""
         assert project.proprietary_terms_cached == ""
         assert project.proprietary_terms_cached_at is None
+
+
+class TestManufacturabilityCheckStatusValues:
+    """Test new status values exist."""
+
+    def test_dispatching_status_exists(self) -> None:
+        """DISPATCHING status should exist for image pulling phase."""
+        assert ManufacturabilityCheck.Status.DISPATCHING == "dispatching"
+
+    def test_starting_status_exists(self) -> None:
+        """STARTING status should exist for container creation phase."""
+        assert ManufacturabilityCheck.Status.STARTING == "starting"
+
+    def test_analyzing_status_exists(self) -> None:
+        """ANALYZING status should exist for post-container log analysis."""
+        assert ManufacturabilityCheck.Status.ANALYZING == "analyzing"
