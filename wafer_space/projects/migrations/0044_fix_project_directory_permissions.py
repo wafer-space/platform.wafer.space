@@ -42,7 +42,8 @@ def fix_project_directory_permissions(apps, _schema_editor):
     logger.info("Checking permissions for %d project directories", count)
 
     fixed_count = 0
-    skipped_count = 0
+    already_correct_count = 0
+    missing_count = 0
     error_count = 0
 
     for project_id in project_ids:
@@ -50,7 +51,7 @@ def fix_project_directory_permissions(apps, _schema_editor):
 
         # Skip if directory doesn't exist
         if not project_path.exists():
-            skipped_count += 1
+            missing_count += 1
             continue
 
         # Skip if not a directory
@@ -79,7 +80,7 @@ def fix_project_directory_permissions(apps, _schema_editor):
                 fixed_count += 1
             else:
                 # Already correct
-                skipped_count += 1
+                already_correct_count += 1
 
         except OSError:
             logger.exception(
@@ -89,9 +90,10 @@ def fix_project_directory_permissions(apps, _schema_editor):
             error_count += 1
 
     logger.info(
-        "Permission fix complete: %d fixed, %d already correct, %d errors",
+        "Permission fix complete: %d fixed, %d already correct, %d missing, %d errors",
         fixed_count,
-        skipped_count,
+        already_correct_count,
+        missing_count,
         error_count,
     )
 
