@@ -978,11 +978,11 @@ def check_process_job(self, check_id):
         }
 
     finally:
-        # Always cleanup container, even if exceptions occur
-        # This prevents Docker resource leaks on failures or timeouts
-        if context is not None and context.container is not None:
-            logger.info("Cleaning up container in finally block...")
-            _cleanup_container(context.container, logger)
+        # Container cleanup is handled by periodic orphaned container cleanup
+        # This ensures cleanup happens even when finally doesn't run
+        # (e.g., worker killed by OOM, SIGKILL) and prevents cleanup failures
+        # from affecting long-running tasks
+        pass
 
 
 @shared_task(queue="maintenance")
