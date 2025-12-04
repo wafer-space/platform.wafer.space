@@ -325,17 +325,21 @@
       });
     });
 
-    // Grid slot cells - click and keyboard
+    // Grid slot cells - click and keyboard (using configurable handler)
     document.querySelectorAll('#grid-table td[data-slot-id]').forEach(function(cell) {
-      cell.addEventListener('click', function() {
-        showSlotModal(this);
-      });
-      cell.addEventListener('keydown', function(event) {
-        if (event.key === 'Enter' || event.key === ' ') {
-          showSlotModal(this);
-          event.preventDefault();
-        }
-      });
+      var handlerName = cell.dataset.clickHandler;
+      var handler = window[handlerName];
+      if (handler) {
+        cell.addEventListener('click', function() {
+          handler(this);
+        });
+        cell.addEventListener('keydown', function(event) {
+          if (event.key === 'Enter' || event.key === ' ') {
+            handler(this);
+            event.preventDefault();
+          }
+        });
+      }
     });
 
     // Assign buttons in project table
@@ -406,4 +410,7 @@
   } else {
     init();
   }
+
+  // Expose functions for grid click handlers
+  window.showSlotModal = showSlotModal;
 })();

@@ -397,3 +397,22 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
             By.CSS_SELECTOR, "#projects-table tbody tr:first-child"
         )
         assert "Alpha" in first_row.text
+
+    def test_grid_uses_template_partial(self, driver, wait, staff_user, shuttle):
+        """Test that grid renders correctly (implies template partial works)."""
+        self.perform_login(driver, staff_user.username, TEST_PASSWORD)
+
+        driver.get(f"{self.live_server_url}/shuttles/{shuttle.name}/assign/")
+
+        # Wait for grid to load
+        grid_table = wait.until(
+            expected_conditions.presence_of_element_located((By.ID, "grid-table"))
+        )
+
+        # Verify grid has click handler attribute on cells
+        slot_cells = grid_table.find_elements(By.CSS_SELECTOR, "td[data-slot-id]")
+        assert len(slot_cells) > 0
+
+        # All cells should have data-click-handler attribute
+        for cell in slot_cells:
+            assert cell.get_attribute("data-click-handler") is not None

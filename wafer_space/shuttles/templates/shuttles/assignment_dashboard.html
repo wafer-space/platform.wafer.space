@@ -18,48 +18,7 @@
             <small class="text-muted ms-2">Click a slot to assign</small>
           </div>
           <div class="card-body p-2">
-            {% if grid %}
-              <table class="table table-bordered table-sm mb-0" id="grid-table">
-                <thead>
-                  <tr>
-                    <th class="text-center bg-light"></th>
-                    {% for col in columns %}<th class="text-center bg-light">{{ col }}</th>{% endfor %}
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for row in grid %}
-                    <tr>
-                      <th class="text-center bg-light">{{ forloop.counter }}</th>
-                      {% for slot in row %}
-                        <td class="text-center slot-cell {% if slot.project %}{% if slot.project.slot_size != slot.slot_size %}table-warning{% else %}table-success{% endif %}{% else %}table-secondary{% endif %}"
-                            style="cursor: pointer;
-                                   vertical-align: middle"
-                            data-slot-id="{{ slot.pk }}"
-                            data-slot-position="{{ slot.grid_position }}"
-                            data-slot-size="{{ slot.slot_size }}"
-                            data-project-id="{% if slot.project %}{{ slot.project.pk }}{% endif %}"
-                            tabindex="0"
-                            role="button"
-                            aria-label="Slot {{ slot.grid_position }}{% if slot.project %}, assigned to {{ slot.project.project_id }}{% if slot.project.slot_size != slot.slot_size %} (size mismatch){% endif %}{% else %}, empty{% endif %}">
-                          {% if slot.project %}
-                            <strong class="font-monospace">{{ slot.project.project_id }}</strong>
-                            <span class="mfg-indicator {% if slot.project.is_manufacturable %}mfg-pass{% elif slot.project.is_manufacturable is None %}mfg-pending{% else %}mfg-fail{% endif %}">
-                              {% if slot.project.is_manufacturable %}✓{% elif slot.project.is_manufacturable is None %}⏳{% else %}✗{% endif %}
-                            </span>
-                          {% else %}
-                            <span class="text-muted">{{ slot.grid_position }}</span>
-                          {% endif %}
-                        </td>
-                      {% endfor %}
-                    </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            {% else %}
-              <div class="alert alert-info mb-0">
-                No grid configured. Run <code>python manage.py generate_shuttle_grid {{ shuttle.name }}</code>
-              </div>
-            {% endif %}
+            {% include "shuttles/_grid.html" with grid=grid columns=columns click_handler="showSlotModal" %}
           </div>
         </div>
       </div>
