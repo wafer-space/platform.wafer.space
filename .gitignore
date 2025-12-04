@@ -308,4 +308,4 @@ client_secret_*.json
 secrets/
 
 # Git worktrees (isolated workspaces)
-.worktrees/
+.worktrees
