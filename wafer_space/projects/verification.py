@@ -395,7 +395,7 @@ def _check_celery_status(check: ManufacturabilityCheck, task_id: str) -> bool:
 
 
 def is_check_task_actively_running(check: ManufacturabilityCheck) -> bool:
-    """Verify manufacturability check task is executing AND process exists.
+    """Best-effort verification that a manufacturability check task is still active.
 
     Detection order (most reliable first):
     1. Docker container exists - most reliable (container created before RUNNING)
@@ -406,7 +406,8 @@ def is_check_task_actively_running(check: ManufacturabilityCheck) -> bool:
         check: ManufacturabilityCheck to verify
 
     Returns:
-        True if task is running, False if definitely orphaned
+        True if task appears to be running or cannot be verified,
+        False if definitely orphaned
     """
     task_id = check.celery_job_id
     if not task_id:
