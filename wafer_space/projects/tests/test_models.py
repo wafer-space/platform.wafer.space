@@ -2402,3 +2402,82 @@ class TestManufacturabilityCheckStatusClassification:
         assert ManufacturabilityCheck.Status.PENDING not in terminal
         assert ManufacturabilityCheck.Status.RUNNING not in terminal
         assert ManufacturabilityCheck.Status.ERROR not in terminal
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckNewTransitions(TestCase):
+    """Test new state transitions are allowed."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_pending_can_transition_to_dispatching(self):
+        """PENDING -> DISPATCHING is allowed."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.DISPATCHING)
+
+    def test_dispatching_can_transition_to_starting(self):
+        """DISPATCHING -> STARTING is allowed."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.STARTING)
+
+    def test_starting_can_transition_to_running(self):
+        """STARTING -> RUNNING is allowed."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.STARTING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.RUNNING)
+
+    def test_running_can_transition_to_analyzing(self):
+        """RUNNING -> ANALYZING is allowed."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.ANALYZING)
+
+    def test_analyzing_can_transition_to_finished(self):
+        """ANALYZING -> FINISHED is allowed."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ANALYZING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.FINISHED)
+
+    def test_analyzing_can_transition_to_error(self):
+        """ANALYZING -> ERROR is allowed."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ANALYZING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.ERROR)
