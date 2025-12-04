@@ -7,7 +7,6 @@ project files uploaded by Django (django:www-data).
 
 from __future__ import annotations
 
-import os
 import stat
 import tempfile
 from pathlib import Path
@@ -15,6 +14,10 @@ from pathlib import Path
 from django.core.files.base import ContentFile
 
 from wafer_space.projects.storage import ProjectFileStorage
+
+# Permission constants for directory mode checks
+GROUP_WRITABLE_PERMISSIONS = 0o775  # rwxrwxr-x - allows group write
+OWNER_ONLY_WRITABLE_PERMISSIONS = 0o755  # rwxr-xr-x - owner write only
 
 
 def test_project_file_storage_creates_directories_with_775_permissions():
@@ -36,7 +39,7 @@ def test_project_file_storage_creates_directories_with_775_permissions():
         dir_mode = stat.S_IMODE(dir_stat.st_mode)
 
         # Should be 0o775 (rwxrwxr-x)
-        assert dir_mode == 0o775, (
+        assert dir_mode == GROUP_WRITABLE_PERMISSIONS, (
             f"Directory permissions are {oct(dir_mode)}, expected 0o775. "
             f"This means group write is not enabled, preventing celery-mfg "
             f"from writing log files."
@@ -49,13 +52,15 @@ def test_project_file_storage_creates_directories_with_775_permissions():
 def test_project_file_storage_default_directory_permissions():
     """Test that ProjectFileStorage has correct default directory_permissions_mode."""
     storage = ProjectFileStorage()
-    assert storage.directory_permissions_mode == 0o775
+    assert storage.directory_permissions_mode == GROUP_WRITABLE_PERMISSIONS
 
 
 def test_project_file_storage_allows_override_directory_permissions():
     """Test that directory_permissions_mode can be overridden if needed."""
-    storage = ProjectFileStorage(directory_permissions_mode=0o755)
-    assert storage.directory_permissions_mode == 0o755
+    storage = ProjectFileStorage(
+        directory_permissions_mode=OWNER_ONLY_WRITABLE_PERMISSIONS
+    )
+    assert storage.directory_permissions_mode == OWNER_ONLY_WRITABLE_PERMISSIONS
 
 
 def test_project_file_storage_creates_nested_directories():
@@ -74,7 +79,7 @@ def test_project_file_storage_creates_nested_directories():
         for subdir in ["projects", "projects/uuid1", "projects/uuid1/subdir1"]:
             dir_path = base_path / subdir
             dir_mode = stat.S_IMODE(dir_path.stat().st_mode)
-            assert dir_mode == 0o775, (
+            assert dir_mode == GROUP_WRITABLE_PERMISSIONS, (
                 f"Directory {subdir} has permissions {oct(dir_mode)}, expected 0o775"
             )
 
