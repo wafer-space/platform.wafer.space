@@ -81,11 +81,10 @@ def fix_project_directory_permissions(apps, _schema_editor):
                 # Already correct
                 skipped_count += 1
 
-        except OSError as exc:
+        except OSError:
             logger.exception(
-                "Failed to chmod %s: %s",
+                "Failed to chmod %s",
                 project_path,
-                exc,
             )
             error_count += 1
 
@@ -97,7 +96,7 @@ def fix_project_directory_permissions(apps, _schema_editor):
     )
 
 
-def reverse_migration(apps, _schema_editor):
+def reverse_migration(_apps, _schema_editor):
     """Reverse migration (no-op with warning).
 
     We don't reverse permission changes as it could break existing functionality.
