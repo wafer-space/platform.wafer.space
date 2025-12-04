@@ -30,9 +30,88 @@
   let currentProjectIdForAssign = null;
   let currentProjectSize = null;
 
+  // Column sorting state
+  let currentSortColumn = null;
+  let currentSortDirection = null; // 'asc', 'desc', or null
+
+  // Size sort order (largest to smallest)
+  const sizeSortOrder = {'1x1': 0, '0p5x1': 1, '1x0p5': 2, '0p5x0p5': 3};
+
   // Helper to get human-readable size label (uses server-provided labels)
   function getSizeLabel(size) {
     return sizeLabels[size] || size;
+  }
+
+  // Sort the projects table by column
+  function sortTable(columnIndex, sortType) {
+    const table = document.getElementById('projects-table');
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    const headers = table.querySelectorAll('thead th');
+
+    // Determine sort direction
+    if (currentSortColumn === columnIndex) {
+      if (currentSortDirection === 'asc') {
+        currentSortDirection = 'desc';
+      } else if (currentSortDirection === 'desc') {
+        currentSortDirection = null;
+      } else {
+        currentSortDirection = 'asc';
+      }
+    } else {
+      currentSortColumn = columnIndex;
+      currentSortDirection = 'asc';
+    }
+
+    // Update sort indicators
+    headers.forEach(function(header, idx) {
+      const indicator = header.querySelector('.sort-indicator');
+      if (indicator) {
+        if (idx === columnIndex && currentSortDirection === 'asc') {
+          indicator.textContent = ' ▲';
+        } else if (idx === columnIndex && currentSortDirection === 'desc') {
+          indicator.textContent = ' ▼';
+        } else {
+          indicator.textContent = '';
+        }
+      }
+    });
+
+    // If no direction, restore original order (by DOM order on page load)
+    if (!currentSortDirection) {
+      // Re-sort by original data-row-index if we had stored it, or just leave as-is
+      // For simplicity, sort by project ID as default
+      sortType = 'text';
+      currentSortDirection = 'asc';
+      columnIndex = 0;
+    }
+
+    // Sort rows
+    rows.sort(function(a, b) {
+      const aCell = a.cells[columnIndex];
+      const bCell = b.cells[columnIndex];
+
+      let aVal = aCell.dataset.sortValue || aCell.textContent.trim();
+      let bVal = bCell.dataset.sortValue || bCell.textContent.trim();
+
+      let comparison = 0;
+
+      if (sortType === 'size') {
+        comparison = (sizeSortOrder[aVal] || 99) - (sizeSortOrder[bVal] || 99);
+      } else if (sortType === 'status') {
+        comparison = parseInt(aVal, 10) - parseInt(bVal, 10);
+      } else {
+        // Text sort
+        comparison = aVal.localeCompare(bVal);
+      }
+
+      return currentSortDirection === 'desc' ? -comparison : comparison;
+    });
+
+    // Re-append rows in sorted order
+    rows.forEach(function(row) {
+      tbody.appendChild(row);
+    });
   }
 
   // Table filtering
@@ -237,6 +316,14 @@
     const unassignedOnly = document.getElementById('unassigned-only');
     if (sizeFilter) sizeFilter.addEventListener('change', filterTable);
     if (unassignedOnly) unassignedOnly.addEventListener('change', filterTable);
+
+    // Column sorting
+    document.querySelectorAll('#projects-table thead th[data-sortable]').forEach(function(header, index) {
+      header.addEventListener('click', function() {
+        const sortType = this.dataset.sortType || 'text';
+        sortTable(index, sortType);
+      });
+    });
 
     // Grid slot cells - click and keyboard
     document.querySelectorAll('#grid-table td[data-slot-id]').forEach(function(cell) {

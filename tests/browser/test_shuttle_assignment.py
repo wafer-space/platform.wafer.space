@@ -1,5 +1,7 @@
 """Browser tests for shuttle slot assignment functionality."""
 
+import time
+
 import pytest
 from django.contrib.auth import get_user_model
 from django.test import Client
@@ -346,3 +348,52 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
         indicator = assigned_slot.find_element(By.CSS_SELECTOR, ".mfg-indicator")
         assert indicator is not None
         assert "✓" in indicator.text or "mfg-pass" in indicator.get_attribute("class")
+
+    def test_table_columns_are_sortable(
+        self, driver, wait, staff_user, shuttle, project_with_compliance
+    ):
+        """Test that clicking column headers sorts the table."""
+        # Create a second project for sorting
+        project2 = Project.objects.create(
+            user=staff_user,
+            name="Alpha Project",
+            description="First alphabetically",
+            shuttle=shuttle,
+            project_id="ALPH",
+            slot_size=SlotSize.FULL,
+        )
+        ProjectComplianceCertification.objects.create(
+            project=project2,
+            export_control_compliant=True,
+            not_restricted_entity=True,
+            end_use_statement="Test",
+            certified_by=staff_user,
+        )
+
+        self.perform_login(driver, staff_user.username, TEST_PASSWORD)
+
+        driver.get(f"{self.live_server_url}/shuttles/{shuttle.name}/assign/")
+
+        # Wait for projects table to load
+        wait.until(
+            expected_conditions.presence_of_element_located((By.ID, "projects-table"))
+        )
+
+        # Find the Name header and click to sort
+        name_header = driver.find_element(
+            By.XPATH, "//table[@id='projects-table']//th[contains(text(), 'Name')]"
+        )
+        assert "sortable" in name_header.get_attribute(
+            "class"
+        ) or name_header.get_attribute("data-sortable")
+
+        name_header.click()
+
+        # Wait a moment for sort to apply
+        time.sleep(0.1)
+
+        # Get first row's name - should be "Alpha Project" (alphabetically first)
+        first_row = driver.find_element(
+            By.CSS_SELECTOR, "#projects-table tbody tr:first-child"
+        )
+        assert "Alpha" in first_row.text
