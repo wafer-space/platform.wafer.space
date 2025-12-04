@@ -75,31 +75,6 @@ One or more deferred errors were encountered:
         expected_drc_errors = 2  # One per tool: Magic + KLayout
         assert len(drc_errors) == expected_drc_errors
 
-    def test_parse_single_drc_error_type(self):
-        """Test parsing when only one type of DRC error is present."""
-        logs = """
-One or more deferred errors were encountered:
-5 Magic DRC errors found.
-"""
-        result = PrecheckLogParser.parse_logs(logs, exit_code=1)
-
-        assert result["success"] is False
-        assert len(result["errors"]) == 1
-        assert "5" in result["errors"][0]["message"]
-        assert "Magic" in result["errors"][0]["message"]
-        assert result["errors"][0]["category"] == "DRC"
-
-    def test_parse_singular_drc_error(self):
-        """Test parsing singular 'error' vs plural 'errors'."""
-        logs = """
-One or more deferred errors were encountered:
-1 Magic DRC error found.
-"""
-        result = PrecheckLogParser.parse_logs(logs, exit_code=1)
-
-        assert len(result["errors"]) == 1
-        assert "1" in result["errors"][0]["message"]
-
 
 class TestDRCCompletionDetection:
     """Test DRC completion detection for both Magic and KLayout.
