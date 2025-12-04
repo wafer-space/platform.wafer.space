@@ -416,3 +416,29 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
         # All cells should have data-click-handler attribute
         for cell in slot_cells:
             assert cell.get_attribute("data-click-handler") is not None
+
+    def test_slot_modal_has_autocomplete_input(
+        self, driver, wait, staff_user, shuttle, project_with_compliance
+    ):
+        """Test that slot modal uses autocomplete input instead of select."""
+        self.perform_login(driver, staff_user.username, TEST_PASSWORD)
+
+        driver.get(f"{self.live_server_url}/shuttles/{shuttle.name}/assign/")
+
+        # Click a slot to open modal
+        slot_cell = wait.until(
+            expected_conditions.element_to_be_clickable(
+                (By.CSS_SELECTOR, "td[data-slot-id]")
+            )
+        )
+        slot_cell.click()
+
+        # Wait for modal
+        modal = wait.until(
+            expected_conditions.visibility_of_element_located((By.ID, "slotModal"))
+        )
+
+        # Check for autocomplete input (not select)
+        autocomplete_input = modal.find_element(By.ID, "project-search")
+        assert autocomplete_input.get_attribute("type") == "text"
+        assert autocomplete_input.get_attribute("autocomplete") == "off"

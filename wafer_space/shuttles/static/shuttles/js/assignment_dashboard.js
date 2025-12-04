@@ -24,11 +24,20 @@
     document.getElementById('size-labels-data').textContent
   );
 
+  // Projects data for autocomplete
+  const projectsData = JSON.parse(
+    document.getElementById('projects-data').textContent
+  );
+
   // State for current modal context
   let currentSlotId = null;
   let currentSlotSize = null;
   let currentProjectIdForAssign = null;
   let currentProjectSize = null;
+
+  // Autocomplete state
+  let filteredProjects = [];
+  let activeIndex = -1;
 
   // Column sorting state
   let currentSortColumn = null;
@@ -114,6 +123,172 @@
     });
   }
 
+  // Sort projects by relevance for autocomplete
+  function sortProjectsForSlot(slotSize) {
+    // Priority: same size > different size
+    // Within size group: manufacturable > failed > pending > assigned
+    return projectsData.slice().sort(function(a, b) {
+      const aSameSize = a.slot_size === slotSize;
+      const bSameSize = b.slot_size === slotSize;
+
+      // Same size first
+      if (aSameSize !== bSameSize) {
+        return aSameSize ? -1 : 1;
+      }
+
+      // Within same size group, sort by status
+      function getPriority(proj) {
+        if (proj.is_assigned) return 3;
+        if (proj.is_manufacturable === true) return 0;
+        if (proj.is_manufacturable === false) return 1;
+        return 2; // pending (null)
+      }
+
+      const aPriority = getPriority(a);
+      const bPriority = getPriority(b);
+
+      if (aPriority !== bPriority) {
+        return aPriority - bPriority;
+      }
+
+      // Within same priority, sort by project_id
+      return a.project_id.localeCompare(b.project_id);
+    });
+  }
+
+  // Filter and render autocomplete results
+  function filterProjects(query, slotSize) {
+    const sorted = sortProjectsForSlot(slotSize);
+    const lowerQuery = query.toLowerCase();
+
+    filteredProjects = sorted.filter(function(p) {
+      return p.project_id.toLowerCase().includes(lowerQuery) ||
+             p.name.toLowerCase().includes(lowerQuery);
+    });
+
+    renderAutocompleteResults(slotSize);
+  }
+
+  // Render autocomplete dropdown
+  function renderAutocompleteResults(slotSize) {
+    const resultsDiv = document.getElementById('project-results');
+
+    if (filteredProjects.length === 0) {
+      resultsDiv.innerHTML = '<div class="autocomplete-item text-muted">No matching projects</div>';
+      resultsDiv.classList.add('show');
+      return;
+    }
+
+    let html = '';
+    let lastSameSize = null;
+    let lastStatus = null;
+
+    filteredProjects.forEach(function(proj, index) {
+      const isSameSize = proj.slot_size === slotSize;
+
+      // Add major separator between same-size and different-size
+      if (lastSameSize !== null && lastSameSize !== isSameSize) {
+        html += '<div class="autocomplete-separator major">Different size</div>';
+        lastStatus = null;
+      }
+      lastSameSize = isSameSize;
+
+      // Add minor separator between status groups (within same size)
+      const status = proj.is_assigned ? 'assigned' :
+                     proj.is_manufacturable === true ? 'ready' :
+                     proj.is_manufacturable === false ? 'failed' : 'pending';
+
+      if (lastStatus !== null && lastStatus !== status && isSameSize) {
+        html += '<div class="autocomplete-separator"></div>';
+      }
+      lastStatus = status;
+
+      // Manufacturing icon
+      const mfgIcon = proj.is_manufacturable === true ? '✓' :
+                      proj.is_manufacturable === false ? '✗' : '⏳';
+      const mfgClass = proj.is_manufacturable === true ? 'mfg-pass' :
+                       proj.is_manufacturable === false ? 'mfg-fail' : 'mfg-pending';
+
+      // Size badge (only for different size)
+      const sizeBadge = isSameSize ? '' :
+        '<span class="badge bg-secondary slot-badge ms-1">[' + getSizeLabel(proj.slot_size) + ']</span>';
+
+      // Assigned slots display
+      const assignedDisplay = proj.is_assigned ?
+        '<span class="text-muted ms-1">(' + proj.assigned_slots.join(', ') + ')</span>' : '';
+
+      html += '<div class="autocomplete-item' + (index === activeIndex ? ' active' : '') + '" ' +
+              'data-index="' + index + '" data-project-id="' + proj.id + '">' +
+              '<span class="project-id">' + proj.project_id + '</span> ' +
+              '<span class="' + mfgClass + '">' + mfgIcon + '</span> ' +
+              '<span class="project-name">' + proj.name + '</span>' +
+              sizeBadge + assignedDisplay +
+              '</div>';
+    });
+
+    resultsDiv.innerHTML = html;
+    resultsDiv.classList.add('show');
+
+    // Bind click handlers
+    resultsDiv.querySelectorAll('.autocomplete-item[data-project-id]').forEach(function(item) {
+      item.addEventListener('click', function() {
+        selectProject(parseInt(this.dataset.projectId, 10));
+      });
+    });
+  }
+
+  // Select a project from autocomplete
+  function selectProject(projectId) {
+    const project = projectsData.find(function(p) { return p.id === projectId; });
+    if (!project) return;
+
+    document.getElementById('selected-project-id').value = projectId;
+    document.getElementById('project-search').value = '';
+    document.getElementById('project-results').classList.remove('show');
+
+    // Show selected display
+    const display = document.getElementById('selected-project-display');
+    const badge = document.getElementById('selected-project-badge');
+    const mfgIcon = project.is_manufacturable === true ? '✓' :
+                    project.is_manufacturable === false ? '✗' : '⏳';
+    badge.textContent = project.project_id + ' ' + mfgIcon + ' - ' + project.name;
+    display.style.display = 'block';
+
+    // Check size mismatch
+    const warning = document.getElementById('size-mismatch-warning');
+    if (project.slot_size !== currentSlotSize) {
+      warning.style.display = 'block';
+    } else {
+      warning.style.display = 'none';
+    }
+
+    activeIndex = -1;
+  }
+
+  // Handle autocomplete keyboard navigation
+  function handleAutocompleteKeydown(event) {
+    const resultsDiv = document.getElementById('project-results');
+    if (!resultsDiv.classList.contains('show')) return;
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      activeIndex = Math.min(activeIndex + 1, filteredProjects.length - 1);
+      renderAutocompleteResults(currentSlotSize);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      activeIndex = Math.max(activeIndex - 1, 0);
+      renderAutocompleteResults(currentSlotSize);
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      if (activeIndex >= 0 && activeIndex < filteredProjects.length) {
+        selectProject(filteredProjects[activeIndex].id);
+      }
+    } else if (event.key === 'Escape') {
+      resultsDiv.classList.remove('show');
+      activeIndex = -1;
+    }
+  }
+
   // Table filtering
   function filterTable() {
     const sizeFilter = document.getElementById('size-filter').value;
@@ -153,9 +328,16 @@
       currentProjectSection.style.display = 'none';
     }
 
-    // Reset project select and warning
-    document.getElementById('modal-project-select').value = '';
+    // Reset autocomplete
+    document.getElementById('project-search').value = '';
+    document.getElementById('selected-project-id').value = '';
+    document.getElementById('selected-project-display').style.display = 'none';
+    document.getElementById('project-results').classList.remove('show');
     document.getElementById('size-mismatch-warning').style.display = 'none';
+    activeIndex = -1;
+
+    // Pre-populate filtered list
+    filterProjects('', currentSlotSize);
 
     const modal = new bootstrap.Modal(document.getElementById('slotModal'));
     modal.show();
@@ -242,8 +424,7 @@
 
   // Assign project to slot (from grid click)
   function assignProject() {
-    const projectSelect = document.getElementById('modal-project-select');
-    const projectId = projectSelect.value;
+    const projectId = document.getElementById('selected-project-id').value;
 
     if (!projectId) {
       alert('Please select a project');
@@ -353,21 +534,39 @@
       });
     });
 
-    // Size mismatch warning in slot modal
-    const modalProjectSelect = document.getElementById('modal-project-select');
-    if (modalProjectSelect) {
-      modalProjectSelect.addEventListener('change', function() {
-        const selectedOption = this.options[this.selectedIndex];
-        const projectSize = selectedOption.dataset.size;
-        const warning = document.getElementById('size-mismatch-warning');
+    // Autocomplete input
+    const projectSearch = document.getElementById('project-search');
+    if (projectSearch) {
+      projectSearch.addEventListener('input', function() {
+        filterProjects(this.value, currentSlotSize);
+      });
+      projectSearch.addEventListener('focus', function() {
+        filterProjects(this.value, currentSlotSize);
+      });
+      projectSearch.addEventListener('keydown', handleAutocompleteKeydown);
+    }
 
-        if (projectSize && projectSize !== currentSlotSize) {
-          warning.style.display = 'block';
-        } else {
-          warning.style.display = 'none';
-        }
+    // Clear project selection
+    const clearBtn = document.getElementById('clear-project-selection');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', function() {
+        document.getElementById('selected-project-id').value = '';
+        document.getElementById('selected-project-display').style.display = 'none';
+        document.getElementById('size-mismatch-warning').style.display = 'none';
+        document.getElementById('project-search').focus();
       });
     }
+
+    // Close autocomplete when clicking outside
+    document.addEventListener('click', function(event) {
+      const resultsDiv = document.getElementById('project-results');
+      const searchInput = document.getElementById('project-search');
+      if (resultsDiv && searchInput &&
+          !resultsDiv.contains(event.target) &&
+          event.target !== searchInput) {
+        resultsDiv.classList.remove('show');
+      }
+    });
 
     // Size mismatch warning in assign modal
     const assignSlotSelect = document.getElementById('assign-modal-slot-select');

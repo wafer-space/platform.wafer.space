@@ -35,3 +35,52 @@
 .mfg-pending {
   color: #ffc107; /* Bootstrap warning yellow */
 }
+
+/* Autocomplete dropdown styles */
+#project-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 1000;
+}
+
+#project-results.show {
+  display: block;
+}
+
+.autocomplete-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #eee;
+}
+
+.autocomplete-item:hover,
+.autocomplete-item.active {
+  background-color: #f8f9fa;
+}
+
+.autocomplete-item .project-id {
+  font-family: monospace;
+  font-weight: bold;
+}
+
+.autocomplete-item .project-name {
+  color: #666;
+}
+
+.autocomplete-item .slot-badge {
+  font-size: 0.75em;
+}
+
+.autocomplete-separator {
+  padding: 4px 12px;
+  background-color: #f0f0f0;
+  font-size: 0.8em;
+  color: #666;
+  border-bottom: 1px solid #ddd;
+}
+
+.autocomplete-separator.major {
+  background-color: #e0e0e0;
+  border-top: 2px solid #ccc;
+}

@@ -125,6 +125,25 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
             ]
         context["slots_by_project"] = slots_by_project
 
+        # Build projects data for autocomplete
+        projects_data = []
+        for project in projects:
+            assigned_slots = [
+                slot.grid_position for slot in project.shuttle_slots.all()
+            ]
+            projects_data.append(
+                {
+                    "id": project.pk,
+                    "project_id": project.project_id or "",
+                    "name": project.name,
+                    "slot_size": project.slot_size,
+                    "is_manufacturable": project.is_manufacturable,
+                    "is_assigned": bool(assigned_slots),
+                    "assigned_slots": assigned_slots,
+                }
+            )
+        context["projects_data"] = projects_data
+
         # Build grid for visualization
         num_rows, num_cols = shuttle.grid_dimensions
         if num_rows > 0 and num_cols > 0:
