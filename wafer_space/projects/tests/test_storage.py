@@ -74,9 +74,14 @@ def test_project_file_storage_creates_nested_directories():
             "projects/uuid1/subdir1/subdir2/test.gds", test_content
         )
 
-        # Check all directories have 775
+        # Check all directories have 775 (including the deepest leaf directory)
         base_path = Path(tmpdir)
-        for subdir in ["projects", "projects/uuid1", "projects/uuid1/subdir1"]:
+        for subdir in [
+            "projects",
+            "projects/uuid1",
+            "projects/uuid1/subdir1",
+            "projects/uuid1/subdir1/subdir2",
+        ]:
             dir_path = base_path / subdir
             dir_mode = stat.S_IMODE(dir_path.stat().st_mode)
             assert dir_mode == GROUP_WRITABLE_PERMISSIONS, (
