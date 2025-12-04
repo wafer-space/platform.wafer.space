@@ -34,7 +34,7 @@ def is_check_container_running(check: ManufacturabilityCheck) -> bool | None:
     Returns:
         True if running container found
         False if no container found (definitely orphaned)
-        None if Docker connection fails (cannot verify, assume running)
+        None if Docker unavailable (caller should fall back to other checks)
     """
     try:
         client = docker.from_env()
@@ -43,7 +43,7 @@ def is_check_container_running(check: ManufacturabilityCheck) -> bool | None:
             "Failed to connect to Docker - cannot verify container for check %s",
             check.id,
         )
-        return None  # Cannot verify - assume running to be safe
+        return None
 
     try:
         # Query for containers with this check's label
@@ -56,7 +56,12 @@ def is_check_container_running(check: ManufacturabilityCheck) -> bool | None:
             "Error querying Docker for check %s containers",
             check.id,
         )
-        return None  # Cannot verify - assume running to be safe
+        return None
+    finally:
+        # Close client to avoid lingering HTTP connections. Use hasattr check
+        # for compatibility with test mocks that may not implement close().
+        if hasattr(client, "close"):
+            client.close()
 
     if containers:
         # Found at least one running container with this check ID
