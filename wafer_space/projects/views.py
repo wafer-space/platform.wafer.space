@@ -468,9 +468,12 @@ class ManufacturabilityCheckCancelView(LoginRequiredMixin, UserPassesTestMixin, 
     """Cancel a running manufacturability check (POST-only)."""
 
     def test_func(self):
-        """Only allow the owner to cancel the check."""
+        """Allow owner, staff, or superuser to cancel the check."""
+        user = self.request.user
+        if user.is_superuser or user.is_staff:
+            return True
         project = get_object_or_404(Project, pk=self.kwargs["pk"])
-        return project.user == self.request.user
+        return project.user == user
 
     def post(self, request, pk):
         """Handle check cancellation."""
@@ -493,7 +496,12 @@ class ManufacturabilityCheckCancelView(LoginRequiredMixin, UserPassesTestMixin, 
             return redirect("projects:detail", pk=pk)
 
         try:
-            check.mark_cancelling(reason="Cancelled by user")
+            # Indicate whether cancelled by owner or admin
+            if project.user == request.user:
+                reason = "Cancelled by owner"
+            else:
+                reason = f"Cancelled by admin ({request.user.email})"
+            check.mark_cancelling(reason=reason)
             messages.success(request, "Cancellation requested. Cleanup in progress...")
         except InvalidStateTransitionError:
             msg = "Check could not be cancelled (already finished or in error state)."
