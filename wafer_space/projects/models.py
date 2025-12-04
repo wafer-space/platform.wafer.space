@@ -1242,6 +1242,34 @@ class ManufacturabilityCheck(models.Model):
         CANCELLING = "cancelling", "Cancelling"  # Cleanup in progress
         CANCELLED = "cancelled", "Cancelled"  # User cancelled
 
+        @classmethod
+        def active(cls) -> list[str]:
+            """Statuses that count toward server concurrent limit.
+
+            These statuses indicate a check is actively using Docker server resources
+            (container exists or is being created).
+            """
+            return [cls.DISPATCHING, cls.STARTING, cls.RUNNING, cls.CANCELLING]
+
+        @classmethod
+        def working(cls) -> list[str]:
+            """Statuses where check is actively being processed.
+
+            These statuses indicate work is happening - either on Docker or analysis.
+            """
+            return [
+                cls.DISPATCHING,
+                cls.STARTING,
+                cls.RUNNING,
+                cls.ANALYZING,
+                cls.CANCELLING,
+            ]
+
+        @classmethod
+        def terminal(cls) -> list[str]:
+            """Statuses that represent completion (success or failure)."""
+            return [cls.FINISHED, cls.CANCELLED]
+
     # State machine: defines valid transitions
     # PENDING: waiting for capacity to dispatch to Celery
     # DISPATCHED: job sent to Celery, waiting for worker
