@@ -176,6 +176,17 @@ class Project(models.Model):
             return f"{self.shuttle.description}: {self.shuttle.name}"
         return ""
 
+    @property
+    def slot_size_full_label(self) -> str:
+        """Return full slot size label with dimensions.
+
+        Use this for detailed displays like project creation/detail pages.
+        For compact displays, use get_slot_size_display() instead.
+
+        Example: "1×1 - Full Slot (3.88mm × 5.07mm = 19.67mm²)"
+        """
+        return SlotSize(self.slot_size).full_label
+
     def can_submit(self) -> tuple[bool, str]:
         """Check if project can be submitted.
 
