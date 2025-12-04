@@ -9,6 +9,10 @@ PROJECT_NAME := wafer_space
 MANAGE := $(UV) run python manage.py
 CELERY := $(UV) run celery
 
+# Make uv load .env file automatically (needed since manage.py no longer has
+# DJANGO_SETTINGS_MODULE fallback - see issue #152)
+export UV_ENV_FILE := .env
+
 # Colors for output
 BLUE := \033[0;34m
 GREEN := \033[0;32m
