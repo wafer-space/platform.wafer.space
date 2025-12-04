@@ -470,7 +470,7 @@ class ManufacturabilityCheckCancelView(LoginRequiredMixin, UserPassesTestMixin, 
     def test_func(self):
         """Allow owner, staff, or superuser to cancel the check."""
         user = self.request.user
-        if user.is_superuser or user.is_staff:
+        if user.is_authenticated and (user.is_superuser or user.is_staff):
             return True
         project = get_object_or_404(Project, pk=self.kwargs["pk"])
         return project.user == user
