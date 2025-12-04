@@ -78,3 +78,49 @@ jobs:
 
       - name: Test with pytest
         run: uv run pytest
+
+  # Test that Makefile commands work for developers (relies on UV_ENV_FILE in Makefile)
+  makefile:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_PASSWORD: postgres
+
+    env:
+      # Only set DATABASE_URL - NOT DJANGO_SETTINGS_MODULE
+      # The Makefile's UV_ENV_FILE should load it from .env
+      DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/postgres'
+
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: "true"
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+
+      - name: Install dependencies
+        run: make venv
+
+      - name: Create .env from template
+        run: cp .env.example .env
+
+      - name: Test make migrate
+        run: make migrate
+
+      - name: Test make lint
+        run: make lint
+
+      - name: Test make type-check
+        run: make type-check
