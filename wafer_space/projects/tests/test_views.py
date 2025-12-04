@@ -1333,7 +1333,7 @@ class TestManufacturabilityCheckCancelView(TestCase):
         assert "/accounts/login/" in response["Location"]
 
     def test_cancel_check_requires_ownership(self):
-        """Test that only project owner can cancel check."""
+        """Test that non-owner, non-staff users cannot cancel check."""
         ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
@@ -1362,6 +1362,68 @@ class TestManufacturabilityCheckCancelView(TestCase):
 
         # GET should return 405 Method Not Allowed
         assert response.status_code == HTTP_METHOD_NOT_ALLOWED
+
+    def test_staff_user_can_cancel_any_check(self):
+        """Test that staff users can cancel any project's check."""
+        staff_user = User.objects.create_user(
+            username="staffuser",
+            email="staff@example.com",
+            password=TEST_PASSWORD,
+            is_staff=True,
+        )
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+
+        self.client.login(username="staffuser", password=TEST_PASSWORD)
+        url = reverse("projects:cancel_check", kwargs={"pk": self.project.pk})
+        response = self.client.post(url)
+
+        assert response.status_code == HTTP_FOUND
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLING
+        # Verify admin cancellation is logged
+        assert f"Cancelled by admin ({staff_user.username})" in check.processing_logs
+
+    def test_superuser_can_cancel_any_check(self):
+        """Test that superusers can cancel any project's check."""
+        superuser = User.objects.create_superuser(
+            username="superuser",
+            email="super@example.com",
+            password=TEST_PASSWORD,
+        )
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+
+        self.client.login(username="superuser", password=TEST_PASSWORD)
+        url = reverse("projects:cancel_check", kwargs={"pk": self.project.pk})
+        response = self.client.post(url)
+
+        assert response.status_code == HTTP_FOUND
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLING
+        # Verify admin cancellation is logged
+        assert f"Cancelled by admin ({superuser.username})" in check.processing_logs
+
+    def test_owner_cancel_logs_correct_reason(self):
+        """Test that owner cancellation logs 'Cancelled by owner'."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:cancel_check", kwargs={"pk": self.project.pk})
+        self.client.post(url)
+
+        check.refresh_from_db()
+        assert "Cancelled by owner" in check.processing_logs
 
 
 @pytest.mark.django_db
