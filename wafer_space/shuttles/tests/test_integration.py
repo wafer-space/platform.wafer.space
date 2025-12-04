@@ -53,10 +53,10 @@ column_widths: [1.0, 0.5, 1.0]
         assert slots[4].grid_position == "B2"  # (1, 1)
         assert slots[5].grid_position == "C2"  # (1, 2)
 
-        # Verify slot sizes
+        # Verify slot sizes (format: width x height)
         assert slots[0].slot_size == SlotSize.FULL  # 1.0 x 1.0
-        assert slots[1].slot_size == SlotSize.HALF_HEIGHT  # 1.0 x 0.5
-        assert slots[3].slot_size == SlotSize.HALF_WIDTH  # 0.5 x 1.0
+        assert slots[1].slot_size == SlotSize.HALF_WIDTH  # 0.5 x 1.0
+        assert slots[3].slot_size == SlotSize.HALF_HEIGHT  # 1.0 x 0.5
         assert slots[4].slot_size == SlotSize.QUARTER  # 0.5 x 0.5
 
         # Step 4: Create projects
