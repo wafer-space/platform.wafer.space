@@ -1233,7 +1233,10 @@ class ManufacturabilityCheck(models.Model):
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"  # Waiting for capacity
         DISPATCHED = "dispatched", "Dispatched"  # Job sent to Celery
+        DISPATCHING = "dispatching", "Dispatching"  # Image being pulled
+        STARTING = "starting", "Starting"  # Container being created
         RUNNING = "running", "Running"  # Celery worker executing
+        ANALYZING = "analyzing", "Analyzing"  # Logs being analyzed
         FINISHED = "finished", "Finished"  # Analysis complete
         ERROR = "error", "Error"  # System/processing failure
         CANCELLING = "cancelling", "Cancelling"  # Cleanup in progress
