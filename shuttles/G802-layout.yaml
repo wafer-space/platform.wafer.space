@@ -8,11 +8,11 @@
 # - Columns A-G: full-width (1.0)
 # - Column H (rightmost): half-width (0.5)
 #
-# Resulting slot sizes:
-# - Row 1, Cols A-G: HALF_WIDTH (1x0.5)
+# Resulting slot sizes (format: width x height):
+# - Row 1, Cols A-G: HALF_HEIGHT (1x0.5) - full width, half height
 # - Row 1, Col H: QUARTER (0.5x0.5)
 # - Rows 2-5, Cols A-G: FULL (1x1)
-# - Rows 2-5, Col H: HALF_HEIGHT (0.5x1)
+# - Rows 2-5, Col H: HALF_WIDTH (0.5x1) - half width, full height
 
 shuttle: G802
 

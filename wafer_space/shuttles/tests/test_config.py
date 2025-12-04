@@ -54,13 +54,26 @@ row_heights: [1.0]
     @pytest.mark.parametrize(
         ("row_h", "col_w", "expected"),
         [
-            (1.0, 1.0, SlotSize.FULL),
-            (0.5, 0.5, SlotSize.QUARTER),
-            (1.0, 0.5, SlotSize.HALF_HEIGHT),
-            (0.5, 1.0, SlotSize.HALF_WIDTH),
+            # SlotSize format is <width>x<height>
+            # column_width -> slot width, row_height -> slot height
+            (1.0, 1.0, SlotSize.FULL),  # width=1, height=1 -> "1x1"
+            (0.5, 0.5, SlotSize.QUARTER),  # width=0.5, height=0.5 -> "0p5x0p5"
+            # row_height=1.0, column_width=0.5 -> width=0.5, height=1.0 -> HALF_WIDTH
+            (1.0, 0.5, SlotSize.HALF_WIDTH),  # "0p5x1" (width=0.5, height=1)
+            # row_height=0.5, column_width=1.0 -> width=1.0, height=0.5 -> HALF_HEIGHT
+            (0.5, 1.0, SlotSize.HALF_HEIGHT),  # "1x0p5" (width=1, height=0.5)
         ],
     )
     def test_calculate_slot_size(self, row_h, col_w, expected):
-        """Should calculate correct SlotSize from dimensions."""
+        """Should calculate correct SlotSize from dimensions.
+
+        SlotSize values use format <width>x<height>:
+        - HALF_WIDTH = "0p5x1" means width=0.5, height=1.0
+        - HALF_HEIGHT = "1x0p5" means width=1.0, height=0.5
+
+        The function parameters map directly:
+        - column_width -> slot width
+        - row_height -> slot height
+        """
         result = GridConfig.calculate_slot_size(row_h, col_w)
         assert result == expected

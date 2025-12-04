@@ -3,6 +3,7 @@
 from django import forms
 from django.core.exceptions import ValidationError
 
+from wafer_space.core.enums import SlotSize
 from wafer_space.shuttles.models import Shuttle
 
 from .models import PROJECT_ID_LENGTH
@@ -46,6 +47,13 @@ class ProjectForm(forms.ModelForm):
             )
             if default_shuttle:
                 self.fields["shuttle"].initial = default_shuttle
+
+        # Use full labels for slot_size dropdown (includes dimensions)
+        slot_size_field = self.fields["slot_size"]
+        if isinstance(slot_size_field, forms.TypedChoiceField):
+            slot_size_field.choices = [
+                (size.value, size.full_label) for size in SlotSize
+            ]
 
     project_id = forms.CharField(
         max_length=PROJECT_ID_LENGTH,

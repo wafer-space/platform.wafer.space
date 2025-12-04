@@ -41,18 +41,18 @@ column_widths: [1.0, 0.5]
         expected_slots = 4  # 2 rows x 2 columns
         assert len(slots) == expected_slots
 
-        # Verify positions and sizes
+        # Verify positions and sizes (slot size format: width x height)
         assert slots[0].row == 0
         assert slots[0].column == 0
         assert slots[0].slot_size == SlotSize.FULL  # 1.0 x 1.0
 
         assert slots[1].row == 0
         assert slots[1].column == 1
-        assert slots[1].slot_size == SlotSize.HALF_HEIGHT  # 1.0 x 0.5
+        assert slots[1].slot_size == SlotSize.HALF_WIDTH  # 0.5 x 1.0
 
         assert slots[2].row == 1
         assert slots[2].column == 0
-        assert slots[2].slot_size == SlotSize.HALF_WIDTH  # 0.5 x 1.0
+        assert slots[2].slot_size == SlotSize.HALF_HEIGHT  # 1.0 x 0.5
 
         assert slots[3].row == 1
         assert slots[3].column == 1

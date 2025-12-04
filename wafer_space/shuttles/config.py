@@ -111,8 +111,10 @@ class GridConfig:
         if row_height == HALF_SIZE and column_width == HALF_SIZE:
             return SlotSize.QUARTER
         if row_height == FULL_SIZE and column_width == HALF_SIZE:
-            return SlotSize.HALF_HEIGHT
-        if row_height == HALF_SIZE and column_width == FULL_SIZE:
+            # width=0.5, height=1.0 -> HALF_WIDTH ("0p5x1")
             return SlotSize.HALF_WIDTH
+        if row_height == HALF_SIZE and column_width == FULL_SIZE:
+            # width=1.0, height=0.5 -> HALF_HEIGHT ("1x0p5")
+            return SlotSize.HALF_HEIGHT
         msg = f"Invalid dimensions: {row_height} x {column_width}"
         raise GridConfigError(msg)
