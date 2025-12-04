@@ -126,6 +126,7 @@
             <tr>
               <th>Project ID</th>
               <th>Name</th>
+              <th>Owner</th>
               <th>Size</th>
               <th>Status</th>
               <th>Slots</th>
@@ -138,6 +139,7 @@
                   data-assigned="{% if project.shuttle_slots.exists %}true{% else %}false{% endif %}">
                 <td class="font-monospace">{{ project.full_id|default:project.project_id }}</td>
                 <td>{{ project.name }}</td>
+                <td>{{ project.user.username|default:"—" }}</td>
                 <td>
                   <span class="badge bg-secondary">{{ project.get_slot_size_display }}</span>
                 </td>

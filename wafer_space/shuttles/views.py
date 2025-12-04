@@ -96,7 +96,9 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
         }
 
         # Get all projects on this shuttle with their slot assignments
-        projects = shuttle.projects.all().prefetch_related("shuttle_slots")
+        projects = shuttle.projects.select_related("user").prefetch_related(
+            "shuttle_slots"
+        )
         context["projects"] = projects
 
         # Build slots_by_project data for JavaScript

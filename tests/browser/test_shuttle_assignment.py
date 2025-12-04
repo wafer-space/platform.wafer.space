@@ -275,3 +275,24 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
         page_source = driver.page_source
         assert ">Proj<" in page_source
         assert ">Slots<" in page_source
+
+    def test_projects_table_shows_owner_column(
+        self, driver, wait, staff_user, shuttle, project_with_compliance
+    ):
+        """Test that projects table shows owner column."""
+        self.perform_login(driver, staff_user.username, TEST_PASSWORD)
+
+        driver.get(f"{self.live_server_url}/shuttles/{shuttle.name}/assign/")
+
+        # Wait for projects table to load
+        projects_table = wait.until(
+            expected_conditions.presence_of_element_located((By.ID, "projects-table"))
+        )
+
+        # Check that Owner column header exists
+        headers = projects_table.find_elements(By.CSS_SELECTOR, "thead th")
+        header_texts = [h.text for h in headers]
+        assert "Owner" in header_texts
+
+        # Check that the owner username is shown in the table
+        assert staff_user.username in projects_table.text
