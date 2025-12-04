@@ -433,8 +433,12 @@ INFO: Check completed
         mock_client.api.pull.return_value = []  # Empty progress stream
 
         # Mock container with not manufacturable result (non-zero exit code)
+        # Must include both Magic AND KLayout DRC results for precheck to be
+        # considered "complete" - otherwise it's classified as system error
         mock_logs = b"""ERROR: DRC violation at (100, 200)
 ERROR: Metal spacing violation
+2 Magic DRC errors found.
+1 KLayout DRC errors found.
 FATAL: Design has critical errors
 """
         mock_container = MagicMock()
