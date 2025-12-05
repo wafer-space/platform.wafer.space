@@ -84,6 +84,16 @@ PRECHECK_CONTAINER_CLEANUP_INTERVAL_SECONDS = 15.0  # Cleanup every 15s in dev
 PRECHECK_TIMEOUT_SECONDS = 5 * 60  # 5 minutes hard limit for local dev
 PRECHECK_SOFT_TIMEOUT_BUFFER = 60  # 1 minute buffer (4 min soft, 5 min hard)
 
+# Local Docker server for development
+DOCKER_SERVERS = [
+    {
+        "id": "local",
+        "url": "unix:///var/run/docker.sock",
+        "max_concurrent": 4,
+        "priority": 1,
+    },
+]
+
 CELERY_BEAT_SCHEDULE = {
     # Download recovery
     "ensure-download-tasks-queued": {
