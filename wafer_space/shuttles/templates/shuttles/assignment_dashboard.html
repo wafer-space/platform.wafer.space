@@ -120,6 +120,7 @@
                 <td data-sort-value="{{ project.slot_size }}">
                   <span class="badge bg-secondary">{{ project.get_slot_size_display }}</span>
                 </td>
+                {# Sort order: Ready(0) < Failed(1) < Pending(2) - prioritizes actionable projects #}
                 <td data-sort-value="{% if project.is_manufacturable %}0{% elif project.is_manufacturable is None %}2{% else %}1{% endif %}">
                   {% if project.is_manufacturable %}
                     <span class="badge bg-success">Ready</span>
