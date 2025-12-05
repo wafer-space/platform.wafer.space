@@ -275,25 +275,8 @@ def is_check_task_queued(check: ManufacturabilityCheck) -> bool:
         True if task is found in any queue, False if missing
     """
     # NOTE: This function is now obsolete with polling architecture
-    # but kept for compatibility during transition
+    # but kept for compatibility during transition. Always returns False.
     return False
-
-    # First check broker queue (tasks waiting in kombu_message table)
-    if _is_task_in_broker_queue(task_id):
-        return True
-
-    # Check reserved and active queues using inspect API
-    inspect = current_app.control.inspect()
-
-    # Check reserved queue (tasks fetched by worker but not started)
-    reserved_result = _check_inspect_result(inspect.reserved(), task_id, "reserved")
-    if reserved_result is None or reserved_result:
-        return True  # Cannot verify or found - assume queued
-
-    # Check active queue (tasks currently executing)
-    active_result = _check_inspect_result(inspect.active(), task_id, "active")
-    # Return True if unable to verify (None) or if found, False otherwise
-    return active_result is None or bool(active_result)
 
 
 def _check_container_status(check: ManufacturabilityCheck) -> bool | None:

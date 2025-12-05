@@ -2712,8 +2712,9 @@ def checks_cleanup_orphaned_docker() -> dict:
 
         # Check exists - is it in an active state?
         # CANCELLING containers are handled by checks_cancelling, not here
-        # Use Status.active() which includes DISPATCHING/STARTING/RUNNING/CANCELLING
-        active_states = ManufacturabilityCheck.Status.active() + [
+        # Use Status.active() + CANCELLING
+        active_states = [
+            *ManufacturabilityCheck.Status.active(),
             ManufacturabilityCheck.Status.CANCELLING,
         ]
         if check.status not in active_states:
@@ -3083,7 +3084,7 @@ def checks_cleanup_orphaned_processing() -> dict:
         # This is intentional - polling architecture should handle state transitions
         if is_check_task_actively_running(check):
             logger.debug(
-                "[checks_cleanup_orphaned_processing] Check %s verified (container active)",
+                "[checks_cleanup_orphaned_processing] Check %s verified",
                 check.id,
             )
             verified += 1

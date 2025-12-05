@@ -13,7 +13,6 @@ from django.utils import timezone
 from simple_history.models import HistoricalRecords
 
 from wafer_space.core.enums import SlotSize
-from wafer_space.projects.exceptions import ConcurrentLimitError
 from wafer_space.projects.exceptions import InvalidStateTransitionError
 from wafer_space.projects.exceptions import MaxRetriesExceededError
 from wafer_space.projects.storage import ProjectFileStorage
