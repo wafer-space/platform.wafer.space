@@ -169,6 +169,20 @@
     renderAutocompleteResults(slotSize);
   }
 
+  // Update screen reader status announcement
+  function updateSearchStatus(count) {
+    const statusEl = document.getElementById('project-search-status');
+    if (statusEl) {
+      if (count === 0) {
+        statusEl.textContent = 'No matching projects found';
+      } else if (count === 1) {
+        statusEl.textContent = '1 project found';
+      } else {
+        statusEl.textContent = count + ' projects found';
+      }
+    }
+  }
+
   // Render autocomplete dropdown
   function renderAutocompleteResults(slotSize) {
     const resultsDiv = document.getElementById('project-results');
@@ -177,6 +191,7 @@
       resultsDiv.innerHTML = '<div class="autocomplete-item text-muted" role="option" aria-disabled="true">No matching projects</div>';
       resultsDiv.classList.add('show');
       document.getElementById('project-search').setAttribute('aria-expanded', 'true');
+      updateSearchStatus(0);
       return;
     }
 
@@ -231,6 +246,7 @@
     resultsDiv.innerHTML = html;
     resultsDiv.classList.add('show');
     document.getElementById('project-search').setAttribute('aria-expanded', 'true');
+    updateSearchStatus(filteredProjects.length);
 
     // Bind click handlers
     resultsDiv.querySelectorAll('.autocomplete-item[data-project-id]').forEach(function(item) {
