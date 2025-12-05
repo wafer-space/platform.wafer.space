@@ -1192,8 +1192,12 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.PENDING,
         )
-        check.mark_dispatched(celery_job_id="test-job-id")
-        # Old pathway: DISPATCHED -> RUNNING (skips STARTING state)
+        # New pathway: PENDING -> DISPATCHING -> STARTING -> RUNNING
+        check.mark_dispatching(server_id="server-1")
+        check.mark_starting(
+            docker_image="test-image:latest",
+            docker_image_digest="sha256:abc123",
+        )
         check.mark_running(
             docker_container_id="test-container-id",
             docker_command="docker run ...",
@@ -1298,7 +1302,6 @@ class TestManufacturabilityCheckCancelView(TestCase):
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.PENDING,
-            celery_job_id="celery-task-123",
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -1316,7 +1319,6 @@ class TestManufacturabilityCheckCancelView(TestCase):
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.RUNNING,
-            celery_job_id="celery-task-456",
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)

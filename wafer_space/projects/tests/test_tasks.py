@@ -866,17 +866,15 @@ class TestChecksCleanupOrphanedProcessing(TestCase):
 
     @patch("wafer_space.projects.tasks.is_check_task_actively_running")
     def test_marks_orphaned_running_checks_as_error(self, mock_is_running):
-        """Test RUNNING checks with dead PIDs are marked ERROR."""
+        """Test RUNNING checks not actively running are marked ERROR."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.RUNNING,
-            celery_job_id="task-123",
-            celery_worker_pid=TEST_WORKER_PID,
-            celery_worker_hostname="worker1",
+            docker_container_id="container-123",
         )
 
-        # Task is NOT actively running (orphaned)
+        # Task is NOT actively running (orphaned) - function now always returns False
         mock_is_running.return_value = False
 
         result = checks_cleanup_orphaned_processing()
@@ -884,24 +882,18 @@ class TestChecksCleanupOrphanedProcessing(TestCase):
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.ERROR
         assert "orphaned" in check.error_message.lower()
-        # mark_error() preserves tracking fields for debugging
-        # They are only cleared by reset_for_retry() when retrying
-        assert check.celery_worker_pid == TEST_WORKER_PID
-        assert check.celery_worker_hostname == "worker1"
         assert result["orphaned"] == 1
         assert result["verified"] == 0
         mock_is_running.assert_called_once_with(check)
 
     @patch("wafer_space.projects.tasks.is_check_task_actively_running")
     def test_leaves_valid_running_checks_alone(self, mock_is_running):
-        """Test RUNNING checks with valid PIDs are not touched."""
+        """Test RUNNING checks actively running are not touched."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.RUNNING,
-            celery_job_id="task-456",
-            celery_worker_pid=TEST_WORKER_PID,
-            celery_worker_hostname="worker1",
+            docker_container_id="container-456",
         )
 
         # Task IS actively running (valid)
@@ -911,8 +903,6 @@ class TestChecksCleanupOrphanedProcessing(TestCase):
 
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.RUNNING
-        assert check.celery_worker_pid == TEST_WORKER_PID
-        assert check.celery_worker_hostname == "worker1"
         assert result["orphaned"] == 0
         assert result["verified"] == 1
         mock_is_running.assert_called_once_with(check)
@@ -931,17 +921,13 @@ class TestChecksCleanupOrphanedProcessing(TestCase):
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.RUNNING,
-            celery_job_id="task-orphaned",
-            celery_worker_pid=DEAD_WORKER_PID,
-            celery_worker_hostname="dead-worker",
+            docker_container_id="container-orphaned",
         )
         valid_check = ManufacturabilityCheck.objects.create(
             project=project2,
             project_file=project_file2,
             status=ManufacturabilityCheck.Status.RUNNING,
-            celery_job_id="task-valid",
-            celery_worker_pid=TEST_WORKER_PID,
-            celery_worker_hostname="live-worker",
+            docker_container_id="container-valid",
         )
 
         # First check is orphaned, second is valid
@@ -952,11 +938,7 @@ class TestChecksCleanupOrphanedProcessing(TestCase):
         orphaned_check.refresh_from_db()
         valid_check.refresh_from_db()
         assert orphaned_check.status == ManufacturabilityCheck.Status.ERROR
-        # mark_error() preserves tracking fields for debugging
-        assert orphaned_check.celery_worker_pid == DEAD_WORKER_PID
-        assert orphaned_check.celery_worker_hostname == "dead-worker"
         assert valid_check.status == ManufacturabilityCheck.Status.RUNNING
-        assert valid_check.celery_worker_pid == TEST_WORKER_PID
         assert result["orphaned"] == 1
         assert result["verified"] == 1
 
@@ -978,7 +960,7 @@ class TestChecksCleanupOrphanedProcessing(TestCase):
         ManufacturabilityCheck.objects.create(
             project=project2,
             project_file=project_file2,
-            status=ManufacturabilityCheck.Status.DISPATCHED,
+            status=ManufacturabilityCheck.Status.DISPATCHING,
         )
 
         result = checks_cleanup_orphaned_processing()
