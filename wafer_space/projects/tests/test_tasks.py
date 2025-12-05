@@ -16,7 +16,6 @@ from unittest.mock import MagicMock
 from unittest.mock import Mock
 from unittest.mock import patch
 
-import docker.errors
 import pytest
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -1555,8 +1554,8 @@ class TestDoCancelling:
     """Test do_cancelling work task."""
 
     @pytest.mark.django_db
-    def test_stops_and_removes_container(self) -> None:
-        """Stops running container and removes it."""
+    def test_transitions_to_cancelled(self) -> None:
+        """Transitions CANCELLING check to CANCELLED status."""
         check = ManufacturabilityCheckFactory(
             status=ManufacturabilityCheck.Status.CANCELLING,
             docker_server_id="test-local",
@@ -1566,51 +1565,27 @@ class TestDoCancelling:
             manufacturability_check=check, task_id="test", task_name="do_cancelling"
         )
 
-        with patch("wafer_space.projects.tasks_checks.docker") as mock_docker:
-            mock_client = MagicMock()
-            mock_docker.DockerClient.return_value = mock_client
-            mock_container = MagicMock()
-            mock_container.id = "container123"
-            mock_container.status = "running"
-            mock_client.containers.get.return_value = mock_container
-
-            result = do_cancelling(check.id)
+        result = do_cancelling(check.id)
 
         assert result["status"] == "success"
-        assert result["container_stopped"] is True
-        assert result["container_removed"] is True
-        mock_container.stop.assert_called_once()
-        mock_container.remove.assert_called_once()
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.CANCELLED
 
     @pytest.mark.django_db
-    def test_handles_missing_container_gracefully(self) -> None:
-        """Handles case where container is already gone."""
+    def test_cleans_up_task_tracking(self) -> None:
+        """Removes ManufacturabilityCheckTask after completion."""
         check = ManufacturabilityCheckFactory(
             status=ManufacturabilityCheck.Status.CANCELLING,
-            docker_server_id="test-local",
-            docker_container_id="container123",
         )
         ManufacturabilityCheckTask.objects.create(
             manufacturability_check=check, task_id="test", task_name="do_cancelling"
         )
 
-        with patch("wafer_space.projects.tasks_checks.docker") as mock_docker:
-            mock_client = MagicMock()
-            mock_docker.DockerClient.return_value = mock_client
-            # Configure docker.errors to have proper exception classes
-            mock_docker.errors.NotFound = docker.errors.NotFound
-            mock_docker.errors.DockerException = docker.errors.DockerException
-            mock_client.containers.get.side_effect = docker.errors.NotFound(
-                "Container not found"
-            )
+        do_cancelling(check.id)
 
-            result = do_cancelling(check.id)
-
-        assert result["status"] == "success"
-        check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+        assert not ManufacturabilityCheckTask.objects.filter(
+            manufacturability_check=check
+        ).exists()
 
     @pytest.mark.django_db
     def test_skips_if_status_changed(self) -> None:
@@ -1619,8 +1594,6 @@ class TestDoCancelling:
             status=ManufacturabilityCheck.Status.FINISHED,
         )
 
-        with patch("wafer_space.projects.tasks_checks.docker") as mock_docker:
-            result = do_cancelling(check.id)
+        result = do_cancelling(check.id)
 
-        mock_docker.DockerClient.assert_not_called()
         assert result["status"] == "skipped"
