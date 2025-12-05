@@ -256,7 +256,7 @@
     // Bind click handlers
     resultsDiv.querySelectorAll('.autocomplete-item[data-project-id]').forEach(function(item) {
       item.addEventListener('click', function() {
-        selectProject(parseInt(this.dataset.projectId, 10));
+        selectProject(this.dataset.projectId);
       });
     });
   }
@@ -502,9 +502,9 @@
 
   // Assign project to slot (from grid click)
   function assignProject() {
-    const projectId = parseInt(document.getElementById('selected-project-id').value, 10);
+    const projectId = document.getElementById('selected-project-id').value;
 
-    if (!projectId || isNaN(projectId)) {
+    if (!projectId) {
       alert('Please select a project');
       return;
     }
