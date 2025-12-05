@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from contextlib import contextmanager
 from datetime import UTC
@@ -12,7 +13,9 @@ from typing import Any
 from typing import ParamSpec
 from typing import TypeVar
 
+import docker
 from celery import shared_task
+from django.conf import settings
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -115,14 +118,20 @@ def track_task(check_id: int) -> Generator[None]:
 
 
 def queued_check_task(
+    *,
+    expected_status: str | None = None,
     **celery_kwargs: Any,
 ) -> Callable[[Callable[..., T]], Any]:
     """Decorator for manufacturability check work tasks.
 
-    Combines @shared_task with automatic task tracking cleanup.
-    The decorated function's first argument must be check_id.
+    Combines @shared_task with automatic task tracking cleanup and optional
+    status verification. The decorated function receives a ManufacturabilityCheck
+    object as its first argument (fetched from the check_id passed by Celery).
 
     Args:
+        expected_status: If provided, verify check.status matches this value
+            before calling the wrapped function. Returns skip result if mismatch.
+            Use the status name, e.g., "DISPATCHING", "STARTING", "RUNNING".
         **celery_kwargs: Arguments passed to @shared_task
             (e.g., queue="docker-ephemeral")
 
@@ -130,9 +139,9 @@ def queued_check_task(
         Decorator that wraps the function with task tracking and Celery integration.
 
     Example:
-        @queued_check_task(queue="docker-ephemeral")
-        def do_running(check_id: int) -> dict[str, Any]:
-            check = ManufacturabilityCheck.objects.get(id=check_id)
+        @queued_check_task(expected_status="RUNNING")
+        def do_running(check: ManufacturabilityCheck) -> dict[str, Any]:
+            # check is already fetched and status verified
             # ... do work
             return {"status": "completed"}
     """
@@ -142,14 +151,39 @@ def queued_check_task(
 
     def decorator(func: Callable[..., T]) -> Any:
         @wraps(func)
-        def wrapper(check_id: int, *args: Any, **kwargs: Any) -> T:
+        def wrapper(check_id: int, *args: Any, **kwargs: Any) -> T | dict[str, str]:
+            import logging  # noqa: PLC0415
+
             # Import here to avoid circular dependency
+            from wafer_space.projects.models import (  # noqa: PLC0415
+                ManufacturabilityCheck,
+            )
             from wafer_space.projects.models import (  # noqa: PLC0415
                 ManufacturabilityCheckTask,
             )
 
+            logger = logging.getLogger(__name__)
+
+            logger.info("Starting %s for check %s", func.__name__, check_id)
+
             try:
-                return func(check_id, *args, **kwargs)
+                # Fetch the check object
+                check = ManufacturabilityCheck.objects.get(id=check_id)
+
+                # Verify expected status if specified
+                if expected_status and check.status != expected_status:
+                    logger.info(
+                        "Skipping %s for check %s - status changed to %s",
+                        func.__name__,
+                        check_id,
+                        check.status,
+                    )
+                    return {"status": "skipped", "reason": "status_changed"}
+
+                # Call wrapped function with check object
+                result = func(check, *args, **kwargs)
+                logger.info("Completed %s for check %s", func.__name__, check_id)
+                return result
             finally:
                 ManufacturabilityCheckTask.objects.filter(
                     manufacturability_check_id=check_id
@@ -161,3 +195,91 @@ def queued_check_task(
         return shared_task(**celery_kwargs)(wrapper)
 
     return decorator
+
+
+def checks_task(**celery_kwargs: Any) -> Callable[[Callable[..., T]], Any]:
+    """Decorator for periodic checks_ tasks with automatic logging.
+
+    Wraps function with @shared_task and adds start/stop logging.
+    The function name is used in log messages (e.g., "[checks_pending] Starting...").
+
+    Args:
+        **celery_kwargs: Arguments passed to @shared_task (e.g., queue="default")
+
+    Returns:
+        Decorator that wraps the function with Celery and logging.
+
+    Example:
+        @checks_task(queue="default")
+        def checks_pending() -> dict[str, int]:
+            # ... do work
+            return {"dispatched": 5}
+    """
+    # Default to default queue if not specified
+    if "queue" not in celery_kwargs:
+        celery_kwargs["queue"] = "default"
+
+    def decorator(func: Callable[..., T]) -> Any:
+        @wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> T:
+            logger = logging.getLogger(__name__)
+
+            logger.info("[%s] Starting", func.__name__)
+
+            result = func(*args, **kwargs)
+
+            logger.info("[%s] Complete", func.__name__)
+
+            return result
+
+        return shared_task(**celery_kwargs)(wrapper)
+
+    return decorator
+
+
+def get_server_config(server_id: str) -> dict | None:
+    """Get server config by ID from DOCKER_SERVERS settings.
+
+    Args:
+        server_id: The server ID to look up.
+
+    Returns:
+        Server config dict if found, None otherwise.
+    """
+    return next(
+        (s for s in settings.DOCKER_SERVERS if s["id"] == server_id),
+        None,
+    )
+
+
+def get_docker_client(server: dict) -> docker.DockerClient:
+    """Create a Docker client for the given server config.
+
+    Args:
+        server: Server config dict with 'url' key.
+
+    Returns:
+        Docker client instance.
+
+    Raises:
+        docker.errors.DockerException: If connection fails.
+    """
+    return docker.DockerClient(base_url=str(server["url"]))
+
+
+def stop_and_remove_container(
+    container: docker.models.containers.Container,
+    logger: logging.Logger,
+) -> None:
+    """Stop and remove a Docker container safely.
+
+    Args:
+        container: Docker container to remove.
+        logger: Logger for error messages.
+    """
+    try:
+        if container.status == "running":
+            container.stop(timeout=10)
+        container.remove(force=True)
+    except docker.errors.DockerException:
+        logger.exception("Failed to remove container %s", container.id)
