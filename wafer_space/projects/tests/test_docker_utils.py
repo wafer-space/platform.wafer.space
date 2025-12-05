@@ -2,13 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
-
 from wafer_space.projects.docker_utils import parse_docker_timestamp_float
 from wafer_space.projects.docker_utils import strip_docker_timestamps
-from wafer_space.projects.docker_utils import track_task
-from wafer_space.projects.models import ManufacturabilityCheckTask
-from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 
 
 class TestParseDockerTimestampFloat:
@@ -71,54 +66,3 @@ class TestStripDockerTimestamps:
     def test_handles_empty_string(self) -> None:
         """Empty string returns empty string."""
         assert strip_docker_timestamps("") == ""
-
-
-class TestTrackTask:
-    """Test track_task context manager."""
-
-    @pytest.mark.django_db
-    def test_deletes_task_on_success(self) -> None:
-        """Task tracking row is deleted when context exits normally."""
-        check = ManufacturabilityCheckFactory()
-        ManufacturabilityCheckTask.objects.create(
-            manufacturability_check=check,
-            task_id="abc123",
-            task_name="do_running",
-        )
-        assert ManufacturabilityCheckTask.objects.filter(
-            manufacturability_check=check
-        ).exists()
-
-        with track_task(check.id):
-            pass  # Simulated work
-
-        assert not ManufacturabilityCheckTask.objects.filter(
-            manufacturability_check=check
-        ).exists()
-
-    @pytest.mark.django_db
-    def test_deletes_task_on_exception(self) -> None:
-        """Task tracking row is deleted even when exception occurs."""
-        check = ManufacturabilityCheckFactory()
-        ManufacturabilityCheckTask.objects.create(
-            manufacturability_check=check,
-            task_id="abc123",
-            task_name="do_running",
-        )
-
-        msg = "test error"
-        with pytest.raises(ValueError, match="test error"), track_task(check.id):
-            raise ValueError(msg)
-
-        assert not ManufacturabilityCheckTask.objects.filter(
-            manufacturability_check=check
-        ).exists()
-
-    @pytest.mark.django_db
-    def test_handles_missing_task_gracefully(self) -> None:
-        """No error if task row doesn't exist."""
-        check = ManufacturabilityCheckFactory()
-        # No ManufacturabilityCheckTask created
-
-        with track_task(check.id):
-            pass  # Should not raise
