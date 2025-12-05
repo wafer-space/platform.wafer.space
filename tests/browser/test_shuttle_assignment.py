@@ -1,7 +1,5 @@
 """Browser tests for shuttle slot assignment functionality."""
 
-import time
-
 import pytest
 from django.contrib.auth import get_user_model
 from django.test import Client
@@ -389,14 +387,13 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
 
         name_header.click()
 
-        # Wait a moment for sort to apply
-        time.sleep(0.1)
-
-        # Get first row's name - should be "Alpha Project" (alphabetically first)
-        first_row = driver.find_element(
-            By.CSS_SELECTOR, "#projects-table tbody tr:first-child"
+        # Wait for sort to apply - first row should contain "Alpha" after sorting
+        wait.until(
+            lambda d: "Alpha"
+            in d.find_element(
+                By.CSS_SELECTOR, "#projects-table tbody tr:first-child"
+            ).text
         )
-        assert "Alpha" in first_row.text
 
     def test_grid_uses_template_partial(self, driver, wait, staff_user, shuttle):
         """Test that grid renders correctly (implies template partial works)."""
