@@ -458,6 +458,11 @@ PRECHECK_TIMEOUT_SECONDS = 20 * 60 * 60  # 20 hours hard limit
 PRECHECK_SOFT_TIMEOUT_BUFFER = 60 * 60  # 1 hour buffer before hard limit
 PRECHECK_SCAN_INTERVAL_SECONDS = 30.0  # Scan for files ready to check every 30s
 
+# Docker server configuration
+# Servers are selected in priority order (lowest number = highest priority)
+# Override in environment-specific settings
+DOCKER_SERVERS: list[dict[str, str | int]] = []
+
 # Celery Beat periodic tasks
 CELERY_BEAT_SCHEDULE = {
     # Download recovery

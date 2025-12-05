@@ -70,6 +70,16 @@ CELERY_TASK_EAGER_PROPAGATES = True
 # CELERY_BROKER_URL: uses base.py default (PostgreSQL via SQLAlchemy)
 # DOWNLOAD_TASK_*: uses base.py defaults (Celery retry configuration)
 
+# Test Docker server configuration
+DOCKER_SERVERS = [
+    {
+        "id": "test-local",
+        "url": "unix:///var/run/docker.sock",
+        "max_concurrent": 2,
+        "priority": 1,
+    },
+]
+
 # LOGGING
 # ------------------------------------------------------------------------------
 # Uses base.py defaults
