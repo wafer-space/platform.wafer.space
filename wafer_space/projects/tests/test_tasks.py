@@ -44,8 +44,10 @@ from wafer_space.projects.tasks import checks_cleanup_orphaned_dispatch
 from wafer_space.projects.tasks import checks_cleanup_orphaned_processing
 from wafer_space.projects.tasks import checks_create
 from wafer_space.projects.tasks import checks_dispatch
+from wafer_space.projects.tasks import checks_pending
 from wafer_space.projects.tasks import checks_retry
 from wafer_space.projects.tasks import download_project_file
+from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.shuttles.models import Shuttle
 
 User = get_user_model()
@@ -1880,3 +1882,93 @@ class TestChecksCleanupOrphanedProcessing(TestCase):
         assert result["orphaned"] == 0
         assert result["verified"] == 0
         mock_is_running.assert_not_called()
+
+
+class TestChecksPending:
+    """Test checks_pending beat task."""
+
+    @pytest.mark.django_db
+    def test_transitions_pending_to_dispatching(self) -> None:
+        """Transitions PENDING checks to DISPATCHING with server assignment."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.PENDING
+        )
+
+        result = checks_pending()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.DISPATCHING
+        assert check.docker_server_id is not None
+        assert result["dispatched"] == 1
+
+    @pytest.mark.django_db
+    def test_respects_server_capacity(self, settings) -> None:
+        """Only dispatches up to max_concurrent per server."""
+        settings.DOCKER_SERVERS = [
+            {
+                "id": "test",
+                "url": "unix:///test.sock",
+                "max_concurrent": 2,
+                "priority": 1,
+            },
+        ]
+        # Create 2 already active checks
+        ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING,
+            docker_server_id="test",
+        )
+        ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING,
+            docker_server_id="test",
+        )
+        # Create pending check
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.PENDING
+        )
+
+        result = checks_pending()
+
+        check.refresh_from_db()
+        # Should remain PENDING - server at capacity
+        assert check.status == ManufacturabilityCheck.Status.PENDING
+        assert result["dispatched"] == 0
+
+    @pytest.mark.django_db
+    def test_uses_priority_order(self, settings) -> None:
+        """Uses servers in priority order (lowest priority number first)."""
+        settings.DOCKER_SERVERS = [
+            {
+                "id": "low-priority",
+                "url": "unix:///a.sock",
+                "max_concurrent": 2,
+                "priority": 10,
+            },
+            {
+                "id": "high-priority",
+                "url": "unix:///b.sock",
+                "max_concurrent": 2,
+                "priority": 1,
+            },
+        ]
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.PENDING
+        )
+
+        result = checks_pending()
+
+        check.refresh_from_db()
+        assert check.docker_server_id == "high-priority"
+        assert result["dispatched"] == 1
+
+    @pytest.mark.django_db
+    def test_does_not_touch_non_pending(self) -> None:
+        """Does not affect checks not in PENDING status."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING
+        )
+
+        result = checks_pending()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.RUNNING
+        assert result["dispatched"] == 0
