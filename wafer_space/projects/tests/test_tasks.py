@@ -930,15 +930,16 @@ class TestChecksCleanupOrphanedProcessing(TestCase):
             docker_container_id="container-valid",
         )
 
-        # First check is orphaned, second is valid
+        # orphaned_check created first -> returns False (orphaned)
+        # valid_check created second -> returns True (valid)
         mock_is_running.side_effect = [False, True]
 
         result = checks_cleanup_orphaned_processing()
 
         orphaned_check.refresh_from_db()
         valid_check.refresh_from_db()
-        assert orphaned_check.status == ManufacturabilityCheck.Status.ERROR
         assert valid_check.status == ManufacturabilityCheck.Status.RUNNING
+        assert orphaned_check.status == ManufacturabilityCheck.Status.ERROR
         assert result["orphaned"] == 1
         assert result["verified"] == 1
 
