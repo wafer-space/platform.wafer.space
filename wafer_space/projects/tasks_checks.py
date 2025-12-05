@@ -190,11 +190,9 @@ def checks_cleanup_orphaned_docker() -> dict:
     total_removed = 0
     server_results: dict[str, dict] = {}
 
-    # Active states (containers we should keep)
-    active_states = [
-        *ManufacturabilityCheck.Status.active(),
-        ManufacturabilityCheck.Status.CANCELLING,
-    ]
+    # Active states (containers we should keep) - includes DISPATCHING, STARTING,
+    # RUNNING, CANCELLING.
+    active_states = list(ManufacturabilityCheck.Status.active())
 
     for server in settings.DOCKER_SERVERS:
         server_id = str(server["id"])
