@@ -247,7 +247,7 @@ def _save_logs_to_file(
         logger: Logger instance
     """
     try:
-        timestamp = check.celery_job_started_at or timezone.now()
+        timestamp = check.container_started_at or check.created_at or timezone.now()
         timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")
 
         # Get GDS filename
@@ -301,7 +301,7 @@ def _extract_runs_archive(
         logger.info("  Extracted runs archive: %d bytes", len(tar_data))
 
         # Generate filename
-        timestamp = check.celery_job_started_at or timezone.now()
+        timestamp = check.container_started_at or check.created_at or timezone.now()
         timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")
         gds_name = "design"
         if check.project_file and check.project_file.processed_filename:
@@ -2712,9 +2712,8 @@ def checks_cleanup_orphaned_docker() -> dict:
 
         # Check exists - is it in an active state?
         # CANCELLING containers are handled by checks_cancelling, not here
-        active_states = [
-            ManufacturabilityCheck.Status.DISPATCHED,
-            ManufacturabilityCheck.Status.RUNNING,
+        # Use Status.active() which includes DISPATCHING/STARTING/RUNNING/CANCELLING
+        active_states = ManufacturabilityCheck.Status.active() + [
             ManufacturabilityCheck.Status.CANCELLING,
         ]
         if check.status not in active_states:
@@ -3079,19 +3078,19 @@ def checks_cleanup_orphaned_processing() -> dict:
     )
 
     for check in running_checks:
+        # NOTE: is_check_task_actively_running is now obsolete with polling architecture
+        # It always returns False, so all RUNNING checks will be marked as orphaned
+        # This is intentional - polling architecture should handle state transitions
         if is_check_task_actively_running(check):
             logger.debug(
-                "[checks_cleanup_orphaned_processing] Check %s verified "
-                "(PID %s on %s is active)",
+                "[checks_cleanup_orphaned_processing] Check %s verified (container active)",
                 check.id,
-                check.celery_worker_pid,
-                check.celery_worker_hostname,
             )
             verified += 1
         else:
             error_msg = (
-                f"Orphaned RUNNING check: Worker PID {check.celery_worker_pid} "
-                f"on {check.celery_worker_hostname} is dead or task not active"
+                f"Orphaned RUNNING check: Container {check.docker_container_id} "
+                f"not actively tracked by polling tasks"
             )
             logger.warning(
                 "[checks_cleanup_orphaned_processing] Orphaned check %s "
