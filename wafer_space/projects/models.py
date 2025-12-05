@@ -2032,6 +2032,39 @@ Your GDS file should have:
         return f"https://github.com/wafer-space/gf180mcu-precheck/issues/new?{params}"
 
 
+class ManufacturabilityCheckTask(models.Model):
+    """Tracks pending/running Celery tasks for manufacturability checks.
+
+    Ephemeral - rows are deleted when tasks complete. Used to prevent
+    duplicate task queuing.
+    """
+
+    manufacturability_check = models.OneToOneField(
+        ManufacturabilityCheck,
+        on_delete=models.CASCADE,
+        related_name="pending_task",
+    )
+    task_id = models.CharField(
+        max_length=255,
+        help_text="Celery task ID",
+    )
+    task_name = models.CharField(
+        max_length=255,
+        help_text="Name of the Celery task (e.g., do_running)",
+    )
+    queued_at = models.DateTimeField(
+        auto_now_add=True,
+        help_text="When the task was queued",
+    )
+
+    class Meta:
+        verbose_name = "Manufacturability Check Task"
+        verbose_name_plural = "Manufacturability Check Tasks"
+
+    def __str__(self) -> str:
+        return f"{self.task_name} for check {self.manufacturability_check_id}"
+
+
 class ManufacturabilityCheckpoint(models.Model):
     """Track resource usage during manufacturability check execution.
 
