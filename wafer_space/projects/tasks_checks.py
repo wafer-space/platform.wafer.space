@@ -50,6 +50,36 @@ def _stop_and_remove_container(container, logger) -> None:
         logger.exception("Failed to remove container %s", container.id)
 
 
+def _get_server_config(server_id: str) -> dict | None:
+    """Get server config by ID from DOCKER_SERVERS settings.
+
+    Args:
+        server_id: The server ID to look up.
+
+    Returns:
+        Server config dict if found, None otherwise.
+    """
+    return next(
+        (s for s in settings.DOCKER_SERVERS if s["id"] == server_id),
+        None,
+    )
+
+
+def _get_docker_client(server: dict) -> docker.DockerClient:
+    """Create a Docker client for the given server config.
+
+    Args:
+        server: Server config dict with 'url' key.
+
+    Returns:
+        Docker client instance.
+
+    Raises:
+        docker.errors.DockerException: If connection fails.
+    """
+    return docker.DockerClient(base_url=str(server["url"]))
+
+
 @shared_task(queue="docker-ephemeral")
 def checks_cleanup_orphaned_docker() -> dict:
     """Remove Docker containers not linked to active checks (fallback cleanup).
@@ -517,18 +547,13 @@ def do_dispatching(check_id: int) -> dict[str, str]:
     if check.status != ManufacturabilityCheck.Status.DISPATCHING:
         return {"status": "skipped", "reason": "status_changed"}
 
-    # Get server config
-    server = next(
-        (s for s in settings.DOCKER_SERVERS if s["id"] == check.docker_server_id),
-        None,
-    )
+    server = _get_server_config(check.docker_server_id)
     if not server:
         error_msg = f"Unknown server: {check.docker_server_id}"
         check.mark_error(error_message=error_msg)
         return {"status": "error", "reason": "unknown_server"}
 
-    # Connect to Docker
-    client = docker.DockerClient(base_url=str(server["url"]))
+    client = _get_docker_client(server)
 
     try:
         image_name = settings.PRECHECK_DOCKER_IMAGE
@@ -574,20 +599,15 @@ def do_starting(check_id: int) -> dict[str, Any]:  # noqa: C901, PLR0911, PLR091
         )
         return {"status": "skipped", "reason": "status_changed"}
 
-    # Get server config
-    server = next(
-        (s for s in settings.DOCKER_SERVERS if s["id"] == check.docker_server_id),
-        None,
-    )
+    server = _get_server_config(check.docker_server_id)
     if not server:
         error_msg = f"Unknown server: {check.docker_server_id}"
         logger.error(error_msg)
         check.mark_error(error_message=error_msg)
         return {"status": "error", "reason": "unknown_server"}
 
-    # Connect to Docker
     try:
-        client = docker.DockerClient(base_url=str(server["url"]))
+        client = _get_docker_client(server)
     except docker.errors.DockerException as e:
         error_msg = f"Failed to connect to Docker server: {e}"
         logger.exception(error_msg)
@@ -714,20 +734,15 @@ def do_running(check_id: int) -> dict[str, Any]:  # noqa: C901, PLR0911, PLR0912
         )
         return {"status": "skipped", "reason": "status_changed"}
 
-    # Get server config
-    server = next(
-        (s for s in settings.DOCKER_SERVERS if s["id"] == check.docker_server_id),
-        None,
-    )
+    server = _get_server_config(check.docker_server_id)
     if not server:
         error_msg = f"Unknown server: {check.docker_server_id}"
         logger.error(error_msg)
         check.mark_error(error_message=error_msg)
         return {"status": "error", "reason": "unknown_server"}
 
-    # Connect to Docker
     try:
-        client = docker.DockerClient(base_url=str(server["url"]))
+        client = _get_docker_client(server)
     except docker.errors.DockerException as e:
         error_msg = f"Failed to connect to Docker server: {e}"
         logger.exception(error_msg)
@@ -735,7 +750,6 @@ def do_running(check_id: int) -> dict[str, Any]:  # noqa: C901, PLR0911, PLR0912
         return {"status": "error", "reason": str(e)}
 
     try:
-        # Get the container
         container = client.containers.get(check.docker_container_id)
     except docker.errors.NotFound:
         error_msg = f"Container {check.docker_container_id} not found"
