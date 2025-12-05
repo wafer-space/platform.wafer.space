@@ -22,6 +22,7 @@ from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.users.models import User
 from wafer_space.users.tests.factories import UserFactory
 
+from .constants import FLOAT_PRECISION_TOLERANCE
 from .constants import PROGRESS_COMPLETE
 from .constants import TEST_PASSWORD
 from .constants import TEST_WORKER_PID
@@ -2533,3 +2534,32 @@ class TestManufacturabilityCheckTimestampFields:
         check = ManufacturabilityCheckFactory()
         assert hasattr(check, "analysis_completed_at")
         assert check.analysis_completed_at is None
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckDockerFields:
+    """Test Docker-related fields."""
+
+    def test_docker_exit_code_field_exists(self) -> None:
+        """Check should have docker_exit_code field."""
+        check = ManufacturabilityCheckFactory()
+        assert hasattr(check, "docker_exit_code")
+        assert check.docker_exit_code is None
+
+    def test_logs_downloaded_until_field_exists(self) -> None:
+        """Check should have logs_downloaded_until field for incremental log fetch."""
+        check = ManufacturabilityCheckFactory()
+        assert hasattr(check, "logs_downloaded_until")
+        assert check.logs_downloaded_until is None
+
+    def test_logs_downloaded_until_stores_float(self) -> None:
+        """logs_downloaded_until stores Unix timestamp with nanosecond precision."""
+        check = ManufacturabilityCheckFactory()
+        check.logs_downloaded_until = 1733400000.123456789
+        check.save()
+        check.refresh_from_db()
+        # Float precision may vary, but should be close
+        assert (
+            abs(check.logs_downloaded_until - 1733400000.123456789)
+            < FLOAT_PRECISION_TOLERANCE
+        )

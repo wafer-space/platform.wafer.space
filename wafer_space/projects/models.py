@@ -1412,6 +1412,18 @@ class ManufacturabilityCheck(models.Model):
         help_text="When log analysis completed",
     )
 
+    # Docker exit code and log tracking
+    docker_exit_code = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Exit code from Docker container",
+    )
+    logs_downloaded_until = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Unix timestamp (with nanoseconds) for incremental log fetch",
+    )
+
     # Results
     is_manufacturable = models.BooleanField(null=True, blank=True)
     errors = models.JSONField(default=list, blank=True)  # Manufacturing errors
