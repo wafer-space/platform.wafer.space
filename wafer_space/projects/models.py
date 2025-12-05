@@ -1348,11 +1348,6 @@ class ManufacturabilityCheck(models.Model):
         default="",
         help_text="ID of Docker container running the analysis",
     )
-    docker_container_started_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="When Docker container started",
-    )
 
     # Granular timestamps for each phase
     dispatching_started_at = models.DateTimeField(
@@ -1798,7 +1793,6 @@ class ManufacturabilityCheck(models.Model):
 
         # Clear all job-related fields
         self.docker_container_id = ""
-        self.docker_container_started_at = None
         self.error_message = ""
 
         self.save()
