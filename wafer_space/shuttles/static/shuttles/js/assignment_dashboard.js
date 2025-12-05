@@ -218,6 +218,7 @@
         '<span class="text-muted ms-1">(' + proj.assigned_slots.join(', ') + ')</span>' : '';
 
       html += '<div class="autocomplete-item' + (index === activeIndex ? ' active' : '') + '" ' +
+              'role="option" aria-selected="' + (index === activeIndex ? 'true' : 'false') + '" ' +
               'data-index="' + index + '" data-project-id="' + proj.id + '">' +
               '<span class="project-id">' + proj.project_id + '</span> ' +
               '<span class="' + mfgClass + '">' + mfgIcon + '</span> ' +
