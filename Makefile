@@ -94,6 +94,18 @@ collectstatic: ## Collect static files
 	@$(MANAGE) collectstatic --noinput
 	@echo "$(GREEN)✓ Static files collected$(NC)"
 
+.PHONY: dev-data
+dev-data: ## Populate database with development test data
+	@echo "$(BLUE)Populating development data...$(NC)"
+	@$(MANAGE) populate_dev_data
+	@echo "$(GREEN)✓ Development data populated$(NC)"
+
+.PHONY: dev-data-reset
+dev-data-reset: ## Reset and repopulate development test data
+	@echo "$(YELLOW)Resetting development data...$(NC)"
+	@$(MANAGE) populate_dev_data --reset
+	@echo "$(GREEN)✓ Development data reset and repopulated$(NC)"
+
 # ==================== Testing ====================
 
 .PHONY: test
