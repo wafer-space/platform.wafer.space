@@ -14,6 +14,17 @@
 /* Manufacturing status indicators for grid cells */
 .slot-cell {
   position: relative;
+  cursor: pointer;
+}
+
+/* Hover and focus states for clickable grid cells */
+.slot-cell:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+.slot-cell:focus-visible {
+  outline: 2px solid #0d6efd;
+  outline-offset: -2px;
 }
 
 .mfg-indicator {
