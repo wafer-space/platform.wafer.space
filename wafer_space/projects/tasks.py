@@ -2874,6 +2874,61 @@ def checks_cleanup_orphaned_docker() -> dict:
 
 
 @shared_task(queue="default")
+def checks_pending() -> dict[str, int]:
+    """Transition PENDING checks to DISPATCHING with server assignment.
+
+    Respects per-server concurrent limits. Assigns to servers in priority order.
+
+    Returns:
+        Dict with count of dispatched checks.
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("[checks_pending] Starting pending check assignment")
+
+    dispatched = 0
+
+    # Sort servers by priority (lowest first)
+    servers = sorted(settings.DOCKER_SERVERS, key=lambda s: s["priority"])
+
+    for server in servers:
+        server_id = str(server["id"])
+        max_concurrent = int(server["max_concurrent"])
+
+        # Count active checks on this server
+        active_count = ManufacturabilityCheck.objects.filter(
+            docker_server_id=server_id,
+            status__in=ManufacturabilityCheck.Status.active(),
+        ).count()
+
+        available_slots = max_concurrent - active_count
+
+        if available_slots > 0:
+            logger.info(
+                "[checks_pending] Server %s: %d/%d active, %d slots available",
+                server_id,
+                active_count,
+                max_concurrent,
+                available_slots,
+            )
+
+            pending_checks = ManufacturabilityCheck.objects.filter(
+                status=ManufacturabilityCheck.Status.PENDING,
+            ).order_by("created_at")[:available_slots]
+
+            for check in pending_checks:
+                check.mark_dispatching(server_id=server_id)
+                logger.info(
+                    "[checks_pending] Assigned check %s to server %s",
+                    check.id,
+                    server_id,
+                )
+                dispatched += 1
+
+    logger.info("[checks_pending] Complete: dispatched=%d", dispatched)
+    return {"dispatched": dispatched}
+
+
+@shared_task(queue="default")
 def checks_dispatch() -> dict:
     """Dispatch PENDING checks to Celery queue (respecting concurrent limit).
 
