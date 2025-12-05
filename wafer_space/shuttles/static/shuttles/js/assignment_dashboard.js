@@ -487,16 +487,8 @@
       })
       .then(function(data) {
         if (data.success) {
-          // Only show alert for size mismatch warnings, not reassignment
-          if (data.warning && data.warning.indexOf('Size mismatch') !== -1) {
-            // Extract just the size mismatch part
-            var parts = data.warning.split(' | ');
-            var sizeMismatch = parts.find(function(p) {
-              return p.indexOf('Size mismatch') !== -1;
-            });
-            if (sizeMismatch) {
-              alert(sizeMismatch);
-            }
+          if (data.warning) {
+            alert(data.warning);
           }
           location.reload();
         } else {

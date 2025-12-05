@@ -364,10 +364,8 @@ class ShuttleSlot(models.Model):
             if self.project == project:
                 # Already assigned to this project - no-op
                 return None
-            # Reassigning to a different project
+            # Reassigning to a different project (no warning needed)
             is_reassignment = True
-            old_project_id = self.project.project_id if self.project else "unknown"
-            warnings.append(f"Replaced assignment from {old_project_id}")
         elif self.status != self.Status.AVAILABLE:
             # Other statuses (OCCUPIED, CANCELLED) are not reassignable
             msg = "Slot is not available"

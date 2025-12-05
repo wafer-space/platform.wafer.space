@@ -284,9 +284,6 @@ class TestAssignProjectView:
         assert response.status_code == HTTPStatus.OK
         data = response.json()
         assert data["success"] is True
-        # Should include warning about replacement
-        assert "warning" in data
-        assert "Replaced" in data["warning"]
 
         # Verify slot now has new project
         slot.refresh_from_db()
