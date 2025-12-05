@@ -13,6 +13,7 @@ from celery import shared_task
 from celery.utils.log import get_task_logger
 from django.conf import settings
 
+from .docker_utils import checks_task
 from .docker_utils import get_docker_client
 from .docker_utils import get_server_config
 from .docker_utils import parse_docker_timestamp_float
@@ -165,7 +166,7 @@ def checks_cleanup_orphaned_docker() -> dict:
     }
 
 
-@shared_task(queue="default")
+@checks_task(queue="default")
 def checks_pending() -> dict[str, int]:
     """Transition PENDING checks to DISPATCHING with server assignment.
 
@@ -175,7 +176,6 @@ def checks_pending() -> dict[str, int]:
         Dict with count of dispatched checks.
     """
     logger = logging.getLogger(__name__)
-    logger.info("[checks_pending] Starting pending check assignment")
 
     dispatched = 0
 
@@ -196,7 +196,7 @@ def checks_pending() -> dict[str, int]:
 
         if available_slots > 0:
             logger.info(
-                "[checks_pending] Server %s: %d/%d active, %d slots available",
+                "Server %s: %d/%d active, %d slots available",
                 server_id,
                 active_count,
                 max_concurrent,
@@ -209,18 +209,13 @@ def checks_pending() -> dict[str, int]:
 
             for check in pending_checks:
                 check.mark_dispatching(server_id=server_id)
-                logger.info(
-                    "[checks_pending] Assigned check %s to server %s",
-                    check.id,
-                    server_id,
-                )
+                logger.info("Assigned check %s to server %s", check.id, server_id)
                 dispatched += 1
 
-    logger.info("[checks_pending] Complete: dispatched=%d", dispatched)
     return {"dispatched": dispatched}
 
 
-@shared_task(queue="default")
+@checks_task(queue="default")
 def checks_dispatching() -> dict[str, int]:
     """Queue do_dispatching work tasks for DISPATCHING checks.
 
@@ -230,7 +225,6 @@ def checks_dispatching() -> dict[str, int]:
         Dict with count of queued tasks.
     """
     logger = logging.getLogger(__name__)
-    logger.info("[checks_dispatching] Starting dispatching cycle")
 
     queued = 0
 
@@ -239,7 +233,7 @@ def checks_dispatching() -> dict[str, int]:
     ).exclude(pending_task__isnull=False)
 
     logger.info(
-        "[checks_dispatching] Found %d DISPATCHING checks without pending task",
+        "Found %d DISPATCHING checks without pending task",
         dispatching_checks.count(),
     )
 
@@ -251,17 +245,14 @@ def checks_dispatching() -> dict[str, int]:
             task_name="do_dispatching",
         )
         logger.info(
-            "[checks_dispatching] Queued do_dispatching for check %s (task: %s)",
-            check.id,
-            result.id,
+            "Queued do_dispatching for check %s (task: %s)", check.id, result.id
         )
         queued += 1
 
-    logger.info("[checks_dispatching] Complete: queued=%d", queued)
     return {"queued": queued}
 
 
-@shared_task(queue="default")
+@checks_task(queue="default")
 def checks_starting() -> dict[str, int]:
     """Queue do_starting work tasks for STARTING checks.
 
@@ -271,7 +262,6 @@ def checks_starting() -> dict[str, int]:
         Dict with count of queued tasks.
     """
     logger = logging.getLogger(__name__)
-    logger.info("[checks_starting] Starting starting cycle")
 
     queued = 0
 
@@ -280,7 +270,7 @@ def checks_starting() -> dict[str, int]:
     ).exclude(pending_task__isnull=False)
 
     logger.info(
-        "[checks_starting] Found %d STARTING checks without pending task",
+        "Found %d STARTING checks without pending task",
         starting_checks.count(),
     )
 
@@ -291,18 +281,13 @@ def checks_starting() -> dict[str, int]:
             task_id=result.id,
             task_name="do_starting",
         )
-        logger.info(
-            "[checks_starting] Queued do_starting for check %s (task: %s)",
-            check.id,
-            result.id,
-        )
+        logger.info("Queued do_starting for check %s (task: %s)", check.id, result.id)
         queued += 1
 
-    logger.info("[checks_starting] Complete: queued=%d", queued)
     return {"queued": queued}
 
 
-@shared_task(queue="default")
+@checks_task(queue="default")
 def checks_running() -> dict[str, int]:
     """Queue do_running work tasks for RUNNING checks.
 
@@ -312,7 +297,6 @@ def checks_running() -> dict[str, int]:
         Dict with count of queued tasks.
     """
     logger = logging.getLogger(__name__)
-    logger.info("[checks_running] Starting running cycle")
 
     queued = 0
 
@@ -321,7 +305,7 @@ def checks_running() -> dict[str, int]:
     ).exclude(pending_task__isnull=False)
 
     logger.info(
-        "[checks_running] Found %d RUNNING checks without pending task",
+        "Found %d RUNNING checks without pending task",
         running_checks.count(),
     )
 
@@ -332,18 +316,13 @@ def checks_running() -> dict[str, int]:
             task_id=result.id,
             task_name="do_running",
         )
-        logger.info(
-            "[checks_running] Queued do_running for check %s (task: %s)",
-            check.id,
-            result.id,
-        )
+        logger.info("Queued do_running for check %s (task: %s)", check.id, result.id)
         queued += 1
 
-    logger.info("[checks_running] Complete: queued=%d", queued)
     return {"queued": queued}
 
 
-@shared_task(queue="default")
+@checks_task(queue="default")
 def checks_analyzing() -> dict[str, int]:
     """Queue do_analyzing work tasks for ANALYZING checks.
 
@@ -353,7 +332,6 @@ def checks_analyzing() -> dict[str, int]:
         Dict with count of queued tasks.
     """
     logger = logging.getLogger(__name__)
-    logger.info("[checks_analyzing] Starting analyzing cycle")
 
     queued = 0
 
@@ -362,7 +340,7 @@ def checks_analyzing() -> dict[str, int]:
     ).exclude(pending_task__isnull=False)
 
     logger.info(
-        "[checks_analyzing] Found %d ANALYZING checks without pending task",
+        "Found %d ANALYZING checks without pending task",
         analyzing_checks.count(),
     )
 
@@ -373,18 +351,13 @@ def checks_analyzing() -> dict[str, int]:
             task_id=result.id,
             task_name="do_analyzing",
         )
-        logger.info(
-            "[checks_analyzing] Queued do_analyzing for check %s (task: %s)",
-            check.id,
-            result.id,
-        )
+        logger.info("Queued do_analyzing for check %s (task: %s)", check.id, result.id)
         queued += 1
 
-    logger.info("[checks_analyzing] Complete: queued=%d", queued)
     return {"queued": queued}
 
 
-@shared_task(queue="default")
+@checks_task(queue="default")
 def checks_retry() -> dict:
     """Move retryable ERROR checks back to PENDING state.
 
@@ -392,7 +365,6 @@ def checks_retry() -> dict:
         dict with 'retried' and 'exhausted' counts
     """
     logger = logging.getLogger(__name__)
-    logger.info("[checks_retry] Starting retry cycle")
 
     retried = 0
     exhausted = 0
@@ -401,12 +373,12 @@ def checks_retry() -> dict:
         status=ManufacturabilityCheck.Status.ERROR,
     )
     error_count = error_checks.count()
-    logger.info("[checks_retry] Found %d checks in ERROR state", error_count)
+    logger.info("Found %d checks in ERROR state", error_count)
 
     for check in error_checks:
         if check.can_retry():
             logger.info(
-                "[checks_retry] Retrying check %s (project: %s, attempt %d/%d)",
+                "Retrying check %s (project: %s, attempt %d/%d)",
                 check.id,
                 check.project.name,
                 check.retry_count + 1,
@@ -416,22 +388,17 @@ def checks_retry() -> dict:
             retried += 1
         else:
             logger.info(
-                "[checks_retry] Check %s exhausted retries (%d/%d)",
+                "Check %s exhausted retries (%d/%d)",
                 check.id,
                 check.retry_count,
                 check.max_retries,
             )
             exhausted += 1
 
-    logger.info(
-        "[checks_retry] Complete: retried=%d, exhausted=%d",
-        retried,
-        exhausted,
-    )
     return {"retried": retried, "exhausted": exhausted}
 
 
-@shared_task(queue="default")
+@checks_task(queue="default")
 def checks_create() -> dict:
     """Create ManufacturabilityChecks for verified downloads that need them.
 
@@ -439,7 +406,6 @@ def checks_create() -> dict:
         dict with 'created' count
     """
     logger = logging.getLogger(__name__)
-    logger.info("[checks_create] Starting check creation cycle")
 
     created = 0
 
@@ -452,7 +418,7 @@ def checks_create() -> dict:
     )
 
     files_count = files_needing_checks.count()
-    logger.info("[checks_create] Found %d verified files needing checks", files_count)
+    logger.info("Found %d verified files needing checks", files_count)
 
     for project_file in files_needing_checks:
         check = ManufacturabilityCheck.objects.create(
@@ -461,18 +427,17 @@ def checks_create() -> dict:
             status=ManufacturabilityCheck.Status.PENDING,
         )
         logger.info(
-            "[checks_create] Created check %s for project %s, file %s",
+            "Created check %s for project %s, file %s",
             check.id,
             project_file.project.name,
             project_file.original_filename,
         )
         created += 1
 
-    logger.info("[checks_create] Complete: created=%d", created)
     return {"created": created}
 
 
-@shared_task(queue="default")
+@checks_task(queue="default")
 def checks_cancelling() -> dict[str, int]:
     """Queue do_cancelling work tasks for CANCELLING checks.
 
@@ -482,7 +447,6 @@ def checks_cancelling() -> dict[str, int]:
         Dict with count of queued tasks.
     """
     logger = logging.getLogger(__name__)
-    logger.info("[checks_cancelling] Starting cancelling cycle")
 
     queued = 0
 
@@ -491,7 +455,7 @@ def checks_cancelling() -> dict[str, int]:
     ).exclude(pending_task__isnull=False)
 
     logger.info(
-        "[checks_cancelling] Found %d CANCELLING checks without pending task",
+        "Found %d CANCELLING checks without pending task",
         cancelling_checks.count(),
     )
 
@@ -502,14 +466,9 @@ def checks_cancelling() -> dict[str, int]:
             task_id=result.id,
             task_name="do_cancelling",
         )
-        logger.info(
-            "[checks_cancelling] Queued do_cancelling for check %s (task: %s)",
-            check.id,
-            result.id,
-        )
+        logger.info("Queued do_cancelling for check %s (task: %s)", check.id, result.id)
         queued += 1
 
-    logger.info("[checks_cancelling] Complete: queued=%d", queued)
     return {"queued": queued}
 
 
@@ -926,7 +885,7 @@ def do_cancelling(check: ManufacturabilityCheck) -> dict[str, Any]:
     return {"status": "success"}
 
 
-@shared_task(queue="default")
+@checks_task(queue="default")
 def checks_cleanup_stale_files() -> dict:
     """Cancel checks on project files that are no longer active.
 
