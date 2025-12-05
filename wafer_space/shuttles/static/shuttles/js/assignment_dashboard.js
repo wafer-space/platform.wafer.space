@@ -503,9 +503,9 @@
 
   // Assign project to slot (from grid click)
   function assignProject() {
-    const projectId = document.getElementById('selected-project-id').value;
+    const projectId = parseInt(document.getElementById('selected-project-id').value, 10);
 
-    if (!projectId) {
+    if (!projectId || isNaN(projectId)) {
       alert('Please select a project');
       return;
     }
