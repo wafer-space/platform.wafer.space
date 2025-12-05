@@ -179,13 +179,15 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
             },
         ),
         (
-            "Docker Container",
+            "Docker & Version Info",
             {
                 "fields": [
                     "docker_server_id",
                     "docker_container_id",
                     "docker_image",
                     "docker_image_digest",
+                    "tool_versions",
+                    "precheck_version",
                 ],
                 "classes": ["collapse"],
             },
@@ -195,18 +197,6 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
             {
                 "fields": [
                     "processing_logs",
-                ],
-                "classes": ["collapse"],
-            },
-        ),
-        (
-            "Version Information",
-            {
-                "fields": [
-                    "docker_image",
-                    "docker_image_digest",
-                    "tool_versions",
-                    "precheck_version",
                     "last_activity",
                 ],
                 "classes": ["collapse"],
