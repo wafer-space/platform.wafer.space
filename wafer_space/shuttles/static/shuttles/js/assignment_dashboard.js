@@ -290,6 +290,15 @@
     activeIndex = -1;
   }
 
+  // Scroll the active autocomplete item into view
+  function scrollActiveItemIntoView() {
+    var resultsDiv = document.getElementById('project-results');
+    var activeItem = resultsDiv.querySelector('.autocomplete-item.active');
+    if (activeItem) {
+      activeItem.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }
+
   // Handle autocomplete keyboard navigation
   function handleAutocompleteKeydown(event) {
     const resultsDiv = document.getElementById('project-results');
@@ -299,20 +308,12 @@
       event.preventDefault();
       activeIndex = Math.min(activeIndex + 1, filteredProjects.length - 1);
       renderAutocompleteResults(currentSlotSize);
-      // Scroll active item into view
-      var activeItem = resultsDiv.querySelector('.autocomplete-item.active');
-      if (activeItem) {
-        activeItem.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      }
+      scrollActiveItemIntoView();
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
       activeIndex = Math.max(activeIndex - 1, 0);
       renderAutocompleteResults(currentSlotSize);
-      // Scroll active item into view
-      var activeItem = resultsDiv.querySelector('.autocomplete-item.active');
-      if (activeItem) {
-        activeItem.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      }
+      scrollActiveItemIntoView();
     } else if (event.key === 'Enter') {
       event.preventDefault();
       if (activeIndex >= 0 && activeIndex < filteredProjects.length) {
