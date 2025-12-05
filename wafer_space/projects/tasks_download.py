@@ -1312,12 +1312,7 @@ def _process_and_save_content(
                 "stage": "content_extraction",
                 "traceback": traceback.format_exc(),
                 "original_filename": project_file.original_filename,
-                "file_size": (
-                    processed_content.stat().st_size
-                    if isinstance(processed_content, Path)
-                    and processed_content.exists()
-                    else None
-                ),
+                "file_size": len(processed_content),
             },
         )
 
