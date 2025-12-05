@@ -103,8 +103,8 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
         "project",
         "status",
         "is_manufacturable",
-        "celery_job_started_at",
-        "celery_job_finished_at",
+        "container_started_at",
+        "analysis_completed_at",
         "docker_image_digest",
         "rerun_requested_by",
     ]
@@ -112,8 +112,8 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
     list_filter = [
         "status",
         "is_manufacturable",
-        "celery_job_started_at",
-        "celery_job_finished_at",
+        "container_started_at",
+        "analysis_completed_at",
     ]
 
     search_fields = [
@@ -124,12 +124,11 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
 
     readonly_fields = [
         "project",
-        "celery_job_dispatched_at",
-        "celery_job_started_at",
-        "celery_job_finished_at",
-        "celery_job_id",
-        "celery_worker_pid",
-        "celery_worker_hostname",
+        "dispatching_started_at",
+        "starting_started_at",
+        "container_started_at",
+        "container_finished_at",
+        "analysis_completed_at",
         "is_manufacturable",
         "errors",
         "warnings",
@@ -138,7 +137,7 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
         "docker_image",
         "docker_image_digest",
         "docker_container_id",
-        "docker_container_started_at",
+        "docker_server_id",
         "tool_versions",
         "precheck_version",
         "last_activity",
@@ -166,15 +165,15 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
             },
         ),
         (
-            "Celery Job",
+            "Timing",
             {
                 "fields": [
-                    "celery_job_dispatched_at",
-                    "celery_job_started_at",
-                    "celery_job_finished_at",
-                    "celery_job_id",
-                    "celery_worker_pid",
-                    "celery_worker_hostname",
+                    "dispatching_started_at",
+                    "starting_started_at",
+                    "container_started_at",
+                    "container_finished_at",
+                    "analysis_completed_at",
+                    "last_activity",
                 ],
                 "classes": ["collapse"],
             },
@@ -183,8 +182,10 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
             "Docker Container",
             {
                 "fields": [
+                    "docker_server_id",
                     "docker_container_id",
-                    "docker_container_started_at",
+                    "docker_image",
+                    "docker_image_digest",
                 ],
                 "classes": ["collapse"],
             },
