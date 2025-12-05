@@ -94,29 +94,17 @@ git commit -m "feat(models): add DISPATCHING, STARTING, ANALYZING status values"
 class TestManufacturabilityCheckStatusClassification:
     """Test status classification methods."""
 
-    def test_active_returns_server_limiting_statuses(self) -> None:
-        """active() returns statuses that count toward server concurrent limit."""
+    def test_active_returns_processing_statuses(self) -> None:
+        """active() returns statuses where check is actively being processed."""
         active = ManufacturabilityCheck.Status.active()
         assert ManufacturabilityCheck.Status.DISPATCHING in active
         assert ManufacturabilityCheck.Status.STARTING in active
         assert ManufacturabilityCheck.Status.RUNNING in active
+        assert ManufacturabilityCheck.Status.ANALYZING in active
         assert ManufacturabilityCheck.Status.CANCELLING in active
         # These should NOT be in active:
         assert ManufacturabilityCheck.Status.PENDING not in active
-        assert ManufacturabilityCheck.Status.ANALYZING not in active
         assert ManufacturabilityCheck.Status.FINISHED not in active
-
-    def test_working_returns_processing_statuses(self) -> None:
-        """working() returns statuses where check is actively being processed."""
-        working = ManufacturabilityCheck.Status.working()
-        assert ManufacturabilityCheck.Status.DISPATCHING in working
-        assert ManufacturabilityCheck.Status.STARTING in working
-        assert ManufacturabilityCheck.Status.RUNNING in working
-        assert ManufacturabilityCheck.Status.ANALYZING in working
-        assert ManufacturabilityCheck.Status.CANCELLING in working
-        # These should NOT be in working:
-        assert ManufacturabilityCheck.Status.PENDING not in working
-        assert ManufacturabilityCheck.Status.FINISHED not in working
 
     def test_terminal_returns_completion_statuses(self) -> None:
         """terminal() returns statuses representing completion."""

@@ -377,8 +377,7 @@ class ManufacturingCheckTask(models.Model):
 
 ### ManufacturingCheck: Add Status Classification Methods
 
-- `Status.active()` - statuses counting toward server concurrent limit
-- `Status.working()` - statuses where check is actively being processed
+- `Status.active()` - statuses where check is actively being processed
 - `Status.terminal()` - statuses representing completion
 
 ### ManufacturingCheck: Remove Fields

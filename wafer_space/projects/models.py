@@ -1240,18 +1240,10 @@ class ManufacturabilityCheck(models.Model):
 
         @classmethod
         def active(cls) -> list[str]:
-            """Statuses that count toward server concurrent limit.
-
-            These statuses indicate a check is actively using Docker server resources
-            (container exists or is being created).
-            """
-            return [cls.DISPATCHING, cls.STARTING, cls.RUNNING, cls.CANCELLING]
-
-        @classmethod
-        def working(cls) -> list[str]:
             """Statuses where check is actively being processed.
 
             These statuses indicate work is happening - either on Docker or analysis.
+            Used for concurrent limits and determining if a check is still running.
             """
             return [
                 cls.DISPATCHING,
@@ -1290,7 +1282,6 @@ class ManufacturabilityCheck(models.Model):
         Status.STARTING: {Status.RUNNING, Status.ERROR, Status.CANCELLING},
         Status.RUNNING: {
             Status.ANALYZING,
-            Status.FINISHED,
             Status.ERROR,
             Status.CANCELLING,
         },
