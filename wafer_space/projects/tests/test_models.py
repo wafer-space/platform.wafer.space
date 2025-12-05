@@ -2498,3 +2498,38 @@ class TestManufacturabilityCheckServerField:
         """docker_server_id can store server identifier."""
         check = ManufacturabilityCheckFactory(docker_server_id="local")
         assert check.docker_server_id == "local"
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckTimestampFields:
+    """Test new granular timestamp fields."""
+
+    def test_dispatching_started_at_field_exists(self) -> None:
+        """Check should have dispatching_started_at field."""
+        check = ManufacturabilityCheckFactory()
+        assert hasattr(check, "dispatching_started_at")
+        assert check.dispatching_started_at is None
+
+    def test_starting_started_at_field_exists(self) -> None:
+        """Check should have starting_started_at field."""
+        check = ManufacturabilityCheckFactory()
+        assert hasattr(check, "starting_started_at")
+        assert check.starting_started_at is None
+
+    def test_container_started_at_field_exists(self) -> None:
+        """Check should have container_started_at field."""
+        check = ManufacturabilityCheckFactory()
+        assert hasattr(check, "container_started_at")
+        assert check.container_started_at is None
+
+    def test_container_finished_at_field_exists(self) -> None:
+        """Check should have container_finished_at field."""
+        check = ManufacturabilityCheckFactory()
+        assert hasattr(check, "container_finished_at")
+        assert check.container_finished_at is None
+
+    def test_analysis_completed_at_field_exists(self) -> None:
+        """Check should have analysis_completed_at field."""
+        check = ManufacturabilityCheckFactory()
+        assert hasattr(check, "analysis_completed_at")
+        assert check.analysis_completed_at is None
