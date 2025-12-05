@@ -18,6 +18,7 @@ from unittest.mock import Mock
 from unittest.mock import patch
 from unittest.mock import patch as mock_patch
 
+import docker.errors
 import pytest
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -50,7 +51,11 @@ from wafer_space.projects.tasks import checks_pending
 from wafer_space.projects.tasks import checks_retry
 from wafer_space.projects.tasks import checks_running
 from wafer_space.projects.tasks import checks_starting
+from wafer_space.projects.tasks import do_analyzing
+from wafer_space.projects.tasks import do_cancelling
 from wafer_space.projects.tasks import do_dispatching
+from wafer_space.projects.tasks import do_running
+from wafer_space.projects.tasks import do_starting
 from wafer_space.projects.tasks import download_project_file
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.shuttles.models import Shuttle
@@ -2136,3 +2141,312 @@ class TestDoDispatching:
         mock_docker.DockerClient.assert_not_called()
         assert result["status"] == "skipped"
         assert result["reason"] == "status_changed"
+
+
+class TestDoStarting:
+    """Test do_starting work task."""
+
+    @pytest.mark.django_db
+    def test_creates_and_starts_container(self, tmp_path) -> None:
+        """Creates container with correct config and starts it."""
+        # Create a test file
+        test_file = tmp_path / "design.gds"
+        test_file.write_bytes(b"test gds content")
+
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.STARTING,
+            docker_server_id="test-local",
+            docker_image="ghcr.io/test:latest",
+        )
+        check.project_file.file.name = str(test_file)
+        check.project_file.save()
+
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_starting"
+        )
+
+        with (
+            patch("wafer_space.projects.tasks.docker") as mock_docker,
+            patch("wafer_space.projects.tasks.Path") as mock_path,
+        ):
+            mock_client = MagicMock()
+            mock_docker.DockerClient.return_value = mock_client
+            mock_container = MagicMock()
+            mock_container.id = "container123"
+            mock_container.status = "running"
+            mock_client.containers.create.return_value = mock_container
+
+            # Mock the Path to say file exists
+            mock_path_instance = MagicMock()
+            mock_path_instance.exists.return_value = True
+            mock_path.return_value = mock_path_instance
+
+            result = do_starting(check.id)
+
+        assert result["status"] == "success"
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.RUNNING
+        assert check.docker_container_id == "container123"
+
+    @pytest.mark.django_db
+    def test_cleans_up_task_tracking(self, tmp_path) -> None:
+        """Deletes ManufacturabilityCheckTask when done."""
+        test_file = tmp_path / "design.gds"
+        test_file.write_bytes(b"test")
+
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.STARTING,
+            docker_server_id="test-local",
+            docker_image="ghcr.io/test:latest",
+        )
+        check.project_file.file.name = str(test_file)
+        check.project_file.save()
+
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_starting"
+        )
+
+        with (
+            patch("wafer_space.projects.tasks.docker") as mock_docker,
+            patch("wafer_space.projects.tasks.Path") as mock_path,
+        ):
+            mock_client = MagicMock()
+            mock_docker.DockerClient.return_value = mock_client
+            mock_container = MagicMock()
+            mock_container.id = "container123"
+            mock_container.status = "running"
+            mock_client.containers.create.return_value = mock_container
+            mock_path_instance = MagicMock()
+            mock_path_instance.exists.return_value = True
+            mock_path.return_value = mock_path_instance
+
+            do_starting(check.id)
+
+        assert not ManufacturabilityCheckTask.objects.filter(
+            manufacturability_check=check
+        ).exists()
+
+    @pytest.mark.django_db
+    def test_skips_if_status_changed(self) -> None:
+        """Does nothing if status is no longer STARTING."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.CANCELLED,
+            docker_server_id="test-local",
+        )
+
+        with patch("wafer_space.projects.tasks.docker") as mock_docker:
+            result = do_starting(check.id)
+
+        mock_docker.DockerClient.assert_not_called()
+        assert result["status"] == "skipped"
+        assert result["reason"] == "status_changed"
+
+
+class TestDoRunning:
+    """Test do_running work task."""
+
+    @pytest.mark.django_db
+    def test_downloads_logs_and_updates_check(self) -> None:
+        """Downloads container logs and appends to processing logs."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING,
+            docker_server_id="test-local",
+            docker_container_id="container123",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_running"
+        )
+
+        mock_logs = "2024-12-05T10:00:00.123456789Z Test log line\n"
+
+        with patch("wafer_space.projects.tasks.docker") as mock_docker:
+            mock_client = MagicMock()
+            mock_docker.DockerClient.return_value = mock_client
+            mock_container = MagicMock()
+            mock_container.id = "container123"
+            mock_container.status = "running"
+            mock_container.logs.return_value = mock_logs.encode("utf-8")
+            mock_client.containers.get.return_value = mock_container
+
+            result = do_running(check.id)
+
+        assert result["status"] == "still_running"
+        check.refresh_from_db()
+        assert "Test log line" in check.processing_logs
+
+    @pytest.mark.django_db
+    def test_transitions_to_analyzing_when_container_exited(self) -> None:
+        """Transitions to ANALYZING when container has exited."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING,
+            docker_server_id="test-local",
+            docker_container_id="container123",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_running"
+        )
+
+        with patch("wafer_space.projects.tasks.docker") as mock_docker:
+            mock_client = MagicMock()
+            mock_docker.DockerClient.return_value = mock_client
+            mock_container = MagicMock()
+            mock_container.id = "container123"
+            mock_container.status = "exited"
+            mock_container.attrs = {"State": {"ExitCode": 0}}
+            mock_container.logs.return_value = b""
+            mock_client.containers.get.return_value = mock_container
+
+            result = do_running(check.id)
+
+        assert result["status"] == "container_exited"
+        assert result["exit_code"] == 0
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.ANALYZING
+
+    @pytest.mark.django_db
+    def test_skips_if_status_changed(self) -> None:
+        """Does nothing if status is no longer RUNNING."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.CANCELLED,
+        )
+
+        with patch("wafer_space.projects.tasks.docker") as mock_docker:
+            result = do_running(check.id)
+
+        mock_docker.DockerClient.assert_not_called()
+        assert result["status"] == "skipped"
+
+
+class TestDoAnalyzing:
+    """Test do_analyzing work task."""
+
+    @pytest.mark.django_db
+    def test_parses_logs_and_transitions_to_finished(self) -> None:
+        """Parses logs successfully and transitions to FINISHED."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            docker_exit_code=0,
+            processing_logs="Precheck successfully completed.",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_analyzing"
+        )
+
+        result = do_analyzing(check.id)
+
+        assert result["status"] == "success"
+        assert result["is_manufacturable"] is True
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
+        assert check.is_manufacturable is True
+
+    @pytest.mark.django_db
+    def test_handles_design_errors(self) -> None:
+        """Marks check as not manufacturable when design has errors."""
+        logs = """
+Error: Multiple top cells found: cell1, cell2
+Check for Magic DRC errors clear.
+Check for KLayout DRC errors clear.
+"""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            docker_exit_code=1,
+            processing_logs=logs,
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_analyzing"
+        )
+
+        result = do_analyzing(check.id)
+
+        assert result["status"] == "success"
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
+        assert check.is_manufacturable is False
+        assert len(check.errors) > 0
+
+    @pytest.mark.django_db
+    def test_skips_if_status_changed(self) -> None:
+        """Does nothing if status is no longer ANALYZING."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.CANCELLED,
+        )
+
+        result = do_analyzing(check.id)
+
+        assert result["status"] == "skipped"
+
+
+class TestDoCancelling:
+    """Test do_cancelling work task."""
+
+    @pytest.mark.django_db
+    def test_stops_and_removes_container(self) -> None:
+        """Stops running container and removes it."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.CANCELLING,
+            docker_server_id="test-local",
+            docker_container_id="container123",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_cancelling"
+        )
+
+        with patch("wafer_space.projects.tasks.docker") as mock_docker:
+            mock_client = MagicMock()
+            mock_docker.DockerClient.return_value = mock_client
+            mock_container = MagicMock()
+            mock_container.id = "container123"
+            mock_container.status = "running"
+            mock_client.containers.get.return_value = mock_container
+
+            result = do_cancelling(check.id)
+
+        assert result["status"] == "success"
+        assert result["container_stopped"] is True
+        assert result["container_removed"] is True
+        mock_container.stop.assert_called_once()
+        mock_container.remove.assert_called_once()
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+
+    @pytest.mark.django_db
+    def test_handles_missing_container_gracefully(self) -> None:
+        """Handles case where container is already gone."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.CANCELLING,
+            docker_server_id="test-local",
+            docker_container_id="container123",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_cancelling"
+        )
+
+        with patch("wafer_space.projects.tasks.docker") as mock_docker:
+            mock_client = MagicMock()
+            mock_docker.DockerClient.return_value = mock_client
+            # Configure docker.errors to have proper exception classes
+            mock_docker.errors.NotFound = docker.errors.NotFound
+            mock_docker.errors.DockerException = docker.errors.DockerException
+            mock_client.containers.get.side_effect = docker.errors.NotFound(
+                "Container not found"
+            )
+
+            result = do_cancelling(check.id)
+
+        assert result["status"] == "success"
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+
+    @pytest.mark.django_db
+    def test_skips_if_status_changed(self) -> None:
+        """Does nothing if status is no longer CANCELLING."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+
+        with patch("wafer_space.projects.tasks.docker") as mock_docker:
+            result = do_cancelling(check.id)
+
+        mock_docker.DockerClient.assert_not_called()
+        assert result["status"] == "skipped"
