@@ -210,8 +210,8 @@ document.querySelectorAll('.slot-cell').forEach(cell => {
 ```javascript
 function selectSlotAndSubmit(cell) {
   const slotId = cell.dataset.slotId;
-  const projectId = document.getElementById('assign-project-id').value;
-  doAssignment(projectId, slotId);
+  // currentProjectIdForAssign is set by assignSlot() when modal opens
+  doAssignment(currentProjectIdForAssign, slotId);
 }
 ```
 
