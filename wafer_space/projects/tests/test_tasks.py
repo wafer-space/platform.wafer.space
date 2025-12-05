@@ -1136,9 +1136,10 @@ class TestDoDispatching:
             manufacturability_check=check, task_id="test", task_name="do_dispatching"
         )
 
-        with patch("wafer_space.projects.tasks_checks.docker") as mock_docker:
+        mock_path = "wafer_space.projects.tasks_checks.docker.DockerClient"
+        with patch(mock_path) as mock_docker_client:
             mock_client = MagicMock()
-            mock_docker.DockerClient.return_value = mock_client
+            mock_docker_client.return_value = mock_client
             mock_image = MagicMock()
             mock_image.attrs = {"RepoDigests": ["ghcr.io/test@sha256:abc123"]}
             mock_client.images.pull.return_value = mock_image
@@ -1160,9 +1161,10 @@ class TestDoDispatching:
             manufacturability_check=check, task_id="test", task_name="do_dispatching"
         )
 
-        with patch("wafer_space.projects.tasks_checks.docker") as mock_docker:
+        mock_path = "wafer_space.projects.tasks_checks.docker.DockerClient"
+        with patch(mock_path) as mock_docker_client:
             mock_client = MagicMock()
-            mock_docker.DockerClient.return_value = mock_client
+            mock_docker_client.return_value = mock_client
             mock_image = MagicMock()
             mock_image.attrs = {"RepoDigests": ["ghcr.io/test@sha256:abc123"]}
             mock_client.images.pull.return_value = mock_image
@@ -1181,11 +1183,12 @@ class TestDoDispatching:
             docker_server_id="test-local",
         )
 
-        with patch("wafer_space.projects.tasks_checks.docker") as mock_docker:
+        mock_path = "wafer_space.projects.tasks_checks.docker.DockerClient"
+        with patch(mock_path) as mock_docker_client:
             result = do_dispatching(check.id)
 
         # Should not interact with Docker
-        mock_docker.DockerClient.assert_not_called()
+        mock_docker_client.assert_not_called()
         assert result["status"] == "skipped"
         assert result["reason"] == "status_changed"
 
@@ -1212,12 +1215,13 @@ class TestDoStarting:
             manufacturability_check=check, task_id="test", task_name="do_starting"
         )
 
+        mock_docker_path = "wafer_space.projects.tasks_checks.docker.DockerClient"
         with (
-            patch("wafer_space.projects.tasks_checks.docker") as mock_docker,
+            patch(mock_docker_path) as mock_docker_client,
             patch("wafer_space.projects.tasks_checks.Path") as mock_path,
         ):
             mock_client = MagicMock()
-            mock_docker.DockerClient.return_value = mock_client
+            mock_docker_client.return_value = mock_client
             mock_container = MagicMock()
             mock_container.id = "container123"
             mock_container.status = "running"
@@ -1253,12 +1257,13 @@ class TestDoStarting:
             manufacturability_check=check, task_id="test", task_name="do_starting"
         )
 
+        mock_docker_path = "wafer_space.projects.tasks_checks.docker.DockerClient"
         with (
-            patch("wafer_space.projects.tasks_checks.docker") as mock_docker,
+            patch(mock_docker_path) as mock_docker_client,
             patch("wafer_space.projects.tasks_checks.Path") as mock_path,
         ):
             mock_client = MagicMock()
-            mock_docker.DockerClient.return_value = mock_client
+            mock_docker_client.return_value = mock_client
             mock_container = MagicMock()
             mock_container.id = "container123"
             mock_container.status = "running"
@@ -1281,10 +1286,11 @@ class TestDoStarting:
             docker_server_id="test-local",
         )
 
-        with patch("wafer_space.projects.tasks_checks.docker") as mock_docker:
+        mock_path = "wafer_space.projects.tasks_checks.docker.DockerClient"
+        with patch(mock_path) as mock_docker_client:
             result = do_starting(check.id)
 
-        mock_docker.DockerClient.assert_not_called()
+        mock_docker_client.assert_not_called()
         assert result["status"] == "skipped"
         assert result["reason"] == "status_changed"
 
@@ -1306,9 +1312,10 @@ class TestDoRunning:
 
         mock_logs = "2024-12-05T10:00:00.123456789Z Test log line\n"
 
-        with patch("wafer_space.projects.tasks_checks.docker") as mock_docker:
+        mock_path = "wafer_space.projects.tasks_checks.docker.DockerClient"
+        with patch(mock_path) as mock_docker_client:
             mock_client = MagicMock()
-            mock_docker.DockerClient.return_value = mock_client
+            mock_docker_client.return_value = mock_client
             mock_container = MagicMock()
             mock_container.id = "container123"
             mock_container.status = "running"
@@ -1333,9 +1340,10 @@ class TestDoRunning:
             manufacturability_check=check, task_id="test", task_name="do_running"
         )
 
-        with patch("wafer_space.projects.tasks_checks.docker") as mock_docker:
+        mock_path = "wafer_space.projects.tasks_checks.docker.DockerClient"
+        with patch(mock_path) as mock_docker_client:
             mock_client = MagicMock()
-            mock_docker.DockerClient.return_value = mock_client
+            mock_docker_client.return_value = mock_client
             mock_container = MagicMock()
             mock_container.id = "container123"
             mock_container.status = "exited"
@@ -1357,10 +1365,11 @@ class TestDoRunning:
             status=ManufacturabilityCheck.Status.CANCELLED,
         )
 
-        with patch("wafer_space.projects.tasks_checks.docker") as mock_docker:
+        mock_path = "wafer_space.projects.tasks_checks.docker.DockerClient"
+        with patch(mock_path) as mock_docker_client:
             result = do_running(check.id)
 
-        mock_docker.DockerClient.assert_not_called()
+        mock_docker_client.assert_not_called()
         assert result["status"] == "skipped"
 
 
