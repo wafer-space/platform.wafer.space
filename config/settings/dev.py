@@ -89,7 +89,7 @@ DOCKER_SERVERS = [
     {
         "id": "local",
         "url": "unix:///var/run/docker.sock",
-        "max_concurrent": 4,
+        "max_concurrent": 1,
         "priority": 1,
     },
 ]
