@@ -11,6 +11,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        # Create ManufacturabilityCheckTask model
         migrations.CreateModel(
             name="ManufacturabilityCheckTask",
             fields=[
@@ -53,5 +54,59 @@ class Migration(migrations.Migration):
                 "verbose_name": "Manufacturability Check Task",
                 "verbose_name_plural": "Manufacturability Check Tasks",
             },
+        ),
+        # Update ManufacturabilityCheck model options
+        migrations.AlterModelOptions(
+            name="manufacturabilitycheck",
+            options={
+                "ordering": ["-created_at"],
+                "verbose_name": "Manufacturability Check",
+                "verbose_name_plural": "Manufacturability Checks",
+            },
+        ),
+        # Remove deprecated celery fields
+        migrations.RemoveField(
+            model_name="manufacturabilitycheck",
+            name="celery_job_dispatched_at",
+        ),
+        migrations.RemoveField(
+            model_name="manufacturabilitycheck",
+            name="celery_job_finished_at",
+        ),
+        migrations.RemoveField(
+            model_name="manufacturabilitycheck",
+            name="celery_job_id",
+        ),
+        migrations.RemoveField(
+            model_name="manufacturabilitycheck",
+            name="celery_job_started_at",
+        ),
+        migrations.RemoveField(
+            model_name="manufacturabilitycheck",
+            name="celery_worker_hostname",
+        ),
+        migrations.RemoveField(
+            model_name="manufacturabilitycheck",
+            name="celery_worker_pid",
+        ),
+        # Update status field with new choices
+        migrations.AlterField(
+            model_name="manufacturabilitycheck",
+            name="status",
+            field=models.CharField(
+                choices=[
+                    ("pending", "Pending"),
+                    ("dispatching", "Dispatching"),
+                    ("starting", "Starting"),
+                    ("running", "Running"),
+                    ("analyzing", "Analyzing"),
+                    ("finished", "Finished"),
+                    ("error", "Error"),
+                    ("cancelling", "Cancelling"),
+                    ("cancelled", "Cancelled"),
+                ],
+                default="pending",
+                max_length=20,
+            ),
         ),
     ]

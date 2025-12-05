@@ -7,7 +7,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("projects", "0044_fix_project_directory_permissions"),
-        ("projects", "0048_remove_deprecated_celery_fields"),
+        ("projects", "0047_add_manufacturability_check_task"),
     ]
 
     operations = []
