@@ -276,9 +276,8 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
         assert ">Proj<" in page_source
         assert ">Slots<" in page_source
 
-    def test_projects_table_shows_owner_column(
-        self, driver, wait, staff_user, shuttle, project_with_compliance
-    ):
+    @pytest.mark.usefixtures("project_with_compliance")
+    def test_projects_table_shows_owner_column(self, driver, wait, staff_user, shuttle):
         """Test that projects table shows owner column."""
         self.perform_login(driver, staff_user.username, TEST_PASSWORD)
 
@@ -347,9 +346,8 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
         assert indicator is not None
         assert "✓" in indicator.text or "mfg-pass" in indicator.get_attribute("class")
 
-    def test_table_columns_are_sortable(
-        self, driver, wait, staff_user, shuttle, project_with_compliance
-    ):
+    @pytest.mark.usefixtures("project_with_compliance")
+    def test_table_columns_are_sortable(self, driver, wait, staff_user, shuttle):
         """Test that clicking column headers sorts the table."""
         # Create a second project for sorting
         project2 = Project.objects.create(
@@ -414,9 +412,8 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
         for cell in slot_cells:
             assert cell.get_attribute("data-click-handler") is not None
 
-    def test_slot_modal_has_autocomplete_input(
-        self, driver, wait, staff_user, shuttle, project_with_compliance
-    ):
+    @pytest.mark.usefixtures("project_with_compliance")
+    def test_slot_modal_has_autocomplete_input(self, driver, wait, staff_user, shuttle):
         """Test that slot modal uses autocomplete input instead of select."""
         self.perform_login(driver, staff_user.username, TEST_PASSWORD)
 
@@ -440,9 +437,8 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
         assert autocomplete_input.get_attribute("type") == "text"
         assert autocomplete_input.get_attribute("autocomplete") == "off"
 
-    def test_assign_modal_shows_grid_picker(
-        self, driver, wait, staff_user, shuttle, project_with_compliance
-    ):
+    @pytest.mark.usefixtures("project_with_compliance")
+    def test_assign_modal_shows_grid_picker(self, driver, wait, staff_user, shuttle):
         """Test that assign modal shows grid instead of dropdown."""
         self.perform_login(driver, staff_user.username, TEST_PASSWORD)
 
