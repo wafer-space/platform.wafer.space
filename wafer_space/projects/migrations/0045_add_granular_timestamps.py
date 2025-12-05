@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("projects", "0044_fix_docker_server_id_nullable"),
+        ("projects", "0043_add_docker_server_id"),
     ]
 
     operations = [
