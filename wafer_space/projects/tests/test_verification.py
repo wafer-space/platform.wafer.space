@@ -596,6 +596,7 @@ class CheckTaskActivelyRunningTests(TestCase):
         # Function is now obsolete and always returns False
         assert result is False
 
+    @pytest.mark.skip(reason="Obsolete - function always returns False")
     @patch("wafer_space.projects.verification.socket")
     @patch("wafer_space.projects.verification.current_app")
     def test_check_task_active_different_hostname_returns_true(
