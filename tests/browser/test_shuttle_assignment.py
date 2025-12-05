@@ -342,8 +342,12 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
         assigned_slot = grid_table.find_element(
             By.CSS_SELECTOR, "td.table-success[data-slot-id]"
         )
-        indicator = assigned_slot.find_element(By.CSS_SELECTOR, ".mfg-indicator")
+        # Look for any manufacturing status indicator (mfg-pass, mfg-pending, or mfg-fail)
+        indicator = assigned_slot.find_element(
+            By.CSS_SELECTOR, ".mfg-pass, .mfg-pending, .mfg-fail"
+        )
         assert indicator is not None
+        # With is_manufacturable=True, should show checkmark with mfg-pass class
         assert "✓" in indicator.text or "mfg-pass" in indicator.get_attribute("class")
 
     @pytest.mark.usefixtures("project_with_compliance")
