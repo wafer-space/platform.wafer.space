@@ -30,7 +30,6 @@ from django.db import transaction
 from django.utils import timezone
 from django_celery_results.models import TaskResult
 
-from config.celery import app as celery_app
 from wafer_space.notifications.services import NotificationService
 
 from .content_pipeline import ContentPipeline
@@ -3385,90 +3384,45 @@ def checks_cleanup_orphaned_processing() -> dict:
     return {"orphaned": orphaned, "verified": verified}
 
 
-@shared_task(queue="docker-ephemeral")
-def checks_cancelling() -> dict:
-    """Complete cancellation for checks in CANCELLING state.
+@shared_task(queue="default")
+def checks_cancelling() -> dict[str, int]:
+    """Queue do_cancelling work tasks for CANCELLING checks.
 
-    This task performs cleanup (revoke Celery task, stop Docker container)
-    before calling mark_cancelled() which handles the state transition
-    and clears tracking fields atomically.
+    Only queues if check doesn't already have a pending task.
 
     Returns:
-        dict with 'completed' and 'failed' counts
+        Dict with count of queued tasks.
     """
     logger = logging.getLogger(__name__)
-    logger.info("[checks_cancelling] Starting cancellation processing")
+    logger.info("[checks_cancelling] Starting cancelling cycle")
 
-    status_enum = ManufacturabilityCheck.Status
-    completed = 0
-    failed = 0
+    queued = 0
 
     cancelling_checks = ManufacturabilityCheck.objects.filter(
-        status=status_enum.CANCELLING
-    )
-    cancelling_count = cancelling_checks.count()
-    logger.info(
-        "[checks_cancelling] Found %d checks in CANCELLING state",
-        cancelling_count,
-    )
+        status=ManufacturabilityCheck.Status.CANCELLING,
+    ).exclude(pending_task__isnull=False)
 
-    client = docker.from_env(timeout=settings.DOCKER_CLIENT_TIMEOUT)
+    logger.info(
+        "[checks_cancelling] Found %d CANCELLING checks without pending task",
+        cancelling_checks.count(),
+    )
 
     for check in cancelling_checks:
-        logger.info(
-            "[checks_cancelling] Processing check %s "
-            "(project: %s, task: %s, container: %s)",
-            check.id,
-            check.project.name,
-            check.celery_job_id,
-            check.docker_container_id,
+        result = do_cancelling.delay(check.id)
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check,
+            task_id=result.id,
+            task_name="do_cancelling",
         )
-        try:
-            # Step 1: Revoke Celery task (cleanup only, don't modify DB)
-            if check.celery_job_id:
-                logger.info(
-                    "[checks_cancelling] Revoking Celery task %s",
-                    check.celery_job_id,
-                )
-                celery_app.control.revoke(check.celery_job_id, terminate=True)
+        logger.info(
+            "[checks_cancelling] Queued do_cancelling for check %s (task: %s)",
+            check.id,
+            result.id,
+        )
+        queued += 1
 
-            # Step 2: Stop and remove Docker container (cleanup only, don't modify DB)
-            if check.docker_container_id:
-                try:
-                    container = client.containers.get(check.docker_container_id)
-                    if container.status == "running":
-                        logger.info(
-                            "[checks_cancelling] Stopping container %s",
-                            check.docker_container_id,
-                        )
-                        container.stop(timeout=10)
-                    logger.info(
-                        "[checks_cancelling] Removing container %s",
-                        check.docker_container_id,
-                    )
-                    container.remove(force=True)
-                except docker.errors.NotFound:
-                    logger.info(
-                        "[checks_cancelling] Container %s already gone",
-                        check.docker_container_id,
-                    )
-
-            # Step 3: Complete transition - mark_cancelled() clears fields atomically
-            check.mark_cancelled()
-            logger.info("[checks_cancelling] Check %s marked CANCELLED", check.id)
-            completed += 1
-
-        except (docker.errors.DockerException, InvalidStateTransitionError) as exc:
-            msg = f"Failed to complete cancellation for check {check.id}: {exc}"
-            logger.exception(msg)
-            failed += 1
-
-    logger.info(
-        "[checks_cancelling] Complete: completed=%d, failed=%d",
-        completed,
-        failed,
-    )
-    return {"completed": completed, "failed": failed}
+    logger.info("[checks_cancelling] Complete: queued=%d", queued)
+    return {"queued": queued}
 
 
 # Work tasks (do_*) - Placeholder stubs for polling architecture
