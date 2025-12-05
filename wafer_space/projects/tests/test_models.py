@@ -1351,11 +1351,11 @@ class TestManufacturabilityCheckStateTransitions(TestCase):
         assert check.can_transition_to(ManufacturabilityCheck.Status.FINISHED) is False
 
     def test_can_transition_dispatched_to_running(self):
-        """DISPATCHED can transition to RUNNING."""
+        """STARTING can transition to RUNNING."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHING,
+            status=ManufacturabilityCheck.Status.STARTING,
         )
         assert check.can_transition_to(ManufacturabilityCheck.Status.RUNNING) is True
 
@@ -1967,7 +1967,7 @@ class TestManufacturabilityCheckMarkFinished(TestCase):
                 tool_versions={},
             )
 
-        assert "dispatched" in str(exc_info.value).lower()
+        assert "dispatching" in str(exc_info.value).lower()
         assert "finished" in str(exc_info.value).lower()
 
     def test_mark_finished_from_finished_raises(self):
