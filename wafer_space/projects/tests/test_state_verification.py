@@ -37,8 +37,8 @@ class DownloadStateVerificationTests(TestCase):
             description="Test Description",
         )
 
-    @patch("wafer_space.projects.tasks.is_download_task_actively_running")
-    @patch("wafer_space.projects.tasks.is_download_task_queued")
+    @patch("wafer_space.projects.tasks_download.is_download_task_actively_running")
+    @patch("wafer_space.projects.tasks_download.is_download_task_queued")
     @patch("wafer_space.projects.tasks.download_project_file.delay")
     def test_pending_file_creates_task(
         self, mock_delay, mock_is_queued, mock_is_running
@@ -72,8 +72,8 @@ class DownloadStateVerificationTests(TestCase):
         assert project_file.download_task_id == "new-task-123"
         assert project_file.download_status == ProjectFile.DownloadStatus.QUEUED
 
-    @patch("wafer_space.projects.tasks.is_download_task_actively_running")
-    @patch("wafer_space.projects.tasks.is_download_task_queued")
+    @patch("wafer_space.projects.tasks_download.is_download_task_actively_running")
+    @patch("wafer_space.projects.tasks_download.is_download_task_queued")
     def test_queued_file_verified(self, mock_is_queued, mock_is_running):
         """Test QUEUED file is verified and counted."""
         # Create file with task_id (status = QUEUED automatically)
@@ -97,8 +97,8 @@ class DownloadStateVerificationTests(TestCase):
         project_file.refresh_from_db()
         assert project_file.download_status == ProjectFile.DownloadStatus.QUEUED
 
-    @patch("wafer_space.projects.tasks.is_download_task_actively_running")
-    @patch("wafer_space.projects.tasks.is_download_task_queued")
+    @patch("wafer_space.projects.tasks_download.is_download_task_actively_running")
+    @patch("wafer_space.projects.tasks_download.is_download_task_queued")
     def test_queued_file_orphaned(self, mock_is_queued, mock_is_running):
         """Test QUEUED file not in queue is marked orphaned."""
         # Create file with task_id (status = QUEUED automatically)
@@ -123,8 +123,8 @@ class DownloadStateVerificationTests(TestCase):
         assert project_file.download_status == ProjectFile.DownloadStatus.FAILED
         assert "not found in Celery queue" in project_file.download_error
 
-    @patch("wafer_space.projects.tasks.is_download_task_queued")
-    @patch("wafer_space.projects.tasks.is_download_task_actively_running")
+    @patch("wafer_space.projects.tasks_download.is_download_task_queued")
+    @patch("wafer_space.projects.tasks_download.is_download_task_actively_running")
     def test_downloading_file_verified(self, mock_is_running, mock_is_queued):
         """Test DOWNLOADING file is verified and counted."""
         # Create file with task_id and DOWNLOADING attempt
@@ -154,8 +154,8 @@ class DownloadStateVerificationTests(TestCase):
         assert project_file.download_status == ProjectFile.DownloadStatus.DOWNLOADING
 
     @patch("wafer_space.projects.tasks.download_project_file.delay")
-    @patch("wafer_space.projects.tasks.is_download_task_queued")
-    @patch("wafer_space.projects.tasks.is_download_task_actively_running")
+    @patch("wafer_space.projects.tasks_download.is_download_task_queued")
+    @patch("wafer_space.projects.tasks_download.is_download_task_actively_running")
     def test_downloading_file_orphaned(
         self, mock_is_running, mock_is_queued, mock_delay
     ):
@@ -201,8 +201,8 @@ class DownloadStateVerificationTests(TestCase):
         assert "not running" in first_attempt.download_error
 
     @patch("wafer_space.projects.tasks.download_project_file.delay")
-    @patch("wafer_space.projects.tasks.is_download_task_queued")
-    @patch("wafer_space.projects.tasks.is_download_task_actively_running")
+    @patch("wafer_space.projects.tasks_download.is_download_task_queued")
+    @patch("wafer_space.projects.tasks_download.is_download_task_actively_running")
     def test_downloading_file_orphaned_max_retries(
         self, mock_is_running, mock_is_queued, mock_delay
     ):
@@ -241,8 +241,8 @@ class DownloadStateVerificationTests(TestCase):
         # Verify NO new task was queued
         mock_delay.assert_not_called()
 
-    @patch("wafer_space.projects.tasks.socket")
-    @patch("wafer_space.projects.tasks.os")
+    @patch("wafer_space.projects.tasks_download.socket")
+    @patch("wafer_space.projects.tasks_download.os")
     def test_download_task_captures_worker_info(self, mock_os, mock_socket):
         """Test that download task captures PID and hostname in DownloadAttempt."""
         project_file = ProjectFile.objects.create(
