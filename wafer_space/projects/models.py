@@ -26,8 +26,6 @@ class CheckExecutionContext:
     Groups worker and docker info to avoid too many function parameters.
     """
 
-    celery_worker_pid: int
-    celery_worker_hostname: str
     docker_container_id: str
     docker_image: str
     docker_image_digest: str
@@ -1184,7 +1182,7 @@ def _get_check_file_prefix(instance) -> tuple[str, str, str]:
     Returns:
         tuple: (gds_name, top_cell, timestamp_str)
     """
-    timestamp = instance.celery_job_started_at or timezone.now()
+    timestamp = instance.container_started_at or instance.created_at or timezone.now()
     timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")
 
     # Get GDS filename (without path)
@@ -1232,7 +1230,6 @@ class ManufacturabilityCheck(models.Model):
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"  # Waiting for capacity
-        DISPATCHED = "dispatched", "Dispatched"  # Job sent to Celery
         DISPATCHING = "dispatching", "Dispatching"  # Image being pulled
         STARTING = "starting", "Starting"  # Container being created
         RUNNING = "running", "Running"  # Celery worker executing
@@ -1271,11 +1268,10 @@ class ManufacturabilityCheck(models.Model):
             return [cls.FINISHED, cls.CANCELLED]
 
     # State machine: defines valid transitions
-    # PENDING: waiting for capacity to dispatch to Celery
+    # PENDING: waiting for capacity to dispatch
     # DISPATCHING: image being pulled
     # STARTING: container being created
-    # DISPATCHED: job sent to Celery (legacy, being phased out)
-    # RUNNING: Celery worker executing analysis
+    # RUNNING: container executing analysis
     # ANALYZING: logs being analyzed
     # FINISHED: analysis complete (terminal)
     # ERROR: system failure, can retry
@@ -1283,13 +1279,11 @@ class ManufacturabilityCheck(models.Model):
     ALLOWED_TRANSITIONS: ClassVar[dict[Status, set[Status]]] = {
         Status.PENDING: {
             Status.DISPATCHING,
-            Status.DISPATCHED,
             Status.ERROR,
             Status.CANCELLING,
         },
         Status.DISPATCHING: {Status.STARTING, Status.ERROR, Status.CANCELLING},
         Status.STARTING: {Status.RUNNING, Status.ERROR, Status.CANCELLING},
-        Status.DISPATCHED: {Status.RUNNING, Status.ERROR, Status.CANCELLING},
         Status.RUNNING: {
             Status.ANALYZING,
             Status.FINISHED,
@@ -1306,11 +1300,15 @@ class ManufacturabilityCheck(models.Model):
     # Maximum characters of processing logs to include in GitHub issue body
     GITHUB_ISSUE_LOG_CHARS: ClassVar[int] = 5000
 
+    # Maximum concurrent checks allowed (active on any server)
+    MAX_CONCURRENT_CHECKS: ClassVar[int] = 4
+
     # Statuses representing checks that are in progress and should be
     # cancelled when the project file is replaced
     IN_PROGRESS_STATUSES: ClassVar[list[Status]] = [
         Status.PENDING,
-        Status.DISPATCHED,
+        Status.DISPATCHING,
+        Status.STARTING,
         Status.RUNNING,
     ]
 
@@ -1334,34 +1332,6 @@ class ManufacturabilityCheck(models.Model):
     created_at = models.DateTimeField(
         auto_now_add=True,
         help_text="When this check record was created",
-    )
-
-    # Processing details
-    celery_job_started_at = models.DateTimeField(null=True, blank=True)
-    celery_job_finished_at = models.DateTimeField(null=True, blank=True)
-    celery_job_id = models.CharField(
-        max_length=100,
-        blank=True,
-        default="",
-        help_text="ID of the Celery job processing this check",
-    )
-    celery_job_dispatched_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="When job was dispatched to Celery queue",
-    )
-
-    # Worker tracking (matching DownloadAttempt pattern)
-    celery_worker_pid = models.IntegerField(
-        null=True,
-        blank=True,
-        help_text="Process ID of Celery worker executing this check",
-    )
-    celery_worker_hostname = models.CharField(
-        max_length=255,
-        blank=True,
-        default="",
-        help_text="Hostname of Celery worker executing this check",
     )
 
     # Docker container tracking
@@ -1515,7 +1485,7 @@ class ManufacturabilityCheck(models.Model):
     class Meta:
         verbose_name = "Manufacturability Check"
         verbose_name_plural = "Manufacturability Checks"
-        ordering = ["-celery_job_started_at"]
+        ordering = ["-created_at"]
 
     def __str__(self):
         return f"Check for {self.project.name} - {self.get_status_display()}"
@@ -1538,46 +1508,6 @@ class ManufacturabilityCheck(models.Model):
         current_status = self.Status(self.status)
         allowed = self.ALLOWED_TRANSITIONS.get(current_status, set())
         return new_status in allowed
-
-    def mark_dispatched(self, *, celery_job_id: str) -> None:
-        """Mark check as dispatched to Celery queue.
-
-        Pathway 2: PENDING → DISPATCHED
-
-        Args:
-            celery_job_id: The ID returned by celery_task.delay()
-
-        Raises:
-            InvalidStateTransitionError: If transition is not allowed
-            ConcurrentLimitError: If the concurrent DISPATCHED/RUNNING limit
-                would be exceeded
-        """
-        if not self.can_transition_to(self.Status.DISPATCHED):
-            raise InvalidStateTransitionError(
-                from_status=self.status,
-                to_status=self.Status.DISPATCHED,
-            )
-
-        # Check concurrent limit (DISPATCHED + RUNNING)
-        active_count = (
-            ManufacturabilityCheck.objects.filter(
-                status__in=[self.Status.DISPATCHED, self.Status.RUNNING],
-            )
-            .exclude(pk=self.pk)
-            .count()
-        )
-
-        concurrent_limit = settings.PRECHECK_CONCURRENT_LIMIT
-        if active_count >= concurrent_limit:
-            raise ConcurrentLimitError(
-                active_count=active_count,
-                max_concurrent=concurrent_limit,
-            )
-
-        self.status = self.Status.DISPATCHED
-        self.celery_job_id = celery_job_id
-        self.celery_job_dispatched_at = timezone.now()
-        self.save(update_fields=["status", "celery_job_id", "celery_job_dispatched_at"])
 
     def mark_dispatching(self, *, server_id: str) -> None:
         """Transition PENDING -> DISPATCHING with server assignment.
@@ -1750,10 +1680,10 @@ class ManufacturabilityCheck(models.Model):
     ) -> None:
         """Mark check as errored due to system failure.
 
-        Pathways 5/6: PENDING/DISPATCHED/RUNNING → ERROR
+        Pathways: PENDING/DISPATCHING/STARTING/RUNNING → ERROR
 
-        Preserves tracking fields (celery_job_id, docker_container_id, worker info)
-        for debugging. These are only cleared by reset_for_retry() when retrying.
+        Preserves tracking fields (docker_container_id) for debugging.
+        These are only cleared by reset_for_retry() when retrying.
 
         Args:
             error_message: System error message describing the failure
@@ -1771,7 +1701,6 @@ class ManufacturabilityCheck(models.Model):
 
         self.status = self.Status.ERROR
         self.error_message = error_message
-        self.celery_job_finished_at = timezone.now()
 
         # Set initial logs if provided
         if processing_logs:
@@ -1782,7 +1711,6 @@ class ManufacturabilityCheck(models.Model):
                 "status",
                 "error_message",
                 "processing_logs",
-                "celery_job_finished_at",
             ]
         )
 
@@ -1817,8 +1745,8 @@ class ManufacturabilityCheck(models.Model):
         """Complete cancellation - only called by cleanup task after cleanup is done.
 
         This method should only be called from CANCELLING state, after the
-        checks_cancelling task has revoked the Celery task and stopped any
-        Docker container. It clears all task/container tracking fields.
+        cleanup task has stopped any Docker container. It clears container
+        tracking fields.
 
         Raises:
             InvalidStateTransitionError: If transition is not allowed
@@ -1830,20 +1758,12 @@ class ManufacturabilityCheck(models.Model):
             )
 
         self.status = self.Status.CANCELLED
-        self.celery_job_finished_at = timezone.now()
-        # Clear task and container tracking fields (cleanup already done)
-        self.celery_job_id = ""
+        # Clear container tracking fields (cleanup already done)
         self.docker_container_id = ""
-        self.celery_worker_pid = None
-        self.celery_worker_hostname = ""
         self.save(
             update_fields=[
                 "status",
-                "celery_job_finished_at",
-                "celery_job_id",
                 "docker_container_id",
-                "celery_worker_pid",
-                "celery_worker_hostname",
             ]
         )
 
@@ -1878,12 +1798,6 @@ class ManufacturabilityCheck(models.Model):
         self.retry_count += 1
 
         # Clear all job-related fields
-        self.celery_job_id = ""
-        self.celery_job_dispatched_at = None
-        self.celery_job_started_at = None
-        self.celery_job_finished_at = None
-        self.celery_worker_pid = None
-        self.celery_worker_hostname = ""
         self.docker_container_id = ""
         self.docker_container_started_at = None
         self.error_message = ""
@@ -2012,9 +1926,9 @@ class ManufacturabilityCheck(models.Model):
 
     @property
     def checks_running(self) -> int:
-        """Get number of checks currently active (DISPATCHED or RUNNING)."""
+        """Get number of checks currently active (DISPATCHING/STARTING/RUNNING)."""
         return ManufacturabilityCheck.objects.filter(
-            status__in=[self.Status.DISPATCHED, self.Status.RUNNING],
+            status__in=self.Status.active(),
         ).count()
 
     def get_reproduction_instructions(self) -> str:
