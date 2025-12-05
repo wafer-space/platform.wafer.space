@@ -36,6 +36,7 @@ from .content_pipeline import ContentPipeline
 from .content_pipeline import cleanup_temp_dir
 from .content_pipeline import get_temp_dir_for_file
 from .content_processors import _processor_registry
+from .docker_utils import track_task
 from .exceptions import InvalidStateTransitionError
 from .file_type_utils import detect_file_type_from_data
 from .format_validators import validate_output_format
@@ -3431,15 +3432,53 @@ def checks_cancelling() -> dict[str, int]:
 
 @shared_task(queue="docker-ephemeral")
 def do_dispatching(check_id: int) -> dict[str, str]:
-    """Pull Docker image for a DISPATCHING check. (Placeholder)
+    """Pull Docker image for a DISPATCHING check.
+
+    Transitions to STARTING on success.
 
     Args:
         check_id: ManufacturabilityCheck ID.
 
     Returns:
-        Dict with status.
+        Dict with result status.
     """
-    return {"status": "not_implemented"}
+    with track_task(check_id):
+        check = ManufacturabilityCheck.objects.get(id=check_id)
+
+        if check.status != ManufacturabilityCheck.Status.DISPATCHING:
+            return {"status": "skipped", "reason": "status_changed"}
+
+        # Get server config
+        server = next(
+            (s for s in settings.DOCKER_SERVERS if s["id"] == check.docker_server_id),
+            None,
+        )
+        if not server:
+            error_msg = f"Unknown server: {check.docker_server_id}"
+            check.mark_error(error_message=error_msg)
+            return {"status": "error", "reason": "unknown_server"}
+
+        # Connect to Docker
+        client = docker.DockerClient(base_url=str(server["url"]))
+
+        try:
+            image_name = settings.PRECHECK_DOCKER_IMAGE
+            image = client.images.pull(image_name)
+
+            # Extract digest from pulled image
+            digests = image.attrs.get("RepoDigests", [])
+            digest = digests[0].split("@")[1] if digests else "unknown"
+
+            check.mark_starting(
+                docker_image=image_name,
+                docker_image_digest=digest,
+            )
+        except docker.errors.DockerException as e:
+            error_msg = f"Docker pull failed: {e}"
+            check.mark_error(error_message=error_msg)
+            return {"status": "error", "reason": str(e)}
+        else:
+            return {"status": "success", "image": image_name, "digest": digest}
 
 
 @shared_task(queue="docker-ephemeral")
