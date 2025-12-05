@@ -511,10 +511,6 @@
 
   // Remove assignment from slot
   function doRemoveAssignment(slotId) {
-    if (!confirm('Are you sure you want to remove this assignment?')) {
-      return;
-    }
-
     const url = removeUrlTemplate.replace('/0/', '/' + slotId + '/');
     fetch(url, {
       method: 'POST',
