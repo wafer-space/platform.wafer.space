@@ -48,8 +48,8 @@ __all__ = [
 def checks_cleanup_orphaned_docker() -> dict:
     """Remove Docker containers not linked to active checks (fallback cleanup).
 
-    Starts from Docker (source of truth) and validates against database.
-    Removes containers where the associated ManufacturabilityCheck is:
+    Iterates over all configured Docker servers and removes containers where
+    the associated ManufacturabilityCheck is:
     - Missing (deleted)
     - FINISHED
     - ERROR
@@ -58,88 +58,111 @@ def checks_cleanup_orphaned_docker() -> dict:
     CANCELLING containers are handled by checks_cancelling task, not here.
 
     Returns:
-        dict with 'containers_scanned' and 'removed' counts
+        dict with per-server results and totals
     """
     logger = get_task_logger(__name__)
-    logger.info("=" * 60)
-    logger.info("CLEANING UP ORPHANED DOCKER CONTAINERS")
-    logger.info("=" * 60)
+    logger.info("[checks_cleanup_orphaned_docker] Starting")
 
-    try:
-        client = docker.from_env()
-    except docker.errors.DockerException as exc:
-        logger.exception("Failed to connect to Docker")
-        return {
-            "status": "error",
-            "error": str(exc),
-        }
+    total_scanned = 0
+    total_removed = 0
+    server_results: dict[str, dict] = {}
 
-    # Get all containers with our label
-    containers = client.containers.list(
-        all=True,
-        filters={"label": "wafer.space.service=manufacturability-check"},
+    # Active states (containers we should keep)
+    active_states = [
+        *ManufacturabilityCheck.Status.active(),
+        ManufacturabilityCheck.Status.CANCELLING,
+    ]
+
+    for server in settings.DOCKER_SERVERS:
+        server_id = str(server["id"])
+        logger.info("Scanning server %s", server_id)
+
+        try:
+            client = get_docker_client(server)
+        except docker.errors.DockerException as exc:
+            logger.exception("Failed to connect to server %s", server_id)
+            server_results[server_id] = {"status": "error", "error": str(exc)}
+            continue
+
+        # Get all containers with our label
+        try:
+            containers = client.containers.list(
+                all=True,
+                filters={"label": "wafer.space.service=manufacturability-check"},
+            )
+        except docker.errors.DockerException as exc:
+            logger.exception("Failed to list containers on %s", server_id)
+            server_results[server_id] = {"status": "error", "error": str(exc)}
+            continue
+
+        logger.info("Server %s: found %d containers", server_id, len(containers))
+
+        scanned = len(containers)
+        removed = 0
+
+        for container in containers:
+            check_id = container.labels.get("wafer.space.check_id")
+
+            # No check_id label = definitely orphaned
+            if not check_id:
+                logger.info(
+                    "Server %s, container %s: no check_id label, removing",
+                    server_id,
+                    container.short_id,
+                )
+                stop_and_remove_container(container, logger)
+                removed += 1
+                continue
+
+            # Look up the check
+            try:
+                check = ManufacturabilityCheck.objects.get(id=check_id)
+            except ManufacturabilityCheck.DoesNotExist:
+                logger.info(
+                    "Server %s, container %s: check %s not found, removing",
+                    server_id,
+                    container.short_id,
+                    check_id,
+                )
+                stop_and_remove_container(container, logger)
+                removed += 1
+                continue
+
+            # Check exists - is it in an active state?
+            if check.status not in active_states:
+                logger.info(
+                    "Server %s, container %s: check %s in %s state, removing",
+                    server_id,
+                    container.short_id,
+                    check_id,
+                    check.status,
+                )
+                stop_and_remove_container(container, logger)
+                removed += 1
+            else:
+                logger.debug(
+                    "Server %s, container %s: check %s in %s state, keeping",
+                    server_id,
+                    container.short_id,
+                    check_id,
+                    check.status,
+                )
+
+        server_results[server_id] = {"scanned": scanned, "removed": removed}
+        total_scanned += scanned
+        total_removed += removed
+
+    logger.info(
+        "[checks_cleanup_orphaned_docker] Complete: scanned=%d, removed=%d",
+        total_scanned,
+        total_removed,
     )
 
-    logger.info("  Found %d containers with service label", len(containers))
-
-    removed = 0
-    for container in containers:
-        check_id = container.labels.get("wafer.space.check_id")
-
-        # No check_id label = definitely orphaned
-        if not check_id:
-            logger.info(
-                "  Container %s: no check_id label, removing",
-                container.short_id,
-            )
-            stop_and_remove_container(container, logger)
-            removed += 1
-            continue
-
-        # Look up the check
-        try:
-            check = ManufacturabilityCheck.objects.get(id=check_id)
-        except ManufacturabilityCheck.DoesNotExist:
-            logger.info(
-                "  Container %s: check %s not found, removing",
-                container.short_id,
-                check_id,
-            )
-            stop_and_remove_container(container, logger)
-            removed += 1
-            continue
-
-        # Check exists - is it in an active state?
-        # CANCELLING containers are handled by checks_cancelling, not here
-        # Use Status.active() + CANCELLING
-        active_states = [
-            *ManufacturabilityCheck.Status.active(),
-            ManufacturabilityCheck.Status.CANCELLING,
-        ]
-        if check.status not in active_states:
-            logger.info(
-                "  Container %s: check %s in %s state, removing",
-                container.short_id,
-                check_id,
-                check.status,
-            )
-            stop_and_remove_container(container, logger)
-            removed += 1
-        else:
-            logger.debug(
-                "  Container %s: check %s in %s state, keeping",
-                container.short_id,
-                check_id,
-                check.status,
-            )
-
-    logger.info("=" * 60)
-    logger.info("CLEANUP COMPLETE")
-    logger.info("  Scanned: %d", len(containers))
-    logger.info("  Removed: %d", removed)
-    logger.info("=" * 60)
-
-    return {"containers_scanned": len(containers), "removed": removed}
+    return {
+        "containers_scanned": total_scanned,
+        "removed": total_removed,
+        "servers": server_results,
+    }
 
 
 @shared_task(queue="default")
