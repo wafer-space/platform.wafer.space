@@ -487,9 +487,6 @@
       })
       .then(function(data) {
         if (data.success) {
-          if (data.warning) {
-            alert(data.warning);
-          }
           location.reload();
         } else {
           alert('Error: ' + data.error);
