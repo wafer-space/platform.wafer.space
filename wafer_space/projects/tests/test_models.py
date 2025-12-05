@@ -2611,3 +2611,61 @@ class TestManufacturabilityCheckMarkDispatching:
         )
         with pytest.raises(InvalidStateTransitionError):
             check.mark_dispatching(server_id="local")
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckMarkStarting:
+    """Test mark_starting transition method."""
+
+    def test_mark_starting_changes_status(self) -> None:
+        """mark_starting transitions DISPATCHING -> STARTING."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.DISPATCHING
+        )
+        check.mark_starting(
+            docker_image="ghcr.io/test:latest", docker_image_digest="sha256:abc123"
+        )
+        assert check.status == ManufacturabilityCheck.Status.STARTING
+
+    def test_mark_starting_sets_image_info(self) -> None:
+        """mark_starting stores image and digest."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.DISPATCHING
+        )
+        check.mark_starting(
+            docker_image="ghcr.io/test:latest", docker_image_digest="sha256:abc123"
+        )
+        assert check.docker_image == "ghcr.io/test:latest"
+        assert check.docker_image_digest == "sha256:abc123"
+
+    def test_mark_starting_sets_timestamp(self) -> None:
+        """mark_starting sets starting_started_at automatically."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.DISPATCHING
+        )
+        assert check.starting_started_at is None
+        check.mark_starting(
+            docker_image="ghcr.io/test:latest", docker_image_digest="sha256:abc123"
+        )
+        assert check.starting_started_at is not None
+
+    def test_mark_starting_saves_to_db(self) -> None:
+        """mark_starting saves changes to database."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.DISPATCHING
+        )
+        check.mark_starting(
+            docker_image="ghcr.io/test:latest", docker_image_digest="sha256:abc123"
+        )
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.STARTING
+        assert check.docker_image == "ghcr.io/test:latest"
+        assert check.docker_image_digest == "sha256:abc123"
+
+    def test_mark_starting_raises_for_invalid_transition(self) -> None:
+        """mark_starting raises for non-DISPATCHING status."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.PENDING
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_starting(docker_image="test", docker_image_digest="sha256:abc")
