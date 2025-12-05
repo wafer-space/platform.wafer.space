@@ -1385,6 +1385,33 @@ class ManufacturabilityCheck(models.Model):
         help_text="When Docker container started",
     )
 
+    # Granular timestamps for each phase
+    dispatching_started_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When check entered DISPATCHING (image pull started)",
+    )
+    starting_started_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When check entered STARTING (container creation started)",
+    )
+    container_started_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When container was confirmed running",
+    )
+    container_finished_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When container exited",
+    )
+    analysis_completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When log analysis completed",
+    )
+
     # Results
     is_manufacturable = models.BooleanField(null=True, blank=True)
     errors = models.JSONField(default=list, blank=True)  # Manufacturing errors
