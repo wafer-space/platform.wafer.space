@@ -93,10 +93,8 @@
       }
     });
 
-    // If no direction, restore original order (by DOM order on page load)
+    // If no direction (third click), reset to default sort: Project ID ascending
     if (!currentSortDirection) {
-      // Re-sort by original data-row-index if we had stored it, or just leave as-is
-      // For simplicity, sort by project ID as default
       sortType = 'text';
       currentSortDirection = 'asc';
       columnIndex = 0;
