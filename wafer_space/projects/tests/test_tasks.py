@@ -62,7 +62,7 @@ class URLValidationSecurityTests(TestCase):
 
     def test_valid_http_url_allowed(self):
         """Test that http:// URLs are accepted."""
-        with patch("wafer_space.projects.tasks.urlopen") as mock_urlopen:
+        with patch("wafer_space.projects.tasks_download.urlopen") as mock_urlopen:
             mock_response = Mock()
             mock_response.read.return_value = b"test content"
             mock_response.headers = {"Content-Type": "application/zip"}
@@ -75,7 +75,7 @@ class URLValidationSecurityTests(TestCase):
 
     def test_valid_https_url_allowed(self):
         """Test that https:// URLs are accepted."""
-        with patch("wafer_space.projects.tasks.urlopen") as mock_urlopen:
+        with patch("wafer_space.projects.tasks_download.urlopen") as mock_urlopen:
             mock_response = Mock()
             mock_response.read.return_value = b"test content"
             mock_response.headers = {"Content-Type": "application/zip"}
@@ -142,7 +142,7 @@ class URLValidationSecurityTests(TestCase):
     def test_scheme_case_insensitive(self):
         """Test that scheme validation is case insensitive."""
         # Should allow HTTPS
-        with patch("wafer_space.projects.tasks.urlopen") as mock_urlopen:
+        with patch("wafer_space.projects.tasks_download.urlopen") as mock_urlopen:
             mock_response = Mock()
             mock_response.read.return_value = b"test content"
             mock_response.headers = {}
@@ -162,7 +162,7 @@ class URLValidationSecurityTests(TestCase):
         """Test that custom headers are passed to the request."""
         custom_headers = {"Authorization": "Bearer token123", "Custom-Header": "test"}
 
-        with patch("wafer_space.projects.tasks.urlopen") as mock_urlopen:
+        with patch("wafer_space.projects.tasks_download.urlopen") as mock_urlopen:
             mock_response = Mock()
             mock_response.read.return_value = b"test content"
             mock_response.headers = {"Content-Type": "text/plain"}
@@ -214,7 +214,7 @@ class URLValidationBehaviorTests(TestCase):
         for url in valid_cases:
             with (
                 self.subTest(url=url),
-                patch("wafer_space.projects.tasks.urlopen") as mock_urlopen,
+                patch("wafer_space.projects.tasks_download.urlopen") as mock_urlopen,
             ):
                 mock_response = Mock()
                 mock_response.read.return_value = b"test"
@@ -306,7 +306,7 @@ class TestDownloadLogging(TestCase):
         """Test that download start log includes user information."""
         # Capture log output
         with self.assertLogs(
-            "wafer_space.projects.tasks", level=logging.INFO
+            "wafer_space.projects.tasks_download", level=logging.INFO
         ) as log_context:
             _log_download_start(str(self.project.id), self.project_file)
 
@@ -328,8 +328,8 @@ class TestContentPipelineIntegration(TestCase):
             user=self.user, name="Test Project", description="Test Description"
         )
 
-    @patch("wafer_space.projects.tasks._download_with_progress")
-    @patch("wafer_space.projects.tasks._apply_content_pipeline")
+    @patch("wafer_space.projects.tasks_download._download_with_progress")
+    @patch("wafer_space.projects.tasks_download._apply_content_pipeline")
     def test_download_with_zip_extraction(self, mock_pipeline, mock_download):
         """Test download with ZIP extraction through pipeline."""
         # Create project file
@@ -371,7 +371,7 @@ class TestContentPipelineIntegration(TestCase):
             finally:
                 temp_path.unlink(missing_ok=True)
 
-    @patch("wafer_space.projects.tasks._apply_content_pipeline")
+    @patch("wafer_space.projects.tasks_download._apply_content_pipeline")
     def test_download_with_nested_compression(self, mock_pipeline):
         """Test download with nested compression (e.g., design.gds.gz inside .zip)."""
         project_file = ProjectFile.objects.create(
@@ -412,7 +412,7 @@ class TestContentPipelineIntegration(TestCase):
             finally:
                 temp_path.unlink(missing_ok=True)
 
-    @patch("wafer_space.projects.tasks._apply_content_pipeline")
+    @patch("wafer_space.projects.tasks_download._apply_content_pipeline")
     def test_download_with_format_validation(self, mock_pipeline):
         """Test that format validation is enforced after extraction."""
         project_file = ProjectFile.objects.create(
@@ -458,7 +458,7 @@ class DownloadTaskTests(TestCase):
         )
         self.project = Project.objects.create(user=self.user, name="Test Project")
 
-    @patch("wafer_space.projects.tasks.requests.get")
+    @patch("wafer_space.projects.tasks_download.requests.get")
     @patch("django.conf.settings.GITHUB_TOKEN", TEST_GITHUB_TOKEN)
     def test_download_github_artifact_returns_url(self, mock_get):
         """Test that _download_github_artifact returns authenticated URL."""
@@ -518,7 +518,7 @@ class DownloadTaskTests(TestCase):
             temp_path = Path(temp_file.name)
 
         try:
-            mock_func = "wafer_space.projects.tasks._download_github_artifact"
+            mock_func = "wafer_space.projects.tasks_download._download_github_artifact"
             with patch(mock_func) as mock_gh:
                 mock_gh.return_value = {
                     "url": "https://api.github.com/repos/owner/repo/actions/artifacts/789/zip",
@@ -578,7 +578,7 @@ class DownloadTaskTests(TestCase):
         expected = "owner.repo.r123-a0.artifact.design.gds"
         assert result == expected
 
-    @patch("wafer_space.projects.tasks.requests.get")
+    @patch("wafer_space.projects.tasks_download.requests.get")
     def test_download_with_progress_no_hash_return(self, mock_get):
         """Test that _download_with_progress only downloads, doesn't return hashes."""
         expected_file_size = 1024  # Expected download size in bytes
@@ -621,10 +621,10 @@ class DownloadTaskTests(TestCase):
         finally:
             temp_path.unlink(missing_ok=True)
 
-    @patch("wafer_space.projects.tasks.extract_top_cell")
-    @patch("wafer_space.projects.tasks._apply_content_pipeline")
-    @patch("wafer_space.projects.tasks.detect_file_type_from_data")
-    @patch("wafer_space.projects.tasks._download_with_progress")
+    @patch("wafer_space.projects.tasks_download.extract_top_cell")
+    @patch("wafer_space.projects.tasks_download._apply_content_pipeline")
+    @patch("wafer_space.projects.tasks_download.detect_file_type_from_data")
+    @patch("wafer_space.projects.tasks_download._download_with_progress")
     def test_hash_calculated_on_extracted_file_not_zip(
         self, mock_download, mock_detect, mock_pipeline, mock_extract_top_cell
     ):
@@ -864,7 +864,7 @@ class TestChecksCleanupOrphanedProcessing(TestCase):
             hash_verified=True,
         )
 
-    @patch("wafer_space.projects.tasks.is_check_task_actively_running")
+    @patch("wafer_space.projects.tasks_checks.is_check_task_actively_running")
     def test_marks_orphaned_running_checks_as_error(self, mock_is_running):
         """Test RUNNING checks not actively running are marked ERROR."""
         check = ManufacturabilityCheck.objects.create(
@@ -886,7 +886,7 @@ class TestChecksCleanupOrphanedProcessing(TestCase):
         assert result["verified"] == 0
         mock_is_running.assert_called_once_with(check)
 
-    @patch("wafer_space.projects.tasks.is_check_task_actively_running")
+    @patch("wafer_space.projects.tasks_checks.is_check_task_actively_running")
     def test_leaves_valid_running_checks_alone(self, mock_is_running):
         """Test RUNNING checks actively running are not touched."""
         check = ManufacturabilityCheck.objects.create(
@@ -907,7 +907,7 @@ class TestChecksCleanupOrphanedProcessing(TestCase):
         assert result["verified"] == 1
         mock_is_running.assert_called_once_with(check)
 
-    @patch("wafer_space.projects.tasks.is_check_task_actively_running")
+    @patch("wafer_space.projects.tasks_checks.is_check_task_actively_running")
     def test_handles_mixed_checks(self, mock_is_running):
         """Test handles both orphaned and valid checks correctly."""
         project2 = Project.objects.create(user=self.user, name="Test Project 2")
@@ -944,7 +944,7 @@ class TestChecksCleanupOrphanedProcessing(TestCase):
         assert result["orphaned"] == 1
         assert result["verified"] == 1
 
-    @patch("wafer_space.projects.tasks.is_check_task_actively_running")
+    @patch("wafer_space.projects.tasks_checks.is_check_task_actively_running")
     def test_ignores_non_running_checks(self, mock_is_running):
         """Test only processes RUNNING checks."""
         project2 = Project.objects.create(user=self.user, name="Test Project 2")
@@ -1263,7 +1263,7 @@ class TestDoDispatching:
             manufacturability_check=check, task_id="test", task_name="do_dispatching"
         )
 
-        with patch("wafer_space.projects.tasks.docker") as mock_docker:
+        with patch("wafer_space.projects.tasks_checks.docker") as mock_docker:
             mock_client = MagicMock()
             mock_docker.DockerClient.return_value = mock_client
             mock_image = MagicMock()
@@ -1287,7 +1287,7 @@ class TestDoDispatching:
             manufacturability_check=check, task_id="test", task_name="do_dispatching"
         )
 
-        with patch("wafer_space.projects.tasks.docker") as mock_docker:
+        with patch("wafer_space.projects.tasks_checks.docker") as mock_docker:
             mock_client = MagicMock()
             mock_docker.DockerClient.return_value = mock_client
             mock_image = MagicMock()
@@ -1308,7 +1308,7 @@ class TestDoDispatching:
             docker_server_id="test-local",
         )
 
-        with patch("wafer_space.projects.tasks.docker") as mock_docker:
+        with patch("wafer_space.projects.tasks_checks.docker") as mock_docker:
             result = do_dispatching(check.id)
 
         # Should not interact with Docker
@@ -1340,8 +1340,8 @@ class TestDoStarting:
         )
 
         with (
-            patch("wafer_space.projects.tasks.docker") as mock_docker,
-            patch("wafer_space.projects.tasks.Path") as mock_path,
+            patch("wafer_space.projects.tasks_checks.docker") as mock_docker,
+            patch("wafer_space.projects.tasks_checks.Path") as mock_path,
         ):
             mock_client = MagicMock()
             mock_docker.DockerClient.return_value = mock_client
@@ -1381,8 +1381,8 @@ class TestDoStarting:
         )
 
         with (
-            patch("wafer_space.projects.tasks.docker") as mock_docker,
-            patch("wafer_space.projects.tasks.Path") as mock_path,
+            patch("wafer_space.projects.tasks_checks.docker") as mock_docker,
+            patch("wafer_space.projects.tasks_checks.Path") as mock_path,
         ):
             mock_client = MagicMock()
             mock_docker.DockerClient.return_value = mock_client
@@ -1408,7 +1408,7 @@ class TestDoStarting:
             docker_server_id="test-local",
         )
 
-        with patch("wafer_space.projects.tasks.docker") as mock_docker:
+        with patch("wafer_space.projects.tasks_checks.docker") as mock_docker:
             result = do_starting(check.id)
 
         mock_docker.DockerClient.assert_not_called()
@@ -1433,7 +1433,7 @@ class TestDoRunning:
 
         mock_logs = "2024-12-05T10:00:00.123456789Z Test log line\n"
 
-        with patch("wafer_space.projects.tasks.docker") as mock_docker:
+        with patch("wafer_space.projects.tasks_checks.docker") as mock_docker:
             mock_client = MagicMock()
             mock_docker.DockerClient.return_value = mock_client
             mock_container = MagicMock()
@@ -1460,7 +1460,7 @@ class TestDoRunning:
             manufacturability_check=check, task_id="test", task_name="do_running"
         )
 
-        with patch("wafer_space.projects.tasks.docker") as mock_docker:
+        with patch("wafer_space.projects.tasks_checks.docker") as mock_docker:
             mock_client = MagicMock()
             mock_docker.DockerClient.return_value = mock_client
             mock_container = MagicMock()
@@ -1484,7 +1484,7 @@ class TestDoRunning:
             status=ManufacturabilityCheck.Status.CANCELLED,
         )
 
-        with patch("wafer_space.projects.tasks.docker") as mock_docker:
+        with patch("wafer_space.projects.tasks_checks.docker") as mock_docker:
             result = do_running(check.id)
 
         mock_docker.DockerClient.assert_not_called()
@@ -1566,7 +1566,7 @@ class TestDoCancelling:
             manufacturability_check=check, task_id="test", task_name="do_cancelling"
         )
 
-        with patch("wafer_space.projects.tasks.docker") as mock_docker:
+        with patch("wafer_space.projects.tasks_checks.docker") as mock_docker:
             mock_client = MagicMock()
             mock_docker.DockerClient.return_value = mock_client
             mock_container = MagicMock()
@@ -1596,7 +1596,7 @@ class TestDoCancelling:
             manufacturability_check=check, task_id="test", task_name="do_cancelling"
         )
 
-        with patch("wafer_space.projects.tasks.docker") as mock_docker:
+        with patch("wafer_space.projects.tasks_checks.docker") as mock_docker:
             mock_client = MagicMock()
             mock_docker.DockerClient.return_value = mock_client
             # Configure docker.errors to have proper exception classes
@@ -1619,7 +1619,7 @@ class TestDoCancelling:
             status=ManufacturabilityCheck.Status.FINISHED,
         )
 
-        with patch("wafer_space.projects.tasks.docker") as mock_docker:
+        with patch("wafer_space.projects.tasks_checks.docker") as mock_docker:
             result = do_cancelling(check.id)
 
         mock_docker.DockerClient.assert_not_called()

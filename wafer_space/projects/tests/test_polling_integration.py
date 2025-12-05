@@ -71,7 +71,8 @@ class TestPollingLifecycleIntegration:
             docker_server_id="test",
         )
 
-        with patch("wafer_space.projects.tasks.docker.DockerClient") as mock_docker:
+        mock_path = "wafer_space.projects.tasks_checks.docker.DockerClient"
+        with patch(mock_path) as mock_docker:
             mock_client = MagicMock()
             mock_docker.return_value = mock_client
 
@@ -162,7 +163,8 @@ class TestPollingLifecycleIntegration:
             docker_exit_code=0,
         )
 
-        with patch("wafer_space.projects.tasks.docker.DockerClient") as mock_docker:
+        mock_path = "wafer_space.projects.tasks_checks.docker.DockerClient"
+        with patch(mock_path) as mock_docker:
             mock_client = MagicMock()
             mock_docker.return_value = mock_client
 
@@ -285,7 +287,8 @@ class TestPollingLifecycleIntegration:
         )
 
         # Simulate Docker pull failure
-        with patch("wafer_space.projects.tasks.docker.DockerClient") as mock_docker:
+        mock_path = "wafer_space.projects.tasks_checks.docker.DockerClient"
+        with patch(mock_path) as mock_docker:
             mock_client = MagicMock()
             mock_docker.return_value = mock_client
             mock_client.images.pull.side_effect = docker.errors.DockerException(
@@ -393,7 +396,8 @@ class TestPollingLifecycleIntegration:
         )
 
         # Execute work task
-        with patch("wafer_space.projects.tasks.docker.DockerClient") as mock_docker:
+        mock_path = "wafer_space.projects.tasks_checks.docker.DockerClient"
+        with patch(mock_path) as mock_docker:
             mock_client = MagicMock()
             mock_docker.return_value = mock_client
 
@@ -484,7 +488,8 @@ class TestPollingLifecycleIntegration:
             docker_exit_code=1,
         )
 
-        with patch("wafer_space.projects.tasks.docker.DockerClient") as mock_docker:
+        mock_path = "wafer_space.projects.tasks_checks.docker.DockerClient"
+        with patch(mock_path) as mock_docker:
             mock_client = MagicMock()
             mock_docker.return_value = mock_client
 
