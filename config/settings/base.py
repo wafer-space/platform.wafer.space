@@ -470,25 +470,37 @@ CELERY_BEAT_SCHEDULE = {
         "task": "wafer_space.projects.tasks.ensure_download_tasks_queued",
         "schedule": DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS,
     },
-    # Manufacturability check lifecycle
-    "checks-create": {
-        "task": "wafer_space.projects.tasks.checks_create",
+    # Manufacturability check lifecycle - polling architecture
+    # Each task polls for checks in a specific state and advances them to the next state
+    "checks-pending": {
+        "task": "wafer_space.projects.tasks.checks_pending",
         "schedule": 30.0,
     },
-    "checks-dispatch": {
-        "task": "wafer_space.projects.tasks.checks_dispatch",
+    "checks-dispatching": {
+        "task": "wafer_space.projects.tasks.checks_dispatching",
+        "schedule": 15.0,
+    },
+    "checks-starting": {
+        "task": "wafer_space.projects.tasks.checks_starting",
+        "schedule": 15.0,
+    },
+    "checks-running": {
+        "task": "wafer_space.projects.tasks.checks_running",
+        "schedule": 15.0,
+    },
+    "checks-analyzing": {
+        "task": "wafer_space.projects.tasks.checks_analyzing",
         "schedule": 30.0,
+    },
+    "checks-cancelling": {
+        "task": "wafer_space.projects.tasks.checks_cancelling",
+        "schedule": 15.0,
     },
     "checks-retry": {
         "task": "wafer_space.projects.tasks.checks_retry",
         "schedule": 60.0,
     },
-    # Cancellation cleanup (fast - critical for releasing slots)
-    "checks-cancelling": {
-        "task": "wafer_space.projects.tasks.checks_cancelling",
-        "schedule": 15.0,
-    },
-    # Orphan detection
+    # Orphan detection and cleanup
     # NOTE: checks-cleanup-orphaned-dispatch disabled - needs investigation on
     # how to reliably verify task is still in broker queue. See issue #133.
     # "checks-cleanup-orphaned-dispatch": {
