@@ -379,9 +379,14 @@
     const currentProjectSection = document.getElementById('modal-current-project');
     if (projectId) {
       currentProjectSection.style.display = 'block';
-      const strongEl = cell.querySelector('strong');
-      document.getElementById('modal-current-project-id').textContent =
-        strongEl ? strongEl.textContent : projectId;
+      // Look up full project info from projectsData
+      var project = projectsData.find(function(p) { return p.id === projectId; });
+      if (project) {
+        document.getElementById('modal-current-project-id').textContent =
+          project.project_id + ' - ' + project.name;
+      } else {
+        document.getElementById('modal-current-project-id').textContent = projectId;
+      }
     } else {
       currentProjectSection.style.display = 'none';
     }
