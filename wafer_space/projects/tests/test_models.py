@@ -884,9 +884,7 @@ class TestManufacturabilityCheckMarkCancelled(TestCase):
             status=ManufacturabilityCheck.Status.CANCELLING,
         )
 
-        before = timezone.now()
         check.mark_cancelled()
-        after = timezone.now()
 
         check.refresh_from_db()
 
@@ -2107,12 +2105,10 @@ class TestManufacturabilityCheckMarkError(TestCase):
         test_error = "System error: out of memory"
         test_logs = "Started processing\nMemory usage: 95%\nOOM kill"
 
-        before = timezone.now()
         check.mark_error(
             error_message=test_error,
             processing_logs=test_logs,
         )
-        after = timezone.now()
 
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.ERROR
