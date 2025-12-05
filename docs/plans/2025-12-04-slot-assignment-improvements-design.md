@@ -26,8 +26,8 @@ Improvements to the shuttle slot assignment page (`/shuttles/<name>/assign/`) to
 
 **Behavior:**
 - Click column header to sort ascending
-- Click again to toggle descending
-- Click again to return to original order
+- Click again to sort descending
+- Click a third time to reset to default order (Project ID ascending)
 - Visual indicator: ▲ (ascending) / ▼ (descending)
 
 **Sortable columns:**
