@@ -94,45 +94,7 @@ DOCKER_SERVERS = [
     },
 ]
 
-CELERY_BEAT_SCHEDULE = {
-    # Download recovery
-    "ensure-download-tasks-queued": {
-        "task": "wafer_space.projects.tasks.ensure_download_tasks_queued",
-        "schedule": DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS,
-    },
-    # Manufacturability check lifecycle
-    "checks-create": {
-        "task": "wafer_space.projects.tasks.checks_create",
-        "schedule": 15.0,  # Faster in dev (30s in prod)
-    },
-    "checks-dispatch": {
-        "task": "wafer_space.projects.tasks.checks_dispatch",
-        "schedule": 15.0,  # Faster in dev (30s in prod)
-    },
-    "checks-retry": {
-        "task": "wafer_space.projects.tasks.checks_retry",
-        "schedule": 30.0,  # Faster in dev (60s in prod)
-    },
-    # Cancellation cleanup (fast - critical for releasing slots)
-    "checks-cancelling": {
-        "task": "wafer_space.projects.tasks.checks_cancelling",
-        "schedule": 10.0,  # Faster in dev (15s in prod)
-    },
-    # Orphan detection
-    "checks-cleanup-orphaned-processing": {
-        "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_processing",
-        "schedule": 30.0,  # Faster in dev (60s in prod)
-    },
-    "checks-cleanup-orphaned-docker": {
-        "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_docker",
-        # 15s in dev (300s in prod)
-        "schedule": PRECHECK_CONTAINER_CLEANUP_INTERVAL_SECONDS,
-    },
-    "checks-cleanup-stale-files": {
-        "task": "wafer_space.projects.tasks.checks_cleanup_stale_files",
-        "schedule": 30.0,  # Faster in dev (60s in prod)
-    },
-}
+# CELERY_BEAT_SCHEDULE: uses base.py defaults (all tasks are fast-running now)
 
 # LOGGING
 # ------------------------------------------------------------------------------
