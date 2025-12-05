@@ -470,11 +470,11 @@ CELERY_BEAT_SCHEDULE = {
         "task": "wafer_space.projects.tasks.ensure_download_tasks_queued",
         "schedule": DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS,
     },
-    # Manufacturability check lifecycle - polling architecture
+    # Manufacturability check lifecycle - polling architecture (15s intervals)
     # Each task polls for checks in a specific state and advances them to the next state
     "checks-pending": {
         "task": "wafer_space.projects.tasks.checks_pending",
-        "schedule": 30.0,
+        "schedule": 15.0,
     },
     "checks-dispatching": {
         "task": "wafer_space.projects.tasks.checks_dispatching",
@@ -490,24 +490,24 @@ CELERY_BEAT_SCHEDULE = {
     },
     "checks-analyzing": {
         "task": "wafer_space.projects.tasks.checks_analyzing",
-        "schedule": 30.0,
+        "schedule": 15.0,
     },
     "checks-cancelling": {
         "task": "wafer_space.projects.tasks.checks_cancelling",
         "schedule": 15.0,
     },
+    # Cleanup and retry tasks (60s intervals)
     "checks-retry": {
         "task": "wafer_space.projects.tasks.checks_retry",
         "schedule": 60.0,
     },
-    # Orphan detection and cleanup
     "checks-cleanup-orphaned-processing": {
         "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_processing",
         "schedule": 60.0,
     },
     "checks-cleanup-orphaned-docker": {
         "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_docker",
-        "schedule": 300.0,
+        "schedule": 60.0,
     },
     "checks-cleanup-stale-files": {
         "task": "wafer_space.projects.tasks.checks_cleanup_stale_files",

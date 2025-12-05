@@ -107,17 +107,17 @@ Beat tasks run on a schedule and must be fast/reliable. All Docker API interacti
 
 | Beat Task | Interval | Finds | Action |
 |-----------|----------|-------|--------|
-| `checks_pending` | 30s | PENDING | Marks DISPATCHING (assigns server) |
+| `checks_pending` | 15s | PENDING | Marks DISPATCHING (assigns server) |
 | `checks_dispatching` | 15s | DISPATCHING | Queues `do_dispatching` |
 | `checks_starting` | 15s | STARTING | Queues `do_starting` |
 | `checks_running` | 15s | RUNNING | Queues `do_running` |
-| `checks_analyzing` | 30s | ANALYZING | Queues `do_analyzing` |
+| `checks_analyzing` | 15s | ANALYZING | Queues `do_analyzing` |
 | `checks_cancelling` | 15s | CANCELLING | Queues `do_cancelling` |
 | `checks_retry` | 60s | ERROR (can_retry) | Sets status → PENDING |
 | `checks_cleanup_orphaned_dispatching` | 60s | Stale DISPATCHING | Sets status → ERROR |
 | `checks_cleanup_orphaned_starting` | 60s | Stale STARTING | Sets status → ERROR |
 | `checks_cleanup_orphaned_running` | 60s | RUNNING, container gone | Sets status → ERROR |
-| `checks_cleanup_orphaned_docker` | 300s | Untracked containers | Queues `do_cleanup_orphaned_docker` |
+| `checks_cleanup_orphaned_docker` | 60s | Untracked containers | Queues `do_cleanup_orphaned_docker` |
 | `checks_cleanup_stale_files` | 60s | Active checks on inactive files | Sets status → CANCELLING |
 
 ### Work Tasks (docker-ephemeral queue)
@@ -399,11 +399,11 @@ class ManufacturingCheckTask(models.Model):
 
 ### Add Beat Tasks
 
-- `checks_pending` (30s)
+- `checks_pending` (15s)
 - `checks_dispatching` (15s)
 - `checks_starting` (15s)
 - `checks_running` (15s)
-- `checks_analyzing` (30s)
+- `checks_analyzing` (15s)
 - `checks_cancelling` (15s)
 
 ### Add Work Tasks
