@@ -456,13 +456,13 @@ class ManufacturabilityCheckStatusView(LoginRequiredMixin, UserPassesTestMixin, 
             )
 
         started = (
-            check.celery_job_started_at.isoformat()
-            if check.celery_job_started_at
+            check.container_started_at.isoformat()
+            if check.container_started_at
             else None
         )
         finished = (
-            check.celery_job_finished_at.isoformat()
-            if check.celery_job_finished_at
+            check.analysis_completed_at.isoformat()
+            if check.analysis_completed_at
             else None
         )
 
@@ -561,7 +561,7 @@ class ManufacturabilityCheckAdminStatusView(
                 "project__user",
                 "project_file",
             )
-            .order_by("-celery_job_started_at")
+            .order_by("-container_started_at")
         )
 
         # Get pending checks
