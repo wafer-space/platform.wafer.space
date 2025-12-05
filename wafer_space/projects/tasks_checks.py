@@ -20,13 +20,11 @@ from .exceptions import InvalidStateTransitionError
 from .models import ManufacturabilityCheck
 from .models import ManufacturabilityCheckTask
 from .models import ProjectFile
-from .verification import is_check_task_actively_running
 
 __all__ = [
     "checks_analyzing",
     "checks_cancelling",
     "checks_cleanup_orphaned_docker",
-    "checks_cleanup_orphaned_processing",
     "checks_cleanup_stale_files",
     "checks_create",
     "checks_dispatching",
@@ -455,67 +453,6 @@ def checks_create() -> dict:
 
     logger.info("[checks_create] Complete: created=%d", created)
     return {"created": created}
-
-
-@shared_task(queue="default")
-def checks_cleanup_orphaned_processing() -> dict:
-    """Find and mark RUNNING checks with dead workers as ERROR.
-
-    Orphaned checks are those in RUNNING state whose worker process
-    has died or is no longer actively executing the task.
-
-    mark_error() preserves all tracking fields for debugging purposes.
-    Fields are cleared by reset_for_retry() if/when the check is retried.
-
-    Returns:
-        dict with 'orphaned' and 'verified' counts
-    """
-    logger = logging.getLogger(__name__)
-    logger.info("[checks_cleanup_orphaned_processing] Starting orphan check")
-
-    orphaned = 0
-    verified = 0
-
-    running_checks = ManufacturabilityCheck.objects.filter(
-        status=ManufacturabilityCheck.Status.RUNNING,
-    )
-    running_count = running_checks.count()
-    logger.info(
-        "[checks_cleanup_orphaned_processing] Found %d RUNNING checks",
-        running_count,
-    )
-
-    for check in running_checks:
-        # NOTE: is_check_task_actively_running is now obsolete with polling architecture
-        # It always returns False, so all RUNNING checks will be marked as orphaned
-        # This is intentional - polling architecture should handle state transitions
-        if is_check_task_actively_running(check):
-            logger.debug(
-                "[checks_cleanup_orphaned_processing] Check %s verified",
-                check.id,
-            )
-            verified += 1
-        else:
-            error_msg = (
-                f"Orphaned RUNNING check: Container {check.docker_container_id} "
-                f"not actively tracked by polling tasks"
-            )
-            logger.warning(
-                "[checks_cleanup_orphaned_processing] Orphaned check %s "
-                "(project: %s): %s",
-                check.id,
-                check.project.name,
-                error_msg,
-            )
-            check.mark_error(error_message=error_msg)
-            orphaned += 1
-
-    logger.info(
-        "[checks_cleanup_orphaned_processing] Complete: verified=%d, orphaned=%d",
-        verified,
-        orphaned,
-    )
-    return {"orphaned": orphaned, "verified": verified}
 
 
 @shared_task(queue="default")

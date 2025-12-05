@@ -34,7 +34,6 @@ from wafer_space.projects.tasks import _process_and_save_content
 from wafer_space.projects.tasks import _safe_urlopen
 from wafer_space.projects.tasks import checks_analyzing
 from wafer_space.projects.tasks import checks_cancelling
-from wafer_space.projects.tasks import checks_cleanup_orphaned_processing
 from wafer_space.projects.tasks import checks_create
 from wafer_space.projects.tasks import checks_dispatching
 from wafer_space.projects.tasks import checks_pending
@@ -844,131 +843,6 @@ class TestChecksCancelling:
 
         mock_delay.assert_not_called()
         assert result["queued"] == 0
-
-
-@pytest.mark.django_db
-class TestChecksCleanupOrphanedProcessing(TestCase):
-    """Test checks_cleanup_orphaned_processing task."""
-
-    def setUp(self):
-        """Set up test fixtures."""
-        self.user = User.objects.create_user(
-            username="testuser", email="test@example.com", password=TEST_PASSWORD
-        )
-        self.project = Project.objects.create(user=self.user, name="Test Project")
-        self.project_file = ProjectFile.objects.create(
-            project=self.project,
-            original_filename="test.gds",
-            is_active=True,
-            hash_verified=True,
-        )
-
-    @patch("wafer_space.projects.tasks_checks.is_check_task_actively_running")
-    def test_marks_orphaned_running_checks_as_error(self, mock_is_running):
-        """Test RUNNING checks not actively running are marked ERROR."""
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.RUNNING,
-            docker_container_id="container-123",
-        )
-
-        # Task is NOT actively running (orphaned) - function now always returns False
-        mock_is_running.return_value = False
-
-        result = checks_cleanup_orphaned_processing()
-
-        check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.ERROR
-        assert "orphaned" in check.error_message.lower()
-        assert result["orphaned"] == 1
-        assert result["verified"] == 0
-        mock_is_running.assert_called_once_with(check)
-
-    @patch("wafer_space.projects.tasks_checks.is_check_task_actively_running")
-    def test_leaves_valid_running_checks_alone(self, mock_is_running):
-        """Test RUNNING checks actively running are not touched."""
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.RUNNING,
-            docker_container_id="container-456",
-        )
-
-        # Task IS actively running (valid)
-        mock_is_running.return_value = True
-
-        result = checks_cleanup_orphaned_processing()
-
-        check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.RUNNING
-        assert result["orphaned"] == 0
-        assert result["verified"] == 1
-        mock_is_running.assert_called_once_with(check)
-
-    @patch("wafer_space.projects.tasks_checks.is_check_task_actively_running")
-    def test_handles_mixed_checks(self, mock_is_running):
-        """Test handles both orphaned and valid checks correctly."""
-        project2 = Project.objects.create(user=self.user, name="Test Project 2")
-        project_file2 = ProjectFile.objects.create(
-            project=project2,
-            original_filename="test2.gds",
-            is_active=True,
-            hash_verified=True,
-        )
-        orphaned_check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.RUNNING,
-            docker_container_id="container-orphaned",
-        )
-        valid_check = ManufacturabilityCheck.objects.create(
-            project=project2,
-            project_file=project_file2,
-            status=ManufacturabilityCheck.Status.RUNNING,
-            docker_container_id="container-valid",
-        )
-
-        # Checks ordered by -created_at, so valid_check (created last) comes first
-        # valid_check (first in query) -> returns True (valid)
-        # orphaned_check (second in query) -> returns False (orphaned)
-        mock_is_running.side_effect = [True, False]
-
-        result = checks_cleanup_orphaned_processing()
-
-        orphaned_check.refresh_from_db()
-        valid_check.refresh_from_db()
-        assert valid_check.status == ManufacturabilityCheck.Status.RUNNING
-        assert orphaned_check.status == ManufacturabilityCheck.Status.ERROR
-        assert result["orphaned"] == 1
-        assert result["verified"] == 1
-
-    @patch("wafer_space.projects.tasks_checks.is_check_task_actively_running")
-    def test_ignores_non_running_checks(self, mock_is_running):
-        """Test only processes RUNNING checks."""
-        project2 = Project.objects.create(user=self.user, name="Test Project 2")
-        project_file2 = ProjectFile.objects.create(
-            project=project2,
-            original_filename="test2.gds",
-            is_active=True,
-            hash_verified=True,
-        )
-        ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PENDING,
-        )
-        ManufacturabilityCheck.objects.create(
-            project=project2,
-            project_file=project_file2,
-            status=ManufacturabilityCheck.Status.DISPATCHING,
-        )
-
-        result = checks_cleanup_orphaned_processing()
-
-        assert result["orphaned"] == 0
-        assert result["verified"] == 0
-        mock_is_running.assert_not_called()
 
 
 class TestChecksPending:

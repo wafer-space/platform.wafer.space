@@ -501,10 +501,6 @@ CELERY_BEAT_SCHEDULE = {
         "task": "wafer_space.projects.tasks.checks_retry",
         "schedule": 60.0,
     },
-    "checks-cleanup-orphaned-processing": {
-        "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_processing",
-        "schedule": 60.0,
-    },
     "checks-cleanup-orphaned-docker": {
         "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_docker",
         "schedule": 60.0,
