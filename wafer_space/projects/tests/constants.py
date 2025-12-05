@@ -30,3 +30,6 @@ EXPECTED_USER_PROJECTS = 2  # Number of projects created for test user
 
 # Worker tracking test values
 TEST_WORKER_PID = 12345
+
+# Float precision tolerance
+FLOAT_PRECISION_TOLERANCE = 0.000001
