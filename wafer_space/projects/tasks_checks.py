@@ -142,9 +142,9 @@ def queued_check_task(
                 )
                 check.mark_error(error_message=e.message)
                 return {"status": "error", "reason": e.reason}
-            except docker.errors.DockerException as e:
-                # Handle Docker errors - mark check as error
-                error_msg = f"Docker error in {func.__name__}: {e}"
+            except Exception as e:
+                # Handle all other errors - mark check as error
+                error_msg = f"{func.__name__} failed: {e}"
                 logger.exception(error_msg)
                 check.mark_error(error_message=error_msg)
                 return {"status": "error", "reason": str(e)}
@@ -648,33 +648,28 @@ def do_dispatching(check: ManufacturabilityCheck) -> dict[str, str]:
 
     Returns:
         Dict with result status.
+
+    Raises:
+        TaskExecutionError: If server lookup fails (handled by decorator).
+        docker.errors.DockerException: If Docker operations fail (handled by decorator).
     """
-    server = get_server_config(check.docker_server_id)
-    if not server:
-        error_msg = f"Unknown server: {check.docker_server_id}"
-        check.mark_error(error_message=error_msg)
-        return {"status": "error", "reason": "unknown_server"}
+    logger = logging.getLogger(__name__)
 
-    client = get_docker_client(server)
+    client = _get_docker_client_for_server(check.docker_server_id, logger)
 
-    try:
-        image_name = settings.PRECHECK_DOCKER_IMAGE
-        image = client.images.pull(image_name)
+    image_name = settings.PRECHECK_DOCKER_IMAGE
+    image = client.images.pull(image_name)
 
-        # Extract digest from pulled image
-        digests = image.attrs.get("RepoDigests", [])
-        digest = digests[0].split("@")[1] if digests else "unknown"
+    # Extract digest from pulled image
+    digests = image.attrs.get("RepoDigests", [])
+    digest = digests[0].split("@")[1] if digests else "unknown"
 
-        check.mark_starting(
-            docker_image=image_name,
-            docker_image_digest=digest,
-        )
-    except docker.errors.DockerException as e:
-        error_msg = f"Docker pull failed: {e}"
-        check.mark_error(error_message=error_msg)
-        return {"status": "error", "reason": str(e)}
-    else:
-        return {"status": "success", "image": image_name, "digest": digest}
+    check.mark_starting(
+        docker_image=image_name,
+        docker_image_digest=digest,
+    )
+
+    return {"status": "success", "image": image_name, "digest": digest}
 
 
 # =============================================================================
@@ -974,63 +969,55 @@ def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
     """
     logger = logging.getLogger(__name__)
 
-    try:
-        # Parse the logs
-        logs = check.processing_logs or ""
-        exit_code = check.docker_exit_code or 0
+    # Parse the logs
+    logs = check.processing_logs or ""
+    exit_code = check.docker_exit_code or 0
 
-        logger.info(
-            "Parsing logs for check %s (exit_code=%d, log_length=%d)",
-            check.id,
-            exit_code,
-            len(logs),
-        )
+    logger.info(
+        "Parsing logs for check %s (exit_code=%d, log_length=%d)",
+        check.id,
+        exit_code,
+        len(logs),
+    )
 
-        parse_result = PrecheckLogParser.parse_logs(logs, exit_code)
+    parse_result = PrecheckLogParser.parse_logs(logs, exit_code)
 
-        # Extract errors and warnings
-        error_messages = [e["message"] for e in parse_result["errors"]]
-        warning_messages = [w.get("message", str(w)) for w in parse_result["warnings"]]
+    # Extract errors and warnings
+    error_messages = [e["message"] for e in parse_result["errors"]]
+    warning_messages = [w.get("message", str(w)) for w in parse_result["warnings"]]
 
-        # Determine manufacturability
-        is_manufacturable = parse_result["success"]
+    # Determine manufacturability
+    is_manufacturable = parse_result["success"]
 
-        # Extract tool versions from logs if available
-        # For now, use a simple approach - look for version strings
-        tool_versions: dict[str, str] = {}
-        # Placeholder - real version extraction would be more sophisticated
-        if "precheck" in logs.lower():
-            tool_versions["precheck"] = "unknown"
+    # Extract tool versions from logs if available
+    # For now, use a simple approach - look for version strings
+    tool_versions: dict[str, str] = {}
+    # Placeholder - real version extraction would be more sophisticated
+    if "precheck" in logs.lower():
+        tool_versions["precheck"] = "unknown"
 
-        logger.info(
-            "Analysis complete for check %s: manufacturable=%s, errors=%d, warnings=%d",
-            check.id,
-            is_manufacturable,
-            len(error_messages),
-            len(warning_messages),
-        )
+    logger.info(
+        "Analysis complete for check %s: manufacturable=%s, errors=%d, warnings=%d",
+        check.id,
+        is_manufacturable,
+        len(error_messages),
+        len(warning_messages),
+    )
 
-        # Transition to FINISHED
-        check.mark_finished(
-            is_manufacturable=is_manufacturable,
-            errors=error_messages,
-            warnings=warning_messages,
-            tool_versions=tool_versions,
-        )
+    # Transition to FINISHED
+    check.mark_finished(
+        is_manufacturable=is_manufacturable,
+        errors=error_messages,
+        warnings=warning_messages,
+        tool_versions=tool_versions,
+    )
 
-        return {
-            "status": "success",
-            "is_manufacturable": is_manufacturable,
-            "error_count": len(error_messages),
-            "warning_count": len(warning_messages),
-        }
-
-    except Exception as e:
-        # Catch any parsing errors and mark as system error
-        error_msg = f"Failed to analyze logs: {e}"
-        logger.exception(error_msg)
-        check.mark_error(error_message=error_msg)
-        return {"status": "error", "reason": str(e)}
+    return {
+        "status": "success",
+        "is_manufacturable": is_manufacturable,
+        "error_count": len(error_messages),
+        "warning_count": len(warning_messages),
+    }
 
 
 @queued_check_task(expected_status="CANCELLING")
