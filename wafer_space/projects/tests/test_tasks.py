@@ -50,6 +50,7 @@ from wafer_space.projects.tasks import checks_pending
 from wafer_space.projects.tasks import checks_retry
 from wafer_space.projects.tasks import checks_running
 from wafer_space.projects.tasks import checks_starting
+from wafer_space.projects.tasks import do_dispatching
 from wafer_space.projects.tasks import download_project_file
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.shuttles.models import Shuttle
@@ -2067,3 +2068,71 @@ class TestChecksAnalyzing:
 
         mock_delay.assert_not_called()
         assert result["queued"] == 0
+
+
+class TestDoDispatching:
+    """Test do_dispatching work task."""
+
+    @pytest.mark.django_db
+    def test_pulls_image_and_transitions_to_starting(self) -> None:
+        """Pulls Docker image and transitions to STARTING."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.DISPATCHING,
+            docker_server_id="test-local",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_dispatching"
+        )
+
+        with patch("wafer_space.projects.tasks.docker") as mock_docker:
+            mock_client = MagicMock()
+            mock_docker.DockerClient.return_value = mock_client
+            mock_image = MagicMock()
+            mock_image.attrs = {"RepoDigests": ["ghcr.io/test@sha256:abc123"]}
+            mock_client.images.pull.return_value = mock_image
+
+            do_dispatching(check.id)
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.STARTING
+        assert check.docker_image_digest == "sha256:abc123"
+
+    @pytest.mark.django_db
+    def test_cleans_up_task_tracking(self) -> None:
+        """Deletes ManufacturabilityCheckTask when done."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.DISPATCHING,
+            docker_server_id="test-local",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_dispatching"
+        )
+
+        with patch("wafer_space.projects.tasks.docker") as mock_docker:
+            mock_client = MagicMock()
+            mock_docker.DockerClient.return_value = mock_client
+            mock_image = MagicMock()
+            mock_image.attrs = {"RepoDigests": ["ghcr.io/test@sha256:abc123"]}
+            mock_client.images.pull.return_value = mock_image
+
+            do_dispatching(check.id)
+
+        assert not ManufacturabilityCheckTask.objects.filter(
+            manufacturability_check=check
+        ).exists()
+
+    @pytest.mark.django_db
+    def test_skips_if_status_changed(self) -> None:
+        """Does nothing if status is no longer DISPATCHING."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.CANCELLED,
+            docker_server_id="test-local",
+        )
+
+        with patch("wafer_space.projects.tasks.docker") as mock_docker:
+            result = do_dispatching(check.id)
+
+        # Should not interact with Docker
+        mock_docker.DockerClient.assert_not_called()
+        assert result["status"] == "skipped"
+        assert result["reason"] == "status_changed"
