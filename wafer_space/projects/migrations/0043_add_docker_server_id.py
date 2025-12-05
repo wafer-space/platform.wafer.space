@@ -15,9 +15,9 @@ class Migration(migrations.Migration):
             name="docker_server_id",
             field=models.CharField(
                 blank=True,
+                default="",
                 help_text="ID of Docker server running this check (from DOCKER_SERVERS setting)",
                 max_length=64,
-                null=True,
             ),
         ),
         migrations.AlterField(
