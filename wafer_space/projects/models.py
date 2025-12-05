@@ -1694,24 +1694,20 @@ class ManufacturabilityCheck(models.Model):
         self,
         *,
         is_manufacturable: bool,
-        errors: list[dict],
-        warnings: list[dict],
-        processing_logs: str,
-        tool_versions: dict | None = None,
+        errors: list[str],
+        warnings: list[str],
+        tool_versions: dict[str, str],
     ) -> None:
-        """Mark check as finished with results.
-
-        Pathway 4: RUNNING → FINISHED
+        """Transition ANALYZING -> FINISHED with analysis results.
 
         Args:
-            is_manufacturable: Whether the design is manufacturable
-            errors: List of error dicts (manufacturing issues)
-            warnings: List of warning dicts (manufacturing warnings)
-            processing_logs: Full log output from processing
-            tool_versions: Dict of tool versions used (pdk, magic, klayout, etc.)
+            is_manufacturable: Whether design is manufacturable.
+            errors: List of error messages.
+            warnings: List of warning messages.
+            tool_versions: Tool versions used in analysis.
 
         Raises:
-            InvalidStateTransitionError: If transition is not allowed
+            InvalidStateTransitionError: If not in ANALYZING status.
         """
         if not self.can_transition_to(self.Status.FINISHED):
             raise InvalidStateTransitionError(
@@ -1723,22 +1719,18 @@ class ManufacturabilityCheck(models.Model):
         self.is_manufacturable = is_manufacturable
         self.errors = errors
         self.warnings = warnings
-        self.processing_logs = processing_logs
-        self.celery_job_finished_at = timezone.now()
-        if tool_versions is not None:
-            self.tool_versions = tool_versions
-
-        update_fields = [
-            "status",
-            "is_manufacturable",
-            "errors",
-            "warnings",
-            "processing_logs",
-            "celery_job_finished_at",
-        ]
-        if tool_versions is not None:
-            update_fields.append("tool_versions")
-        self.save(update_fields=update_fields)
+        self.tool_versions = tool_versions
+        self.analysis_completed_at = timezone.now()
+        self.save(
+            update_fields=[
+                "status",
+                "is_manufacturable",
+                "errors",
+                "warnings",
+                "tool_versions",
+                "analysis_completed_at",
+            ]
+        )
 
         # Update project status
         if is_manufacturable:
@@ -1747,7 +1739,7 @@ class ManufacturabilityCheck(models.Model):
             self.project.status = Project.Status.NOT_MANUFACTURABLE
         self.project.is_manufacturable = is_manufacturable
         self.project.manufacturability_errors = self.errors
-        self.project.check_completed_at = self.celery_job_finished_at
+        self.project.check_completed_at = self.analysis_completed_at
         self.project.save()
 
     def mark_error(

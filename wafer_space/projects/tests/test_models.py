@@ -1733,6 +1733,95 @@ class TestManufacturabilityCheckMarkAnalyzing(TestCase):
 
 
 @pytest.mark.django_db
+class TestManufacturabilityCheckMarkFinishedUpdated(TestCase):
+    """Test updated mark_finished transition method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_mark_finished_from_analyzing(self):
+        """mark_finished transitions ANALYZING -> FINISHED."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            project=self.project,
+            project_file=self.project_file,
+        )
+        check.mark_finished(
+            is_manufacturable=True,
+            errors=[],
+            warnings=["minor issue"],
+            tool_versions={"precheck": "1.0"},
+        )
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
+
+    def test_mark_finished_sets_results(self):
+        """mark_finished stores analysis results."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            project=self.project,
+            project_file=self.project_file,
+        )
+        check.mark_finished(
+            is_manufacturable=False,
+            errors=["fatal error"],
+            warnings=[],
+            tool_versions={"precheck": "2.0"},
+        )
+        assert check.is_manufacturable is False
+        assert check.errors == ["fatal error"]
+        assert check.warnings == []
+        assert check.tool_versions == {"precheck": "2.0"}
+
+    def test_mark_finished_sets_analysis_completed_at(self):
+        """mark_finished sets analysis_completed_at automatically."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            project=self.project,
+            project_file=self.project_file,
+        )
+        assert check.analysis_completed_at is None
+        check.mark_finished(
+            is_manufacturable=True,
+            errors=[],
+            warnings=[],
+            tool_versions={},
+        )
+        assert check.analysis_completed_at is not None
+
+    def test_mark_finished_raises_for_invalid_transition(self):
+        """mark_finished raises for non-ANALYZING/RUNNING status."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.STARTING,
+            project=self.project,
+            project_file=self.project_file,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_finished(
+                is_manufacturable=True,
+                errors=[],
+                warnings=[],
+                tool_versions={},
+            )
+
+
+@pytest.mark.django_db
 class TestProjectSlotSize(TestCase):
     """Test Project.slot_size field and SlotSize choices."""
 
