@@ -20,6 +20,7 @@ from .exceptions import InvalidStateTransitionError
 from .models import ManufacturabilityCheck
 from .models import ManufacturabilityCheckTask
 from .models import ProjectFile
+from .precheck_parser import PrecheckLogParser
 
 __all__ = [
     "checks_analyzing",
@@ -846,9 +847,6 @@ def do_analyzing(check_id: int) -> dict[str, Any]:
         Dict with analysis results.
     """
     logger = logging.getLogger(__name__)
-
-    from wafer_space.projects.precheck_parser import PrecheckLogParser  # noqa: PLC0415
-
     check = ManufacturabilityCheck.objects.get(id=check_id)
 
     if check.status != ManufacturabilityCheck.Status.ANALYZING:
