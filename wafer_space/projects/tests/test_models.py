@@ -1667,6 +1667,72 @@ class TestManufacturabilityCheckMarkRunningUpdated(TestCase):
 
 
 @pytest.mark.django_db
+class TestManufacturabilityCheckMarkAnalyzing(TestCase):
+    """Test mark_analyzing transition method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_mark_analyzing_changes_status(self):
+        """mark_analyzing transitions RUNNING -> ANALYZING."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING,
+            project=self.project,
+            project_file=self.project_file,
+        )
+        check.mark_analyzing(docker_exit_code=0)
+        assert check.status == ManufacturabilityCheck.Status.ANALYZING
+
+    def test_mark_analyzing_sets_exit_code(self):
+        """mark_analyzing stores container exit code."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING,
+            project=self.project,
+            project_file=self.project_file,
+        )
+        check.mark_analyzing(docker_exit_code=1)
+        assert check.docker_exit_code == 1
+
+    def test_mark_analyzing_sets_container_finished_at(self):
+        """mark_analyzing sets container_finished_at automatically."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING,
+            project=self.project,
+            project_file=self.project_file,
+        )
+        assert check.container_finished_at is None
+        check.mark_analyzing(docker_exit_code=0)
+        assert check.container_finished_at is not None
+
+    def test_mark_analyzing_raises_for_invalid_transition(self):
+        """mark_analyzing raises for non-RUNNING status."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.STARTING,
+            project=self.project,
+            project_file=self.project_file,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_analyzing(docker_exit_code=0)
+
+
+@pytest.mark.django_db
 class TestProjectSlotSize(TestCase):
     """Test Project.slot_size field and SlotSize choices."""
 
