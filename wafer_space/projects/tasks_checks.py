@@ -13,8 +13,11 @@ from celery import shared_task
 from celery.utils.log import get_task_logger
 from django.conf import settings
 
+from .docker_utils import get_docker_client
+from .docker_utils import get_server_config
 from .docker_utils import parse_docker_timestamp_float
 from .docker_utils import queued_check_task
+from .docker_utils import stop_and_remove_container
 from .docker_utils import strip_docker_timestamps
 from .exceptions import InvalidStateTransitionError
 from .models import ManufacturabilityCheck
@@ -39,46 +42,6 @@ __all__ = [
     "do_running",
     "do_starting",
 ]
-
-
-def _stop_and_remove_container(container, logger) -> None:
-    """Stop and remove a Docker container safely."""
-    try:
-        if container.status == "running":
-            container.stop(timeout=10)
-        container.remove(force=True)
-    except docker.errors.DockerException:
-        logger.exception("Failed to remove container %s", container.id)
-
-
-def _get_server_config(server_id: str) -> dict | None:
-    """Get server config by ID from DOCKER_SERVERS settings.
-
-    Args:
-        server_id: The server ID to look up.
-
-    Returns:
-        Server config dict if found, None otherwise.
-    """
-    return next(
-        (s for s in settings.DOCKER_SERVERS if s["id"] == server_id),
-        None,
-    )
-
-
-def _get_docker_client(server: dict) -> docker.DockerClient:
-    """Create a Docker client for the given server config.
-
-    Args:
-        server: Server config dict with 'url' key.
-
-    Returns:
-        Docker client instance.
-
-    Raises:
-        docker.errors.DockerException: If connection fails.
-    """
-    return docker.DockerClient(base_url=str(server["url"]))
 
 
 @shared_task(queue="docker-ephemeral")
@@ -129,7 +92,7 @@ def checks_cleanup_orphaned_docker() -> dict:
                 "  Container %s: no check_id label, removing",
                 container.short_id,
             )
-            _stop_and_remove_container(container, logger)
+            stop_and_remove_container(container, logger)
             removed += 1
             continue
 
@@ -142,7 +105,7 @@ def checks_cleanup_orphaned_docker() -> dict:
                 container.short_id,
                 check_id,
             )
-            _stop_and_remove_container(container, logger)
+            stop_and_remove_container(container, logger)
             removed += 1
             continue
 
@@ -160,7 +123,7 @@ def checks_cleanup_orphaned_docker() -> dict:
                 check_id,
                 check.status,
             )
-            _stop_and_remove_container(container, logger)
+            stop_and_remove_container(container, logger)
             removed += 1
         else:
             logger.debug(
@@ -548,13 +511,13 @@ def do_dispatching(check_id: int) -> dict[str, str]:
     if check.status != ManufacturabilityCheck.Status.DISPATCHING:
         return {"status": "skipped", "reason": "status_changed"}
 
-    server = _get_server_config(check.docker_server_id)
+    server = get_server_config(check.docker_server_id)
     if not server:
         error_msg = f"Unknown server: {check.docker_server_id}"
         check.mark_error(error_message=error_msg)
         return {"status": "error", "reason": "unknown_server"}
 
-    client = _get_docker_client(server)
+    client = get_docker_client(server)
 
     try:
         image_name = settings.PRECHECK_DOCKER_IMAGE
@@ -600,7 +563,7 @@ def do_starting(check_id: int) -> dict[str, Any]:  # noqa: C901, PLR0911, PLR091
         )
         return {"status": "skipped", "reason": "status_changed"}
 
-    server = _get_server_config(check.docker_server_id)
+    server = get_server_config(check.docker_server_id)
     if not server:
         error_msg = f"Unknown server: {check.docker_server_id}"
         logger.error(error_msg)
@@ -608,7 +571,7 @@ def do_starting(check_id: int) -> dict[str, Any]:  # noqa: C901, PLR0911, PLR091
         return {"status": "error", "reason": "unknown_server"}
 
     try:
-        client = _get_docker_client(server)
+        client = get_docker_client(server)
     except docker.errors.DockerException as e:
         error_msg = f"Failed to connect to Docker server: {e}"
         logger.exception(error_msg)
@@ -735,7 +698,7 @@ def do_running(check_id: int) -> dict[str, Any]:  # noqa: C901, PLR0911, PLR0912
         )
         return {"status": "skipped", "reason": "status_changed"}
 
-    server = _get_server_config(check.docker_server_id)
+    server = get_server_config(check.docker_server_id)
     if not server:
         error_msg = f"Unknown server: {check.docker_server_id}"
         logger.error(error_msg)
@@ -743,7 +706,7 @@ def do_running(check_id: int) -> dict[str, Any]:  # noqa: C901, PLR0911, PLR0912
         return {"status": "error", "reason": "unknown_server"}
 
     try:
-        client = _get_docker_client(server)
+        client = get_docker_client(server)
     except docker.errors.DockerException as e:
         error_msg = f"Failed to connect to Docker server: {e}"
         logger.exception(error_msg)
@@ -916,8 +879,8 @@ def do_analyzing(check_id: int) -> dict[str, Any]:
         return {"status": "error", "reason": str(e)}
 
 
-@queued_check_task()
-def do_cancelling(check_id: int) -> dict[str, Any]:
+@queued_check_task(expected_status="CANCELLING")
+def do_cancelling(check: ManufacturabilityCheck) -> dict[str, Any]:
     """Transition a CANCELLING check to CANCELLED.
 
     Simply marks the check as cancelled. Any Docker container cleanup
@@ -925,26 +888,17 @@ def do_cancelling(check_id: int) -> dict[str, Any]:
     container (via its wafer.space.check_id label) and remove it.
 
     Args:
-        check_id: ManufacturabilityCheck ID.
+        check: ManufacturabilityCheck in CANCELLING status (validated by decorator).
 
     Returns:
         Dict with cancellation status.
     """
     logger = logging.getLogger(__name__)
-    check = ManufacturabilityCheck.objects.get(id=check_id)
-
-    if check.status != ManufacturabilityCheck.Status.CANCELLING:
-        logger.info(
-            "Skipping do_cancelling for check %s - status changed to %s",
-            check_id,
-            check.status,
-        )
-        return {"status": "skipped", "reason": "status_changed"}
 
     # Transition to CANCELLED - container cleanup handled by orphan task
     check.mark_cancelled()
 
-    logger.info("Check %s marked as cancelled", check_id)
+    logger.info("Check %s marked as cancelled", check.id)
 
     return {"status": "success"}
 
