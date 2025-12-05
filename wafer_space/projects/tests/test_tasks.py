@@ -930,9 +930,10 @@ class TestChecksCleanupOrphanedProcessing(TestCase):
             docker_container_id="container-valid",
         )
 
-        # orphaned_check created first -> returns False (orphaned)
-        # valid_check created second -> returns True (valid)
-        mock_is_running.side_effect = [False, True]
+        # Checks ordered by -created_at, so valid_check (created last) comes first
+        # valid_check (first in query) -> returns True (valid)
+        # orphaned_check (second in query) -> returns False (orphaned)
+        mock_is_running.side_effect = [True, False]
 
         result = checks_cleanup_orphaned_processing()
 
