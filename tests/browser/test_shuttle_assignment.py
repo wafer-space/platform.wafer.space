@@ -342,7 +342,7 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
         assigned_slot = grid_table.find_element(
             By.CSS_SELECTOR, "td.table-success[data-slot-id]"
         )
-        # Look for any manufacturing status indicator (mfg-pass, mfg-pending, or mfg-fail)
+        # Look for any manufacturing status indicator
         indicator = assigned_slot.find_element(
             By.CSS_SELECTOR, ".mfg-pass, .mfg-pending, .mfg-fail"
         )
