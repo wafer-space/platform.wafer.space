@@ -1601,6 +1601,35 @@ class ManufacturabilityCheck(models.Model):
             update_fields=["status", "docker_server_id", "dispatching_started_at"]
         )
 
+    def mark_starting(self, *, docker_image: str, docker_image_digest: str) -> None:
+        """Transition DISPATCHING -> STARTING with image info.
+
+        Args:
+            docker_image: Full Docker image name with tag.
+            docker_image_digest: Image digest (sha256:...).
+
+        Raises:
+            InvalidStateTransitionError: If not in DISPATCHING status.
+        """
+        if not self.can_transition_to(self.Status.STARTING):
+            raise InvalidStateTransitionError(
+                from_status=self.status,
+                to_status=self.Status.STARTING,
+            )
+
+        self.status = self.Status.STARTING
+        self.docker_image = docker_image
+        self.docker_image_digest = docker_image_digest
+        self.starting_started_at = timezone.now()
+        self.save(
+            update_fields=[
+                "status",
+                "docker_image",
+                "docker_image_digest",
+                "starting_started_at",
+            ]
+        )
+
     def mark_running(self, *, context: CheckExecutionContext) -> None:
         """Mark check as running in Celery worker.
 
