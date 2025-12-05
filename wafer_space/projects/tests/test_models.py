@@ -2231,14 +2231,12 @@ class TestManufacturabilityCheckResetForRetry(TestCase):
             status=ManufacturabilityCheck.Status.ERROR,
             retry_count=0,
             docker_container_id="container-123",
-            docker_container_started_at=timezone.now(),
             error_message="Previous error",
         )
         check.reset_for_retry()
 
         check.refresh_from_db()
         assert check.docker_container_id == ""
-        assert check.docker_container_started_at is None
         assert check.error_message == ""
 
     def test_reset_for_retry_at_max_retries_raises(self):

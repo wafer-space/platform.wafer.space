@@ -15,6 +15,7 @@ import docker.errors
 from celery import shared_task
 from celery.utils.log import get_task_logger
 from django.conf import settings
+from django.db import IntegrityError
 
 from .docker_utils import get_docker_client
 from .docker_utils import get_server_config
@@ -359,11 +360,16 @@ def checks_dispatching() -> dict[str, int]:
 
     for check in dispatching_checks:
         result = do_dispatching.delay(check.id)
-        ManufacturabilityCheckTask.objects.create(
-            manufacturability_check=check,
-            task_id=result.id,
-            task_name="do_dispatching",
-        )
+        try:
+            ManufacturabilityCheckTask.objects.create(
+                manufacturability_check=check,
+                task_id=result.id,
+                task_name="do_dispatching",
+            )
+        except IntegrityError:
+            # Task already created by concurrent beat cycle - skip
+            logger.debug("Task already exists for check %s, skipping", check.id)
+            continue
         logger.info(
             "Queued do_dispatching for check %s (task: %s)", check.id, result.id
         )
@@ -396,11 +402,16 @@ def checks_starting() -> dict[str, int]:
 
     for check in starting_checks:
         result = do_starting.delay(check.id)
-        ManufacturabilityCheckTask.objects.create(
-            manufacturability_check=check,
-            task_id=result.id,
-            task_name="do_starting",
-        )
+        try:
+            ManufacturabilityCheckTask.objects.create(
+                manufacturability_check=check,
+                task_id=result.id,
+                task_name="do_starting",
+            )
+        except IntegrityError:
+            # Task already created by concurrent beat cycle - skip
+            logger.debug("Task already exists for check %s, skipping", check.id)
+            continue
         logger.info("Queued do_starting for check %s (task: %s)", check.id, result.id)
         queued += 1
 
@@ -431,11 +442,16 @@ def checks_running() -> dict[str, int]:
 
     for check in running_checks:
         result = do_running.delay(check.id)
-        ManufacturabilityCheckTask.objects.create(
-            manufacturability_check=check,
-            task_id=result.id,
-            task_name="do_running",
-        )
+        try:
+            ManufacturabilityCheckTask.objects.create(
+                manufacturability_check=check,
+                task_id=result.id,
+                task_name="do_running",
+            )
+        except IntegrityError:
+            # Task already created by concurrent beat cycle - skip
+            logger.debug("Task already exists for check %s, skipping", check.id)
+            continue
         logger.info("Queued do_running for check %s (task: %s)", check.id, result.id)
         queued += 1
 
@@ -466,11 +482,16 @@ def checks_analyzing() -> dict[str, int]:
 
     for check in analyzing_checks:
         result = do_analyzing.delay(check.id)
-        ManufacturabilityCheckTask.objects.create(
-            manufacturability_check=check,
-            task_id=result.id,
-            task_name="do_analyzing",
-        )
+        try:
+            ManufacturabilityCheckTask.objects.create(
+                manufacturability_check=check,
+                task_id=result.id,
+                task_name="do_analyzing",
+            )
+        except IntegrityError:
+            # Task already created by concurrent beat cycle - skip
+            logger.debug("Task already exists for check %s, skipping", check.id)
+            continue
         logger.info("Queued do_analyzing for check %s (task: %s)", check.id, result.id)
         queued += 1
 
@@ -581,11 +602,16 @@ def checks_cancelling() -> dict[str, int]:
 
     for check in cancelling_checks:
         result = do_cancelling.delay(check.id)
-        ManufacturabilityCheckTask.objects.create(
-            manufacturability_check=check,
-            task_id=result.id,
-            task_name="do_cancelling",
-        )
+        try:
+            ManufacturabilityCheckTask.objects.create(
+                manufacturability_check=check,
+                task_id=result.id,
+                task_name="do_cancelling",
+            )
+        except IntegrityError:
+            # Task already created by concurrent beat cycle - skip
+            logger.debug("Task already exists for check %s, skipping", check.id)
+            continue
         logger.info("Queued do_cancelling for check %s (task: %s)", check.id, result.id)
         queued += 1
 
