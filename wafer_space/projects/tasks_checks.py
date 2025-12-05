@@ -1018,7 +1018,7 @@ def checks_cleanup_stale_files() -> dict:
 
     # Find checks in progress on inactive project files
     stale_checks = ManufacturabilityCheck.objects.filter(
-        status__in=ManufacturabilityCheck.IN_PROGRESS_STATUSES,
+        status__in=ManufacturabilityCheck.Status.in_progress(),
         project_file__is_active=False,
     )
 

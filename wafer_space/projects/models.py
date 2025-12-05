@@ -1266,6 +1266,11 @@ class ManufacturabilityCheck(models.Model):
             """Statuses that represent completion (success or failure)."""
             return [cls.FINISHED, cls.CANCELLED]
 
+        @classmethod
+        def in_progress(cls) -> list[str]:
+            """Statuses where check is in progress (not yet completed)."""
+            return [cls.PENDING, cls.DISPATCHING, cls.STARTING, cls.RUNNING]
+
     # State machine: defines valid transitions
     # PENDING: waiting for capacity to dispatch
     # DISPATCHING: image being pulled
@@ -1298,18 +1303,6 @@ class ManufacturabilityCheck(models.Model):
 
     # Maximum characters of processing logs to include in GitHub issue body
     GITHUB_ISSUE_LOG_CHARS: ClassVar[int] = 5000
-
-    # Maximum concurrent checks allowed (active on any server)
-    MAX_CONCURRENT_CHECKS: ClassVar[int] = 4
-
-    # Statuses representing checks that are in progress and should be
-    # cancelled when the project file is replaced
-    IN_PROGRESS_STATUSES: ClassVar[list[Status]] = [
-        Status.PENDING,
-        Status.DISPATCHING,
-        Status.STARTING,
-        Status.RUNNING,
-    ]
 
     project = models.ForeignKey(
         Project,
