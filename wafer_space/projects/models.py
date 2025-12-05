@@ -1579,6 +1579,28 @@ class ManufacturabilityCheck(models.Model):
         self.celery_job_dispatched_at = timezone.now()
         self.save(update_fields=["status", "celery_job_id", "celery_job_dispatched_at"])
 
+    def mark_dispatching(self, *, server_id: str) -> None:
+        """Transition PENDING -> DISPATCHING with server assignment.
+
+        Args:
+            server_id: ID of the Docker server to run this check on.
+
+        Raises:
+            InvalidStateTransitionError: If not in PENDING status.
+        """
+        if not self.can_transition_to(self.Status.DISPATCHING):
+            raise InvalidStateTransitionError(
+                from_status=self.status,
+                to_status=self.Status.DISPATCHING,
+            )
+
+        self.status = self.Status.DISPATCHING
+        self.docker_server_id = server_id
+        self.dispatching_started_at = timezone.now()
+        self.save(
+            update_fields=["status", "docker_server_id", "dispatching_started_at"]
+        )
+
     def mark_running(self, *, context: CheckExecutionContext) -> None:
         """Mark check as running in Celery worker.
 
