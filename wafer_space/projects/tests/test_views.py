@@ -637,10 +637,8 @@ class TestProjectSubmitView(TestCase):
         # Should return 403 Forbidden
         assert response.status_code == HTTP_FORBIDDEN
 
-    @patch("wafer_space.projects.tasks.check_process_job.delay")
-    def test_successful_submission(self, mock_task):
+    def test_successful_submission(self):
         """Test successful project submission."""
-        mock_task.return_value = Mock(id="task-123")
 
         # Create completed and verified file
         project_file = ProjectFile.objects.create(
@@ -837,10 +835,8 @@ class TestProjectSubmitView(TestCase):
         assert len(messages) == 1
         assert "already" in str(messages[0]).lower()
 
-    @patch("wafer_space.projects.tasks.check_process_job.delay")
-    def test_prevents_double_submission_race_condition(self, mock_task):
+    def test_prevents_double_submission_race_condition(self):
         """Test that double submission is prevented even with race condition."""
-        mock_task.return_value = Mock(id="task-123")
 
         # Create completed file
         project_file = ProjectFile.objects.create(
