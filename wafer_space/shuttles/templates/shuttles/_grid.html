@@ -4,9 +4,9 @@
 {#   columns - list of column letters ['A', 'B', ...] #}
 {#   click_handler - JavaScript function name to call on click #}
 {#   grid_id - HTML id for the table (default: "grid-table") #}
-
 {% if grid %}
-  <table class="table table-bordered table-sm mb-0 grid-table" id="{{ grid_id|default:'grid-table' }}">
+  <table class="table table-bordered table-sm mb-0 grid-table"
+         id="{{ grid_id|default:'grid-table' }}">
     <thead>
       <tr>
         <th class="text-center bg-light"></th>
@@ -32,7 +32,13 @@
               {% if slot.project %}
                 <strong class="font-monospace">{{ slot.project.project_id }}</strong>
                 <span class="mfg-indicator {% if slot.project.is_manufacturable %}mfg-pass{% elif slot.project.is_manufacturable is None %}mfg-pending{% else %}mfg-fail{% endif %}">
-                  {% if slot.project.is_manufacturable %}✓{% elif slot.project.is_manufacturable is None %}⏳{% else %}✗{% endif %}
+                  {% if slot.project.is_manufacturable %}
+                    ✓
+                  {% elif slot.project.is_manufacturable is None %}
+                    ⏳
+                  {% else %}
+                    ✗
+                  {% endif %}
                 </span>
               {% else %}
                 <span class="text-muted">{{ slot.grid_position }}</span>
@@ -44,7 +50,5 @@
     </tbody>
   </table>
 {% else %}
-  <div class="alert alert-info mb-0">
-    No grid configured.
-  </div>
+  <div class="alert alert-info mb-0">No grid configured.</div>
 {% endif %}

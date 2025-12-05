@@ -6,7 +6,7 @@
   {{ shuttle.name }} Assignment
 {% endblock title %}
 {% block content %}
-  <link rel="stylesheet" href="{% static 'shuttles/css/assignment.css' %}">
+  <link rel="stylesheet" href="{% static 'shuttles/css/assignment.css' %}" />
   <div class="container-fluid mt-4 px-4">
     <h1>Shuttle {{ shuttle.name }} Assignment Status</h1>
     <div class="row mb-4">
@@ -76,11 +76,36 @@
         <table class="table table-hover" id="projects-table">
           <thead>
             <tr>
-              <th data-sortable="true" data-sort-type="text" class="sortable" style="cursor: pointer;">Project ID <span class="sort-indicator"></span></th>
-              <th data-sortable="true" data-sort-type="text" class="sortable" style="cursor: pointer;">Name <span class="sort-indicator"></span></th>
-              <th data-sortable="true" data-sort-type="text" class="sortable" style="cursor: pointer;">Owner <span class="sort-indicator"></span></th>
-              <th data-sortable="true" data-sort-type="size" class="sortable" style="cursor: pointer;">Size <span class="sort-indicator"></span></th>
-              <th data-sortable="true" data-sort-type="status" class="sortable" style="cursor: pointer;">Status <span class="sort-indicator"></span></th>
+              <th data-sortable="true"
+                  data-sort-type="text"
+                  class="sortable"
+                  style="cursor: pointer">
+                Project ID <span class="sort-indicator"></span>
+              </th>
+              <th data-sortable="true"
+                  data-sort-type="text"
+                  class="sortable"
+                  style="cursor: pointer">
+                Name <span class="sort-indicator"></span>
+              </th>
+              <th data-sortable="true"
+                  data-sort-type="text"
+                  class="sortable"
+                  style="cursor: pointer">
+                Owner <span class="sort-indicator"></span>
+              </th>
+              <th data-sortable="true"
+                  data-sort-type="size"
+                  class="sortable"
+                  style="cursor: pointer">
+                Size <span class="sort-indicator"></span>
+              </th>
+              <th data-sortable="true"
+                  data-sort-type="status"
+                  class="sortable"
+                  style="cursor: pointer">
+                Status <span class="sort-indicator"></span>
+              </th>
               <th>Slots</th>
               <th>Actions</th>
             </tr>
@@ -159,12 +184,17 @@
                      class="form-control mb-2"
                      id="project-search"
                      placeholder="Type to search projects..."
-                     autocomplete="off">
-              <input type="hidden" id="selected-project-id">
-              <div id="project-results" class="dropdown-menu w-100" style="max-height: 300px; overflow-y: auto;"></div>
+                     autocomplete="off" />
+              <input type="hidden" id="selected-project-id" />
+              <div id="project-results"
+                   class="dropdown-menu w-100"
+                   style="max-height: 300px;
+                          overflow-y: auto"></div>
               <div id="selected-project-display" class="mb-2" style="display: none;">
                 <span class="badge bg-primary" id="selected-project-badge"></span>
-                <button type="button" class="btn btn-sm btn-link text-danger p-0 ms-2" id="clear-project-selection">Clear</button>
+                <button type="button"
+                        class="btn btn-sm btn-link text-danger p-0 ms-2"
+                        id="clear-project-selection">Clear</button>
               </div>
             </div>
             <div id="size-mismatch-warning"
