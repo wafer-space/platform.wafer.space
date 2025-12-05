@@ -3306,6 +3306,75 @@ def checks_cancelling() -> dict:
     return {"completed": completed, "failed": failed}
 
 
+# Work tasks (do_*) - Placeholder stubs for polling architecture
+# These will be implemented in later phases
+
+
+@shared_task(queue="docker-ephemeral")
+def do_dispatching(check_id: int) -> dict[str, str]:
+    """Pull Docker image for a DISPATCHING check. (Placeholder)
+
+    Args:
+        check_id: ManufacturabilityCheck ID.
+
+    Returns:
+        Dict with status.
+    """
+    return {"status": "not_implemented"}
+
+
+@shared_task(queue="docker-ephemeral")
+def do_starting(check_id: int) -> dict[str, str]:
+    """Create and start Docker container for a STARTING check. (Placeholder)
+
+    Args:
+        check_id: ManufacturabilityCheck ID.
+
+    Returns:
+        Dict with status.
+    """
+    return {"status": "not_implemented"}
+
+
+@shared_task(queue="docker-ephemeral")
+def do_running(check_id: int) -> dict[str, str]:
+    """Monitor running container and download logs. (Placeholder)
+
+    Args:
+        check_id: ManufacturabilityCheck ID.
+
+    Returns:
+        Dict with status.
+    """
+    return {"status": "not_implemented"}
+
+
+@shared_task(queue="docker-ephemeral")
+def do_analyzing(check_id: int) -> dict[str, str]:
+    """Analyze container logs and extract results. (Placeholder)
+
+    Args:
+        check_id: ManufacturabilityCheck ID.
+
+    Returns:
+        Dict with status.
+    """
+    return {"status": "not_implemented"}
+
+
+@shared_task(queue="docker-ephemeral")
+def do_cancelling(check_id: int) -> dict[str, str]:
+    """Stop and remove container for a CANCELLING check. (Placeholder)
+
+    Args:
+        check_id: ManufacturabilityCheck ID.
+
+    Returns:
+        Dict with status.
+    """
+    return {"status": "not_implemented"}
+
+
 @shared_task(queue="default")
 def checks_cleanup_stale_files() -> dict:
     """Cancel checks on project files that are no longer active.
