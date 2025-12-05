@@ -51,6 +51,13 @@
     return sizeLabels[size] || size;
   }
 
+  // Helper to escape HTML to prevent XSS
+  function escapeHtml(text) {
+    var div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
   // Sort the projects table by column
   function sortTable(columnIndex, sortType) {
     const table = document.getElementById('projects-table');
@@ -229,16 +236,16 @@
       const sizeBadge = isSameSize ? '' :
         '<span class="badge bg-secondary slot-badge ms-1">[' + getSizeLabel(proj.slot_size) + ']</span>';
 
-      // Assigned slots display
+      // Assigned slots display (escape each slot position for safety)
       const assignedDisplay = proj.is_assigned ?
-        '<span class="text-muted ms-1">(' + proj.assigned_slots.join(', ') + ')</span>' : '';
+        '<span class="text-muted ms-1">(' + proj.assigned_slots.map(escapeHtml).join(', ') + ')</span>' : '';
 
       html += '<div class="autocomplete-item' + (index === activeIndex ? ' active' : '') + '" ' +
               'role="option" aria-selected="' + (index === activeIndex ? 'true' : 'false') + '" ' +
               'data-index="' + index + '" data-project-id="' + proj.id + '">' +
-              '<span class="project-id">' + proj.project_id + '</span> ' +
+              '<span class="project-id">' + escapeHtml(proj.project_id) + '</span> ' +
               '<span class="' + mfgClass + '">' + mfgIcon + '</span> ' +
-              '<span class="project-name">' + proj.name + '</span>' +
+              '<span class="project-name">' + escapeHtml(proj.name) + '</span>' +
               sizeBadge + assignedDisplay +
               '</div>';
     });
