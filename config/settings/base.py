@@ -501,12 +501,6 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": 60.0,
     },
     # Orphan detection and cleanup
-    # NOTE: checks-cleanup-orphaned-dispatch disabled - needs investigation on
-    # how to reliably verify task is still in broker queue. See issue #133.
-    # "checks-cleanup-orphaned-dispatch": {
-    #     "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_dispatch",
-    #     "schedule": 60.0,
-    # },
     "checks-cleanup-orphaned-processing": {
         "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_processing",
         "schedule": 60.0,

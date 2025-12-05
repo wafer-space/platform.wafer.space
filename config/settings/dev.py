@@ -119,10 +119,6 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": 10.0,  # Faster in dev (15s in prod)
     },
     # Orphan detection
-    "checks-cleanup-orphaned-dispatch": {
-        "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_dispatch",
-        "schedule": 30.0,  # Faster in dev (60s in prod)
-    },
     "checks-cleanup-orphaned-processing": {
         "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_processing",
         "schedule": 30.0,  # Faster in dev (60s in prod)
