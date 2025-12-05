@@ -1664,6 +1664,32 @@ class ManufacturabilityCheck(models.Model):
             ]
         )
 
+    def mark_analyzing(self, *, docker_exit_code: int) -> None:
+        """Transition RUNNING -> ANALYZING with exit code.
+
+        Args:
+            docker_exit_code: Container exit code.
+
+        Raises:
+            InvalidStateTransitionError: If not in RUNNING status.
+        """
+        if not self.can_transition_to(self.Status.ANALYZING):
+            raise InvalidStateTransitionError(
+                from_status=self.status,
+                to_status=self.Status.ANALYZING,
+            )
+
+        self.status = self.Status.ANALYZING
+        self.docker_exit_code = docker_exit_code
+        self.container_finished_at = timezone.now()
+        self.save(
+            update_fields=[
+                "status",
+                "docker_exit_code",
+                "container_finished_at",
+            ]
+        )
+
     def mark_finished(
         self,
         *,
