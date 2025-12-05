@@ -2971,6 +2971,129 @@ def checks_dispatching() -> dict[str, int]:
 
 
 @shared_task(queue="default")
+def checks_starting() -> dict[str, int]:
+    """Queue do_starting work tasks for STARTING checks.
+
+    Only queues if check doesn't already have a pending task.
+
+    Returns:
+        Dict with count of queued tasks.
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("[checks_starting] Starting starting cycle")
+
+    queued = 0
+
+    starting_checks = ManufacturabilityCheck.objects.filter(
+        status=ManufacturabilityCheck.Status.STARTING,
+    ).exclude(pending_task__isnull=False)
+
+    logger.info(
+        "[checks_starting] Found %d STARTING checks without pending task",
+        starting_checks.count(),
+    )
+
+    for check in starting_checks:
+        result = do_starting.delay(check.id)
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check,
+            task_id=result.id,
+            task_name="do_starting",
+        )
+        logger.info(
+            "[checks_starting] Queued do_starting for check %s (task: %s)",
+            check.id,
+            result.id,
+        )
+        queued += 1
+
+    logger.info("[checks_starting] Complete: queued=%d", queued)
+    return {"queued": queued}
+
+
+@shared_task(queue="default")
+def checks_running() -> dict[str, int]:
+    """Queue do_running work tasks for RUNNING checks.
+
+    Only queues if check doesn't already have a pending task.
+
+    Returns:
+        Dict with count of queued tasks.
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("[checks_running] Starting running cycle")
+
+    queued = 0
+
+    running_checks = ManufacturabilityCheck.objects.filter(
+        status=ManufacturabilityCheck.Status.RUNNING,
+    ).exclude(pending_task__isnull=False)
+
+    logger.info(
+        "[checks_running] Found %d RUNNING checks without pending task",
+        running_checks.count(),
+    )
+
+    for check in running_checks:
+        result = do_running.delay(check.id)
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check,
+            task_id=result.id,
+            task_name="do_running",
+        )
+        logger.info(
+            "[checks_running] Queued do_running for check %s (task: %s)",
+            check.id,
+            result.id,
+        )
+        queued += 1
+
+    logger.info("[checks_running] Complete: queued=%d", queued)
+    return {"queued": queued}
+
+
+@shared_task(queue="default")
+def checks_analyzing() -> dict[str, int]:
+    """Queue do_analyzing work tasks for ANALYZING checks.
+
+    Only queues if check doesn't already have a pending task.
+
+    Returns:
+        Dict with count of queued tasks.
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("[checks_analyzing] Starting analyzing cycle")
+
+    queued = 0
+
+    analyzing_checks = ManufacturabilityCheck.objects.filter(
+        status=ManufacturabilityCheck.Status.ANALYZING,
+    ).exclude(pending_task__isnull=False)
+
+    logger.info(
+        "[checks_analyzing] Found %d ANALYZING checks without pending task",
+        analyzing_checks.count(),
+    )
+
+    for check in analyzing_checks:
+        result = do_analyzing.delay(check.id)
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check,
+            task_id=result.id,
+            task_name="do_analyzing",
+        )
+        logger.info(
+            "[checks_analyzing] Queued do_analyzing for check %s (task: %s)",
+            check.id,
+            result.id,
+        )
+        queued += 1
+
+    logger.info("[checks_analyzing] Complete: queued=%d", queued)
+    return {"queued": queued}
+
+
+@shared_task(queue="default")
 def checks_dispatch() -> dict:
     """Dispatch PENDING checks to Celery queue (respecting concurrent limit).
 

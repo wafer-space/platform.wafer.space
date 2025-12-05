@@ -40,6 +40,7 @@ from wafer_space.projects.tasks import _prepare_download_request
 from wafer_space.projects.tasks import _process_and_save_content
 from wafer_space.projects.tasks import _safe_urlopen
 from wafer_space.projects.tasks import check_process_job
+from wafer_space.projects.tasks import checks_analyzing
 from wafer_space.projects.tasks import checks_cancelling
 from wafer_space.projects.tasks import checks_cleanup_orphaned_dispatch
 from wafer_space.projects.tasks import checks_cleanup_orphaned_processing
@@ -48,6 +49,8 @@ from wafer_space.projects.tasks import checks_dispatch
 from wafer_space.projects.tasks import checks_dispatching
 from wafer_space.projects.tasks import checks_pending
 from wafer_space.projects.tasks import checks_retry
+from wafer_space.projects.tasks import checks_running
+from wafer_space.projects.tasks import checks_starting
 from wafer_space.projects.tasks import download_project_file
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.shuttles.models import Shuttle
@@ -2034,3 +2037,130 @@ class TestChecksDispatching:
         assert task.task_id == "task-abc"
         assert task.task_name == "do_dispatching"
         assert task.queued_at is not None
+
+
+class TestChecksStarting:
+    """Test checks_starting beat task."""
+
+    @pytest.mark.django_db
+    def test_queues_do_starting_for_starting_checks(self) -> None:
+        """Queues do_starting work task for STARTING checks."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.STARTING,
+            docker_server_id="local",
+        )
+
+        with patch("wafer_space.projects.tasks.do_starting.delay") as mock_delay:
+            mock_delay.return_value.id = "task-123"
+            result = checks_starting()
+
+        mock_delay.assert_called_once_with(check.id)
+        assert result["queued"] == 1
+
+        # Should create task tracking row
+        task = ManufacturabilityCheckTask.objects.get(manufacturability_check=check)
+        assert task.task_id == "task-123"
+        assert task.task_name == "do_starting"
+
+    @pytest.mark.django_db
+    def test_skips_checks_with_pending_task(self) -> None:
+        """Does not queue if check already has pending task."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.STARTING,
+            docker_server_id="local",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check,
+            task_id="existing",
+            task_name="do_starting",
+        )
+
+        with patch("wafer_space.projects.tasks.do_starting.delay") as mock_delay:
+            result = checks_starting()
+
+        mock_delay.assert_not_called()
+        assert result["queued"] == 0
+
+
+class TestChecksRunning:
+    """Test checks_running beat task."""
+
+    @pytest.mark.django_db
+    def test_queues_do_running_for_running_checks(self) -> None:
+        """Queues do_running work task for RUNNING checks."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING,
+            docker_server_id="local",
+        )
+
+        with patch("wafer_space.projects.tasks.do_running.delay") as mock_delay:
+            mock_delay.return_value.id = "task-456"
+            result = checks_running()
+
+        mock_delay.assert_called_once_with(check.id)
+        assert result["queued"] == 1
+
+        # Should create task tracking row
+        task = ManufacturabilityCheckTask.objects.get(manufacturability_check=check)
+        assert task.task_id == "task-456"
+        assert task.task_name == "do_running"
+
+    @pytest.mark.django_db
+    def test_skips_checks_with_pending_task(self) -> None:
+        """Does not queue if check already has pending task."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING,
+            docker_server_id="local",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check,
+            task_id="existing",
+            task_name="do_running",
+        )
+
+        with patch("wafer_space.projects.tasks.do_running.delay") as mock_delay:
+            result = checks_running()
+
+        mock_delay.assert_not_called()
+        assert result["queued"] == 0
+
+
+class TestChecksAnalyzing:
+    """Test checks_analyzing beat task."""
+
+    @pytest.mark.django_db
+    def test_queues_do_analyzing_for_analyzing_checks(self) -> None:
+        """Queues do_analyzing work task for ANALYZING checks."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+        )
+
+        with patch("wafer_space.projects.tasks.do_analyzing.delay") as mock_delay:
+            mock_delay.return_value.id = "task-789"
+            result = checks_analyzing()
+
+        mock_delay.assert_called_once_with(check.id)
+        assert result["queued"] == 1
+
+        # Should create task tracking row
+        task = ManufacturabilityCheckTask.objects.get(manufacturability_check=check)
+        assert task.task_id == "task-789"
+        assert task.task_name == "do_analyzing"
+
+    @pytest.mark.django_db
+    def test_skips_checks_with_pending_task(self) -> None:
+        """Does not queue if check already has pending task."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check,
+            task_id="existing",
+            task_name="do_analyzing",
+        )
+
+        with patch("wafer_space.projects.tasks.do_analyzing.delay") as mock_delay:
+            result = checks_analyzing()
+
+        mock_delay.assert_not_called()
+        assert result["queued"] == 0
