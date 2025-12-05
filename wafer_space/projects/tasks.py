@@ -44,6 +44,7 @@ from .models import DownloadAttempt
 from .models import FileProcessingError
 from .models import ManufacturabilityCheck
 from .models import ManufacturabilityCheckpoint
+from .models import ManufacturabilityCheckTask
 from .models import Project
 from .models import ProjectFile
 from .models import ProjectFileChunk
@@ -2926,6 +2927,47 @@ def checks_pending() -> dict[str, int]:
 
     logger.info("[checks_pending] Complete: dispatched=%d", dispatched)
     return {"dispatched": dispatched}
+
+
+@shared_task(queue="default")
+def checks_dispatching() -> dict[str, int]:
+    """Queue do_dispatching work tasks for DISPATCHING checks.
+
+    Only queues if check doesn't already have a pending task.
+
+    Returns:
+        Dict with count of queued tasks.
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("[checks_dispatching] Starting dispatching cycle")
+
+    queued = 0
+
+    dispatching_checks = ManufacturabilityCheck.objects.filter(
+        status=ManufacturabilityCheck.Status.DISPATCHING,
+    ).exclude(pending_task__isnull=False)
+
+    logger.info(
+        "[checks_dispatching] Found %d DISPATCHING checks without pending task",
+        dispatching_checks.count(),
+    )
+
+    for check in dispatching_checks:
+        result = do_dispatching.delay(check.id)
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check,
+            task_id=result.id,
+            task_name="do_dispatching",
+        )
+        logger.info(
+            "[checks_dispatching] Queued do_dispatching for check %s (task: %s)",
+            check.id,
+            result.id,
+        )
+        queued += 1
+
+    logger.info("[checks_dispatching] Complete: queued=%d", queued)
+    return {"queued": queued}
 
 
 @shared_task(queue="default")
