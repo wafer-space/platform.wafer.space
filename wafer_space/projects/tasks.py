@@ -57,7 +57,6 @@ from .url_handlers import GitHubArtifactHandler
 from .url_handlers import GoogleSourceHandler
 from .url_handlers import URLHandlerRegistry
 from .verification import is_check_task_actively_running
-from .verification import is_check_task_queued
 from .verification import is_download_task_actively_running
 from .verification import is_download_task_queued
 
@@ -3049,64 +3048,6 @@ def checks_create() -> dict:
 
     logger.info("[checks_create] Complete: created=%d", created)
     return {"created": created}
-
-
-@shared_task(queue="default")
-def checks_cleanup_orphaned_dispatch() -> dict:
-    """Find and mark DISPATCHED checks with missing Celery tasks as ERROR.
-
-    Orphaned checks are those in DISPATCHED state whose Celery task is
-    no longer in the queue (not reserved or active). This can happen if
-    workers crash or tasks are lost.
-
-    Returns:
-        dict with 'orphaned' and 'verified' counts
-    """
-    logger = logging.getLogger(__name__)
-    logger.info("[checks_cleanup_orphaned_dispatch] Starting orphan check")
-
-    orphaned = 0
-    verified = 0
-
-    dispatched_checks = ManufacturabilityCheck.objects.filter(
-        status=ManufacturabilityCheck.Status.DISPATCHED,
-    )
-    dispatched_count = dispatched_checks.count()
-    logger.info(
-        "[checks_cleanup_orphaned_dispatch] Found %d DISPATCHED checks",
-        dispatched_count,
-    )
-
-    for check in dispatched_checks:
-        if is_check_task_queued(check):
-            logger.debug(
-                "[checks_cleanup_orphaned_dispatch] Check %s verified "
-                "(task %s in queue)",
-                check.id,
-                check.celery_job_id,
-            )
-            verified += 1
-        else:
-            error_msg = (
-                f"Orphaned DISPATCHED check: Celery task {check.celery_job_id} "
-                f"not found in queue"
-            )
-            logger.warning(
-                "[checks_cleanup_orphaned_dispatch] Orphaned check %s "
-                "(project: %s): %s",
-                check.id,
-                check.project.name,
-                error_msg,
-            )
-            check.mark_error(error_message=error_msg)
-            orphaned += 1
-
-    logger.info(
-        "[checks_cleanup_orphaned_dispatch] Complete: verified=%d, orphaned=%d",
-        verified,
-        orphaned,
-    )
-    return {"orphaned": orphaned, "verified": verified}
 
 
 @shared_task(queue="default")

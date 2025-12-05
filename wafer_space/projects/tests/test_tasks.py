@@ -35,7 +35,6 @@ from wafer_space.projects.tasks import _process_and_save_content
 from wafer_space.projects.tasks import _safe_urlopen
 from wafer_space.projects.tasks import checks_analyzing
 from wafer_space.projects.tasks import checks_cancelling
-from wafer_space.projects.tasks import checks_cleanup_orphaned_dispatch
 from wafer_space.projects.tasks import checks_cleanup_orphaned_processing
 from wafer_space.projects.tasks import checks_create
 from wafer_space.projects.tasks import checks_dispatching
@@ -846,128 +845,6 @@ class TestChecksCancelling:
 
         mock_delay.assert_not_called()
         assert result["queued"] == 0
-
-
-@pytest.mark.django_db
-class TestChecksCleanupOrphanedDispatch(TestCase):
-    """Test checks_cleanup_orphaned_dispatch task."""
-
-    def setUp(self):
-        """Set up test fixtures."""
-        self.user = User.objects.create_user(
-            username="testuser", email="test@example.com", password=TEST_PASSWORD
-        )
-        self.project = Project.objects.create(user=self.user, name="Test Project")
-        self.project_file = ProjectFile.objects.create(
-            project=self.project,
-            original_filename="test.gds",
-            is_active=True,
-            hash_verified=True,
-        )
-
-    @patch("wafer_space.projects.tasks.is_check_task_queued")
-    def test_marks_orphaned_dispatched_checks_as_error(self, mock_is_queued):
-        """Test DISPATCHED checks with missing Celery tasks are marked ERROR."""
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHED,
-            celery_job_id="task-123",
-        )
-
-        mock_is_queued.return_value = False
-
-        result = checks_cleanup_orphaned_dispatch()
-
-        check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.ERROR
-        assert "orphaned" in check.error_message.lower()
-        assert result["orphaned"] == 1
-        assert result["verified"] == 0
-        mock_is_queued.assert_called_once_with(check)
-
-    @patch("wafer_space.projects.tasks.is_check_task_queued")
-    def test_leaves_valid_dispatched_checks_alone(self, mock_is_queued):
-        """Test DISPATCHED checks with valid Celery tasks are not touched."""
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHED,
-            celery_job_id="task-456",
-        )
-
-        # Task IS in queue (valid)
-        mock_is_queued.return_value = True
-
-        result = checks_cleanup_orphaned_dispatch()
-
-        check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.DISPATCHED
-        assert result["orphaned"] == 0
-        assert result["verified"] == 1
-        mock_is_queued.assert_called_once_with(check)
-
-    @patch("wafer_space.projects.tasks.is_check_task_queued")
-    def test_handles_mixed_checks(self, mock_is_queued):
-        """Test handles both orphaned and valid checks correctly."""
-        project2 = Project.objects.create(user=self.user, name="Test Project 2")
-        project_file2 = ProjectFile.objects.create(
-            project=project2,
-            original_filename="test2.gds",
-            is_active=True,
-            hash_verified=True,
-        )
-        orphaned_check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHED,
-            celery_job_id="task-orphaned",
-        )
-        valid_check = ManufacturabilityCheck.objects.create(
-            project=project2,
-            project_file=project_file2,
-            status=ManufacturabilityCheck.Status.DISPATCHED,
-            celery_job_id="task-valid",
-        )
-
-        # First check is orphaned, second is valid
-        mock_is_queued.side_effect = [False, True]
-
-        result = checks_cleanup_orphaned_dispatch()
-
-        orphaned_check.refresh_from_db()
-        valid_check.refresh_from_db()
-        assert orphaned_check.status == ManufacturabilityCheck.Status.ERROR
-        assert valid_check.status == ManufacturabilityCheck.Status.DISPATCHED
-        assert result["orphaned"] == 1
-        assert result["verified"] == 1
-
-    @patch("wafer_space.projects.tasks.is_check_task_queued")
-    def test_ignores_non_dispatched_checks(self, mock_is_queued):
-        """Test only processes DISPATCHED checks."""
-        project2 = Project.objects.create(user=self.user, name="Test Project 2")
-        project_file2 = ProjectFile.objects.create(
-            project=project2,
-            original_filename="test2.gds",
-            is_active=True,
-            hash_verified=True,
-        )
-        ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PENDING,
-        )
-        ManufacturabilityCheck.objects.create(
-            project=project2,
-            project_file=project_file2,
-            status=ManufacturabilityCheck.Status.RUNNING,
-        )
-
-        result = checks_cleanup_orphaned_dispatch()
-
-        assert result["orphaned"] == 0
-        assert result["verified"] == 0
-        mock_is_queued.assert_not_called()
 
 
 @pytest.mark.django_db
