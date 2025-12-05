@@ -1,8 +1,5 @@
 """Tests for project models."""
 
-from unittest.mock import Mock
-from unittest.mock import patch
-
 import pytest
 from django.core.exceptions import ValidationError
 from django.test import TestCase
@@ -245,10 +242,8 @@ class TestProjectSubmit(TestCase):
 
         assert "hash" in str(exc_info.value).lower()
 
-    @patch("wafer_space.projects.tasks.check_process_job.delay")
-    def test_submit_sets_status_to_submitted(self, mock_task):
+    def test_submit_sets_status_to_submitted(self):
         """Test that submit() sets status to SUBMITTED."""
-        mock_task.return_value = Mock(id="task-123")
 
         _pf = ProjectFile.objects.create(
             project=self.project,
@@ -345,10 +340,8 @@ class TestProjectSubmit(TestCase):
         ).count()
         assert final_check_count == initial_check_count
 
-    @patch("wafer_space.projects.tasks.check_process_job.delay")
-    def test_submit_does_not_create_duplicate_check(self, mock_task):
+    def test_submit_does_not_create_duplicate_check(self):
         """Test that submit() does not create duplicate manufacturability check."""
-        mock_task.return_value = Mock(id="task-123")
 
         _pf = ProjectFile.objects.create(
             project=self.project,
