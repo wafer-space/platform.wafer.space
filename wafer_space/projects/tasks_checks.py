@@ -476,23 +476,18 @@ def checks_cancelling() -> dict[str, int]:
 # These will be implemented in later phases
 
 
-@queued_check_task()
-def do_dispatching(check_id: int) -> dict[str, str]:
+@queued_check_task(expected_status="DISPATCHING")
+def do_dispatching(check: ManufacturabilityCheck) -> dict[str, str]:
     """Pull Docker image for a DISPATCHING check.
 
     Transitions to STARTING on success.
 
     Args:
-        check_id: ManufacturabilityCheck ID.
+        check: ManufacturabilityCheck in DISPATCHING status (validated by decorator).
 
     Returns:
         Dict with result status.
     """
-    check = ManufacturabilityCheck.objects.get(id=check_id)
-
-    if check.status != ManufacturabilityCheck.Status.DISPATCHING:
-        return {"status": "skipped", "reason": "status_changed"}
-
     server = get_server_config(check.docker_server_id)
     if not server:
         error_msg = f"Unknown server: {check.docker_server_id}"
@@ -521,29 +516,20 @@ def do_dispatching(check_id: int) -> dict[str, str]:
         return {"status": "success", "image": image_name, "digest": digest}
 
 
-@queued_check_task()
-def do_starting(check_id: int) -> dict[str, Any]:  # noqa: C901, PLR0911, PLR0915
+@queued_check_task(expected_status="STARTING")
+def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:  # noqa: PLR0911
     """Create and start Docker container for a STARTING check.
 
     Creates a Docker container with appropriate labels and volume mounts,
     starts it, and waits briefly for it to reach running state.
 
     Args:
-        check_id: ManufacturabilityCheck ID.
+        check: ManufacturabilityCheck in STARTING status (validated by decorator).
 
     Returns:
         Dict with status and container info.
     """
     logger = logging.getLogger(__name__)
-    check = ManufacturabilityCheck.objects.get(id=check_id)
-
-    if check.status != ManufacturabilityCheck.Status.STARTING:
-        logger.info(
-            "Skipping do_starting for check %s - status changed to %s",
-            check_id,
-            check.status,
-        )
-        return {"status": "skipped", "reason": "status_changed"}
 
     server = get_server_config(check.docker_server_id)
     if not server:
@@ -600,7 +586,7 @@ def do_starting(check_id: int) -> dict[str, Any]:  # noqa: C901, PLR0911, PLR091
         logger.info(
             "Created container %s for check %s on server %s",
             container.id[:12],
-            check_id,
+            check.id,
             check.docker_server_id,
         )
 
@@ -639,7 +625,7 @@ def do_starting(check_id: int) -> dict[str, Any]:  # noqa: C901, PLR0911, PLR091
 
         logger.info(
             "Check %s transitioned to RUNNING with container %s",
-            check_id,
+            check.id,
             container.id[:12],
         )
 
@@ -656,29 +642,20 @@ def do_starting(check_id: int) -> dict[str, Any]:  # noqa: C901, PLR0911, PLR091
         return {"status": "error", "reason": str(e)}
 
 
-@queued_check_task()
-def do_running(check_id: int) -> dict[str, Any]:  # noqa: C901, PLR0911, PLR0912, PLR0915
+@queued_check_task(expected_status="RUNNING")
+def do_running(check: ManufacturabilityCheck) -> dict[str, Any]:  # noqa: C901, PLR0911, PLR0915
     """Monitor running container and download logs incrementally.
 
     Checks container status, downloads new logs since last fetch,
     and transitions to ANALYZING if container has exited.
 
     Args:
-        check_id: ManufacturabilityCheck ID.
+        check: ManufacturabilityCheck in RUNNING status (validated by decorator).
 
     Returns:
         Dict with status and log info.
     """
     logger = logging.getLogger(__name__)
-    check = ManufacturabilityCheck.objects.get(id=check_id)
-
-    if check.status != ManufacturabilityCheck.Status.RUNNING:
-        logger.info(
-            "Skipping do_running for check %s - status changed to %s",
-            check_id,
-            check.status,
-        )
-        return {"status": "skipped", "reason": "status_changed"}
 
     server = get_server_config(check.docker_server_id)
     if not server:
@@ -732,7 +709,7 @@ def do_running(check_id: int) -> dict[str, Any]:  # noqa: C901, PLR0911, PLR0912
                 logger.info(
                     "Downloaded %d bytes of logs for check %s",
                     len(clean_logs),
-                    check_id,
+                    check.id,
                 )
 
         # Check container status
@@ -762,7 +739,7 @@ def do_running(check_id: int) -> dict[str, Any]:  # noqa: C901, PLR0911, PLR0912
         logger.info(
             "Container %s still running for check %s",
             container.id[:12],
-            check_id,
+            check.id,
         )
 
         return {
@@ -778,29 +755,20 @@ def do_running(check_id: int) -> dict[str, Any]:  # noqa: C901, PLR0911, PLR0912
         return {"status": "error", "reason": str(e)}
 
 
-@queued_check_task()
-def do_analyzing(check_id: int) -> dict[str, Any]:
+@queued_check_task(expected_status="ANALYZING")
+def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
     """Analyze container logs and extract results.
 
     Parses the container logs to determine if the design is manufacturable,
     extracts errors and warnings, and transitions to FINISHED.
 
     Args:
-        check_id: ManufacturabilityCheck ID.
+        check: ManufacturabilityCheck in ANALYZING status (validated by decorator).
 
     Returns:
         Dict with analysis results.
     """
     logger = logging.getLogger(__name__)
-    check = ManufacturabilityCheck.objects.get(id=check_id)
-
-    if check.status != ManufacturabilityCheck.Status.ANALYZING:
-        logger.info(
-            "Skipping do_analyzing for check %s - status changed to %s",
-            check_id,
-            check.status,
-        )
-        return {"status": "skipped", "reason": "status_changed"}
 
     try:
         # Parse the logs
@@ -809,7 +777,7 @@ def do_analyzing(check_id: int) -> dict[str, Any]:
 
         logger.info(
             "Parsing logs for check %s (exit_code=%d, log_length=%d)",
-            check_id,
+            check.id,
             exit_code,
             len(logs),
         )
@@ -832,7 +800,7 @@ def do_analyzing(check_id: int) -> dict[str, Any]:
 
         logger.info(
             "Analysis complete for check %s: manufacturable=%s, errors=%d, warnings=%d",
-            check_id,
+            check.id,
             is_manufacturable,
             len(error_messages),
             len(warning_messages),

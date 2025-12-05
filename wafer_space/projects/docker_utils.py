@@ -170,8 +170,8 @@ def queued_check_task(
                 # Fetch the check object
                 check = ManufacturabilityCheck.objects.get(id=check_id)
 
-                # Verify expected status if specified
-                if expected_status and check.status != expected_status:
+                # Verify expected status if specified (case-insensitive comparison)
+                if expected_status and check.status.lower() != expected_status.lower():
                     logger.info(
                         "Skipping %s for check %s - status changed to %s",
                         func.__name__,
