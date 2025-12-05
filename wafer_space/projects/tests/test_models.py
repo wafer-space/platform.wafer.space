@@ -1594,6 +1594,79 @@ class TestManufacturabilityCheckMarkRunning(TestCase):
 
 
 @pytest.mark.django_db
+class TestManufacturabilityCheckMarkRunningUpdated(TestCase):
+    """Test updated mark_running transition method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_mark_running_from_starting(self):
+        """mark_running transitions STARTING -> RUNNING."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.STARTING,
+            project=self.project,
+            project_file=self.project_file,
+        )
+        check.mark_running(
+            docker_container_id="abc123",
+            docker_command="precheck /input/design.gds",
+        )
+        assert check.status == ManufacturabilityCheck.Status.RUNNING
+
+    def test_mark_running_sets_container_info(self):
+        """mark_running stores container ID and command."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.STARTING,
+            project=self.project,
+            project_file=self.project_file,
+        )
+        check.mark_running(
+            docker_container_id="abc123",
+            docker_command="precheck /input/design.gds",
+        )
+        assert check.docker_container_id == "abc123"
+        assert check.docker_command == "precheck /input/design.gds"
+
+    def test_mark_running_sets_container_started_at(self):
+        """mark_running sets container_started_at automatically."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.STARTING,
+            project=self.project,
+            project_file=self.project_file,
+        )
+        assert check.container_started_at is None
+        check.mark_running(docker_container_id="abc123", docker_command="precheck")
+        assert check.container_started_at is not None
+
+    def test_mark_running_raises_for_invalid_transition(self):
+        """mark_running raises for non-STARTING status."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.DISPATCHING,
+            project=self.project,
+            project_file=self.project_file,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_running(docker_container_id="abc", docker_command="test")
+
+
+@pytest.mark.django_db
 class TestProjectSlotSize(TestCase):
     """Test Project.slot_size field and SlotSize choices."""
 

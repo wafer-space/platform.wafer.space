@@ -1630,16 +1630,20 @@ class ManufacturabilityCheck(models.Model):
             ]
         )
 
-    def mark_running(self, *, context: CheckExecutionContext) -> None:
-        """Mark check as running in Celery worker.
-
-        Pathway 3: DISPATCHED → RUNNING
+    def mark_running(
+        self,
+        *,
+        docker_container_id: str,
+        docker_command: str,
+    ) -> None:
+        """Transition STARTING -> RUNNING with container info.
 
         Args:
-            context: CheckExecutionContext with worker and docker info
+            docker_container_id: Docker container ID.
+            docker_command: Command executed in container (as string).
 
         Raises:
-            InvalidStateTransitionError: If transition is not allowed
+            InvalidStateTransitionError: If not in STARTING status.
         """
         if not self.can_transition_to(self.Status.RUNNING):
             raise InvalidStateTransitionError(
@@ -1648,25 +1652,15 @@ class ManufacturabilityCheck(models.Model):
             )
 
         self.status = self.Status.RUNNING
-        self.celery_worker_pid = context.celery_worker_pid
-        self.celery_worker_hostname = context.celery_worker_hostname
-        self.docker_container_id = context.docker_container_id
-        self.docker_container_started_at = timezone.now()
-        self.celery_job_started_at = timezone.now()
-        self.docker_image = context.docker_image
-        self.docker_image_digest = context.docker_image_digest
-        self.docker_command = context.docker_command
+        self.docker_container_id = docker_container_id
+        self.docker_command = docker_command
+        self.container_started_at = timezone.now()
         self.save(
             update_fields=[
                 "status",
-                "celery_worker_pid",
-                "celery_worker_hostname",
                 "docker_container_id",
-                "docker_container_started_at",
-                "celery_job_started_at",
-                "docker_image",
-                "docker_image_digest",
                 "docker_command",
+                "container_started_at",
             ]
         )
 
