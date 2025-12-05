@@ -37,8 +37,8 @@ from .content_pipeline import cleanup_temp_dir
 from .content_pipeline import get_temp_dir_for_file
 from .content_processors import _processor_registry
 from .docker_utils import parse_docker_timestamp_float
+from .docker_utils import queued_check_task
 from .docker_utils import strip_docker_timestamps
-from .docker_utils import track_task
 from .exceptions import InvalidStateTransitionError
 from .file_type_utils import detect_file_type_from_data
 from .format_validators import validate_output_format
@@ -3156,7 +3156,7 @@ def checks_cancelling() -> dict[str, int]:
 # These will be implemented in later phases
 
 
-@shared_task(queue="docker-ephemeral")
+@queued_check_task()
 def do_dispatching(check_id: int) -> dict[str, str]:
     """Pull Docker image for a DISPATCHING check.
 
@@ -3168,46 +3168,45 @@ def do_dispatching(check_id: int) -> dict[str, str]:
     Returns:
         Dict with result status.
     """
-    with track_task(check_id):
-        check = ManufacturabilityCheck.objects.get(id=check_id)
+    check = ManufacturabilityCheck.objects.get(id=check_id)
 
-        if check.status != ManufacturabilityCheck.Status.DISPATCHING:
-            return {"status": "skipped", "reason": "status_changed"}
+    if check.status != ManufacturabilityCheck.Status.DISPATCHING:
+        return {"status": "skipped", "reason": "status_changed"}
 
-        # Get server config
-        server = next(
-            (s for s in settings.DOCKER_SERVERS if s["id"] == check.docker_server_id),
-            None,
+    # Get server config
+    server = next(
+        (s for s in settings.DOCKER_SERVERS if s["id"] == check.docker_server_id),
+        None,
+    )
+    if not server:
+        error_msg = f"Unknown server: {check.docker_server_id}"
+        check.mark_error(error_message=error_msg)
+        return {"status": "error", "reason": "unknown_server"}
+
+    # Connect to Docker
+    client = docker.DockerClient(base_url=str(server["url"]))
+
+    try:
+        image_name = settings.PRECHECK_DOCKER_IMAGE
+        image = client.images.pull(image_name)
+
+        # Extract digest from pulled image
+        digests = image.attrs.get("RepoDigests", [])
+        digest = digests[0].split("@")[1] if digests else "unknown"
+
+        check.mark_starting(
+            docker_image=image_name,
+            docker_image_digest=digest,
         )
-        if not server:
-            error_msg = f"Unknown server: {check.docker_server_id}"
-            check.mark_error(error_message=error_msg)
-            return {"status": "error", "reason": "unknown_server"}
-
-        # Connect to Docker
-        client = docker.DockerClient(base_url=str(server["url"]))
-
-        try:
-            image_name = settings.PRECHECK_DOCKER_IMAGE
-            image = client.images.pull(image_name)
-
-            # Extract digest from pulled image
-            digests = image.attrs.get("RepoDigests", [])
-            digest = digests[0].split("@")[1] if digests else "unknown"
-
-            check.mark_starting(
-                docker_image=image_name,
-                docker_image_digest=digest,
-            )
-        except docker.errors.DockerException as e:
-            error_msg = f"Docker pull failed: {e}"
-            check.mark_error(error_message=error_msg)
-            return {"status": "error", "reason": str(e)}
-        else:
-            return {"status": "success", "image": image_name, "digest": digest}
+    except docker.errors.DockerException as e:
+        error_msg = f"Docker pull failed: {e}"
+        check.mark_error(error_message=error_msg)
+        return {"status": "error", "reason": str(e)}
+    else:
+        return {"status": "success", "image": image_name, "digest": digest}
 
 
-@shared_task(queue="docker-ephemeral")
+@queued_check_task()
 def do_starting(check_id: int) -> dict[str, Any]:  # noqa: C901, PLR0911, PLR0915
     """Create and start Docker container for a STARTING check.
 
@@ -3221,135 +3220,133 @@ def do_starting(check_id: int) -> dict[str, Any]:  # noqa: C901, PLR0911, PLR091
         Dict with status and container info.
     """
     logger = logging.getLogger(__name__)
+    check = ManufacturabilityCheck.objects.get(id=check_id)
 
-    with track_task(check_id):
-        check = ManufacturabilityCheck.objects.get(id=check_id)
-
-        if check.status != ManufacturabilityCheck.Status.STARTING:
-            logger.info(
-                "Skipping do_starting for check %s - status changed to %s",
-                check_id,
-                check.status,
-            )
-            return {"status": "skipped", "reason": "status_changed"}
-
-        # Get server config
-        server = next(
-            (s for s in settings.DOCKER_SERVERS if s["id"] == check.docker_server_id),
-            None,
+    if check.status != ManufacturabilityCheck.Status.STARTING:
+        logger.info(
+            "Skipping do_starting for check %s - status changed to %s",
+            check_id,
+            check.status,
         )
-        if not server:
-            error_msg = f"Unknown server: {check.docker_server_id}"
+        return {"status": "skipped", "reason": "status_changed"}
+
+    # Get server config
+    server = next(
+        (s for s in settings.DOCKER_SERVERS if s["id"] == check.docker_server_id),
+        None,
+    )
+    if not server:
+        error_msg = f"Unknown server: {check.docker_server_id}"
+        logger.error(error_msg)
+        check.mark_error(error_message=error_msg)
+        return {"status": "error", "reason": "unknown_server"}
+
+    # Connect to Docker
+    try:
+        client = docker.DockerClient(base_url=str(server["url"]))
+    except docker.errors.DockerException as e:
+        error_msg = f"Failed to connect to Docker server: {e}"
+        logger.exception(error_msg)
+        check.mark_error(error_message=error_msg)
+        return {"status": "error", "reason": str(e)}
+
+    try:
+        # Get the project file path
+        project_file = check.project_file
+        if not project_file.file:
+            error_msg = "Project file not downloaded yet"
             logger.error(error_msg)
             check.mark_error(error_message=error_msg)
-            return {"status": "error", "reason": "unknown_server"}
+            return {"status": "error", "reason": "file_not_ready"}
 
-        # Connect to Docker
-        try:
-            client = docker.DockerClient(base_url=str(server["url"]))
-        except docker.errors.DockerException as e:
-            error_msg = f"Failed to connect to Docker server: {e}"
-            logger.exception(error_msg)
+        gds_path = Path(project_file.file.path)
+        if not gds_path.exists():
+            error_msg = f"File not found at {gds_path}"
+            logger.error(error_msg)
             check.mark_error(error_message=error_msg)
-            return {"status": "error", "reason": str(e)}
+            return {"status": "error", "reason": "file_not_found"}
 
-        try:
-            # Get the project file path
-            project_file = check.project_file
-            if not project_file.file:
-                error_msg = "Project file not downloaded yet"
-                logger.error(error_msg)
-                check.mark_error(error_message=error_msg)
-                return {"status": "error", "reason": "file_not_ready"}
-
-            gds_path = Path(project_file.file.path)
-            if not gds_path.exists():
-                error_msg = f"File not found at {gds_path}"
-                logger.error(error_msg)
-                check.mark_error(error_message=error_msg)
-                return {"status": "error", "reason": "file_not_found"}
-
-            # Create container with labels and volume mount
-            command = "precheck"
-            container = client.containers.create(
-                check.docker_image,
-                command=command,
-                labels={
-                    "wafer.space.service": "manufacturability-check",
-                    "wafer.space.check_id": str(check.id),
-                    "wafer.space.project_id": str(check.project.id),
+        # Create container with labels and volume mount
+        command = "precheck"
+        container = client.containers.create(
+            check.docker_image,
+            command=command,
+            labels={
+                "wafer.space.service": "manufacturability-check",
+                "wafer.space.check_id": str(check.id),
+                "wafer.space.project_id": str(check.project.id),
+            },
+            volumes={
+                str(gds_path): {
+                    "bind": "/input/design.gds",
+                    "mode": "ro",
                 },
-                volumes={
-                    str(gds_path): {
-                        "bind": "/input/design.gds",
-                        "mode": "ro",
-                    },
-                },
-                # Limit resources to prevent runaway containers
-                mem_limit="4g",
-                cpu_count=2,
-            )
+            },
+            # Limit resources to prevent runaway containers
+            mem_limit="4g",
+            cpu_count=2,
+        )
 
-            logger.info(
-                "Created container %s for check %s on server %s",
-                container.id[:12],
-                check_id,
-                check.docker_server_id,
-            )
+        logger.info(
+            "Created container %s for check %s on server %s",
+            container.id[:12],
+            check_id,
+            check.docker_server_id,
+        )
 
-            # Start the container
-            container.start()
-            logger.info("Started container %s", container.id[:12])
+        # Start the container
+        container.start()
+        logger.info("Started container %s", container.id[:12])
 
-            # Wait briefly for container to be running
-            # Give it a few seconds to start
-            max_wait = 10
-            for _ in range(max_wait):
-                container.reload()
-                if container.status == "running":
-                    break
-                if container.status == "exited":
-                    # Container exited immediately - this is an error
-                    error_msg = "Container exited immediately after start"
-                    logger.error(error_msg)
-                    check.mark_error(error_message=error_msg)
-                    return {"status": "error", "reason": "container_exited_immediately"}
-                time.sleep(1)
-
-            # Final status check
+        # Wait briefly for container to be running
+        # Give it a few seconds to start
+        max_wait = 10
+        for _ in range(max_wait):
             container.reload()
-            if container.status != "running":
-                error_msg = f"Container failed to start: status={container.status}"
+            if container.status == "running":
+                break
+            if container.status == "exited":
+                # Container exited immediately - this is an error
+                error_msg = "Container exited immediately after start"
                 logger.error(error_msg)
                 check.mark_error(error_message=error_msg)
-                return {"status": "error", "reason": "failed_to_start"}
+                return {"status": "error", "reason": "container_exited_immediately"}
+            time.sleep(1)
 
-            # Transition to RUNNING
-            check.mark_running(
-                docker_container_id=container.id,
-                docker_command=command,
-            )
-
-            logger.info(
-                "Check %s transitioned to RUNNING with container %s",
-                check_id,
-                container.id[:12],
-            )
-
-            return {  # noqa: TRY300
-                "status": "success",
-                "container_id": container.id,
-                "command": command,
-            }
-
-        except docker.errors.DockerException as e:
-            error_msg = f"Docker container creation failed: {e}"
-            logger.exception(error_msg)
+        # Final status check
+        container.reload()
+        if container.status != "running":
+            error_msg = f"Container failed to start: status={container.status}"
+            logger.error(error_msg)
             check.mark_error(error_message=error_msg)
-            return {"status": "error", "reason": str(e)}
+            return {"status": "error", "reason": "failed_to_start"}
+
+        # Transition to RUNNING
+        check.mark_running(
+            docker_container_id=container.id,
+            docker_command=command,
+        )
+
+        logger.info(
+            "Check %s transitioned to RUNNING with container %s",
+            check_id,
+            container.id[:12],
+        )
+
+        return {  # noqa: TRY300
+            "status": "success",
+            "container_id": container.id,
+            "command": command,
+        }
+
+    except docker.errors.DockerException as e:
+        error_msg = f"Docker container creation failed: {e}"
+        logger.exception(error_msg)
+        check.mark_error(error_message=error_msg)
+        return {"status": "error", "reason": str(e)}
 
 
-@shared_task(queue="docker-ephemeral")
+@queued_check_task()
 def do_running(check_id: int) -> dict[str, Any]:  # noqa: C901, PLR0911, PLR0912, PLR0915
     """Monitor running container and download logs incrementally.
 
@@ -3363,123 +3360,121 @@ def do_running(check_id: int) -> dict[str, Any]:  # noqa: C901, PLR0911, PLR0912
         Dict with status and log info.
     """
     logger = logging.getLogger(__name__)
+    check = ManufacturabilityCheck.objects.get(id=check_id)
 
-    with track_task(check_id):
-        check = ManufacturabilityCheck.objects.get(id=check_id)
-
-        if check.status != ManufacturabilityCheck.Status.RUNNING:
-            logger.info(
-                "Skipping do_running for check %s - status changed to %s",
-                check_id,
-                check.status,
-            )
-            return {"status": "skipped", "reason": "status_changed"}
-
-        # Get server config
-        server = next(
-            (s for s in settings.DOCKER_SERVERS if s["id"] == check.docker_server_id),
-            None,
+    if check.status != ManufacturabilityCheck.Status.RUNNING:
+        logger.info(
+            "Skipping do_running for check %s - status changed to %s",
+            check_id,
+            check.status,
         )
-        if not server:
-            error_msg = f"Unknown server: {check.docker_server_id}"
-            logger.error(error_msg)
-            check.mark_error(error_message=error_msg)
-            return {"status": "error", "reason": "unknown_server"}
+        return {"status": "skipped", "reason": "status_changed"}
 
-        # Connect to Docker
-        try:
-            client = docker.DockerClient(base_url=str(server["url"]))
-        except docker.errors.DockerException as e:
-            error_msg = f"Failed to connect to Docker server: {e}"
-            logger.exception(error_msg)
-            check.mark_error(error_message=error_msg)
-            return {"status": "error", "reason": str(e)}
+    # Get server config
+    server = next(
+        (s for s in settings.DOCKER_SERVERS if s["id"] == check.docker_server_id),
+        None,
+    )
+    if not server:
+        error_msg = f"Unknown server: {check.docker_server_id}"
+        logger.error(error_msg)
+        check.mark_error(error_message=error_msg)
+        return {"status": "error", "reason": "unknown_server"}
 
-        try:
-            # Get the container
-            container = client.containers.get(check.docker_container_id)
-        except docker.errors.NotFound:
-            error_msg = f"Container {check.docker_container_id} not found"
-            logger.exception(error_msg)
-            check.mark_error(error_message=error_msg)
-            return {"status": "error", "reason": "container_not_found"}
-        except docker.errors.DockerException as e:
-            error_msg = f"Failed to get container: {e}"
-            logger.exception(error_msg)
-            check.mark_error(error_message=error_msg)
-            return {"status": "error", "reason": str(e)}
+    # Connect to Docker
+    try:
+        client = docker.DockerClient(base_url=str(server["url"]))
+    except docker.errors.DockerException as e:
+        error_msg = f"Failed to connect to Docker server: {e}"
+        logger.exception(error_msg)
+        check.mark_error(error_message=error_msg)
+        return {"status": "error", "reason": str(e)}
 
-        try:
-            # Download logs incrementally
-            logs_kwargs: dict[str, Any] = {"timestamps": True}
-            if check.logs_downloaded_until:
-                # Only get logs since last download
-                logs_kwargs["since"] = check.logs_downloaded_until
+    try:
+        # Get the container
+        container = client.containers.get(check.docker_container_id)
+    except docker.errors.NotFound:
+        error_msg = f"Container {check.docker_container_id} not found"
+        logger.exception(error_msg)
+        check.mark_error(error_message=error_msg)
+        return {"status": "error", "reason": "container_not_found"}
+    except docker.errors.DockerException as e:
+        error_msg = f"Failed to get container: {e}"
+        logger.exception(error_msg)
+        check.mark_error(error_message=error_msg)
+        return {"status": "error", "reason": str(e)}
 
-            raw_logs = container.logs(**logs_kwargs).decode("utf-8", errors="replace")
+    try:
+        # Download logs incrementally
+        logs_kwargs: dict[str, Any] = {"timestamps": True}
+        if check.logs_downloaded_until:
+            # Only get logs since last download
+            logs_kwargs["since"] = check.logs_downloaded_until
 
-            # Find the latest timestamp in the logs for next incremental fetch
-            latest_timestamp = None
-            if raw_logs:
-                for line in raw_logs.split("\n"):
-                    timestamp = parse_docker_timestamp_float(line)
-                    if timestamp:
-                        latest_timestamp = timestamp
+        raw_logs = container.logs(**logs_kwargs).decode("utf-8", errors="replace")
 
-                # Strip timestamps and append to processing logs
-                clean_logs = strip_docker_timestamps(raw_logs)
-                if clean_logs.strip():
-                    check.append_to_processing_logs(clean_logs)
-                    logger.info(
-                        "Downloaded %d bytes of logs for check %s",
-                        len(clean_logs),
-                        check_id,
-                    )
+        # Find the latest timestamp in the logs for next incremental fetch
+        latest_timestamp = None
+        if raw_logs:
+            for line in raw_logs.split("\n"):
+                timestamp = parse_docker_timestamp_float(line)
+                if timestamp:
+                    latest_timestamp = timestamp
 
-            # Check container status
-            container.reload()
-            container_status = container.status
-
-            if container_status == "exited":
-                # Container has finished - get exit code and transition
-                exit_code = container.attrs.get("State", {}).get("ExitCode", -1)
+            # Strip timestamps and append to processing logs
+            clean_logs = strip_docker_timestamps(raw_logs)
+            if clean_logs.strip():
+                check.append_to_processing_logs(clean_logs)
                 logger.info(
-                    "Container %s exited with code %d",
-                    container.id[:12],
-                    exit_code,
+                    "Downloaded %d bytes of logs for check %s",
+                    len(clean_logs),
+                    check_id,
                 )
 
-                check.mark_analyzing(docker_exit_code=exit_code)
-                return {
-                    "status": "container_exited",
-                    "exit_code": exit_code,
-                }
+        # Check container status
+        container.reload()
+        container_status = container.status
 
-            # Container still running - update logs timestamp
-            if latest_timestamp:
-                check.logs_downloaded_until = latest_timestamp
-                check.save(update_fields=["logs_downloaded_until"])
-
+        if container_status == "exited":
+            # Container has finished - get exit code and transition
+            exit_code = container.attrs.get("State", {}).get("ExitCode", -1)
             logger.info(
-                "Container %s still running for check %s",
+                "Container %s exited with code %d",
                 container.id[:12],
-                check_id,
+                exit_code,
             )
 
+            check.mark_analyzing(docker_exit_code=exit_code)
             return {
-                "status": "still_running",
-                "container_status": container_status,
-                "logs_bytes": len(raw_logs) if raw_logs else 0,
+                "status": "container_exited",
+                "exit_code": exit_code,
             }
 
-        except docker.errors.DockerException as e:
-            error_msg = f"Docker error while monitoring container: {e}"
-            logger.exception(error_msg)
-            check.mark_error(error_message=error_msg)
-            return {"status": "error", "reason": str(e)}
+        # Container still running - update logs timestamp
+        if latest_timestamp:
+            check.logs_downloaded_until = latest_timestamp
+            check.save(update_fields=["logs_downloaded_until"])
+
+        logger.info(
+            "Container %s still running for check %s",
+            container.id[:12],
+            check_id,
+        )
+
+        return {
+            "status": "still_running",
+            "container_status": container_status,
+            "logs_bytes": len(raw_logs) if raw_logs else 0,
+        }
+
+    except docker.errors.DockerException as e:
+        error_msg = f"Docker error while monitoring container: {e}"
+        logger.exception(error_msg)
+        check.mark_error(error_message=error_msg)
+        return {"status": "error", "reason": str(e)}
 
 
-@shared_task(queue="docker-ephemeral")
+@queued_check_task()
 def do_analyzing(check_id: int) -> dict[str, Any]:
     """Analyze container logs and extract results.
 
@@ -3496,80 +3491,76 @@ def do_analyzing(check_id: int) -> dict[str, Any]:
 
     from wafer_space.projects.precheck_parser import PrecheckLogParser  # noqa: PLC0415
 
-    with track_task(check_id):
-        check = ManufacturabilityCheck.objects.get(id=check_id)
+    check = ManufacturabilityCheck.objects.get(id=check_id)
 
-        if check.status != ManufacturabilityCheck.Status.ANALYZING:
-            logger.info(
-                "Skipping do_analyzing for check %s - status changed to %s",
-                check_id,
-                check.status,
-            )
-            return {"status": "skipped", "reason": "status_changed"}
+    if check.status != ManufacturabilityCheck.Status.ANALYZING:
+        logger.info(
+            "Skipping do_analyzing for check %s - status changed to %s",
+            check_id,
+            check.status,
+        )
+        return {"status": "skipped", "reason": "status_changed"}
 
-        try:
-            # Parse the logs
-            logs = check.processing_logs or ""
-            exit_code = check.docker_exit_code or 0
+    try:
+        # Parse the logs
+        logs = check.processing_logs or ""
+        exit_code = check.docker_exit_code or 0
 
-            logger.info(
-                "Parsing logs for check %s (exit_code=%d, log_length=%d)",
-                check_id,
-                exit_code,
-                len(logs),
-            )
+        logger.info(
+            "Parsing logs for check %s (exit_code=%d, log_length=%d)",
+            check_id,
+            exit_code,
+            len(logs),
+        )
 
-            parse_result = PrecheckLogParser.parse_logs(logs, exit_code)
+        parse_result = PrecheckLogParser.parse_logs(logs, exit_code)
 
-            # Extract errors and warnings
-            error_messages = [e["message"] for e in parse_result["errors"]]
-            warning_messages = [
-                w.get("message", str(w)) for w in parse_result["warnings"]
-            ]
+        # Extract errors and warnings
+        error_messages = [e["message"] for e in parse_result["errors"]]
+        warning_messages = [w.get("message", str(w)) for w in parse_result["warnings"]]
 
-            # Determine manufacturability
-            is_manufacturable = parse_result["success"]
+        # Determine manufacturability
+        is_manufacturable = parse_result["success"]
 
-            # Extract tool versions from logs if available
-            # For now, use a simple approach - look for version strings
-            tool_versions: dict[str, str] = {}
-            # Placeholder - real version extraction would be more sophisticated
-            if "precheck" in logs.lower():
-                tool_versions["precheck"] = "unknown"
+        # Extract tool versions from logs if available
+        # For now, use a simple approach - look for version strings
+        tool_versions: dict[str, str] = {}
+        # Placeholder - real version extraction would be more sophisticated
+        if "precheck" in logs.lower():
+            tool_versions["precheck"] = "unknown"
 
-            logger.info(
-                "Analysis complete for check %s: "
-                "manufacturable=%s, errors=%d, warnings=%d",
-                check_id,
-                is_manufacturable,
-                len(error_messages),
-                len(warning_messages),
-            )
+        logger.info(
+            "Analysis complete for check %s: manufacturable=%s, errors=%d, warnings=%d",
+            check_id,
+            is_manufacturable,
+            len(error_messages),
+            len(warning_messages),
+        )
 
-            # Transition to FINISHED
-            check.mark_finished(
-                is_manufacturable=is_manufacturable,
-                errors=error_messages,
-                warnings=warning_messages,
-                tool_versions=tool_versions,
-            )
+        # Transition to FINISHED
+        check.mark_finished(
+            is_manufacturable=is_manufacturable,
+            errors=error_messages,
+            warnings=warning_messages,
+            tool_versions=tool_versions,
+        )
 
-            return {
-                "status": "success",
-                "is_manufacturable": is_manufacturable,
-                "error_count": len(error_messages),
-                "warning_count": len(warning_messages),
-            }
+        return {
+            "status": "success",
+            "is_manufacturable": is_manufacturable,
+            "error_count": len(error_messages),
+            "warning_count": len(warning_messages),
+        }
 
-        except Exception as e:
-            # Catch any parsing errors and mark as system error
-            error_msg = f"Failed to analyze logs: {e}"
-            logger.exception(error_msg)
-            check.mark_error(error_message=error_msg)
-            return {"status": "error", "reason": str(e)}
+    except Exception as e:
+        # Catch any parsing errors and mark as system error
+        error_msg = f"Failed to analyze logs: {e}"
+        logger.exception(error_msg)
+        check.mark_error(error_message=error_msg)
+        return {"status": "error", "reason": str(e)}
 
 
-@shared_task(queue="docker-ephemeral")
+@queued_check_task()
 def do_cancelling(check_id: int) -> dict[str, Any]:
     """Stop and remove container for a CANCELLING check.
 
@@ -3583,98 +3574,92 @@ def do_cancelling(check_id: int) -> dict[str, Any]:
         Dict with cancellation status.
     """
     logger = logging.getLogger(__name__)
+    check = ManufacturabilityCheck.objects.get(id=check_id)
 
-    with track_task(check_id):
-        check = ManufacturabilityCheck.objects.get(id=check_id)
+    if check.status != ManufacturabilityCheck.Status.CANCELLING:
+        logger.info(
+            "Skipping do_cancelling for check %s - status changed to %s",
+            check_id,
+            check.status,
+        )
+        return {"status": "skipped", "reason": "status_changed"}
 
-        if check.status != ManufacturabilityCheck.Status.CANCELLING:
-            logger.info(
-                "Skipping do_cancelling for check %s - status changed to %s",
-                check_id,
-                check.status,
-            )
-            return {"status": "skipped", "reason": "status_changed"}
+    container_id = check.docker_container_id
+    container_stopped = False
+    container_removed = False
 
-        container_id = check.docker_container_id
-        container_stopped = False
-        container_removed = False
+    # Only attempt Docker operations if we have a container ID and server
+    if container_id and check.docker_server_id:
+        # Get server config
+        server = next(
+            (s for s in settings.DOCKER_SERVERS if s["id"] == check.docker_server_id),
+            None,
+        )
 
-        # Only attempt Docker operations if we have a container ID and server
-        if container_id and check.docker_server_id:
-            # Get server config
-            server = next(
-                (
-                    s
-                    for s in settings.DOCKER_SERVERS
-                    if s["id"] == check.docker_server_id
-                ),
-                None,
-            )
+        if server:
+            try:
+                client = docker.DockerClient(base_url=str(server["url"]))
 
-            if server:
                 try:
-                    client = docker.DockerClient(base_url=str(server["url"]))
+                    container = client.containers.get(container_id)
 
-                    try:
-                        container = client.containers.get(container_id)
-
-                        # Stop the container if it's running
-                        container.reload()
-                        if container.status in ("running", "paused"):
-                            logger.info(
-                                "Stopping container %s for check %s",
-                                container_id[:12],
-                                check_id,
-                            )
-                            container.stop(timeout=10)
-                            container_stopped = True
-
-                        # Remove the container
+                    # Stop the container if it's running
+                    container.reload()
+                    if container.status in ("running", "paused"):
                         logger.info(
-                            "Removing container %s for check %s",
+                            "Stopping container %s for check %s",
                             container_id[:12],
                             check_id,
                         )
-                        container.remove()
-                        container_removed = True
+                        container.stop(timeout=10)
+                        container_stopped = True
 
-                    except docker.errors.NotFound:
-                        # Container already gone - that's fine
-                        logger.info(
-                            "Container %s not found (already removed)",
-                            container_id[:12],
-                        )
-                        container_removed = True
-
-                except docker.errors.DockerException as e:
-                    # Log the error but don't fail - we still want to mark as cancelled
-                    logger.warning(
-                        "Docker error during cancellation of check %s: %s",
+                    # Remove the container
+                    logger.info(
+                        "Removing container %s for check %s",
+                        container_id[:12],
                         check_id,
-                        e,
                     )
-            else:
+                    container.remove()
+                    container_removed = True
+
+                except docker.errors.NotFound:
+                    # Container already gone - that's fine
+                    logger.info(
+                        "Container %s not found (already removed)",
+                        container_id[:12],
+                    )
+                    container_removed = True
+
+            except docker.errors.DockerException as e:
+                # Log the error but don't fail - we still want to mark as cancelled
                 logger.warning(
-                    "Unknown server %s for check %s - cannot clean up container",
-                    check.docker_server_id,
+                    "Docker error during cancellation of check %s: %s",
                     check_id,
+                    e,
                 )
+        else:
+            logger.warning(
+                "Unknown server %s for check %s - cannot clean up container",
+                check.docker_server_id,
+                check_id,
+            )
 
-        # Transition to CANCELLED
-        check.mark_cancelled()
+    # Transition to CANCELLED
+    check.mark_cancelled()
 
-        logger.info(
-            "Check %s cancelled (container_stopped=%s, container_removed=%s)",
-            check_id,
-            container_stopped,
-            container_removed,
-        )
+    logger.info(
+        "Check %s cancelled (container_stopped=%s, container_removed=%s)",
+        check_id,
+        container_stopped,
+        container_removed,
+    )
 
-        return {
-            "status": "success",
-            "container_stopped": container_stopped,
-            "container_removed": container_removed,
-        }
+    return {
+        "status": "success",
+        "container_stopped": container_stopped,
+        "container_removed": container_removed,
+    }
 
 
 @shared_task(queue="default")

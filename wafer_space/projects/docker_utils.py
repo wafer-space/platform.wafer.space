@@ -6,10 +6,20 @@ import re
 from contextlib import contextmanager
 from datetime import UTC
 from datetime import datetime
+from functools import wraps
 from typing import TYPE_CHECKING
+from typing import Any
+from typing import ParamSpec
+from typing import TypeVar
+
+from celery import shared_task
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from collections.abc import Generator
+
+P = ParamSpec("P")
+T = TypeVar("T")
 
 # Matches Docker RFC3339Nano timestamp at start of line
 DOCKER_TIMESTAMP_PATTERN = re.compile(
@@ -89,6 +99,9 @@ def track_task(check_id: int) -> Generator[None]:
 
     Yields:
         None - work is done in the context block.
+
+    Note:
+        Prefer using @queued_check_task decorator instead of this context manager.
     """
     # Import here to avoid circular dependency
     from wafer_space.projects.models import ManufacturabilityCheckTask  # noqa: PLC0415
@@ -99,3 +112,52 @@ def track_task(check_id: int) -> Generator[None]:
         ManufacturabilityCheckTask.objects.filter(
             manufacturability_check_id=check_id
         ).delete()
+
+
+def queued_check_task(
+    **celery_kwargs: Any,
+) -> Callable[[Callable[..., T]], Any]:
+    """Decorator for manufacturability check work tasks.
+
+    Combines @shared_task with automatic task tracking cleanup.
+    The decorated function's first argument must be check_id.
+
+    Args:
+        **celery_kwargs: Arguments passed to @shared_task
+            (e.g., queue="docker-ephemeral")
+
+    Returns:
+        Decorator that wraps the function with task tracking and Celery integration.
+
+    Example:
+        @queued_check_task(queue="docker-ephemeral")
+        def do_running(check_id: int) -> dict[str, Any]:
+            check = ManufacturabilityCheck.objects.get(id=check_id)
+            # ... do work
+            return {"status": "completed"}
+    """
+    # Default to docker-ephemeral queue if not specified
+    if "queue" not in celery_kwargs:
+        celery_kwargs["queue"] = "docker-ephemeral"
+
+    def decorator(func: Callable[..., T]) -> Any:
+        @wraps(func)
+        def wrapper(check_id: int, *args: Any, **kwargs: Any) -> T:
+            # Import here to avoid circular dependency
+            from wafer_space.projects.models import (  # noqa: PLC0415
+                ManufacturabilityCheckTask,
+            )
+
+            try:
+                return func(check_id, *args, **kwargs)
+            finally:
+                ManufacturabilityCheckTask.objects.filter(
+                    manufacturability_check_id=check_id
+                ).delete()
+
+        # Apply shared_task decorator with provided kwargs
+        # Return type is Any because Celery tasks have special methods
+        # like .delay() and .apply_async()
+        return shared_task(**celery_kwargs)(wrapper)
+
+    return decorator
