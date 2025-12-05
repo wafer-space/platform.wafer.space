@@ -174,8 +174,9 @@
     const resultsDiv = document.getElementById('project-results');
 
     if (filteredProjects.length === 0) {
-      resultsDiv.innerHTML = '<div class="autocomplete-item text-muted">No matching projects</div>';
+      resultsDiv.innerHTML = '<div class="autocomplete-item text-muted" role="option" aria-disabled="true">No matching projects</div>';
       resultsDiv.classList.add('show');
+      document.getElementById('project-search').setAttribute('aria-expanded', 'true');
       return;
     }
 
@@ -229,6 +230,7 @@
 
     resultsDiv.innerHTML = html;
     resultsDiv.classList.add('show');
+    document.getElementById('project-search').setAttribute('aria-expanded', 'true');
 
     // Bind click handlers
     resultsDiv.querySelectorAll('.autocomplete-item[data-project-id]').forEach(function(item) {
@@ -246,6 +248,7 @@
     document.getElementById('selected-project-id').value = projectId;
     document.getElementById('project-search').value = '';
     document.getElementById('project-results').classList.remove('show');
+    document.getElementById('project-search').setAttribute('aria-expanded', 'false');
 
     // Show selected display
     const display = document.getElementById('selected-project-display');
@@ -286,6 +289,7 @@
       }
     } else if (event.key === 'Escape') {
       resultsDiv.classList.remove('show');
+      document.getElementById('project-search').setAttribute('aria-expanded', 'false');
       activeIndex = -1;
     }
   }
@@ -355,6 +359,7 @@
     document.getElementById('selected-project-id').value = '';
     document.getElementById('selected-project-display').style.display = 'none';
     document.getElementById('project-results').classList.remove('show');
+    document.getElementById('project-search').setAttribute('aria-expanded', 'false');
     document.getElementById('size-mismatch-warning').style.display = 'none';
     activeIndex = -1;
 
@@ -593,6 +598,7 @@
           !resultsDiv.contains(event.target) &&
           event.target !== searchInput) {
         resultsDiv.classList.remove('show');
+        searchInput.setAttribute('aria-expanded', 'false');
       }
     });
 

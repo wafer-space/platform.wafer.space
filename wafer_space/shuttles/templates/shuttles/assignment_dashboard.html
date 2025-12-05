@@ -184,7 +184,10 @@
                      class="form-control mb-2"
                      id="project-search"
                      placeholder="Type to search projects..."
-                     autocomplete="off" />
+                     autocomplete="off"
+                     aria-autocomplete="list"
+                     aria-controls="project-results"
+                     aria-expanded="false" />
               <input type="hidden" id="selected-project-id" />
               <div id="project-results"
                    class="dropdown-menu w-100"
