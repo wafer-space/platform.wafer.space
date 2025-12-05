@@ -382,8 +382,7 @@ class CheckTaskQueuedVerificationTests(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHED,
-            celery_job_id="check-task-123",
+            status=ManufacturabilityCheck.Status.DISPATCHING,
         )
 
         # Mock broker queue check to return False (not in broker)
@@ -410,8 +409,7 @@ class CheckTaskQueuedVerificationTests(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHED,
-            celery_job_id="check-task-456",
+            status=ManufacturabilityCheck.Status.DISPATCHING,
         )
 
         # Mock broker queue check to return False (not in broker)
@@ -438,8 +436,7 @@ class CheckTaskQueuedVerificationTests(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHED,
-            celery_job_id="check-task-789",
+            status=ManufacturabilityCheck.Status.DISPATCHING,
         )
 
         # Mock broker queue check to return False (not in broker)
@@ -462,8 +459,7 @@ class CheckTaskQueuedVerificationTests(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHED,
-            celery_job_id="check-task-broker-123",
+            status=ManufacturabilityCheck.Status.DISPATCHING,
         )
 
         # Mock broker queue check to return True (found in broker)
@@ -520,9 +516,6 @@ class CheckTaskActivelyRunningTests(TestCase):
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.RUNNING,
-            celery_job_id="check-task-123",
-            celery_worker_pid=12345,
-            celery_worker_hostname="worker-01",
         )
 
         # Mock Docker - container running
@@ -563,9 +556,6 @@ class CheckTaskActivelyRunningTests(TestCase):
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.RUNNING,
-            celery_job_id="check-task-456",
-            celery_worker_pid=99999,
-            celery_worker_hostname="worker-01",
         )
 
         # Mock Docker - no containers (to test PID fallback)
@@ -598,7 +588,6 @@ class CheckTaskActivelyRunningTests(TestCase):
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.RUNNING,
-            celery_job_id="check-task-789",
         )
 
         # Mock Docker - no containers (to test Celery fallback)
@@ -639,9 +628,6 @@ class CheckTaskActivelyRunningTests(TestCase):
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.RUNNING,
-            celery_job_id="check-task-remote",
-            celery_worker_pid=12345,
-            celery_worker_hostname="remote-worker",
         )
 
         # Mock Docker - container running
