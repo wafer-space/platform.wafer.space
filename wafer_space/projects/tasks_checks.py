@@ -135,6 +135,20 @@ def queued_check_task(
 
                 # Call wrapped function with check object
                 result = func(check, *args, **kwargs)
+            except TaskExecutionError as e:
+                # Handle task execution errors - mark check as error
+                logger.exception(
+                    "%s failed for check %s: %s", func.__name__, check_id, e.message
+                )
+                check.mark_error(error_message=e.message)
+                return {"status": "error", "reason": e.reason}
+            except docker.errors.DockerException as e:
+                # Handle Docker errors - mark check as error
+                error_msg = f"Docker error in {func.__name__}: {e}"
+                logger.exception(error_msg)
+                check.mark_error(error_message=error_msg)
+                return {"status": "error", "reason": str(e)}
+            else:
                 logger.info("Completed %s for check %s", func.__name__, check_id)
                 return result
             finally:
@@ -750,66 +764,60 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
 
     Returns:
         Dict with status and container info.
+
+    Raises:
+        TaskExecutionError: If server/file validation fails (handled by decorator).
+        docker.errors.DockerException: If Docker operations fail (handled by decorator).
     """
     logger = logging.getLogger(__name__)
 
-    try:
-        client = _get_docker_client_for_server(check.docker_server_id, logger)
-        gds_path = _get_project_file_path(check, logger)
+    client = _get_docker_client_for_server(check.docker_server_id, logger)
+    gds_path = _get_project_file_path(check, logger)
 
-        # Create container with labels and volume mount
-        command = "precheck"
-        container = client.containers.create(
-            check.docker_image,
-            command=command,
-            labels={
-                "wafer.space.service": "manufacturability-check",
-                "wafer.space.check_id": str(check.id),
-                "wafer.space.project_id": str(check.project.id),
+    # Create container with labels and volume mount
+    command = "precheck"
+    container = client.containers.create(
+        check.docker_image,
+        command=command,
+        labels={
+            "wafer.space.service": "manufacturability-check",
+            "wafer.space.check_id": str(check.id),
+            "wafer.space.project_id": str(check.project.id),
+        },
+        volumes={
+            str(gds_path): {
+                "bind": "/input/design.gds",
+                "mode": "ro",
             },
-            volumes={
-                str(gds_path): {
-                    "bind": "/input/design.gds",
-                    "mode": "ro",
-                },
-            },
-            # Limit resources to prevent runaway containers
-            mem_limit="4g",
-            cpu_count=2,
-        )
+        },
+        # Limit resources to prevent runaway containers
+        mem_limit="4g",
+        cpu_count=2,
+    )
 
-        logger.info(
-            "Created container %s for check %s on server %s",
-            container.id[:12],
-            check.id,
-            check.docker_server_id,
-        )
+    logger.info(
+        "Created container %s for check %s on server %s",
+        container.id[:12],
+        check.id,
+        check.docker_server_id,
+    )
 
-        # Start the container and wait for it to be running
-        container.start()
-        logger.info("Started container %s", container.id[:12])
-        _wait_for_container_running(container, logger)
+    # Start the container and wait for it to be running
+    container.start()
+    logger.info("Started container %s", container.id[:12])
+    _wait_for_container_running(container, logger)
 
-        # Transition to RUNNING
-        check.mark_running(
-            docker_container_id=container.id,
-            docker_command=command,
-        )
+    # Transition to RUNNING
+    check.mark_running(
+        docker_container_id=container.id,
+        docker_command=command,
+    )
 
-        logger.info(
-            "Check %s transitioned to RUNNING with container %s",
-            check.id,
-            container.id[:12],
-        )
-
-    except TaskExecutionError as e:
-        check.mark_error(error_message=e.message)
-        return {"status": "error", "reason": e.reason}
-    except docker.errors.DockerException as e:
-        error_msg = f"Docker container creation failed: {e}"
-        logger.exception(error_msg)
-        check.mark_error(error_message=error_msg)
-        return {"status": "error", "reason": str(e)}
+    logger.info(
+        "Check %s transitioned to RUNNING with container %s",
+        check.id,
+        container.id[:12],
+    )
 
     return {
         "status": "success",
@@ -929,32 +937,26 @@ def do_running(check: ManufacturabilityCheck) -> dict[str, Any]:
 
     Returns:
         Dict with status and log info.
+
+    Raises:
+        TaskExecutionError: If server/container lookup fails (handled by decorator).
+        docker.errors.DockerException: If Docker operations fail (handled by decorator).
     """
     logger = logging.getLogger(__name__)
 
-    try:
-        client = _get_docker_client_for_server(check.docker_server_id, logger)
-        container = _get_container(client, check.docker_container_id, logger)
-        latest_timestamp, raw_logs = _fetch_and_process_logs(container, check, logger)
+    client = _get_docker_client_for_server(check.docker_server_id, logger)
+    container = _get_container(client, check.docker_container_id, logger)
+    latest_timestamp, raw_logs = _fetch_and_process_logs(container, check, logger)
 
-        # Check container status
-        container.reload()
+    # Check container status
+    container.reload()
 
-        if container.status == "exited":
-            return _handle_container_exited(container, check, logger)
+    if container.status == "exited":
+        return _handle_container_exited(container, check, logger)
 
-        return _handle_container_still_running(
-            container, check, latest_timestamp, raw_logs, logger
-        )
-
-    except TaskExecutionError as e:
-        check.mark_error(error_message=e.message)
-        return {"status": "error", "reason": e.reason}
-    except docker.errors.DockerException as e:
-        error_msg = f"Docker error while monitoring container: {e}"
-        logger.exception(error_msg)
-        check.mark_error(error_message=error_msg)
-        return {"status": "error", "reason": str(e)}
+    return _handle_container_still_running(
+        container, check, latest_timestamp, raw_logs, logger
+    )
 
 
 @queued_check_task(expected_status="ANALYZING")
