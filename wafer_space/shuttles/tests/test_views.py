@@ -255,8 +255,8 @@ class TestAssignProjectView:
         assert "warning" in data
         assert "Size mismatch" in data["warning"]
 
-    def test_reject_if_slot_occupied(self, client):
-        """Should reject if slot already occupied."""
+    def test_reassign_slot_replaces_project(self, client):
+        """Should allow reassigning a slot to a different project."""
         user = UserFactory(is_staff=True)
         client.force_login(user)
 
@@ -267,6 +267,43 @@ class TestAssignProjectView:
             column=0,
             slot_size=SlotSize.FULL,
             status=ShuttleSlot.Status.RESERVED,
+        )
+        old_project = ProjectFactory(shuttle=shuttle, project_id="OLD1")
+        slot.project = old_project
+        slot.save()
+
+        new_project = ProjectFactory(shuttle=shuttle, project_id="NEW1")
+
+        url = reverse("shuttles:assign_project", kwargs={"name": shuttle.name})
+        response = client.post(
+            url,
+            data=json.dumps({"project_id": str(new_project.pk), "slot_id": slot.pk}),
+            content_type="application/json",
+        )
+
+        assert response.status_code == HTTPStatus.OK
+        data = response.json()
+        assert data["success"] is True
+        # Should include warning about replacement
+        assert "warning" in data
+        assert "Replaced" in data["warning"]
+
+        # Verify slot now has new project
+        slot.refresh_from_db()
+        assert slot.project == new_project
+
+    def test_reject_occupied_slot(self, client):
+        """Should reject assignment to occupied (non-reassignable) slots."""
+        user = UserFactory(is_staff=True)
+        client.force_login(user)
+
+        shuttle = ShuttleFactory(name="G804")
+        slot = ShuttleSlot.objects.create(
+            shuttle=shuttle,
+            row=0,
+            column=0,
+            slot_size=SlotSize.FULL,
+            status=ShuttleSlot.Status.OCCUPIED,
         )
         slot.project = ProjectFactory(shuttle=shuttle)
         slot.save()

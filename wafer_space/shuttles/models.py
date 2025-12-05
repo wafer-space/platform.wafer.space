@@ -351,20 +351,49 @@ class ShuttleSlot(models.Model):
         return self.get_slot_size_display()
 
     def reserve(self, project: Project, user: User) -> str | None:
-        """Reserve this slot for a project with size validation."""
-        if self.status != self.Status.AVAILABLE:
+        """Reserve this slot for a project with size validation.
+
+        Allows reassignment: if the slot is already reserved, the existing
+        assignment will be replaced with the new project.
+        """
+        warnings = []
+        is_reassignment = False
+
+        # Handle reassignment case
+        if self.status == self.Status.RESERVED:
+            if self.project == project:
+                # Already assigned to this project - no-op
+                return None
+            # Reassigning to a different project
+            is_reassignment = True
+            old_project_id = self.project.project_id if self.project else "unknown"
+            warnings.append(f"Replaced assignment from {old_project_id}")
+        elif self.status != self.Status.AVAILABLE:
+            # Other statuses (OCCUPIED, CANCELLED) are not reassignable
             msg = "Slot is not available"
             raise ValueError(msg)
 
-        if not self.shuttle.can_accept_projects():
+        # For new reservations, check can_accept_projects (includes available_slots > 0)
+        # For reassignment, only check shuttle status and deadline (not available slots)
+        shuttle = self.shuttle
+        if is_reassignment:
+            # Check shuttle is still open
+            if shuttle.status != Shuttle.Status.OPEN:
+                msg = "Shuttle is not open for assignments"
+                raise ValueError(msg)
+            # Check deadline hasn't passed
+            deadline = shuttle.submission_deadline
+            if deadline and timezone.now() >= deadline:
+                msg = "Shuttle submission deadline has passed"
+                raise ValueError(msg)
+        elif not shuttle.can_accept_projects():
             msg = "Shuttle is not accepting projects"
             raise ValueError(msg)
 
         # Check for size mismatch (warning only, not blocking)
-        size_mismatch = None
         if hasattr(project, "slot_size") and project.slot_size != self.slot_size:
-            size_mismatch = (
-                f"⚠️ Size mismatch: Project is {project.slot_size} "
+            warnings.append(
+                f"Size mismatch: Project is {project.slot_size} "
                 f"but slot is {self.slot_size}"
             )
 
@@ -375,7 +404,7 @@ class ShuttleSlot(models.Model):
         self.reserved_at = timezone.now()
         self.save()
 
-        return size_mismatch
+        return " | ".join(warnings) if warnings else None
 
     def cancel_reservation(self) -> None:
         """Cancel this slot's reservation."""
