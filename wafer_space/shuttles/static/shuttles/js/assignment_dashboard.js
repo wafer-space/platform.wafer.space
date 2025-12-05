@@ -487,7 +487,8 @@
       })
       .then(function(data) {
         if (data.success) {
-          if (data.warning) {
+          // Only show alert for size mismatch warnings, not reassignment
+          if (data.warning && data.warning.indexOf('Size mismatch') !== -1) {
             alert(data.warning);
           }
           location.reload();
