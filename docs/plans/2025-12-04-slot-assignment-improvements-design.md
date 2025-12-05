@@ -47,7 +47,7 @@ Improvements to the shuttle slot assignment page (`/shuttles/<name>/assign/`) to
 
 ### 2. Username Column
 
-**Display:** Project owner's username (`project.owner.username`)
+**Display:** Project owner's username (`project.user.username`)
 
 **Position:** Between "Name" and "Size" columns
 
@@ -55,7 +55,7 @@ Improvements to the shuttle slot assignment page (`/shuttles/<name>/assign/`) to
 
 **View change:**
 ```python
-projects = shuttle.projects.select_related('owner')
+projects = shuttle.projects.select_related('user')
 ```
 
 ### 3. Manufacturable Column in Summary Stats
@@ -219,7 +219,7 @@ function selectSlotAndSubmit(cell) {
 
 | File | Changes |
 |------|---------|
-| `shuttles/views.py` | Add `select_related('owner')`, manufacturable stats |
+| `shuttles/views.py` | Add `select_related('user')`, manufacturable stats |
 | `shuttles/templates/shuttles/assignment_dashboard.html` | Add columns, refactor grid to include |
 | `shuttles/templates/shuttles/_grid.html` | New partial (extracted from dashboard) |
 | `shuttles/static/shuttles/js/assignment_dashboard.js` | Sorting, autocomplete, grid handlers |
