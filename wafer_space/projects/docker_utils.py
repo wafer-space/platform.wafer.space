@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import re
+from contextlib import contextmanager
 from datetime import UTC
 from datetime import datetime
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 # Matches Docker RFC3339Nano timestamp at start of line
 DOCKER_TIMESTAMP_PATTERN = re.compile(
@@ -70,3 +75,27 @@ def strip_docker_timestamps(logs: str) -> str:
             clean_lines.append(line)
 
     return "\n".join(clean_lines)
+
+
+@contextmanager
+def track_task(check_id: int) -> Generator[None]:
+    """Delete task tracking row when work completes.
+
+    Used by work tasks (do_*) to clean up their ManufacturabilityCheckTask
+    row regardless of success or failure.
+
+    Args:
+        check_id: ID of the ManufacturabilityCheck.
+
+    Yields:
+        None - work is done in the context block.
+    """
+    # Import here to avoid circular dependency
+    from wafer_space.projects.models import ManufacturabilityCheckTask  # noqa: PLC0415
+
+    try:
+        yield
+    finally:
+        ManufacturabilityCheckTask.objects.filter(
+            manufacturability_check_id=check_id
+        ).delete()
