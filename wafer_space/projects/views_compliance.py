@@ -68,7 +68,7 @@ def compliance_certification_create(request: HttpRequest, pk: UUID) -> HttpRespo
 
     # Check if project is manufacturable
     # Get the most recent manufacturability check
-    check = project.manufacturability_checks.order_by("-celery_job_started_at").first()
+    check = project.manufacturability_checks.order_by("-created_at").first()
     if not check:
         messages.error(
             request,
