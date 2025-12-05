@@ -28,8 +28,6 @@ from .constants import TEST_WORKER_PID
 def _make_exec_context(**kwargs) -> CheckExecutionContext:
     """Create a CheckExecutionContext for tests with sensible defaults."""
     return CheckExecutionContext(
-        celery_worker_pid=kwargs.get("celery_worker_pid", TEST_WORKER_PID),
-        celery_worker_hostname=kwargs.get("celery_worker_hostname", "worker-01"),
         docker_container_id=kwargs.get("docker_container_id", "abc123def456"),
         docker_image=kwargs.get("docker_image", "test-image:latest"),
         docker_image_digest=kwargs.get("docker_image_digest", "sha256:test"),
@@ -368,7 +366,6 @@ class TestProjectSubmit(TestCase):
             project=self.project,
             project_file=_pf,
             status=ManufacturabilityCheck.Status.RUNNING,
-            celery_job_id="existing-task-123",
         )
 
         self.project.submit()
@@ -768,7 +765,6 @@ class TestManufacturabilityCheckMarkCancelling(TestCase):
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.DISPATCHING,
-            celery_job_id="test-job-123",
         )
 
         check.mark_cancelling(reason="New file submitted")
@@ -776,7 +772,6 @@ class TestManufacturabilityCheckMarkCancelling(TestCase):
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.CANCELLING
         # Job ID preserved for cleanup task
-        assert check.celery_job_id == "test-job-123"
 
     def test_mark_cancelling_from_running(self):
         """Test mark_cancelling transitions RUNNING to CANCELLING."""
@@ -880,10 +875,9 @@ class TestManufacturabilityCheckMarkCancelled(TestCase):
 
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.CANCELLED
-        assert check.celery_job_finished_at is not None
 
     def test_mark_cancelled_sets_timestamp(self):
-        """Test mark_cancelled sets celery_job_finished_at timestamp."""
+        """Test mark_cancelled completes successfully."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
@@ -895,8 +889,6 @@ class TestManufacturabilityCheckMarkCancelled(TestCase):
         after = timezone.now()
 
         check.refresh_from_db()
-        assert check.celery_job_finished_at is not None
-        assert before <= check.celery_job_finished_at <= after
 
     def test_mark_cancelled_from_pending_raises(self):
         """Test mark_cancelled raises from PENDING.
@@ -1085,7 +1077,12 @@ class TestManufacturabilityCheckQueueProperties(TestCase):
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.PENDING,
         )
-        # REMOVED: check.mark_dispatched(celery_job_id="test-job-1")  # mark_dispatched is deprecated
+        # Use new polling pathway to transition to RUNNING
+        check.mark_dispatching(server_id="server-1")
+        check.mark_starting(
+            docker_image="test:latest",
+            docker_image_digest="sha256:abc",
+        )
         check.mark_running(
             docker_container_id="test-container",
             docker_command="precheck",
@@ -1153,13 +1150,12 @@ class TestManufacturabilityCheckQueueProperties(TestCase):
             is_active=True,
         )
 
-        # Create DISPATCHED check using state machine
-        check2 = ManufacturabilityCheck.objects.create(
+        # Create DISPATCHING check using state machine
+        ManufacturabilityCheck.objects.create(
             project=project2,
             project_file=file2,
-            status=ManufacturabilityCheck.Status.PENDING,
+            status=ManufacturabilityCheck.Status.DISPATCHING,
         )
-        # REMOVED: check2.mark_dispatched(celery_job_id="test-job-2")  # mark_dispatched is deprecated
 
         # Create RUNNING check using state machine
         check3 = ManufacturabilityCheck.objects.create(
@@ -1167,7 +1163,12 @@ class TestManufacturabilityCheckQueueProperties(TestCase):
             project_file=file3,
             status=ManufacturabilityCheck.Status.PENDING,
         )
-        # REMOVED: check3.mark_dispatched(celery_job_id="test-job-3")  # mark_dispatched is deprecated
+        # Use new polling pathway to transition to RUNNING
+        check3.mark_dispatching(server_id="server-1")
+        check3.mark_starting(
+            docker_image="test:latest",
+            docker_image_digest="sha256:abc",
+        )
         check3.mark_running(
             docker_container_id="test-container",
             docker_command="precheck",
@@ -1302,13 +1303,14 @@ class TestManufacturabilityCheckStateTransitions(TestCase):
         )
 
     def test_can_transition_pending_to_dispatched(self):
-        """PENDING can transition to DISPATCHED."""
+        """PENDING can transition to DISPATCHING."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.PENDING,
         )
-        assert check.can_transition_to(ManufacturabilityCheck.Status.DISPATCHING) is True
+        expected = ManufacturabilityCheck.Status.DISPATCHING
+        assert check.can_transition_to(expected) is True
 
     def test_can_transition_pending_to_error(self):
         """PENDING can transition to ERROR."""
@@ -2059,7 +2061,6 @@ class TestManufacturabilityCheckMarkError(TestCase):
         error_suffix = "\n\n=== SYSTEM ERROR - See error_message field ==="
         expected_logs = "Error starting container\nExit code: 1" + error_suffix
         assert check.processing_logs == expected_logs
-        assert check.celery_job_finished_at is not None
 
     def test_mark_error_from_dispatched(self):
         """Can mark DISPATCHING check as ERROR."""
@@ -2118,8 +2119,6 @@ class TestManufacturabilityCheckMarkError(TestCase):
         assert check.error_message == test_error
         error_suffix = "\n\n=== SYSTEM ERROR - See error_message field ==="
         assert check.processing_logs == test_logs + error_suffix
-        assert check.celery_job_finished_at is not None
-        assert before <= check.celery_job_finished_at <= after
 
     def test_mark_error_with_default_logs(self):
         """mark_error() appends error suffix even when no logs provided."""
@@ -2235,12 +2234,6 @@ class TestManufacturabilityCheckResetForRetry(TestCase):
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.ERROR,
             retry_count=0,
-            celery_job_id="abc-123",
-            celery_job_dispatched_at=timezone.now(),
-            celery_job_started_at=timezone.now(),
-            celery_job_finished_at=timezone.now(),
-            celery_worker_pid=TEST_WORKER_PID,
-            celery_worker_hostname="worker-1",
             docker_container_id="container-123",
             docker_container_started_at=timezone.now(),
             error_message="Previous error",
@@ -2248,12 +2241,6 @@ class TestManufacturabilityCheckResetForRetry(TestCase):
         check.reset_for_retry()
 
         check.refresh_from_db()
-        assert check.celery_job_id == ""
-        assert check.celery_job_dispatched_at is None
-        assert check.celery_job_started_at is None
-        assert check.celery_job_finished_at is None
-        assert check.celery_worker_pid is None
-        assert check.celery_worker_hostname == ""
         assert check.docker_container_id == ""
         assert check.docker_container_started_at is None
         assert check.error_message == ""

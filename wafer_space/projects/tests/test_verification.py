@@ -472,16 +472,16 @@ class CheckTaskQueuedVerificationTests(TestCase):
         mock_app.control.inspect.assert_not_called()
 
     def test_check_task_without_task_id_returns_false(self):
-        """Test that check without celery_job_id returns False."""
+        """Test that check returns False (function is obsolete)."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.PENDING,
-            celery_job_id="",  # Empty celery_job_id
         )
 
         result = is_check_task_queued(check)
 
+        # Function is now obsolete and always returns False
         assert result is False
 
 
@@ -605,16 +605,16 @@ class CheckTaskActivelyRunningTests(TestCase):
         assert result is False
 
     def test_check_task_without_task_id_returns_false(self):
-        """Test that check without celery_job_id returns False."""
+        """Test that check returns False (function is obsolete)."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.RUNNING,
-            celery_job_id="",  # Empty celery_job_id
         )
 
         result = is_check_task_actively_running(check)
 
+        # Function is now obsolete and always returns False
         assert result is False
 
     @patch("wafer_space.projects.verification.socket")
