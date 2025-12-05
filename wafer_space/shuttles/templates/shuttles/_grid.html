@@ -30,16 +30,7 @@
                 role="button"
                 aria-label="Slot {{ slot.grid_position }}{% if slot.project %}, assigned to {{ slot.project.project_id }}{% if slot.project.slot_size != slot.slot_size %} (size mismatch){% endif %}{% else %}, empty{% endif %}">
               {% if slot.project %}
-                <strong class="font-monospace">{{ slot.project.project_id }}</strong>
-                <span class="mfg-indicator {% if slot.project.is_manufacturable %}mfg-pass{% elif slot.project.is_manufacturable is None %}mfg-pending{% else %}mfg-fail{% endif %}">
-                  {% if slot.project.is_manufacturable %}
-                    ✓
-                  {% elif slot.project.is_manufacturable is None %}
-                    ⏳
-                  {% else %}
-                    ✗
-                  {% endif %}
-                </span>
+                <strong class="font-monospace">{{ slot.project.project_id }}<span class="{% if slot.project.is_manufacturable %}mfg-pass{% elif slot.project.is_manufacturable is None %}mfg-pending{% else %}mfg-fail{% endif %}">{% if slot.project.is_manufacturable %}✓{% elif slot.project.is_manufacturable is None %}?{% else %}✗{% endif %}</span></strong>
               {% else %}
                 <span class="text-muted">{{ slot.grid_position }}</span>
               {% endif %}
