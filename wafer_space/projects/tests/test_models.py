@@ -2563,3 +2563,51 @@ class TestManufacturabilityCheckDockerFields:
             abs(check.logs_downloaded_until - 1733400000.123456789)
             < FLOAT_PRECISION_TOLERANCE
         )
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckMarkDispatching:
+    """Test mark_dispatching transition method."""
+
+    def test_mark_dispatching_changes_status(self) -> None:
+        """mark_dispatching transitions PENDING -> DISPATCHING."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.PENDING
+        )
+        check.mark_dispatching(server_id="local")
+        assert check.status == ManufacturabilityCheck.Status.DISPATCHING
+
+    def test_mark_dispatching_sets_server_id(self) -> None:
+        """mark_dispatching stores the assigned server ID."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.PENDING
+        )
+        check.mark_dispatching(server_id="remote-1")
+        assert check.docker_server_id == "remote-1"
+
+    def test_mark_dispatching_sets_timestamp(self) -> None:
+        """mark_dispatching sets dispatching_started_at automatically."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.PENDING
+        )
+        assert check.dispatching_started_at is None
+        check.mark_dispatching(server_id="local")
+        assert check.dispatching_started_at is not None
+
+    def test_mark_dispatching_saves_to_db(self) -> None:
+        """mark_dispatching saves changes to database."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.PENDING
+        )
+        check.mark_dispatching(server_id="local")
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.DISPATCHING
+        assert check.docker_server_id == "local"
+
+    def test_mark_dispatching_raises_for_invalid_transition(self) -> None:
+        """mark_dispatching raises for non-PENDING status."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_dispatching(server_id="local")
