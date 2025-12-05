@@ -124,23 +124,24 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
 
     readonly_fields = [
         "project",
+        "created_at",
         "dispatching_started_at",
         "starting_started_at",
         "container_started_at",
         "container_finished_at",
         "analysis_completed_at",
+        "last_activity",
         "is_manufacturable",
         "errors",
         "warnings",
         "error_message",
         "processing_logs",
+        "docker_server_id",
+        "docker_container_id",
         "docker_image",
         "docker_image_digest",
-        "docker_container_id",
-        "docker_server_id",
         "tool_versions",
         "precheck_version",
-        "last_activity",
     ]
 
     fieldsets = [
@@ -168,12 +169,12 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
             "Timing",
             {
                 "fields": [
+                    "created_at",
                     "dispatching_started_at",
                     "starting_started_at",
                     "container_started_at",
                     "container_finished_at",
                     "analysis_completed_at",
-                    "last_activity",
                 ],
                 "classes": ["collapse"],
             },
