@@ -274,9 +274,9 @@ def is_check_task_queued(check: ManufacturabilityCheck) -> bool:
     Returns:
         True if task is found in any queue, False if missing
     """
-    task_id = check.celery_job_id
-    if not task_id:
-        return False
+    # NOTE: This function is now obsolete with polling architecture
+    # but kept for compatibility during transition
+    return False
 
     # First check broker queue (tasks waiting in kombu_message table)
     if _is_task_in_broker_queue(task_id):
@@ -410,19 +410,6 @@ def is_check_task_actively_running(check: ManufacturabilityCheck) -> bool:
         True if task appears to be running or cannot be verified,
         False if definitely orphaned
     """
-    task_id = check.celery_job_id
-    if not task_id:
-        return False
-
-    # STEP 1: Check Docker container (most reliable)
-    container_status = _check_container_status(check)
-    if container_status is not None:
-        return container_status
-
-    # STEP 2: Check worker PID (reliable for local workers)
-    pid_status = _check_pid_status(check)
-    if pid_status is not None:
-        return pid_status
-
-    # STEP 3: Check Celery task in active list (unreliable with PostgreSQL)
-    return _check_celery_status(check, task_id)
+    # NOTE: This function is now obsolete with polling architecture
+    # Polling architecture uses container status, not Celery task tracking
+    return False
