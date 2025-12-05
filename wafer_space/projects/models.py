@@ -15,6 +15,7 @@ from wafer_space.core.enums import SlotSize
 from wafer_space.projects.exceptions import ConcurrentLimitError
 from wafer_space.projects.exceptions import InvalidStateTransitionError
 from wafer_space.projects.exceptions import MaxRetriesExceededError
+from wafer_space.projects.storage import ProjectFileStorage
 
 
 @dataclass
@@ -366,6 +367,7 @@ class ProjectFile(models.Model):
         max_length=512,
         blank=True,
         null=True,
+        storage=ProjectFileStorage(),
         validators=[
             FileExtensionValidator(
                 allowed_extensions=[
@@ -1224,12 +1226,14 @@ class ManufacturabilityCheck(models.Model):
         upload_to=manufacturability_check_log_path,
         max_length=512,
         blank=True,
+        storage=ProjectFileStorage(),
         help_text="Log file stored on filesystem (next to GDS file)",
     )
     runs_archive = models.FileField(
         upload_to=manufacturability_check_runs_path,
         max_length=512,
         blank=True,
+        storage=ProjectFileStorage(),
         help_text="Tar archive of detailed step logs from precheck runs/ directory",
     )
 

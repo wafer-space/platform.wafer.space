@@ -3,6 +3,7 @@
 from unittest.mock import Mock
 from unittest.mock import patch
 
+import docker.errors
 import pytest
 from django.contrib.auth import get_user_model
 from django.db import connection
@@ -13,6 +14,7 @@ from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.verification import _is_task_in_broker_queue
+from wafer_space.projects.verification import is_check_container_running
 from wafer_space.projects.verification import is_check_task_actively_running
 from wafer_space.projects.verification import is_check_task_queued
 from wafer_space.projects.verification import is_download_task_actively_running
@@ -508,8 +510,11 @@ class CheckTaskActivelyRunningTests(TestCase):
 
     @patch("wafer_space.projects.verification.psutil")
     @patch("wafer_space.projects.verification.socket")
+    @patch("wafer_space.projects.verification.docker.from_env")
     @patch("wafer_space.projects.verification.current_app")
-    def test_check_task_active_and_pid_exists(self, mock_app, mock_socket, mock_psutil):
+    def test_check_task_active_and_pid_exists(
+        self, mock_app, mock_from_env, mock_socket, mock_psutil
+    ):
         """Test check task in active list with valid PID returns True."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
@@ -519,6 +524,12 @@ class CheckTaskActivelyRunningTests(TestCase):
             celery_worker_pid=12345,
             celery_worker_hostname="worker-01",
         )
+
+        # Mock Docker - container running
+        mock_client = Mock()
+        mock_container = Mock()
+        mock_client.containers.list.return_value = [mock_container]
+        mock_from_env.return_value = mock_client
 
         # Mock Celery inspect
         mock_inspect = Mock()
@@ -540,10 +551,13 @@ class CheckTaskActivelyRunningTests(TestCase):
 
         assert result is True
 
+    @patch("wafer_space.projects.verification.docker.from_env")
     @patch("wafer_space.projects.verification.psutil")
     @patch("wafer_space.projects.verification.socket")
     @patch("wafer_space.projects.verification.current_app")
-    def test_check_task_active_but_pid_dead(self, mock_app, mock_socket, mock_psutil):
+    def test_check_task_active_but_pid_dead(
+        self, mock_app, mock_socket, mock_psutil, mock_from_env
+    ):
         """Test check task in active but PID doesn't exist returns False."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
@@ -553,6 +567,11 @@ class CheckTaskActivelyRunningTests(TestCase):
             celery_worker_pid=99999,
             celery_worker_hostname="worker-01",
         )
+
+        # Mock Docker - no containers (to test PID fallback)
+        mock_client = Mock()
+        mock_client.containers.list.return_value = []
+        mock_from_env.return_value = mock_client
 
         # Mock Celery inspect (task shows as active)
         mock_inspect = Mock()
@@ -571,8 +590,9 @@ class CheckTaskActivelyRunningTests(TestCase):
 
         assert result is False
 
+    @patch("wafer_space.projects.verification.docker.from_env")
     @patch("wafer_space.projects.verification.current_app")
-    def test_check_task_not_in_active(self, mock_app):
+    def test_check_task_not_in_active(self, mock_app, mock_from_env):
         """Test check task not in active list returns False."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
@@ -580,6 +600,11 @@ class CheckTaskActivelyRunningTests(TestCase):
             status=ManufacturabilityCheck.Status.RUNNING,
             celery_job_id="check-task-789",
         )
+
+        # Mock Docker - no containers (to test Celery fallback)
+        mock_client = Mock()
+        mock_client.containers.list.return_value = []
+        mock_from_env.return_value = mock_client
 
         # Mock Celery inspect (empty)
         mock_inspect = Mock()
@@ -604,9 +629,10 @@ class CheckTaskActivelyRunningTests(TestCase):
         assert result is False
 
     @patch("wafer_space.projects.verification.socket")
+    @patch("wafer_space.projects.verification.docker.from_env")
     @patch("wafer_space.projects.verification.current_app")
     def test_check_task_active_different_hostname_returns_true(
-        self, mock_app, mock_socket
+        self, mock_app, mock_from_env, mock_socket
     ):
         """Test check task on different host returns True (can't verify remote)."""
         check = ManufacturabilityCheck.objects.create(
@@ -617,6 +643,12 @@ class CheckTaskActivelyRunningTests(TestCase):
             celery_worker_pid=12345,
             celery_worker_hostname="remote-worker",
         )
+
+        # Mock Docker - container running
+        mock_client = Mock()
+        mock_container = Mock()
+        mock_client.containers.list.return_value = [mock_container]
+        mock_from_env.return_value = mock_client
 
         # Mock Celery inspect
         mock_inspect = Mock()
@@ -631,4 +663,343 @@ class CheckTaskActivelyRunningTests(TestCase):
         result = is_check_task_actively_running(check)
 
         # Should return True because we can't verify remote processes
+        assert result is True
+
+
+@pytest.mark.django_db
+class CheckContainerRunningTests(TestCase):
+    """Tests for is_check_container_running() function."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
+        )
+        self.project = Project.objects.create(
+            user=self.user, name="Test Project", description="Test Description"
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            source_url="http://example.com/test.gds",
+            original_filename="test.gds",
+            is_active=True,
+        )
+
+    @patch("wafer_space.projects.verification.docker.from_env")
+    def test_container_running_returns_true(self, mock_from_env):
+        """Test that running container returns True."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="check-task-123",
+        )
+
+        # Mock Docker client
+        mock_client = Mock()
+        mock_container = Mock()
+        mock_container.id = "container-123"
+        mock_client.containers.list.return_value = [mock_container]
+        mock_from_env.return_value = mock_client
+
+        result = is_check_container_running(check)
+
+        assert result is True
+        mock_client.containers.list.assert_called_once_with(
+            all=False,
+            filters={"label": f"wafer.space.check_id={check.id}"},
+        )
+
+    @patch("wafer_space.projects.verification.docker.from_env")
+    def test_no_container_returns_false(self, mock_from_env):
+        """Test that no container returns False (definitely orphaned)."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="check-task-456",
+        )
+
+        # Mock Docker client - no containers
+        mock_client = Mock()
+        mock_client.containers.list.return_value = []
+        mock_from_env.return_value = mock_client
+
+        result = is_check_container_running(check)
+
+        assert result is False
+        mock_client.containers.list.assert_called_once_with(
+            all=False,
+            filters={"label": f"wafer.space.check_id={check.id}"},
+        )
+
+    @patch("wafer_space.projects.verification.docker.from_env")
+    def test_docker_connection_error_returns_none(self, mock_from_env):
+        """Test that Docker connection error returns None (cannot verify)."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="check-task-789",
+        )
+
+        # Mock Docker connection failure
+        mock_from_env.side_effect = docker.errors.DockerException("Cannot connect")
+
+        result = is_check_container_running(check)
+
+        assert result is None
+
+    @patch("wafer_space.projects.verification.docker.from_env")
+    def test_docker_query_error_returns_none(self, mock_from_env):
+        """Test that Docker query error returns None (cannot verify)."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="check-task-error",
+        )
+
+        # Mock Docker client that throws on list
+        mock_client = Mock()
+        mock_client.containers.list.side_effect = docker.errors.DockerException(
+            "Query error"
+        )
+        mock_from_env.return_value = mock_client
+
+        result = is_check_container_running(check)
+
+        assert result is None
+
+    @patch("wafer_space.projects.verification.docker.from_env")
+    def test_multiple_containers_returns_true(self, mock_from_env):
+        """Test that multiple containers returns True."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="check-task-multi",
+        )
+
+        # Mock Docker client - multiple containers
+        mock_client = Mock()
+        mock_container1 = Mock()
+        mock_container1.id = "container-1"
+        mock_container2 = Mock()
+        mock_container2.id = "container-2"
+        mock_client.containers.list.return_value = [mock_container1, mock_container2]
+        mock_from_env.return_value = mock_client
+
+        result = is_check_container_running(check)
+
+        assert result is True
+
+
+@pytest.mark.django_db
+class CheckTaskActivelyRunningEnhancedTests(TestCase):
+    """Tests for enhanced is_check_task_actively_running() with Docker-first logic."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser", email="test@example.com", password=TEST_PASSWORD
+        )
+        self.project = Project.objects.create(
+            user=self.user, name="Test Project", description="Test Description"
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            source_url="http://example.com/test.gds",
+            original_filename="test.gds",
+            is_active=True,
+        )
+
+    @patch("wafer_space.projects.verification.docker.from_env")
+    def test_container_running_returns_true_immediately(self, mock_from_env):
+        """Test that running container returns True without checking PID or Celery."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="check-task-123",
+            celery_worker_pid=12345,
+            celery_worker_hostname="worker-01",
+        )
+
+        # Mock Docker client - container running
+        mock_client = Mock()
+        mock_container = Mock()
+        mock_client.containers.list.return_value = [mock_container]
+        mock_from_env.return_value = mock_client
+
+        result = is_check_task_actively_running(check)
+
+        assert result is True
+        # Docker check was performed
+        mock_client.containers.list.assert_called_once()
+
+    @patch("wafer_space.projects.verification.docker.from_env")
+    def test_no_container_returns_false_immediately(self, mock_from_env):
+        """Test that no container returns False without checking PID or Celery."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="check-task-456",
+            celery_worker_pid=12345,
+            celery_worker_hostname="worker-01",
+        )
+
+        # Mock Docker client - no containers
+        mock_client = Mock()
+        mock_client.containers.list.return_value = []
+        mock_from_env.return_value = mock_client
+
+        result = is_check_task_actively_running(check)
+
+        assert result is False
+        # Docker check was performed
+        mock_client.containers.list.assert_called_once()
+
+    @patch("wafer_space.projects.verification.psutil")
+    @patch("wafer_space.projects.verification.socket")
+    @patch("wafer_space.projects.verification.docker.from_env")
+    def test_docker_unavailable_falls_back_to_pid_check(
+        self, mock_from_env, mock_socket, mock_psutil
+    ):
+        """Test that Docker error falls back to PID check."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="check-task-789",
+            celery_worker_pid=12345,
+            celery_worker_hostname="worker-01",
+        )
+
+        # Mock Docker connection failure
+        mock_from_env.side_effect = docker.errors.DockerException("Cannot connect")
+
+        # Mock socket (same hostname)
+        mock_socket.gethostname.return_value = "worker-01"
+
+        # Mock psutil (PID exists, is Celery process)
+        mock_psutil.pid_exists.return_value = True
+        mock_proc = Mock()
+        mock_proc.cmdline.return_value = ["python", "-m", "celery", "worker"]
+        mock_psutil.Process.return_value = mock_proc
+
+        result = is_check_task_actively_running(check)
+
+        assert result is True
+        # PID check was performed
+        mock_psutil.pid_exists.assert_called_once_with(12345)
+
+    @patch("wafer_space.projects.verification.psutil")
+    @patch("wafer_space.projects.verification.socket")
+    @patch("wafer_space.projects.verification.docker.from_env")
+    def test_docker_unavailable_pid_dead_returns_false(
+        self, mock_from_env, mock_socket, mock_psutil
+    ):
+        """Test that Docker error + dead PID returns False."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="check-task-dead",
+            celery_worker_pid=99999,
+            celery_worker_hostname="worker-01",
+        )
+
+        # Mock Docker connection failure
+        mock_from_env.side_effect = docker.errors.DockerException("Cannot connect")
+
+        # Mock socket (same hostname)
+        mock_socket.gethostname.return_value = "worker-01"
+
+        # Mock psutil (PID does NOT exist)
+        mock_psutil.pid_exists.return_value = False
+
+        result = is_check_task_actively_running(check)
+
+        assert result is False
+
+    @patch("wafer_space.projects.verification.current_app")
+    @patch("wafer_space.projects.verification.docker.from_env")
+    def test_docker_unavailable_no_pid_falls_back_to_celery(
+        self, mock_from_env, mock_app
+    ):
+        """Test that Docker error + no PID falls back to Celery check."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="check-task-celery",
+        )
+
+        # Mock Docker connection failure
+        mock_from_env.side_effect = docker.errors.DockerException("Cannot connect")
+
+        # Mock Celery inspect - task in active list
+        mock_inspect = Mock()
+        mock_inspect.active.return_value = {
+            "worker1": [{"id": "check-task-celery"}],
+        }
+        mock_app.control.inspect.return_value = mock_inspect
+
+        result = is_check_task_actively_running(check)
+
+        assert result is True
+        # Celery check was performed
+        mock_inspect.active.assert_called_once()
+
+    @patch("wafer_space.projects.verification.current_app")
+    @patch("wafer_space.projects.verification.docker.from_env")
+    def test_docker_unavailable_no_pid_celery_missing_returns_false(
+        self, mock_from_env, mock_app
+    ):
+        """Test that Docker error + no PID + Celery missing returns False."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="check-task-missing",
+        )
+
+        # Mock Docker connection failure
+        mock_from_env.side_effect = docker.errors.DockerException("Cannot connect")
+
+        # Mock Celery inspect - task NOT in active list
+        mock_inspect = Mock()
+        mock_inspect.active.return_value = {}
+        mock_app.control.inspect.return_value = mock_inspect
+
+        result = is_check_task_actively_running(check)
+
+        assert result is False
+
+    @patch("wafer_space.projects.verification.current_app")
+    @patch("wafer_space.projects.verification.docker.from_env")
+    def test_docker_unavailable_no_pid_celery_unsupported_returns_true(
+        self, mock_from_env, mock_app
+    ):
+        """Test Docker error + no PID + unsupported Celery broker returns True."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            celery_job_id="check-task-unsupported",
+        )
+
+        # Mock Docker connection failure
+        mock_from_env.side_effect = docker.errors.DockerException("Cannot connect")
+
+        # Mock Celery inspect - returns None (unsupported broker)
+        mock_inspect = Mock()
+        mock_inspect.active.return_value = None
+        mock_app.control.inspect.return_value = mock_inspect
+
+        result = is_check_task_actively_running(check)
+
+        # Should return True (fail-safe - assume running)
         assert result is True

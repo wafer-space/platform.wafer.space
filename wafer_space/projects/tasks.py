@@ -590,6 +590,9 @@ def _start_container(context: _CheckContext) -> tuple[str, str]:
     context.logger.info("  Docker run command:")
     context.logger.info("  %s", docker_command)
 
+    # CRITICAL: Container is created with labels atomically BEFORE check status
+    # transitions to RUNNING. This ensures orphaned check detection can find
+    # containers by label. Labels are set during container creation (atomic).
     container = context.client.containers.run(
         image=settings.PRECHECK_DOCKER_IMAGE,
         command=docker_command_list,
@@ -604,6 +607,7 @@ def _start_container(context: _CheckContext) -> tuple[str, str]:
         },
         labels={
             "wafer.space.service": "manufacturability-check",
+            # Used by orphaned check detection to find container
             "wafer.space.check_id": str(context.check.id),
         },
     )
@@ -897,10 +901,13 @@ def check_process_job(self, check_id):
         docker_image, docker_image_digest = _pull_and_record_image(context)
 
         # Step 4: Start container and collect metadata (no DB writes yet)
+        # CRITICAL: Container MUST be created and labeled BEFORE status transition
+        # This ensures orphaned check detection can find the container by label
         docker_command, container_id = _start_container(context)
 
         # Step 5: ATOMIC STATE TRANSITION - mark_running() with all collected data
         # This is the single point where we transition DISPATCHED -> RUNNING
+        # Container is already created and labeled, preventing race conditions
         logger.info("Step 5: Transitioning to RUNNING state...")
         exec_context = CheckExecutionContext(
             celery_worker_pid=os.getpid(),
@@ -978,11 +985,10 @@ def check_process_job(self, check_id):
         }
 
     finally:
-        # Always cleanup container, even if exceptions occur
-        # This prevents Docker resource leaks on failures or timeouts
-        if context is not None and context.container is not None:
-            logger.info("Cleaning up container in finally block...")
-            _cleanup_container(context.container, logger)
+        # Cleanup is now handled by a separate periodic task, so container
+        # removal no longer depends on this finally block running (e.g., in
+        # OOM/SIGKILL cases) and cannot block long-running tasks.
+        pass
 
 
 @shared_task(queue="maintenance")

@@ -6,6 +6,8 @@ import logging
 import socket
 from typing import TYPE_CHECKING
 
+import docker
+import docker.errors
 import psutil
 from celery import current_app
 from django.db import DatabaseError
@@ -16,6 +18,66 @@ if TYPE_CHECKING:
     from wafer_space.projects.models import ProjectFile
 
 logger = logging.getLogger(__name__)
+
+
+def is_check_container_running(check: ManufacturabilityCheck) -> bool | None:
+    """Check if Docker container for this check is running.
+
+    This is the most reliable way to verify a check is actively running because:
+    1. Container is created BEFORE check enters RUNNING state (verified by Task 4)
+    2. Container has label wafer.space.check_id={check.id} for reliable lookup
+    3. Docker API is authoritative for container state
+
+    Args:
+        check: ManufacturabilityCheck to verify
+
+    Returns:
+        True if running container found
+        False if no container found (definitely orphaned)
+        None if Docker unavailable (caller should fall back to other checks)
+    """
+    try:
+        client = docker.from_env()
+    except docker.errors.DockerException:
+        logger.warning(
+            "Failed to connect to Docker - cannot verify container for check %s",
+            check.id,
+        )
+        return None
+
+    try:
+        # Query for containers with this check's label
+        containers = client.containers.list(
+            all=False,  # Only running containers
+            filters={"label": f"wafer.space.check_id={check.id}"},
+        )
+    except docker.errors.DockerException:
+        logger.exception(
+            "Error querying Docker for check %s containers",
+            check.id,
+        )
+        return None
+    finally:
+        # Close client to avoid lingering HTTP connections. Use hasattr check
+        # for compatibility with test mocks that may not implement close().
+        if hasattr(client, "close"):
+            client.close()
+
+    if containers:
+        # Found at least one running container with this check ID
+        logger.debug(
+            "Check %s has %d running container(s)",
+            check.id,
+            len(containers),
+        )
+        return True
+
+    # No running containers found
+    logger.debug(
+        "Check %s has no running containers",
+        check.id,
+    )
+    return False
 
 
 def _check_inspect_result(
@@ -233,33 +295,133 @@ def is_check_task_queued(check: ManufacturabilityCheck) -> bool:
     return active_result is None or bool(active_result)
 
 
-def is_check_task_actively_running(check: ManufacturabilityCheck) -> bool:
-    """Verify manufacturability check task is executing AND process exists.
+def _check_container_status(check: ManufacturabilityCheck) -> bool | None:
+    """Check Docker container status for verification.
 
     Args:
         check: ManufacturabilityCheck to verify
 
     Returns:
-        True if task is running with valid PID, False otherwise
+        True if container running, False if definitely orphaned, None to continue
+    """
+    container_result = is_check_container_running(check)
+    if container_result is False:
+        # Definitely orphaned - no container running
+        logger.debug(
+            "Check %s is orphaned: no running container",
+            check.id,
+        )
+        return False
+    if container_result is True:
+        # Container running - definitely active
+        logger.debug(
+            "Check %s verified active: container running",
+            check.id,
+        )
+        return True
+    # container_result is None - Docker unavailable, fall through to next check
+    return None
+
+
+def _check_pid_status(check: ManufacturabilityCheck) -> bool | None:
+    """Check worker PID status for verification.
+
+    Args:
+        check: ManufacturabilityCheck to verify
+
+    Returns:
+        True if PID alive, False if dead, None to continue
+    """
+    if not (check.celery_worker_pid and check.celery_worker_hostname):
+        return None
+
+    pid_alive = _verify_worker_process(
+        check.celery_worker_pid,
+        check.celery_worker_hostname,
+    )
+    if not pid_alive:
+        # PID dead - definitely orphaned
+        logger.debug(
+            "Check %s is orphaned: PID %s on %s is dead",
+            check.id,
+            check.celery_worker_pid,
+            check.celery_worker_hostname,
+        )
+        return False
+
+    # PID alive - likely active
+    logger.debug(
+        "Check %s verified active: PID %s on %s alive",
+        check.id,
+        check.celery_worker_pid,
+        check.celery_worker_hostname,
+    )
+    return True
+
+
+def _check_celery_status(check: ManufacturabilityCheck, task_id: str) -> bool:
+    """Check Celery task status for verification.
+
+    Args:
+        check: ManufacturabilityCheck to verify
+        task_id: Celery task ID
+
+    Returns:
+        True if task active or cannot verify, False if definitely orphaned
+    """
+    inspect = current_app.control.inspect()
+    active_result = _check_inspect_result(inspect.active(), task_id, "active")
+    if active_result is None:
+        # Cannot verify - assume still active to be safe
+        logger.debug(
+            "Check %s assumed active: cannot verify (unsupported broker)",
+            check.id,
+        )
+        return True
+    if not active_result:
+        # Task not in active list - orphaned
+        logger.debug(
+            "Check %s is orphaned: not in Celery active list",
+            check.id,
+        )
+        return False
+
+    # Task in active list
+    logger.debug(
+        "Check %s verified active: in Celery active list",
+        check.id,
+    )
+    return True
+
+
+def is_check_task_actively_running(check: ManufacturabilityCheck) -> bool:
+    """Best-effort verification that a manufacturability check task is still active.
+
+    Detection order (most reliable first):
+    1. Docker container exists - most reliable (container created before RUNNING)
+    2. Worker PID exists - reliable for local workers
+    3. Celery task in active list - unreliable with PostgreSQL broker
+
+    Args:
+        check: ManufacturabilityCheck to verify
+
+    Returns:
+        True if task appears to be running or cannot be verified,
+        False if definitely orphaned
     """
     task_id = check.celery_job_id
     if not task_id:
         return False
 
-    inspect = current_app.control.inspect()
+    # STEP 1: Check Docker container (most reliable)
+    container_status = _check_container_status(check)
+    if container_status is not None:
+        return container_status
 
-    # Check task in active list
-    active_result = _check_inspect_result(inspect.active(), task_id, "active")
-    if active_result is None:
-        return True  # Cannot verify - assume still active to be safe
-    if not active_result:
-        return False
+    # STEP 2: Check worker PID (reliable for local workers)
+    pid_status = _check_pid_status(check)
+    if pid_status is not None:
+        return pid_status
 
-    # Verify PID exists (if available)
-    if check.celery_worker_pid and check.celery_worker_hostname:
-        return _verify_worker_process(
-            check.celery_worker_pid,
-            check.celery_worker_hostname,
-        )
-
-    return True
+    # STEP 3: Check Celery task in active list (unreliable with PostgreSQL)
+    return _check_celery_status(check, task_id)
