@@ -969,10 +969,11 @@ def do_analyzing(check_id: int) -> dict[str, Any]:
 
 @queued_check_task()
 def do_cancelling(check_id: int) -> dict[str, Any]:
-    """Stop and remove container for a CANCELLING check.
+    """Transition a CANCELLING check to CANCELLED.
 
-    Attempts to stop and remove the Docker container if it exists,
-    then transitions the check to CANCELLED status.
+    Simply marks the check as cancelled. Any Docker container cleanup
+    is handled by checks_cleanup_orphaned_docker which will detect the
+    container (via its wafer.space.check_id label) and remove it.
 
     Args:
         check_id: ManufacturabilityCheck ID.
@@ -991,82 +992,12 @@ def do_cancelling(check_id: int) -> dict[str, Any]:
         )
         return {"status": "skipped", "reason": "status_changed"}
 
-    container_id = check.docker_container_id
-    container_stopped = False
-    container_removed = False
-
-    # Only attempt Docker operations if we have a container ID and server
-    if container_id and check.docker_server_id:
-        # Get server config
-        server = next(
-            (s for s in settings.DOCKER_SERVERS if s["id"] == check.docker_server_id),
-            None,
-        )
-
-        if server:
-            try:
-                client = docker.DockerClient(base_url=str(server["url"]))
-
-                try:
-                    container = client.containers.get(container_id)
-
-                    # Stop the container if it's running
-                    container.reload()
-                    if container.status in ("running", "paused"):
-                        logger.info(
-                            "Stopping container %s for check %s",
-                            container_id[:12],
-                            check_id,
-                        )
-                        container.stop(timeout=10)
-                        container_stopped = True
-
-                    # Remove the container
-                    logger.info(
-                        "Removing container %s for check %s",
-                        container_id[:12],
-                        check_id,
-                    )
-                    container.remove()
-                    container_removed = True
-
-                except docker.errors.NotFound:
-                    # Container already gone - that's fine
-                    logger.info(
-                        "Container %s not found (already removed)",
-                        container_id[:12],
-                    )
-                    container_removed = True
-
-            except docker.errors.DockerException as e:
-                # Log the error but don't fail - we still want to mark as cancelled
-                logger.warning(
-                    "Docker error during cancellation of check %s: %s",
-                    check_id,
-                    e,
-                )
-        else:
-            logger.warning(
-                "Unknown server %s for check %s - cannot clean up container",
-                check.docker_server_id,
-                check_id,
-            )
-
-    # Transition to CANCELLED
+    # Transition to CANCELLED - container cleanup handled by orphan task
     check.mark_cancelled()
 
-    logger.info(
-        "Check %s cancelled (container_stopped=%s, container_removed=%s)",
-        check_id,
-        container_stopped,
-        container_removed,
-    )
+    logger.info("Check %s marked as cancelled", check_id)
 
-    return {
-        "status": "success",
-        "container_stopped": container_stopped,
-        "container_removed": container_removed,
-    }
+    return {"status": "success"}
 
 
 @shared_task(queue="default")
