@@ -1093,7 +1093,10 @@ class TestManufacturabilityCheckQueueProperties(TestCase):
             status=ManufacturabilityCheck.Status.PENDING,
         )
         check.mark_dispatched(celery_job_id="test-job-1")
-        check.mark_running(context=_make_exec_context(celery_worker_pid=12345))
+        check.mark_running(
+            docker_container_id="test-container",
+            docker_command="precheck",
+        )
 
         assert check.queue_position is None
 
@@ -1172,7 +1175,10 @@ class TestManufacturabilityCheckQueueProperties(TestCase):
             status=ManufacturabilityCheck.Status.PENDING,
         )
         check3.mark_dispatched(celery_job_id="test-job-3")
-        check3.mark_running(context=_make_exec_context(celery_worker_pid=12345))
+        check3.mark_running(
+            docker_container_id="test-container",
+            docker_command="precheck",
+        )
 
         # Create our PENDING check
         check = ManufacturabilityCheck.objects.create(
@@ -1503,13 +1509,16 @@ class TestManufacturabilityCheckMarkRunning(TestCase):
         )
 
     def test_mark_running_from_dispatched(self):
-        """Can mark DISPATCHED check as RUNNING."""
+        """Can mark STARTING check as RUNNING."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHED,
+            status=ManufacturabilityCheck.Status.STARTING,
         )
-        check.mark_running(context=_make_exec_context())
+        check.mark_running(
+            docker_container_id="test-container",
+            docker_command="precheck",
+        )
 
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.RUNNING
@@ -1519,22 +1528,22 @@ class TestManufacturabilityCheckMarkRunning(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHED,
+            status=ManufacturabilityCheck.Status.STARTING,
         )
 
         before = timezone.now()
-        check.mark_running(context=_make_exec_context())
+        check.mark_running(
+            docker_container_id="test-container-123",
+            docker_command="precheck /path/to/file",
+        )
         after = timezone.now()
 
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.RUNNING
-        assert check.celery_worker_pid == TEST_WORKER_PID
-        assert check.celery_worker_hostname == "worker-01"
-        assert check.docker_container_id == "abc123def456"
-        assert check.docker_container_started_at is not None
-        assert before <= check.docker_container_started_at <= after
-        assert check.celery_job_started_at is not None
-        assert before <= check.celery_job_started_at <= after
+        assert check.docker_container_id == "test-container-123"
+        assert check.docker_command == "precheck /path/to/file"
+        assert check.container_started_at is not None
+        assert before <= check.container_started_at <= after
 
     def test_mark_running_from_pending_raises(self):
         """Cannot mark PENDING check as RUNNING."""
@@ -1544,7 +1553,10 @@ class TestManufacturabilityCheckMarkRunning(TestCase):
             status=ManufacturabilityCheck.Status.PENDING,
         )
         with pytest.raises(InvalidStateTransitionError) as exc_info:
-            check.mark_running(context=_make_exec_context())
+            check.mark_running(
+                docker_container_id="test-container",
+                docker_command="precheck",
+            )
 
         assert "pending" in str(exc_info.value).lower()
         assert "running" in str(exc_info.value).lower()
@@ -1557,7 +1569,10 @@ class TestManufacturabilityCheckMarkRunning(TestCase):
             status=ManufacturabilityCheck.Status.RUNNING,
         )
         with pytest.raises(InvalidStateTransitionError):
-            check.mark_running(context=_make_exec_context())
+            check.mark_running(
+                docker_container_id="test-container",
+                docker_command="precheck",
+            )
 
     def test_mark_running_from_finished_raises(self):
         """Cannot mark FINISHED check as RUNNING."""
@@ -1567,7 +1582,10 @@ class TestManufacturabilityCheckMarkRunning(TestCase):
             status=ManufacturabilityCheck.Status.FINISHED,
         )
         with pytest.raises(InvalidStateTransitionError) as exc_info:
-            check.mark_running(context=_make_exec_context())
+            check.mark_running(
+                docker_container_id="test-container",
+                docker_command="precheck",
+            )
 
         assert "finished" in str(exc_info.value).lower()
         assert "running" in str(exc_info.value).lower()
@@ -1580,7 +1598,10 @@ class TestManufacturabilityCheckMarkRunning(TestCase):
             status=ManufacturabilityCheck.Status.ERROR,
         )
         with pytest.raises(InvalidStateTransitionError):
-            check.mark_running(context=_make_exec_context())
+            check.mark_running(
+                docker_container_id="test-container",
+                docker_command="precheck",
+            )
 
     def test_mark_running_from_cancelled_raises(self):
         """Cannot mark CANCELLED check as RUNNING."""
@@ -1590,7 +1611,10 @@ class TestManufacturabilityCheckMarkRunning(TestCase):
             status=ManufacturabilityCheck.Status.CANCELLED,
         )
         with pytest.raises(InvalidStateTransitionError):
-            check.mark_running(context=_make_exec_context())
+            check.mark_running(
+                docker_container_id="test-container",
+                docker_command="precheck",
+            )
 
 
 @pytest.mark.django_db
@@ -1928,46 +1952,42 @@ class TestManufacturabilityCheckMarkFinished(TestCase):
         )
 
     def test_mark_finished_from_running(self):
-        """Can mark RUNNING check as FINISHED."""
+        """Can mark ANALYZING check as FINISHED."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.RUNNING,
+            status=ManufacturabilityCheck.Status.ANALYZING,
         )
         check.mark_finished(
             is_manufacturable=True,
             errors=[],
             warnings=[],
-            processing_logs="Processing completed successfully",
+            tool_versions={"precheck": "1.0.0"},
         )
 
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.FINISHED
         assert check.is_manufacturable is True
-        assert check.celery_job_finished_at is not None
+        assert check.analysis_completed_at is not None
 
     def test_mark_finished_sets_all_fields(self):
         """mark_finished() sets all required fields."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.RUNNING,
+            status=ManufacturabilityCheck.Status.ANALYZING,
         )
 
-        test_errors = [
-            {"rule": "metal1.width", "message": "Width violation"},
-        ]
-        test_warnings = [
-            {"rule": "density", "message": "Low metal density"},
-        ]
-        test_logs = "Step 1: Loading GDS\nStep 2: Running checks\nComplete"
+        test_errors = ["Width violation"]
+        test_warnings = ["Low metal density"]
+        test_tool_versions = {"precheck": "1.0.0"}
 
         before = timezone.now()
         check.mark_finished(
             is_manufacturable=False,
             errors=test_errors,
             warnings=test_warnings,
-            processing_logs=test_logs,
+            tool_versions=test_tool_versions,
         )
         after = timezone.now()
 
@@ -1976,9 +1996,9 @@ class TestManufacturabilityCheckMarkFinished(TestCase):
         assert check.is_manufacturable is False
         assert check.errors == test_errors
         assert check.warnings == test_warnings
-        assert check.processing_logs == test_logs
-        assert check.celery_job_finished_at is not None
-        assert before <= check.celery_job_finished_at <= after
+        assert check.tool_versions == test_tool_versions
+        assert check.analysis_completed_at is not None
+        assert before <= check.analysis_completed_at <= after
 
     def test_mark_finished_from_pending_raises(self):
         """Cannot mark PENDING check as FINISHED."""
@@ -1992,7 +2012,7 @@ class TestManufacturabilityCheckMarkFinished(TestCase):
                 is_manufacturable=True,
                 errors=[],
                 warnings=[],
-                processing_logs="Should fail",
+                tool_versions={},
             )
 
         assert "pending" in str(exc_info.value).lower()
@@ -2010,7 +2030,7 @@ class TestManufacturabilityCheckMarkFinished(TestCase):
                 is_manufacturable=True,
                 errors=[],
                 warnings=[],
-                processing_logs="Should fail",
+                tool_versions={},
             )
 
         assert "dispatched" in str(exc_info.value).lower()
@@ -2028,7 +2048,7 @@ class TestManufacturabilityCheckMarkFinished(TestCase):
                 is_manufacturable=True,
                 errors=[],
                 warnings=[],
-                processing_logs="Should fail",
+                tool_versions={},
             )
 
     def test_mark_finished_from_error_raises(self):
@@ -2043,7 +2063,7 @@ class TestManufacturabilityCheckMarkFinished(TestCase):
                 is_manufacturable=True,
                 errors=[],
                 warnings=[],
-                processing_logs="Should fail",
+                tool_versions={},
             )
 
         assert "error" in str(exc_info.value).lower()
@@ -2061,7 +2081,7 @@ class TestManufacturabilityCheckMarkFinished(TestCase):
                 is_manufacturable=True,
                 errors=[],
                 warnings=[],
-                processing_logs="Should fail",
+                tool_versions={},
             )
 
 

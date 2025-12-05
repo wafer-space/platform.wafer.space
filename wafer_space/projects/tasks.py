@@ -40,7 +40,6 @@ from .content_processors import _processor_registry
 from .exceptions import InvalidStateTransitionError
 from .file_type_utils import detect_file_type_from_data
 from .format_validators import validate_output_format
-from .models import CheckExecutionContext
 from .models import DownloadAttempt
 from .models import FileProcessingError
 from .models import ManufacturabilityCheck
@@ -735,7 +734,6 @@ def _handle_check_result(check, logs, exit_code, logger):
         is_manufacturable=is_manufacturable,
         errors=[] if is_manufacturable else parsed.get("errors", []),
         warnings=parsed.get("warnings", []),
-        processing_logs=logs,
         tool_versions=tool_versions,
     )
 
@@ -897,27 +895,22 @@ def check_process_job(self, check_id):
         # Step 2: Connect to Docker
         context = _setup_docker_context(check, project_file, self, logger)
 
-        # Step 3: Pull Docker image and collect metadata (no DB writes)
-        docker_image, docker_image_digest = _pull_and_record_image(context)
+        # Step 3: Pull Docker image (no DB writes)
+        _pull_and_record_image(context)
 
         # Step 4: Start container and collect metadata (no DB writes yet)
         # CRITICAL: Container MUST be created and labeled BEFORE status transition
         # This ensures orphaned check detection can find the container by label
         docker_command, container_id = _start_container(context)
 
-        # Step 5: ATOMIC STATE TRANSITION - mark_running() with all collected data
+        # Step 5: ATOMIC STATE TRANSITION - mark_running() with container info
         # This is the single point where we transition DISPATCHED -> RUNNING
         # Container is already created and labeled, preventing race conditions
         logger.info("Step 5: Transitioning to RUNNING state...")
-        exec_context = CheckExecutionContext(
-            celery_worker_pid=os.getpid(),
-            celery_worker_hostname=socket.gethostname(),
+        check.mark_running(
             docker_container_id=container_id,
-            docker_image=docker_image,
-            docker_image_digest=docker_image_digest,
             docker_command=docker_command,
         )
-        check.mark_running(context=exec_context)
         logger.info("  ✓ Check is now RUNNING")
 
         # Step 6: Run container to completion (only log updates allowed)

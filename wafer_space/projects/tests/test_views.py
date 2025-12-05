@@ -10,7 +10,6 @@ from django.test import TestCase
 from django.urls import reverse
 
 from wafer_space.core.enums import SlotSize
-from wafer_space.projects.models import CheckExecutionContext
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
@@ -1198,20 +1197,17 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
             status=ManufacturabilityCheck.Status.PENDING,
         )
         check.mark_dispatched(celery_job_id="test-job-id")
-        exec_context = CheckExecutionContext(
-            celery_worker_pid=12345,
-            celery_worker_hostname="test-worker",
+        # Old pathway: DISPATCHED -> RUNNING (skips STARTING state)
+        check.mark_running(
             docker_container_id="test-container-id",
-            docker_image="test-image:latest",
-            docker_image_digest="sha256:test",
             docker_command="docker run ...",
         )
-        check.mark_running(context=exec_context)
+        check.mark_analyzing(docker_exit_code=1)
         check.mark_finished(
             is_manufacturable=False,
-            errors=[{"message": "Error 1"}, {"message": "Error 2"}],
-            warnings=[{"message": "Warning 1"}],
-            processing_logs="Test processing logs",
+            errors=["Error 1", "Error 2"],
+            warnings=["Warning 1"],
+            tool_versions={"precheck": "1.0.0"},
         )
 
         # Log in and access detail view
@@ -1224,9 +1220,9 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
         assert check is not None
         assert check.status == ManufacturabilityCheck.Status.FINISHED
         assert check.is_manufacturable is False
-        expected_errors = [{"message": "Error 1"}, {"message": "Error 2"}]
+        expected_errors = ["Error 1", "Error 2"]
         assert check.errors == expected_errors
-        assert check.warnings == [{"message": "Warning 1"}]
+        assert check.warnings == ["Warning 1"]
 
     def test_detail_view_shows_error_message_to_staff(self):
         """Test that staff users can see system error messages."""
