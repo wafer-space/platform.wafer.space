@@ -17,6 +17,7 @@ from wafer_space.projects.models import LicenseType
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
+from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.users.models import User
 from wafer_space.users.tests.factories import UserFactory
@@ -2481,3 +2482,19 @@ class TestManufacturabilityCheckNewTransitions(TestCase):
             status=ManufacturabilityCheck.Status.ANALYZING,
         )
         assert check.can_transition_to(ManufacturabilityCheck.Status.ERROR)
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckServerField:
+    """Test docker_server_id field."""
+
+    def test_docker_server_id_field_exists(self) -> None:
+        """Check should have docker_server_id field."""
+        check = ManufacturabilityCheckFactory()
+        assert hasattr(check, "docker_server_id")
+        assert check.docker_server_id == ""  # Default is empty string
+
+    def test_docker_server_id_can_be_set(self) -> None:
+        """docker_server_id can store server identifier."""
+        check = ManufacturabilityCheckFactory(docker_server_id="local")
+        assert check.docker_server_id == "local"

@@ -1365,6 +1365,14 @@ class ManufacturabilityCheck(models.Model):
     )
 
     # Docker container tracking
+    docker_server_id = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text=(
+            "ID of Docker server running this check (from DOCKER_SERVERS setting)"
+        ),
+    )
     docker_container_id = models.CharField(
         max_length=64,
         blank=True,

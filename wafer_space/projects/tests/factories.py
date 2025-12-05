@@ -7,6 +7,7 @@ from factory import Sequence
 from factory import SubFactory
 from factory.django import DjangoModelFactory
 
+from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.users.tests.factories import UserFactory
@@ -36,3 +37,15 @@ class ProjectFileFactory(DjangoModelFactory[ProjectFile]):
 
     class Meta:
         model = ProjectFile
+
+
+class ManufacturabilityCheckFactory(DjangoModelFactory[ManufacturabilityCheck]):
+    """Factory for creating test ManufacturabilityCheck instances."""
+
+    project = SubFactory(ProjectFactory)
+    project_file = SubFactory(ProjectFileFactory, project=project)
+    status = ManufacturabilityCheck.Status.PENDING
+    docker_server_id = ""
+
+    class Meta:
+        model = ManufacturabilityCheck
