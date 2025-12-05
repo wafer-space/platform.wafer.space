@@ -4,8 +4,11 @@ Background tasks for manufacturability checks.
 
 import logging
 import time
+from functools import wraps
 from pathlib import Path
+from typing import TYPE_CHECKING
 from typing import Any
+from typing import TypeVar
 
 import docker
 import docker.errors
@@ -13,11 +16,9 @@ from celery import shared_task
 from celery.utils.log import get_task_logger
 from django.conf import settings
 
-from .docker_utils import checks_task
 from .docker_utils import get_docker_client
 from .docker_utils import get_server_config
 from .docker_utils import parse_docker_timestamp_float
-from .docker_utils import queued_check_task
 from .docker_utils import stop_and_remove_container
 from .docker_utils import strip_docker_timestamps
 from .exceptions import InvalidStateTransitionError
@@ -25,6 +26,127 @@ from .models import ManufacturabilityCheck
 from .models import ManufacturabilityCheckTask
 from .models import ProjectFile
 from .precheck_parser import PrecheckLogParser
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+T = TypeVar("T")
+
+
+# =============================================================================
+# Task Decorators
+# =============================================================================
+
+
+def checks_task(**celery_kwargs: Any) -> "Callable[[Callable[..., T]], Any]":
+    """Decorator for periodic checks_ tasks with automatic logging.
+
+    Wraps function with @shared_task and adds start/stop logging.
+    The function name is used in log messages (e.g., "[checks_pending] Starting...").
+
+    Args:
+        **celery_kwargs: Arguments passed to @shared_task (e.g., queue="default")
+
+    Returns:
+        Decorator that wraps the function with Celery and logging.
+
+    Example:
+        @checks_task(queue="default")
+        def checks_pending() -> dict[str, int]:
+            # ... do work
+            return {"dispatched": 5}
+    """
+    # Default to default queue if not specified
+    if "queue" not in celery_kwargs:
+        celery_kwargs["queue"] = "default"
+
+    def decorator(func: "Callable[..., T]") -> Any:
+        @wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> T:
+            logger = logging.getLogger(__name__)
+
+            logger.info("[%s] Starting", func.__name__)
+
+            result = func(*args, **kwargs)
+
+            logger.info("[%s] Complete", func.__name__)
+
+            return result
+
+        return shared_task(**celery_kwargs)(wrapper)
+
+    return decorator
+
+
+def queued_check_task(
+    *,
+    expected_status: str | None = None,
+    **celery_kwargs: Any,
+) -> "Callable[[Callable[..., T]], Any]":
+    """Decorator for manufacturability check work tasks.
+
+    Combines @shared_task with automatic task tracking cleanup and optional
+    status verification. The decorated function receives a ManufacturabilityCheck
+    object as its first argument (fetched from the check_id passed by Celery).
+
+    Args:
+        expected_status: If provided, verify check.status matches this value
+            before calling the wrapped function. Returns skip result if mismatch.
+            Use the status name, e.g., "DISPATCHING", "STARTING", "RUNNING".
+        **celery_kwargs: Arguments passed to @shared_task
+            (e.g., queue="docker-ephemeral")
+
+    Returns:
+        Decorator that wraps the function with task tracking and Celery integration.
+
+    Example:
+        @queued_check_task(expected_status="RUNNING")
+        def do_running(check: ManufacturabilityCheck) -> dict[str, Any]:
+            # check is already fetched and status verified
+            # ... do work
+            return {"status": "completed"}
+    """
+    # Default to docker-ephemeral queue if not specified
+    if "queue" not in celery_kwargs:
+        celery_kwargs["queue"] = "docker-ephemeral"
+
+    def decorator(func: "Callable[..., T]") -> Any:
+        @wraps(func)
+        def wrapper(check_id: int, *args: Any, **kwargs: Any) -> T | dict[str, str]:
+            logger = logging.getLogger(__name__)
+
+            logger.info("Starting %s for check %s", func.__name__, check_id)
+
+            try:
+                # Fetch the check object
+                check = ManufacturabilityCheck.objects.get(id=check_id)
+
+                # Verify expected status if specified (case-insensitive comparison)
+                if expected_status and check.status.lower() != expected_status.lower():
+                    logger.info(
+                        "Skipping %s for check %s - status changed to %s",
+                        func.__name__,
+                        check_id,
+                        check.status,
+                    )
+                    return {"status": "skipped", "reason": "status_changed"}
+
+                # Call wrapped function with check object
+                result = func(check, *args, **kwargs)
+                logger.info("Completed %s for check %s", func.__name__, check_id)
+                return result
+            finally:
+                ManufacturabilityCheckTask.objects.filter(
+                    manufacturability_check_id=check_id
+                ).delete()
+
+        # Apply shared_task decorator with provided kwargs
+        # Return type is Any because Celery tasks have special methods
+        # like .delay() and .apply_async()
+        return shared_task(**celery_kwargs)(wrapper)
+
+    return decorator
+
 
 __all__ = [
     "checks_analyzing",
