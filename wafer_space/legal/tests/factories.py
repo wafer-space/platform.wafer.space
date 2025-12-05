@@ -12,6 +12,7 @@ from factory.django import DjangoModelFactory
 from wafer_space.legal.models import TermsOfService
 from wafer_space.legal.models import TermsOfServiceAcceptance
 from wafer_space.legal.models import TermsOfServiceNotification
+from wafer_space.legal.utils import dump_frontmatter_post
 from wafer_space.legal.utils import get_tos_versions_directory
 from wafer_space.users.tests.factories import UserFactory
 
@@ -71,8 +72,9 @@ These terms are for testing purposes only."""
 
             # Write markdown file with front matter
             # This will be intercepted by the mock in tests
+            # Use dump_frontmatter_post for consistent formatting (issue #153)
             with file_path.open("w") as f:
-                f.write(frontmatter.dumps(post))
+                f.write(dump_frontmatter_post(post))
 
         # Create database entry
         return super()._create(model_class, *args, **kwargs)

@@ -9,6 +9,7 @@ from django.db import models
 from django.utils import timezone
 
 from .utils import get_tos_versions_directory
+from .utils import write_frontmatter_file
 
 
 class TermsOfService(models.Model):
@@ -92,7 +93,11 @@ class TermsOfService(models.Model):
         return self._frontmatter_post.metadata
 
     def _update_active_status_in_files(self) -> None:
-        """Update is_active status in markdown front matter."""
+        """Update is_active status in markdown front matter.
+
+        Only writes files if the is_active status actually changed,
+        to avoid spurious file modifications (see GitHub issue #153).
+        """
         base_dir = get_tos_versions_directory()
         if not base_dir.exists():
             return
@@ -106,15 +111,15 @@ class TermsOfService(models.Model):
                 with file_path.open() as f:
                     post = frontmatter.load(f)
 
-                # Update is_active status
-                if file_path.stem == self.version:
-                    post.metadata["is_active"] = True
-                else:
-                    post.metadata["is_active"] = False
+                # Determine the correct is_active status
+                should_be_active = file_path.stem == self.version
+                current_is_active = post.metadata.get("is_active", False)
 
-                # Write back to file
-                with file_path.open("w") as f:
-                    f.write(frontmatter.dumps(post))
+                # Only update if status actually changed
+                if current_is_active != should_be_active:
+                    post.metadata["is_active"] = should_be_active
+                    # Write back to file (with consistent formatting)
+                    write_frontmatter_file(file_path, post)
             except (FileNotFoundError, KeyError):
                 continue
 
