@@ -224,9 +224,9 @@
       }
       lastStatus = status;
 
-      // Manufacturing icon
-      const mfgIcon = proj.is_manufacturable === true ? '✓' :
-                      proj.is_manufacturable === false ? '✗' : '⏳';
+      // Manufacturing status indicator
+      const mfgText = proj.is_manufacturable === true ? '✓' :
+                      proj.is_manufacturable === false ? '✗' : '?';
       const mfgClass = proj.is_manufacturable === true ? 'mfg-pass' :
                        proj.is_manufacturable === false ? 'mfg-fail' : 'mfg-pending';
 
@@ -241,8 +241,8 @@
       html += '<div class="autocomplete-item' + (index === activeIndex ? ' active' : '') + '" ' +
               'role="option" aria-selected="' + (index === activeIndex ? 'true' : 'false') + '" ' +
               'data-index="' + index + '" data-project-id="' + proj.id + '">' +
-              '<span class="project-id">' + escapeHtml(proj.project_id) + '</span> ' +
-              '<span class="' + mfgClass + '">' + mfgIcon + '</span> ' +
+              '<span class="project-id">' + escapeHtml(proj.project_id) + '</span>' +
+              '<span class="' + mfgClass + '">' + mfgText + '</span> ' +
               '<span class="project-name">' + escapeHtml(proj.name) + '</span>' +
               sizeBadge + assignedDisplay +
               '</div>';
@@ -274,9 +274,9 @@
     // Show selected display
     const display = document.getElementById('selected-project-display');
     const badge = document.getElementById('selected-project-badge');
-    const mfgIcon = project.is_manufacturable === true ? '✓' :
-                    project.is_manufacturable === false ? '✗' : '⏳';
-    badge.textContent = project.project_id + ' ' + mfgIcon + ' - ' + project.name;
+    const mfgText = project.is_manufacturable === true ? '✓' :
+                    project.is_manufacturable === false ? '✗' : '?';
+    badge.textContent = project.project_id + mfgText + ' - ' + project.name;
     display.style.display = 'block';
 
     // Check size mismatch
