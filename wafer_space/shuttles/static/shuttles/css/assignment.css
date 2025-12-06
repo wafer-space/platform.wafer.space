@@ -109,10 +109,10 @@
 
 /* Green border for size-matching slots */
 .slot-highlight-size {
-  border-color: #28a745 !important;
+  border: 1px solid #28a745 !important;
 }
 
 /* Blue border for currently assigned slots - takes priority over green */
 .slot-highlight-assigned {
-  border-color: #0d6efd !important;
+  border: 1px solid #0d6efd !important;
 }
