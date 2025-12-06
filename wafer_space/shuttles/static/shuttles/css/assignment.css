@@ -106,3 +106,9 @@
   background-color: #e0e0e0;
   border-top: 2px solid #ccc;
 }
+
+/* Green border for size-matching slots */
+.slot-highlight-size {
+  outline: 3px solid #28a745 !important;
+  outline-offset: -3px;
+}

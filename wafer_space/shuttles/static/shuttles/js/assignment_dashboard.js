@@ -553,6 +553,26 @@
     doRemoveAssignment(slotId);
   }
 
+  // Highlight all slots matching a given size (on main grid)
+  function highlightSlotsBySize(size, gridId) {
+    gridId = gridId || 'grid-table';
+    var grid = document.getElementById(gridId);
+    grid.querySelectorAll('td[data-slot-size]').forEach(function(cell) {
+      if (cell.dataset.slotSize === size) {
+        cell.classList.add('slot-highlight-size');
+      }
+    });
+  }
+
+  // Clear all highlights from a grid
+  function clearSlotHighlights(gridId) {
+    gridId = gridId || 'grid-table';
+    var grid = document.getElementById(gridId);
+    grid.querySelectorAll('.slot-highlight-size, .slot-highlight-assigned').forEach(function(cell) {
+      cell.classList.remove('slot-highlight-size', 'slot-highlight-assigned');
+    });
+  }
+
   // Initialize event listeners on DOM ready
   function init() {
     // Table filtering
