@@ -832,16 +832,22 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
         file_size,
     )
 
-    # Build command with input/output paths
-    # precheck --input /input/design.gds --output /output/design.gds --dir /workspace
+    # Get top cell name for precheck command
+    top_cell = check.project_file.top_cell or "unknown"
+    logger.info("[do_starting] Top cell: %s", top_cell)
+
+    # Build command: python precheck.py --input <gds> --top <cell> --dir <workdir>
+    # The container has ENTRYPOINT ["dev-shell"] and WORKDIR /workspace
+    # precheck.py is at /workspace/precheck.py
     command = [
-        "precheck",
+        "python",
+        "precheck.py",
         "--input",
         "/input/design.gds",
-        "--output",
-        "/output/design.gds",
+        "--top",
+        top_cell,
         "--dir",
-        "/workspace",
+        "/input",
     ]
     command_str = " ".join(command)
     logger.info("[do_starting] Container command: %s", command_str)
