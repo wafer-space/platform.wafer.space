@@ -11,6 +11,7 @@ from celery import current_app
 from celery.states import READY_STATES
 from django.db import DatabaseError
 from django.db import connection
+from django.utils import timezone
 from django_celery_results.models import TaskResult
 
 if TYPE_CHECKING:
@@ -115,10 +116,20 @@ def _is_task_in_results_unfinished(task_id: str | None) -> bool:
         # Task is unfinished if its status is NOT in READY_STATES
         is_unfinished = task_result.status not in READY_STATES
         if is_unfinished:
+            # Calculate age for debugging stale tasks
+            age_seconds = None
+            if task_result.date_created:
+                age_delta = timezone.now() - task_result.date_created
+                age_seconds = age_delta.total_seconds()
+
             logger.debug(
-                "Task %s found in results with unfinished status: %s",
+                "Task %s found in results: status=%s, worker=%s, "
+                "date_created=%s, age=%.1fs",
                 task_id,
                 task_result.status,
+                task_result.worker,
+                task_result.date_created,
+                age_seconds or 0,
             )
     except Exception:
         logger.exception("Error checking task result for task %s", task_id)
