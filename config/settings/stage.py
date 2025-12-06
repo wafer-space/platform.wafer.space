@@ -100,6 +100,9 @@ DOWNLOAD_TASK_RETRY_BACKOFF_MULTIPLIER = 2  # 30s, 60s
 
 # Download state verification (faster for staging)
 DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS = 30.0  # Check every 30s in staging
+
+# Manufacturability check configuration
+PRECHECK_CONCURRENT_LIMIT = 2  # 2 × 24GB = 48GB RAM required
 # CELERY_BEAT_SCHEDULE: uses base.py defaults (all check lifecycle tasks)
 
 # LOGGING

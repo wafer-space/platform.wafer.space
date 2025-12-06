@@ -540,7 +540,7 @@ def _start_container(context: _CheckContext) -> tuple[str, str]:
     context.logger.info("  Project name: %s", context.project.name)
     context.logger.info("  Project ID: %s", context.project.id)
     context.logger.info("  Slot size: %s", context.project.slot_size)
-    context.logger.info("  Memory limit: 64GB")
+    context.logger.info("  Memory limit: 24GB")
 
     # Build the precheck command to run inside nix-shell
     if not context.project_file.top_cell:
@@ -583,7 +583,7 @@ def _start_container(context: _CheckContext) -> tuple[str, str]:
         f"-e COLUMNS=200 -e TERM=xterm-256color "
         f"-v {context.gds_path}:/input/design.gds:ro "
         f"-w /workspace "
-        f"--memory 64g "
+        f"--memory 24g "
         f"{settings.PRECHECK_DOCKER_IMAGE} "
         f"{precheck_cmd}"
     )
@@ -599,7 +599,7 @@ def _start_container(context: _CheckContext) -> tuple[str, str]:
         volumes={context.gds_path: {"bind": "/input/design.gds", "mode": "ro"}},
         working_dir="/workspace",
         detach=True,
-        mem_limit="64g",
+        mem_limit="24g",
         network_disabled=True,
         environment={
             "COLUMNS": "200",  # Wide terminal for better log output
