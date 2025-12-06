@@ -665,18 +665,51 @@ def do_dispatching(check: ManufacturabilityCheck) -> dict[str, str]:
     """
     logger = logging.getLogger(__name__)
 
+    logger.info(
+        "[do_dispatching] Starting for check %s (server=%s, project=%s, file=%s)",
+        check.id,
+        check.docker_server_id,
+        check.project.name,
+        check.project_file.original_filename,
+    )
+
+    logger.info(
+        "[do_dispatching] Connecting to Docker server %s...",
+        check.docker_server_id,
+    )
     client = _get_docker_client_for_server(check.docker_server_id, logger)
+    logger.info("[do_dispatching] Connected to Docker server")
 
     image_name = settings.PRECHECK_DOCKER_IMAGE
+    logger.info(
+        "[do_dispatching] Pulling Docker image %s (this may take a while)...",
+        image_name,
+    )
     image = client.images.pull(image_name)
+    logger.info(
+        "[do_dispatching] Successfully pulled image %s (id=%s)",
+        image_name,
+        image.id[:19] if image.id else "unknown",
+    )
 
     # Extract digest from pulled image
     digests = image.attrs.get("RepoDigests", [])
     digest = digests[0].split("@")[1] if digests else "unknown"
+    # Truncate digest for logging (SHA256 digests are 64 chars)
+    preview_len = 32
+    if len(digest) > preview_len:
+        digest_preview = digest[:preview_len] + "..."
+    else:
+        digest_preview = digest
+    logger.info("[do_dispatching] Image digest: %s", digest_preview)
 
+    logger.info("[do_dispatching] Transitioning check %s to STARTING", check.id)
     check.mark_starting(
         docker_image=image_name,
         docker_image_digest=digest,
+    )
+    logger.info(
+        "[do_dispatching] Check %s successfully transitioned to STARTING", check.id
     )
 
     return {"status": "success", "image": image_name, "digest": digest}
@@ -777,8 +810,27 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
     """
     logger = logging.getLogger(__name__)
 
+    logger.info(
+        "[do_starting] Starting for check %s (server=%s, image=%s)",
+        check.id,
+        check.docker_server_id,
+        check.docker_image,
+    )
+
+    logger.info(
+        "[do_starting] Connecting to Docker server %s...", check.docker_server_id
+    )
     client = _get_docker_client_for_server(check.docker_server_id, logger)
+    logger.info("[do_starting] Connected to Docker server")
+
+    logger.info("[do_starting] Validating project file path...")
     gds_path = _get_project_file_path(check, logger)
+    file_size = gds_path.stat().st_size
+    logger.info(
+        "[do_starting] Project file validated: %s (%d bytes)",
+        gds_path.name,
+        file_size,
+    )
 
     # Build command with input/output paths
     # precheck --input /input/design.gds --output /output/design.gds --dir /workspace
@@ -791,8 +843,14 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
         "--dir",
         "/workspace",
     ]
+    command_str = " ".join(command)
+    logger.info("[do_starting] Container command: %s", command_str)
 
     # Create container WITHOUT volumes (for remote Docker support)
+    logger.info(
+        "[do_starting] Creating container from image %s (mem_limit=4g, cpu_count=2)...",
+        check.docker_image,
+    )
     container = client.containers.create(
         check.docker_image,
         command=command,
@@ -805,9 +863,8 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
         mem_limit="4g",
         cpu_count=2,
     )
-
     logger.info(
-        "Created container %s for check %s on server %s",
+        "[do_starting] Container created: id=%s (check=%s, server=%s)",
         container.id[:12],
         check.id,
         check.docker_server_id,
@@ -816,27 +873,42 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
     # Upload GDS file to container via put_archive
     # Note: put_archive requires the target directory to exist, so we upload to /
     # with the path structure in the arcname to create /input/design.gds
-    logger.info("Uploading GDS file to container %s", container.id[:12])
+    logger.info(
+        "[do_starting] Creating tar archive of GDS file (%d bytes)...",
+        file_size,
+    )
     tar_stream = create_tar_archive(gds_path, arcname="input/design.gds")
+    tar_size = tar_stream.seek(0, 2)  # Get size by seeking to end
+    tar_stream.seek(0)  # Reset to beginning
+    logger.info(
+        "[do_starting] Uploading tar archive to container %s (%d bytes)...",
+        container.id[:12],
+        tar_size,
+    )
     container.put_archive("/", tar_stream)
-    logger.info("Uploaded GDS file to /input/design.gds in container")
+    logger.info(
+        "[do_starting] Successfully uploaded GDS to /input/design.gds in container %s",
+        container.id[:12],
+    )
 
     # Start the container and wait for it to be running
+    logger.info("[do_starting] Starting container %s...", container.id[:12])
     container.start()
-    logger.info("Started container %s", container.id[:12])
+    logger.info(
+        "[do_starting] Container %s start command issued, waiting for running state...",
+        container.id[:12],
+    )
     _wait_for_container_running(container, logger)
-
-    # Store full command for reproducibility
-    command_str = " ".join(command)
+    logger.info("[do_starting] Container %s is now running", container.id[:12])
 
     # Transition to RUNNING
+    logger.info("[do_starting] Transitioning check %s to RUNNING...", check.id)
     check.mark_running(
         docker_container_id=container.id,
         docker_command=command_str,
     )
-
     logger.info(
-        "Check %s transitioned to RUNNING with container %s",
+        "[do_starting] Check %s successfully transitioned to RUNNING (container=%s)",
         check.id,
         container.id[:12],
     )
@@ -1066,19 +1138,39 @@ def do_running(check: ManufacturabilityCheck) -> dict[str, Any]:
     """
     logger = logging.getLogger(__name__)
 
+    logger.info(
+        "[do_running] Polling check %s (container=%s, checkpoint_count=%d)",
+        check.id,
+        check.docker_container_id[:12] if check.docker_container_id else "none",
+        check.checkpoints.count(),
+    )
+
     client = _get_docker_client_for_server(check.docker_server_id, logger)
     container = _get_container(client, check.docker_container_id, logger)
 
     # Record checkpoint with container stats
+    logger.debug("[do_running] Recording checkpoint...")
     checkpoint = _record_checkpoint(check, container, logger)
+    if checkpoint:
+        logger.info(
+            "[do_running] Checkpoint %d recorded (CPU: %.1f%%, Memory: %.1f%%)",
+            checkpoint.checkpoint_number,
+            checkpoint.cpu_percent or 0,
+            checkpoint.memory_percent or 0,
+        )
 
     # Fetch and process logs
+    logger.debug("[do_running] Fetching logs...")
     latest_timestamp, raw_logs = _fetch_and_process_logs(container, check, logger)
 
     # Check container status
     container.reload()
 
     if container.status == "exited":
+        logger.info(
+            "[do_running] Container %s has exited, transitioning to ANALYZING",
+            container.id[:12],
+        )
         return _handle_container_exited(container, check, logger)
 
     result = _handle_container_still_running(
@@ -1088,6 +1180,12 @@ def do_running(check: ManufacturabilityCheck) -> dict[str, Any]:
     # Include checkpoint info in result if recorded
     if checkpoint:
         result["checkpoint_number"] = checkpoint.checkpoint_number
+
+    logger.debug(
+        "[do_running] Check %s still running (logs_bytes=%d)",
+        check.id,
+        result.get("logs_bytes", 0),
+    )
 
     return result
 
@@ -1348,32 +1446,58 @@ def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
     """
     logger = logging.getLogger(__name__)
 
+    logger.info(
+        "[do_analyzing] Starting for check %s (server=%s, container=%s, exit_code=%s)",
+        check.id,
+        check.docker_server_id,
+        check.docker_container_id[:12] if check.docker_container_id else "none",
+        check.docker_exit_code,
+    )
+
     # Get container for output extraction
     container = None
     if check.docker_container_id and check.docker_server_id:
+        logger.info(
+            "[do_analyzing] Connecting to Docker server %s to retrieve container...",
+            check.docker_server_id,
+        )
         try:
             client = _get_docker_client_for_server(check.docker_server_id, logger)
             container = _get_container(client, check.docker_container_id, logger)
+            logger.info(
+                "[do_analyzing] Successfully retrieved container %s (status=%s)",
+                check.docker_container_id[:12],
+                container.status,
+            )
         except docker.errors.DockerException as e:
             logger.warning(
-                "Could not get container for output extraction: %s",
+                "[do_analyzing] Could not get container for output extraction: %s",
                 e,
             )
+    else:
+        logger.info(
+            "[do_analyzing] No container info available "
+            "(container_id=%s, server_id=%s)",
+            check.docker_container_id,
+            check.docker_server_id,
+        )
 
     try:
         # 1. Save processing logs to log_file
+        log_size = len(check.processing_logs) if check.processing_logs else 0
+        logger.info("[do_analyzing] Step 1/5: Saving logs (%d bytes)...", log_size)
         _save_log_file(check, logger)
 
         # 2-4. Extract outputs from container if available
         if container is not None:
+            logger.info("[do_analyzing] Steps 2-4: Extracting container outputs...")
             _save_runs_archive(check, container, logger)
             _save_output_gds(check, container, logger)
             _save_docker_layer_export(check, container, logger)
         else:
-            logger.info("Skipping container output extraction - no container available")
+            logger.info("[do_analyzing] Steps 2-4: No container, skipping extraction")
 
     finally:
-        # Clean up temp directory
         _cleanup_temp_dir(check)
 
     # 5. Parse the logs
@@ -1381,8 +1505,7 @@ def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
     exit_code = check.docker_exit_code or 0
 
     logger.info(
-        "Parsing logs for check %s (exit_code=%d, log_length=%d)",
-        check.id,
+        "[do_analyzing] Step 5/5: Parsing logs (exit_code=%d, log_length=%d bytes)...",
         exit_code,
         len(logs),
     )
@@ -1402,14 +1525,24 @@ def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
         tool_versions["precheck"] = "unknown"
 
     logger.info(
-        "Analysis complete for check %s: manufacturable=%s, errors=%d, warnings=%d",
-        check.id,
+        "[do_analyzing] Log parsing complete: "
+        "manufacturable=%s, errors=%d, warnings=%d",
         is_manufacturable,
         len(error_messages),
         len(warning_messages),
     )
 
+    # Log first few errors for debugging (limit to avoid log spam)
+    max_errors_to_log = 5
+    if error_messages:
+        for i, err in enumerate(error_messages[:max_errors_to_log], 1):
+            logger.info("[do_analyzing] Error %d: %s", i, err[:200])
+        if len(error_messages) > max_errors_to_log:
+            remaining = len(error_messages) - max_errors_to_log
+            logger.info("[do_analyzing] ... and %d more errors", remaining)
+
     # 6. Transition to FINISHED
+    logger.info("[do_analyzing] Transitioning check %s to FINISHED...", check.id)
     check.mark_finished(
         is_manufacturable=is_manufacturable,
         errors=error_messages,
@@ -1417,17 +1550,26 @@ def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
         tool_versions=tool_versions,
     )
 
+    outputs_saved = {
+        "log_file": bool(check.log_file),
+        "runs_archive": bool(check.runs_archive),
+        "output_gds": bool(check.output_gds),
+        "docker_layer_export": bool(check.docker_layer_export),
+    }
+    logger.info(
+        "[do_analyzing] Check %s successfully transitioned to FINISHED "
+        "(manufacturable=%s, outputs=%s)",
+        check.id,
+        is_manufacturable,
+        outputs_saved,
+    )
+
     return {
         "status": "success",
         "is_manufacturable": is_manufacturable,
         "error_count": len(error_messages),
         "warning_count": len(warning_messages),
-        "outputs_saved": {
-            "log_file": bool(check.log_file),
-            "runs_archive": bool(check.runs_archive),
-            "output_gds": bool(check.output_gds),
-            "docker_layer_export": bool(check.docker_layer_export),
-        },
+        "outputs_saved": outputs_saved,
     }
 
 
