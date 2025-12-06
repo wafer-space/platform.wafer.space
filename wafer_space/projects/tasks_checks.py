@@ -16,6 +16,7 @@ from celery import shared_task
 from celery.utils.log import get_task_logger
 from django.conf import settings
 from django.db import IntegrityError
+from django.utils import timezone
 
 from .docker_utils import create_tar_archive
 from .docker_utils import get_docker_client
@@ -26,6 +27,7 @@ from .docker_utils import strip_docker_timestamps
 from .exceptions import InvalidStateTransitionError
 from .exceptions import TaskExecutionError
 from .models import ManufacturabilityCheck
+from .models import ManufacturabilityCheckpoint
 from .models import ManufacturabilityCheckTask
 from .models import ProjectFile
 from .precheck_parser import PrecheckLogParser
@@ -936,12 +938,112 @@ def _handle_container_still_running(
     }
 
 
+def _record_checkpoint(
+    check: ManufacturabilityCheck,
+    container: "docker.models.containers.Container",
+    logger: logging.Logger,
+) -> ManufacturabilityCheckpoint | None:
+    """Record a checkpoint with container stats.
+
+    Fetches Docker container stats and creates a ManufacturabilityCheckpoint
+    record with CPU, memory, I/O, and network usage data.
+
+    Args:
+        check: The manufacturability check to record checkpoint for.
+        container: Docker container to get stats from.
+        logger: Logger instance for messages.
+
+    Returns:
+        The created checkpoint, or None if stats unavailable.
+    """
+    try:
+        stats = container.stats(stream=False)
+    except docker.errors.DockerException as e:
+        logger.warning("Failed to get container stats: %s", e)
+        return None
+
+    # Get checkpoint number
+    checkpoint_count = check.checkpoints.count()
+
+    # Calculate elapsed time from container start
+    if check.container_started_at:
+        elapsed = (timezone.now() - check.container_started_at).total_seconds()
+    else:
+        elapsed = 0.0
+
+    # Extract stats from Docker response
+    cpu_stats = stats.get("cpu_stats", {})
+    precpu_stats = stats.get("precpu_stats", {})
+    memory_stats = stats.get("memory_stats", {})
+    blkio_stats = stats.get("blkio_stats", {})
+    networks = stats.get("networks", {})
+
+    # Calculate CPU percent (requires comparing current to previous)
+    cpu_delta = cpu_stats.get("cpu_usage", {}).get("total_usage", 0) - precpu_stats.get(
+        "cpu_usage", {}
+    ).get("total_usage", 0)
+    system_delta = cpu_stats.get("system_cpu_usage", 0) - precpu_stats.get(
+        "system_cpu_usage", 0
+    )
+    online_cpus = cpu_stats.get("online_cpus", 1)
+    cpu_percent = None
+    if system_delta > 0 and cpu_delta > 0:
+        cpu_percent = (cpu_delta / system_delta) * online_cpus * 100.0
+
+    # Calculate memory percent
+    memory_usage = memory_stats.get("usage")
+    memory_limit = memory_stats.get("limit")
+    memory_percent = None
+    if memory_limit and memory_limit > 0 and memory_usage is not None:
+        memory_percent = (memory_usage / memory_limit) * 100.0
+
+    # Sum network stats across all interfaces
+    network_rx = sum(n.get("rx_bytes", 0) for n in networks.values())
+    network_tx = sum(n.get("tx_bytes", 0) for n in networks.values())
+
+    # Sum block I/O
+    io_stats = blkio_stats.get("io_service_bytes_recursive", []) or []
+    block_read = sum(s.get("value", 0) for s in io_stats if s.get("op") == "read")
+    block_write = sum(s.get("value", 0) for s in io_stats if s.get("op") == "write")
+
+    checkpoint = ManufacturabilityCheckpoint.objects.create(
+        manufacturability_check=check,
+        checkpoint_number=checkpoint_count,
+        elapsed_seconds=elapsed,
+        cpu_percent=cpu_percent,
+        cpu_total_usage=cpu_stats.get("cpu_usage", {}).get("total_usage"),
+        cpu_system_usage=cpu_stats.get("system_cpu_usage"),
+        cpu_online_cpus=online_cpus,
+        memory_usage_bytes=memory_usage,
+        memory_limit_bytes=memory_limit,
+        memory_percent=memory_percent,
+        memory_cache_bytes=memory_stats.get("stats", {}).get("cache"),
+        block_read_bytes=block_read,
+        block_write_bytes=block_write,
+        network_rx_bytes=network_rx,
+        network_tx_bytes=network_tx,
+        container_state=container.status,
+        raw_stats_json=stats,
+    )
+
+    logger.debug(
+        "Recorded checkpoint %d for check %s (CPU: %.1f%%, Memory: %.1f%%)",
+        checkpoint_count,
+        check.id,
+        cpu_percent or 0,
+        memory_percent or 0,
+    )
+
+    return checkpoint
+
+
 @queued_check_task(expected_status="RUNNING")
 def do_running(check: ManufacturabilityCheck) -> dict[str, Any]:
     """Monitor running container and download logs incrementally.
 
     Checks container status, downloads new logs since last fetch,
-    and transitions to ANALYZING if container has exited.
+    records a checkpoint with container stats, and transitions to
+    ANALYZING if container has exited.
 
     Args:
         check: ManufacturabilityCheck in RUNNING status (validated by decorator).
@@ -957,6 +1059,11 @@ def do_running(check: ManufacturabilityCheck) -> dict[str, Any]:
 
     client = _get_docker_client_for_server(check.docker_server_id, logger)
     container = _get_container(client, check.docker_container_id, logger)
+
+    # Record checkpoint with container stats
+    checkpoint = _record_checkpoint(check, container, logger)
+
+    # Fetch and process logs
     latest_timestamp, raw_logs = _fetch_and_process_logs(container, check, logger)
 
     # Check container status
@@ -965,9 +1072,15 @@ def do_running(check: ManufacturabilityCheck) -> dict[str, Any]:
     if container.status == "exited":
         return _handle_container_exited(container, check, logger)
 
-    return _handle_container_still_running(
+    result = _handle_container_still_running(
         container, check, latest_timestamp, raw_logs, logger
     )
+
+    # Include checkpoint info in result if recorded
+    if checkpoint:
+        result["checkpoint_number"] = checkpoint.checkpoint_number
+
+    return result
 
 
 @queued_check_task(expected_status="ANALYZING")

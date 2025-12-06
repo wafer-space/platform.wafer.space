@@ -1344,6 +1344,20 @@ class TestDoRunning:
         )
 
         mock_logs = "2024-12-05T10:00:00.123456789Z Test log line\n"
+        mock_stats = {
+            "cpu_stats": {
+                "cpu_usage": {"total_usage": 1000000000},
+                "system_cpu_usage": 2000000000,
+                "online_cpus": 2,
+            },
+            "precpu_stats": {
+                "cpu_usage": {"total_usage": 900000000},
+                "system_cpu_usage": 1900000000,
+            },
+            "memory_stats": {"usage": 1048576, "limit": 4294967296},
+            "blkio_stats": {},
+            "networks": {},
+        }
 
         mock_path = "wafer_space.projects.tasks_checks.docker.DockerClient"
         with patch(mock_path) as mock_docker_client:
@@ -1353,6 +1367,7 @@ class TestDoRunning:
             mock_container.id = "container123"
             mock_container.status = "running"
             mock_container.logs.return_value = mock_logs.encode("utf-8")
+            mock_container.stats.return_value = mock_stats
             mock_client.containers.get.return_value = mock_container
 
             result = do_running(check.id)
@@ -1373,6 +1388,21 @@ class TestDoRunning:
             manufacturability_check=check, task_id="test", task_name="do_running"
         )
 
+        mock_stats = {
+            "cpu_stats": {
+                "cpu_usage": {"total_usage": 1000000000},
+                "system_cpu_usage": 2000000000,
+                "online_cpus": 2,
+            },
+            "precpu_stats": {
+                "cpu_usage": {"total_usage": 900000000},
+                "system_cpu_usage": 1900000000,
+            },
+            "memory_stats": {"usage": 1048576, "limit": 4294967296},
+            "blkio_stats": {},
+            "networks": {},
+        }
+
         mock_path = "wafer_space.projects.tasks_checks.docker.DockerClient"
         with patch(mock_path) as mock_docker_client:
             mock_client = MagicMock()
@@ -1382,6 +1412,7 @@ class TestDoRunning:
             mock_container.status = "exited"
             mock_container.attrs = {"State": {"ExitCode": 0}}
             mock_container.logs.return_value = b""
+            mock_container.stats.return_value = mock_stats
             mock_client.containers.get.return_value = mock_container
 
             result = do_running(check.id)
