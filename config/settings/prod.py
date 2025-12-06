@@ -93,6 +93,9 @@ INSTALLED_APPS += [
 # DOWNLOAD_TASK_*: uses base.py defaults (Celery retry configuration)
 # CELERY_BEAT_SCHEDULE: uses base.py defaults (all check lifecycle tasks)
 
+# Manufacturability check configuration
+PRECHECK_CONCURRENT_LIMIT = 9  # 9 × 24GB = 216GB RAM required
+
 # LOGGING
 # ------------------------------------------------------------------------------
 LOGGING = {
