@@ -1198,7 +1198,7 @@ class TestDoStarting:
 
     @pytest.mark.django_db
     def test_creates_and_starts_container(self, tmp_path) -> None:
-        """Creates container with correct config and starts it."""
+        """Creates container with put_archive for remote Docker support."""
         # Create a test file
         test_file = tmp_path / "design.gds"
         test_file.write_bytes(b"test gds content")
@@ -1216,8 +1216,10 @@ class TestDoStarting:
         )
 
         mock_docker_path = "wafer_space.projects.tasks_checks.docker.DockerClient"
+        mock_tar_path = "wafer_space.projects.tasks_checks.create_tar_archive"
         with (
             patch(mock_docker_path) as mock_docker_client,
+            patch(mock_tar_path) as mock_create_tar,
             patch("wafer_space.projects.tasks_checks.Path") as mock_path,
         ):
             mock_client = MagicMock()
@@ -1227,10 +1229,14 @@ class TestDoStarting:
             mock_container.status = "running"
             mock_client.containers.create.return_value = mock_container
 
-            # Mock the Path to say file exists
+            # Mock Path for file existence check
             mock_path_instance = MagicMock()
             mock_path_instance.exists.return_value = True
             mock_path.return_value = mock_path_instance
+
+            # Mock create_tar_archive to return a BytesIO
+            mock_tar_stream = MagicMock()
+            mock_create_tar.return_value = mock_tar_stream
 
             result = do_starting(check.id)
 
@@ -1238,6 +1244,30 @@ class TestDoStarting:
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.RUNNING
         assert check.docker_container_id == "container123"
+
+        # Verify container was created WITHOUT volumes parameter
+        create_call = mock_client.containers.create.call_args
+        assert "volumes" not in create_call.kwargs
+
+        # Verify command includes new flags
+        assert create_call.kwargs["command"] == [
+            "precheck",
+            "--input",
+            "/input/design.gds",
+            "--output",
+            "/output/design.gds",
+            "--dir",
+            "/workspace",
+        ]
+
+        # Verify put_archive was called with the tar stream
+        mock_container.put_archive.assert_called_once_with("/input", mock_tar_stream)
+
+        # Verify command is stored correctly
+        assert check.docker_command == (
+            "precheck --input /input/design.gds --output /output/design.gds "
+            "--dir /workspace"
+        )
 
     @pytest.mark.django_db
     def test_cleans_up_task_tracking(self, tmp_path) -> None:
@@ -1258,8 +1288,10 @@ class TestDoStarting:
         )
 
         mock_docker_path = "wafer_space.projects.tasks_checks.docker.DockerClient"
+        mock_tar_path = "wafer_space.projects.tasks_checks.create_tar_archive"
         with (
             patch(mock_docker_path) as mock_docker_client,
+            patch(mock_tar_path) as mock_create_tar,
             patch("wafer_space.projects.tasks_checks.Path") as mock_path,
         ):
             mock_client = MagicMock()
@@ -1271,6 +1303,7 @@ class TestDoStarting:
             mock_path_instance = MagicMock()
             mock_path_instance.exists.return_value = True
             mock_path.return_value = mock_path_instance
+            mock_create_tar.return_value = MagicMock()
 
             do_starting(check.id)
 

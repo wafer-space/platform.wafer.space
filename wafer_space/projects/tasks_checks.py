@@ -17,6 +17,7 @@ from celery.utils.log import get_task_logger
 from django.conf import settings
 from django.db import IntegrityError
 
+from .docker_utils import create_tar_archive
 from .docker_utils import get_docker_client
 from .docker_utils import get_server_config
 from .docker_utils import parse_docker_timestamp_float
@@ -751,8 +752,9 @@ def _wait_for_container_running(
 def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
     """Create and start Docker container for a STARTING check.
 
-    Creates a Docker container with appropriate labels and volume mounts,
-    starts it, and waits briefly for it to reach running state.
+    Creates a Docker container with appropriate labels, uploads the GDS file
+    via put_archive (for remote Docker support), starts the container, and
+    waits briefly for it to reach running state.
 
     Args:
         check: ManufacturabilityCheck in STARTING status (validated by decorator).
@@ -769,8 +771,19 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
     client = _get_docker_client_for_server(check.docker_server_id, logger)
     gds_path = _get_project_file_path(check, logger)
 
-    # Create container with labels and volume mount
-    command = "precheck"
+    # Build command with input/output paths
+    # precheck --input /input/design.gds --output /output/design.gds --dir /workspace
+    command = [
+        "precheck",
+        "--input",
+        "/input/design.gds",
+        "--output",
+        "/output/design.gds",
+        "--dir",
+        "/workspace",
+    ]
+
+    # Create container WITHOUT volumes (for remote Docker support)
     container = client.containers.create(
         check.docker_image,
         command=command,
@@ -778,12 +791,6 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
             "wafer.space.service": "manufacturability-check",
             "wafer.space.check_id": str(check.id),
             "wafer.space.project_id": str(check.project.id),
-        },
-        volumes={
-            str(gds_path): {
-                "bind": "/input/design.gds",
-                "mode": "ro",
-            },
         },
         # Limit resources to prevent runaway containers
         mem_limit="4g",
@@ -797,15 +804,24 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
         check.docker_server_id,
     )
 
+    # Upload GDS file to container via put_archive
+    logger.info("Uploading GDS file to container %s", container.id[:12])
+    tar_stream = create_tar_archive(gds_path, arcname="design.gds")
+    container.put_archive("/input", tar_stream)
+    logger.info("Uploaded GDS file to /input/design.gds in container")
+
     # Start the container and wait for it to be running
     container.start()
     logger.info("Started container %s", container.id[:12])
     _wait_for_container_running(container, logger)
 
+    # Store full command for reproducibility
+    command_str = " ".join(command)
+
     # Transition to RUNNING
     check.mark_running(
         docker_container_id=container.id,
-        docker_command=command,
+        docker_command=command_str,
     )
 
     logger.info(
@@ -817,7 +833,7 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
     return {
         "status": "success",
         "container_id": container.id,
-        "command": command,
+        "command": command_str,
     }
 
 
