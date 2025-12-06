@@ -112,3 +112,10 @@
   outline: 3px solid #28a745 !important;
   outline-offset: -3px;
 }
+
+/* Blue border for currently assigned slots - takes priority over green */
+.slot-highlight-assigned {
+  outline: 3px solid #0d6efd !important;
+  outline-offset: -3px;
+  box-shadow: inset 0 0 0 2px #0d6efd;
+}

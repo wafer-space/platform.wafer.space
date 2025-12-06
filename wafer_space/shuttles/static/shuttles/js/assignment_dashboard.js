@@ -567,6 +567,17 @@
     });
   }
 
+  // Highlight specific slots by their positions (e.g., ['A1', 'B2'])
+  function highlightAssignedSlots(positions, gridId) {
+    gridId = gridId || 'grid-table';
+    var grid = document.getElementById(gridId);
+    grid.querySelectorAll('td[data-slot-position]').forEach(function(cell) {
+      if (positions.indexOf(cell.dataset.slotPosition) !== -1) {
+        cell.classList.add('slot-highlight-assigned');
+      }
+    });
+  }
+
   // Clear all highlights from a grid
   function clearSlotHighlights(gridId) {
     gridId = gridId || 'grid-table';
