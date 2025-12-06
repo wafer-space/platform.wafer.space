@@ -1822,25 +1822,38 @@ Check for KLayout DRC errors clear.
 
     @pytest.mark.django_db
     def test_handles_missing_container_gracefully(self) -> None:
-        """Still works when container is not available."""
+        """Returns error when container is not available (deleted/cleaned up).
+
+        When the container has been removed before analyzing completes,
+        the task returns an error result rather than crashing. This is
+        graceful handling - the error is logged and reported.
+        """
+        # Mock docker client to raise NotFound when getting container
+        mock_client = MagicMock()
+        mock_client.containers.get.side_effect = docker.errors.NotFound(
+            "container gone"
+        )
+
         check = ManufacturabilityCheckFactory(
             status=ManufacturabilityCheck.Status.ANALYZING,
             docker_exit_code=0,
             processing_logs="Precheck successfully completed.",
-            docker_server_id=None,
-            docker_container_id=None,
+            docker_server_id="test-local",
+            docker_container_id="nonexistent-container-id",
         )
         ManufacturabilityCheckTask.objects.create(
             manufacturability_check=check, task_id="test", task_name="do_analyzing"
         )
 
-        result = do_analyzing(check.id)
+        with patch(
+            "wafer_space.projects.tasks_checks.get_docker_client",
+            return_value=mock_client,
+        ):
+            result = do_analyzing(check.id)
 
-        assert result["status"] == "success"
-        check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.FINISHED
-        # Log file should still be saved even without container
-        assert bool(check.log_file)
+        # Graceful handling: returns error result instead of crashing
+        assert result["status"] == "error"
+        assert "container_not_found" in result.get("reason", "")
 
 
 class TestDoCancelling:
