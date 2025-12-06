@@ -3,6 +3,8 @@ Background tasks for manufacturability checks.
 """
 
 import logging
+import shutil
+import tarfile
 import time
 from functools import wraps
 from pathlib import Path
@@ -15,6 +17,8 @@ import docker.errors
 from celery import shared_task
 from celery.utils.log import get_task_logger
 from django.conf import settings
+from django.core.files import File
+from django.core.files.base import ContentFile
 from django.db import IntegrityError
 from django.utils import timezone
 
@@ -23,9 +27,12 @@ from .docker_utils import get_docker_client
 from .docker_utils import get_server_config
 from .docker_utils import parse_docker_timestamp_float
 from .docker_utils import stop_and_remove_container
+from .docker_utils import stream_archive_to_file
+from .docker_utils import stream_container_diff_to_file
 from .docker_utils import strip_docker_timestamps
 from .exceptions import InvalidStateTransitionError
 from .exceptions import TaskExecutionError
+from .hashing import MultiHasher
 from .models import ManufacturabilityCheck
 from .models import ManufacturabilityCheckpoint
 from .models import ManufacturabilityCheckTask
@@ -1081,6 +1088,239 @@ def do_running(check: ManufacturabilityCheck) -> dict[str, Any]:
         result["checkpoint_number"] = checkpoint.checkpoint_number
 
     return result
+
+
+# =============================================================================
+# Helper Functions for do_analyzing
+# =============================================================================
+
+
+def _get_temp_dir(check: ManufacturabilityCheck) -> Path:
+    """Get temporary directory for check outputs (in project dir, not /tmp).
+
+    Creates a temp directory next to the project file to avoid permission
+    issues with /tmp and to keep related files together.
+
+    Args:
+        check: The manufacturability check.
+
+    Returns:
+        Path to temp directory (created if needed).
+    """
+    project_dir = Path(check.project_file.file.path).parent
+    temp_dir = project_dir / ".tmp" / f"check_{check.id}"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    return temp_dir
+
+
+def _cleanup_temp_dir(check: ManufacturabilityCheck) -> None:
+    """Remove temporary directory for check.
+
+    Silently ignores if directory doesn't exist.
+
+    Args:
+        check: The manufacturability check.
+    """
+    project_dir = Path(check.project_file.file.path).parent
+    temp_dir = project_dir / ".tmp" / f"check_{check.id}"
+    if temp_dir.exists():
+        shutil.rmtree(temp_dir)
+
+
+def _save_log_file(check: ManufacturabilityCheck, logger: logging.Logger) -> None:
+    """Save processing logs to log_file field with checksum.
+
+    Creates a log file from check.processing_logs and saves it to the
+    log_file FileField with SHA256 checksum.
+
+    Args:
+        check: The manufacturability check with logs to save.
+        logger: Logger for messages.
+    """
+    if not check.processing_logs:
+        logger.info("No processing logs to save for check %s", check.id)
+        return
+
+    content = check.processing_logs.encode("utf-8")
+
+    # Calculate checksum
+    hasher = MultiHasher(algorithms=["sha256"])
+    hasher.update(content)
+
+    # Save to Django FileField
+    filename = f"check_{check.id}.log"
+    check.log_file.save(filename, ContentFile(content), save=False)
+    check.log_file_sha256 = hasher.hexdigest("sha256")
+    check.save(update_fields=["log_file", "log_file_sha256"])
+
+    logger.info(
+        "Saved log file for check %s (%d bytes, sha256=%s...)",
+        check.id,
+        len(content),
+        check.log_file_sha256[:16],
+    )
+
+
+def _save_runs_archive(
+    check: ManufacturabilityCheck,
+    container: "docker.models.containers.Container",
+    logger: logging.Logger,
+) -> None:
+    """Extract and save /workspace/runs/ directory as compressed tarball.
+
+    The runs directory contains precheck tool output files and artifacts.
+    Extracts it from the container, compresses with gzip, and saves to
+    the runs_archive FileField.
+
+    Args:
+        check: The manufacturability check.
+        container: Docker container to extract from.
+        logger: Logger for messages.
+    """
+    temp_dir = _get_temp_dir(check)
+    temp_path = temp_dir / "runs.tar.gz"
+
+    result = stream_archive_to_file(
+        container, "/workspace/runs", temp_path, logger, compress=True
+    )
+    if not result:
+        logger.info("No runs directory found in container for check %s", check.id)
+        return
+
+    bytes_written, checksums = result
+
+    # Save to Django FileField
+    with temp_path.open("rb") as f:
+        filename = f"check_{check.id}_runs.tar.gz"
+        check.runs_archive.save(filename, File(f), save=False)
+    check.runs_archive_sha256 = checksums["sha256"]
+    check.save(update_fields=["runs_archive", "runs_archive_sha256"])
+
+    # Clean up temp file
+    temp_path.unlink()
+
+    logger.info(
+        "Saved runs archive for check %s (%d bytes, sha256=%s...)",
+        check.id,
+        bytes_written,
+        check.runs_archive_sha256[:16],
+    )
+
+
+def _save_output_gds(
+    check: ManufacturabilityCheck,
+    container: "docker.models.containers.Container",
+    logger: logging.Logger,
+) -> None:
+    """Extract and save output GDS from /output/design.gds.
+
+    The output GDS is the modified design file produced by precheck,
+    which may include added QR codes or other modifications.
+
+    Args:
+        check: The manufacturability check.
+        container: Docker container to extract from.
+        logger: Logger for messages.
+    """
+    temp_dir = _get_temp_dir(check)
+    tar_path = temp_dir / "output_gds.tar"
+
+    # Extract the tar archive containing the GDS file
+    result = stream_archive_to_file(
+        container, "/output/design.gds", tar_path, logger, compress=False
+    )
+    if not result:
+        logger.info("No output GDS found in container for check %s", check.id)
+        return
+
+    # The archive contains the file - need to extract it
+    gds_path = temp_dir / "design.gds"
+
+    try:
+        with tarfile.open(tar_path, "r") as tar:
+            for member in tar.getmembers():
+                if member.name.endswith(".gds"):
+                    # Extract the GDS file
+                    extracted_file = tar.extractfile(member)
+                    if extracted_file:
+                        gds_path.write_bytes(extracted_file.read())
+                    break
+    except tarfile.TarError as e:
+        logger.warning("Failed to extract GDS from tar for check %s: %s", check.id, e)
+        tar_path.unlink(missing_ok=True)
+        return
+
+    if not gds_path.exists():
+        logger.warning(
+            "No GDS file found in /output/design.gds archive for check %s",
+            check.id,
+        )
+        tar_path.unlink(missing_ok=True)
+        return
+
+    # Calculate checksum of actual GDS file
+    hasher = MultiHasher.from_file(gds_path, algorithms=["sha256"])
+
+    # Save to Django FileField
+    with gds_path.open("rb") as f:
+        filename = f"check_{check.id}_output.gds"
+        check.output_gds.save(filename, File(f), save=False)
+    check.output_gds_sha256 = hasher.hexdigest("sha256")
+    check.save(update_fields=["output_gds", "output_gds_sha256"])
+
+    # Clean up temp files
+    tar_path.unlink(missing_ok=True)
+    gds_path.unlink(missing_ok=True)
+
+    logger.info(
+        "Saved output GDS for check %s (%d bytes, sha256=%s...)",
+        check.id,
+        hasher.bytes_processed,
+        check.output_gds_sha256[:16],
+    )
+
+
+def _save_docker_layer_export(
+    check: ManufacturabilityCheck,
+    container: "docker.models.containers.Container",
+    logger: logging.Logger,
+) -> None:
+    """Export container filesystem as compressed tarball for debugging.
+
+    Uses container.export() to get the full filesystem, then compresses it.
+    This is useful for debugging container issues.
+
+    Args:
+        check: The manufacturability check.
+        container: Docker container to export.
+        logger: Logger for messages.
+    """
+    temp_dir = _get_temp_dir(check)
+    temp_path = temp_dir / "layer.tar.gz"
+
+    result = stream_container_diff_to_file(container, temp_path, logger)
+    if not result:
+        logger.info("No container export for check %s", check.id)
+        return
+
+    bytes_written, checksums = result
+
+    # Save to Django FileField
+    with temp_path.open("rb") as f:
+        filename = f"check_{check.id}_layer.tar.gz"
+        check.docker_layer_export.save(filename, File(f), save=False)
+    check.docker_layer_sha256 = checksums["sha256"]
+    check.save(update_fields=["docker_layer_export", "docker_layer_sha256"])
+
+    # Clean up temp file
+    temp_path.unlink()
+
+    logger.info(
+        "Saved docker layer export for check %s (%d bytes, sha256=%s...)",
+        check.id,
+        bytes_written,
+        check.docker_layer_sha256[:16],
+    )
 
 
 @queued_check_task(expected_status="ANALYZING")
