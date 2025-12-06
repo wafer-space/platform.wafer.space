@@ -16,12 +16,14 @@ from unittest.mock import MagicMock
 from unittest.mock import Mock
 from unittest.mock import patch
 
+import docker
 import pytest
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
+from wafer_space.projects.models import ManufacturabilityCheckpoint
 from wafer_space.projects.models import ManufacturabilityCheckTask
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
@@ -53,6 +55,17 @@ TEST_PASSWORD = "testpass123"  # noqa: S105 - Test password constant
 TEST_GITHUB_TOKEN = "test_token"  # noqa: S105 - Test token constant
 TEST_WORKER_PID = 12345  # Test worker process ID constant
 DEAD_WORKER_PID = 99999  # Test dead worker process ID constant
+
+# Test constants for checkpoint stats
+TEST_MEMORY_USAGE = 1048576  # 1 MB
+TEST_MEMORY_LIMIT = 4294967296  # 4 GB
+TEST_CPU_COUNT = 2
+TEST_BLOCK_READ = 1024
+TEST_BLOCK_WRITE = 2048
+TEST_NETWORK_RX = 500
+TEST_NETWORK_TX = 300
+TEST_CHECKPOINT_COUNT = 2
+TEST_CPU_PERCENT_TOLERANCE = 0.01
 
 
 class URLValidationSecurityTests(TestCase):
@@ -1421,6 +1434,272 @@ class TestDoRunning:
         assert result["exit_code"] == 0
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.ANALYZING
+
+    @pytest.mark.django_db
+    def test_creates_checkpoint_with_stats(self) -> None:
+        """Creates ManufacturabilityCheckpoint with container stats."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING,
+            docker_server_id="test-local",
+            docker_container_id="container123",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_running"
+        )
+
+        mock_stats = {
+            "cpu_stats": {
+                "cpu_usage": {"total_usage": 1000000000},
+                "system_cpu_usage": 2000000000,
+                "online_cpus": 2,
+            },
+            "precpu_stats": {
+                "cpu_usage": {"total_usage": 900000000},
+                "system_cpu_usage": 1900000000,
+            },
+            "memory_stats": {"usage": 1048576, "limit": 4294967296},
+            "blkio_stats": {
+                "io_service_bytes_recursive": [
+                    {"op": "read", "value": 1024},
+                    {"op": "write", "value": 2048},
+                ]
+            },
+            "networks": {"eth0": {"rx_bytes": 500, "tx_bytes": 300}},
+        }
+
+        mock_path = "wafer_space.projects.tasks_checks.docker.DockerClient"
+        with patch(mock_path) as mock_docker_client:
+            mock_client = MagicMock()
+            mock_docker_client.return_value = mock_client
+            mock_container = MagicMock()
+            mock_container.id = "container123"
+            mock_container.status = "running"
+            mock_container.logs.return_value = b""
+            mock_container.stats.return_value = mock_stats
+            mock_client.containers.get.return_value = mock_container
+
+            result = do_running(check.id)
+
+        # Verify checkpoint was created
+        assert ManufacturabilityCheckpoint.objects.filter(
+            manufacturability_check=check
+        ).exists()
+        checkpoint = ManufacturabilityCheckpoint.objects.get(
+            manufacturability_check=check
+        )
+
+        # Verify stats were recorded
+        assert checkpoint.checkpoint_number == 0
+        assert checkpoint.memory_usage_bytes == TEST_MEMORY_USAGE
+        assert checkpoint.memory_limit_bytes == TEST_MEMORY_LIMIT
+        assert checkpoint.cpu_online_cpus == TEST_CPU_COUNT
+        assert checkpoint.block_read_bytes == TEST_BLOCK_READ
+        assert checkpoint.block_write_bytes == TEST_BLOCK_WRITE
+        assert checkpoint.network_rx_bytes == TEST_NETWORK_RX
+        assert checkpoint.network_tx_bytes == TEST_NETWORK_TX
+        assert checkpoint.container_state == "running"
+
+        # Verify result includes checkpoint info
+        assert result["checkpoint_number"] == 0
+
+    @pytest.mark.django_db
+    def test_checkpoint_stores_raw_stats_json(self) -> None:
+        """Stores raw Docker stats JSON for debugging."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING,
+            docker_server_id="test-local",
+            docker_container_id="container123",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_running"
+        )
+
+        mock_stats = {
+            "cpu_stats": {
+                "cpu_usage": {"total_usage": 1000000000},
+                "system_cpu_usage": 2000000000,
+                "online_cpus": 2,
+            },
+            "precpu_stats": {
+                "cpu_usage": {"total_usage": 900000000},
+                "system_cpu_usage": 1900000000,
+            },
+            "memory_stats": {"usage": 1048576, "limit": 4294967296},
+            "blkio_stats": {},
+            "networks": {},
+            "extra_field": "should_be_preserved",
+        }
+
+        mock_path = "wafer_space.projects.tasks_checks.docker.DockerClient"
+        with patch(mock_path) as mock_docker_client:
+            mock_client = MagicMock()
+            mock_docker_client.return_value = mock_client
+            mock_container = MagicMock()
+            mock_container.id = "container123"
+            mock_container.status = "running"
+            mock_container.logs.return_value = b""
+            mock_container.stats.return_value = mock_stats
+            mock_client.containers.get.return_value = mock_container
+
+            do_running(check.id)
+
+        checkpoint = ManufacturabilityCheckpoint.objects.get(
+            manufacturability_check=check
+        )
+
+        # Verify raw stats JSON is stored
+        assert checkpoint.raw_stats_json is not None
+        assert checkpoint.raw_stats_json["extra_field"] == "should_be_preserved"
+        assert checkpoint.raw_stats_json["cpu_stats"]["online_cpus"] == TEST_CPU_COUNT
+
+    @pytest.mark.django_db
+    def test_checkpoint_calculates_cpu_percent(self) -> None:
+        """Calculates CPU percentage from stats delta."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING,
+            docker_server_id="test-local",
+            docker_container_id="container123",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_running"
+        )
+
+        # CPU delta: 100000000 (1000000000 - 900000000)
+        # System delta: 100000000 (2000000000 - 1900000000)
+        # Expected: (100000000 / 100000000) * 2 * 100 = 200.0%
+        mock_stats = {
+            "cpu_stats": {
+                "cpu_usage": {"total_usage": 1000000000},
+                "system_cpu_usage": 2000000000,
+                "online_cpus": 2,
+            },
+            "precpu_stats": {
+                "cpu_usage": {"total_usage": 900000000},
+                "system_cpu_usage": 1900000000,
+            },
+            "memory_stats": {"usage": 1048576, "limit": 4294967296},
+            "blkio_stats": {},
+            "networks": {},
+        }
+
+        mock_path = "wafer_space.projects.tasks_checks.docker.DockerClient"
+        with patch(mock_path) as mock_docker_client:
+            mock_client = MagicMock()
+            mock_docker_client.return_value = mock_client
+            mock_container = MagicMock()
+            mock_container.id = "container123"
+            mock_container.status = "running"
+            mock_container.logs.return_value = b""
+            mock_container.stats.return_value = mock_stats
+            mock_client.containers.get.return_value = mock_container
+
+            do_running(check.id)
+
+        checkpoint = ManufacturabilityCheckpoint.objects.get(
+            manufacturability_check=check
+        )
+
+        # CPU percent: (cpu_delta / system_delta) * online_cpus * 100 = 200%
+        assert checkpoint.cpu_percent is not None
+        assert abs(checkpoint.cpu_percent - 200.0) < TEST_CPU_PERCENT_TOLERANCE
+
+    @pytest.mark.django_db
+    def test_checkpoint_increments_checkpoint_number(self) -> None:
+        """Checkpoint number increments on each poll."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING,
+            docker_server_id="test-local",
+            docker_container_id="container123",
+        )
+
+        # Pre-create a checkpoint to verify incrementing
+        ManufacturabilityCheckpoint.objects.create(
+            manufacturability_check=check,
+            checkpoint_number=0,
+            container_state="running",
+            elapsed_seconds=0.0,
+        )
+
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_running"
+        )
+
+        mock_stats = {
+            "cpu_stats": {
+                "cpu_usage": {"total_usage": 1000000000},
+                "system_cpu_usage": 2000000000,
+                "online_cpus": 2,
+            },
+            "precpu_stats": {
+                "cpu_usage": {"total_usage": 900000000},
+                "system_cpu_usage": 1900000000,
+            },
+            "memory_stats": {"usage": 1048576, "limit": 4294967296},
+            "blkio_stats": {},
+            "networks": {},
+        }
+
+        mock_path = "wafer_space.projects.tasks_checks.docker.DockerClient"
+        with patch(mock_path) as mock_docker_client:
+            mock_client = MagicMock()
+            mock_docker_client.return_value = mock_client
+            mock_container = MagicMock()
+            mock_container.id = "container123"
+            mock_container.status = "running"
+            mock_container.logs.return_value = b""
+            mock_container.stats.return_value = mock_stats
+            mock_client.containers.get.return_value = mock_container
+
+            result = do_running(check.id)
+
+        # Should now have 2 checkpoints (0 and 1)
+        checkpoints = ManufacturabilityCheckpoint.objects.filter(
+            manufacturability_check=check
+        ).order_by("checkpoint_number")
+        assert checkpoints.count() == TEST_CHECKPOINT_COUNT
+        assert checkpoints[0].checkpoint_number == 0
+        assert checkpoints[1].checkpoint_number == 1
+        assert result["checkpoint_number"] == 1
+
+    @pytest.mark.django_db
+    def test_checkpoint_handles_stats_failure_gracefully(self) -> None:
+        """Continues if container.stats() fails."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING,
+            docker_server_id="test-local",
+            docker_container_id="container123",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_running"
+        )
+
+        mock_path = "wafer_space.projects.tasks_checks.docker.DockerClient"
+        with patch(mock_path) as mock_docker_client:
+            mock_client = MagicMock()
+            mock_docker_client.return_value = mock_client
+            mock_container = MagicMock()
+            mock_container.id = "container123"
+            mock_container.status = "running"
+            mock_container.logs.return_value = b"Log output\n"
+            # Stats call raises exception
+            mock_container.stats.side_effect = docker.errors.DockerException(
+                "Stats unavailable"
+            )
+            mock_client.containers.get.return_value = mock_container
+
+            # Should not raise - should handle gracefully
+            result = do_running(check.id)
+
+        # Task should still complete successfully
+        assert result["status"] == "still_running"
+
+        # No checkpoint should be created
+        assert not ManufacturabilityCheckpoint.objects.filter(
+            manufacturability_check=check
+        ).exists()
+
+        # checkpoint_number should not be in result
+        assert "checkpoint_number" not in result
 
     @pytest.mark.django_db
     def test_skips_if_status_changed(self) -> None:
