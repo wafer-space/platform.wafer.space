@@ -2,14 +2,24 @@
 
 from __future__ import annotations
 
+import contextlib
+import gzip
+import hashlib
+import logging
 import tarfile
 from typing import TYPE_CHECKING
+from unittest.mock import MagicMock
+
+import docker
 
 from wafer_space.projects.docker_utils import create_tar_archive
 from wafer_space.projects.docker_utils import parse_docker_timestamp_float
+from wafer_space.projects.docker_utils import stream_archive_to_file
+from wafer_space.projects.docker_utils import stream_container_diff_to_file
 from wafer_space.projects.docker_utils import strip_docker_timestamps
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
 
@@ -143,3 +153,168 @@ class TestCreateTarArchive:
         # Should be able to read immediately without seeking
         assert tar_stream.tell() == 0
         assert tar_stream.read(5) != b""
+
+
+class TestStreamArchiveToFile:
+    """Test stream_archive_to_file function."""
+
+    def test_extracts_archive_from_container(self, tmp_path: Path) -> None:
+        """Extracts archive from container and writes to file."""
+        # Create mock container that returns tar data
+        test_content = b"test file content"
+        mock_container = MagicMock()
+        mock_container.get_archive.return_value = (iter([test_content]), {})
+
+        output_path = tmp_path / "output.tar"
+        logger = logging.getLogger(__name__)
+
+        result = stream_archive_to_file(
+            mock_container, "/workspace/test.txt", output_path, logger
+        )
+
+        assert result is not None
+        bytes_written, checksums = result
+        assert bytes_written == len(test_content)
+        assert "sha256" in checksums
+        assert output_path.exists()
+        assert output_path.read_bytes() == test_content
+
+    def test_returns_checksum(self, tmp_path: Path) -> None:
+        """Returns SHA256 checksum of extracted data."""
+        test_content = b"checksum test content"
+        expected_sha256 = hashlib.sha256(test_content).hexdigest()
+
+        mock_container = MagicMock()
+        mock_container.get_archive.return_value = (iter([test_content]), {})
+
+        output_path = tmp_path / "output.tar"
+        logger = logging.getLogger(__name__)
+
+        result = stream_archive_to_file(
+            mock_container, "/workspace/test.txt", output_path, logger
+        )
+
+        assert result is not None
+        _bytes_written, checksums = result
+        assert checksums["sha256"] == expected_sha256
+
+    def test_compresses_when_requested(self, tmp_path: Path) -> None:
+        """Compresses output with gzip when compress=True."""
+        test_content = b"x" * 1000  # Compressible content
+        mock_container = MagicMock()
+        mock_container.get_archive.return_value = (iter([test_content]), {})
+
+        output_path = tmp_path / "output.tar.gz"
+        logger = logging.getLogger(__name__)
+
+        result = stream_archive_to_file(
+            mock_container,
+            "/workspace/test.txt",
+            output_path,
+            logger,
+            compress=True,
+        )
+
+        assert result is not None
+        assert output_path.exists()
+        # Verify it's gzip compressed
+        with gzip.open(output_path, "rb") as f:
+            decompressed = f.read()
+        assert decompressed == test_content
+
+    def test_returns_none_for_missing_path(self, tmp_path: Path) -> None:
+        """Returns None if container path doesn't exist."""
+        mock_container = MagicMock()
+        mock_container.get_archive.side_effect = docker.errors.NotFound("not found")
+
+        output_path = tmp_path / "output.tar"
+        logger = logging.getLogger(__name__)
+
+        result = stream_archive_to_file(
+            mock_container, "/nonexistent/path", output_path, logger
+        )
+
+        assert result is None
+        assert not output_path.exists()
+
+    def test_cleans_up_temp_file_on_failure(self, tmp_path: Path) -> None:
+        """Cleans up temp file if extraction fails mid-stream."""
+
+        # Create a generator that fails mid-stream
+        def failing_generator() -> Iterator[bytes]:
+            yield b"partial data"
+            msg = "connection lost"
+            raise docker.errors.DockerException(msg)
+
+        mock_container = MagicMock()
+        mock_container.get_archive.return_value = (failing_generator(), {})
+
+        output_path = tmp_path / "output.tar"
+        logger = logging.getLogger(__name__)
+
+        with contextlib.suppress(docker.errors.DockerException):
+            stream_archive_to_file(
+                mock_container, "/workspace/test.txt", output_path, logger
+            )
+
+        # Temp file should be cleaned up
+        temp_path = output_path.with_suffix(".tar.tmp")
+        assert not temp_path.exists()
+
+
+class TestStreamContainerDiffToFile:
+    """Test stream_container_diff_to_file function."""
+
+    def test_exports_container_filesystem(self, tmp_path: Path) -> None:
+        """Exports container filesystem to compressed tarball."""
+        test_content = b"container filesystem data"
+        mock_container = MagicMock()
+        mock_container.export.return_value = iter([test_content])
+
+        output_path = tmp_path / "layer.tar.gz"
+        logger = logging.getLogger(__name__)
+
+        result = stream_container_diff_to_file(mock_container, output_path, logger)
+
+        assert result is not None
+        bytes_written, checksums = result
+        assert bytes_written > 0
+        assert "sha256" in checksums
+        assert output_path.exists()
+
+        # Verify it's gzip compressed
+        with gzip.open(output_path, "rb") as f:
+            decompressed = f.read()
+        assert decompressed == test_content
+
+    def test_returns_none_on_export_failure(self, tmp_path: Path) -> None:
+        """Returns None if container export fails."""
+        mock_container = MagicMock()
+        mock_container.export.side_effect = docker.errors.DockerException("failed")
+
+        output_path = tmp_path / "layer.tar.gz"
+        logger = logging.getLogger(__name__)
+
+        result = stream_container_diff_to_file(mock_container, output_path, logger)
+
+        assert result is None
+        assert not output_path.exists()
+
+    def test_calculates_checksum_of_compressed_file(self, tmp_path: Path) -> None:
+        """Calculates checksum of the compressed output file."""
+        test_content = b"test data for checksum"
+        mock_container = MagicMock()
+        mock_container.export.return_value = iter([test_content])
+
+        output_path = tmp_path / "layer.tar.gz"
+        logger = logging.getLogger(__name__)
+
+        result = stream_container_diff_to_file(mock_container, output_path, logger)
+
+        assert result is not None
+        bytes_written, checksums = result
+
+        # Verify checksum matches actual file
+        actual_sha256 = hashlib.sha256(output_path.read_bytes()).hexdigest()
+        assert checksums["sha256"] == actual_sha256
+        assert bytes_written == output_path.stat().st_size
