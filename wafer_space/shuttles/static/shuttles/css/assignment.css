@@ -108,11 +108,11 @@
 }
 
 /* Green border for size-matching slots */
-.slot-highlight-size {
+.grid-table td.slot-highlight-size {
   border: 1px solid #28a745 !important;
 }
 
 /* Blue border for currently assigned slots - takes priority over green */
-.slot-highlight-assigned {
+.grid-table td.slot-highlight-assigned {
   border: 1px solid #0d6efd !important;
 }
