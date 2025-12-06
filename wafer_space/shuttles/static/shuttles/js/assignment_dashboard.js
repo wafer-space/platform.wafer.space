@@ -467,6 +467,9 @@
 
     const modal = new bootstrap.Modal(document.getElementById('assignModal'));
     modal.show();
+
+    // Highlight matching-size slots in the modal grid
+    highlightSlotsBySize(slotSize, 'assign-modal-grid-table');
   }
 
   // Perform the assignment API call
@@ -614,6 +617,19 @@
           this.dataset.projectName,
           this.dataset.projectSize
         );
+      });
+    });
+
+    // Highlight slots on project table row hover
+    document.querySelectorAll('#projects-table tbody tr').forEach(function(row) {
+      row.addEventListener('mouseenter', function() {
+        var size = this.dataset.size;
+        if (size) {
+          highlightSlotsBySize(size);
+        }
+      });
+      row.addEventListener('mouseleave', function() {
+        clearSlotHighlights();
       });
     });
 
