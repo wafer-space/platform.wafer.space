@@ -1222,6 +1222,7 @@ class TestDoStarting:
             docker_image="ghcr.io/test:latest",
         )
         check.project_file.file.name = str(test_file)
+        check.project_file.top_cell = "chip_top"
         check.project_file.save()
 
         ManufacturabilityCheckTask.objects.create(
@@ -1262,15 +1263,16 @@ class TestDoStarting:
         create_call = mock_client.containers.create.call_args
         assert "volumes" not in create_call.kwargs
 
-        # Verify command includes new flags
+        # Verify command includes precheck.py with --top flag
         assert create_call.kwargs["command"] == [
-            "precheck",
+            "python",
+            "precheck.py",
             "--input",
             "/input/design.gds",
-            "--output",
-            "/output/design.gds",
+            "--top",
+            "chip_top",
             "--dir",
-            "/workspace",
+            "/input",
         ]
 
         # Verify put_archive was called with the tar stream at root
@@ -1279,8 +1281,7 @@ class TestDoStarting:
 
         # Verify command is stored correctly
         assert check.docker_command == (
-            "precheck --input /input/design.gds --output /output/design.gds "
-            "--dir /workspace"
+            "python precheck.py --input /input/design.gds --top chip_top --dir /input"
         )
 
     @pytest.mark.django_db
