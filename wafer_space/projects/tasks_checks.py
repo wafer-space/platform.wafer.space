@@ -1488,7 +1488,7 @@ def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
             logger.info("[do_analyzing] Steps 2-4: Extracting container outputs...")
             _save_runs_archive(check, container, logger)
             _save_output_gds(check, container, logger)
-            _save_docker_layer_export(check, container, logger)
+            logger.info("[do_analyzing] Skipping layer export (disabled)")
         else:
             logger.info("[do_analyzing] Steps 2-4: No container, skipping extraction")
 
