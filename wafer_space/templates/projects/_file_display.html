@@ -134,7 +134,16 @@
               <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
               Analyzing results...
             </span>
-            {# No cancel button for analyzing - container already finished #}
+            {# Cancel button for analyzing checks #}
+            <form method="post"
+                  action="{% url 'projects:cancel_check' pk=file.project.pk %}"
+                  class="d-inline ms-2"
+                  onsubmit="return confirm('Are you sure you want to cancel this manufacturability check?');">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-outline-danger">
+                <i class="bi bi-x-circle"></i> Cancel
+              </button>
+            </form>
           {% elif check.status == 'finished' %}
             {# 3-tier result display: Clean, Warnings, or Not Manufacturable #}
             {% if check.is_manufacturable %}
