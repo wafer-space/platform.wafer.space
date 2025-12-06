@@ -856,20 +856,24 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
 
     # Create container WITHOUT volumes (for remote Docker support)
     logger.info(
-        "[do_starting] Creating container from image %s (mem_limit=4g, cpu_count=2)...",
+        "[do_starting] Creating container from image %s (mem_limit=64g)...",
         check.docker_image,
     )
     container = client.containers.create(
         check.docker_image,
         command=command,
+        working_dir="/workspace",
         labels={
             "wafer.space.service": "manufacturability-check",
             "wafer.space.check_id": str(check.id),
             "wafer.space.project_id": str(check.project.id),
         },
-        # Limit resources to prevent runaway containers
-        mem_limit="4g",
-        cpu_count=2,
+        mem_limit="64g",
+        network_disabled=True,
+        environment={
+            "COLUMNS": "200",  # Wide terminal for better log output
+            "TERM": "xterm-256color",
+        },
     )
     logger.info(
         "[do_starting] Container created: id=%s (check=%s, server=%s)",
