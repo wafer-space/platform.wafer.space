@@ -26,10 +26,10 @@
                   <th class="py-1 text-end">Slots</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody id="summary-table-body">
                 {% for slot_size, stat in stats.items %}
                   {% if stat.total_slots > 0 %}
-                    <tr>
+                    <tr data-size="{{ slot_size.value }}" style="cursor: pointer">
                       <td class="py-1">{{ slot_size.label }}</td>
                       <td class="py-1 text-end"
                           title="{{ stat.assigned_count }} projects assigned to slots / {{ stat.projects_count }} total projects of this size on shuttle">

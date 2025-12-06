@@ -657,6 +657,19 @@
       });
     });
 
+    // Highlight slots on summary table row hover
+    document.querySelectorAll('#summary-table-body tr').forEach(function(row) {
+      row.addEventListener('mouseenter', function() {
+        var size = this.dataset.size;
+        if (size) {
+          highlightSlotsBySize(size);
+        }
+      });
+      row.addEventListener('mouseleave', function() {
+        clearSlotHighlights();
+      });
+    });
+
     // Autocomplete input
     const projectSearch = document.getElementById('project-search');
     if (projectSearch) {
