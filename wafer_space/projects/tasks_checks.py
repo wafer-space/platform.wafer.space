@@ -1598,10 +1598,12 @@ def do_cancelling(check: ManufacturabilityCheck) -> dict[str, Any]:
     """
     logger = logging.getLogger(__name__)
 
+    logger.info("[do_cancelling] Starting for check %s", check.id)
+
     # Transition to CANCELLED - container cleanup handled by orphan task
     check.mark_cancelled()
 
-    logger.info("Check %s marked as cancelled", check.id)
+    logger.info("[do_cancelling] Check %s marked as cancelled", check.id)
 
     return {"status": "success"}
 
