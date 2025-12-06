@@ -1224,6 +1224,32 @@ def manufacturability_check_runs_path(instance, filename):
     return f"projects/{instance.project.id}/{filename}"
 
 
+def manufacturability_check_output_gds_path(instance, filename):
+    """Generate upload path for output GDS file.
+
+    Output GDS contains the modified design with QR code and other additions.
+    Format: projects/<project_id>/<gds_name>.<top_cell>.precheck.<timestamp>.output.gds
+
+    Example: projects/abc123/design.gds.TOP_CELL.precheck.20251126_231820.output.gds
+    """
+    gds_name, top_cell, timestamp_str = _get_check_file_prefix(instance)
+    filename = f"{gds_name}.{top_cell}.precheck.{timestamp_str}.output.gds"
+    return f"projects/{instance.project.id}/{filename}"
+
+
+def manufacturability_check_docker_layer_path(instance, filename):
+    """Generate upload path for docker layer export.
+
+    Docker layer export contains only the filesystem changes made during the run.
+    Format: projects/<project_id>/<gds_name>.<top_cell>.precheck.<ts>.layer.tar.gz
+
+    Example: projects/abc123/design.gds.TOP_CELL.precheck.20251126.layer.tar.gz
+    """
+    gds_name, top_cell, timestamp_str = _get_check_file_prefix(instance)
+    filename = f"{gds_name}.{top_cell}.precheck.{timestamp_str}.layer.tar.gz"
+    return f"projects/{instance.project.id}/{filename}"
+
+
 class ManufacturabilityCheck(models.Model):
     """Track manufacturability checking process for projects."""
 
@@ -1390,6 +1416,46 @@ class ManufacturabilityCheck(models.Model):
         blank=True,
         storage=ProjectFileStorage(),
         help_text="Tar archive of detailed step logs from precheck runs/ directory",
+    )
+    output_gds = models.FileField(
+        upload_to=manufacturability_check_output_gds_path,
+        max_length=512,
+        blank=True,
+        storage=ProjectFileStorage(),
+        help_text="Output GDS file from precheck (modified design with QR code, etc.)",
+    )
+    docker_layer_export = models.FileField(
+        upload_to=manufacturability_check_docker_layer_path,
+        max_length=512,
+        blank=True,
+        storage=ProjectFileStorage(),
+        help_text="Compressed tarball of container filesystem changes for debugging",
+    )
+
+    # Checksums for output files (SHA256)
+    log_file_sha256 = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="SHA256 checksum of log file",
+    )
+    runs_archive_sha256 = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="SHA256 checksum of runs archive",
+    )
+    output_gds_sha256 = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="SHA256 checksum of output GDS file",
+    )
+    docker_layer_sha256 = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="SHA256 checksum of docker layer export",
     )
 
     # System error tracking (distinct from manufacturing errors)
@@ -2118,6 +2184,13 @@ class ManufacturabilityCheckpoint(models.Model):
         max_length=20,
         blank=True,
         help_text="Container state (running, exited, etc.)",
+    )
+
+    # Raw Docker stats response for debugging
+    raw_stats_json = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Raw Docker stats API response for debugging",
     )
 
     class Meta:
