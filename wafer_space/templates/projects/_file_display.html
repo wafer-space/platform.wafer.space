@@ -84,7 +84,9 @@
             </form>
           {% elif check.status == 'dispatching' %}
             <span class="badge bg-info">
-              <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+              <span class="spinner-border spinner-border-sm"
+                    role="status"
+                    aria-hidden="true"></span>
               Pulling Docker image...
             </span>
             {# Cancel button for dispatching checks #}
@@ -99,7 +101,9 @@
             </form>
           {% elif check.status == 'starting' %}
             <span class="badge bg-info">
-              <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+              <span class="spinner-border spinner-border-sm"
+                    role="status"
+                    aria-hidden="true"></span>
               Starting container...
             </span>
             {# Cancel button for starting checks #}
@@ -131,7 +135,9 @@
             </form>
           {% elif check.status == 'analyzing' %}
             <span class="badge bg-info">
-              <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+              <span class="spinner-border spinner-border-sm"
+                    role="status"
+                    aria-hidden="true"></span>
               Analyzing results...
             </span>
             {# Cancel button for analyzing checks #}
