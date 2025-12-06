@@ -470,6 +470,10 @@
 
     // Highlight matching-size slots in the modal grid
     highlightSlotsBySize(slotSize, 'assign-modal-grid-table');
+
+    // Highlight assigned slots for this project in the modal grid
+    var positions = projectSlots.map(function(s) { return s.position; });
+    highlightAssignedSlots(positions, 'assign-modal-grid-table');
   }
 
   // Perform the assignment API call
@@ -637,6 +641,15 @@
         var size = this.dataset.size;
         if (size) {
           highlightSlotsBySize(size);
+        }
+
+        // Also highlight assigned slots for this project
+        var assignBtn = this.querySelector('[data-assign-project]');
+        if (assignBtn) {
+          var projectId = assignBtn.dataset.assignProject;
+          var slots = slotsByProject[projectId] || [];
+          var positions = slots.map(function(s) { return s.position; });
+          highlightAssignedSlots(positions);
         }
       });
       row.addEventListener('mouseleave', function() {
