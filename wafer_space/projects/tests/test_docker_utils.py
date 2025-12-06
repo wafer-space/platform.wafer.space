@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+import tarfile
+from typing import TYPE_CHECKING
+
+from wafer_space.projects.docker_utils import create_tar_archive
 from wafer_space.projects.docker_utils import parse_docker_timestamp_float
 from wafer_space.projects.docker_utils import strip_docker_timestamps
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class TestParseDockerTimestampFloat:
@@ -66,3 +73,73 @@ class TestStripDockerTimestamps:
     def test_handles_empty_string(self) -> None:
         """Empty string returns empty string."""
         assert strip_docker_timestamps("") == ""
+
+
+class TestCreateTarArchive:
+    """Test create_tar_archive function."""
+
+    def test_creates_valid_tar_archive(self, tmp_path: Path) -> None:
+        """Creates a valid tar archive from a file."""
+        # Create a test file
+        test_file = tmp_path / "test.gds"
+        test_content = b"test file content"
+        test_file.write_bytes(test_content)
+
+        # Create the archive
+        tar_stream = create_tar_archive(test_file)
+
+        # Verify it's a valid tar
+        tar_stream.seek(0)
+        with tarfile.open(fileobj=tar_stream, mode="r") as tar:
+            members = tar.getnames()
+            assert len(members) == 1
+            assert members[0] == "design.gds"
+
+    def test_uses_custom_arcname(self, tmp_path: Path) -> None:
+        """Uses the specified arcname for the file in the archive."""
+        test_file = tmp_path / "my_design.gds"
+        test_file.write_bytes(b"content")
+
+        tar_stream = create_tar_archive(test_file, arcname="custom_name.gds")
+
+        tar_stream.seek(0)
+        with tarfile.open(fileobj=tar_stream, mode="r") as tar:
+            members = tar.getnames()
+            assert members[0] == "custom_name.gds"
+
+    def test_preserves_file_content(self, tmp_path: Path) -> None:
+        """Archived file contains the correct content."""
+        test_file = tmp_path / "test.gds"
+        test_content = b"important design data"
+        test_file.write_bytes(test_content)
+
+        tar_stream = create_tar_archive(test_file)
+
+        tar_stream.seek(0)
+        with tarfile.open(fileobj=tar_stream, mode="r") as tar:
+            extracted = tar.extractfile("design.gds")
+            assert extracted is not None
+            assert extracted.read() == test_content
+
+    def test_accepts_string_path(self, tmp_path: Path) -> None:
+        """Accepts a string path argument."""
+        test_file = tmp_path / "test.gds"
+        test_file.write_bytes(b"content")
+
+        # Pass as string instead of Path
+        tar_stream = create_tar_archive(str(test_file))
+
+        tar_stream.seek(0)
+        with tarfile.open(fileobj=tar_stream, mode="r") as tar:
+            assert len(tar.getnames()) == 1
+
+    def test_stream_is_seeked_to_start(self, tmp_path: Path) -> None:
+        """Returned stream is seeked to position 0."""
+        test_file = tmp_path / "test.gds"
+        test_file.write_bytes(b"content")
+
+        tar_stream = create_tar_archive(test_file)
+
+        # Should be able to read immediately without seeking
+        assert tar_stream.tell() == 0
+        assert tar_stream.read(5) != b""
