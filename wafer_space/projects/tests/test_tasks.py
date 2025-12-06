@@ -1914,50 +1914,104 @@ class TestChecksCleanupStalePendingTasks:
     """Tests for checks_cleanup_stale_pending_tasks task."""
 
     @pytest.mark.django_db
-    def test_deletes_old_pending_tasks(self) -> None:
-        """Deletes ManufacturabilityCheckTask records older than 10 minutes."""
+    @patch(
+        "wafer_space.projects.tasks_checks.is_check_task_actively_running",
+        return_value=False,
+    )
+    def test_deletes_orphaned_tasks_not_in_queue_or_results(
+        self, mock_is_active: Mock
+    ) -> None:
+        """Deletes ManufacturabilityCheckTask records when task is orphaned.
+
+        A task is orphaned if it's not in the broker queue AND not in
+        TaskResult with an unfinished status.
+        """
         check = ManufacturabilityCheckFactory(
             status=ManufacturabilityCheck.Status.ANALYZING,
         )
         task = ManufacturabilityCheckTask.objects.create(
             manufacturability_check=check,
-            task_id="old-task-id",
+            task_id="orphaned-task-id",
             task_name="do_analyzing",
         )
 
-        # Set queued_at to 11 minutes ago to make task stale
-        task.queued_at = timezone.now() - timedelta(minutes=11)
+        # Set queued_at to 1 minute ago (older than 30 second threshold)
+        task.queued_at = timezone.now() - timedelta(minutes=1)
         task.save(update_fields=["queued_at"])
 
         result = checks_cleanup_stale_pending_tasks()
 
         assert result["deleted"] == 1
+        assert result["still_active"] == 0
         assert not ManufacturabilityCheckTask.objects.filter(id=task.id).exists()
+        mock_is_active.assert_called_once_with("orphaned-task-id")
 
     @pytest.mark.django_db
-    def test_keeps_recent_pending_tasks(self) -> None:
-        """Does not delete ManufacturabilityCheckTask records under 10 minutes old."""
+    @patch(
+        "wafer_space.projects.tasks_checks.is_check_task_actively_running",
+        return_value=True,
+    )
+    def test_keeps_tasks_still_in_queue(self, mock_is_active: Mock) -> None:
+        """Does not delete tasks that are still in the broker queue."""
         check = ManufacturabilityCheckFactory(
             status=ManufacturabilityCheck.Status.ANALYZING,
         )
         task = ManufacturabilityCheckTask.objects.create(
             manufacturability_check=check,
-            task_id="recent-task-id",
+            task_id="queued-task-id",
             task_name="do_analyzing",
         )
 
-        # Set queued_at to 5 minutes ago - task is still fresh
-        task.queued_at = timezone.now() - timedelta(minutes=5)
+        # Set queued_at to 1 minute ago (older than 30 second threshold)
+        task.queued_at = timezone.now() - timedelta(minutes=1)
         task.save(update_fields=["queued_at"])
 
         result = checks_cleanup_stale_pending_tasks()
 
         assert result["deleted"] == 0
+        assert result["still_active"] == 1
         assert ManufacturabilityCheckTask.objects.filter(id=task.id).exists()
+        mock_is_active.assert_called_once_with("queued-task-id")
 
     @pytest.mark.django_db
-    def test_returns_zero_when_no_stale_tasks(self) -> None:
-        """Returns zero when no stale tasks exist."""
+    @patch(
+        "wafer_space.projects.tasks_checks.is_check_task_actively_running",
+        return_value=False,
+    )
+    def test_keeps_very_recent_tasks_without_checking(
+        self, mock_is_active: Mock
+    ) -> None:
+        """Does not check tasks queued within last 30 seconds.
+
+        Very recent tasks might still be in transit between queue and worker,
+        so we skip checking them to avoid false positives.
+        """
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+        )
+        task = ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check,
+            task_id="fresh-task-id",
+            task_name="do_analyzing",
+        )
+
+        # Set queued_at to 10 seconds ago - under the 30 second threshold
+        task.queued_at = timezone.now() - timedelta(seconds=10)
+        task.save(update_fields=["queued_at"])
+
+        result = checks_cleanup_stale_pending_tasks()
+
+        # Task should be kept because it's too recent to check
+        assert result["deleted"] == 0
+        assert result["still_active"] == 0
+        assert ManufacturabilityCheckTask.objects.filter(id=task.id).exists()
+        # Verify the mock was never called
+        mock_is_active.assert_not_called()
+
+    @pytest.mark.django_db
+    def test_returns_zero_when_no_pending_tasks(self) -> None:
+        """Returns zero when no pending tasks exist."""
         result = checks_cleanup_stale_pending_tasks()
 
         assert result["deleted"] == 0
+        assert result["still_active"] == 0

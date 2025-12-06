@@ -39,6 +39,7 @@ from .models import ManufacturabilityCheckpoint
 from .models import ManufacturabilityCheckTask
 from .models import ProjectFile
 from .precheck_parser import PrecheckLogParser
+from .verification import is_check_task_actively_running
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -1649,31 +1650,46 @@ def checks_cleanup_stale_files() -> dict:
 
 @checks_task(queue="default")
 def checks_cleanup_stale_pending_tasks() -> dict:
-    """Remove stale ManufacturabilityCheckTask records that block check re-queuing.
+    """Remove orphaned ManufacturabilityCheckTask records that block check re-queuing.
 
     When a Celery task fails catastrophically (e.g., worker crash, OOM kill)
     before the finally block can delete the ManufacturabilityCheckTask record,
     the record remains and prevents the beat task from re-queuing the check.
 
-    This task finds ManufacturabilityCheckTask records older than a threshold
-    (10 minutes) and deletes them, allowing the check to be re-queued.
+    This task finds ManufacturabilityCheckTask records where the associated
+    Celery task is no longer active (not in broker queue and not running),
+    and deletes them, allowing the check to be re-queued.
+
+    A task is considered orphaned if:
+    - It's NOT in the broker queue (kombu_message), AND
+    - It's either NOT in TaskResult, OR in TaskResult with a finished status
+      (SUCCESS, FAILURE, REVOKED)
 
     Returns:
-        dict with 'deleted' count of stale records removed
+        dict with 'deleted' count of orphaned records removed
     """
     logger = logging.getLogger(__name__)
     deleted = 0
+    still_active = 0
 
-    # 10 minutes is generous - most tasks complete in under 5 minutes
-    stale_threshold = timezone.now() - timedelta(minutes=10)
+    # Check all pending tasks - use time filter to avoid checking very recent tasks
+    # that might still be in transit between queue and worker
+    min_age_threshold = timezone.now() - timedelta(seconds=30)
 
-    stale_tasks = ManufacturabilityCheckTask.objects.filter(
-        queued_at__lt=stale_threshold,
+    pending_tasks = ManufacturabilityCheckTask.objects.filter(
+        queued_at__lt=min_age_threshold,
     )
 
-    for task in stale_tasks:
+    for task in pending_tasks:
+        if is_check_task_actively_running(task.task_id):
+            # Task is still active - leave it alone
+            still_active += 1
+            continue
+
+        # Task is orphaned - remove the lock
         logger.warning(
-            "Removing stale pending task %s for check %s (queued at %s, task_name=%s)",
+            "Removing orphaned pending task %s for check %s "
+            "(queued at %s, task_name=%s, not in queue or results)",
             task.task_id,
             task.manufacturability_check_id,
             task.queued_at,
@@ -1682,11 +1698,11 @@ def checks_cleanup_stale_pending_tasks() -> dict:
         task.delete()
         deleted += 1
 
-    if deleted:
+    if deleted or still_active:
         logger.info(
-            "Deleted %d stale pending task records older than %s",
+            "Pending task cleanup: %d orphaned deleted, %d still active",
             deleted,
-            stale_threshold,
+            still_active,
         )
 
-    return {"deleted": deleted}
+    return {"deleted": deleted, "still_active": still_active}

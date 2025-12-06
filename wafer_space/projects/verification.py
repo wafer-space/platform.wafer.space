@@ -8,8 +8,10 @@ from typing import TYPE_CHECKING
 
 import psutil
 from celery import current_app
+from celery.states import READY_STATES
 from django.db import DatabaseError
 from django.db import connection
+from django_celery_results.models import TaskResult
 
 if TYPE_CHECKING:
     from wafer_space.projects.models import ManufacturabilityCheck
@@ -87,6 +89,83 @@ def _is_task_in_broker_queue(task_id: str | None) -> bool:
     except DatabaseError:
         logger.exception("Error checking broker queue for task %s", task_id)
         return False
+
+
+def _is_task_in_results_unfinished(task_id: str | None) -> bool:
+    """Check if a task exists in TaskResult with an unfinished status.
+
+    This checks Django Celery Results for a task that has been picked up by a
+    worker but hasn't finished yet (status is not SUCCESS, FAILURE, or REVOKED).
+
+    Args:
+        task_id: The Celery task ID to search for
+
+    Returns:
+        True if task is found with unfinished status, False otherwise
+    """
+    if not task_id:
+        return False
+
+    try:
+        task_result = TaskResult.objects.filter(task_id=task_id).first()
+        if task_result is None:
+            # Task not in results - could be waiting in queue or never executed
+            return False
+
+        # Task is unfinished if its status is NOT in READY_STATES
+        is_unfinished = task_result.status not in READY_STATES
+        if is_unfinished:
+            logger.debug(
+                "Task %s found in results with unfinished status: %s",
+                task_id,
+                task_result.status,
+            )
+    except Exception:
+        logger.exception("Error checking task result for task %s", task_id)
+        # Err on the side of caution - assume still running
+        return True
+    else:
+        return is_unfinished
+
+
+def is_check_task_actively_running(task_id: str | None) -> bool:
+    """Check if a Celery task is still actively running or waiting in queue.
+
+    This function checks two places:
+    1. Broker queue (kombu_message table) - tasks waiting to be picked up
+    2. Task results (django_celery_results_taskresult) - tasks being executed
+
+    A task is considered active if:
+    - It's in the broker queue (visible=TRUE), OR
+    - It's in TaskResult with a non-ready status (PENDING, STARTED, etc.)
+
+    A task is considered orphaned (not active) if:
+    - It's NOT in the broker queue, AND
+    - It's either NOT in TaskResult, OR in TaskResult with READY status
+      (SUCCESS, FAILURE, REVOKED)
+
+    Args:
+        task_id: The Celery task ID to check
+
+    Returns:
+        True if task is still active (queued or running), False if orphaned
+    """
+    if not task_id:
+        return False
+
+    # Check 1: Is task waiting in broker queue?
+    if _is_task_in_broker_queue(task_id):
+        logger.debug("Task %s is in broker queue", task_id)
+        return True
+
+    # Check 2: Is task in results with unfinished status?
+    if _is_task_in_results_unfinished(task_id):
+        logger.debug("Task %s is in results with unfinished status", task_id)
+        return True
+
+    # Task is not in queue and not running - it's orphaned
+    logger.debug("Task %s is orphaned (not in queue, not running)", task_id)
+    return False
 
 
 def is_download_task_queued(project_file: ProjectFile) -> bool:
