@@ -467,51 +467,51 @@ DOCKER_SERVERS: list[dict[str, str | int]] = []
 CELERY_BEAT_SCHEDULE = {
     # Download recovery
     "ensure-download-tasks-queued": {
-        "task": "wafer_space.projects.tasks.ensure_download_tasks_queued",
+        "task": "wafer_space.projects.tasks_download.ensure_download_tasks_queued",
         "schedule": DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS,
     },
     # Manufacturability check creation (creates checks for verified files)
     "checks-create": {
-        "task": "wafer_space.projects.tasks.checks_create",
+        "task": "wafer_space.projects.tasks_checks.checks_create",
         "schedule": 15.0,
     },
     # Manufacturability check lifecycle - polling architecture (15s intervals)
     # Each task polls for checks in a specific state and advances them to the next state
     "checks-pending": {
-        "task": "wafer_space.projects.tasks.checks_pending",
+        "task": "wafer_space.projects.tasks_checks.checks_pending",
         "schedule": 15.0,
     },
     "checks-dispatching": {
-        "task": "wafer_space.projects.tasks.checks_dispatching",
+        "task": "wafer_space.projects.tasks_checks.checks_dispatching",
         "schedule": 15.0,
     },
     "checks-starting": {
-        "task": "wafer_space.projects.tasks.checks_starting",
+        "task": "wafer_space.projects.tasks_checks.checks_starting",
         "schedule": 15.0,
     },
     "checks-running": {
-        "task": "wafer_space.projects.tasks.checks_running",
+        "task": "wafer_space.projects.tasks_checks.checks_running",
         "schedule": 15.0,
     },
     "checks-analyzing": {
-        "task": "wafer_space.projects.tasks.checks_analyzing",
+        "task": "wafer_space.projects.tasks_checks.checks_analyzing",
         "schedule": 15.0,
     },
     "checks-cancelling": {
-        "task": "wafer_space.projects.tasks.checks_cancelling",
+        "task": "wafer_space.projects.tasks_checks.checks_cancelling",
         "schedule": 15.0,
     },
     # Cleanup and retry tasks (60s intervals)
     "checks-retry": {
-        "task": "wafer_space.projects.tasks.checks_retry",
+        "task": "wafer_space.projects.tasks_checks.checks_retry",
         "schedule": 60.0,
     },
     "checks-cleanup-orphaned-docker": {
-        "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_docker",
+        "task": "wafer_space.projects.tasks_checks.checks_cleanup_orphaned_docker",
         "schedule": 60.0,
     },
     "checks-cleanup-stale-files": {
-        "task": "wafer_space.projects.tasks.checks_cleanup_stale_files",
+        "task": "wafer_space.projects.tasks_checks.checks_cleanup_stale_files",
         "schedule": 60.0,
     },
 }
