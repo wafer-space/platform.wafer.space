@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import io
 import pathlib
 import re
@@ -12,6 +13,8 @@ from typing import TYPE_CHECKING
 
 import docker
 from django.conf import settings
+
+from .hashing import MultiHasher
 
 if TYPE_CHECKING:
     import logging
@@ -154,3 +157,132 @@ def create_tar_archive(
         tar.add(str(path), arcname=arcname)
     tar_stream.seek(0)
     return tar_stream
+
+
+def stream_archive_to_file(
+    container: docker.models.containers.Container,
+    container_path: str,
+    output_path: Path,
+    logger: logging.Logger,
+    *,
+    compress: bool = False,
+) -> tuple[int, dict[str, str]] | None:
+    """Stream archive from container to file, calculating checksums.
+
+    Args:
+        container: Docker container.
+        container_path: Path inside container to extract.
+        output_path: Local path to write to.
+        logger: Logger instance.
+        compress: Whether to gzip compress the output.
+
+    Returns:
+        Tuple of (bytes_written, checksums_dict) or None if path doesn't exist.
+    """
+    try:
+        bits, _stat = container.get_archive(container_path)
+    except docker.errors.NotFound:
+        logger.info("Path %s not found in container", container_path)
+        return None
+    except docker.errors.DockerException as e:
+        logger.warning("Failed to extract %s: %s", container_path, e)
+        return None
+
+    hasher = MultiHasher(algorithms=["sha256"])
+    bytes_written = 0
+
+    # Use temp file in same directory to ensure atomic move
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = output_path.with_suffix(output_path.suffix + ".tmp")
+
+    try:
+        if compress:
+            with gzip.open(temp_path, "wb", compresslevel=9) as f:
+                for chunk in bits:
+                    hasher.update(chunk)
+                    f.write(chunk)
+                    bytes_written += len(chunk)
+        else:
+            with temp_path.open("wb") as f:
+                for chunk in bits:
+                    hasher.update(chunk)
+                    f.write(chunk)
+                    bytes_written += len(chunk)
+
+        # Atomic rename
+        temp_path.rename(output_path)
+
+        logger.info(
+            "Extracted %s to %s (%d bytes, sha256=%s...)",
+            container_path,
+            output_path,
+            bytes_written,
+            hasher.hexdigest("sha256")[:16],
+        )
+
+        return bytes_written, hasher.hexdigests()
+
+    except Exception:
+        # Clean up temp file on failure
+        if temp_path.exists():
+            temp_path.unlink()
+        raise
+
+
+def stream_container_diff_to_file(
+    container: docker.models.containers.Container,
+    output_path: Path,
+    logger: logging.Logger,
+) -> tuple[int, dict[str, str]] | None:
+    """Stream container filesystem changes to compressed tarball.
+
+    Uses docker export to get the full container filesystem.
+    The exported archive includes all changes since container start.
+
+    Args:
+        container: Docker container (can be running or stopped).
+        output_path: Local path to write .tar.gz to.
+        logger: Logger instance.
+
+    Returns:
+        Tuple of (bytes_written, checksums_dict) or None if export fails.
+    """
+    try:
+        # Use export() which returns a generator of raw tar chunks
+        export_stream = container.export()
+    except docker.errors.DockerException as e:
+        logger.warning("Failed to export container: %s", e)
+        return None
+
+    hasher = MultiHasher(algorithms=["sha256"])
+    bytes_written = 0
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = output_path.with_suffix(output_path.suffix + ".tmp")
+
+    try:
+        with gzip.open(temp_path, "wb", compresslevel=9) as gz_file:
+            for chunk in export_stream:
+                gz_file.write(chunk)
+
+        # Read the compressed file to calculate hash
+        with temp_path.open("rb") as f:
+            while chunk := f.read(65536):
+                hasher.update(chunk)
+                bytes_written += len(chunk)
+
+        # Atomic rename
+        temp_path.rename(output_path)
+
+        logger.info(
+            "Exported container to %s (%d bytes compressed)",
+            output_path,
+            bytes_written,
+        )
+
+        return bytes_written, hasher.hexdigests()
+
+    except Exception:
+        if temp_path.exists():
+            temp_path.unlink()
+        raise
