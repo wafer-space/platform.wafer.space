@@ -31,6 +31,7 @@
                   {% if stat.total_slots > 0 %}
                     <tr data-size="{{ slot_size.value }}" style="cursor: pointer">
                       <td class="py-1">{{ slot_size.label }}</td>
+                      {# djlint:off H023 #}
                       <td class="py-1 text-end"
                           title="{{ stat.assigned_count }} projects with slot allocated.&#10;{{ stat.projects_count }} projects of this size available for slot allocation.">
                         {{ stat.assigned_count }}/{{ stat.projects_count }}
@@ -43,6 +44,7 @@
                           title="{{ stat.available_slots }} slots available.&#10;{{ stat.total_slots }} slots of this size.">
                         {{ stat.available_slots }}/{{ stat.total_slots }}
                       </td>
+                      {# djlint:on #}
                     </tr>
                   {% endif %}
                 {% endfor %}
