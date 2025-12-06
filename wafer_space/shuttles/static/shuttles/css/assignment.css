@@ -107,12 +107,14 @@
   border-top: 2px solid #ccc;
 }
 
-/* Green border for size-matching slots */
-.grid-table td.slot-highlight-size {
-  border: 1px solid #28a745 !important;
+/* Green outline for size-matching slots */
+.slot-highlight-size {
+  outline: 2px solid #28a745;
+  outline-offset: -2px;
 }
 
-/* Blue border for currently assigned slots - takes priority over green */
-.grid-table td.slot-highlight-assigned {
-  border: 1px solid #0d6efd !important;
+/* Blue outline for currently assigned slots - takes priority over green */
+.slot-highlight-assigned {
+  outline: 2px solid #0d6efd;
+  outline-offset: -2px;
 }
