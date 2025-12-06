@@ -1687,7 +1687,7 @@ def checks_cleanup_stale_pending_tasks() -> dict:
             continue
 
         # Task is orphaned - remove the lock
-        logger.warning(
+        logger.info(
             "Removing orphaned pending task %s for check %s "
             "(queued at %s, task_name=%s, not in queue or results)",
             task.task_id,
@@ -1697,12 +1697,5 @@ def checks_cleanup_stale_pending_tasks() -> dict:
         )
         task.delete()
         deleted += 1
-
-    if deleted or still_active:
-        logger.info(
-            "Pending task cleanup: %d orphaned deleted, %d still active",
-            deleted,
-            still_active,
-        )
 
     return {"deleted": deleted, "still_active": still_active}
