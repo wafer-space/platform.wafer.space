@@ -189,7 +189,6 @@ __all__ = [
     "checks_running",
     "checks_starting",
     "do_analyzing",
-    "do_cancelling",
     "do_dispatching",
     "do_running",
     "do_starting",
@@ -608,42 +607,29 @@ def checks_create() -> dict:
 
 @checks_task(queue="default")
 def checks_cancelling() -> dict[str, int]:
-    """Queue do_cancelling work tasks for CANCELLING checks.
+    """Transition CANCELLING checks to CANCELLED.
 
-    Only queues if check doesn't already have a pending task.
+    Unlike other status handlers, this doesn't queue work tasks - it directly
+    marks checks as cancelled since there's no async work to do. Container
+    cleanup is handled separately by checks_cleanup_orphaned_docker.
 
     Returns:
-        Dict with count of queued tasks.
+        Dict with count of cancelled checks.
     """
     logger = logging.getLogger(__name__)
 
-    queued = 0
+    cancelled = 0
 
     cancelling_checks = ManufacturabilityCheck.objects.filter(
         status=ManufacturabilityCheck.Status.CANCELLING,
-    ).exclude(pending_task__isnull=False)
-
-    logger.info(
-        "Found %d CANCELLING checks without pending task",
-        cancelling_checks.count(),
     )
 
     for check in cancelling_checks:
-        result = do_cancelling.delay(check.id)
-        try:
-            ManufacturabilityCheckTask.objects.create(
-                manufacturability_check=check,
-                task_id=result.id,
-                task_name="do_cancelling",
-            )
-        except IntegrityError:
-            # Task already created by concurrent beat cycle - skip
-            logger.debug("Task already exists for check %s, skipping", check.id)
-            continue
-        logger.info("Queued do_cancelling for check %s (task: %s)", check.id, result.id)
-        queued += 1
+        logger.info("[checks_cancelling] Marking check %s as cancelled", check.id)
+        check.mark_cancelled()
+        cancelled += 1
 
-    return {"queued": queued}
+    return {"cancelled": cancelled}
 
 
 # Work tasks (do_*) - Placeholder stubs for polling architecture
@@ -1582,32 +1568,6 @@ def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
     }
 
 
-@queued_check_task(expected_status="CANCELLING")
-def do_cancelling(check: ManufacturabilityCheck) -> dict[str, Any]:
-    """Transition a CANCELLING check to CANCELLED.
-
-    Simply marks the check as cancelled. Any Docker container cleanup
-    is handled by checks_cleanup_orphaned_docker which will detect the
-    container (via its wafer.space.check_id label) and remove it.
-
-    Args:
-        check: ManufacturabilityCheck in CANCELLING status (validated by decorator).
-
-    Returns:
-        Dict with cancellation status.
-    """
-    logger = logging.getLogger(__name__)
-
-    logger.info("[do_cancelling] Starting for check %s", check.id)
-
-    # Transition to CANCELLED - container cleanup handled by orphan task
-    check.mark_cancelled()
-
-    logger.info("[do_cancelling] Check %s marked as cancelled", check.id)
-
-    return {"status": "success"}
-
-
 @checks_task(queue="default")
 def checks_cleanup_stale_files() -> dict:
     """Cancel checks on project files that are no longer active.
@@ -1678,8 +1638,14 @@ def checks_cleanup_stale_pending_tasks() -> dict:
     # that might still be in transit between queue and worker
     min_age_threshold = timezone.now() - timedelta(seconds=30)
 
-    pending_tasks = ManufacturabilityCheckTask.objects.filter(
-        queued_at__lt=min_age_threshold,
+    pending_tasks = list(
+        ManufacturabilityCheckTask.objects.filter(
+            queued_at__lt=min_age_threshold,
+        )
+    )
+    logger.info(
+        "Pending tasks: %i",
+        len(pending_tasks),
     )
 
     for task in pending_tasks:

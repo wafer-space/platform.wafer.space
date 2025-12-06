@@ -45,7 +45,6 @@ from wafer_space.projects.tasks import checks_retry
 from wafer_space.projects.tasks import checks_running
 from wafer_space.projects.tasks import checks_starting
 from wafer_space.projects.tasks import do_analyzing
-from wafer_space.projects.tasks import do_cancelling
 from wafer_space.projects.tasks import do_dispatching
 from wafer_space.projects.tasks import do_running
 from wafer_space.projects.tasks import do_starting
@@ -824,41 +823,36 @@ class TestChecksCancelling:
     """Test checks_cancelling beat task."""
 
     @pytest.mark.django_db
-    def test_queues_do_cancelling_for_cancelling_checks(self) -> None:
-        """Queues do_cancelling work task for CANCELLING checks."""
+    def test_marks_cancelling_checks_as_cancelled(self) -> None:
+        """Directly marks CANCELLING checks as CANCELLED without queuing tasks."""
         check = ManufacturabilityCheckFactory(
             status=ManufacturabilityCheck.Status.CANCELLING,
         )
 
-        with patch("wafer_space.projects.tasks.do_cancelling.delay") as mock_delay:
-            mock_delay.return_value.id = "task-999"
-            result = checks_cancelling()
+        result = checks_cancelling()
 
-        mock_delay.assert_called_once_with(check.id)
-        assert result["queued"] == 1
-
-        # Should create task tracking row
-        task = ManufacturabilityCheckTask.objects.get(manufacturability_check=check)
-        assert task.task_id == "task-999"
-        assert task.task_name == "do_cancelling"
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLED
+        assert result["cancelled"] == 1
 
     @pytest.mark.django_db
-    def test_skips_checks_with_pending_task(self) -> None:
-        """Does not queue if check already has pending task."""
-        check = ManufacturabilityCheckFactory(
+    def test_handles_multiple_cancelling_checks(self) -> None:
+        """Processes multiple CANCELLING checks in one call."""
+        check1 = ManufacturabilityCheckFactory(
             status=ManufacturabilityCheck.Status.CANCELLING,
         )
-        ManufacturabilityCheckTask.objects.create(
-            manufacturability_check=check,
-            task_id="existing",
-            task_name="do_cancelling",
+        check2 = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.CANCELLING,
         )
 
-        with patch("wafer_space.projects.tasks.do_cancelling.delay") as mock_delay:
-            result = checks_cancelling()
+        result = checks_cancelling()
 
-        mock_delay.assert_not_called()
-        assert result["queued"] == 0
+        check1.refresh_from_db()
+        check2.refresh_from_db()
+        assert check1.status == ManufacturabilityCheck.Status.CANCELLED
+        assert check2.status == ManufacturabilityCheck.Status.CANCELLED
+        expected_cancelled = 2
+        assert result["cancelled"] == expected_cancelled
 
 
 class TestChecksPending:
@@ -1859,55 +1853,6 @@ Check for KLayout DRC errors clear.
         # Graceful handling: returns error result instead of crashing
         assert result["status"] == "error"
         assert "container_not_found" in result.get("reason", "")
-
-
-class TestDoCancelling:
-    """Test do_cancelling work task."""
-
-    @pytest.mark.django_db
-    def test_transitions_to_cancelled(self) -> None:
-        """Transitions CANCELLING check to CANCELLED status."""
-        check = ManufacturabilityCheckFactory(
-            status=ManufacturabilityCheck.Status.CANCELLING,
-            docker_server_id="test-local",
-            docker_container_id="container123",
-        )
-        ManufacturabilityCheckTask.objects.create(
-            manufacturability_check=check, task_id="test", task_name="do_cancelling"
-        )
-
-        result = do_cancelling(check.id)
-
-        assert result["status"] == "success"
-        check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.CANCELLED
-
-    @pytest.mark.django_db
-    def test_cleans_up_task_tracking(self) -> None:
-        """Removes ManufacturabilityCheckTask after completion."""
-        check = ManufacturabilityCheckFactory(
-            status=ManufacturabilityCheck.Status.CANCELLING,
-        )
-        ManufacturabilityCheckTask.objects.create(
-            manufacturability_check=check, task_id="test", task_name="do_cancelling"
-        )
-
-        do_cancelling(check.id)
-
-        assert not ManufacturabilityCheckTask.objects.filter(
-            manufacturability_check=check
-        ).exists()
-
-    @pytest.mark.django_db
-    def test_skips_if_status_changed(self) -> None:
-        """Does nothing if status is no longer CANCELLING."""
-        check = ManufacturabilityCheckFactory(
-            status=ManufacturabilityCheck.Status.FINISHED,
-        )
-
-        result = do_cancelling(check.id)
-
-        assert result["status"] == "skipped"
 
 
 class TestChecksCleanupStalePendingTasks:
