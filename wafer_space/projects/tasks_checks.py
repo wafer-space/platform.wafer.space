@@ -6,6 +6,7 @@ import logging
 import shutil
 import tarfile
 import time
+from datetime import timedelta
 from functools import wraps
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -179,6 +180,7 @@ __all__ = [
     "checks_cancelling",
     "checks_cleanup_orphaned_docker",
     "checks_cleanup_stale_files",
+    "checks_cleanup_stale_pending_tasks",
     "checks_create",
     "checks_dispatching",
     "checks_pending",
@@ -1643,3 +1645,48 @@ def checks_cleanup_stale_files() -> dict:
             )
 
     return {"cancelled": cancelled}
+
+
+@checks_task(queue="default")
+def checks_cleanup_stale_pending_tasks() -> dict:
+    """Remove stale ManufacturabilityCheckTask records that block check re-queuing.
+
+    When a Celery task fails catastrophically (e.g., worker crash, OOM kill)
+    before the finally block can delete the ManufacturabilityCheckTask record,
+    the record remains and prevents the beat task from re-queuing the check.
+
+    This task finds ManufacturabilityCheckTask records older than a threshold
+    (10 minutes) and deletes them, allowing the check to be re-queued.
+
+    Returns:
+        dict with 'deleted' count of stale records removed
+    """
+    logger = logging.getLogger(__name__)
+    deleted = 0
+
+    # 10 minutes is generous - most tasks complete in under 5 minutes
+    stale_threshold = timezone.now() - timedelta(minutes=10)
+
+    stale_tasks = ManufacturabilityCheckTask.objects.filter(
+        queued_at__lt=stale_threshold,
+    )
+
+    for task in stale_tasks:
+        logger.warning(
+            "Removing stale pending task %s for check %s (queued at %s, task_name=%s)",
+            task.task_id,
+            task.manufacturability_check_id,
+            task.queued_at,
+            task.task_name,
+        )
+        task.delete()
+        deleted += 1
+
+    if deleted:
+        logger.info(
+            "Deleted %d stale pending task records older than %s",
+            deleted,
+            stale_threshold,
+        )
+
+    return {"deleted": deleted}

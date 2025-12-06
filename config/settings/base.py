@@ -514,6 +514,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "wafer_space.projects.tasks_checks.checks_cleanup_stale_files",
         "schedule": 60.0,
     },
+    "checks-cleanup-stale-pending-tasks": {
+        "task": "wafer_space.projects.tasks_checks.checks_cleanup_stale_pending_tasks",
+        "schedule": 60.0,
+    },
 }
 
 # File Download and Processing Configuration

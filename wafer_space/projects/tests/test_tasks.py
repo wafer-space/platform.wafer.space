@@ -10,6 +10,7 @@ import hashlib
 import io
 import logging
 import zipfile
+from datetime import timedelta
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from unittest.mock import MagicMock
@@ -20,6 +21,7 @@ import docker
 import pytest
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.utils import timezone
 
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
@@ -48,6 +50,7 @@ from wafer_space.projects.tasks import do_dispatching
 from wafer_space.projects.tasks import do_running
 from wafer_space.projects.tasks import do_starting
 from wafer_space.projects.tasks import download_project_file
+from wafer_space.projects.tasks_checks import checks_cleanup_stale_pending_tasks
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 
 User = get_user_model()
@@ -1905,3 +1908,56 @@ class TestDoCancelling:
         result = do_cancelling(check.id)
 
         assert result["status"] == "skipped"
+
+
+class TestChecksCleanupStalePendingTasks:
+    """Tests for checks_cleanup_stale_pending_tasks task."""
+
+    @pytest.mark.django_db
+    def test_deletes_old_pending_tasks(self) -> None:
+        """Deletes ManufacturabilityCheckTask records older than 10 minutes."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+        )
+        task = ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check,
+            task_id="old-task-id",
+            task_name="do_analyzing",
+        )
+
+        # Set queued_at to 11 minutes ago to make task stale
+        task.queued_at = timezone.now() - timedelta(minutes=11)
+        task.save(update_fields=["queued_at"])
+
+        result = checks_cleanup_stale_pending_tasks()
+
+        assert result["deleted"] == 1
+        assert not ManufacturabilityCheckTask.objects.filter(id=task.id).exists()
+
+    @pytest.mark.django_db
+    def test_keeps_recent_pending_tasks(self) -> None:
+        """Does not delete ManufacturabilityCheckTask records under 10 minutes old."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+        )
+        task = ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check,
+            task_id="recent-task-id",
+            task_name="do_analyzing",
+        )
+
+        # Set queued_at to 5 minutes ago - task is still fresh
+        task.queued_at = timezone.now() - timedelta(minutes=5)
+        task.save(update_fields=["queued_at"])
+
+        result = checks_cleanup_stale_pending_tasks()
+
+        assert result["deleted"] == 0
+        assert ManufacturabilityCheckTask.objects.filter(id=task.id).exists()
+
+    @pytest.mark.django_db
+    def test_returns_zero_when_no_stale_tasks(self) -> None:
+        """Returns zero when no stale tasks exist."""
+        result = checks_cleanup_stale_pending_tasks()
+
+        assert result["deleted"] == 0
