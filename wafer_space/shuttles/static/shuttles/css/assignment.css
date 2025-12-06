@@ -107,14 +107,12 @@
   border-top: 2px solid #ccc;
 }
 
-/* Green outline for size-matching slots */
+/* Green highlight for size-matching slots - uses inset box-shadow to avoid doubling on adjacent cells */
 .slot-highlight-size {
-  outline: 2px solid #28a745;
-  outline-offset: -2px;
+  box-shadow: inset 0 0 0 2px #28a745;
 }
 
-/* Blue outline for currently assigned slots - takes priority over green */
+/* Blue highlight for currently assigned slots - takes priority over green */
 .slot-highlight-assigned {
-  outline: 2px solid #0d6efd;
-  outline-offset: -2px;
+  box-shadow: inset 0 0 0 2px #0d6efd;
 }
