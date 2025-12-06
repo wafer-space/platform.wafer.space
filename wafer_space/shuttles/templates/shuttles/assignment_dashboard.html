@@ -10,18 +10,6 @@
   <div class="container-fluid mt-4 px-4">
     <h1>Shuttle {{ shuttle.name }} Assignment Status</h1>
     <div class="row mb-4">
-      <!-- Grid Layout -->
-      <div class="col-lg-10">
-        <div class="card h-100">
-          <div class="card-header py-2">
-            <strong>Grid Layout</strong>
-            <small class="text-muted ms-2">Click a slot to assign</small>
-          </div>
-          <div class="card-body p-2">
-            {% include "shuttles/_grid.html" with grid=grid columns=columns click_handler="showSlotModal" grid_id="grid-table" %}
-          </div>
-        </div>
-      </div>
       <!-- Summary Statistics -->
       <div class="col-lg-2">
         <div class="card h-100">
@@ -43,14 +31,29 @@
                   {% if stat.total_slots > 0 %}
                     <tr>
                       <td class="py-1">{{ slot_size.label }}</td>
-                      <td class="py-1 text-end">{{ stat.assigned_count }}/{{ stat.projects_count }}</td>
-                      <td class="py-1 text-end">{{ stat.manufacturable_assigned }}/{{ stat.manufacturable_total }}</td>
-                      <td class="py-1 text-end">{{ stat.available_slots }}/{{ stat.total_slots }}</td>
+                      <td class="py-1 text-end"
+                          title="{{ stat.assigned_count }} projects assigned to slots / {{ stat.projects_count }} total projects of this size on shuttle">{{ stat.assigned_count }}/{{ stat.projects_count }}</td>
+                      <td class="py-1 text-end"
+                          title="{{ stat.manufacturable_assigned }} manufacturable projects assigned / {{ stat.manufacturable_total }} total manufacturable projects">{{ stat.manufacturable_assigned }}/{{ stat.manufacturable_total }}</td>
+                      <td class="py-1 text-end"
+                          title="{{ stat.available_slots }} available slots / {{ stat.total_slots }} total slots of this size">{{ stat.available_slots }}/{{ stat.total_slots }}</td>
                     </tr>
                   {% endif %}
                 {% endfor %}
               </tbody>
             </table>
+          </div>
+        </div>
+      </div>
+      <!-- Grid Layout -->
+      <div class="col-lg-auto">
+        <div class="card h-100 grid-layout-card">
+          <div class="card-header py-2">
+            <strong>Grid Layout</strong>
+            <small class="text-muted ms-2">Click a slot to assign</small>
+          </div>
+          <div class="card-body p-2">
+            {% include "shuttles/_grid.html" with grid=grid columns=columns click_handler="showSlotModal" grid_id="grid-table" %}
           </div>
         </div>
       </div>
@@ -115,7 +118,9 @@
               <tr data-size="{{ project.slot_size }}"
                   data-assigned="{% if project.shuttle_slots.exists %}true{% else %}false{% endif %}">
                 <td class="font-monospace">{{ project.full_id|default:project.project_id }}</td>
-                <td>{{ project.name }}</td>
+                <td>
+                  <a href="{% url 'projects:detail' project.pk %}">{{ project.name }}</a>
+                </td>
                 <td>{{ project.user.username|default:"—" }}</td>
                 <td data-sort-value="{{ project.slot_size }}">
                   <span class="badge bg-secondary">{{ project.get_slot_size_display }}</span>

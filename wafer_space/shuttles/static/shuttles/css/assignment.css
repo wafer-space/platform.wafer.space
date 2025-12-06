@@ -5,6 +5,11 @@
   width: auto !important;
 }
 
+/* Grid layout card - fit content width */
+.grid-layout-card {
+  width: fit-content;
+}
+
 .grid-table th,
 .grid-table td {
   border: 1px solid #333 !important;
