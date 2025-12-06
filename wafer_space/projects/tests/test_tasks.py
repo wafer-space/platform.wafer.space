@@ -1775,6 +1775,73 @@ Check for KLayout DRC errors clear.
 
         assert result["status"] == "skipped"
 
+    @pytest.mark.django_db
+    def test_saves_log_file_with_checksum(self, tmp_path: Path) -> None:
+        """Saves processing logs to log_file with SHA256 checksum."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            docker_exit_code=0,
+            processing_logs="Precheck successfully completed.",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_analyzing"
+        )
+
+        result = do_analyzing(check.id)
+
+        assert result["status"] == "success"
+        check.refresh_from_db()
+        assert bool(check.log_file)
+        assert check.log_file_sha256 != ""
+        # Verify checksum matches content
+        content = check.log_file.read()
+        expected_sha256 = hashlib.sha256(content).hexdigest()
+        assert check.log_file_sha256 == expected_sha256
+
+    @pytest.mark.django_db
+    def test_returns_outputs_saved_in_result(self) -> None:
+        """Returns outputs_saved dict showing which outputs were saved."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            docker_exit_code=0,
+            processing_logs="Precheck successfully completed.",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_analyzing"
+        )
+
+        result = do_analyzing(check.id)
+
+        assert "outputs_saved" in result
+        assert "log_file" in result["outputs_saved"]
+        # Without a container, only log_file should be saved
+        assert result["outputs_saved"]["log_file"] is True
+        assert result["outputs_saved"]["runs_archive"] is False
+        assert result["outputs_saved"]["output_gds"] is False
+        assert result["outputs_saved"]["docker_layer_export"] is False
+
+    @pytest.mark.django_db
+    def test_handles_missing_container_gracefully(self) -> None:
+        """Still works when container is not available."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            docker_exit_code=0,
+            processing_logs="Precheck successfully completed.",
+            docker_server_id=None,
+            docker_container_id=None,
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_analyzing"
+        )
+
+        result = do_analyzing(check.id)
+
+        assert result["status"] == "success"
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
+        # Log file should still be saved even without container
+        assert bool(check.log_file)
+
 
 class TestDoCancelling:
     """Test do_cancelling work task."""
