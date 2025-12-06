@@ -825,18 +825,31 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
     top_cell = check.project_file.top_cell or "unknown"
     logger.info("[do_starting] Top cell: %s", top_cell)
 
-    # Build command: python precheck.py --input <gds> --top <cell> --dir <workdir>
+    # Get slot size and full_id from project (required for precheck)
+    slot_size = check.project.slot_size
+    full_id = check.project.full_id
+    if not full_id:
+        msg = (
+            "Cannot run manufacturability check: "
+            "project must be assigned to shuttle with project ID"
+        )
+        raise ValueError(msg)
+    logger.info("[do_starting] Slot size: %s, Full ID: %s", slot_size, full_id)
+
+    # Build precheck command with slot size and project ID
     # The container has ENTRYPOINT ["dev-shell"] and WORKDIR /workspace
     # precheck.py is at /workspace/precheck.py
     command = [
-        "python",
+        "python3",
         "precheck.py",
         "--input",
         "/input/design.gds",
         "--top",
         top_cell,
-        "--dir",
-        "/input",
+        "--slot",
+        slot_size,
+        "--id",
+        full_id,
     ]
     command_str = " ".join(command)
     logger.info("[do_starting] Container command: %s", command_str)

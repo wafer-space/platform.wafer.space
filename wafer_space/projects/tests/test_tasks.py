@@ -51,6 +51,7 @@ from wafer_space.projects.tasks import do_starting
 from wafer_space.projects.tasks import download_project_file
 from wafer_space.projects.tasks_checks import checks_cleanup_stale_pending_tasks
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
+from wafer_space.shuttles.tests.factories import ShuttleFactory
 
 User = get_user_model()
 TEST_PASSWORD = "testpass123"  # noqa: S105 - Test password constant
@@ -1213,11 +1214,18 @@ class TestDoStarting:
         test_file = tmp_path / "design.gds"
         test_file.write_bytes(b"test gds content")
 
+        # Create shuttle to enable full_id on the project
+        shuttle = ShuttleFactory(name="G850")
+
         check = ManufacturabilityCheckFactory(
             status=ManufacturabilityCheck.Status.STARTING,
             docker_server_id="test-local",
             docker_image="ghcr.io/test:latest",
         )
+        # Assign shuttle and project_id to enable full_id
+        check.project.shuttle = shuttle
+        check.project.project_id = "ABCD"
+        check.project.save()
         check.project_file.file.name = str(test_file)
         check.project_file.top_cell = "chip_top"
         check.project_file.save()
@@ -1260,16 +1268,18 @@ class TestDoStarting:
         create_call = mock_client.containers.create.call_args
         assert "volumes" not in create_call.kwargs
 
-        # Verify command includes precheck.py with --top flag
+        # Verify command includes precheck.py with --slot and --id flags
         assert create_call.kwargs["command"] == [
-            "python",
+            "python3",
             "precheck.py",
             "--input",
             "/input/design.gds",
             "--top",
             "chip_top",
-            "--dir",
-            "/input",
+            "--slot",
+            "1x1",
+            "--id",
+            "G850ABCD",
         ]
 
         # Verify put_archive was called with the tar stream at root
@@ -1277,9 +1287,11 @@ class TestDoStarting:
         mock_container.put_archive.assert_called_once_with("/", mock_tar_stream)
 
         # Verify command is stored correctly
-        assert check.docker_command == (
-            "python precheck.py --input /input/design.gds --top chip_top --dir /input"
+        expected_cmd = (
+            "python3 precheck.py --input /input/design.gds "
+            "--top chip_top --slot 1x1 --id G850ABCD"
         )
+        assert check.docker_command == expected_cmd
 
     @pytest.mark.django_db
     def test_cleans_up_task_tracking(self, tmp_path) -> None:
