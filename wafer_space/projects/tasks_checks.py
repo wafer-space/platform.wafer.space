@@ -814,9 +814,11 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
     )
 
     # Upload GDS file to container via put_archive
+    # Note: put_archive requires the target directory to exist, so we upload to /
+    # with the path structure in the arcname to create /input/design.gds
     logger.info("Uploading GDS file to container %s", container.id[:12])
-    tar_stream = create_tar_archive(gds_path, arcname="design.gds")
-    container.put_archive("/input", tar_stream)
+    tar_stream = create_tar_archive(gds_path, arcname="input/design.gds")
+    container.put_archive("/", tar_stream)
     logger.info("Uploaded GDS file to /input/design.gds in container")
 
     # Start the container and wait for it to be running

@@ -1273,8 +1273,9 @@ class TestDoStarting:
             "/workspace",
         ]
 
-        # Verify put_archive was called with the tar stream
-        mock_container.put_archive.assert_called_once_with("/input", mock_tar_stream)
+        # Verify put_archive was called with the tar stream at root
+        # (we upload to / with arcname=input/design.gds to create the directory)
+        mock_container.put_archive.assert_called_once_with("/", mock_tar_stream)
 
         # Verify command is stored correctly
         assert check.docker_command == (

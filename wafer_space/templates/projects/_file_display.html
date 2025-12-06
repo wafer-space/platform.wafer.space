@@ -82,11 +82,27 @@
                 <i class="bi bi-x-circle"></i> Cancel
               </button>
             </form>
-          {% elif check.status == 'dispatched' %}
+          {% elif check.status == 'dispatching' %}
             <span class="badge bg-info">
-              <i class="bi bi-hourglass-split"></i> Dispatched
+              <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+              Pulling Docker image...
             </span>
-            {# Cancel button for dispatched checks #}
+            {# Cancel button for dispatching checks #}
+            <form method="post"
+                  action="{% url 'projects:cancel_check' pk=file.project.pk %}"
+                  class="d-inline ms-2"
+                  onsubmit="return confirm('Are you sure you want to cancel this manufacturability check?');">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-outline-danger">
+                <i class="bi bi-x-circle"></i> Cancel
+              </button>
+            </form>
+          {% elif check.status == 'starting' %}
+            <span class="badge bg-info">
+              <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+              Starting container...
+            </span>
+            {# Cancel button for starting checks #}
             <form method="post"
                   action="{% url 'projects:cancel_check' pk=file.project.pk %}"
                   class="d-inline ms-2"
@@ -113,6 +129,12 @@
                 <i class="bi bi-x-circle"></i> Cancel
               </button>
             </form>
+          {% elif check.status == 'analyzing' %}
+            <span class="badge bg-info">
+              <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+              Analyzing results...
+            </span>
+            {# No cancel button for analyzing - container already finished #}
           {% elif check.status == 'finished' %}
             {# 3-tier result display: Clean, Warnings, or Not Manufacturable #}
             {% if check.is_manufacturable %}
@@ -251,7 +273,7 @@
           </details>
         </div>
         {# Display processing logs if available or if check is running #}
-        {% if check.processing_logs or check.status == 'running' or check.status == 'pending' or check.status == 'dispatched' %}
+        {% if check.processing_logs or check.status == 'running' or check.status == 'pending' or check.status == 'dispatching' or check.status == 'starting' or check.status == 'analyzing' %}
           <div class="mt-3" id="processing-logs-container">
             <h6>
               <i class="bi bi-terminal"></i> Processing Logs
