@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import io
+import pathlib
 import re
+import tarfile
 from datetime import UTC
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -12,6 +15,7 @@ from django.conf import settings
 
 if TYPE_CHECKING:
     import logging
+    from pathlib import Path
 
 # Matches Docker RFC3339Nano timestamp at start of line
 DOCKER_TIMESTAMP_PATTERN = re.compile(
@@ -125,3 +129,28 @@ def stop_and_remove_container(
         container.remove(force=True)
     except docker.errors.DockerException:
         logger.exception("Failed to remove container %s", container.id)
+
+
+def create_tar_archive(
+    file_path: Path | str,
+    arcname: str = "design.gds",
+) -> io.BytesIO:
+    """Create an in-memory tar archive from a file.
+
+    This is used with Docker's put_archive() API to upload files
+    to a container without using bind mounts, enabling support
+    for remote Docker servers.
+
+    Args:
+        file_path: Path to the file to archive.
+        arcname: Name of the file inside the archive.
+
+    Returns:
+        BytesIO stream containing the tar archive, seeked to position 0.
+    """
+    path = pathlib.Path(file_path) if isinstance(file_path, str) else file_path
+    tar_stream = io.BytesIO()
+    with tarfile.open(fileobj=tar_stream, mode="w") as tar:
+        tar.add(str(path), arcname=arcname)
+    tar_stream.seek(0)
+    return tar_stream
