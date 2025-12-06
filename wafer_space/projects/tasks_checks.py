@@ -1325,20 +1325,56 @@ def _save_docker_layer_export(
 
 @queued_check_task(expected_status="ANALYZING")
 def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
-    """Analyze container logs and extract results.
+    """Analyze container logs, extract outputs, and determine results.
 
-    Parses the container logs to determine if the design is manufacturable,
-    extracts errors and warnings, and transitions to FINISHED.
+    This function:
+    1. Saves processing logs to log_file field
+    2. Extracts /workspace/runs/ directory as compressed tarball
+    3. Extracts output GDS from /output/design.gds if it exists
+    4. Exports container filesystem changes for debugging
+    5. Parses logs to determine manufacturability
+    6. Transitions to FINISHED
+
+    NOTE: Container cleanup is handled by checks_cleanup_orphaned_docker task,
+    NOT here. The container remains after this function completes.
 
     Args:
         check: ManufacturabilityCheck in ANALYZING status (validated by decorator).
 
     Returns:
-        Dict with analysis results.
+        Dict with analysis results and outputs saved.
     """
     logger = logging.getLogger(__name__)
 
-    # Parse the logs
+    # Get container for output extraction
+    container = None
+    if check.docker_container_id and check.docker_server_id:
+        try:
+            client = _get_docker_client_for_server(check.docker_server_id, logger)
+            container = _get_container(client, check.docker_container_id, logger)
+        except docker.errors.DockerException as e:
+            logger.warning(
+                "Could not get container for output extraction: %s",
+                e,
+            )
+
+    try:
+        # 1. Save processing logs to log_file
+        _save_log_file(check, logger)
+
+        # 2-4. Extract outputs from container if available
+        if container is not None:
+            _save_runs_archive(check, container, logger)
+            _save_output_gds(check, container, logger)
+            _save_docker_layer_export(check, container, logger)
+        else:
+            logger.info("Skipping container output extraction - no container available")
+
+    finally:
+        # Clean up temp directory
+        _cleanup_temp_dir(check)
+
+    # 5. Parse the logs
     logs = check.processing_logs or ""
     exit_code = check.docker_exit_code or 0
 
@@ -1359,9 +1395,7 @@ def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
     is_manufacturable = parse_result["success"]
 
     # Extract tool versions from logs if available
-    # For now, use a simple approach - look for version strings
     tool_versions: dict[str, str] = {}
-    # Placeholder - real version extraction would be more sophisticated
     if "precheck" in logs.lower():
         tool_versions["precheck"] = "unknown"
 
@@ -1373,7 +1407,7 @@ def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
         len(warning_messages),
     )
 
-    # Transition to FINISHED
+    # 6. Transition to FINISHED
     check.mark_finished(
         is_manufacturable=is_manufacturable,
         errors=error_messages,
@@ -1386,6 +1420,12 @@ def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
         "is_manufacturable": is_manufacturable,
         "error_count": len(error_messages),
         "warning_count": len(warning_messages),
+        "outputs_saved": {
+            "log_file": bool(check.log_file),
+            "runs_archive": bool(check.runs_archive),
+            "output_gds": bool(check.output_gds),
+            "docker_layer_export": bool(check.docker_layer_export),
+        },
     }
 
 
