@@ -470,6 +470,11 @@ CELERY_BEAT_SCHEDULE = {
         "task": "wafer_space.projects.tasks.ensure_download_tasks_queued",
         "schedule": DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS,
     },
+    # Manufacturability check creation (creates checks for verified files)
+    "checks-create": {
+        "task": "wafer_space.projects.tasks.checks_create",
+        "schedule": 15.0,
+    },
     # Manufacturability check lifecycle - polling architecture (15s intervals)
     # Each task polls for checks in a specific state and advances them to the next state
     "checks-pending": {
