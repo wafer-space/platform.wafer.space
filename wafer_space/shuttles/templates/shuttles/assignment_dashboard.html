@@ -32,15 +32,15 @@
                     <tr data-size="{{ slot_size.value }}" style="cursor: pointer">
                       <td class="py-1">{{ slot_size.label }}</td>
                       <td class="py-1 text-end"
-                          title="{{ stat.assigned_count }} projects assigned to slots / {{ stat.projects_count }} total projects of this size on shuttle">
+                          title="{{ stat.assigned_count }} projects with slot allocated.&#10;{{ stat.projects_count }} projects of this size available for slot allocation.">
                         {{ stat.assigned_count }}/{{ stat.projects_count }}
                       </td>
                       <td class="py-1 text-end"
-                          title="{{ stat.manufacturable_assigned }} manufacturable projects assigned / {{ stat.manufacturable_total }} total manufacturable projects">
+                          title="{{ stat.manufacturable_assigned }} projects passing manufacturing precheck with slot allocated.&#10;{{ stat.manufacturable_total }} projects passing manufacturing precheck available for slot allocation.">
                         {{ stat.manufacturable_assigned }}/{{ stat.manufacturable_total }}
                       </td>
                       <td class="py-1 text-end"
-                          title="{{ stat.available_slots }} available slots / {{ stat.total_slots }} total slots of this size">
+                          title="{{ stat.available_slots }} slots available.&#10;{{ stat.total_slots }} slots of this size.">
                         {{ stat.available_slots }}/{{ stat.total_slots }}
                       </td>
                     </tr>
