@@ -980,6 +980,52 @@ def _get_project_file_path(
     return gds_path
 
 
+def _container_exists_for_check(
+    client: docker.DockerClient,
+    check: ManufacturabilityCheck,
+    logger: logging.Logger,
+) -> bool:
+    """Check if any container exists for this check (running or stopped).
+
+    Prevents creating duplicate containers when do_starting runs more than
+    once for the same check (e.g., a worker crash after container creation
+    leaves the check in STARTING, the stale pending-task cleanup removes the
+    task lock, and the beat task re-queues do_starting).
+
+    Args:
+        client: Docker client for the check's assigned server.
+        check: ManufacturabilityCheck to look up by container label.
+        logger: Logger for diagnostics.
+
+    Returns:
+        True if any container labeled with this check's ID exists.
+        False if none found, or if the Docker query fails (fail-open:
+        container creation will surface any real Docker problems).
+    """
+    try:
+        containers = client.containers.list(
+            all=True,  # Include stopped containers
+            filters={"label": f"wafer.space.check_id={check.id}"},
+        )
+    except docker.errors.DockerException:
+        logger.warning(
+            "[do_starting] Could not query existing containers for check %s",
+            check.id,
+        )
+        return False
+
+    if containers:
+        container_info = [(c.short_id, c.status) for c in containers]
+        logger.warning(
+            "[do_starting] Check %s already has container(s): %s",
+            check.id,
+            container_info,
+        )
+        return True
+
+    return False
+
+
 def _wait_for_container_running(
     container: "docker.models.containers.Container",
     logger: logging.Logger,
@@ -1036,6 +1082,9 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
     via put_archive (for remote Docker support), starts the container, and
     waits briefly for it to reach running state.
 
+    Aborts if a container (running or stopped) already exists for this check,
+    preventing duplicate containers when do_starting runs more than once.
+
     Args:
         check: ManufacturabilityCheck in STARTING status (validated by decorator).
 
@@ -1043,7 +1092,8 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
         Dict with status and container info.
 
     Raises:
-        TaskExecutionError: If server/file validation fails (handled by decorator).
+        TaskExecutionError: If server/file validation fails or a container
+            already exists for this check (handled by decorator).
         docker.errors.DockerException: If Docker operations fail (handled by decorator).
     """
     logger = logging.getLogger(__name__)
@@ -1060,6 +1110,11 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
     )
     client = _get_docker_client_for_server(check.docker_server_id, logger)
     logger.info("[do_starting] Connected to Docker server")
+
+    # Safety check: prevent duplicate containers for this check
+    if _container_exists_for_check(client, check, logger):
+        msg = f"Container already exists for check {check.id}"
+        raise TaskExecutionError(reason="container_already_exists", message=msg)
 
     logger.info("[do_starting] Validating project file path...")
     gds_path = _get_project_file_path(check, logger)
