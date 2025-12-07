@@ -441,6 +441,11 @@ DOWNLOAD_TASK_RETRY_BACKOFF_MULTIPLIER = 2  # Exponential backoff: 60s, 120s
 # Fallback system to detect orphaned tasks and recover from queue loss
 DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS = 60.0  # Check every 1 minute
 
+# Docker client configuration
+# ------------------------------------------------------------------------------
+# Timeout for Docker SDK HTTP client (default 60s is too short for some operations)
+DOCKER_CLIENT_TIMEOUT = 300  # 5 minutes
+
 # Precheck (Manufacturability Checking) configuration
 # See: Design document for manufacturability checking implementation
 PRECHECK_DOCKER_IMAGE = "ghcr.io/wafer-space/gf180mcu-precheck:latest"

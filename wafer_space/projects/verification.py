@@ -10,6 +10,7 @@ import docker
 import docker.errors
 import psutil
 from celery import current_app
+from django.conf import settings
 from django.db import DatabaseError
 from django.db import connection
 
@@ -37,7 +38,7 @@ def is_check_container_running(check: ManufacturabilityCheck) -> bool | None:
         None if Docker unavailable (caller should fall back to other checks)
     """
     try:
-        client = docker.from_env()
+        client = docker.from_env(timeout=settings.DOCKER_CLIENT_TIMEOUT)
     except docker.errors.DockerException:
         logger.warning(
             "Failed to connect to Docker - cannot verify container for check %s",
