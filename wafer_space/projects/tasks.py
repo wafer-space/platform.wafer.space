@@ -825,7 +825,7 @@ def _setup_docker_context(check, project_file, task_instance, logger):
         _CheckContext: Execution context for the check
     """
     logger.info("Step 2: Connecting to Docker daemon...")
-    client = docker.from_env()
+    client = docker.from_env(timeout=300)
     docker_info = client.info()
     logger.info("  ✓ Docker connected: %s", docker_info.get("Name", "unknown"))
     logger.info("  ✓ Docker version: %s", docker_info.get("ServerVersion", "unknown"))
@@ -2804,7 +2804,7 @@ def checks_cleanup_orphaned_docker() -> dict:
     logger.info("=" * 60)
 
     try:
-        client = docker.from_env()
+        client = docker.from_env(timeout=300)
     except docker.errors.DockerException as exc:
         logger.exception("Failed to connect to Docker")
         return {
@@ -3180,7 +3180,7 @@ def checks_cancelling() -> dict:
         cancelling_count,
     )
 
-    client = docker.from_env()
+    client = docker.from_env(timeout=300)
 
     for check in cancelling_checks:
         logger.info(

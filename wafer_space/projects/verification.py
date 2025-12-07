@@ -37,7 +37,7 @@ def is_check_container_running(check: ManufacturabilityCheck) -> bool | None:
         None if Docker unavailable (caller should fall back to other checks)
     """
     try:
-        client = docker.from_env()
+        client = docker.from_env(timeout=300)
     except docker.errors.DockerException:
         logger.warning(
             "Failed to connect to Docker - cannot verify container for check %s",
