@@ -1208,8 +1208,18 @@ class TestDoStarting:
     """Test do_starting work task."""
 
     @pytest.mark.django_db
-    def test_creates_and_starts_container(self, tmp_path) -> None:
+    def test_creates_and_starts_container(self, tmp_path, settings) -> None:
         """Creates container with put_archive for remote Docker support."""
+        # Configure Docker server for the test
+        settings.DOCKER_SERVERS = [
+            {
+                "id": "test-local",
+                "url": "unix:///test.sock",
+                "max_concurrent": 4,
+                "priority": 1,
+            },
+        ]
+
         # Create a test file
         test_file = tmp_path / "design.gds"
         test_file.write_bytes(b"test gds content")
@@ -1234,15 +1244,16 @@ class TestDoStarting:
             manufacturability_check=check, task_id="test", task_name="do_starting"
         )
 
-        mock_docker_path = "wafer_space.projects.tasks_checks.docker.DockerClient"
+        # Mock get_docker_client (imported from docker_utils)
+        mock_docker_path = "wafer_space.projects.tasks_checks.get_docker_client"
         mock_tar_path = "wafer_space.projects.tasks_checks.create_tar_archive"
         with (
-            patch(mock_docker_path) as mock_docker_client,
+            patch(mock_docker_path) as mock_get_docker_client,
             patch(mock_tar_path) as mock_create_tar,
             patch("wafer_space.projects.tasks_checks.Path") as mock_path,
         ):
             mock_client = MagicMock()
-            mock_docker_client.return_value = mock_client
+            mock_get_docker_client.return_value = mock_client
             mock_container = MagicMock()
             mock_container.id = "container123"
             mock_container.status = "running"
@@ -1280,6 +1291,7 @@ class TestDoStarting:
             "1x1",
             "--id",
             "G850ABCD",
+            "--help",
         ]
 
         # Verify put_archive was called with the tar stream at root
@@ -1733,10 +1745,14 @@ class TestDoAnalyzing:
     @pytest.mark.django_db
     def test_parses_logs_and_transitions_to_finished(self) -> None:
         """Parses logs successfully and transitions to FINISHED."""
+        # Success requires all three: DRC clear messages + success message
+        success_logs = """Check for Magic DRC errors clear.
+Check for KLayout DRC errors clear.
+Precheck successfully completed."""
         check = ManufacturabilityCheckFactory(
             status=ManufacturabilityCheck.Status.ANALYZING,
             docker_exit_code=0,
-            processing_logs="Precheck successfully completed.",
+            processing_logs=success_logs,
         )
         ManufacturabilityCheckTask.objects.create(
             manufacturability_check=check, task_id="test", task_name="do_analyzing"
