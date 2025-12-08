@@ -154,6 +154,11 @@ class TestPollingLifecycleIntegration:
             processed_filename="test.gds",
             top_cell="TOP",
         )
+        # Success requires all three: DRC clear messages + success message
+        # processing_logs is populated by do_running, so set it here
+        success_logs = """Check for Magic DRC errors clear.
+Check for KLayout DRC errors clear.
+Precheck successfully completed."""
         check = ManufacturabilityCheckFactory(
             project=project_file.project,
             project_file=project_file,
@@ -161,20 +166,22 @@ class TestPollingLifecycleIntegration:
             docker_server_id="test",
             docker_container_id="test-container",
             docker_exit_code=0,
+            processing_logs=success_logs,
         )
 
-        mock_path = "wafer_space.projects.tasks_checks.docker.DockerClient"
-        with patch(mock_path) as mock_docker:
+        # Mock get_docker_client for container extraction
+        mock_path = "wafer_space.projects.tasks_checks.get_docker_client"
+        with patch(mock_path) as mock_get_docker_client:
             mock_client = MagicMock()
-            mock_docker.return_value = mock_client
+            mock_get_docker_client.return_value = mock_client
 
             mock_container = MagicMock()
             mock_client.containers.get.return_value = mock_container
 
-            success_log = b"[INFO] All checks passed\n[INFO] Design is manufacturable"
+            # get_archive returns (iterator_of_bytes, stat_dict)
             mock_container.get_archive.return_value = (
-                iter([success_log]),
-                {"name": "precheck.log"},
+                iter([b"tar content"]),
+                {"name": "file.tar"},
             )
 
             result = do_analyzing(check.id)
@@ -358,6 +365,76 @@ class TestPollingLifecycleIntegration:
         assert pending_check.status == ManufacturabilityCheck.Status.DISPATCHING
         assert pending_check.docker_server_id == "test"
         assert result["dispatched"] == 1
+
+    def test_dispatch_serialization_full_lifecycle(self, settings) -> None:
+        """Test serialization through complete state machine transitions.
+
+        Starts with two PENDING checks and walks the first through each state,
+        verifying the second doesn't dispatch until the first reaches RUNNING.
+        """
+        settings.DOCKER_SERVERS = [
+            {
+                "id": "test",
+                "url": "unix:///test.sock",
+                "max_concurrent": 4,  # Plenty of capacity
+                "priority": 1,
+            },
+        ]
+
+        # Create two pending checks (check1 created first, so dispatched first)
+        check1 = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.PENDING
+        )
+        check2 = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.PENDING
+        )
+
+        # Step 1: First checks_pending() - only check1 should dispatch
+        result = checks_pending()
+        check1.refresh_from_db()
+        check2.refresh_from_db()
+
+        assert result["dispatched"] == 1
+        assert check1.status == ManufacturabilityCheck.Status.DISPATCHING
+        assert check1.docker_server_id == "test"
+        assert check2.status == ManufacturabilityCheck.Status.PENDING
+        assert check2.docker_server_id == ""
+
+        # Step 2: While check1 is DISPATCHING, check2 should NOT dispatch
+        result = checks_pending()
+        check2.refresh_from_db()
+
+        assert result["dispatched"] == 0
+        assert check2.status == ManufacturabilityCheck.Status.PENDING
+
+        # Step 3: Transition check1 to STARTING (image pull complete)
+        check1.mark_starting(
+            docker_image="test-image:latest",
+            docker_image_digest="sha256:abc123",
+        )
+        assert check1.status == ManufacturabilityCheck.Status.STARTING
+
+        # Step 4: While check1 is STARTING, check2 should still NOT dispatch
+        result = checks_pending()
+        check2.refresh_from_db()
+
+        assert result["dispatched"] == 0
+        assert check2.status == ManufacturabilityCheck.Status.PENDING
+
+        # Step 5: Transition check1 to RUNNING (container created and started)
+        check1.mark_running(
+            docker_container_id="container123",
+            docker_command="/run/precheck.sh",
+        )
+        assert check1.status == ManufacturabilityCheck.Status.RUNNING
+
+        # Step 6: NOW check2 should be dispatched
+        result = checks_pending()
+        check2.refresh_from_db()
+
+        assert result["dispatched"] == 1
+        assert check2.status == ManufacturabilityCheck.Status.DISPATCHING
+        assert check2.docker_server_id == "test"
 
     def test_error_handling_transitions_to_error(self, settings) -> None:
         """Test that errors during Docker operations transition to ERROR state."""
