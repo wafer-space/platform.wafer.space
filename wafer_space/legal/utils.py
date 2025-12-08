@@ -57,10 +57,10 @@ def write_frontmatter_file(file_path: Path, post: Post) -> bool:
 
     # Check if file exists and content is unchanged
     if file_path.exists():
-        existing_content = file_path.read_text()
+        existing_content = file_path.read_text(encoding="utf-8")
         if existing_content == new_content:
             return False
 
     # Write the file
-    file_path.write_text(new_content)
+    file_path.write_text(new_content, encoding="utf-8")
     return True
