@@ -159,7 +159,18 @@ class PrecheckLogParser:
 
     @classmethod
     def parse_logs(cls, logs: str, exit_code: int) -> ParseResult:
-        """Parse precheck logs - conservative initial implementation.
+        """Parse precheck logs - requires positive evidence of success.
+
+        Success requires ALL of the following:
+        1. exit_code == 0
+        2. "Precheck successfully completed." message in logs
+        3. Both Magic AND KLayout DRC tools reported results (errors or clear)
+
+        This prevents false positives when:
+        - Container never ran (exit_code defaults to 0)
+        - Container exited cleanly but didn't complete checks
+        - Logs are empty or missing
+        - Only partial checks ran
 
         Args:
             logs: Raw output from precheck.py
@@ -167,7 +178,7 @@ class PrecheckLogParser:
 
         Returns:
             dict with keys:
-                - success: bool (based on exit code and output)
+                - success: bool (based on exit code AND positive evidence)
                 - errors: list of error dicts
                 - warnings: list of warning dicts
                 - raw_output: original logs
@@ -177,8 +188,16 @@ class PrecheckLogParser:
         warnings: list[dict] = []
         detected_checks: list[str] = []
 
-        # Simple success detection
-        if "Precheck successfully completed." in logs:
+        # Check for explicit success message
+        has_success_message = "Precheck successfully completed." in logs
+
+        # Check for DRC tool completion - both tools must report results
+        drc_tools_complete = both_drc_tools_completed(logs)
+
+        # Success requires ALL: exit_code == 0 AND success message AND both DRC tools
+        is_success = exit_code == 0 and has_success_message and drc_tools_complete
+
+        if is_success:
             return ParseResult(
                 success=True,
                 errors=errors,
@@ -210,18 +229,33 @@ class PrecheckLogParser:
                     )
                 )
 
-        # If exit code != 0 but no errors found, treat whole output as error
-        if exit_code != 0 and not errors:
-            errors.append(
-                ErrorDict(
-                    message="Precheck failed - see full logs for details",
-                    line=0,
-                    category="System",
+        # If not successful and no errors found, add appropriate error message
+        if not is_success and not errors:
+            if exit_code != 0:
+                errors.append(
+                    ErrorDict(
+                        message="Precheck failed - see full logs for details",
+                        line=0,
+                        category="System",
+                    )
                 )
-            )
+            else:
+                # exit_code == 0 but missing required evidence - build specific message
+                missing = []
+                if not has_success_message:
+                    missing.append("no success message")
+                if not drc_tools_complete:
+                    missing.append("DRC tools did not report results")
+                errors.append(
+                    ErrorDict(
+                        message=f"Precheck did not complete - {' and '.join(missing)}",
+                        line=0,
+                        category="System",
+                    )
+                )
 
         return ParseResult(
-            success=exit_code == 0,
+            success=is_success,
             errors=errors,
             warnings=warnings,
             raw_output=logs,
