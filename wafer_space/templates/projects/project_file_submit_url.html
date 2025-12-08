@@ -25,7 +25,9 @@
               <strong>
                 {% if running_check.status == 'running' %}
                   running
-                {% elif running_check.status == 'dispatched' %}
+                {% elif running_check.status == 'analyzing' %}
+                  analyzing
+                {% elif running_check.status in 'dispatching,starting' %}
                   starting
                 {% else %}
                   pending
