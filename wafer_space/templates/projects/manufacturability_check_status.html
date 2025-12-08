@@ -19,7 +19,7 @@
     <div class="row mb-4">
       {% for status_key, status_info in status_counts.items %}
         <div class="col-md-2 mb-3">
-          <div class="card {% if status_key == 'running' %}border-primary{% elif status_key == 'dispatched' %}border-info{% elif status_key == 'pending' %}border-warning{% elif status_key == 'finished' %}border-success{% elif status_key == 'error' %}border-danger{% elif status_key == 'cancelling' %}border-warning{% elif status_key == 'cancelled' %}border-secondary{% endif %}">
+          <div class="card {% if status_key == 'running' %}border-primary{% elif status_key == 'dispatching' %}border-info{% elif status_key == 'starting' %}border-info{% elif status_key == 'analyzing' %}border-primary{% elif status_key == 'pending' %}border-warning{% elif status_key == 'finished' %}border-success{% elif status_key == 'error' %}border-danger{% elif status_key == 'cancelling' %}border-warning{% elif status_key == 'cancelled' %}border-secondary{% endif %}">
             <div class="card-body text-center">
               <h3 class="card-title mb-0">{{ status_info.count }}</h3>
               <p class="card-text text-muted mb-0">{{ status_info.label }}</p>
@@ -172,14 +172,23 @@
                     <td>
                       {% if check.status == 'pending' %}
                         <span class="badge bg-warning text-dark">Pending</span>
-                      {% elif check.status == 'dispatched' %}
-                        <span class="badge bg-info">Dispatched</span>
+                      {% elif check.status == 'dispatching' %}
+                        <span class="badge bg-info">Dispatching</span>
+                      {% elif check.status == 'starting' %}
+                        <span class="badge bg-info">Starting</span>
                       {% elif check.status == 'running' %}
                         <span class="badge bg-primary">
                           <span class="spinner-border spinner-border-sm"
                                 role="status"
                                 aria-hidden="true"></span>
                           Running
+                        </span>
+                      {% elif check.status == 'analyzing' %}
+                        <span class="badge bg-primary">
+                          <span class="spinner-border spinner-border-sm"
+                                role="status"
+                                aria-hidden="true"></span>
+                          Analyzing
                         </span>
                       {% elif check.status == 'finished' %}
                         <span class="badge bg-success">Finished</span>
