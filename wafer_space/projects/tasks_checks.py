@@ -1542,9 +1542,10 @@ def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
     finally:
         _cleanup_temp_dir(check)
 
-    # 5. Parse the logs
+    # 5. Parse the logs (docker_exit_code set by mark_analyzing, can't be None)
     logs = check.processing_logs or ""
-    exit_code = check.docker_exit_code or 0
+    assert check.docker_exit_code is not None, "mark_analyzing requires exit code"
+    exit_code = check.docker_exit_code
 
     logger.info(
         "[do_analyzing] Step 5/5: Parsing logs (exit_code=%d, log_length=%d bytes)...",
