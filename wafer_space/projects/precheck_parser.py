@@ -127,30 +127,41 @@ def both_drc_tools_completed(logs: str) -> bool:
 def classify_failure(logs: str, exit_code: int) -> str:
     """Classify failure as 'system', 'design', or 'success'.
 
-    The precheck is only considered successfully completed if BOTH Magic and
-    KLayout DRC tools reported results (either errors or clear). If either
-    tool is missing its result, it's a system error (precheck didn't complete).
+    The precheck is only considered successfully completed if ALL of:
+    1. exit_code == 0
+    2. "Precheck successfully completed." message in logs
+    3. BOTH Magic AND KLayout DRC tools reported results
+
+    If any of these are missing, it's either a system error (precheck didn't
+    complete) or a design error (DRC found issues).
 
     Args:
         logs: Raw output from precheck
         exit_code: Process exit code
 
     Returns:
-        'success' if exit code 0
-        'system' if infrastructure failure (should retry) or DRC tools incomplete
+        'success' if all evidence present
+        'system' if infrastructure failure (should retry) or precheck incomplete
         'design' if user's design has errors (no retry)
     """
-    if exit_code == 0:
+    has_success_message = "Precheck successfully completed." in logs
+    drc_tools_complete = both_drc_tools_completed(logs)
+
+    # Success requires ALL: exit_code == 0 AND success message AND both DRC tools
+    if exit_code == 0 and has_success_message and drc_tools_complete:
         return "success"
 
     # Check if both DRC tools completed - if not, it's a system error
     # Both Magic AND KLayout must report either "errors found" or "clear"
-    if not both_drc_tools_completed(logs):
+    if not drc_tools_complete:
         return "system"
 
-    # Both DRC tools reported results - classify based on content
-    # If we got here with exit_code != 0 and both tools completed,
-    # at least one tool has errors → design error
+    # exit_code == 0 but missing success message means incomplete - system error
+    if exit_code == 0 and not has_success_message:
+        return "system"
+
+    # Both DRC tools reported results with exit_code != 0
+    # → at least one tool has errors → design error
     return "design"
 
 
