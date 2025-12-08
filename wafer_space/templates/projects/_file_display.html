@@ -211,17 +211,39 @@
             <strong>Completed:</strong> {{ check.celery_job_finished_at|date:"Y-m-d H:i:s" }}
           </p>
         {% endif %}
-        {# Log file download link #}
-        {% if check.log_file %}
-          <p class="mb-2">
-            <strong>Log File:</strong>
-            <a href="{{ check.log_file.url }}"
-               class="btn btn-sm btn-outline-secondary"
-               download>
-              <i class="bi bi-download"></i> Download Log
-            </a>
-            <small class="text-muted ms-2">({{ check.log_file.size|filesizeformat }})</small>
-          </p>
+        {# Output files download section #}
+        {% if check.log_file or check.runs_archive or check.output_gds %}
+          <div class="mt-3 mb-3">
+            <h6>
+              <i class="bi bi-folder2-open"></i> Output Files
+            </h6>
+            <div class="d-flex flex-wrap gap-2">
+              {% if check.log_file %}
+                <a href="{{ check.log_file.url }}"
+                   class="btn btn-sm btn-outline-secondary"
+                   download>
+                  <i class="bi bi-file-text"></i> Processing Log
+                  <small class="text-muted">({{ check.log_file.size|filesizeformat }})</small>
+                </a>
+              {% endif %}
+              {% if check.runs_archive %}
+                <a href="{{ check.runs_archive.url }}"
+                   class="btn btn-sm btn-outline-primary"
+                   download>
+                  <i class="bi bi-file-zip"></i> Runs Archive
+                  <small class="text-muted">({{ check.runs_archive.size|filesizeformat }})</small>
+                </a>
+              {% endif %}
+              {% if check.output_gds %}
+                <a href="{{ check.output_gds.url }}"
+                   class="btn btn-sm btn-outline-success"
+                   download>
+                  <i class="bi bi-file-earmark-binary"></i> Output GDS
+                  <small class="text-muted">({{ check.output_gds.size|filesizeformat }})</small>
+                </a>
+              {% endif %}
+            </div>
+          </div>
         {% endif %}
         {# Docker command for reproducibility - always show section #}
         <div class="mt-3">
