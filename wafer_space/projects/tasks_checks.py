@@ -880,6 +880,8 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
         "precheck.py",
         "--input",
         "/input/design.gds",
+        "--output",
+        "/output/design.gds",
         "--top",
         top_cell,
         "--slot",
