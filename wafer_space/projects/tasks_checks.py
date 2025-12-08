@@ -39,6 +39,7 @@ from .models import ManufacturabilityCheckpoint
 from .models import ManufacturabilityCheckTask
 from .models import ProjectFile
 from .precheck_parser import PrecheckLogParser
+from .precheck_parser import classify_failure
 from .verification import is_check_task_actively_running
 
 if TYPE_CHECKING:
@@ -1470,6 +1471,85 @@ def _save_docker_layer_export(
     )
 
 
+def _finalize_analyzing(
+    check: ManufacturabilityCheck,
+    failure_type: str,
+    error_messages: list[str],
+    warning_messages: list[str],
+    tool_versions: dict[str, str],
+) -> dict[str, Any]:
+    """Finalize analysis by transitioning check to appropriate state.
+
+    Args:
+        check: The manufacturability check.
+        failure_type: 'success', 'design', or 'system'.
+        error_messages: List of error messages from parsing.
+        warning_messages: List of warning messages from parsing.
+        tool_versions: Dict of tool versions detected.
+
+    Returns:
+        Result dict with status and details.
+    """
+    logger = logging.getLogger(__name__)
+    outputs_saved = {
+        "log_file": bool(check.log_file),
+        "runs_archive": bool(check.runs_archive),
+        "output_gds": bool(check.output_gds),
+        "docker_layer_export": bool(check.docker_layer_export),
+    }
+
+    if failure_type == "system":
+        # System error - precheck didn't complete properly, can be retried
+        if error_messages:
+            error_msg = "; ".join(error_messages)
+        else:
+            error_msg = "Precheck incomplete"
+        logger.info(
+            "[do_analyzing] System error detected, transitioning check %s to ERROR...",
+            check.id,
+        )
+        check.mark_error(error_message=error_msg)
+        logger.info(
+            "[do_analyzing] Check %s transitioned to ERROR (outputs=%s)",
+            check.id,
+            outputs_saved,
+        )
+        return {
+            "status": "error",
+            "failure_type": "system",
+            "error_count": len(error_messages),
+            "outputs_saved": outputs_saved,
+        }
+
+    # Success or design error - transition to FINISHED
+    is_manufacturable = failure_type == "success"
+    logger.info(
+        "[do_analyzing] Transitioning check %s to FINISHED (manufacturable=%s)...",
+        check.id,
+        is_manufacturable,
+    )
+    check.mark_finished(
+        is_manufacturable=is_manufacturable,
+        errors=error_messages,
+        warnings=warning_messages,
+        tool_versions=tool_versions,
+    )
+    logger.info(
+        "[do_analyzing] Check %s transitioned to FINISHED "
+        "(manufacturable=%s, outputs=%s)",
+        check.id,
+        is_manufacturable,
+        outputs_saved,
+    )
+    return {
+        "status": "success",
+        "is_manufacturable": is_manufacturable,
+        "error_count": len(error_messages),
+        "warning_count": len(warning_messages),
+        "outputs_saved": outputs_saved,
+    }
+
+
 @queued_check_task(expected_status="ANALYZING")
 def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
     """Analyze container logs, extract outputs, and determine results.
@@ -1564,8 +1644,8 @@ def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
     error_messages = [e["message"] for e in parse_result["errors"]]
     warning_messages = [w.get("message", str(w)) for w in parse_result["warnings"]]
 
-    # Determine manufacturability
-    is_manufacturable = parse_result["success"]
+    # Classify the failure type: 'success', 'design', or 'system'
+    failure_type = classify_failure(logs, exit_code)
 
     # Extract tool versions from logs if available
     tool_versions: dict[str, str] = {}
@@ -1573,9 +1653,8 @@ def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
         tool_versions["precheck"] = "unknown"
 
     logger.info(
-        "[do_analyzing] Log parsing complete: "
-        "manufacturable=%s, errors=%d, warnings=%d",
-        is_manufacturable,
+        "[do_analyzing] Log parsing complete: failure_type=%s, errors=%d, warnings=%d",
+        failure_type,
         len(error_messages),
         len(warning_messages),
     )
@@ -1589,36 +1668,14 @@ def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
             remaining = len(error_messages) - max_errors_to_log
             logger.info("[do_analyzing] ... and %d more errors", remaining)
 
-    # 6. Transition to FINISHED
-    logger.info("[do_analyzing] Transitioning check %s to FINISHED...", check.id)
-    check.mark_finished(
-        is_manufacturable=is_manufacturable,
-        errors=error_messages,
-        warnings=warning_messages,
+    # 6. Transition to appropriate state based on failure type
+    return _finalize_analyzing(
+        check=check,
+        failure_type=failure_type,
+        error_messages=error_messages,
+        warning_messages=warning_messages,
         tool_versions=tool_versions,
     )
-
-    outputs_saved = {
-        "log_file": bool(check.log_file),
-        "runs_archive": bool(check.runs_archive),
-        "output_gds": bool(check.output_gds),
-        "docker_layer_export": bool(check.docker_layer_export),
-    }
-    logger.info(
-        "[do_analyzing] Check %s successfully transitioned to FINISHED "
-        "(manufacturable=%s, outputs=%s)",
-        check.id,
-        is_manufacturable,
-        outputs_saved,
-    )
-
-    return {
-        "status": "success",
-        "is_manufacturable": is_manufacturable,
-        "error_count": len(error_messages),
-        "warning_count": len(warning_messages),
-        "outputs_saved": outputs_saved,
-    }
 
 
 @checks_task(queue="default")

@@ -646,6 +646,14 @@ Precheck successfully completed."""
             processed_filename="test.gds",
             top_cell="TOP",
         )
+        # Design failure: DRC tools completed but exit_code=1 (errors found)
+        failure_logs = """Precheck Summary:
+[ERROR] DRC violation at (100, 200)
+[ERROR] Metal spacing violation
+Check for Magic DRC errors clear.
+Check for KLayout DRC errors clear.
+[INFO] Design is NOT manufacturable
+"""
         check = ManufacturabilityCheckFactory(
             project=project_file.project,
             project_file=project_file,
@@ -653,6 +661,7 @@ Precheck successfully completed."""
             docker_server_id="test",
             docker_container_id="test-container",
             docker_exit_code=1,
+            processing_logs=failure_logs,
         )
 
         mock_path = "wafer_space.projects.tasks_checks.docker.DockerClient"
@@ -664,11 +673,13 @@ Precheck successfully completed."""
             mock_container.id = "test-container"
             mock_client.containers.get.return_value = mock_container
 
-            # Mock failed precheck output
+            # Mock failed precheck output - DRC tools completed but found errors
             failure_log = b"""
 Precheck Summary:
 [ERROR] DRC violation at (100, 200)
 [ERROR] Metal spacing violation
+Check for Magic DRC errors clear.
+Check for KLayout DRC errors clear.
 [INFO] Design is NOT manufacturable
 """
             mock_container.get_archive.return_value = (

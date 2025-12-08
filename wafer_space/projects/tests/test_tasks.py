@@ -1805,10 +1805,14 @@ Check for KLayout DRC errors clear.
     @pytest.mark.django_db
     def test_saves_log_file_with_checksum(self, tmp_path: Path) -> None:
         """Saves processing logs to log_file with SHA256 checksum."""
+        # Success requires all evidence: DRC clear messages + success message
+        success_logs = """Check for Magic DRC errors clear.
+Check for KLayout DRC errors clear.
+Precheck successfully completed."""
         check = ManufacturabilityCheckFactory(
             status=ManufacturabilityCheck.Status.ANALYZING,
             docker_exit_code=0,
-            processing_logs="Precheck successfully completed.",
+            processing_logs=success_logs,
         )
         ManufacturabilityCheckTask.objects.create(
             manufacturability_check=check, task_id="test", task_name="do_analyzing"
@@ -1828,10 +1832,14 @@ Check for KLayout DRC errors clear.
     @pytest.mark.django_db
     def test_returns_outputs_saved_in_result(self) -> None:
         """Returns outputs_saved dict showing which outputs were saved."""
+        # Success requires all evidence: DRC clear messages + success message
+        success_logs = """Check for Magic DRC errors clear.
+Check for KLayout DRC errors clear.
+Precheck successfully completed."""
         check = ManufacturabilityCheckFactory(
             status=ManufacturabilityCheck.Status.ANALYZING,
             docker_exit_code=0,
-            processing_logs="Precheck successfully completed.",
+            processing_logs=success_logs,
         )
         ManufacturabilityCheckTask.objects.create(
             manufacturability_check=check, task_id="test", task_name="do_analyzing"
