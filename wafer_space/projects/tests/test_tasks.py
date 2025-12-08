@@ -1301,7 +1301,7 @@ class TestDoStarting:
         # Verify command is stored correctly
         expected_cmd = (
             "python3 precheck.py --input /input/design.gds "
-            "--top chip_top --slot 1x1 --id G850ABCD"
+            "--top chip_top --slot 1x1 --id G850ABCD --help"
         )
         assert check.docker_command == expected_cmd
 
