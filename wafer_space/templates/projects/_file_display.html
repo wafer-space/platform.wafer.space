@@ -217,32 +217,61 @@
             <h6>
               <i class="bi bi-folder2-open"></i> Output Files
             </h6>
-            <div class="d-flex flex-wrap gap-2">
-              {% if check.log_file %}
-                <a href="{{ check.log_file.url }}"
-                   class="btn btn-sm btn-outline-secondary"
-                   download>
-                  <i class="bi bi-file-text"></i> Processing Log
-                  <small class="text-muted">({{ check.log_file.size|filesizeformat }})</small>
-                </a>
-              {% endif %}
-              {% if check.runs_archive %}
-                <a href="{{ check.runs_archive.url }}"
-                   class="btn btn-sm btn-outline-primary"
-                   download>
-                  <i class="bi bi-file-zip"></i> Runs Archive
-                  <small class="text-muted">({{ check.runs_archive.size|filesizeformat }})</small>
-                </a>
-              {% endif %}
-              {% if check.output_gds %}
-                <a href="{{ check.output_gds.url }}"
-                   class="btn btn-sm btn-outline-success"
-                   download>
-                  <i class="bi bi-file-earmark-binary"></i> Output GDS
-                  <small class="text-muted">({{ check.output_gds.size|filesizeformat }})</small>
-                </a>
-              {% endif %}
-            </div>
+            <table class="table table-sm table-borderless mb-0">
+              <tbody>
+                {% if check.log_file %}
+                  <tr>
+                    <td style="width: 180px;">
+                      <a href="{{ check.log_file.url }}"
+                         class="btn btn-sm btn-outline-secondary"
+                         download>
+                        <i class="bi bi-file-text"></i> Processing Log
+                      </a>
+                    </td>
+                    <td class="text-muted small">{{ check.log_file.size|filesizeformat }}</td>
+                    <td>
+                      {% if check.log_file_sha256 %}
+                        <code class="small text-muted">sha256:{{ check.log_file_sha256 }}</code>
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% endif %}
+                {% if check.runs_archive %}
+                  <tr>
+                    <td style="width: 180px;">
+                      <a href="{{ check.runs_archive.url }}"
+                         class="btn btn-sm btn-outline-primary"
+                         download>
+                        <i class="bi bi-file-zip"></i> Runs Archive
+                      </a>
+                    </td>
+                    <td class="text-muted small">{{ check.runs_archive.size|filesizeformat }}</td>
+                    <td>
+                      {% if check.runs_archive_sha256 %}
+                        <code class="small text-muted">sha256:{{ check.runs_archive_sha256 }}</code>
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% endif %}
+                {% if check.output_gds %}
+                  <tr>
+                    <td style="width: 180px;">
+                      <a href="{{ check.output_gds.url }}"
+                         class="btn btn-sm btn-outline-success"
+                         download>
+                        <i class="bi bi-file-earmark-binary"></i> Output GDS
+                      </a>
+                    </td>
+                    <td class="text-muted small">{{ check.output_gds.size|filesizeformat }}</td>
+                    <td>
+                      {% if check.output_gds_sha256 %}
+                        <code class="small text-muted">sha256:{{ check.output_gds_sha256 }}</code>
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% endif %}
+              </tbody>
+            </table>
           </div>
         {% endif %}
         {# Docker command for reproducibility - always show section #}
