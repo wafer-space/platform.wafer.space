@@ -318,7 +318,12 @@ def checks_cleanup_orphaned_docker() -> dict:
 def checks_pending() -> dict[str, int]:
     """Transition PENDING checks to DISPATCHING with server assignment.
 
-    Respects per-server concurrent limits. Assigns to servers in priority order.
+    Serializes dispatch to prevent Docker API overload:
+    - Only ONE check per server can be in DISPATCHING state at a time
+    - Must wait for check to reach STARTING before dispatching the next
+    - Still respects per-server max_concurrent for total active checks
+
+    This prevents multiple concurrent image pulls from overloading Docker API.
 
     Returns:
         Dict with count of dispatched checks.
@@ -334,31 +339,56 @@ def checks_pending() -> dict[str, int]:
         server_id = str(server["id"])
         max_concurrent = int(server["max_concurrent"])
 
-        # Count active checks on this server
+        # Serialize dispatch: skip if any check is already DISPATCHING on this server
+        # This prevents multiple concurrent image pulls from overloading Docker API
+        dispatching_count = ManufacturabilityCheck.objects.filter(
+            docker_server_id=server_id,
+            status=ManufacturabilityCheck.Status.DISPATCHING,
+        ).count()
+
+        if dispatching_count > 0:
+            logger.debug(
+                "Server %s: %d check(s) already DISPATCHING, skipping dispatch",
+                server_id,
+                dispatching_count,
+            )
+            continue
+
+        # Count active checks on this server (DISPATCHING, STARTING, RUNNING, etc.)
         active_count = ManufacturabilityCheck.objects.filter(
             docker_server_id=server_id,
             status__in=ManufacturabilityCheck.Status.active(),
         ).count()
 
-        available_slots = max_concurrent - active_count
-
-        if available_slots > 0:
-            logger.info(
-                "Server %s: %d/%d active, %d slots available",
+        if active_count >= max_concurrent:
+            logger.debug(
+                "Server %s: at capacity (%d/%d active)",
                 server_id,
                 active_count,
                 max_concurrent,
-                available_slots,
             )
+            continue
 
-            pending_checks = ManufacturabilityCheck.objects.filter(
+        logger.info(
+            "Server %s: %d/%d active, dispatching one check",
+            server_id,
+            active_count,
+            max_concurrent,
+        )
+
+        # Dispatch only ONE check per server per cycle (serialized dispatch)
+        pending_check = (
+            ManufacturabilityCheck.objects.filter(
                 status=ManufacturabilityCheck.Status.PENDING,
-            ).order_by("created_at")[:available_slots]
+            )
+            .order_by("created_at")
+            .first()
+        )
 
-            for check in pending_checks:
-                check.mark_dispatching(server_id=server_id)
-                logger.info("Assigned check %s to server %s", check.id, server_id)
-                dispatched += 1
+        if pending_check:
+            pending_check.mark_dispatching(server_id=server_id)
+            logger.info("Assigned check %s to server %s", pending_check.id, server_id)
+            dispatched += 1
 
     return {"dispatched": dispatched}
 
