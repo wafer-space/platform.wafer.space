@@ -269,6 +269,96 @@ class TestPollingLifecycleIntegration:
         assert pending_check.docker_server_id == ""
         assert result["dispatched"] == 0
 
+    def test_dispatch_serialization_blocks_on_dispatching(self, settings) -> None:
+        """Test that new dispatches are blocked when a check is DISPATCHING."""
+        settings.DOCKER_SERVERS = [
+            {
+                "id": "test",
+                "url": "unix:///test.sock",
+                "max_concurrent": 4,  # Plenty of capacity
+                "priority": 1,
+            },
+        ]
+
+        # Create a check already in DISPATCHING (doing image pull)
+        ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.DISPATCHING,
+            docker_server_id="test",
+        )
+
+        # Create pending check
+        pending_check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.PENDING
+        )
+
+        result = checks_pending()
+
+        pending_check.refresh_from_db()
+        # Should NOT dispatch - serialization blocks concurrent Docker operations
+        assert pending_check.status == ManufacturabilityCheck.Status.PENDING
+        assert pending_check.docker_server_id == ""
+        assert result["dispatched"] == 0
+
+    def test_dispatch_serialization_blocks_on_starting(self, settings) -> None:
+        """Test that new dispatches are blocked when a check is STARTING."""
+        settings.DOCKER_SERVERS = [
+            {
+                "id": "test",
+                "url": "unix:///test.sock",
+                "max_concurrent": 4,  # Plenty of capacity
+                "priority": 1,
+            },
+        ]
+
+        # Create a check already in STARTING (creating container)
+        ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.STARTING,
+            docker_server_id="test",
+        )
+
+        # Create pending check
+        pending_check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.PENDING
+        )
+
+        result = checks_pending()
+
+        pending_check.refresh_from_db()
+        # Should NOT dispatch - serialization blocks concurrent Docker operations
+        assert pending_check.status == ManufacturabilityCheck.Status.PENDING
+        assert pending_check.docker_server_id == ""
+        assert result["dispatched"] == 0
+
+    def test_dispatch_serialization_allows_after_running(self, settings) -> None:
+        """Test that new dispatches are allowed once previous check is RUNNING."""
+        settings.DOCKER_SERVERS = [
+            {
+                "id": "test",
+                "url": "unix:///test.sock",
+                "max_concurrent": 4,  # Plenty of capacity
+                "priority": 1,
+            },
+        ]
+
+        # Create a check already in RUNNING (Docker operations complete)
+        ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING,
+            docker_server_id="test",
+        )
+
+        # Create pending check
+        pending_check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.PENDING
+        )
+
+        result = checks_pending()
+
+        pending_check.refresh_from_db()
+        # SHOULD dispatch - previous check is past initialization
+        assert pending_check.status == ManufacturabilityCheck.Status.DISPATCHING
+        assert pending_check.docker_server_id == "test"
+        assert result["dispatched"] == 1
+
     def test_error_handling_transitions_to_error(self, settings) -> None:
         """Test that errors during Docker operations transition to ERROR state."""
         settings.DOCKER_SERVERS = [
