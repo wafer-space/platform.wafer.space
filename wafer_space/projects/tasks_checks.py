@@ -319,11 +319,12 @@ def checks_pending() -> dict[str, int]:
     """Transition PENDING checks to DISPATCHING with server assignment.
 
     Serializes dispatch to prevent Docker API overload:
-    - Only ONE check per server can be in DISPATCHING state at a time
-    - Must wait for check to reach STARTING before dispatching the next
+    - Only ONE check per server can be in DISPATCHING or STARTING state
+    - Must wait for check to reach RUNNING before dispatching the next
     - Still respects per-server max_concurrent for total active checks
 
-    This prevents multiple concurrent image pulls from overloading Docker API.
+    This prevents multiple concurrent Docker operations (image pulls,
+    container creation) from overloading the Docker API.
 
     Returns:
         Dict with count of dispatched checks.
@@ -339,18 +340,22 @@ def checks_pending() -> dict[str, int]:
         server_id = str(server["id"])
         max_concurrent = int(server["max_concurrent"])
 
-        # Serialize dispatch: skip if any check is already DISPATCHING on this server
-        # This prevents multiple concurrent image pulls from overloading Docker API
-        dispatching_count = ManufacturabilityCheck.objects.filter(
+        # Serialize dispatch: skip if any check is DISPATCHING or STARTING
+        # This prevents concurrent Docker operations (image pull, container create)
+        initializing_count = ManufacturabilityCheck.objects.filter(
             docker_server_id=server_id,
-            status=ManufacturabilityCheck.Status.DISPATCHING,
+            status__in=[
+                ManufacturabilityCheck.Status.DISPATCHING,
+                ManufacturabilityCheck.Status.STARTING,
+            ],
         ).count()
 
-        if dispatching_count > 0:
+        if initializing_count > 0:
             logger.debug(
-                "Server %s: %d check(s) already DISPATCHING, skipping dispatch",
+                "Server %s: %d check(s) initializing (DISPATCHING/STARTING), "
+                "skipping dispatch",
                 server_id,
-                dispatching_count,
+                initializing_count,
             )
             continue
 
