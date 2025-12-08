@@ -1291,7 +1291,6 @@ class TestDoStarting:
             "1x1",
             "--id",
             "G850ABCD",
-            "--help",
         ]
 
         # Verify put_archive was called with the tar stream at root
@@ -1301,7 +1300,7 @@ class TestDoStarting:
         # Verify command is stored correctly
         expected_cmd = (
             "python3 precheck.py --input /input/design.gds "
-            "--top chip_top --slot 1x1 --id G850ABCD --help"
+            "--top chip_top --slot 1x1 --id G850ABCD"
         )
         assert check.docker_command == expected_cmd
 
