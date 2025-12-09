@@ -134,6 +134,12 @@ class Project(models.Model):
         blank=True,
     )
 
+    # Visibility settings
+    is_public = models.BooleanField(
+        default=False,
+        help_text="Whether this design should be publicly visible on the platform",
+    )
+
     # Change history tracking
     history = HistoricalRecords()
 
