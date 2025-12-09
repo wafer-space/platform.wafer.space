@@ -49,8 +49,10 @@ from wafer_space.projects.tasks import do_dispatching
 from wafer_space.projects.tasks import do_running
 from wafer_space.projects.tasks import do_starting
 from wafer_space.projects.tasks import download_project_file
+from wafer_space.projects.tasks_checks import checks_cleanup
 from wafer_space.projects.tasks_checks import checks_cleanup_stale_pending_tasks
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
+from wafer_space.projects.tests.factories import ProjectFileFactory
 from wafer_space.shuttles.tests.factories import ShuttleFactory
 
 User = get_user_model()
@@ -2105,3 +2107,62 @@ class TestChecksCleanupStalePendingTasks:
 
         assert result["deleted"] == 0
         assert result["still_active"] == 0
+
+
+class TestCancelSupersededChecks:
+    """Tests for cancel_superseded_checks functionality."""
+
+    @pytest.mark.django_db
+    def test_cancels_older_in_progress_check_when_newer_exists(self) -> None:
+        """Older in-progress check is cancelled when newer check exists."""
+        project_file = ProjectFileFactory()
+        old_check = ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+
+        checks_cleanup()
+
+        old_check.refresh_from_db()
+        assert old_check.status == ManufacturabilityCheck.Status.CANCELLING
+
+    @pytest.mark.django_db
+    def test_does_not_cancel_if_no_newer_check(self) -> None:
+        """In-progress check is not cancelled if no newer check exists."""
+        project_file = ProjectFileFactory()
+        check = ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+
+        checks_cleanup()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.RUNNING
+
+    @pytest.mark.django_db
+    def test_does_not_cancel_finished_checks(self) -> None:
+        """Finished checks are not cancelled even if newer exists."""
+        project_file = ProjectFileFactory()
+        old_check = ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+        ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+
+        checks_cleanup()
+
+        old_check.refresh_from_db()
+        assert old_check.status == ManufacturabilityCheck.Status.FINISHED
