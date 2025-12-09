@@ -4,8 +4,8 @@
 
 The project submission system allows users to submit their chip design files (GDS/OASIS formats) for low-cost silicon manufacturing through wafer.space. This document provides a comprehensive overview of the current implementation status.
 
-**Last Updated**: 2025-10-19
-**Status**: 95% Complete - Core infrastructure implemented, submission workflow and UI enhancements remaining
+**Last Updated**: 2025-12-09
+**Status**: 95% Complete - Core infrastructure implemented, multi-check refactor complete, submission workflow and UI enhancements remaining
 
 ## Architecture
 
@@ -30,10 +30,12 @@ The project submission system allows users to submit their chip design files (GD
 - Unique constraint: one active file per project
 
 **ManufacturabilityCheck Model**
-- One-to-one relationship with Project
-- Celery task tracking with retry logic
+- **ForeignKey relationship with ProjectFile** (multiple checks per file)
+- Trigger reason tracking (INITIAL, RETRY, DRC_UPDATE, ADMIN_RERUN)
+- Parent check reference for retry chains (flat tree structure)
+- Celery task tracking
 - Results storage (errors, warnings, logs)
-- Status: QUEUED → PROCESSING → COMPLETED/FAILED
+- Status: PENDING → DISPATCHED → RUNNING → FINISHED/ERROR/CANCELLED
 
 #### 2. Business Logic (`services.py`)
 
@@ -323,10 +325,12 @@ Infrastructure exists but not fully connected:
 - `created_at` (DateTimeField)
 - `updated_at` (DateTimeField)
 - `submitted_at` (DateTimeField, nullable)
-- `is_manufacturable` (BooleanField, nullable)
-- `manufacturability_errors` (JSONField)
-- `check_completed_at` (DateTimeField, nullable)
 - `estimated_cost` (DecimalField, nullable)
+
+**Derived Properties (computed from latest check):**
+- `is_manufacturable` (@property) - Derived from latest FINISHED check on submitted file
+- `manufacturability_errors` (@property) - Errors from latest FINISHED check
+- `check_completed_at` (@property) - Completion timestamp from latest check
 
 ### ProjectFile Table
 - `id` (AutoField, PK)
@@ -356,8 +360,10 @@ Infrastructure exists but not fully connected:
 
 ### ManufacturabilityCheck Table
 - `id` (AutoField, PK)
-- `project_id` (OneToOne to projects)
+- `project_file_id` (FK to project_files, cascade) - **Multiple checks per file**
 - `status` (CharField with choices)
+- `trigger_reason` (CharField) - INITIAL, RETRY, DRC_UPDATE, ADMIN_RERUN
+- `parent_check` (ForeignKey to self, nullable) - Links to original check for retry chain
 - `started_at` (DateTimeField, nullable)
 - `completed_at` (DateTimeField, nullable)
 - `task_id` (CharField)
@@ -365,7 +371,6 @@ Infrastructure exists but not fully connected:
 - `errors` (JSONField)
 - `warnings` (JSONField)
 - `processing_logs` (TextField)
-- `parent_check` (ForeignKey to self, nullable) - Links to original check for retry chain
 
 ## Testing Strategy
 
