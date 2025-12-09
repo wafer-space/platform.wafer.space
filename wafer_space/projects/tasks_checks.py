@@ -22,6 +22,8 @@ from django.conf import settings
 from django.core.files import File
 from django.core.files.base import ContentFile
 from django.db import IntegrityError
+from django.db.models import Exists
+from django.db.models import OuterRef
 from django.utils import timezone
 
 from .check_operations import create_retry_check
@@ -184,6 +186,7 @@ def queued_check_task(
 __all__ = [
     "checks_analyzing",
     "checks_cancelling",
+    "checks_cleanup",
     "checks_cleanup_orphaned_docker",
     "checks_cleanup_stale_files",
     "checks_cleanup_stale_pending_tasks",
@@ -1795,6 +1798,70 @@ def checks_cleanup_stale_files() -> dict:
             )
 
     return {"cancelled": cancelled}
+
+
+def _cancel_superseded_checks() -> int:
+    """Cancel in-progress checks that have been superseded by newer checks.
+
+    Returns:
+        Number of checks marked for cancellation.
+    """
+    logger = logging.getLogger(__name__)
+
+    # Subquery: does a newer check exist for the same file?
+    newer_exists = ManufacturabilityCheck.objects.filter(
+        project_file=OuterRef("project_file"),
+        created_at__gt=OuterRef("created_at"),
+    )
+
+    # Find all superseded in-progress checks
+    superseded = ManufacturabilityCheck.objects.filter(
+        status__in=ManufacturabilityCheck.Status.in_progress(),
+    ).filter(Exists(newer_exists))
+
+    cancelled = 0
+    for check in superseded:
+        try:
+            check.mark_cancelling(reason="Superseded by newer check")
+            logger.info(
+                "Marked check %s as cancelling (superseded)",
+                check.id,
+            )
+            cancelled += 1
+        except Exception:
+            logger.exception("Failed to cancel superseded check %s", check.id)
+
+    return cancelled
+
+
+@checks_task(queue="default")
+def checks_cleanup() -> dict:
+    """Cleanup task that performs all periodic cleanup operations.
+
+    This task combines multiple cleanup operations:
+    - Cancel checks superseded by newer checks
+    - Cancel checks on inactive project files
+    - Remove orphaned pending task records
+
+    Returns:
+        Dict with counts of cleanup operations performed.
+    """
+    # Cancel superseded checks
+    superseded_cancelled = _cancel_superseded_checks()
+
+    # Cancel checks on stale files
+    stale_files_result = checks_cleanup_stale_files()
+    stale_files_cancelled = stale_files_result.get("cancelled", 0)
+
+    # Clean up orphaned pending tasks
+    pending_tasks_result = checks_cleanup_stale_pending_tasks()
+    pending_tasks_deleted = pending_tasks_result.get("deleted", 0)
+
+    return {
+        "superseded_cancelled": superseded_cancelled,
+        "stale_files_cancelled": stale_files_cancelled,
+        "pending_tasks_deleted": pending_tasks_deleted,
+    }
 
 
 @checks_task(queue="default")
