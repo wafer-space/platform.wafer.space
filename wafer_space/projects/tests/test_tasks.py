@@ -783,10 +783,9 @@ class TestChecksCreate(TestCase):
         assert result["created"] == 1
         project_file.refresh_from_db()
         assert project_file.manufacturability_checks.count() == 1
-        assert (
-            project_file.latest_manufacturability_check.status
-            == ManufacturabilityCheck.Status.PENDING
-        )
+        check = project_file.latest_manufacturability_check
+        assert check is not None
+        assert check.status == ManufacturabilityCheck.Status.PENDING
 
     def test_does_not_create_for_unverified_file(self):
         """Test no check created for unverified file."""
