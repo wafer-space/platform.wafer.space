@@ -23,6 +23,7 @@ from django.core.files.base import ContentFile
 from django.db import IntegrityError
 from django.utils import timezone
 
+from .docker_utils import create_directory_tar
 from .docker_utils import create_tar_archive
 from .docker_utils import get_docker_client
 from .docker_utils import get_server_config
@@ -938,6 +939,18 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
     container.put_archive("/", tar_stream)
     logger.info(
         "[do_starting] Successfully uploaded GDS to /input/design.gds in container %s",
+        container.id[:12],
+    )
+
+    # Create /output directory for precheck to write output GDS
+    logger.info(
+        "[do_starting] Creating /output directory in container %s...",
+        container.id[:12],
+    )
+    output_dir_tar = create_directory_tar("output")
+    container.put_archive("/", output_dir_tar)
+    logger.info(
+        "[do_starting] Created /output directory in container %s",
         container.id[:12],
     )
 
