@@ -457,6 +457,129 @@ class TestProjectSubmit(TestCase):
 
 
 @pytest.mark.django_db
+class TestProjectDerivedManufacturabilityProperties(TestCase):
+    """Tests for Project's derived manufacturability properties."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+
+    def test_is_manufacturable_returns_none_without_submitted_file(self):
+        """Returns None when no submitted_file."""
+        assert self.project.is_manufacturable is None
+
+    def test_is_manufacturable_returns_none_without_finished_check(self):
+        """Returns None when check is not FINISHED."""
+        project_file = ProjectFileFactory(project=self.project)
+        self.project.submitted_file = project_file
+        self.project.save()
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        assert self.project.is_manufacturable is None
+
+    def test_is_manufacturable_returns_true_from_finished_check(self):
+        """Returns True from latest finished check when manufacturable."""
+        project_file = ProjectFileFactory(project=self.project)
+        self.project.submitted_file = project_file
+        self.project.save()
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
+        assert self.project.is_manufacturable is True
+
+    def test_is_manufacturable_returns_false_from_finished_check(self):
+        """Returns False from latest finished check when not manufacturable."""
+        project_file = ProjectFileFactory(project=self.project)
+        self.project.submitted_file = project_file
+        self.project.save()
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=False,
+        )
+        assert self.project.is_manufacturable is False
+
+    def test_manufacturability_errors_returns_empty_without_submitted_file(self):
+        """Returns empty list when no submitted_file."""
+        assert self.project.manufacturability_errors == []
+
+    def test_manufacturability_errors_returns_empty_without_finished_check(self):
+        """Returns empty list when check is not FINISHED."""
+        project_file = ProjectFileFactory(project=self.project)
+        self.project.submitted_file = project_file
+        self.project.save()
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            errors=["Error 1", "Error 2"],
+        )
+        assert self.project.manufacturability_errors == []
+
+    def test_manufacturability_errors_returns_errors_from_finished_check(self):
+        """Returns errors from latest finished check."""
+        project_file = ProjectFileFactory(project=self.project)
+        self.project.submitted_file = project_file
+        self.project.save()
+        errors = ["Error 1", "Error 2"]
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            errors=errors,
+            is_manufacturable=False,
+        )
+        assert self.project.manufacturability_errors == errors
+
+    def test_check_completed_at_returns_none_without_submitted_file(self):
+        """Returns None when no submitted_file."""
+        assert self.project.check_completed_at is None
+
+    def test_check_completed_at_returns_none_without_finished_check(self):
+        """Returns None when check is not FINISHED."""
+        project_file = ProjectFileFactory(project=self.project)
+        self.project.submitted_file = project_file
+        self.project.save()
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        assert self.project.check_completed_at is None
+
+    def test_check_completed_at_returns_timestamp_from_finished_check(self):
+        """Returns analysis_completed_at from latest finished check."""
+        project_file = ProjectFileFactory(project=self.project)
+        self.project.submitted_file = project_file
+        self.project.save()
+        completed_at = timezone.now()
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+            analysis_completed_at=completed_at,
+        )
+        assert self.project.check_completed_at == completed_at
+
+
+@pytest.mark.django_db
 class TestProjectFileProgressMethods(TestCase):
     """Test ProjectFile progress helper methods."""
 
