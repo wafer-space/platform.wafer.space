@@ -9,6 +9,8 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
 
+from allauth.account.models import EmailAddress
+
 from wafer_space.core.enums import SlotSize
 from wafer_space.core.utils import is_production_environment
 from wafer_space.legal.models import TermsOfService
@@ -138,7 +140,26 @@ class Command(BaseCommand):
                 self.style.SUCCESS(f"  Created user: {username} ({email})")
             )
 
+        # Ensure email is verified
+        self._ensure_email_verified(user)
+
         return user
+
+    def _ensure_email_verified(self, user: Any) -> None:
+        """Ensure user's email is verified in allauth."""
+        email_address, created = EmailAddress.objects.get_or_create(
+            user=user,
+            email=user.email,
+            defaults={
+                "verified": True,
+                "primary": True,
+            },
+        )
+        if not created and not email_address.verified:
+            email_address.verified = True
+            email_address.primary = True
+            email_address.save()
+            self.stdout.write(f"  Verified email for {user.username}")
 
     def _ensure_tos(self) -> TermsOfService:
         """Ensure a TOS version exists."""
