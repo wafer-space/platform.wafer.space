@@ -102,6 +102,8 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
     list_display = [
         "project",
         "status",
+        "trigger_reason",
+        "parent_check",
         "is_manufacturable",
         "container_started_at",
         "analysis_completed_at",
@@ -111,6 +113,7 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
 
     list_filter = [
         "status",
+        "trigger_reason",
         "is_manufacturable",
         "container_started_at",
         "analysis_completed_at",
@@ -124,6 +127,8 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
 
     readonly_fields = [
         "project",
+        "trigger_reason",
+        "parent_check",
         "created_at",
         "dispatching_started_at",
         "starting_started_at",
@@ -151,6 +156,8 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
                 "fields": [
                     "project",
                     "status",
+                    "trigger_reason",
+                    "parent_check",
                 ]
             },
         ),
