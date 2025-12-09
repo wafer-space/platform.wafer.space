@@ -686,7 +686,7 @@ def checks_create() -> dict:
         is_active=True,
         hash_verified=True,
     ).exclude(
-        manufacturability_check__isnull=False,
+        manufacturability_checks__isnull=False,
     )
 
     files_count = files_needing_checks.count()

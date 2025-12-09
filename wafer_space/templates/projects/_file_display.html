@@ -58,7 +58,7 @@
 {% endwith %}
 {# Manufacturability Check Section #}
 {# Check is created immediately when download completes with verified hash #}
-{% with check=file.manufacturability_check %}
+{% with check=file.latest_manufacturability_check %}
   {% if check %}
     {# Show check status when check exists #}
     <div class="card bg-light mb-3">
