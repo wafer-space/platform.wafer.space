@@ -540,7 +540,7 @@ def _start_container(context: _CheckContext) -> tuple[str, str]:
     context.logger.info("  Project name: %s", context.project.name)
     context.logger.info("  Project ID: %s", context.project.id)
     context.logger.info("  Slot size: %s", context.project.slot_size)
-    context.logger.info("  Memory limit: 64GB")
+    context.logger.info("  Memory limit: 24GB")
 
     # Build the precheck command to run inside nix-shell
     if not context.project_file.top_cell:
@@ -583,7 +583,7 @@ def _start_container(context: _CheckContext) -> tuple[str, str]:
         f"-e COLUMNS=200 -e TERM=xterm-256color "
         f"-v {context.gds_path}:/input/design.gds:ro "
         f"-w /workspace "
-        f"--memory 64g "
+        f"--memory 24g "
         f"{settings.PRECHECK_DOCKER_IMAGE} "
         f"{precheck_cmd}"
     )
@@ -599,7 +599,7 @@ def _start_container(context: _CheckContext) -> tuple[str, str]:
         volumes={context.gds_path: {"bind": "/input/design.gds", "mode": "ro"}},
         working_dir="/workspace",
         detach=True,
-        mem_limit="64g",
+        mem_limit="24g",
         network_disabled=True,
         environment={
             "COLUMNS": "200",  # Wide terminal for better log output
@@ -825,7 +825,7 @@ def _setup_docker_context(check, project_file, task_instance, logger):
         _CheckContext: Execution context for the check
     """
     logger.info("Step 2: Connecting to Docker daemon...")
-    client = docker.from_env()
+    client = docker.from_env(timeout=settings.DOCKER_CLIENT_TIMEOUT)
     docker_info = client.info()
     logger.info("  ✓ Docker connected: %s", docker_info.get("Name", "unknown"))
     logger.info("  ✓ Docker version: %s", docker_info.get("ServerVersion", "unknown"))
@@ -2804,7 +2804,7 @@ def checks_cleanup_orphaned_docker() -> dict:
     logger.info("=" * 60)
 
     try:
-        client = docker.from_env()
+        client = docker.from_env(timeout=settings.DOCKER_CLIENT_TIMEOUT)
     except docker.errors.DockerException as exc:
         logger.exception("Failed to connect to Docker")
         return {
@@ -2884,6 +2884,8 @@ def checks_cleanup_orphaned_docker() -> dict:
 def checks_dispatch() -> dict:
     """Dispatch PENDING checks to Celery queue (respecting concurrent limit).
 
+    Only one check can be DISPATCHED at a time to prevent overloading the
+    Docker API with concurrent image pulls and container creation.
     CANCELLING checks count toward the limit because their Docker containers
     may still be running.
 
@@ -2892,6 +2894,17 @@ def checks_dispatch() -> dict:
     """
     logger = logging.getLogger(__name__)
     logger.info("[checks_dispatch] Starting dispatch cycle")
+
+    # Only dispatch one check at a time to avoid overloading Docker API
+    dispatched_count = ManufacturabilityCheck.objects.filter(
+        status=ManufacturabilityCheck.Status.DISPATCHED,
+    ).count()
+    if dispatched_count > 0:
+        logger.info(
+            "[checks_dispatch] Skipping - %d check(s) already dispatching",
+            dispatched_count,
+        )
+        return {"dispatched": 0, "waiting": -1, "reason": "dispatch_in_progress"}
 
     concurrent_limit = getattr(settings, "PRECHECK_CONCURRENT_LIMIT", 4)
 
@@ -2904,11 +2917,10 @@ def checks_dispatch() -> dict:
         ],
     ).count()
 
-    pending = ManufacturabilityCheck.objects.filter(
+    pending_count = ManufacturabilityCheck.objects.filter(
         status=ManufacturabilityCheck.Status.PENDING,
-    ).order_by("created_at")
+    ).count()
 
-    pending_count = pending.count()
     logger.info(
         "[checks_dispatch] Active: %d/%d, Pending: %d",
         active_count,
@@ -2916,34 +2928,41 @@ def checks_dispatch() -> dict:
         pending_count,
     )
 
-    dispatched = 0
-    for check in pending:
-        if active_count >= concurrent_limit:
-            logger.info(
-                "[checks_dispatch] Concurrent limit reached (%d/%d), stopping",
-                active_count,
-                concurrent_limit,
-            )
-            break
-        task = check_process_job.delay(check.id)
-        check.mark_dispatched(celery_job_id=task.id)
+    # Check concurrent limit before dispatching
+    if active_count >= concurrent_limit:
         logger.info(
-            "[checks_dispatch] Dispatched check %s (project: %s, file: %s) -> task %s",
-            check.id,
-            check.project.name,
-            check.project_file.original_filename,
-            task.id,
+            "[checks_dispatch] Concurrent limit reached (%d/%d), not dispatching",
+            active_count,
+            concurrent_limit,
         )
-        active_count += 1
-        dispatched += 1
+        return {"dispatched": 0, "waiting": pending_count}
 
-    waiting = pending_count - dispatched
-    logger.info(
-        "[checks_dispatch] Complete: dispatched=%d, waiting=%d",
-        dispatched,
-        waiting,
+    # Dispatch only ONE check per cycle to serialize Docker API operations
+    check = (
+        ManufacturabilityCheck.objects.filter(
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        .order_by("created_at")
+        .first()
     )
-    return {"dispatched": dispatched, "waiting": waiting}
+
+    if check is None:
+        logger.info("[checks_dispatch] No pending checks to dispatch")
+        return {"dispatched": 0, "waiting": 0}
+
+    task = check_process_job.delay(check.id)
+    check.mark_dispatched(celery_job_id=task.id)
+    logger.info(
+        "[checks_dispatch] Dispatched check %s (project: %s, file: %s) -> task %s",
+        check.id,
+        check.project.name,
+        check.project_file.original_filename,
+        task.id,
+    )
+
+    waiting = pending_count - 1
+    logger.info("[checks_dispatch] Complete: dispatched=1, waiting=%d", waiting)
+    return {"dispatched": 1, "waiting": waiting}
 
 
 @shared_task(queue="default")
@@ -3180,7 +3199,7 @@ def checks_cancelling() -> dict:
         cancelling_count,
     )
 
-    client = docker.from_env()
+    client = docker.from_env(timeout=settings.DOCKER_CLIENT_TIMEOUT)
 
     for check in cancelling_checks:
         logger.info(

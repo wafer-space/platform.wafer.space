@@ -1143,9 +1143,6 @@ class ManufacturabilityCheck(models.Model):
     # Maximum characters of processing logs to include in GitHub issue body
     GITHUB_ISSUE_LOG_CHARS: ClassVar[int] = 5000
 
-    # Maximum concurrent checks allowed (DISPATCHED + RUNNING)
-    MAX_CONCURRENT_CHECKS: ClassVar[int] = 4
-
     # Statuses representing checks that are in progress and should be
     # cancelled when the project file is replaced
     IN_PROGRESS_STATUSES: ClassVar[list[Status]] = [
@@ -1360,10 +1357,11 @@ class ManufacturabilityCheck(models.Model):
             .count()
         )
 
-        if active_count >= self.MAX_CONCURRENT_CHECKS:
+        concurrent_limit = settings.PRECHECK_CONCURRENT_LIMIT
+        if active_count >= concurrent_limit:
             raise ConcurrentLimitError(
                 active_count=active_count,
-                max_concurrent=self.MAX_CONCURRENT_CHECKS,
+                max_concurrent=concurrent_limit,
             )
 
         self.status = self.Status.DISPATCHED
