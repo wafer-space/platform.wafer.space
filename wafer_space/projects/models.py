@@ -1332,10 +1332,10 @@ class ManufacturabilityCheck(models.Model):
         on_delete=models.CASCADE,
         related_name="manufacturability_checks",
     )
-    project_file = models.OneToOneField(
+    project_file = models.ForeignKey(
         "ProjectFile",
         on_delete=models.CASCADE,
-        related_name="manufacturability_check",
+        related_name="manufacturability_checks",
     )
     status = models.CharField(
         max_length=20,
