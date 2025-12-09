@@ -2213,3 +2213,18 @@ class TestProjectHistory:
         latest = project.history.first()
         assert latest.name == "Updated Name"
         assert latest.history_type == "~"  # Updated
+
+    def test_history_tracks_user_when_set(self):
+        """Verify that history records the user who made the change."""
+        from wafer_space.projects.tests.factories import ProjectFactory
+        from wafer_space.users.tests.factories import UserFactory
+
+        user = UserFactory()
+        project = ProjectFactory(name="Test")
+
+        project.name = "Changed by user"
+        project._history_user = user
+        project.save()
+
+        latest = project.history.first()
+        assert latest.history_user == user
