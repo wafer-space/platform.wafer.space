@@ -10,6 +10,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.utils import timezone
+from simple_history.models import HistoricalRecords
 
 from wafer_space.core.enums import SlotSize
 from wafer_space.projects.exceptions import ConcurrentLimitError
@@ -132,6 +133,9 @@ class Project(models.Model):
         null=True,
         blank=True,
     )
+
+    # Change history tracking
+    history = HistoricalRecords()
 
     class Meta:
         verbose_name = "Project"
