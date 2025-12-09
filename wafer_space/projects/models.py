@@ -908,6 +908,15 @@ class ProjectFile(models.Model):
             or self.expected_hash_sha256
         )
 
+    @property
+    def latest_manufacturability_check(self) -> "ManufacturabilityCheck | None":
+        """Get the most recent manufacturability check.
+
+        Returns None if no checks exist yet.
+        Ordered by -created_at (newest first).
+        """
+        return self.manufacturability_checks.first()
+
 
 class FileProcessingError(models.Model):
     """Log of errors that occurred during file processing.
