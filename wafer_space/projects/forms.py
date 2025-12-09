@@ -83,7 +83,14 @@ class ProjectForm(forms.ModelForm):
 
     class Meta:
         model = Project
-        fields = ["name", "description", "shuttle", "project_id", "slot_size"]
+        fields = [
+            "name",
+            "description",
+            "shuttle",
+            "project_id",
+            "slot_size",
+            "is_public",
+        ]
         widgets = {
             "name": forms.TextInput(
                 attrs={
@@ -104,11 +111,17 @@ class ProjectForm(forms.ModelForm):
                     "id": "id_slot_size",
                 },
             ),
+            "is_public": forms.CheckboxInput(
+                attrs={
+                    "class": "form-check-input",
+                },
+            ),
         }
         help_texts = {
             "name": "A descriptive name for your project",
             "description": "Optional details about your design",
             "slot_size": "Select the die slot size for your design",
+            "is_public": "Make this design publicly visible on the platform",
         }
 
     def clean_project_id(self):
@@ -147,6 +160,28 @@ class ProjectForm(forms.ModelForm):
                 raise ValidationError(msg)
 
         return project_id
+
+
+class ProjectUserEditForm(forms.ModelForm):
+    """Limited form for regular users to edit their projects.
+
+    Regular users can only edit visibility settings (is_public).
+    Staff can edit all fields using the full ProjectForm.
+    """
+
+    class Meta:
+        model = Project
+        fields = ["is_public"]
+        widgets = {
+            "is_public": forms.CheckboxInput(
+                attrs={
+                    "class": "form-check-input",
+                },
+            ),
+        }
+        help_texts = {
+            "is_public": "Make this design publicly visible on the platform",
+        }
 
 
 class ProjectFileURLSubmitForm(forms.Form):

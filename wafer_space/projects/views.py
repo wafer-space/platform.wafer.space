@@ -32,6 +32,7 @@ from wafer_space.shuttles.models import Shuttle
 from .exceptions import InvalidStateTransitionError
 from .forms import ProjectFileURLSubmitForm
 from .forms import ProjectForm
+from .forms import ProjectUserEditForm
 from .mixins import ProjectOwnerOrStaffMixin
 from .models import PROJECT_ID_LENGTH
 from .models import DownloadAttempt
@@ -203,14 +204,26 @@ class ProjectCreateView(LoginRequiredMixin, CreateView):
 
 
 class ProjectUpdateView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, UpdateView):
-    """Update an existing project."""
+    """Update an existing project.
+
+    Staff users can edit all project fields.
+    Regular users can only edit visibility settings (is_public).
+    """
 
     model = Project
-    form_class = ProjectForm
     template_name = "projects/project_form.html"
 
+    def get_form_class(self):
+        """Return form class based on user role.
+
+        Staff get full ProjectForm, regular users get limited ProjectUserEditForm.
+        """
+        if self.request.user.is_staff:
+            return ProjectForm
+        return ProjectUserEditForm
+
     def get_context_data(self, **kwargs):
-        """Add viewing_as_admin flag to context."""
+        """Add viewing_as_admin flag and form type to context."""
         context = super().get_context_data(**kwargs)
         project = self.get_object()
         user = self.request.user
@@ -218,6 +231,7 @@ class ProjectUpdateView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, UpdateView
         context["viewing_as_admin"] = (
             user.is_authenticated and user.is_staff and project.user != user
         )
+        context["is_limited_form"] = not user.is_staff
 
         return context
 

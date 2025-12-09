@@ -22,6 +22,12 @@
             Create New Project
           {% endif %}
         </h2>
+        {% if is_limited_form %}
+          <div class="alert alert-info" role="alert">
+            <i class="bi bi-info-circle"></i>
+            You can edit visibility settings for your project. Contact staff if you need to change other details.
+          </div>
+        {% endif %}
         <form method="post">
           {% csrf_token %}
           {{ form|crispy }}

@@ -47,6 +47,14 @@
             <p>
               <strong>Slot Size:</strong> {{ project.slot_size_full_label }}
             </p>
+            <p>
+              <strong>Visibility:</strong>
+              {% if project.is_public %}
+                <span class="badge bg-success"><i class="bi bi-globe"></i> Public</span>
+              {% else %}
+                <span class="badge bg-secondary"><i class="bi bi-lock"></i> Private</span>
+              {% endif %}
+            </p>
             {% if project.shuttle %}
               <p>
                 <strong>Shuttle Run:</strong> {{ project.shuttle.name }} - {{ project.shuttle.description }}

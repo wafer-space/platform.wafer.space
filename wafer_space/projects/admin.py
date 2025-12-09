@@ -21,10 +21,18 @@ class ProjectAdmin(SimpleHistoryAdmin):
         "full_id",
         "slot_size",
         "status",
+        "is_public",
         "created_at",
         "updated_at",
     ]
-    list_filter = ["status", "shuttle", "slot_size", "created_at", "updated_at"]
+    list_filter = [
+        "status",
+        "shuttle",
+        "slot_size",
+        "is_public",
+        "created_at",
+        "updated_at",
+    ]
     search_fields = [
         "name",
         "description",
