@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from collections import Counter
 from typing import TYPE_CHECKING
@@ -173,8 +172,7 @@ class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView
         check = None
         active_file = in_progress_file or submitted_file
         if active_file:
-            with contextlib.suppress(ManufacturabilityCheck.DoesNotExist):
-                check = active_file.manufacturability_check
+            check = active_file.latest_manufacturability_check
         context["check"] = check
 
         return context
@@ -348,12 +346,9 @@ class ProjectFileSubmitURLView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, Vie
         ).first()
 
         if active_file:
-            try:
-                check = active_file.manufacturability_check
-                if check.is_cancellable:
-                    running_check = check
-            except ManufacturabilityCheck.DoesNotExist:
-                pass
+            check = active_file.latest_manufacturability_check
+            if check and check.is_cancellable:
+                running_check = check
 
         return render(
             request,
@@ -448,9 +443,8 @@ class ManufacturabilityCheckStatusView(LoginRequiredMixin, UserPassesTestMixin, 
         if not active_file:
             return JsonResponse({"error": "No active file found"}, status=404)
 
-        try:
-            check = active_file.manufacturability_check
-        except ManufacturabilityCheck.DoesNotExist:
+        check = active_file.latest_manufacturability_check
+        if not check:
             return JsonResponse(
                 {"error": "No manufacturability check found"}, status=404
             )
@@ -503,9 +497,8 @@ class ManufacturabilityCheckCancelView(LoginRequiredMixin, UserPassesTestMixin, 
             messages.error(request, "No active file found.")
             return redirect("projects:detail", pk=pk)
 
-        try:
-            check = active_file.manufacturability_check
-        except ManufacturabilityCheck.DoesNotExist:
+        check = active_file.latest_manufacturability_check
+        if not check:
             messages.error(request, "No manufacturability check found.")
             return redirect("projects:detail", pk=pk)
 
@@ -768,8 +761,8 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
         qs = Project.objects.select_related("user", "shuttle").prefetch_related(
             Prefetch(
                 "files",
-                queryset=ProjectFile.objects.filter(is_active=True).select_related(
-                    "manufacturability_check"
+                queryset=ProjectFile.objects.filter(is_active=True).prefetch_related(
+                    "manufacturability_checks"
                 ),
                 to_attr="active_files",
             )

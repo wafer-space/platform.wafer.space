@@ -175,12 +175,12 @@
               <td>{{ project.user.username }}</td>
               <td>{{ project.user.email }}</td>
               {% with active_file=project.active_files.0 %}
-                {% if active_file and active_file.manufacturability_check %}
-                  <td>{{ active_file.manufacturability_check.get_status_display }}</td>
+                {% if active_file and active_file.latest_manufacturability_check %}
+                  <td>{{ active_file.latest_manufacturability_check.get_status_display }}</td>
                   <td>
-                    {% if active_file.manufacturability_check.is_manufacturable is True %}
+                    {% if active_file.latest_manufacturability_check.is_manufacturable is True %}
                       <span class="text-success">✓</span>
-                    {% elif active_file.manufacturability_check.is_manufacturable is False %}
+                    {% elif active_file.latest_manufacturability_check.is_manufacturable is False %}
                       <span class="text-danger">✗</span>
                     {% else %}
                       -

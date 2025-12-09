@@ -776,15 +776,15 @@ class TestChecksCreate(TestCase):
             status=DownloadAttempt.Status.COMPLETED,
         )
         # Ensure no check exists
-        assert not hasattr(project_file, "manufacturability_check")
+        assert project_file.manufacturability_checks.count() == 0
 
         result = checks_create()
 
         assert result["created"] == 1
         project_file.refresh_from_db()
-        assert hasattr(project_file, "manufacturability_check")
+        assert project_file.manufacturability_checks.count() == 1
         assert (
-            project_file.manufacturability_check.status
+            project_file.latest_manufacturability_check.status
             == ManufacturabilityCheck.Status.PENDING
         )
 
