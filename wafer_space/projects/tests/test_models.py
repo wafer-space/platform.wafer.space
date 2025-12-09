@@ -157,9 +157,15 @@ class TestProjectCanSubmit(TestCase):
         )
 
         # Mark as manufacturable and submitted
-        self.project.is_manufacturable = True
+        self.project.submitted_file = _pf
         self.project.status = Project.Status.SUBMITTED
         self.project.save()
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=_pf,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
 
         can_submit, reason = self.project.can_submit()
 
@@ -184,9 +190,15 @@ class TestProjectCanSubmit(TestCase):
             status=DownloadAttempt.Status.COMPLETED,
         )
         # Mark as manufacturable (simulates completed check via mark_finished)
-        self.project.is_manufacturable = True
+        self.project.submitted_file = _pf
         self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=_pf,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
 
         can_submit, reason = self.project.can_submit()
 
@@ -259,9 +271,15 @@ class TestProjectSubmit(TestCase):
         )
 
         # Mark as manufacturable (simulates completed check via mark_finished)
-        self.project.is_manufacturable = True
+        self.project.submitted_file = _pf
         self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=_pf,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
 
         self.project.submit()
 
@@ -286,9 +304,15 @@ class TestProjectSubmit(TestCase):
         )
 
         # Mark as manufacturable (simulates completed check via mark_finished)
-        self.project.is_manufacturable = True
+        self.project.submitted_file = _pf
         self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=_pf,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
 
         before = timezone.now()
         self.project.submit()
@@ -321,9 +345,15 @@ class TestProjectSubmit(TestCase):
         )
 
         # Mark as manufacturable (simulates completed check via mark_finished)
-        self.project.is_manufacturable = True
+        self.project.submitted_file = _pf
         self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=_pf,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
 
         # Verify no check exists before submission
         initial_check_count = ManufacturabilityCheck.objects.filter(
@@ -357,25 +387,30 @@ class TestProjectSubmit(TestCase):
         )
 
         # Mark as manufacturable (simulates completed check via mark_finished)
-        self.project.is_manufacturable = True
+        self.project.submitted_file = _pf
         self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
-
-        # Create existing check
-        existing_check = ManufacturabilityCheck.objects.create(
+        finished_check = ManufacturabilityCheckFactory(
             project=self.project,
             project_file=_pf,
-            status=ManufacturabilityCheck.Status.RUNNING,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
         )
+
+        initial_check_count = ManufacturabilityCheck.objects.filter(
+            project=self.project
+        ).count()
 
         self.project.submit()
 
-        # Verify only one check exists
-        assert ManufacturabilityCheck.objects.filter(project=self.project).count() == 1
-        # Verify it's the original check (not replaced)
-        check = ManufacturabilityCheck.objects.get(project_file=_pf)
-        assert check.id == existing_check.id
-        assert check.status == ManufacturabilityCheck.Status.RUNNING
+        # Verify submit() did not create a new check
+        final_check_count = ManufacturabilityCheck.objects.filter(
+            project=self.project
+        ).count()
+        assert final_check_count == initial_check_count
+        # Verify the finished check still exists
+        finished_check.refresh_from_db()
+        assert finished_check.status == ManufacturabilityCheck.Status.FINISHED
 
     def test_submit_prevents_double_submission(self):
         """Test that submit() prevents double submission."""
@@ -395,9 +430,15 @@ class TestProjectSubmit(TestCase):
         )
 
         # Mark as manufacturable (simulates completed check via mark_finished)
-        self.project.is_manufacturable = True
+        self.project.submitted_file = _pf
         self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=_pf,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
 
         # First submission should succeed
         self.project.submit()
