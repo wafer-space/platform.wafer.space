@@ -14,7 +14,6 @@ from simple_history.models import HistoricalRecords
 
 from wafer_space.core.enums import SlotSize
 from wafer_space.projects.exceptions import InvalidStateTransitionError
-from wafer_space.projects.exceptions import MaxRetriesExceededError
 from wafer_space.projects.storage import ProjectFileStorage
 
 
@@ -1494,10 +1493,6 @@ class ManufacturabilityCheck(models.Model):
         help_text="System error message if check failed to run (Docker, timeout, etc.)",
     )
 
-    # Retry handling
-    retry_count = models.PositiveIntegerField(default=0)
-    max_retries = models.PositiveIntegerField(default=3)
-
     # Version tracking
     docker_image = models.CharField(
         max_length=500,
@@ -1562,10 +1557,6 @@ class ManufacturabilityCheck(models.Model):
 
     def __str__(self):
         return f"Check for {self.project.name} - {self.get_status_display()}"
-
-    def can_retry(self) -> bool:
-        """Check if this check can be retried."""
-        return self.retry_count < self.max_retries
 
     def can_transition_to(self, new_status: Status) -> bool:
         """Check if transition from current status to new_status is valid.
@@ -1756,7 +1747,6 @@ class ManufacturabilityCheck(models.Model):
         Pathways: PENDING/DISPATCHING/STARTING/RUNNING → ERROR
 
         Preserves tracking fields (docker_container_id) for debugging.
-        These are only cleared by reset_for_retry() when retrying.
 
         Args:
             error_message: System error message describing the failure
@@ -1839,46 +1829,6 @@ class ManufacturabilityCheck(models.Model):
                 "docker_container_id",
             ]
         )
-
-    def reset_for_retry(self, *, reason: str = "") -> None:
-        """Reset check to PENDING state for retry after error.
-
-        Pathway 7: ERROR → PENDING (retry)
-
-        Args:
-            reason: Optional description of why the check is being retried
-
-        Raises:
-            InvalidStateTransitionError: If transition is not allowed
-            MaxRetriesExceededError: If retry_count has reached max_retries
-        """
-        # Check state transition is valid FIRST
-        if not self.can_transition_to(self.Status.PENDING):
-            raise InvalidStateTransitionError(
-                from_status=self.status,
-                to_status=self.Status.PENDING,
-            )
-
-        # Then check retry limit using can_retry() and self.max_retries
-        if not self.can_retry():
-            raise MaxRetriesExceededError(
-                retry_count=self.retry_count,
-                max_retries=self.max_retries,
-            )
-
-        # Reset to PENDING state
-        self.status = self.Status.PENDING
-        self.retry_count += 1
-
-        # Clear all job-related fields
-        self.docker_container_id = ""
-        self.error_message = ""
-
-        self.save()
-
-        # Append retry reason using helper
-        if reason:
-            self.append_to_processing_logs(f"RETRY #{self.retry_count}: {reason}")
 
     def append_to_processing_logs(self, text: str) -> None:
         """Append text to processing logs (thread-safe, never overwrites).
