@@ -13,7 +13,7 @@ def is_production_environment() -> bool:
     Returns True if ANY of the following conditions indicate production:
     - DEBUG is False
     - Database engine is PostgreSQL (not SQLite)
-    - Settings module is prod or stage
+    - Settings module contains prod/stage/production/staging
 
     This is a safety check to prevent dangerous operations (like creating
     test users with weak passwords) from running on production systems.
