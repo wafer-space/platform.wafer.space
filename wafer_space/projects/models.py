@@ -1289,6 +1289,12 @@ class ManufacturabilityCheck(models.Model):
             """Statuses where check is in progress (not yet completed)."""
             return [cls.PENDING, cls.DISPATCHING, cls.STARTING, cls.RUNNING]
 
+    class TriggerReason(models.TextChoices):
+        INITIAL = "initial", "Initial Check"
+        DRC_UPDATE = "drc_update", "DRC Rules Updated"
+        ADMIN_RERUN = "admin_rerun", "Admin Requested Re-run"
+        RETRY = "retry", "Retry After Error"
+
     # State machine: defines valid transitions
     # PENDING: waiting for capacity to dispatch
     # DISPATCHING: image being pulled
@@ -1335,6 +1341,12 @@ class ManufacturabilityCheck(models.Model):
         max_length=20,
         choices=Status.choices,
         default=Status.PENDING,
+    )
+    trigger_reason = models.CharField(
+        max_length=20,
+        choices=TriggerReason.choices,
+        default=TriggerReason.INITIAL,
+        help_text="Why this check was triggered",
     )
 
     # Timestamps

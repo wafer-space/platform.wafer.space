@@ -2817,3 +2817,28 @@ class TestManufacturabilityCheckMarkStarting:
         )
         with pytest.raises(InvalidStateTransitionError):
             check.mark_starting(docker_image="test", docker_image_digest="sha256:abc")
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckTriggerReason:
+    """Tests for ManufacturabilityCheck.TriggerReason and trigger_reason field."""
+
+    def test_trigger_reason_choices_exist(self):
+        """TriggerReason enum has expected choices."""
+        choices = ManufacturabilityCheck.TriggerReason.choices
+        assert ("initial", "Initial Check") in choices
+        assert ("drc_update", "DRC Rules Updated") in choices
+        assert ("admin_rerun", "Admin Requested Re-run") in choices
+        assert ("retry", "Retry After Error") in choices
+
+    def test_trigger_reason_default_is_initial(self):
+        """New checks default to INITIAL trigger reason."""
+        check = ManufacturabilityCheckFactory()
+        assert check.trigger_reason == ManufacturabilityCheck.TriggerReason.INITIAL
+
+    def test_trigger_reason_can_be_set(self):
+        """trigger_reason can be set to any valid choice."""
+        check = ManufacturabilityCheckFactory(
+            trigger_reason=ManufacturabilityCheck.TriggerReason.DRC_UPDATE
+        )
+        assert check.trigger_reason == ManufacturabilityCheck.TriggerReason.DRC_UPDATE
