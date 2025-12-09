@@ -717,37 +717,66 @@ class TestChecksRetry(TestCase):
         )
 
     def test_retries_error_checks_under_limit(self):
-        """Test ERROR checks are retried when under retry limit."""
+        """Test ERROR checks create a new retry check when under retry limit."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.ERROR,
-            retry_count=0,
-            max_retries=3,
         )
 
         result = checks_retry()
 
+        # Old check stays in ERROR state
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.PENDING
-        assert check.retry_count == 1
+        assert check.status == ManufacturabilityCheck.Status.ERROR
+
+        # New retry check was created
         assert result["retried"] == 1
+        retry_check = ManufacturabilityCheck.objects.get(parent_check=check)
+        assert retry_check.status == ManufacturabilityCheck.Status.PENDING
+        assert retry_check.trigger_reason == ManufacturabilityCheck.TriggerReason.RETRY
+        assert retry_check.project == check.project
+        assert retry_check.project_file == check.project_file
 
     def test_does_not_retry_exhausted_checks(self):
         """Test ERROR checks at retry limit are not retried."""
-        check = ManufacturabilityCheck.objects.create(
+        max_retries = 3
+        # Create original check
+        original = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.ERROR,
-            retry_count=3,
-            max_retries=3,
+            status=ManufacturabilityCheck.Status.FINISHED,  # Original is done
+        )
+        # Create retry chain: original -> retry1 -> retry2 -> retry3 (all failed)
+        ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,  # Retry 1 done
+            trigger_reason=ManufacturabilityCheck.TriggerReason.RETRY,
+            parent_check=original,
+        )
+        ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,  # Retry 2 done
+            trigger_reason=ManufacturabilityCheck.TriggerReason.RETRY,
+            parent_check=original,
+        )
+        retry3 = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,  # Retry 3 failed (leaf)
+            trigger_reason=ManufacturabilityCheck.TriggerReason.RETRY,
+            parent_check=original,
         )
 
         result = checks_retry()
 
-        check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.ERROR
+        # No new retry should be created (already at limit of 3)
+        retry3.refresh_from_db()
+        assert retry3.status == ManufacturabilityCheck.Status.ERROR
         assert result["exhausted"] == 1
+        assert original.retry_checks.count() == max_retries  # Still 3, no new ones
 
 
 @pytest.mark.django_db

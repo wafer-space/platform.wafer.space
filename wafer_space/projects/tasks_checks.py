@@ -24,6 +24,7 @@ from django.core.files.base import ContentFile
 from django.db import IntegrityError
 from django.utils import timezone
 
+from .check_operations import create_retry_check
 from .docker_utils import create_directory_tar
 from .docker_utils import create_tar_archive
 from .docker_utils import get_docker_client
@@ -34,6 +35,7 @@ from .docker_utils import stream_archive_to_file
 from .docker_utils import stream_container_diff_to_file
 from .docker_utils import strip_docker_timestamps
 from .exceptions import InvalidStateTransitionError
+from .exceptions import MaxRetriesExceededError
 from .exceptions import TaskExecutionError
 from .hashing import MultiHasher
 from .models import ManufacturabilityCheck
@@ -608,7 +610,10 @@ def checks_analyzing() -> dict[str, int]:
 
 @checks_task(queue="default")
 def checks_retry() -> dict:
-    """Move retryable ERROR checks back to PENDING state.
+    """Create retry checks for ERROR checks that haven't been retried yet.
+
+    Only processes ERROR checks that don't have any retry children (leaf nodes).
+    This prevents double-processing when multiple checks in a retry chain fail.
 
     Returns:
         dict with 'retried' and 'exhausted' counts
@@ -618,29 +623,39 @@ def checks_retry() -> dict:
     retried = 0
     exhausted = 0
 
+    # Only process ERROR checks that haven't been retried yet
+    # (leaf nodes in the retry tree)
     error_checks = ManufacturabilityCheck.objects.filter(
         status=ManufacturabilityCheck.Status.ERROR,
+    ).exclude(
+        # Exclude checks that already have retries
+        id__in=ManufacturabilityCheck.objects.filter(
+            parent_check__isnull=False
+        ).values_list("parent_check_id", flat=True),
     )
     error_count = error_checks.count()
-    logger.info("Found %d checks in ERROR state", error_count)
+    logger.info("Found %d checks in ERROR state (without retries)", error_count)
 
     for check in error_checks:
-        if check.can_retry():
+        try:
+            original = check.parent_check or check
+            retry_count = original.retry_checks.count()
+            new_check = create_retry_check(check)
             logger.info(
-                "Retrying check %s (project: %s, attempt %d/%d)",
+                "Created retry check %s for %s (project: %s, attempt %d)",
+                new_check.id,
                 check.id,
                 check.project.name,
-                check.retry_count + 1,
-                check.max_retries,
+                retry_count + 1,
             )
-            check.reset_for_retry(reason="Automatic retry after error")
             retried += 1
-        else:
+        except MaxRetriesExceededError:
+            original = check.parent_check or check
+            retry_count = original.retry_checks.count()
             logger.info(
-                "Check %s exhausted retries (%d/%d)",
+                "Check %s exhausted retries (%d)",
                 check.id,
-                check.retry_count,
-                check.max_retries,
+                retry_count,
             )
             exhausted += 1
 
