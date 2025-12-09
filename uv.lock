@@ -561,6 +561,18 @@ wheels = [
 ]
 
 [[package]]
+name = "django-simple-history"
+version = "3.10.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/16/2b/8d43eed1f9de32e890e0f5780e6d623a5a7e645e0e77a515edd427029f3c/django_simple_history-3.10.1.tar.gz", hash = "sha256:040f0c2286bed730312aa15f0acee9e7e6f839c4bcd721693251aa7ec5b65d95", size = 233649, upload-time = "2025-06-20T20:22:32.722Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/01/c3/d4ba265feb7b8bad3cf0730a3a8d82bb40d14551f8c53c88895ec06fa51c/django_simple_history-3.10.1-py3-none-any.whl", hash = "sha256:e12c27abfcd7e801a9d274d94542549ce8c617b0b384ae69afb161b56cd02ba4", size = 78611, upload-time = "2025-06-20T20:22:30.878Z" },
+]
+
+[[package]]
 name = "django-stubs"
 version = "5.2.5"
 source = { registry = "https://pypi.org/simple" }
@@ -2217,6 +2229,7 @@ dependencies = [
     { name = "django-crispy-forms" },
     { name = "django-environ" },
     { name = "django-model-utils" },
+    { name = "django-simple-history" },
     { name = "django-webpush" },
     { name = "docker" },
     { name = "gdstk" },
@@ -2276,6 +2289,7 @@ requires-dist = [
     { name = "django-crispy-forms", specifier = "==2.4" },
     { name = "django-environ", specifier = "==0.12.0" },
     { name = "django-model-utils", specifier = "==5.0.0" },
+    { name = "django-simple-history", specifier = ">=3.10.1" },
     { name = "django-webpush", specifier = ">=0.3.0" },
     { name = "docker", specifier = ">=7.1.0" },
     { name = "gdstk", specifier = ">=0.9.61" },
