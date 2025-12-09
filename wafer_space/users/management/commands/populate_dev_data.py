@@ -5,11 +5,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from typing import Any
 
+from allauth.account.models import EmailAddress
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
-
-from allauth.account.models import EmailAddress
 
 from wafer_space.core.enums import SlotSize
 from wafer_space.core.utils import is_production_environment
