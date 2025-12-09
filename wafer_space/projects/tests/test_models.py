@@ -2198,3 +2198,18 @@ class TestProjectHistory:
         history_record = project.history.first()
         assert history_record.name == "Test Project"
         assert history_record.history_type == "+"  # Created
+
+    def test_history_tracks_field_changes(self):
+        """Verify that updating a Project creates a new history record."""
+        from wafer_space.projects.tests.factories import ProjectFactory
+
+        project = ProjectFactory(name="Original Name")
+        original_count = project.history.count()
+
+        project.name = "Updated Name"
+        project.save()
+
+        assert project.history.count() == original_count + 1
+        latest = project.history.first()
+        assert latest.name == "Updated Name"
+        assert latest.history_type == "~"  # Updated
