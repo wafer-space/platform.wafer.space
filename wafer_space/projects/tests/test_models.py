@@ -16,7 +16,9 @@ from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
+from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.users.models import User
+from wafer_space.users.tests.factories import UserFactory
 
 from .constants import PROGRESS_COMPLETE
 from .constants import TEST_PASSWORD
@@ -2190,8 +2192,6 @@ class TestProjectHistory:
 
     def test_history_created_on_initial_save(self):
         """Verify that creating a Project creates a history record."""
-        from wafer_space.projects.tests.factories import ProjectFactory
-
         project = ProjectFactory(name="Test Project")
 
         assert project.history.count() == 1
@@ -2201,8 +2201,6 @@ class TestProjectHistory:
 
     def test_history_tracks_field_changes(self):
         """Verify that updating a Project creates a new history record."""
-        from wafer_space.projects.tests.factories import ProjectFactory
-
         project = ProjectFactory(name="Original Name")
         original_count = project.history.count()
 
@@ -2215,15 +2213,16 @@ class TestProjectHistory:
         assert latest.history_type == "~"  # Updated
 
     def test_history_tracks_user_when_set(self):
-        """Verify that history records the user who made the change."""
-        from wafer_space.projects.tests.factories import ProjectFactory
-        from wafer_space.users.tests.factories import UserFactory
+        """Verify that history records the user who made the change.
 
+        Note: _history_user is the django-simple-history public API for setting
+        the user who made the change, despite the underscore prefix.
+        """
         user = UserFactory()
         project = ProjectFactory(name="Test")
 
         project.name = "Changed by user"
-        project._history_user = user
+        project._history_user = user  # noqa: SLF001
         project.save()
 
         latest = project.history.first()
@@ -2231,9 +2230,6 @@ class TestProjectHistory:
 
     def test_history_tracks_deletion(self):
         """Verify that deleting a Project creates a deletion history record."""
-        from wafer_space.projects.models import Project
-        from wafer_space.projects.tests.factories import ProjectFactory
-
         project = ProjectFactory(name="To Be Deleted")
         project_id = project.id
 
