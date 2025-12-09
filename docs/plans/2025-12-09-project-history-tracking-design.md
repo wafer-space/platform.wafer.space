@@ -139,10 +139,10 @@ The history table is independent and doesn't block normal operations.
 
 ## Acceptance Criteria
 
-- [ ] Install django-simple-history
-- [ ] Add `HistoricalRecords()` to Project model
-- [ ] Add history middleware for user tracking
-- [ ] Update ProjectAdmin to use SimpleHistoryAdmin
-- [ ] Run migrations
+- [x] Install django-simple-history
+- [x] Add `HistoricalRecords()` to Project model
+- [x] Add history middleware for user tracking
+- [x] Update ProjectAdmin to use SimpleHistoryAdmin
+- [x] Run migrations
 - [ ] Populate history for existing Project records (deployment step)
-- [ ] Add tests for history tracking
+- [x] Add tests for history tracking
