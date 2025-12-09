@@ -797,11 +797,7 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
         for project in projects:
             size = project.slot_size
             active_file = project.active_files[0] if project.active_files else None
-            check = (
-                active_file.manufacturability_check
-                if active_file and hasattr(active_file, "manufacturability_check")
-                else None
-            )
+            check = active_file.latest_manufacturability_check if active_file else None
 
             if check:
                 status_counts[check.status] += 1
