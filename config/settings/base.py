@@ -115,6 +115,8 @@ THIRD_PARTY_APPS = [
     "allauth.socialaccount.providers.discord",
     # Background job processing
     "django_celery_results",
+    # History tracking
+    "simple_history",
 ]
 
 LOCAL_APPS = [
