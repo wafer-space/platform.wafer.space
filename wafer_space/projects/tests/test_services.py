@@ -1,11 +1,14 @@
 """Tests for services layer."""
 
+from __future__ import annotations
+
 from unittest.mock import Mock
 from unittest.mock import patch
 
 import pytest
 from django.test import TestCase
 
+from wafer_space.projects.exceptions import MaxRetriesExceededError
 from wafer_space.projects.file_type_utils import detect_file_type_from_data
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
@@ -13,6 +16,7 @@ from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.security import SecurityValidationError
 from wafer_space.projects.services import ProjectFileService
+from wafer_space.projects.services import create_retry_check
 from wafer_space.users.models import User
 
 from .constants import FIVE_MB
@@ -21,6 +25,7 @@ from .constants import PROGRESS_COMPLETE
 from .constants import PROGRESS_HALF
 from .constants import TEN_MB
 from .constants import TEST_PASSWORD
+from .factories import ManufacturabilityCheckFactory
 
 
 @pytest.mark.django_db
@@ -761,3 +766,88 @@ class TestFileReplacementCancelsCheck(TestCase):
         # Verify the completed check was NOT modified
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.FINISHED
+
+
+@pytest.mark.django_db
+class TestCreateRetryCheck:
+    """Tests for create_retry_check service function."""
+
+    def test_creates_new_check_in_pending_state(self):
+        """Creates a new check in PENDING status."""
+        failed_check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ERROR,
+        )
+        retry = create_retry_check(failed_check)
+        assert retry.status == ManufacturabilityCheck.Status.PENDING
+        assert retry.id != failed_check.id
+
+    def test_sets_trigger_reason_to_retry(self):
+        """New check has trigger_reason=RETRY."""
+        failed_check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ERROR,
+        )
+        retry = create_retry_check(failed_check)
+        assert retry.trigger_reason == ManufacturabilityCheck.TriggerReason.RETRY
+
+    def test_sets_parent_check_to_original(self):
+        """parent_check points to original (not the failed check if it's a retry)."""
+        original = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ERROR,
+        )
+        retry1 = create_retry_check(original)
+        retry1.status = ManufacturabilityCheck.Status.ERROR
+        retry1.save()
+
+        retry2 = create_retry_check(retry1)
+        # retry2's parent should be original, not retry1
+        assert retry2.parent_check == original
+
+    def test_preserves_project_and_project_file(self):
+        """New check has same project and project_file."""
+        failed_check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ERROR,
+        )
+        retry = create_retry_check(failed_check)
+        assert retry.project == failed_check.project
+        assert retry.project_file == failed_check.project_file
+
+    def test_raises_value_error_if_not_in_error_state(self):
+        """Cannot retry a check that's not in ERROR status."""
+        pending_check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        with pytest.raises(ValueError, match="Can only retry ERROR checks"):
+            create_retry_check(pending_check)
+
+    def test_raises_max_retries_exceeded_error(self):
+        """Cannot retry beyond max_retries limit."""
+        original = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ERROR,
+        )
+        # Create 3 retries (max)
+        for _ in range(3):
+            retry = ManufacturabilityCheckFactory(
+                project=original.project,
+                project_file=original.project_file,
+                parent_check=original,
+                status=ManufacturabilityCheck.Status.ERROR,
+            )
+
+        with pytest.raises(MaxRetriesExceededError):
+            create_retry_check(retry)
+
+    def test_original_check_unchanged(self):
+        """Original check is not modified."""
+        failed_check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ERROR,
+            error_message="Docker timeout",
+            processing_logs="Some logs",
+        )
+        original_status = failed_check.status
+        original_logs = failed_check.processing_logs
+
+        create_retry_check(failed_check)
+
+        failed_check.refresh_from_db()
+        assert failed_check.status == original_status
+        assert failed_check.processing_logs == original_logs
