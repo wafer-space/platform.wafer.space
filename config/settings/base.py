@@ -185,6 +185,8 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "allauth.account.middleware.AccountMiddleware",
     "wafer_space.legal.middleware.TOSAcceptanceMiddleware",
+    # History tracking - captures user for each change
+    "simple_history.middleware.HistoryRequestMiddleware",
 ]
 
 # STATIC
