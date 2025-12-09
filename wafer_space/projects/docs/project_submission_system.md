@@ -365,8 +365,7 @@ Infrastructure exists but not fully connected:
 - `errors` (JSONField)
 - `warnings` (JSONField)
 - `processing_logs` (TextField)
-- `retry_count` (PositiveIntegerField)
-- `max_retries` (PositiveIntegerField)
+- `parent_check` (ForeignKey to self, nullable) - Links to original check for retry chain
 
 ## Testing Strategy
 
