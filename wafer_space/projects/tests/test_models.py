@@ -2182,3 +2182,19 @@ class TestManufacturabilityCheckResetForRetry(TestCase):
 
         check.refresh_from_db()
         assert check.processing_logs == original_logs
+
+
+@pytest.mark.django_db
+class TestProjectHistory:
+    """Test Project history tracking with django-simple-history."""
+
+    def test_history_created_on_initial_save(self):
+        """Verify that creating a Project creates a history record."""
+        from wafer_space.projects.tests.factories import ProjectFactory
+
+        project = ProjectFactory(name="Test Project")
+
+        assert project.history.count() == 1
+        history_record = project.history.first()
+        assert history_record.name == "Test Project"
+        assert history_record.history_type == "+"  # Created
