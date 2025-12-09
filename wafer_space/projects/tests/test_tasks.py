@@ -285,9 +285,15 @@ class TestProjectSubmissionIntegration(TestCase):
         periodic task for verified files, not during submission.
         """
         # Mark as manufacturable (simulates completed check via mark_finished)
-        self.project.is_manufacturable = True
+        self.project.submitted_file = self.project_file
         self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
 
         # Submit the project
         self.project.submit()

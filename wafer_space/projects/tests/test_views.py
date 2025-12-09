@@ -15,6 +15,7 @@ from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.security import SecurityValidationError
+from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.models import ShuttleSlot
@@ -656,9 +657,15 @@ class TestProjectSubmitView(TestCase):
         )
 
         # Mark as manufacturable (simulates completed check via mark_finished)
-        self.project.is_manufacturable = True
+        self.project.submitted_file = project_file
         self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:submit", kwargs={"pk": self.project.pk})
@@ -810,9 +817,15 @@ class TestProjectSubmitView(TestCase):
         )
 
         # Mark as manufacturable (simulates completed check via mark_finished)
-        self.project.is_manufacturable = True
+        self.project.submitted_file = project_file
         self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
 
         # Submit once
         self.project.submit()
@@ -854,9 +867,15 @@ class TestProjectSubmitView(TestCase):
         )
 
         # Mark as manufacturable (simulates completed check via mark_finished)
-        self.project.is_manufacturable = True
+        self.project.submitted_file = project_file
         self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:submit", kwargs={"pk": self.project.pk})
