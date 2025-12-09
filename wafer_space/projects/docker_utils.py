@@ -159,6 +159,29 @@ def create_tar_archive(
     return tar_stream
 
 
+def create_directory_tar(dirname: str) -> io.BytesIO:
+    """Create an in-memory tar archive containing an empty directory.
+
+    This is used with Docker's put_archive() API to create directories
+    in a container.
+
+    Args:
+        dirname: Name of the directory to create (e.g., "output").
+
+    Returns:
+        BytesIO stream containing the tar archive, seeked to position 0.
+    """
+    tar_stream = io.BytesIO()
+    with tarfile.open(fileobj=tar_stream, mode="w") as tar:
+        # Create a TarInfo for the directory
+        dir_info = tarfile.TarInfo(name=dirname)
+        dir_info.type = tarfile.DIRTYPE
+        dir_info.mode = 0o755
+        tar.addfile(dir_info)
+    tar_stream.seek(0)
+    return tar_stream
+
+
 def stream_archive_to_file(
     container: docker.models.containers.Container,
     container_path: str,

@@ -1295,9 +1295,15 @@ class TestDoStarting:
             "G850ABCD",
         ]
 
-        # Verify put_archive was called with the tar stream at root
-        # (we upload to / with arcname=input/design.gds to create the directory)
-        mock_container.put_archive.assert_called_once_with("/", mock_tar_stream)
+        # Verify put_archive was called twice:
+        # 1. For the input GDS file (arcname=input/design.gds)
+        # 2. For the /output directory
+        put_archive_calls = mock_container.put_archive.call_args_list
+        assert len(put_archive_calls) == len(["input", "output"])  # 2 calls
+        # First call uploads the GDS file
+        first_call = put_archive_calls[0]
+        assert first_call[0][0] == "/"
+        assert first_call[0][1] == mock_tar_stream
 
         # Verify command is stored correctly
         expected_cmd = (
