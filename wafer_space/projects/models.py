@@ -1348,6 +1348,14 @@ class ManufacturabilityCheck(models.Model):
         default=TriggerReason.INITIAL,
         help_text="Why this check was triggered",
     )
+    parent_check = models.ForeignKey(
+        "self",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="retry_checks",
+        help_text="Original check this is a retry of (null if not a retry)",
+    )
 
     # Timestamps
     created_at = models.DateTimeField(
