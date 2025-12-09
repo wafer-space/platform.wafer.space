@@ -2240,3 +2240,48 @@ class TestProjectHistory:
 
         latest = history.first()
         assert latest.history_type == "-"  # Deleted
+
+    def test_history_tracks_is_public_changes(self):
+        """Verify that changes to is_public are tracked in history."""
+        project = ProjectFactory(name="Test", is_public=False)
+        initial_count = project.history.count()
+
+        # Change visibility to public
+        project.is_public = True
+        project.save()
+
+        assert project.history.count() == initial_count + 1
+        latest = project.history.first()
+        assert latest.is_public is True
+        assert latest.history_type == "~"  # Updated
+
+
+@pytest.mark.django_db
+class TestProjectIsPublic:
+    """Test Project is_public field behavior."""
+
+    def test_is_public_defaults_to_false(self):
+        """Verify that is_public defaults to False for new projects."""
+        project = ProjectFactory()
+
+        assert project.is_public is False
+
+    def test_is_public_can_be_set_to_true(self):
+        """Verify that is_public can be set to True."""
+        project = ProjectFactory(is_public=True)
+
+        assert project.is_public is True
+
+    def test_is_public_can_be_toggled(self):
+        """Verify that is_public can be toggled between True and False."""
+        project = ProjectFactory(is_public=False)
+
+        project.is_public = True
+        project.save()
+        project.refresh_from_db()
+        assert project.is_public is True
+
+        project.is_public = False
+        project.save()
+        project.refresh_from_db()
+        assert project.is_public is False

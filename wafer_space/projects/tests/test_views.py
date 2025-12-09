@@ -277,9 +277,49 @@ class TestProjectUpdateView(TestCase):
         # Check redirect location (use Location header for type safety)
         assert "/accounts/login/" in response["Location"]
 
-    def test_owner_can_update(self):
-        """Test that owner can update project."""
+    def test_owner_can_update_visibility(self):
+        """Test that owner can update is_public field.
+
+        Regular users can only edit visibility settings (is_public).
+        All other fields like name, description, slot_size require staff access.
+        """
         self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:update", kwargs={"pk": self.project.pk})
+
+        # Owner can only update is_public
+        form_data = {"is_public": True}
+        response = self.client.post(url, form_data)
+
+        # Should redirect
+        assert response.status_code == HTTP_FOUND
+
+        # Verify is_public was updated
+        self.project.refresh_from_db()
+        assert self.project.is_public is True
+
+    def test_owner_gets_limited_form(self):
+        """Test that owner sees the limited form (is_public only)."""
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:update", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        assert response.context["is_limited_form"] is True
+        # The form should only have is_public field
+        form = response.context["form"]
+        assert "is_public" in form.fields
+        assert "name" not in form.fields
+        assert "description" not in form.fields
+
+    def test_staff_can_update_all_fields(self):
+        """Test that staff can update all project fields."""
+        User.objects.create_user(
+            username="staffuser",
+            email="staff@example.com",
+            password=TEST_PASSWORD,
+            is_staff=True,
+        )
+        self.client.login(username="staffuser", password=TEST_PASSWORD)
         url = reverse("projects:update", kwargs={"pk": self.project.pk})
 
         form_data = {
@@ -288,6 +328,7 @@ class TestProjectUpdateView(TestCase):
             "shuttle": self.shuttle.pk,
             "project_id": "ABCD",
             "slot_size": "0p5x1",
+            "is_public": True,
         }
         response = self.client.post(url, form_data)
 
@@ -299,6 +340,7 @@ class TestProjectUpdateView(TestCase):
         assert self.project.name == "Updated Project"
         assert self.project.description == "Updated description"
         assert self.project.slot_size == "0p5x1"
+        assert self.project.is_public is True
 
     def test_non_owner_cannot_update(self):
         """Test that non-owner cannot update project."""
