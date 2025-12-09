@@ -2228,3 +2228,19 @@ class TestProjectHistory:
 
         latest = project.history.first()
         assert latest.history_user == user
+
+    def test_history_tracks_deletion(self):
+        """Verify that deleting a Project creates a deletion history record."""
+        from wafer_space.projects.models import Project
+        from wafer_space.projects.tests.factories import ProjectFactory
+
+        project = ProjectFactory(name="To Be Deleted")
+        project_id = project.id
+
+        project.delete()
+
+        history = Project.history.filter(id=project_id)
+        assert history.exists()
+
+        latest = history.first()
+        assert latest.history_type == "-"  # Deleted
