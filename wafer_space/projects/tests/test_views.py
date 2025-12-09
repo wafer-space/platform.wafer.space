@@ -278,16 +278,25 @@ class TestProjectUpdateView(TestCase):
         assert "/accounts/login/" in response["Location"]
 
     def test_owner_can_update_visibility(self):
-        """Test that owner can update is_public field.
+        """Test that owner can update is_public field but not other fields.
 
         Regular users can only edit visibility settings (is_public).
         All other fields like name, description, slot_size require staff access.
+        Even if an owner submits other fields, they should be ignored.
         """
         self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:update", kwargs={"pk": self.project.pk})
 
-        # Owner can only update is_public
-        form_data = {"is_public": True}
+        # Store original values
+        original_name = self.project.name
+        original_description = self.project.description
+
+        # Owner submits is_public along with other fields (which should be ignored)
+        form_data = {
+            "is_public": True,
+            "name": "Hacked Name",
+            "description": "Hacked Description",
+        }
         response = self.client.post(url, form_data)
 
         # Should redirect
@@ -296,6 +305,10 @@ class TestProjectUpdateView(TestCase):
         # Verify is_public was updated
         self.project.refresh_from_db()
         assert self.project.is_public is True
+
+        # Verify other fields were NOT changed (form ignores them)
+        assert self.project.name == original_name
+        assert self.project.description == original_description
 
     def test_owner_gets_limited_form(self):
         """Test that owner sees the limited form (is_public only)."""
