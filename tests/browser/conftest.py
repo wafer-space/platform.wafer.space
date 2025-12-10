@@ -169,26 +169,15 @@ def _browser_tos_temp_dir():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def mock_tos_directory_for_browser_tests(
-    _browser_tos_temp_dir, _monkeypatch_session, request
-):
+def mock_tos_directory_for_browser_tests(_browser_tos_temp_dir, _monkeypatch_session):
     """Mock the TOS directory for browser tests to use a temporary directory.
 
     This prevents browser tests from modifying real TOS markdown files.
     See GitHub issue #153.
 
-    Note: This is session-scoped because browser tests share the same
-    TOS files across all tests in a session.
+    Note: This conftest.py is only loaded when browser tests are collected,
+    so we always apply the mock when this fixture runs.
     """
-    # Only apply to browser test runs
-    test_paths = request.config.args
-    is_browser_test = (
-        any("browser" in str(path) for path in test_paths) or not test_paths
-    )
-
-    if not is_browser_test:
-        yield
-        return
 
     def mock_get_tos_dir():
         return _browser_tos_temp_dir
@@ -206,14 +195,13 @@ def mock_tos_directory_for_browser_tests(
         mock_get_tos_dir,
     )
 
-    yield _browser_tos_temp_dir
+    return _browser_tos_temp_dir
 
 
 @pytest.fixture(scope="session", autouse=True)
 def ensure_test_tos_exists(
     django_db_setup,
     django_db_blocker,
-    request,
     mock_tos_directory_for_browser_tests,
 ):
     """Ensure test TOS data exists in the database.
@@ -222,29 +210,20 @@ def ensure_test_tos_exists(
     for all browser tests that need it. The data persists in the test
     database and is visible to the live_server.
 
-    Note: TOS files are now written to a temporary directory (not real
-    filesystem) thanks to mock_tos_directory_for_browser_tests fixture.
-    See GitHub issue #153.
+    Note: This conftest.py is only loaded when browser tests are collected,
+    so we always create test TOS data when this fixture runs. TOS files
+    are written to a temporary directory thanks to the
+    mock_tos_directory_for_browser_tests fixture. See GitHub issue #153.
     """
     # Mark fixture dependencies as intentionally unused (for ordering only)
     del django_db_setup
     del mock_tos_directory_for_browser_tests
 
-    # Create TOS for any test run that includes browser tests
-    # (in CI, all tests run together)
-    test_paths = request.config.args
-    # Check if we're running browser tests at all
-    is_browser_test = (
-        any("browser" in str(path) for path in test_paths) or not test_paths
-    )
-
-    if is_browser_test:
-        with django_db_blocker.unblock():
-            # Create TOS in test database (will persist for all tests)
-            if not TermsOfService.objects.filter(version="1.0.0").exists():
-                call_command("create_test_tos", verbosity=0)
-                # Ensure changes are committed to database
-                connection.cursor().execute("SELECT 1")  # Force connection
+    with django_db_blocker.unblock():
+        if not TermsOfService.objects.filter(version="1.0.0").exists():
+            call_command("create_test_tos", verbosity=0)
+            # Ensure changes are committed to database
+            connection.cursor().execute("SELECT 1")  # Force connection
 
 
 @pytest.fixture(scope="session")
