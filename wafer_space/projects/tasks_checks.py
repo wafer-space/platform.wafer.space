@@ -975,15 +975,15 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
         "[do_starting] Creating tar archive of GDS file (%d bytes)...",
         file_size,
     )
-    tar_stream = create_tar_archive(gds_path, arcname="input/design.gds")
-    tar_size = tar_stream.seek(0, 2)  # Get size by seeking to end
-    tar_stream.seek(0)  # Reset to beginning
-    logger.info(
-        "[do_starting] Uploading tar archive to container %s (%d bytes)...",
-        container.id[:12],
-        tar_size,
-    )
-    container.put_archive("/", tar_stream)
+    with create_tar_archive(gds_path, arcname="input/design.gds") as tar_stream:
+        tar_size = tar_stream.seek(0, 2)  # Get size by seeking to end
+        tar_stream.seek(0)  # Reset to beginning
+        logger.info(
+            "[do_starting] Uploading tar archive to container %s (%d bytes)...",
+            container.id[:12],
+            tar_size,
+        )
+        container.put_archive("/", tar_stream)
     logger.info(
         "[do_starting] Successfully uploaded GDS to /input/design.gds in container %s",
         container.id[:12],

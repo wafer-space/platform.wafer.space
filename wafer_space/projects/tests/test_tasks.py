@@ -1264,9 +1264,9 @@ class TestDoStarting:
             mock_path_instance.exists.return_value = True
             mock_path.return_value = mock_path_instance
 
-            # Mock create_tar_archive to return a BytesIO
+            # Mock create_tar_archive context manager to yield a mock stream
             mock_tar_stream = MagicMock()
-            mock_create_tar.return_value = mock_tar_stream
+            mock_create_tar.return_value.__enter__.return_value = mock_tar_stream
 
             result = do_starting(check.id)
 
@@ -1346,7 +1346,7 @@ class TestDoStarting:
             mock_path_instance = MagicMock()
             mock_path_instance.exists.return_value = True
             mock_path.return_value = mock_path_instance
-            mock_create_tar.return_value = MagicMock()
+            mock_create_tar.return_value.__enter__.return_value = MagicMock()
 
             do_starting(check.id)
 

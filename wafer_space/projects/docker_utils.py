@@ -7,9 +7,15 @@ import io
 import pathlib
 import re
 import tarfile
+import tempfile
+from contextlib import contextmanager
 from datetime import UTC
 from datetime import datetime
 from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+    from typing import IO
 
 import docker
 from django.conf import settings
@@ -137,29 +143,45 @@ def stop_and_remove_container(
         logger.exception("Failed to remove container %s", container.id)
 
 
+@contextmanager
 def create_tar_archive(
     file_path: Path | str,
     arcname: str = "design.gds",
-) -> io.BytesIO:
-    """Create an in-memory tar archive from a file.
+) -> Generator[IO[bytes]]:
+    """Create a tar archive from a file using streaming (no memory buffering).
 
     This is used with Docker's put_archive() API to upload files
     to a container without using bind mounts, enabling support
     for remote Docker servers.
 
+    Uses a temporary file to avoid buffering large GDS files in memory.
+    The temp file is automatically cleaned up when the context manager exits.
+
     Args:
         file_path: Path to the file to archive.
         arcname: Name of the file inside the archive.
 
-    Returns:
-        BytesIO stream containing the tar archive, seeked to position 0.
+    Yields:
+        File handle for the tar archive, seeked to position 0.
+
+    Example:
+        with create_tar_archive(gds_path, arcname="input/design.gds") as tar_stream:
+            tar_size = tar_stream.seek(0, 2)  # Get size
+            tar_stream.seek(0)
+            container.put_archive("/", tar_stream)
     """
     path = pathlib.Path(file_path) if isinstance(file_path, str) else file_path
-    tar_stream = io.BytesIO()
-    with tarfile.open(fileobj=tar_stream, mode="w") as tar:
-        tar.add(str(path), arcname=arcname)
-    tar_stream.seek(0)
-    return tar_stream
+    # Write tar to temp file (context manager ensures proper cleanup)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".tar") as temp_file:
+        with tarfile.open(fileobj=temp_file, mode="w") as tar:
+            tar.add(str(path), arcname=arcname)
+        temp_path = pathlib.Path(temp_file.name)
+    # Re-open for reading and yield to caller
+    try:
+        with temp_path.open("rb") as read_handle:
+            yield read_handle
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 
 def create_directory_tar(dirname: str) -> io.BytesIO:

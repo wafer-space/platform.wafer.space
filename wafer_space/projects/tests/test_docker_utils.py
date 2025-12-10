@@ -7,6 +7,7 @@ import gzip
 import hashlib
 import logging
 import tarfile
+from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
@@ -20,7 +21,6 @@ from wafer_space.projects.docker_utils import strip_docker_timestamps
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-    from pathlib import Path
 
 
 class TestParseDockerTimestampFloat:
@@ -86,7 +86,7 @@ class TestStripDockerTimestamps:
 
 
 class TestCreateTarArchive:
-    """Test create_tar_archive function."""
+    """Test create_tar_archive function (context manager returning temp file)."""
 
     def test_creates_valid_tar_archive(self, tmp_path: Path) -> None:
         """Creates a valid tar archive from a file."""
@@ -95,27 +95,25 @@ class TestCreateTarArchive:
         test_content = b"test file content"
         test_file.write_bytes(test_content)
 
-        # Create the archive
-        tar_stream = create_tar_archive(test_file)
-
-        # Verify it's a valid tar
-        tar_stream.seek(0)
-        with tarfile.open(fileobj=tar_stream, mode="r") as tar:
-            members = tar.getnames()
-            assert len(members) == 1
-            assert members[0] == "design.gds"
+        # Create the archive using context manager
+        with create_tar_archive(test_file) as tar_stream:
+            # Verify it's a valid tar
+            tar_stream.seek(0)
+            with tarfile.open(fileobj=tar_stream, mode="r") as tar:
+                members = tar.getnames()
+                assert len(members) == 1
+                assert members[0] == "design.gds"
 
     def test_uses_custom_arcname(self, tmp_path: Path) -> None:
         """Uses the specified arcname for the file in the archive."""
         test_file = tmp_path / "my_design.gds"
         test_file.write_bytes(b"content")
 
-        tar_stream = create_tar_archive(test_file, arcname="custom_name.gds")
-
-        tar_stream.seek(0)
-        with tarfile.open(fileobj=tar_stream, mode="r") as tar:
-            members = tar.getnames()
-            assert members[0] == "custom_name.gds"
+        with create_tar_archive(test_file, arcname="custom_name.gds") as tar_stream:
+            tar_stream.seek(0)
+            with tarfile.open(fileobj=tar_stream, mode="r") as tar:
+                members = tar.getnames()
+                assert members[0] == "custom_name.gds"
 
     def test_preserves_file_content(self, tmp_path: Path) -> None:
         """Archived file contains the correct content."""
@@ -123,13 +121,12 @@ class TestCreateTarArchive:
         test_content = b"important design data"
         test_file.write_bytes(test_content)
 
-        tar_stream = create_tar_archive(test_file)
-
-        tar_stream.seek(0)
-        with tarfile.open(fileobj=tar_stream, mode="r") as tar:
-            extracted = tar.extractfile("design.gds")
-            assert extracted is not None
-            assert extracted.read() == test_content
+        with create_tar_archive(test_file) as tar_stream:
+            tar_stream.seek(0)
+            with tarfile.open(fileobj=tar_stream, mode="r") as tar:
+                extracted = tar.extractfile("design.gds")
+                assert extracted is not None
+                assert extracted.read() == test_content
 
     def test_accepts_string_path(self, tmp_path: Path) -> None:
         """Accepts a string path argument."""
@@ -137,22 +134,35 @@ class TestCreateTarArchive:
         test_file.write_bytes(b"content")
 
         # Pass as string instead of Path
-        tar_stream = create_tar_archive(str(test_file))
-
-        tar_stream.seek(0)
-        with tarfile.open(fileobj=tar_stream, mode="r") as tar:
-            assert len(tar.getnames()) == 1
+        with create_tar_archive(str(test_file)) as tar_stream:
+            tar_stream.seek(0)
+            with tarfile.open(fileobj=tar_stream, mode="r") as tar:
+                assert len(tar.getnames()) == 1
 
     def test_stream_is_seeked_to_start(self, tmp_path: Path) -> None:
         """Returned stream is seeked to position 0."""
         test_file = tmp_path / "test.gds"
         test_file.write_bytes(b"content")
 
-        tar_stream = create_tar_archive(test_file)
+        with create_tar_archive(test_file) as tar_stream:
+            # Should be able to read immediately without seeking
+            assert tar_stream.tell() == 0
+            assert tar_stream.read(5) != b""
 
-        # Should be able to read immediately without seeking
-        assert tar_stream.tell() == 0
-        assert tar_stream.read(5) != b""
+    def test_cleans_up_temp_file(self, tmp_path: Path) -> None:
+        """Temp file is cleaned up after context manager exits."""
+        test_file = tmp_path / "test.gds"
+        test_file.write_bytes(b"content")
+
+        # Capture the temp file path
+        temp_path = None
+        with create_tar_archive(test_file) as tar_stream:
+            temp_path = Path(tar_stream.name)
+            assert temp_path.exists()
+
+        # After context exit, temp file should be deleted
+        assert temp_path is not None
+        assert not temp_path.exists()
 
 
 class TestStreamArchiveToFile:
