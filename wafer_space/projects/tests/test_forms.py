@@ -1,11 +1,14 @@
 """Tests for project forms."""
 
+from unittest.mock import patch
+
 import pytest
 from django.test import TestCase
 
 from wafer_space.projects.forms import ProjectFileURLSubmitForm
 from wafer_space.projects.forms import ProjectForm
 from wafer_space.projects.models import Project
+from wafer_space.projects.services.license_service import LicenseValidationError
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.users.models import User
 
@@ -582,3 +585,127 @@ class TestProjectFileURLSubmitForm(TestCase):
         form_empty = ProjectFileURLSubmitForm(data=form_data_empty)
         assert not form_empty.is_valid()
         assert "__all__" in form_empty.errors
+
+
+@pytest.mark.django_db
+class TestProjectFormLicenseValidation:
+    """Tests for license field validation in ProjectForm."""
+
+    @pytest.fixture
+    def open_shuttle(self, db):
+        """Create an open shuttle for testing."""
+        return Shuttle.objects.create(
+            name="G899",
+            description="Test Shuttle for License Validation",
+            status=Shuttle.Status.OPEN,
+        )
+
+    @pytest.fixture
+    def base_form_data(self, open_shuttle):
+        """Base valid form data."""
+        return {
+            "name": "Test Project",
+            "description": "A test project",
+            "shuttle": open_shuttle.pk,
+            "project_id": "TEST",
+            "slot_size": "1x1",
+            "is_public": False,
+            "repository_url": "",
+            "license_type": "proprietary",
+            "other_license_spdx_id": "",
+            "proprietary_terms_url": "",
+        }
+
+    def test_other_license_requires_spdx_id(self, base_form_data):
+        """'Other' license type requires SPDX ID."""
+        base_form_data["license_type"] = "other"
+        base_form_data["other_license_spdx_id"] = ""
+
+        form = ProjectForm(data=base_form_data)
+        assert not form.is_valid()
+        assert "other_license_spdx_id" in form.errors
+
+    @patch("wafer_space.projects.forms.validate_spdx_id")
+    def test_other_license_validates_spdx_id(self, mock_validate, base_form_data):
+        """'Other' license validates SPDX ID."""
+        mock_validate.side_effect = LicenseValidationError("Invalid SPDX identifier")
+        base_form_data["license_type"] = "other"
+        base_form_data["other_license_spdx_id"] = "INVALID-ID"
+
+        form = ProjectForm(data=base_form_data)
+        assert not form.is_valid()
+        assert "Invalid SPDX identifier" in str(form.errors["other_license_spdx_id"])
+
+    @patch("wafer_space.projects.forms.validate_spdx_id")
+    def test_valid_other_license_passes(self, mock_validate, base_form_data):
+        """Valid 'Other' license with SPDX ID passes."""
+        mock_validate.return_value = True
+        base_form_data["license_type"] = "other"
+        base_form_data["other_license_spdx_id"] = "GPL-3.0-only"
+
+        form = ProjectForm(data=base_form_data)
+        assert form.is_valid(), form.errors
+
+    @patch("wafer_space.projects.forms.fetch_url_content")
+    def test_proprietary_terms_url_fetched_and_cached(
+        self, mock_fetch, base_form_data, user
+    ):
+        """Proprietary terms URL is fetched and content cached."""
+        mock_fetch.return_value = "License terms content..."
+        base_form_data["license_type"] = "proprietary"
+        base_form_data["proprietary_terms_url"] = "https://example.com/terms.txt"
+
+        form = ProjectForm(data=base_form_data)
+        assert form.is_valid(), form.errors
+
+        # Save and check cache
+        form.instance.user = user
+        project = form.save()
+        assert project.proprietary_terms_cached == "License terms content..."
+        assert project.proprietary_terms_cached_at is not None
+
+    @patch("wafer_space.projects.forms.fetch_url_content")
+    def test_proprietary_terms_url_fetch_failure_shows_error(
+        self, mock_fetch, base_form_data
+    ):
+        """Failed fetch of proprietary terms shows error."""
+        mock_fetch.side_effect = LicenseValidationError("Could not fetch")
+        base_form_data["license_type"] = "proprietary"
+        base_form_data["proprietary_terms_url"] = "https://example.com/bad.txt"
+
+        form = ProjectForm(data=base_form_data)
+        assert not form.is_valid()
+        assert "proprietary_terms_url" in form.errors
+
+    def test_non_other_license_clears_spdx_id(self, base_form_data):
+        """Non-'other' license types clear the SPDX ID field."""
+        base_form_data["license_type"] = "MIT"
+        base_form_data["other_license_spdx_id"] = "should-be-cleared"
+
+        form = ProjectForm(data=base_form_data)
+        assert form.is_valid(), form.errors
+        assert form.cleaned_data["other_license_spdx_id"] == ""
+
+    def test_non_proprietary_license_clears_terms_url(self, base_form_data):
+        """Non-proprietary license types clear the terms URL field."""
+        base_form_data["license_type"] = "MIT"
+        base_form_data["proprietary_terms_url"] = "https://example.com/terms.txt"
+
+        form = ProjectForm(data=base_form_data)
+        assert form.is_valid(), form.errors
+        assert form.cleaned_data["proprietary_terms_url"] == ""
+
+    def test_repository_url_optional(self, base_form_data):
+        """Repository URL is optional."""
+        base_form_data["repository_url"] = ""
+
+        form = ProjectForm(data=base_form_data)
+        assert form.is_valid(), form.errors
+
+    def test_repository_url_accepts_valid_url(self, base_form_data):
+        """Repository URL accepts valid URLs."""
+        base_form_data["repository_url"] = "https://github.com/user/repo"
+
+        form = ProjectForm(data=base_form_data)
+        assert form.is_valid(), form.errors
+        assert form.cleaned_data["repository_url"] == "https://github.com/user/repo"
