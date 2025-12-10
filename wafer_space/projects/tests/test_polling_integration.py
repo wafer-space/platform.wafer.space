@@ -238,9 +238,12 @@ Precheck successfully completed."""
         # Second call should not queue (task already exists)
         result2 = checks_dispatching()
         assert result2["queued"] == 0
-        assert ManufacturabilityCheckTask.objects.filter(
-            manufacturability_check=check
-        ).count() == 1
+        assert (
+            ManufacturabilityCheckTask.objects.filter(
+                manufacturability_check=check
+            ).count()
+            == 1
+        )
 
     def test_concurrent_limit_respected(self, settings) -> None:
         """Test that per-server concurrent limits are enforced."""

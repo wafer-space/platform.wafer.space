@@ -1416,7 +1416,6 @@ class TestManufacturabilityCheckStateTransitions(TestCase):
 
 
 @pytest.mark.django_db
-
 class TestManufacturabilityCheckMarkRunning(TestCase):
     """Tests for mark_running() method."""
 
