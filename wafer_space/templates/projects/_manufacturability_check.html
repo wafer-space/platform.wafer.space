@@ -4,7 +4,6 @@
 {#   - show_title: (optional, default=True) Show "Manufacturability Check" title #}
 {#   - show_cancel: (optional, default=True) Show cancel button for in-progress checks #}
 {#   - show_trigger: (optional, default=False) Show trigger reason badge #}
-{#   - compact: (optional, default=False) Use more compact layout #}
 <div class="card bg-light mb-3">
   <div class="card-body">
     {% if show_title|default:True %}
@@ -152,75 +151,219 @@
         {% endif %}
       </div>
     {% endif %}
-    {% if check.celery_job_started_at %}
-      <p class="mb-2">
-        <strong>Started:</strong> {{ check.celery_job_started_at|date:"Y-m-d H:i:s" }}
-      </p>
-    {% endif %}
-    {% if check.celery_job_finished_at %}
-      <p class="mb-2">
-        <strong>Completed:</strong> {{ check.celery_job_finished_at|date:"Y-m-d H:i:s" }}
-      </p>
-    {% endif %}
-    {# Output files download section #}
-    {% if check.log_file or check.runs_archive or check.output_gds %}
+    {# Basic info #}
+    <p class="mb-2">
+      <strong>Trigger Reason:</strong>
+      {{ check.get_trigger_reason_display|default:"-" }}
+    </p>
+    <p class="mb-2">
+      <strong>Parent Check:</strong>
+      {% if check.parent_check %}
+        Check #{{ check.parent_check.pk }} ({{ check.parent_check.created_at|date:"Y-m-d H:i" }})
+      {% else %}
+        <span class="text-muted">-</span>
+      {% endif %}
+    </p>
+    {# Timestamps section #}
+    <div class="mt-3 mb-3">
+      <h6><i class="bi bi-clock"></i> Timestamps</h6>
+      <table class="table table-sm table-borderless mb-0">
+        <tbody>
+          <tr>
+            <td style="width: 200px;"><strong>Created:</strong></td>
+            <td>{% if check.created_at %}{{ check.created_at|date:"Y-m-d H:i:s" }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+          </tr>
+          <tr>
+            <td><strong>Dispatching Started:</strong></td>
+            <td>{% if check.dispatching_started_at %}{{ check.dispatching_started_at|date:"Y-m-d H:i:s" }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+          </tr>
+          <tr>
+            <td><strong>Starting Started:</strong></td>
+            <td>{% if check.starting_started_at %}{{ check.starting_started_at|date:"Y-m-d H:i:s" }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+          </tr>
+          <tr>
+            <td><strong>Container Started:</strong></td>
+            <td>{% if check.container_started_at %}{{ check.container_started_at|date:"Y-m-d H:i:s" }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+          </tr>
+          <tr>
+            <td><strong>Container Finished:</strong></td>
+            <td>{% if check.container_finished_at %}{{ check.container_finished_at|date:"Y-m-d H:i:s" }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+          </tr>
+          <tr>
+            <td><strong>Analysis Completed:</strong></td>
+            <td>{% if check.analysis_completed_at %}{{ check.analysis_completed_at|date:"Y-m-d H:i:s" }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+          </tr>
+          <tr>
+            <td><strong>Last Activity:</strong></td>
+            <td>{% if check.last_activity %}{{ check.last_activity|date:"Y-m-d H:i:s" }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    {# Docker info section #}
+    <div class="mt-3 mb-3">
+      <h6><i class="bi bi-box"></i> Docker Info</h6>
+      <table class="table table-sm table-borderless mb-0">
+        <tbody>
+          <tr>
+            <td style="width: 200px;"><strong>Server ID:</strong></td>
+            <td>{% if check.docker_server_id %}<code>{{ check.docker_server_id }}</code>{% else %}<span class="text-muted">-</span>{% endif %}</td>
+          </tr>
+          <tr>
+            <td><strong>Container ID:</strong></td>
+            <td>{% if check.docker_container_id %}<code>{{ check.docker_container_id }}</code>{% else %}<span class="text-muted">-</span>{% endif %}</td>
+          </tr>
+          <tr>
+            <td><strong>Exit Code:</strong></td>
+            <td>{% if check.docker_exit_code is not None %}{{ check.docker_exit_code }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+          </tr>
+          <tr>
+            <td><strong>Image:</strong></td>
+            <td>{% if check.docker_image %}<code class="small">{{ check.docker_image }}</code>{% else %}<span class="text-muted">-</span>{% endif %}</td>
+          </tr>
+          <tr>
+            <td><strong>Image Digest:</strong></td>
+            <td>{% if check.docker_image_digest %}<code class="small">{{ check.docker_image_digest }}</code>{% else %}<span class="text-muted">-</span>{% endif %}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    {# Version info section #}
+    <div class="mt-3 mb-3">
+      <h6><i class="bi bi-tag"></i> Version Info</h6>
+      <table class="table table-sm table-borderless mb-0">
+        <tbody>
+          <tr>
+            <td style="width: 200px;"><strong>Precheck Version:</strong></td>
+            <td>{% if check.precheck_version %}{{ check.precheck_version }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+          </tr>
+          <tr>
+            <td><strong>Tool Versions:</strong></td>
+            <td>{% if check.tool_versions %}<code class="small">{{ check.tool_versions }}</code>{% else %}<span class="text-muted">-</span>{% endif %}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    {# Admin re-run info (if applicable) #}
+    {% if check.rerun_requested_by or check.rerun_reason %}
       <div class="mt-3 mb-3">
-        <h6>
-          <i class="bi bi-folder2-open"></i> Output Files
-        </h6>
+        <h6><i class="bi bi-arrow-repeat"></i> Re-run Info</h6>
         <table class="table table-sm table-borderless mb-0">
           <tbody>
-            {% if check.log_file %}
-              <tr>
-                <td style="width: 180px;">
-                  <a href="{{ check.log_file.url }}"
-                     class="btn btn-sm btn-outline-secondary"
-                     download>
-                    <i class="bi bi-file-text"></i> Processing Log
-                  </a>
-                </td>
-                <td class="text-muted small">{{ check.log_file.size|filesizeformat }}</td>
-                <td>
-                  {% if check.log_file_sha256 %}<code class="small text-muted">sha256:{{ check.log_file_sha256 }}</code>{% endif %}
-                </td>
-              </tr>
-            {% endif %}
-            {% if check.runs_archive %}
-              <tr>
-                <td style="width: 180px;">
-                  <a href="{{ check.runs_archive.url }}"
-                     class="btn btn-sm btn-outline-primary"
-                     download>
-                    <i class="bi bi-file-zip"></i> Runs Archive
-                  </a>
-                </td>
-                <td class="text-muted small">{{ check.runs_archive.size|filesizeformat }}</td>
-                <td>
-                  {% if check.runs_archive_sha256 %}
-                    <code class="small text-muted">sha256:{{ check.runs_archive_sha256 }}</code>
-                  {% endif %}
-                </td>
-              </tr>
-            {% endif %}
-            {% if check.output_gds %}
-              <tr>
-                <td style="width: 180px;">
-                  <a href="{{ check.output_gds.url }}"
-                     class="btn btn-sm btn-outline-success"
-                     download>
-                    <i class="bi bi-file-earmark-binary"></i> Output GDS
-                  </a>
-                </td>
-                <td class="text-muted small">{{ check.output_gds.size|filesizeformat }}</td>
-                <td>
-                  {% if check.output_gds_sha256 %}<code class="small text-muted">sha256:{{ check.output_gds_sha256 }}</code>{% endif %}
-                </td>
-              </tr>
-            {% endif %}
+            <tr>
+              <td style="width: 200px;"><strong>Requested By:</strong></td>
+              <td>{% if check.rerun_requested_by %}{{ check.rerun_requested_by.username }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+            </tr>
+            <tr>
+              <td><strong>Reason:</strong></td>
+              <td>{% if check.rerun_reason %}{{ check.rerun_reason }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+            </tr>
           </tbody>
         </table>
       </div>
     {% endif %}
+    {# Output files download section - always show #}
+    <div class="mt-3 mb-3">
+      <h6>
+        <i class="bi bi-folder2-open"></i> Output Files
+      </h6>
+      <table class="table table-sm table-borderless mb-0">
+        <tbody>
+          <tr>
+            <td style="width: 180px;">
+              {% if check.log_file %}
+                <a href="{{ check.log_file.url }}"
+                   class="btn btn-sm btn-outline-secondary"
+                   download>
+                  <i class="bi bi-file-text"></i> Processing Log
+                </a>
+              {% else %}
+                <span class="text-muted"><i class="bi bi-file-text"></i> Processing Log</span>
+              {% endif %}
+            </td>
+            <td class="text-muted small">
+              {% if check.log_file %}{{ check.log_file.size|filesizeformat }}{% else %}-{% endif %}
+            </td>
+            <td>
+              {% if check.log_file_sha256 %}
+                <code class="small text-muted">sha256:{{ check.log_file_sha256 }}</code>
+              {% else %}
+                <span class="text-muted">-</span>
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <td style="width: 180px;">
+              {% if check.runs_archive %}
+                <a href="{{ check.runs_archive.url }}"
+                   class="btn btn-sm btn-outline-primary"
+                   download>
+                  <i class="bi bi-file-zip"></i> Runs Archive
+                </a>
+              {% else %}
+                <span class="text-muted"><i class="bi bi-file-zip"></i> Runs Archive</span>
+              {% endif %}
+            </td>
+            <td class="text-muted small">
+              {% if check.runs_archive %}{{ check.runs_archive.size|filesizeformat }}{% else %}-{% endif %}
+            </td>
+            <td>
+              {% if check.runs_archive_sha256 %}
+                <code class="small text-muted">sha256:{{ check.runs_archive_sha256 }}</code>
+              {% else %}
+                <span class="text-muted">-</span>
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <td style="width: 180px;">
+              {% if check.output_gds %}
+                <a href="{{ check.output_gds.url }}"
+                   class="btn btn-sm btn-outline-success"
+                   download>
+                  <i class="bi bi-file-earmark-binary"></i> Output GDS
+                </a>
+              {% else %}
+                <span class="text-muted"><i class="bi bi-file-earmark-binary"></i> Output GDS</span>
+              {% endif %}
+            </td>
+            <td class="text-muted small">
+              {% if check.output_gds %}{{ check.output_gds.size|filesizeformat }}{% else %}-{% endif %}
+            </td>
+            <td>
+              {% if check.output_gds_sha256 %}
+                <code class="small text-muted">sha256:{{ check.output_gds_sha256 }}</code>
+              {% else %}
+                <span class="text-muted">-</span>
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <td style="width: 180px;">
+              {% if check.docker_layer_export %}
+                <a href="{{ check.docker_layer_export.url }}"
+                   class="btn btn-sm btn-outline-warning"
+                   download>
+                  <i class="bi bi-archive"></i> Docker Layer
+                </a>
+              {% else %}
+                <span class="text-muted"><i class="bi bi-archive"></i> Docker Layer</span>
+              {% endif %}
+            </td>
+            <td class="text-muted small">
+              {% if check.docker_layer_export %}{{ check.docker_layer_export.size|filesizeformat }}{% else %}-{% endif %}
+            </td>
+            <td>
+              {% if check.docker_layer_sha256 %}
+                <code class="small text-muted">sha256:{{ check.docker_layer_sha256 }}</code>
+              {% else %}
+                <span class="text-muted">-</span>
+              {% endif %}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
     {# Docker command for reproducibility - always show section #}
     <div class="mt-3">
       <details>
@@ -233,9 +376,7 @@
                       white-space: pre-wrap;
                       word-break: break-all">{{ check.docker_command }}</pre>
         {% else %}
-          <p class="text-muted small mt-2 mb-0">
-            <i class="bi bi-hourglass-split"></i> Waiting for container to start...
-          </p>
+          <p class="text-muted small mt-2 mb-0">-</p>
         {% endif %}
       </details>
     </div>
@@ -279,53 +420,76 @@
             </table>
           </div>
         {% else %}
-          <p class="text-muted small mt-2 mb-0">
-            <i class="bi bi-hourglass-split"></i> Waiting for resource data...
-          </p>
+          <p class="text-muted small mt-2 mb-0">-</p>
         {% endif %}
       </details>
     </div>
-    {# Display processing logs if available or if check is running #}
-    {% if check.processing_logs or check.status == 'running' or check.status == 'pending' or check.status == 'dispatching' or check.status == 'starting' or check.status == 'analyzing' %}
-      <div class="mt-3" id="processing-logs-container">
-        <h6>
-          <i class="bi bi-terminal"></i> Processing Logs
-        </h6>
+    {# Processing logs - always show section #}
+    <div class="mt-3" id="processing-logs-container">
+      <h6>
+        <i class="bi bi-terminal"></i> Processing Logs
+      </h6>
+      {% if check.processing_logs %}
         <pre id="processing-logs"
              class="bg-dark text-light p-3 rounded"
              style="max-height: 400px;
                     overflow-y: auto;
-                    font-size: 0.85rem">{{ check.processing_logs|default:"Waiting for logs..." }}</pre>
-      </div>
-    {% endif %}
-    {# Display system error message for staff when present #}
-    {% if check.error_message and request.user.is_staff %}
+                    font-size: 0.85rem">{{ check.processing_logs }}</pre>
+      {% else %}
+        <p class="text-muted small mb-0">-</p>
+      {% endif %}
+    </div>
+    {# System error message - always show for staff #}
+    {% if request.user.is_staff %}
       <div class="mt-3">
         <h6 class="text-danger">
           <i class="bi bi-exclamation-triangle"></i> System Error (Staff Only)
         </h6>
-        <div class="alert alert-danger mb-2" role="alert">
-          <pre class="mb-0" style="white-space: pre-wrap; word-break: break-word;">{{ check.error_message }}</pre>
-        </div>
+        {% if check.error_message %}
+          <div class="alert alert-danger mb-2" role="alert">
+            <pre class="mb-0" style="white-space: pre-wrap; word-break: break-word;">{{ check.error_message }}</pre>
+          </div>
+        {% else %}
+          <p class="text-muted small mb-0">-</p>
+        {% endif %}
       </div>
     {% endif %}
-    {# Display errors if check finished with errors #}
-    {% if check.status == 'finished' and check.errors %}
+    {# DRC Errors - always show for finished checks #}
+    {% if check.status == 'finished' %}
       <div class="mt-3">
         <h6 class="text-danger">
           <i class="bi bi-exclamation-triangle"></i> Errors
         </h6>
-        {% for error in check.errors %}<div class="alert alert-danger mb-2" role="alert">{{ error }}</div>{% endfor %}
+        {% if check.errors %}
+          {% for error in check.errors %}<div class="alert alert-danger mb-2" role="alert">{{ error }}</div>{% endfor %}
+        {% else %}
+          <p class="text-muted small mb-0">None</p>
+        {% endif %}
       </div>
-    {% endif %}
-    {# Display warnings if any #}
-    {% if check.status == 'finished' and check.warnings %}
       <div class="mt-3">
         <h6 class="text-warning">
           <i class="bi bi-exclamation-circle"></i> Warnings
         </h6>
-        {% for warning in check.warnings %}<div class="alert alert-warning mb-2" role="alert">{{ warning }}</div>{% endfor %}
+        {% if check.warnings %}
+          {% for warning in check.warnings %}<div class="alert alert-warning mb-2" role="alert">{{ warning }}</div>{% endfor %}
+        {% else %}
+          <p class="text-muted small mb-0">None</p>
+        {% endif %}
       </div>
     {% endif %}
+    {# Result field - always show #}
+    <div class="mt-3">
+      <h6><i class="bi bi-check2-square"></i> Result</h6>
+      <p class="mb-0">
+        <strong>Is Manufacturable:</strong>
+        {% if check.is_manufacturable is True %}
+          <span class="text-success">Yes</span>
+        {% elif check.is_manufacturable is False %}
+          <span class="text-danger">No</span>
+        {% else %}
+          <span class="text-muted">-</span>
+        {% endif %}
+      </p>
+    </div>
   </div>
 </div>
