@@ -29,7 +29,7 @@
               <tbody id="summary-table-body">
                 {% for slot_size, stat in stats.items %}
                   {% if stat.total_slots > 0 %}
-                    <tr data-size="{{ slot_size.value }}" style="cursor: pointer">
+                    <tr data-size="{{ slot_size.value }}">
                       <td class="py-1">{{ slot_size.label }}</td>
                       {# djlint:off H023 #}
                       <td class="py-1 text-end"
