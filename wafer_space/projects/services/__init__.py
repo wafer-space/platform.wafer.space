@@ -4,6 +4,8 @@ from wafer_space.projects.security import URLValidator
 from wafer_space.projects.tasks import download_project_file
 from wafer_space.projects.url_rewriters import URLRewriter
 
+from wafer_space.projects.check_operations import create_retry_check
+
 from .file_service import FileCreationData
 from .file_service import ProjectFileService
 from .license_service import LicenseValidationError
@@ -15,6 +17,7 @@ __all__ = [
     "AsyncResult",
     "FileCreationData",
     "LicenseValidationError",
+    "create_retry_check",
     "ProjectFileService",
     "URLRewriter",
     "URLValidator",
