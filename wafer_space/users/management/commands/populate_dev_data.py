@@ -485,6 +485,39 @@ class Command(BaseCommand):
         # Create manufacturability checks based on scenario
         self._create_manufacturability_checks(project, project_file, scenario, now)
 
+    def _finished_check_fields(self, completed_at: Any) -> dict:
+        """Return common fields for a finished check."""
+        return {
+            "docker_server_id": "docker-server-1",
+            "docker_container_id": "abc123def456789012345678901234567890abcd",
+            "docker_exit_code": 0,
+            "docker_image": "ghcr.io/wafer-space/gf180mcu-precheck:latest",
+            "docker_image_digest": "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+            "precheck_version": "v2.5.1",
+            "tool_versions": {
+                "magic": "8.3.460",
+                "klayout": "0.28.17",
+                "netgen": "1.5.272",
+                "pdk": "gf180mcuD",
+            },
+            "dispatching_started_at": completed_at - timedelta(minutes=12),
+            "starting_started_at": completed_at - timedelta(minutes=11),
+            "container_started_at": completed_at - timedelta(minutes=10),
+            "container_finished_at": completed_at - timedelta(seconds=30),
+            "last_activity": completed_at,
+            "processing_logs": (
+                "[INFO] Starting manufacturability check...\n"
+                "[INFO] Running DRC checks...\n"
+                "[INFO] Running LVS checks...\n"
+                "[INFO] Analysis complete.\n"
+            ),
+            "docker_command": (
+                "docker run --rm -v /data/projects:/workspace "
+                "ghcr.io/wafer-space/gf180mcu-precheck:latest "
+                "--design /workspace/design.gds --pdk gf180mcuD"
+            ),
+        }
+
     def _create_manufacturability_checks(
         self,
         project: Project,
@@ -494,6 +527,7 @@ class Command(BaseCommand):
     ) -> None:
         """Create ManufacturabilityChecks based on scenario."""
         if scenario == "single_pass":
+            completed = now - timedelta(hours=2)
             ManufacturabilityCheck.objects.create(
                 project=project,
                 project_file=project_file,
@@ -502,10 +536,12 @@ class Command(BaseCommand):
                 is_manufacturable=True,
                 errors=[],
                 warnings=["Minor: Consider adding ESD protection"],
-                analysis_completed_at=now - timedelta(hours=2),
+                analysis_completed_at=completed,
+                **self._finished_check_fields(completed),
             )
 
         elif scenario == "single_fail":
+            completed = now - timedelta(hours=1)
             ManufacturabilityCheck.objects.create(
                 project=project,
                 project_file=project_file,
@@ -517,16 +553,25 @@ class Command(BaseCommand):
                     "DRC violation: Via enclosure insufficient at (150, 300)",
                 ],
                 warnings=[],
-                analysis_completed_at=now - timedelta(hours=1),
+                analysis_completed_at=completed,
+                **self._finished_check_fields(completed),
             )
 
         elif scenario == "in_progress":
+            started = now - timedelta(minutes=5)
             ManufacturabilityCheck.objects.create(
                 project=project,
                 project_file=project_file,
                 status=ManufacturabilityCheck.Status.RUNNING,
                 trigger_reason=ManufacturabilityCheck.TriggerReason.INITIAL,
-                container_started_at=now - timedelta(minutes=5),
+                docker_server_id="docker-server-1",
+                docker_container_id="running123456789012345678901234567890ab",
+                docker_image="ghcr.io/wafer-space/gf180mcu-precheck:latest",
+                dispatching_started_at=started - timedelta(minutes=2),
+                starting_started_at=started - timedelta(minutes=1),
+                container_started_at=started,
+                last_activity=now - timedelta(seconds=10),
+                processing_logs="[INFO] Starting manufacturability check...\n",
             )
 
         elif scenario == "error_retry":
@@ -539,18 +584,33 @@ class Command(BaseCommand):
         self, project: Project, project_file: ProjectFile, now: Any
     ) -> None:
         """Create error + retry check scenario."""
+        error_time = now - timedelta(hours=3)
         original_check = ManufacturabilityCheck.objects.create(
             project=project,
             project_file=project_file,
             status=ManufacturabilityCheck.Status.ERROR,
             trigger_reason=ManufacturabilityCheck.TriggerReason.INITIAL,
             error_message="Docker container timeout after 300s",
-            created_at=now - timedelta(hours=3),
+            docker_server_id="docker-server-1",
+            docker_container_id="timeout12345678901234567890123456789012",
+            docker_image="ghcr.io/wafer-space/gf180mcu-precheck:latest",
+            docker_exit_code=137,  # SIGKILL from timeout
+            dispatching_started_at=error_time - timedelta(minutes=7),
+            starting_started_at=error_time - timedelta(minutes=6),
+            container_started_at=error_time - timedelta(minutes=5),
+            last_activity=error_time,
+            processing_logs=(
+                "[INFO] Starting manufacturability check...\n"
+                "[INFO] Running DRC checks...\n"
+                "[ERROR] Container killed after 300s timeout\n"
+            ),
         )
         ManufacturabilityCheck.objects.filter(pk=original_check.pk).update(
-            created_at=now - timedelta(hours=3)
+            created_at=error_time - timedelta(minutes=10)
         )
 
+        # Retry succeeded
+        completed = now - timedelta(hours=2)
         ManufacturabilityCheck.objects.create(
             project=project,
             project_file=project_file,
@@ -560,13 +620,16 @@ class Command(BaseCommand):
             is_manufacturable=True,
             errors=[],
             warnings=[],
-            analysis_completed_at=now - timedelta(hours=2),
+            analysis_completed_at=completed,
+            **self._finished_check_fields(completed),
         )
 
     def _create_drc_update_checks(
         self, project: Project, project_file: ProjectFile, now: Any
     ) -> None:
         """Create DRC update multi-check scenario."""
+        # First check - passed initially
+        completed1 = now - timedelta(days=7)
         first_check = ManufacturabilityCheck.objects.create(
             project=project,
             project_file=project_file,
@@ -575,12 +638,15 @@ class Command(BaseCommand):
             is_manufacturable=True,
             errors=[],
             warnings=[],
-            analysis_completed_at=now - timedelta(days=7),
+            analysis_completed_at=completed1,
+            **self._finished_check_fields(completed1),
         )
         ManufacturabilityCheck.objects.filter(pk=first_check.pk).update(
-            created_at=now - timedelta(days=7, hours=1)
+            created_at=completed1 - timedelta(minutes=15)
         )
 
+        # Second check - DRC rules updated, now fails
+        completed2 = now - timedelta(days=3)
         second_check = ManufacturabilityCheck.objects.create(
             project=project,
             project_file=project_file,
@@ -589,12 +655,15 @@ class Command(BaseCommand):
             is_manufacturable=False,
             errors=["New DRC rule violation: Minimum poly width"],
             warnings=[],
-            analysis_completed_at=now - timedelta(days=3),
+            analysis_completed_at=completed2,
+            **self._finished_check_fields(completed2),
         )
         ManufacturabilityCheck.objects.filter(pk=second_check.pk).update(
-            created_at=now - timedelta(days=3, hours=1)
+            created_at=completed2 - timedelta(minutes=15)
         )
 
+        # Third check - admin re-run after design fix
+        completed3 = now - timedelta(hours=12)
         ManufacturabilityCheck.objects.create(
             project=project,
             project_file=project_file,
@@ -603,5 +672,6 @@ class Command(BaseCommand):
             is_manufacturable=True,
             errors=[],
             warnings=[],
-            analysis_completed_at=now - timedelta(hours=12),
+            analysis_completed_at=completed3,
+            **self._finished_check_fields(completed3),
         )
