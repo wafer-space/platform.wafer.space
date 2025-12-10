@@ -16,6 +16,7 @@ from wafer_space.core.enums import SlotSize
 from wafer_space.core.utils import is_production_environment
 from wafer_space.legal.models import TermsOfService
 from wafer_space.legal.models import TermsOfServiceAcceptance
+from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectComplianceCertification
@@ -303,26 +304,168 @@ class Command(BaseCommand):
         else:
             self.stdout.write("  Test projects already exist")
 
+    def _create_download_attempts(
+        self, project_file: ProjectFile, scenario: str
+    ) -> None:
+        """Create DownloadAttempts for a ProjectFile based on scenario."""
+        now = timezone.now()
+
+        if scenario == "single_success":
+            # Single successful download
+            DownloadAttempt.objects.create(
+                project_file=project_file,
+                attempt_number=1,
+                status=DownloadAttempt.Status.COMPLETED,
+                download_started_at=now - timedelta(hours=5, minutes=2),
+                download_completed_at=now - timedelta(hours=5),
+                download_duration_seconds=120.5,
+                bytes_downloaded=project_file.file_size or 1024000,
+                worker_hostname="celery-worker-1",
+            )
+
+        elif scenario == "retry_success":
+            # First attempt failed, second succeeded
+            DownloadAttempt.objects.create(
+                project_file=project_file,
+                attempt_number=1,
+                status=DownloadAttempt.Status.FAILED,
+                download_started_at=now - timedelta(hours=6),
+                download_completed_at=now - timedelta(hours=6) + timedelta(seconds=30),
+                download_error="Connection timeout after 30s - server unreachable",
+                download_duration_seconds=30.0,
+                bytes_downloaded=0,
+                worker_hostname="celery-worker-1",
+            )
+            DownloadAttempt.objects.create(
+                project_file=project_file,
+                attempt_number=2,
+                status=DownloadAttempt.Status.COMPLETED,
+                download_started_at=now - timedelta(hours=5, minutes=5),
+                download_completed_at=now - timedelta(hours=5),
+                download_duration_seconds=300.0,
+                bytes_downloaded=project_file.file_size or 2048000,
+                worker_hostname="celery-worker-2",
+            )
+
+        elif scenario == "multiple_retries":
+            # Multiple failed attempts then success
+            start1 = now - timedelta(days=1, hours=2)
+            DownloadAttempt.objects.create(
+                project_file=project_file,
+                attempt_number=1,
+                status=DownloadAttempt.Status.FAILED,
+                download_started_at=start1,
+                download_completed_at=start1 + timedelta(seconds=10),
+                download_error="HTTP 503 Service Unavailable",
+                download_duration_seconds=10.0,
+                bytes_downloaded=0,
+                worker_hostname="celery-worker-1",
+            )
+            start2 = now - timedelta(days=1, hours=1)
+            DownloadAttempt.objects.create(
+                project_file=project_file,
+                attempt_number=2,
+                status=DownloadAttempt.Status.FAILED,
+                download_started_at=start2,
+                download_completed_at=start2 + timedelta(minutes=5),
+                download_error="Hash mismatch: expected abc123, got def456",
+                download_duration_seconds=300.0,
+                bytes_downloaded=project_file.file_size or 1024000,
+                worker_hostname="celery-worker-1",
+            )
+            DownloadAttempt.objects.create(
+                project_file=project_file,
+                attempt_number=3,
+                status=DownloadAttempt.Status.COMPLETED,
+                download_started_at=now - timedelta(hours=12),
+                download_completed_at=now - timedelta(hours=12) + timedelta(minutes=3),
+                download_duration_seconds=180.0,
+                bytes_downloaded=project_file.file_size or 1024000,
+                worker_hostname="celery-worker-2",
+            )
+
+        elif scenario == "in_progress":
+            # Download currently in progress
+            DownloadAttempt.objects.create(
+                project_file=project_file,
+                attempt_number=1,
+                status=DownloadAttempt.Status.DOWNLOADING,
+                download_started_at=now - timedelta(minutes=2),
+                bytes_downloaded=int((project_file.file_size or 5000000) * 0.45),
+                worker_hostname="celery-worker-1",
+                worker_pid=12345,
+            )
+
     def _create_checks_for_project(self, project: Project, scenario: str) -> None:
         """Create ProjectFile and ManufacturabilityChecks based on scenario."""
         if scenario == "no_file":
             # No file submitted yet
             return
 
-        # Create a project file (status is derived from download attempts)
+        now = timezone.now()
+
+        # Determine download and file scenarios based on check scenario
+        download_scenario = "single_success"
+        create_old_files = False
+
+        if scenario == "drc_update":
+            # Multiple files showing file revisions
+            download_scenario = "retry_success"
+            create_old_files = True
+        elif scenario == "error_retry":
+            download_scenario = "multiple_retries"
+        elif scenario == "in_progress":
+            download_scenario = "in_progress"
+
+        # Create old/inactive files for some scenarios (file revision history)
+        if create_old_files:
+            # Old file v1 - superseded
+            old_file_1 = ProjectFile.objects.create(
+                project=project,
+                original_url=f"https://example.com/files/{project.project_id}_v1.gds",
+                is_active=False,
+                hash_verified=True,
+                file_size=980000,
+            )
+            self._create_download_attempts(old_file_1, "single_success")
+
+            # Old file v2 - had download issues
+            old_file_2 = ProjectFile.objects.create(
+                project=project,
+                original_url=f"https://example.com/files/{project.project_id}_v2.gds",
+                is_active=False,
+                hash_verified=True,
+                file_size=1050000,
+            )
+            self._create_download_attempts(old_file_2, "retry_success")
+
+        # Create the active project file
+        # hash_verified=False if still downloading
+        is_downloading = scenario == "in_progress"
         project_file = ProjectFile.objects.create(
             project=project,
             original_url=f"https://example.com/files/{project.project_id}.gds",
             is_active=True,
-            hash_verified=True,
+            hash_verified=not is_downloading,
+            file_size=5000000 if is_downloading else 1024000,
         )
+        self._create_download_attempts(project_file, download_scenario)
+
         project.submitted_file = project_file
         project.save(update_fields=["submitted_file"])
 
-        now = timezone.now()
+        # Create manufacturability checks based on scenario
+        self._create_manufacturability_checks(project, project_file, scenario, now)
 
+    def _create_manufacturability_checks(
+        self,
+        project: Project,
+        project_file: ProjectFile,
+        scenario: str,
+        now: Any,
+    ) -> None:
+        """Create ManufacturabilityChecks based on scenario."""
         if scenario == "single_pass":
-            # Single successful check
             ManufacturabilityCheck.objects.create(
                 project=project,
                 project_file=project_file,
@@ -335,7 +478,6 @@ class Command(BaseCommand):
             )
 
         elif scenario == "single_fail":
-            # Single failed check (not manufacturable)
             ManufacturabilityCheck.objects.create(
                 project=project,
                 project_file=project_file,
@@ -351,7 +493,6 @@ class Command(BaseCommand):
             )
 
         elif scenario == "in_progress":
-            # Check currently running
             ManufacturabilityCheck.objects.create(
                 project=project,
                 project_file=project_file,
@@ -361,73 +502,78 @@ class Command(BaseCommand):
             )
 
         elif scenario == "error_retry":
-            # Original check failed with error, then retry succeeded
-            original_check = ManufacturabilityCheck.objects.create(
-                project=project,
-                project_file=project_file,
-                status=ManufacturabilityCheck.Status.ERROR,
-                trigger_reason=ManufacturabilityCheck.TriggerReason.INITIAL,
-                error_message="Docker container timeout after 300s",
-                created_at=now - timedelta(hours=3),
-            )
-            # Force the created_at to be in the past
-            ManufacturabilityCheck.objects.filter(pk=original_check.pk).update(
-                created_at=now - timedelta(hours=3)
-            )
-
-            # Retry check - succeeded
-            ManufacturabilityCheck.objects.create(
-                project=project,
-                project_file=project_file,
-                status=ManufacturabilityCheck.Status.FINISHED,
-                trigger_reason=ManufacturabilityCheck.TriggerReason.RETRY,
-                parent_check=original_check,
-                is_manufacturable=True,
-                errors=[],
-                warnings=[],
-                analysis_completed_at=now - timedelta(hours=2),
-            )
+            self._create_error_retry_checks(project, project_file, now)
 
         elif scenario == "drc_update":
-            # Multiple checks due to DRC rules being updated
-            # First check passed
-            first_check = ManufacturabilityCheck.objects.create(
-                project=project,
-                project_file=project_file,
-                status=ManufacturabilityCheck.Status.FINISHED,
-                trigger_reason=ManufacturabilityCheck.TriggerReason.INITIAL,
-                is_manufacturable=True,
-                errors=[],
-                warnings=[],
-                analysis_completed_at=now - timedelta(days=7),
-            )
-            ManufacturabilityCheck.objects.filter(pk=first_check.pk).update(
-                created_at=now - timedelta(days=7, hours=1)
-            )
+            self._create_drc_update_checks(project, project_file, now)
 
-            # DRC update re-run - found new issues
-            second_check = ManufacturabilityCheck.objects.create(
-                project=project,
-                project_file=project_file,
-                status=ManufacturabilityCheck.Status.FINISHED,
-                trigger_reason=ManufacturabilityCheck.TriggerReason.DRC_UPDATE,
-                is_manufacturable=False,
-                errors=["New DRC rule violation: Minimum poly width"],
-                warnings=[],
-                analysis_completed_at=now - timedelta(days=3),
-            )
-            ManufacturabilityCheck.objects.filter(pk=second_check.pk).update(
-                created_at=now - timedelta(days=3, hours=1)
-            )
+    def _create_error_retry_checks(
+        self, project: Project, project_file: ProjectFile, now: Any
+    ) -> None:
+        """Create error + retry check scenario."""
+        original_check = ManufacturabilityCheck.objects.create(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+            trigger_reason=ManufacturabilityCheck.TriggerReason.INITIAL,
+            error_message="Docker container timeout after 300s",
+            created_at=now - timedelta(hours=3),
+        )
+        ManufacturabilityCheck.objects.filter(pk=original_check.pk).update(
+            created_at=now - timedelta(hours=3)
+        )
 
-            # Third check after fix - passes again
-            ManufacturabilityCheck.objects.create(
-                project=project,
-                project_file=project_file,
-                status=ManufacturabilityCheck.Status.FINISHED,
-                trigger_reason=ManufacturabilityCheck.TriggerReason.ADMIN_RERUN,
-                is_manufacturable=True,
-                errors=[],
-                warnings=[],
-                analysis_completed_at=now - timedelta(hours=12),
-            )
+        ManufacturabilityCheck.objects.create(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            trigger_reason=ManufacturabilityCheck.TriggerReason.RETRY,
+            parent_check=original_check,
+            is_manufacturable=True,
+            errors=[],
+            warnings=[],
+            analysis_completed_at=now - timedelta(hours=2),
+        )
+
+    def _create_drc_update_checks(
+        self, project: Project, project_file: ProjectFile, now: Any
+    ) -> None:
+        """Create DRC update multi-check scenario."""
+        first_check = ManufacturabilityCheck.objects.create(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            trigger_reason=ManufacturabilityCheck.TriggerReason.INITIAL,
+            is_manufacturable=True,
+            errors=[],
+            warnings=[],
+            analysis_completed_at=now - timedelta(days=7),
+        )
+        ManufacturabilityCheck.objects.filter(pk=first_check.pk).update(
+            created_at=now - timedelta(days=7, hours=1)
+        )
+
+        second_check = ManufacturabilityCheck.objects.create(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            trigger_reason=ManufacturabilityCheck.TriggerReason.DRC_UPDATE,
+            is_manufacturable=False,
+            errors=["New DRC rule violation: Minimum poly width"],
+            warnings=[],
+            analysis_completed_at=now - timedelta(days=3),
+        )
+        ManufacturabilityCheck.objects.filter(pk=second_check.pk).update(
+            created_at=now - timedelta(days=3, hours=1)
+        )
+
+        ManufacturabilityCheck.objects.create(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            trigger_reason=ManufacturabilityCheck.TriggerReason.ADMIN_RERUN,
+            is_manufacturable=True,
+            errors=[],
+            warnings=[],
+            analysis_completed_at=now - timedelta(hours=12),
+        )
