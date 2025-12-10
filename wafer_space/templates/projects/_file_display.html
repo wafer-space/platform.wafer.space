@@ -60,8 +60,12 @@
 {# Check is created immediately when download completes with verified hash #}
 {% with check=file.latest_manufacturability_check %}
   {% if check %}
-    {# Show current check using the shared partial #}
-    {% include "projects/_manufacturability_check.html" with check=check show_title=True show_cancel=True show_trigger=True %}
+    {# Show current check using the shared partial, wrapped in card #}
+    <div class="card bg-light mb-3">
+      <div class="card-body">
+        {% include "projects/_manufacturability_check.html" with check=check show_title=True show_cancel=True show_trigger=True %}
+      </div>
+    </div>
     {# Check History - show previous checks (not current) if more than one exists #}
     {% with all_checks=file.manufacturability_checks.all %}
       {% if all_checks.count > 1 %}
@@ -111,7 +115,7 @@
                     </div>
                   </summary>
                   <div class="card-body pt-0">
-                    {% include "projects/_manufacturability_check.html" with check=hist_check show_title=False show_cancel=True show_trigger=False show_card=False %}
+                    {% include "projects/_manufacturability_check.html" with check=hist_check show_title=False show_cancel=True show_trigger=False %}
                   </div>
                 </details>
               </div>
