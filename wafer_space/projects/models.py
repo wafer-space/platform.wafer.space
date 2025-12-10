@@ -169,7 +169,7 @@ class Project(models.Model):
     # License tracking (Issue #193)
     license_type = models.CharField(
         max_length=50,
-        choices=LicenseType.choices,
+        choices=LicenseType,
         default=LicenseType.PROPRIETARY,
         help_text="License under which this project is released",
     )
