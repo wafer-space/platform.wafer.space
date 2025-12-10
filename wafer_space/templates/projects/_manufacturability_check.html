@@ -21,75 +21,31 @@
     {# === MOST IMPORTANT: Status and Result === #}
     <p class="mb-2">
       <strong>Status:</strong>
+      {# Status badge #}
       {% if check.status == 'pending' %}
         <span class="badge bg-secondary">
           <i class="bi bi-clock"></i> Pending
         </span>
-        <form method="post"
-              action="{% url 'projects:cancel_check' pk=check.project.pk %}"
-              class="d-inline ms-2"
-              onsubmit="return confirm('Are you sure you want to cancel this manufacturability check?');">
-          {% csrf_token %}
-          <button type="submit" class="btn btn-sm btn-outline-danger">
-            <i class="bi bi-x-circle"></i> Cancel
-          </button>
-        </form>
       {% elif check.status == 'dispatching' %}
         <span class="badge bg-info">
           <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
           Pulling Docker image...
         </span>
-        <form method="post"
-              action="{% url 'projects:cancel_check' pk=check.project.pk %}"
-              class="d-inline ms-2"
-              onsubmit="return confirm('Are you sure you want to cancel this manufacturability check?');">
-          {% csrf_token %}
-          <button type="submit" class="btn btn-sm btn-outline-danger">
-            <i class="bi bi-x-circle"></i> Cancel
-          </button>
-        </form>
       {% elif check.status == 'starting' %}
         <span class="badge bg-info">
           <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
           Starting container...
         </span>
-        <form method="post"
-              action="{% url 'projects:cancel_check' pk=check.project.pk %}"
-              class="d-inline ms-2"
-              onsubmit="return confirm('Are you sure you want to cancel this manufacturability check?');">
-          {% csrf_token %}
-          <button type="submit" class="btn btn-sm btn-outline-danger">
-            <i class="bi bi-x-circle"></i> Cancel
-          </button>
-        </form>
       {% elif check.status == 'running' %}
         <span id="check-status-badge" class="badge bg-primary">
           <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
           <span id="check-status-text">Checking manufacturability...</span>
         </span>
-        <form method="post"
-              action="{% url 'projects:cancel_check' pk=check.project.pk %}"
-              class="d-inline ms-2"
-              onsubmit="return confirm('Are you sure you want to cancel this manufacturability check?');">
-          {% csrf_token %}
-          <button type="submit" class="btn btn-sm btn-outline-danger">
-            <i class="bi bi-x-circle"></i> Cancel
-          </button>
-        </form>
       {% elif check.status == 'analyzing' %}
         <span class="badge bg-info">
           <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
           Analyzing results...
         </span>
-        <form method="post"
-              action="{% url 'projects:cancel_check' pk=check.project.pk %}"
-              class="d-inline ms-2"
-              onsubmit="return confirm('Are you sure you want to cancel this manufacturability check?');">
-          {% csrf_token %}
-          <button type="submit" class="btn btn-sm btn-outline-danger">
-            <i class="bi bi-x-circle"></i> Cancel
-          </button>
-        </form>
       {% elif check.status == 'finished' %}
         {% if check.is_manufacturable %}
           {% if check.warnings %}
@@ -118,6 +74,18 @@
         <span class="badge bg-secondary">
           <i class="bi bi-x-circle"></i> Cancelled
         </span>
+      {% endif %}
+      {# Cancel button for in-progress checks #}
+      {% if check.is_cancellable %}
+        <form method="post"
+              action="{% url 'projects:cancel_check' pk=check.project.pk %}"
+              class="d-inline ms-2"
+              onsubmit="return confirm('Are you sure you want to cancel this manufacturability check?');">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-sm btn-outline-danger">
+            <i class="bi bi-x-circle"></i> Cancel
+          </button>
+        </form>
       {% endif %}
     </p>
 
