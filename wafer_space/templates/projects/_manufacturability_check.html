@@ -285,36 +285,36 @@
     {# === TRACKING: Timestamps, Docker Info, Version Info - side by side === #}
     <div class="row mt-3 mb-3">
       <div class="col-lg-4 mb-3 mb-lg-0">
-        <h6><i class="bi bi-clock"></i> Timestamps</h6>
+        <h6><i class="bi bi-clock"></i> Timing</h6>
         <table class="table table-sm table-borderless mb-0">
           <tbody>
             <tr>
               <td><strong>Created:</strong></td>
-              <td>{% if check.created_at %}{{ check.created_at|date:"Y-m-d H:i:s" }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+              <td>{% if check.created_at %}<span title="{{ check.created_at|date:'Y-m-d H:i:s' }}">{{ check.created_at|timesince }} ago</span>{% else %}<span class="text-muted">-</span>{% endif %}</td>
             </tr>
             <tr>
               <td><strong>Dispatching:</strong></td>
-              <td>{% if check.dispatching_started_at %}{{ check.dispatching_started_at|date:"Y-m-d H:i:s" }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+              <td>{% if check.dispatching_started_at %}<span title="{{ check.dispatching_started_at|date:'Y-m-d H:i:s' }}">+{{ check.dispatching_started_at|timeuntil:check.created_at }}</span>{% else %}<span class="text-muted">-</span>{% endif %}</td>
             </tr>
             <tr>
               <td><strong>Starting:</strong></td>
-              <td>{% if check.starting_started_at %}{{ check.starting_started_at|date:"Y-m-d H:i:s" }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+              <td>{% if check.starting_started_at %}<span title="{{ check.starting_started_at|date:'Y-m-d H:i:s' }}">+{{ check.starting_started_at|timeuntil:check.created_at }}</span>{% else %}<span class="text-muted">-</span>{% endif %}</td>
             </tr>
             <tr>
               <td><strong>Container Up:</strong></td>
-              <td>{% if check.container_started_at %}{{ check.container_started_at|date:"Y-m-d H:i:s" }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+              <td>{% if check.container_started_at %}<span title="{{ check.container_started_at|date:'Y-m-d H:i:s' }}">+{{ check.container_started_at|timeuntil:check.created_at }}</span>{% else %}<span class="text-muted">-</span>{% endif %}</td>
             </tr>
             <tr>
               <td><strong>Container Done:</strong></td>
-              <td>{% if check.container_finished_at %}{{ check.container_finished_at|date:"Y-m-d H:i:s" }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+              <td>{% if check.container_finished_at %}<span title="{{ check.container_finished_at|date:'Y-m-d H:i:s' }}">+{{ check.container_finished_at|timeuntil:check.created_at }}</span>{% else %}<span class="text-muted">-</span>{% endif %}</td>
             </tr>
             <tr>
               <td><strong>Analysis Done:</strong></td>
-              <td>{% if check.analysis_completed_at %}{{ check.analysis_completed_at|date:"Y-m-d H:i:s" }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+              <td>{% if check.analysis_completed_at %}<span title="{{ check.analysis_completed_at|date:'Y-m-d H:i:s' }}">+{{ check.analysis_completed_at|timeuntil:check.created_at }}</span>{% else %}<span class="text-muted">-</span>{% endif %}</td>
             </tr>
             <tr>
-              <td><strong>Last Activity:</strong></td>
-              <td>{% if check.last_activity %}{{ check.last_activity|date:"Y-m-d H:i:s" }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+              <td><strong>Total Duration:</strong></td>
+              <td>{% if check.analysis_completed_at and check.created_at %}<strong>{{ check.analysis_completed_at|timeuntil:check.created_at }}</strong>{% else %}<span class="text-muted">-</span>{% endif %}</td>
             </tr>
           </tbody>
         </table>
