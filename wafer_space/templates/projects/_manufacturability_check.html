@@ -4,8 +4,9 @@
 {#   - show_title: (optional, default=True) Show "Manufacturability Check" title #}
 {#   - show_cancel: (optional, default=True) Show cancel button for in-progress checks #}
 {#   - show_trigger: (optional, default=False) Show trigger reason badge #}
-<div class="card bg-light mb-3">
-  <div class="card-body">
+{#   - show_card: (optional, default=True) Wrap in card container #}
+{% if show_card|default:True %}<div class="card bg-light mb-3">
+  <div class="card-body">{% endif %}
     {% if show_title|default:True %}
       <h6 class="card-title">
         <i class="bi bi-check-circle"></i> Manufacturability Check
@@ -502,5 +503,5 @@
         {% endif %}
       </details>
     </div>
-  </div>
-</div>
+{% if show_card|default:True %}  </div>
+</div>{% endif %}
