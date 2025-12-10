@@ -79,7 +79,6 @@ DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS = 30.0  # Check every 30s in dev
 
 # Manufacturability check scanning (faster for development)
 PRECHECK_SCAN_INTERVAL_SECONDS = 15.0  # Scan every 15s in dev
-PRECHECK_CONCURRENT_LIMIT = 1  # 1 × 24GB = 24GB RAM required
 PRECHECK_CONTAINER_CLEANUP_INTERVAL_SECONDS = 15.0  # Cleanup every 15s in dev
 PRECHECK_TIMEOUT_SECONDS = 5 * 60  # 5 minutes hard limit for local dev
 PRECHECK_SOFT_TIMEOUT_BUFFER = 60  # 1 minute buffer (4 min soft, 5 min hard)
