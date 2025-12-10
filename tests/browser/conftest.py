@@ -9,6 +9,9 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from _pytest.monkeypatch import MonkeyPatch
+from django.core.management import call_command
+from django.db import connection
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.chrome.service import Service as ChromeService
@@ -19,6 +22,11 @@ from selenium.webdriver.support import expected_conditions
 from selenium.webdriver.support.wait import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.firefox import GeckoDriverManager
+
+import wafer_space.legal.models
+import wafer_space.legal.tests.factories
+import wafer_space.legal.utils
+from wafer_space.legal.models import TermsOfService
 
 # ============================================================================
 # CRITICAL: Block display for all browser tests by default
@@ -135,6 +143,19 @@ def pytest_addoption(parser):
 
 
 @pytest.fixture(scope="session")
+def _monkeypatch_session():
+    """Session-scoped monkeypatch fixture.
+
+    pytest's built-in monkeypatch is function-scoped, so we need our own
+    session-scoped version for fixtures that need to patch modules for
+    the entire test session.
+    """
+    mp = MonkeyPatch()
+    yield mp
+    mp.undo()
+
+
+@pytest.fixture(scope="session")
 def _browser_tos_temp_dir():
     """Create a session-scoped temporary directory for TOS files in browser tests.
 
@@ -148,7 +169,9 @@ def _browser_tos_temp_dir():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def mock_tos_directory_for_browser_tests(_browser_tos_temp_dir, request):
+def mock_tos_directory_for_browser_tests(
+    _browser_tos_temp_dir, _monkeypatch_session, request
+):
     """Mock the TOS directory for browser tests to use a temporary directory.
 
     This prevents browser tests from modifying real TOS markdown files.
@@ -167,27 +190,23 @@ def mock_tos_directory_for_browser_tests(_browser_tos_temp_dir, request):
         yield
         return
 
-    # Patch get_tos_versions_directory to return temp dir
-    import wafer_space.legal.models  # noqa: PLC0415
-    import wafer_space.legal.tests.factories  # noqa: PLC0415
-    import wafer_space.legal.utils  # noqa: PLC0415
-
-    original_func = wafer_space.legal.utils.get_tos_versions_directory
-
     def mock_get_tos_dir():
         return _browser_tos_temp_dir
 
-    # Apply patches
-    wafer_space.legal.utils.get_tos_versions_directory = mock_get_tos_dir
-    wafer_space.legal.models.get_tos_versions_directory = mock_get_tos_dir
-    wafer_space.legal.tests.factories.get_tos_versions_directory = mock_get_tos_dir
+    # Apply patches using session-scoped monkeypatch (auto-restored on cleanup)
+    _monkeypatch_session.setattr(
+        wafer_space.legal.utils, "get_tos_versions_directory", mock_get_tos_dir
+    )
+    _monkeypatch_session.setattr(
+        wafer_space.legal.models, "get_tos_versions_directory", mock_get_tos_dir
+    )
+    _monkeypatch_session.setattr(
+        wafer_space.legal.tests.factories,
+        "get_tos_versions_directory",
+        mock_get_tos_dir,
+    )
 
     yield _browser_tos_temp_dir
-
-    # Restore original
-    wafer_space.legal.utils.get_tos_versions_directory = original_func
-    wafer_space.legal.models.get_tos_versions_directory = original_func
-    wafer_space.legal.tests.factories.get_tos_versions_directory = original_func
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -207,8 +226,9 @@ def ensure_test_tos_exists(
     filesystem) thanks to mock_tos_directory_for_browser_tests fixture.
     See GitHub issue #153.
     """
-    from django.core.management import call_command  # noqa: PLC0415
-    from django.db import connection  # noqa: PLC0415
+    # Mark fixture dependencies as intentionally unused (for ordering only)
+    del django_db_setup
+    del mock_tos_directory_for_browser_tests
 
     # Create TOS for any test run that includes browser tests
     # (in CI, all tests run together)
@@ -221,8 +241,6 @@ def ensure_test_tos_exists(
     if is_browser_test:
         with django_db_blocker.unblock():
             # Create TOS in test database (will persist for all tests)
-            from wafer_space.legal.models import TermsOfService  # noqa: PLC0415
-
             if not TermsOfService.objects.filter(version="1.0.0").exists():
                 call_command("create_test_tos", verbosity=0)
                 # Ensure changes are committed to database
