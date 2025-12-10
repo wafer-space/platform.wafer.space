@@ -115,6 +115,8 @@ THIRD_PARTY_APPS = [
     "allauth.socialaccount.providers.discord",
     # Background job processing
     "django_celery_results",
+    # History tracking
+    "simple_history",
 ]
 
 LOCAL_APPS = [
@@ -183,6 +185,8 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "allauth.account.middleware.AccountMiddleware",
     "wafer_space.legal.middleware.TOSAcceptanceMiddleware",
+    # History tracking - captures user for each change
+    "simple_history.middleware.HistoryRequestMiddleware",
 ]
 
 # STATIC

@@ -204,4 +204,5 @@ dependencies = [
     "python-magic>=0.4.27",
     "docker>=7.1.0",
     "gdstk>=0.9.61",
+    "django-simple-history>=3.10.1",
 ]

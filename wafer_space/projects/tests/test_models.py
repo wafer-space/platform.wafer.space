@@ -16,7 +16,9 @@ from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
+from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.users.models import User
+from wafer_space.users.tests.factories import UserFactory
 
 from .constants import PROGRESS_COMPLETE
 from .constants import TEST_PASSWORD
@@ -2182,3 +2184,104 @@ class TestManufacturabilityCheckResetForRetry(TestCase):
 
         check.refresh_from_db()
         assert check.processing_logs == original_logs
+
+
+@pytest.mark.django_db
+class TestProjectHistory:
+    """Test Project history tracking with django-simple-history."""
+
+    def test_history_created_on_initial_save(self):
+        """Verify that creating a Project creates a history record."""
+        project = ProjectFactory(name="Test Project")
+
+        assert project.history.count() == 1
+        history_record = project.history.first()
+        assert history_record.name == "Test Project"
+        assert history_record.history_type == "+"  # Created
+
+    def test_history_tracks_field_changes(self):
+        """Verify that updating a Project creates a new history record."""
+        project = ProjectFactory(name="Original Name")
+        original_count = project.history.count()
+
+        project.name = "Updated Name"
+        project.save()
+
+        assert project.history.count() == original_count + 1
+        latest = project.history.first()
+        assert latest.name == "Updated Name"
+        assert latest.history_type == "~"  # Updated
+
+    def test_history_tracks_user_when_set(self):
+        """Verify that history records the user who made the change.
+
+        Note: _history_user is the django-simple-history public API for setting
+        the user who made the change, despite the underscore prefix.
+        """
+        user = UserFactory()
+        project = ProjectFactory(name="Test")
+
+        project.name = "Changed by user"
+        project._history_user = user  # noqa: SLF001
+        project.save()
+
+        latest = project.history.first()
+        assert latest.history_user == user
+
+    def test_history_tracks_deletion(self):
+        """Verify that deleting a Project creates a deletion history record."""
+        project = ProjectFactory(name="To Be Deleted")
+        project_id = project.id
+
+        project.delete()
+
+        history = Project.history.filter(id=project_id)
+        assert history.exists()
+
+        latest = history.first()
+        assert latest.history_type == "-"  # Deleted
+
+    def test_history_tracks_is_public_changes(self):
+        """Verify that changes to is_public are tracked in history."""
+        project = ProjectFactory(name="Test", is_public=False)
+        initial_count = project.history.count()
+
+        # Change visibility to public
+        project.is_public = True
+        project.save()
+
+        assert project.history.count() == initial_count + 1
+        latest = project.history.first()
+        assert latest.is_public is True
+        assert latest.history_type == "~"  # Updated
+
+
+@pytest.mark.django_db
+class TestProjectIsPublic:
+    """Test Project is_public field behavior."""
+
+    def test_is_public_defaults_to_false(self):
+        """Verify that is_public defaults to False for new projects."""
+        project = ProjectFactory()
+
+        assert project.is_public is False
+
+    def test_is_public_can_be_set_to_true(self):
+        """Verify that is_public can be set to True."""
+        project = ProjectFactory(is_public=True)
+
+        assert project.is_public is True
+
+    def test_is_public_can_be_toggled(self):
+        """Verify that is_public can be toggled between True and False."""
+        project = ProjectFactory(is_public=False)
+
+        project.is_public = True
+        project.save()
+        project.refresh_from_db()
+        assert project.is_public is True
+
+        project.is_public = False
+        project.save()
+        project.refresh_from_db()
+        assert project.is_public is False

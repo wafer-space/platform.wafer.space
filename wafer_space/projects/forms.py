@@ -18,6 +18,10 @@ SHA256_HASH_LENGTH = 64
 # Compliance form validation constants
 MIN_END_USE_STATEMENT_LENGTH = 10
 
+# Shared is_public field configuration (used by ProjectForm and ProjectUserEditForm)
+IS_PUBLIC_WIDGET = forms.CheckboxInput(attrs={"class": "form-check-input"})
+IS_PUBLIC_HELP_TEXT = "Make this design publicly visible on the platform"
+
 
 class ProjectForm(forms.ModelForm):
     """Form for creating and editing projects."""
@@ -83,7 +87,14 @@ class ProjectForm(forms.ModelForm):
 
     class Meta:
         model = Project
-        fields = ["name", "description", "shuttle", "project_id", "slot_size"]
+        fields = [
+            "name",
+            "description",
+            "shuttle",
+            "project_id",
+            "slot_size",
+            "is_public",
+        ]
         widgets = {
             "name": forms.TextInput(
                 attrs={
@@ -104,11 +115,13 @@ class ProjectForm(forms.ModelForm):
                     "id": "id_slot_size",
                 },
             ),
+            "is_public": IS_PUBLIC_WIDGET,
         }
         help_texts = {
             "name": "A descriptive name for your project",
             "description": "Optional details about your design",
             "slot_size": "Select the die slot size for your design",
+            "is_public": IS_PUBLIC_HELP_TEXT,
         }
 
     def clean_project_id(self):
@@ -147,6 +160,20 @@ class ProjectForm(forms.ModelForm):
                 raise ValidationError(msg)
 
         return project_id
+
+
+class ProjectUserEditForm(forms.ModelForm):
+    """Limited form for regular users to edit their projects.
+
+    Regular users can only edit visibility settings (is_public).
+    Staff can edit all fields using the full ProjectForm.
+    """
+
+    class Meta:
+        model = Project
+        fields = ["is_public"]
+        widgets = {"is_public": IS_PUBLIC_WIDGET}
+        help_texts = {"is_public": IS_PUBLIC_HELP_TEXT}
 
 
 class ProjectFileURLSubmitForm(forms.Form):

@@ -1,6 +1,7 @@
 """Django admin configuration for projects app."""
 
 from django.contrib import admin
+from simple_history.admin import SimpleHistoryAdmin
 
 from wafer_space.contrib.admin_mixins import StaffReadOnlyAdminMixin
 from wafer_space.projects.models import ManufacturabilityCheck
@@ -9,7 +10,7 @@ from wafer_space.projects.models import ProjectAccessLog
 
 
 @admin.register(Project)
-class ProjectAdmin(admin.ModelAdmin):
+class ProjectAdmin(SimpleHistoryAdmin):
     """Admin interface for Project model."""
 
     list_display = [
@@ -20,10 +21,18 @@ class ProjectAdmin(admin.ModelAdmin):
         "full_id",
         "slot_size",
         "status",
+        "is_public",
         "created_at",
         "updated_at",
     ]
-    list_filter = ["status", "shuttle", "slot_size", "created_at", "updated_at"]
+    list_filter = [
+        "status",
+        "shuttle",
+        "slot_size",
+        "is_public",
+        "created_at",
+        "updated_at",
+    ]
     search_fields = [
         "name",
         "description",
