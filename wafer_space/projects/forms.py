@@ -2,13 +2,18 @@
 
 from django import forms
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 
 from wafer_space.core.enums import SlotSize
 from wafer_space.shuttles.models import Shuttle
 
 from .models import PROJECT_ID_LENGTH
+from .models import LicenseType
 from .models import Project
 from .models import ProjectComplianceCertification
+from .services.license_service import LicenseValidationError
+from .services.license_service import fetch_url_content
+from .services.license_service import validate_spdx_id
 
 # Hash length constants
 MD5_HASH_LENGTH = 32
@@ -22,6 +27,36 @@ MIN_END_USE_STATEMENT_LENGTH = 10
 IS_PUBLIC_WIDGET = forms.CheckboxInput(attrs={"class": "form-check-input"})
 IS_PUBLIC_HELP_TEXT = "Make this design publicly visible on the platform"
 
+# Shared license field configuration
+LICENSE_TYPE_WIDGET = forms.Select(
+    attrs={"class": "form-control", "id": "id_license_type"},
+)
+LICENSE_TYPE_HELP_TEXT = "License under which this project is released"
+
+REPOSITORY_URL_WIDGET = forms.URLInput(
+    attrs={
+        "class": "form-control",
+        "placeholder": "https://github.com/username/repo",
+    },
+)
+REPOSITORY_URL_HELP_TEXT = "URL to the project's source repository"
+
+OTHER_LICENSE_WIDGET = forms.TextInput(
+    attrs={
+        "class": "form-control",
+        "placeholder": "GPL-3.0-only",
+    },
+)
+OTHER_LICENSE_HELP_TEXT = "SPDX identifier (e.g., GPL-3.0-only, LGPL-2.1-or-later)"
+
+PROPRIETARY_TERMS_URL_WIDGET = forms.URLInput(
+    attrs={
+        "class": "form-control",
+        "placeholder": "https://example.com/license-terms",
+    },
+)
+PROPRIETARY_TERMS_URL_HELP_TEXT = "URL to your proprietary license terms"
+
 
 class ProjectForm(forms.ModelForm):
     """Form for creating and editing projects."""
@@ -33,6 +68,14 @@ class ProjectForm(forms.ModelForm):
         widget=forms.Select(attrs={"class": "form-control", "id": "id_shuttle"}),
         help_text="Select the shuttle run for this project",
         empty_label=None,  # Remove "--------" option since we always have a default
+    )
+
+    # Override license_type to make it not required (model has default)
+    license_type = forms.ChoiceField(
+        choices=LicenseType.choices,
+        required=False,
+        widget=LICENSE_TYPE_WIDGET,
+        help_text=LICENSE_TYPE_HELP_TEXT,
     )
 
     def __init__(self, *args, **kwargs):
@@ -51,6 +94,9 @@ class ProjectForm(forms.ModelForm):
             )
             if default_shuttle:
                 self.fields["shuttle"].initial = default_shuttle
+
+            # Set default license_type for new projects
+            self.fields["license_type"].initial = LicenseType.PROPRIETARY
 
         # Use full labels for slot_size dropdown (includes dimensions)
         slot_size_field = self.fields["slot_size"]
@@ -94,6 +140,10 @@ class ProjectForm(forms.ModelForm):
             "project_id",
             "slot_size",
             "is_public",
+            "repository_url",
+            "license_type",
+            "other_license_spdx_id",
+            "proprietary_terms_url",
         ]
         widgets = {
             "name": forms.TextInput(
@@ -116,12 +166,18 @@ class ProjectForm(forms.ModelForm):
                 },
             ),
             "is_public": IS_PUBLIC_WIDGET,
+            "repository_url": REPOSITORY_URL_WIDGET,
+            "other_license_spdx_id": OTHER_LICENSE_WIDGET,
+            "proprietary_terms_url": PROPRIETARY_TERMS_URL_WIDGET,
         }
         help_texts = {
             "name": "A descriptive name for your project",
             "description": "Optional details about your design",
             "slot_size": "Select the die slot size for your design",
             "is_public": IS_PUBLIC_HELP_TEXT,
+            "repository_url": REPOSITORY_URL_HELP_TEXT,
+            "other_license_spdx_id": OTHER_LICENSE_HELP_TEXT,
+            "proprietary_terms_url": PROPRIETARY_TERMS_URL_HELP_TEXT,
         }
 
     def clean_project_id(self):
@@ -160,6 +216,68 @@ class ProjectForm(forms.ModelForm):
                 raise ValidationError(msg)
 
         return project_id
+
+    def clean(self):
+        """Validate license fields and cache proprietary terms."""
+        cleaned_data = super().clean()
+        if cleaned_data is None:
+            return cleaned_data
+
+        license_type = cleaned_data.get("license_type")
+        other_spdx_id = cleaned_data.get("other_license_spdx_id", "").strip()
+        terms_url = cleaned_data.get("proprietary_terms_url", "").strip()
+
+        # Validate "other" license type requires valid SPDX ID
+        if license_type == LicenseType.OTHER:
+            if not other_spdx_id:
+                self.add_error(
+                    "other_license_spdx_id",
+                    "SPDX identifier is required for 'Other' license type",
+                )
+            else:
+                try:
+                    validate_spdx_id(other_spdx_id)
+                except LicenseValidationError as e:
+                    self.add_error("other_license_spdx_id", str(e))
+        else:
+            # Clear other_license_spdx_id if not "other" type
+            cleaned_data["other_license_spdx_id"] = ""
+
+        # Clear proprietary_terms_url if not proprietary
+        if license_type != LicenseType.PROPRIETARY:
+            cleaned_data["proprietary_terms_url"] = ""
+        elif terms_url:
+            # Validate and cache proprietary terms URL
+            try:
+                # Store for use in save()
+                self._proprietary_terms_content = fetch_url_content(terms_url)
+            except LicenseValidationError as e:
+                self.add_error("proprietary_terms_url", str(e))
+
+        return cleaned_data
+
+    def save(self, commit=True):  # noqa: FBT002
+        """Save form and update cached proprietary terms."""
+        instance = super().save(commit=False)
+
+        # Update cached terms if we fetched them during validation
+        if (
+            hasattr(self, "_proprietary_terms_content")
+            and self._proprietary_terms_content
+        ):
+            instance.proprietary_terms_cached = self._proprietary_terms_content
+            instance.proprietary_terms_cached_at = timezone.now()
+        elif (
+            instance.license_type != LicenseType.PROPRIETARY
+            or not instance.proprietary_terms_url
+        ):
+            # Clear cache if no longer proprietary or no URL
+            instance.proprietary_terms_cached = ""
+            instance.proprietary_terms_cached_at = None
+
+        if commit:
+            instance.save()
+        return instance
 
 
 class ProjectUserEditForm(forms.ModelForm):
