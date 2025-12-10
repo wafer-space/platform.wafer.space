@@ -230,9 +230,7 @@
                     </td>
                     <td class="text-muted small">{{ check.log_file.size|filesizeformat }}</td>
                     <td>
-                      {% if check.log_file_sha256 %}
-                        <code class="small text-muted">sha256:{{ check.log_file_sha256 }}</code>
-                      {% endif %}
+                      {% if check.log_file_sha256 %}<code class="small text-muted">sha256:{{ check.log_file_sha256 }}</code>{% endif %}
                     </td>
                   </tr>
                 {% endif %}
@@ -264,9 +262,7 @@
                     </td>
                     <td class="text-muted small">{{ check.output_gds.size|filesizeformat }}</td>
                     <td>
-                      {% if check.output_gds_sha256 %}
-                        <code class="small text-muted">sha256:{{ check.output_gds_sha256 }}</code>
-                      {% endif %}
+                      {% if check.output_gds_sha256 %}<code class="small text-muted">sha256:{{ check.output_gds_sha256 }}</code>{% endif %}
                     </td>
                   </tr>
                 {% endif %}
