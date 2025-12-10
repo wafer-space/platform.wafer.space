@@ -57,12 +57,34 @@
       const popoverTriggerList = document.querySelectorAll('[data-bs-toggle="popover"]');
       const popoverList = [...popoverTriggerList].map(popoverTriggerEl => new bootstrap.Popover(popoverTriggerEl));
 
+      // License field conditional visibility (runs for all forms with license fields)
+      const licenseTypeField = document.getElementById('id_license_type');
+      const otherSpdxIdRow = document.getElementById('id_other_license_spdx_id')?.closest('.mb-3');
+      const proprietaryTermsRow = document.getElementById('id_proprietary_terms_url')?.closest('.mb-3');
+
+      function updateLicenseFieldVisibility() {
+        const licenseType = licenseTypeField?.value;
+
+        if (otherSpdxIdRow) {
+          otherSpdxIdRow.style.display = licenseType === 'other' ? '' : 'none';
+        }
+        if (proprietaryTermsRow) {
+          proprietaryTermsRow.style.display = licenseType === 'proprietary' ? '' : 'none';
+        }
+      }
+
+      if (licenseTypeField) {
+        licenseTypeField.addEventListener('change', updateLicenseFieldVisibility);
+        updateLicenseFieldVisibility(); // Set initial state on page load
+      }
+
+      // Project ID validation (only for forms with shuttle/project_id fields)
       const shuttleField = document.getElementById('id_shuttle');
       const projectIdField = document.getElementById('id_project_id');
       const slotSizeField = document.getElementById('id_slot_size');
 
       if (!projectIdField || !shuttleField) {
-        return; // Fields not present (e.g., compliance form)
+        return; // Fields not present (e.g., user edit form, compliance form)
       }
 
       // Force uppercase and alphanumeric only on project_id
@@ -173,27 +195,6 @@
       // Initial validation if editing existing project
       if (projectIdField.value) {
         validateProjectId();
-      }
-
-      // License field conditional visibility
-      const licenseTypeField = document.getElementById('id_license_type');
-      const otherSpdxIdRow = document.getElementById('id_other_license_spdx_id')?.closest('.mb-3');
-      const proprietaryTermsRow = document.getElementById('id_proprietary_terms_url')?.closest('.mb-3');
-
-      function updateLicenseFieldVisibility() {
-        const licenseType = licenseTypeField?.value;
-
-        if (otherSpdxIdRow) {
-          otherSpdxIdRow.style.display = licenseType === 'other' ? '' : 'none';
-        }
-        if (proprietaryTermsRow) {
-          proprietaryTermsRow.style.display = licenseType === 'proprietary' ? '' : 'none';
-        }
-      }
-
-      if (licenseTypeField) {
-        licenseTypeField.addEventListener('change', updateLicenseFieldVisibility);
-        updateLicenseFieldVisibility(); // Set initial state on page load
       }
     });
   </script>
