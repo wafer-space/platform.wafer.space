@@ -80,11 +80,22 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
             assigned_projects = projects.filter(shuttle_slots__isnull=False).distinct()
             assigned_count = assigned_projects.count()
 
+            # Count manufacturable projects (is_manufacturable=True)
+            manufacturable_projects = projects.filter(is_manufacturable=True)
+            manufacturable_total = manufacturable_projects.count()
+            manufacturable_assigned = (
+                manufacturable_projects.filter(shuttle_slots__isnull=False)
+                .distinct()
+                .count()
+            )
+
             stats[slot_size] = {
                 "total_slots": total_slots,
                 "available_slots": available_slots,
                 "projects_count": projects_count,
                 "assigned_count": assigned_count,
+                "manufacturable_total": manufacturable_total,
+                "manufacturable_assigned": manufacturable_assigned,
             }
 
         context["stats"] = stats
@@ -96,7 +107,9 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
         }
 
         # Get all projects on this shuttle with their slot assignments
-        projects = shuttle.projects.all().prefetch_related("shuttle_slots")
+        projects = shuttle.projects.select_related("user").prefetch_related(
+            "shuttle_slots"
+        )
         context["projects"] = projects
 
         # Build slots_by_project data for JavaScript
@@ -111,6 +124,25 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
                 for slot in project.shuttle_slots.all()
             ]
         context["slots_by_project"] = slots_by_project
+
+        # Build projects data for autocomplete
+        projects_data = []
+        for project in projects:
+            assigned_slots = [
+                slot.grid_position for slot in project.shuttle_slots.all()
+            ]
+            projects_data.append(
+                {
+                    "pk": project.pk,
+                    "project_id": project.project_id or "",
+                    "name": project.name,
+                    "slot_size": project.slot_size,
+                    "is_manufacturable": project.is_manufacturable,
+                    "is_assigned": bool(assigned_slots),
+                    "assigned_slots": assigned_slots,
+                }
+            )
+        context["projects_data"] = projects_data
 
         # Build grid for visualization
         num_rows, num_cols = shuttle.grid_dimensions
@@ -171,12 +203,12 @@ class AssignProjectView(StaffRequiredMixin, View):
             shuttle = Shuttle.objects.get(name=name)
 
             data = json.loads(request.body)
-            project_id = data.get("project_id")
+            project_pk = data.get("project_pk")
             slot_id = data.get("slot_id")
 
-            if not project_id or not slot_id:
+            if not project_pk or not slot_id:
                 return JsonResponse(
-                    {"success": False, "error": "Missing project_id or slot_id"},
+                    {"success": False, "error": "Missing project_pk or slot_id"},
                     status=400,
                 )
 
@@ -185,7 +217,7 @@ class AssignProjectView(StaffRequiredMixin, View):
                 slot = ShuttleSlot.objects.select_for_update().get(
                     pk=slot_id, shuttle=shuttle
                 )
-                project = Project.objects.get(pk=project_id, shuttle=shuttle)
+                project = Project.objects.get(pk=project_pk, shuttle=shuttle)
 
                 # Attempt reservation
                 try:

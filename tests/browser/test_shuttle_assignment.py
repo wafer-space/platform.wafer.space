@@ -275,3 +275,196 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
         page_source = driver.page_source
         assert ">Proj<" in page_source
         assert ">Slots<" in page_source
+
+    @pytest.mark.usefixtures("project_with_compliance")
+    def test_projects_table_shows_owner_column(self, driver, wait, staff_user, shuttle):
+        """Test that projects table shows owner column."""
+        self.perform_login(driver, staff_user.username, TEST_PASSWORD)
+
+        driver.get(f"{self.live_server_url}/shuttles/{shuttle.name}/assign/")
+
+        # Wait for projects table to load
+        projects_table = wait.until(
+            expected_conditions.presence_of_element_located((By.ID, "projects-table"))
+        )
+
+        # Check that Owner column header exists
+        headers = projects_table.find_elements(By.CSS_SELECTOR, "thead th")
+        header_texts = [h.text for h in headers]
+        assert "Owner" in header_texts
+
+        # Check that the owner username is shown in the table
+        assert staff_user.username in projects_table.text
+
+    def test_summary_shows_manufacturable_column(
+        self, driver, wait, staff_user, shuttle, project_with_compliance
+    ):
+        """Test that summary table shows manufacturable column."""
+        # Mark project as manufacturable
+        project_with_compliance.is_manufacturable = True
+        project_with_compliance.save()
+
+        self.perform_login(driver, staff_user.username, TEST_PASSWORD)
+
+        driver.get(f"{self.live_server_url}/shuttles/{shuttle.name}/assign/")
+
+        # Wait for page to load
+        wait.until(
+            expected_conditions.presence_of_element_located(
+                (By.XPATH, "//strong[text()='Summary']")
+            )
+        )
+
+        # Check for Mfg column header in summary table
+        page_source = driver.page_source
+        assert ">Mfg<" in page_source or "Mfg</th>" in page_source
+
+    def test_grid_shows_manufacturing_indicators(
+        self, driver, wait, staff_user, shuttle, project_with_compliance
+    ):
+        """Test that grid cells show manufacturing status indicators."""
+        # Mark project as manufacturable and assign to slot
+        project_with_compliance.is_manufacturable = True
+        project_with_compliance.save()
+        slot = shuttle.slots.first()
+        slot.reserve(project_with_compliance, staff_user)
+
+        self.perform_login(driver, staff_user.username, TEST_PASSWORD)
+
+        driver.get(f"{self.live_server_url}/shuttles/{shuttle.name}/assign/")
+
+        # Wait for grid to load
+        grid_table = wait.until(
+            expected_conditions.presence_of_element_located((By.ID, "grid-table"))
+        )
+
+        # Find the assigned slot and check for manufacturing indicator
+        assigned_slot = grid_table.find_element(
+            By.CSS_SELECTOR, "td.table-success[data-slot-id]"
+        )
+        # Look for any manufacturing status indicator
+        indicator = assigned_slot.find_element(
+            By.CSS_SELECTOR, ".mfg-pass, .mfg-pending, .mfg-fail"
+        )
+        assert indicator is not None
+        # With is_manufacturable=True, should show checkmark with mfg-pass class
+        assert "✓" in indicator.text or "mfg-pass" in indicator.get_attribute("class")
+
+    @pytest.mark.usefixtures("project_with_compliance")
+    def test_table_columns_are_sortable(self, driver, wait, staff_user, shuttle):
+        """Test that clicking column headers sorts the table."""
+        # Create a second project for sorting
+        project2 = Project.objects.create(
+            user=staff_user,
+            name="Alpha Project",
+            description="First alphabetically",
+            shuttle=shuttle,
+            project_id="ALPH",
+            slot_size=SlotSize.FULL,
+        )
+        ProjectComplianceCertification.objects.create(
+            project=project2,
+            export_control_compliant=True,
+            not_restricted_entity=True,
+            end_use_statement="Test",
+            certified_by=staff_user,
+        )
+
+        self.perform_login(driver, staff_user.username, TEST_PASSWORD)
+
+        driver.get(f"{self.live_server_url}/shuttles/{shuttle.name}/assign/")
+
+        # Wait for projects table to load
+        wait.until(
+            expected_conditions.presence_of_element_located((By.ID, "projects-table"))
+        )
+
+        # Find the Name header and click to sort
+        name_header = driver.find_element(
+            By.XPATH, "//table[@id='projects-table']//th[contains(text(), 'Name')]"
+        )
+        assert "sortable" in name_header.get_attribute(
+            "class"
+        ) or name_header.get_attribute("data-sortable")
+
+        name_header.click()
+
+        # Wait for sort to apply - first row should contain "Alpha" after sorting
+        wait.until(
+            lambda d: "Alpha"
+            in d.find_element(
+                By.CSS_SELECTOR, "#projects-table tbody tr:first-child"
+            ).text
+        )
+
+    def test_grid_uses_template_partial(self, driver, wait, staff_user, shuttle):
+        """Test that grid renders correctly (implies template partial works)."""
+        self.perform_login(driver, staff_user.username, TEST_PASSWORD)
+
+        driver.get(f"{self.live_server_url}/shuttles/{shuttle.name}/assign/")
+
+        # Wait for grid to load
+        grid_table = wait.until(
+            expected_conditions.presence_of_element_located((By.ID, "grid-table"))
+        )
+
+        # Verify grid has click handler attribute on cells
+        slot_cells = grid_table.find_elements(By.CSS_SELECTOR, "td[data-slot-id]")
+        assert len(slot_cells) > 0
+
+        # All cells should have data-click-handler attribute
+        for cell in slot_cells:
+            assert cell.get_attribute("data-click-handler") is not None
+
+    @pytest.mark.usefixtures("project_with_compliance")
+    def test_slot_modal_has_autocomplete_input(self, driver, wait, staff_user, shuttle):
+        """Test that slot modal uses autocomplete input instead of select."""
+        self.perform_login(driver, staff_user.username, TEST_PASSWORD)
+
+        driver.get(f"{self.live_server_url}/shuttles/{shuttle.name}/assign/")
+
+        # Click a slot to open modal
+        slot_cell = wait.until(
+            expected_conditions.element_to_be_clickable(
+                (By.CSS_SELECTOR, "td[data-slot-id]")
+            )
+        )
+        slot_cell.click()
+
+        # Wait for modal
+        modal = wait.until(
+            expected_conditions.visibility_of_element_located((By.ID, "slotModal"))
+        )
+
+        # Check for autocomplete input (not select)
+        autocomplete_input = modal.find_element(By.ID, "project-search")
+        assert autocomplete_input.get_attribute("type") == "text"
+        assert autocomplete_input.get_attribute("autocomplete") == "off"
+
+    @pytest.mark.usefixtures("project_with_compliance")
+    def test_assign_modal_shows_grid_picker(self, driver, wait, staff_user, shuttle):
+        """Test that assign modal shows grid instead of dropdown."""
+        self.perform_login(driver, staff_user.username, TEST_PASSWORD)
+
+        driver.get(f"{self.live_server_url}/shuttles/{shuttle.name}/assign/")
+
+        # Wait for projects table and click assign button
+        wait.until(
+            expected_conditions.presence_of_element_located((By.ID, "projects-table"))
+        )
+
+        assign_btn = driver.find_element(By.CSS_SELECTOR, "[data-assign-project]")
+        assign_btn.click()
+
+        # Wait for assign modal
+        modal = wait.until(
+            expected_conditions.visibility_of_element_located((By.ID, "assignModal"))
+        )
+
+        # Check for grid in modal (not a select dropdown)
+        grid_in_modal = modal.find_element(By.ID, "assign-modal-grid")
+        assert grid_in_modal is not None
+
+        # Grid should have slot cells
+        slot_cells = grid_in_modal.find_elements(By.CSS_SELECTOR, "td[data-slot-id]")
+        assert len(slot_cells) > 0

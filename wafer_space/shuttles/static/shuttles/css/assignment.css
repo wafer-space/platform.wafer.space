@@ -1,0 +1,134 @@
+/* Grid table styling */
+.grid-table {
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  width: auto !important;
+}
+
+/* Grid layout card - fit content width */
+.grid-layout-card {
+  width: fit-content;
+}
+
+.grid-table th,
+.grid-table td {
+  border: 1px solid #333 !important;
+  padding: 2px 6px !important;
+}
+
+/* Manufacturing status indicators for grid cells */
+.slot-cell {
+  position: relative;
+  cursor: pointer;
+}
+
+/* Hover and focus states for clickable grid cells */
+.slot-cell:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+.slot-cell:focus-visible {
+  outline: 2px solid #0d6efd;
+  outline-offset: -2px;
+}
+
+.mfg-indicator {
+  position: absolute;
+  top: 1px;
+  right: 2px;
+  font-size: 0.65em;
+  line-height: 1;
+}
+
+.mfg-pass {
+  color: #198754; /* Bootstrap success green */
+}
+
+.mfg-fail {
+  color: #dc3545; /* Bootstrap danger red */
+}
+
+.mfg-pending {
+  color: #ffc107; /* Bootstrap warning yellow */
+}
+
+/* Autocomplete dropdown styles */
+#project-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 1000;
+}
+
+#project-results.show {
+  display: block;
+}
+
+.autocomplete-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #eee;
+}
+
+.autocomplete-item:hover,
+.autocomplete-item.active {
+  background-color: #f8f9fa;
+}
+
+/* Visible focus ring for keyboard navigation */
+.autocomplete-item.active {
+  outline: 2px solid #0d6efd;
+  outline-offset: -2px;
+}
+
+.autocomplete-item .project-id {
+  font-family: monospace;
+  font-weight: bold;
+}
+
+.autocomplete-item .project-name {
+  color: #666;
+}
+
+.autocomplete-item .slot-badge {
+  font-size: 0.75em;
+}
+
+.autocomplete-separator {
+  padding: 4px 12px;
+  background-color: #f0f0f0;
+  font-size: 0.8em;
+  color: #666;
+  border-bottom: 1px solid #ddd;
+}
+
+.autocomplete-separator.major {
+  background-color: #e0e0e0;
+  border-top: 2px solid #ccc;
+}
+
+/* Green highlight for size-matching slots - uses pseudo-element for collapsed table compatibility */
+.slot-highlight-size {
+  position: relative;
+}
+
+.slot-highlight-size::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border: 2px solid #28a745;
+  pointer-events: none;
+}
+
+/* Blue highlight for currently assigned slots - takes priority over green */
+.slot-highlight-assigned {
+  position: relative;
+}
+
+.slot-highlight-assigned::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border: 2px solid #0d6efd;
+  pointer-events: none;
+}

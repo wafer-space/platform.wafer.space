@@ -6,72 +6,10 @@
   {{ shuttle.name }} Assignment
 {% endblock title %}
 {% block content %}
+  <link rel="stylesheet" href="{% static 'shuttles/css/assignment.css' %}" />
   <div class="container-fluid mt-4 px-4">
     <h1>Shuttle {{ shuttle.name }} Assignment Status</h1>
     <div class="row mb-4">
-      <!-- Grid Layout -->
-      <div class="col-lg-10">
-        <div class="card h-100">
-          <div class="card-header py-2">
-            <strong>Grid Layout</strong>
-            <small class="text-muted ms-2">Click a slot to assign</small>
-          </div>
-          <div class="card-body p-2">
-            {% if grid %}
-              <style>
-                #grid-table {
-                  border-collapse: collapse;
-                  font-size: 0.8rem;
-                  width: auto !important;
-                }
-
-                #grid-table th,
-                #grid-table td {
-                  border: 1px solid #333 !important;
-                  padding: 2px 6px !important;
-                }
-              </style>
-              <table class="table table-bordered table-sm mb-0" id="grid-table">
-                <thead>
-                  <tr>
-                    <th class="text-center bg-light"></th>
-                    {% for col in columns %}<th class="text-center bg-light">{{ col }}</th>{% endfor %}
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for row in grid %}
-                    <tr>
-                      <th class="text-center bg-light">{{ forloop.counter }}</th>
-                      {% for slot in row %}
-                        <td class="text-center {% if slot.project %}{% if slot.project.slot_size != slot.slot_size %}table-warning{% else %}table-success{% endif %}{% else %}table-secondary{% endif %}"
-                            style="cursor: pointer;
-                                   vertical-align: middle"
-                            data-slot-id="{{ slot.pk }}"
-                            data-slot-position="{{ slot.grid_position }}"
-                            data-slot-size="{{ slot.slot_size }}"
-                            data-project-id="{% if slot.project %}{{ slot.project.pk }}{% endif %}"
-                            tabindex="0"
-                            role="button"
-                            aria-label="Slot {{ slot.grid_position }}{% if slot.project %}, assigned to {{ slot.project.project_id }}{% if slot.project.slot_size != slot.slot_size %} (size mismatch){% endif %}{% else %}, empty{% endif %}">
-                          {% if slot.project %}
-                            <strong class="font-monospace">{{ slot.project.project_id }}</strong>
-                          {% else %}
-                            <span class="text-muted">{{ slot.grid_position }}</span>
-                          {% endif %}
-                        </td>
-                      {% endfor %}
-                    </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            {% else %}
-              <div class="alert alert-info mb-0">
-                No grid configured. Run <code>python manage.py generate_shuttle_grid {{ shuttle.name }}</code>
-              </div>
-            {% endif %}
-          </div>
-        </div>
-      </div>
       <!-- Summary Statistics -->
       <div class="col-lg-2">
         <div class="card h-100">
@@ -84,21 +22,46 @@
                 <tr>
                   <th class="py-1">Size</th>
                   <th class="py-1 text-end">Proj</th>
+                  <th class="py-1 text-end">Mfg</th>
                   <th class="py-1 text-end">Slots</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody id="summary-table-body">
                 {% for slot_size, stat in stats.items %}
                   {% if stat.total_slots > 0 %}
-                    <tr>
+                    <tr data-size="{{ slot_size.value }}">
                       <td class="py-1">{{ slot_size.label }}</td>
-                      <td class="py-1 text-end">{{ stat.assigned_count }}/{{ stat.projects_count }}</td>
-                      <td class="py-1 text-end">{{ stat.available_slots }}/{{ stat.total_slots }}</td>
+                      {# djlint:off H023 #}
+                      <td class="py-1 text-end"
+                          title="{{ stat.assigned_count }} projects with slot allocated.&#10;{{ stat.projects_count }} projects of this size available for slot allocation.">
+                        {{ stat.assigned_count }}/{{ stat.projects_count }}
+                      </td>
+                      <td class="py-1 text-end"
+                          title="{{ stat.manufacturable_assigned }} projects passing manufacturing precheck with slot allocated.&#10;{{ stat.manufacturable_total }} projects passing manufacturing precheck available for slot allocation.">
+                        {{ stat.manufacturable_assigned }}/{{ stat.manufacturable_total }}
+                      </td>
+                      <td class="py-1 text-end"
+                          title="{{ stat.available_slots }} slots available.&#10;{{ stat.total_slots }} slots of this size.">
+                        {{ stat.available_slots }}/{{ stat.total_slots }}
+                      </td>
+                      {# djlint:on #}
                     </tr>
                   {% endif %}
                 {% endfor %}
               </tbody>
             </table>
+          </div>
+        </div>
+      </div>
+      <!-- Grid Layout -->
+      <div class="col-lg-auto">
+        <div class="card h-100 grid-layout-card">
+          <div class="card-header py-2">
+            <strong>Grid Layout</strong>
+            <small class="text-muted ms-2">Click a slot to assign</small>
+          </div>
+          <div class="card-body p-2">
+            {% include "shuttles/_grid.html" with grid=grid columns=columns click_handler="showSlotModal" grid_id="grid-table" %}
           </div>
         </div>
       </div>
@@ -124,10 +87,36 @@
         <table class="table table-hover" id="projects-table">
           <thead>
             <tr>
-              <th>Project ID</th>
-              <th>Name</th>
-              <th>Size</th>
-              <th>Status</th>
+              <th data-sortable="true"
+                  data-sort-type="text"
+                  class="sortable"
+                  style="cursor: pointer">
+                Project ID <span class="sort-indicator"></span>
+              </th>
+              <th data-sortable="true"
+                  data-sort-type="text"
+                  class="sortable"
+                  style="cursor: pointer">
+                Name <span class="sort-indicator"></span>
+              </th>
+              <th data-sortable="true"
+                  data-sort-type="text"
+                  class="sortable"
+                  style="cursor: pointer">
+                Owner <span class="sort-indicator"></span>
+              </th>
+              <th data-sortable="true"
+                  data-sort-type="size"
+                  class="sortable"
+                  style="cursor: pointer">
+                Size <span class="sort-indicator"></span>
+              </th>
+              <th data-sortable="true"
+                  data-sort-type="status"
+                  class="sortable"
+                  style="cursor: pointer">
+                Status <span class="sort-indicator"></span>
+              </th>
               <th>Slots</th>
               <th>Actions</th>
             </tr>
@@ -137,11 +126,15 @@
               <tr data-size="{{ project.slot_size }}"
                   data-assigned="{% if project.shuttle_slots.exists %}true{% else %}false{% endif %}">
                 <td class="font-monospace">{{ project.full_id|default:project.project_id }}</td>
-                <td>{{ project.name }}</td>
                 <td>
+                  <a href="{% url 'projects:detail' project.pk %}">{{ project.name }}</a>
+                </td>
+                <td>{{ project.user.username|default:"—" }}</td>
+                <td data-sort-value="{{ project.slot_size }}">
                   <span class="badge bg-secondary">{{ project.get_slot_size_display }}</span>
                 </td>
-                <td>
+                {# Sort order: Ready(0) < Failed(1) < Pending(2) - prioritizes actionable projects #}
+                <td data-sort-value="{% if project.is_manufacturable %}0{% elif project.is_manufacturable is None %}2{% else %}1{% endif %}">
                   {% if project.is_manufacturable %}
                     <span class="badge bg-success">Ready</span>
                   {% elif project.is_manufacturable is None %}
@@ -199,18 +192,35 @@
             <button class="btn btn-danger btn-sm" id="remove-assignment-btn">Remove Assignment</button>
           </div>
           <div id="modal-assign-section">
-            <label for="modal-project-select" class="form-label">Assign Project:</label>
-            <select class="form-select mb-3" id="modal-project-select">
-              <option value="">-- Select a project --</option>
-              {% for project in projects %}
-                <option value="{{ project.pk }}"
-                        data-size="{{ project.slot_size }}"
-                        data-assigned="{% if project.shuttle_slots.exists %}true{% else %}false{% endif %}">
-                  {{ project.project_id }} - {{ project.name }} ({{ project.get_slot_size_display }})
-                  {% if project.shuttle_slots.exists %}[Already assigned]{% endif %}
-                </option>
-              {% endfor %}
-            </select>
+            <label for="project-search" class="form-label">Assign Project:</label>
+            <div class="position-relative">
+              <input type="text"
+                     class="form-control mb-2"
+                     id="project-search"
+                     placeholder="Type to search projects..."
+                     autocomplete="off"
+                     aria-autocomplete="list"
+                     aria-controls="project-results"
+                     aria-expanded="false" />
+              <input type="hidden" id="selected-project-pk" />
+              <div id="project-results"
+                   class="dropdown-menu w-100"
+                   role="listbox"
+                   aria-label="Project search results"
+                   style="max-height: 300px;
+                          overflow-y: auto"></div>
+              <span id="project-search-status"
+                    class="visually-hidden"
+                    role="status"
+                    aria-live="polite"
+                    aria-atomic="true"></span>
+              <div id="selected-project-display" class="mb-2" style="display: none;">
+                <span class="badge bg-primary" id="selected-project-badge"></span>
+                <button type="button"
+                        class="btn btn-sm btn-link text-danger p-0 ms-2"
+                        id="clear-project-selection">Clear</button>
+              </div>
+            </div>
             <div id="size-mismatch-warning"
                  class="alert alert-warning"
                  style="display: none">
@@ -242,23 +252,13 @@
             <div id="assign-modal-slots-list"></div>
           </div>
           <hr />
-          <label for="assign-modal-slot-select" class="form-label">Add New Assignment:</label>
-          <select class="form-select mb-3" id="assign-modal-slot-select">
-            <option value="">-- Select a slot --</option>
-            {% for row in grid %}
-              {% for slot in row %}
-                {% if not slot.project %}
-                  <option value="{{ slot.pk }}" data-size="{{ slot.slot_size }}">
-                    {{ slot.grid_position }} ({{ slot.get_slot_size_display }})
-                  </option>
-                {% endif %}
-              {% endfor %}
-            {% endfor %}
-          </select>
+          <label class="form-label">Select Slot:</label>
+          <div id="assign-modal-grid">
+            {% include "shuttles/_grid.html" with grid=grid columns=columns click_handler="selectSlotAndSubmit" grid_id="assign-modal-grid-table" %}
+          </div>
           <div id="assign-size-mismatch-warning"
                class="alert alert-warning"
                style="display: none">Size mismatch: Slot size does not match project size.</div>
-          <button class="btn btn-primary" id="assign-from-table-btn">Assign</button>
         </div>
       </div>
     </div>
@@ -270,6 +270,7 @@
        data-csrf-token="{{ csrf_token }}"
        style="display: none"></div>
   {{ slots_by_project|json_script:"slots-data" }}
+  {{ projects_data|json_script:"projects-data" }}
   {{ size_labels|json_script:"size-labels-data" }}
   <script src="{% static 'shuttles/js/assignment_dashboard.js' %}"></script>
 {% endblock content %}
