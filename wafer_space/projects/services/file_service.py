@@ -16,17 +16,17 @@ from urllib.parse import urlparse
 from celery.result import AsyncResult
 from django.db import transaction
 
-from .exceptions import InvalidStateTransitionError
-from .models import ManufacturabilityCheck
-from .models import Project
-from .models import ProjectFile
-from .security import SecurityValidationError
-from .security import URLValidator
-from .tasks import download_project_file
-from .url_handlers import GitHubArtifactHandler
-from .url_handlers import GoogleSourceHandler
-from .url_handlers import URLHandlerRegistry
-from .url_rewriters import URLRewriter
+from wafer_space.projects.exceptions import InvalidStateTransitionError
+from wafer_space.projects.models import ManufacturabilityCheck
+from wafer_space.projects.models import Project
+from wafer_space.projects.models import ProjectFile
+from wafer_space.projects.security import SecurityValidationError
+from wafer_space.projects.security import URLValidator
+from wafer_space.projects.tasks import download_project_file
+from wafer_space.projects.url_handlers import GitHubArtifactHandler
+from wafer_space.projects.url_handlers import GoogleSourceHandler
+from wafer_space.projects.url_handlers import URLHandlerRegistry
+from wafer_space.projects.url_rewriters import URLRewriter
 
 # Valid GDS/OASIS file formats
 VALID_GDS_FORMATS = {".gds", ".gdsii", ".gds2"}

@@ -22,6 +22,7 @@ class ProjectAdmin(SimpleHistoryAdmin):
         "slot_size",
         "status",
         "is_public",
+        "license_type",
         "created_at",
         "updated_at",
     ]
@@ -30,6 +31,7 @@ class ProjectAdmin(SimpleHistoryAdmin):
         "shuttle",
         "slot_size",
         "is_public",
+        "license_type",
         "created_at",
         "updated_at",
     ]
@@ -39,6 +41,8 @@ class ProjectAdmin(SimpleHistoryAdmin):
         "user__username",
         "project_id",
         "shuttle__name",
+        "repository_url",
+        "other_license_spdx_id",
     ]
     readonly_fields = ["created_at", "updated_at"]
 

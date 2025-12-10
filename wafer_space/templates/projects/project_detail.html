@@ -18,11 +18,13 @@
                role="button">
               <i class="bi bi-pencil"></i> Edit
             </a>
-            <a class="btn btn-danger"
-               href="{% url 'projects:delete' pk=project.pk %}"
-               role="button">
-              <i class="bi bi-trash"></i> Delete
-            </a>
+            {% if request.user.is_staff %}
+              <a class="btn btn-secondary"
+                 href="{% url 'admin:projects_project_change' project.pk %}"
+                 role="button">
+                <i class="bi bi-gear"></i> Admin
+              </a>
+            {% endif %}
           </div>
         </div>
         {% if project.description %}
@@ -55,6 +57,41 @@
                 <span class="badge bg-secondary"><i class="bi bi-lock"></i> Private</span>
               {% endif %}
             </p>
+            <p>
+              <strong>License:</strong>
+              {% if project.is_proprietary_license %}
+                <span class="badge bg-secondary">Proprietary</span>
+                {% if project.proprietary_terms_url %}
+                  <a href="{{ project.proprietary_terms_url }}"
+                     target="_blank"
+                     rel="noopener">
+                    <i class="bi bi-box-arrow-up-right"></i> View Terms
+                  </a>
+                {% endif %}
+              {% elif project.is_other_license %}
+                <span class="badge bg-info">{{ project.other_license_spdx_id }}</span>
+                <a href="https://spdx.org/licenses/{{ project.other_license_spdx_id|urlencode }}.html"
+                   target="_blank"
+                   rel="noopener">
+                  <i class="bi bi-box-arrow-up-right"></i> View License
+                </a>
+              {% else %}
+                <span class="badge bg-success">{{ project.get_license_type_display }}</span>
+                <a href="https://spdx.org/licenses/{{ project.license_type|urlencode }}.html"
+                   target="_blank"
+                   rel="noopener">
+                  <i class="bi bi-box-arrow-up-right"></i> View License
+                </a>
+              {% endif %}
+            </p>
+            {% if project.repository_url %}
+              <p>
+                <strong>Repository:</strong>
+                <a href="{{ project.repository_url }}" target="_blank" rel="noopener">
+                  <i class="bi bi-github"></i> {{ project.repository_url }}
+                </a>
+              </p>
+            {% endif %}
             {% if project.shuttle %}
               <p>
                 <strong>Shuttle Run:</strong> {{ project.shuttle.name }} - {{ project.shuttle.description }}

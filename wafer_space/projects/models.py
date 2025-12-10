@@ -55,6 +55,25 @@ def validate_project_id(value: str) -> None:
         raise ValidationError(msg)
 
 
+class LicenseType(models.TextChoices):
+    """License types for projects.
+
+    Uses SPDX identifiers where applicable for standard open source licenses.
+    """
+
+    PROPRIETARY = "proprietary", "Proprietary (All Rights Reserved)"
+    APACHE_2_0 = "Apache-2.0", "Apache License 2.0"
+    MIT = "MIT", "MIT License"
+    BSD_3_CLAUSE = "BSD-3-Clause", "BSD 3-Clause License"
+    ISC = "ISC", "ISC License"
+    CERN_OHL_P = "CERN-OHL-P-2.0", "CERN Open Hardware License (Permissive)"
+    SOLDERPAD_2_0 = "SHL-2.0", "Solderpad Hardware License 2.0"
+    SOLDERPAD_2_1 = "SHL-2.1", "Solderpad Hardware License 2.1"
+    CC0 = "CC0-1.0", "CC0 1.0 (Public Domain)"
+    CC_BY = "CC-BY-4.0", "Creative Commons Attribution 4.0"
+    OTHER = "other", "Other Open Source License"
+
+
 class Project(models.Model):
     """User-submitted design projects for manufacturing."""
 
@@ -140,6 +159,40 @@ class Project(models.Model):
         help_text="Whether this design should be publicly visible on the platform",
     )
 
+    # Repository URL (Issue #137)
+    repository_url = models.URLField(
+        blank=True,
+        max_length=500,
+        help_text="URL to the project's source repository",
+    )
+
+    # License tracking (Issue #193)
+    license_type = models.CharField(
+        max_length=50,
+        choices=LicenseType,
+        default=LicenseType.PROPRIETARY,
+        help_text="License under which this project is released",
+    )
+    other_license_spdx_id = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="SPDX identifier when license_type is 'Other'",
+    )
+    proprietary_terms_url = models.URLField(
+        blank=True,
+        max_length=500,
+        help_text="URL to proprietary license terms",
+    )
+    proprietary_terms_cached = models.TextField(
+        blank=True,
+        help_text="Cached content from proprietary_terms_url",
+    )
+    proprietary_terms_cached_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When proprietary terms were last cached",
+    )
+
     # Change history tracking
     history = HistoricalRecords()
 
@@ -197,6 +250,16 @@ class Project(models.Model):
         Example: "1×1 - Full Slot (3.88mm × 5.07mm = 19.67mm²)"
         """
         return SlotSize(self.slot_size).full_label
+
+    @property
+    def is_proprietary_license(self) -> bool:
+        """Check if project uses proprietary license."""
+        return self.license_type == LicenseType.PROPRIETARY
+
+    @property
+    def is_other_license(self) -> bool:
+        """Check if project uses 'other' (custom SPDX) license."""
+        return self.license_type == LicenseType.OTHER
 
     def can_submit(self) -> tuple[bool, str]:
         """Check if project can be submitted.

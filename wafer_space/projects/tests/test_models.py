@@ -13,6 +13,7 @@ from wafer_space.projects.exceptions import InvalidStateTransitionError
 from wafer_space.projects.exceptions import MaxRetriesExceededError
 from wafer_space.projects.models import CheckExecutionContext
 from wafer_space.projects.models import DownloadAttempt
+from wafer_space.projects.models import LicenseType
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
@@ -2285,3 +2286,65 @@ class TestProjectIsPublic:
         project.save()
         project.refresh_from_db()
         assert project.is_public is False
+
+
+@pytest.mark.django_db
+class TestProjectLicenseFields:
+    """Tests for project license tracking fields."""
+
+    def test_default_license_type_is_proprietary(self, user):
+        """New projects default to proprietary license."""
+        project = Project.objects.create(
+            user=user,
+            name="Test Project",
+            project_id="TEST",
+        )
+        assert project.license_type == LicenseType.PROPRIETARY
+
+    def test_license_type_choices_include_common_licenses(self):
+        """LicenseType enum includes expected common licenses."""
+        license_values = [choice[0] for choice in LicenseType.choices]
+        assert "MIT" in license_values
+        assert "Apache-2.0" in license_values
+        assert "proprietary" in license_values
+        assert "other" in license_values
+
+    def test_repository_url_is_optional(self, user):
+        """Projects can be created without repository_url."""
+        project = Project.objects.create(
+            user=user,
+            name="Test Project",
+            project_id="TEST",
+        )
+        assert project.repository_url == ""
+
+    def test_repository_url_can_be_set(self, user):
+        """Repository URL can be set on project."""
+        project = Project.objects.create(
+            user=user,
+            name="Test Project",
+            project_id="TEST",
+            repository_url="https://github.com/user/repo",
+        )
+        assert project.repository_url == "https://github.com/user/repo"
+
+    def test_other_license_spdx_id_is_optional(self, user):
+        """other_license_spdx_id is optional."""
+        project = Project.objects.create(
+            user=user,
+            name="Test Project",
+            project_id="TEST",
+            license_type=LicenseType.MIT,
+        )
+        assert project.other_license_spdx_id == ""
+
+    def test_proprietary_terms_fields_are_optional(self, user):
+        """Proprietary terms fields are optional."""
+        project = Project.objects.create(
+            user=user,
+            name="Test Project",
+            project_id="TEST",
+        )
+        assert project.proprietary_terms_url == ""
+        assert project.proprietary_terms_cached == ""
+        assert project.proprietary_terms_cached_at is None
