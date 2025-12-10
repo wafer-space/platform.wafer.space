@@ -939,7 +939,7 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
 
     # Create container WITHOUT volumes (for remote Docker support)
     logger.info(
-        "[do_starting] Creating container from image %s (mem_limit=64g)...",
+        "[do_starting] Creating container from image %s (mem_limit=24g)...",
         check.docker_image,
     )
     # Extract site hostname for container labeling (prevents cross-environment cleanup)
@@ -954,7 +954,7 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
             "wafer.space.project_id": str(check.project.id),
             "wafer.space.site": site_host,
         },
-        mem_limit="64g",
+        mem_limit="24g",
         network_disabled=True,
         environment={
             "COLUMNS": "200",  # Wide terminal for better log output
