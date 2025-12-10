@@ -642,7 +642,7 @@ class TestProjectFormLicenseValidation:
     @patch("wafer_space.projects.forms.validate_spdx_id")
     def test_valid_other_license_passes(self, mock_validate, base_form_data):
         """Valid 'Other' license with SPDX ID passes."""
-        mock_validate.return_value = True
+        # validate_spdx_id returns None on success (no error raised)
         base_form_data["license_type"] = "other"
         base_form_data["other_license_spdx_id"] = "GPL-3.0-only"
 
@@ -827,7 +827,7 @@ class TestProjectUserEditFormLicenseValidation:
         self, mock_validate, project_with_owner, base_user_form_data
     ):
         """Valid 'Other' license with SPDX ID passes in user edit form."""
-        mock_validate.return_value = True
+        # validate_spdx_id returns None on success (no error raised)
         base_user_form_data["license_type"] = "other"
         base_user_form_data["other_license_spdx_id"] = "GPL-3.0-only"
 

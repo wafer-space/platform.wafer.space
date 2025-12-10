@@ -17,16 +17,16 @@ from wafer_space.projects.services.license_service import validate_spdx_id
 class TestValidateSpdxId:
     """Tests for validate_spdx_id function."""
 
-    def test_valid_spdx_id_returns_true(self):
-        """Valid SPDX ID returns True."""
+    def test_valid_spdx_id_succeeds(self):
+        """Valid SPDX ID does not raise an error."""
         patch_path = "wafer_space.projects.services.license_service.requests.head"
         with patch(patch_path) as mock_head:
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_head.return_value = mock_response
 
-            result = validate_spdx_id("MIT")
-            assert result is True
+            # Should not raise
+            validate_spdx_id("MIT")
 
     def test_invalid_spdx_id_raises_error(self):
         """Invalid SPDX ID raises LicenseValidationError."""
@@ -57,7 +57,8 @@ class TestFetchUrlContent:
         patch_path = "wafer_space.projects.services.license_service.requests.get"
         with patch(patch_path) as mock_get:
             mock_response = MagicMock()
-            mock_response.text = "License text content"
+            mock_response.headers = {"content-length": "20"}
+            mock_response.iter_content.return_value = [b"License text content"]
             mock_response.raise_for_status = MagicMock()
             mock_get.return_value = mock_response
 

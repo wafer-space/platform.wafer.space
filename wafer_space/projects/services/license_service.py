@@ -19,6 +19,9 @@ HTTP_TIMEOUT = 10.0
 # HTTP status code for success
 HTTP_OK = 200
 
+# Maximum content size for fetched license terms (1 MB)
+MAX_CONTENT_SIZE = 1024 * 1024
+
 # SPDX license text base URL
 SPDX_LICENSE_TEXT_URL = (
     "https://raw.githubusercontent.com/spdx/license-list-data/main/text/{spdx_id}.txt"
@@ -29,14 +32,11 @@ class LicenseValidationError(Exception):
     """Raised when license validation fails."""
 
 
-def validate_spdx_id(spdx_id: str) -> bool:
+def validate_spdx_id(spdx_id: str) -> None:
     """Validate that an SPDX identifier exists.
 
     Args:
         spdx_id: The SPDX license identifier to validate.
-
-    Returns:
-        True if valid, False otherwise.
 
     Raises:
         LicenseValidationError: If the SPDX ID is invalid or unreachable.
@@ -44,12 +44,14 @@ def validate_spdx_id(spdx_id: str) -> bool:
     url = SPDX_LICENSE_TEXT_URL.format(spdx_id=spdx_id)
     try:
         response = requests.head(url, timeout=HTTP_TIMEOUT, allow_redirects=True)
-        if response.status_code == HTTP_OK:
-            return True
-        msg = f"Invalid SPDX identifier: {spdx_id}"
-        raise LicenseValidationError(msg)
+        if response.status_code != HTTP_OK:
+            msg = f"Invalid SPDX identifier: {spdx_id}"
+            raise LicenseValidationError(msg)
     except requests.Timeout as e:
         msg = f"Timeout validating SPDX identifier: {spdx_id}"
+        raise LicenseValidationError(msg) from e
+    except requests.ConnectionError as e:
+        msg = f"Connection error validating SPDX identifier: {spdx_id}"
         raise LicenseValidationError(msg) from e
     except requests.RequestException as e:
         msg = f"Error validating SPDX identifier: {spdx_id}"
@@ -57,22 +59,46 @@ def validate_spdx_id(spdx_id: str) -> bool:
 
 
 def fetch_url_content(url: str) -> str:
-    """Fetch content from a URL.
+    """Fetch content from a URL with size limits.
 
     Args:
         url: The URL to fetch.
 
     Returns:
-        The content as a string.
+        The content as a string (max 1 MB).
 
     Raises:
-        LicenseValidationError: If the URL is unreachable or returns an error.
+        LicenseValidationError: If the URL is unreachable, returns an error,
+            or content exceeds size limit.
     """
     try:
-        response = requests.get(url, timeout=HTTP_TIMEOUT, allow_redirects=True)
+        response = requests.get(
+            url, timeout=HTTP_TIMEOUT, allow_redirects=True, stream=True
+        )
         response.raise_for_status()
+
+        # Check Content-Length header if available
+        content_length = response.headers.get("content-length")
+        if content_length and int(content_length) > MAX_CONTENT_SIZE:
+            msg = f"Content too large (max {MAX_CONTENT_SIZE} bytes): {url}"
+            raise LicenseValidationError(msg)
+
+        # Read content with size limit
+        content = b""
+        for chunk in response.iter_content(chunk_size=8192):
+            content += chunk
+            if len(content) > MAX_CONTENT_SIZE:
+                msg = (
+                    f"Content exceeds size limit (max {MAX_CONTENT_SIZE} bytes): {url}"
+                )
+                raise LicenseValidationError(msg)
+
+        return content.decode("utf-8")
     except requests.Timeout as e:
         msg = f"Timeout fetching URL: {url}"
+        raise LicenseValidationError(msg) from e
+    except requests.ConnectionError as e:
+        msg = f"Connection error fetching URL: {url}"
         raise LicenseValidationError(msg) from e
     except requests.HTTPError as e:
         msg = f"Error fetching URL ({e.response.status_code}): {url}"
@@ -80,8 +106,9 @@ def fetch_url_content(url: str) -> str:
     except requests.RequestException as e:
         msg = f"Error fetching URL: {url}"
         raise LicenseValidationError(msg) from e
-    else:
-        return response.text
+    except UnicodeDecodeError as e:
+        msg = f"Content is not valid UTF-8 text: {url}"
+        raise LicenseValidationError(msg) from e
 
 
 def cache_proprietary_terms(project: Project, terms_url: str) -> None:

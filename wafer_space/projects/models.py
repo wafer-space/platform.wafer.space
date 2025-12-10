@@ -251,6 +251,16 @@ class Project(models.Model):
         """
         return SlotSize(self.slot_size).full_label
 
+    @property
+    def is_proprietary_license(self) -> bool:
+        """Check if project uses proprietary license."""
+        return self.license_type == LicenseType.PROPRIETARY
+
+    @property
+    def is_other_license(self) -> bool:
+        """Check if project uses 'other' (custom SPDX) license."""
+        return self.license_type == LicenseType.OTHER
+
     def can_submit(self) -> tuple[bool, str]:
         """Check if project can be submitted.
 
