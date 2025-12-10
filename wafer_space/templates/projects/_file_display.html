@@ -76,44 +76,45 @@
           {% for hist_check in all_checks %}
             {# Skip the first (latest/current) check - it's shown above #}
             {% if not forloop.first %}
-              {# Wrap in collapsible details element #}
-              <details class="mb-2">
-                <summary class="p-2 bg-white border rounded" style="cursor: pointer; list-style: none;">
-                  <div class="d-flex justify-content-between align-items-center">
-                    <span>
-                      <i class="bi bi-chevron-right"></i>
-                      {% if hist_check.trigger_reason == 'initial' %}
-                        <span class="badge bg-primary">Initial</span>
-                      {% elif hist_check.trigger_reason == 'retry' %}
-                        <span class="badge bg-warning text-dark">Retry</span>
-                      {% elif hist_check.trigger_reason == 'drc_update' %}
-                        <span class="badge bg-info">DRC Update</span>
-                      {% elif hist_check.trigger_reason == 'admin_rerun' %}
-                        <span class="badge bg-secondary">Admin Re-run</span>
-                      {% endif %}
-                      <span class="text-muted ms-2">{{ hist_check.created_at|date:"Y-m-d H:i" }}</span>
-                    </span>
-                    <span>
-                      {% if hist_check.status == 'finished' %}
-                        {% if hist_check.is_manufacturable %}
-                          <span class="badge bg-success"><i class="bi bi-check-circle"></i> Pass</span>
-                        {% else %}
-                          <span class="badge bg-danger"><i class="bi bi-x-circle"></i> Fail</span>
+              {# Card-based collapsible like download attempts #}
+              <div class="card mb-2">
+                <details>
+                  <summary class="card-header py-2" style="cursor: pointer; list-style: none;">
+                    <div class="d-flex justify-content-between align-items-center">
+                      <strong>
+                        {% if hist_check.trigger_reason == 'initial' %}
+                          <span class="badge bg-primary">Initial</span>
+                        {% elif hist_check.trigger_reason == 'retry' %}
+                          <span class="badge bg-warning text-dark">Retry</span>
+                        {% elif hist_check.trigger_reason == 'drc_update' %}
+                          <span class="badge bg-info">DRC Update</span>
+                        {% elif hist_check.trigger_reason == 'admin_rerun' %}
+                          <span class="badge bg-secondary">Admin Re-run</span>
                         {% endif %}
-                      {% elif hist_check.status == 'error' %}
-                        <span class="badge bg-danger"><i class="bi bi-exclamation-triangle"></i> Error</span>
-                      {% elif hist_check.status == 'cancelled' %}
-                        <span class="badge bg-secondary"><i class="bi bi-slash-circle"></i> Cancelled</span>
-                      {% else %}
-                        <span class="badge bg-secondary">{{ hist_check.get_status_display }}</span>
-                      {% endif %}
-                    </span>
+                        <span class="ms-2">{{ hist_check.created_at|date:"Y-m-d H:i" }}</span>
+                      </strong>
+                      <span class="badge {% if hist_check.status == 'finished' and hist_check.is_manufacturable %}bg-success{% elif hist_check.status == 'finished' and not hist_check.is_manufacturable %}bg-danger{% elif hist_check.status == 'error' %}bg-danger{% elif hist_check.status == 'cancelled' %}bg-secondary{% else %}bg-secondary{% endif %}">
+                        {% if hist_check.status == 'finished' %}
+                          {% if hist_check.is_manufacturable %}
+                            <i class="bi bi-check-circle"></i> Pass
+                          {% else %}
+                            <i class="bi bi-x-circle"></i> Fail
+                          {% endif %}
+                        {% elif hist_check.status == 'error' %}
+                          <i class="bi bi-exclamation-triangle"></i> Error
+                        {% elif hist_check.status == 'cancelled' %}
+                          <i class="bi bi-slash-circle"></i> Cancelled
+                        {% else %}
+                          {{ hist_check.get_status_display }}
+                        {% endif %}
+                      </span>
+                    </div>
+                  </summary>
+                  <div class="card-body py-2">
+                    {% include "projects/_manufacturability_check.html" with check=hist_check show_title=False show_cancel=True show_trigger=False show_card=False %}
                   </div>
-                </summary>
-                <div class="mt-2 ps-3">
-                  {% include "projects/_manufacturability_check.html" with check=hist_check show_title=False show_cancel=True show_trigger=False show_card=False %}
-                </div>
-              </details>
+                </details>
+              </div>
             {% endif %}
           {% endfor %}
         </div>
