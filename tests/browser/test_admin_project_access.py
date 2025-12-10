@@ -22,7 +22,7 @@ pytestmark = [pytest.mark.browser, pytest.mark.django_db]
 TEST_PASSWORD = "testpass123"  # noqa: S105
 
 
-def accept_current_tos(user):
+def accept_current_tos(user: User) -> None:
     """Accept the current TOS for a user."""
     tos = TermsOfService.objects.filter(is_active=True).first()
     if tos:
@@ -302,11 +302,12 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
            all logged users undeletable
         """
         # Create another regular user
-        User.objects.create_user(
+        other_user = User.objects.create_user(
             username="otheruser",
             email="otheruser@example.com",
             password=TEST_PASSWORD,
         )
+        accept_current_tos(other_user)
 
         # Verify no logs initially
         assert ProjectAccessLog.objects.count() == 0
