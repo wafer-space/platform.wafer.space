@@ -328,8 +328,8 @@
               <td>{% if check.docker_server_id %}<code>{{ check.docker_server_id }}</code>{% else %}<span class="text-muted">-</span>{% endif %}</td>
             </tr>
             <tr>
-              <td><strong>Container ID:</strong></td>
-              <td>{% if check.docker_container_id %}<code>{{ check.docker_container_id }}</code>{% else %}<span class="text-muted">-</span>{% endif %}</td>
+              <td><strong>Container:</strong></td>
+              <td>{% if check.docker_container_id %}<code title="{{ check.docker_container_id }}">{{ check.docker_container_id|truncatechars:16 }}</code>{% else %}<span class="text-muted">-</span>{% endif %}</td>
             </tr>
             <tr>
               <td><strong>Exit Code:</strong></td>
@@ -341,7 +341,7 @@
             </tr>
             <tr>
               <td><strong>Digest:</strong></td>
-              <td>{% if check.docker_image_digest %}<code class="small" style="word-break: break-all;">{{ check.docker_image_digest }}</code>{% else %}<span class="text-muted">-</span>{% endif %}</td>
+              <td>{% if check.docker_image_digest %}<code class="small" title="{{ check.docker_image_digest }}">{{ check.docker_image_digest|truncatechars:24 }}</code>{% else %}<span class="text-muted">-</span>{% endif %}</td>
             </tr>
           </tbody>
         </table>
@@ -356,7 +356,15 @@
             </tr>
             <tr>
               <td><strong>Tools:</strong></td>
-              <td>{% if check.tool_versions %}<code class="small" style="word-break: break-all;">{{ check.tool_versions }}</code>{% else %}<span class="text-muted">-</span>{% endif %}</td>
+              <td>
+                {% if check.tool_versions %}
+                  {% for key, value in check.tool_versions.items %}
+                    <span class="badge bg-light text-dark border me-1">{{ key }}: {{ value }}</span>
+                  {% endfor %}
+                {% else %}
+                  <span class="text-muted">-</span>
+                {% endif %}
+              </td>
             </tr>
           </tbody>
         </table>
