@@ -717,7 +717,7 @@ def checks_cancelling() -> dict[str, int]:
 # These will be implemented in later phases
 
 
-@queued_check_task(expected_status="DISPATCHING")
+@queued_check_task(expected_status="DISPATCHING", queue="docker-ephemeral")
 def do_dispatching(check: ManufacturabilityCheck) -> dict[str, str]:
     """Pull Docker image for a DISPATCHING check.
 
@@ -860,7 +860,7 @@ def _wait_for_container_running(
         raise TaskExecutionError(reason="failed_to_start", message=msg)
 
 
-@queued_check_task(expected_status="STARTING")
+@queued_check_task(expected_status="STARTING", queue="docker-ephemeral")
 def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
     """Create and start Docker container for a STARTING check.
 
@@ -1228,7 +1228,7 @@ def _record_checkpoint(
     return checkpoint
 
 
-@queued_check_task(expected_status="RUNNING")
+@queued_check_task(expected_status="RUNNING", queue="docker-ephemeral")
 def do_running(check: ManufacturabilityCheck) -> dict[str, Any]:
     """Monitor running container and download logs incrementally.
 
@@ -1612,7 +1612,7 @@ def _finalize_analyzing(
     }
 
 
-@queued_check_task(expected_status="ANALYZING")
+@queued_check_task(expected_status="ANALYZING", queue="docker-ephemeral")
 def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
     """Analyze container logs, extract outputs, and determine results.
 
