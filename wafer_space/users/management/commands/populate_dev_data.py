@@ -485,7 +485,9 @@ class Command(BaseCommand):
         # Create manufacturability checks based on scenario
         self._create_manufacturability_checks(project, project_file, scenario, now)
 
-    def _finished_check_fields(self, completed_at: Any) -> dict:
+    def _finished_check_fields(
+        self, completed_at: Any, project_id: str = "XX01"
+    ) -> dict:
         """Return common fields for a finished check."""
         return {
             "docker_server_id": "docker-server-1",
@@ -516,6 +518,23 @@ class Command(BaseCommand):
                 "ghcr.io/wafer-space/gf180mcu-precheck:latest "
                 "--design /workspace/design.gds --pdk gf180mcuD"
             ),
+            # Placeholder file paths (files don't exist but show in UI)
+            "log_file": f"projects/{project_id}/checks/precheck.log",
+            "runs_archive": f"projects/{project_id}/checks/runs.tar.gz",
+            "output_gds": f"projects/{project_id}/checks/output.gds",
+            "docker_layer_export": f"projects/{project_id}/checks/layer.tar.gz",
+            "log_file_sha256": (
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            ),
+            "runs_archive_sha256": (
+                "27ae41e4649b934ca495991b7852b855d41d8cd98f00b204e9800998ecf8427e"
+            ),
+            "output_gds_sha256": (
+                "d41d8cd98f00b204e9800998ecf8427e098f6bcd4621d373cade4e832627b4f6"
+            ),
+            "docker_layer_sha256": (
+                "098f6bcd4621d373cade4e832627b4f6e3b0c44298fc1c149afbf4c8996fb924"
+            ),
         }
 
     def _create_manufacturability_checks(
@@ -537,7 +556,7 @@ class Command(BaseCommand):
                 errors=[],
                 warnings=["Minor: Consider adding ESD protection"],
                 analysis_completed_at=completed,
-                **self._finished_check_fields(completed),
+                **self._finished_check_fields(completed, project.project_id),
             )
 
         elif scenario == "single_fail":
@@ -554,7 +573,7 @@ class Command(BaseCommand):
                 ],
                 warnings=[],
                 analysis_completed_at=completed,
-                **self._finished_check_fields(completed),
+                **self._finished_check_fields(completed, project.project_id),
             )
 
         elif scenario == "in_progress":
@@ -621,7 +640,7 @@ class Command(BaseCommand):
             errors=[],
             warnings=[],
             analysis_completed_at=completed,
-            **self._finished_check_fields(completed),
+            **self._finished_check_fields(completed, project.project_id),
         )
 
     def _create_drc_update_checks(
@@ -639,7 +658,7 @@ class Command(BaseCommand):
             errors=[],
             warnings=[],
             analysis_completed_at=completed1,
-            **self._finished_check_fields(completed1),
+            **self._finished_check_fields(completed1, project.project_id),
         )
         ManufacturabilityCheck.objects.filter(pk=first_check.pk).update(
             created_at=completed1 - timedelta(minutes=15)
@@ -656,7 +675,7 @@ class Command(BaseCommand):
             errors=["New DRC rule violation: Minimum poly width"],
             warnings=[],
             analysis_completed_at=completed2,
-            **self._finished_check_fields(completed2),
+            **self._finished_check_fields(completed2, project.project_id),
         )
         ManufacturabilityCheck.objects.filter(pk=second_check.pk).update(
             created_at=completed2 - timedelta(minutes=15)
@@ -673,5 +692,5 @@ class Command(BaseCommand):
             errors=[],
             warnings=[],
             analysis_completed_at=completed3,
-            **self._finished_check_fields(completed3),
+            **self._finished_check_fields(completed3, project.project_id),
         )
