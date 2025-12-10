@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import TypeVar
+from urllib.parse import urlparse
 
 import docker
 import docker.errors
@@ -197,6 +198,79 @@ __all__ = [
 ]
 
 
+def _cleanup_container_if_orphaned(
+    container: "docker.models.containers.Container",
+    server_id: str,
+    our_site: str,
+    active_states: list[str],
+    logger: logging.Logger,
+) -> str:
+    """Check if container should be cleaned up and remove if so.
+
+    Returns:
+        'skipped' - container from different site
+        'removed' - container was orphaned and removed
+        'kept' - container is still active
+    """
+    # Check site label - skip containers from other platform instances
+    container_site = container.labels.get("wafer.space.site")
+    if container_site and container_site != our_site:
+        logger.debug(
+            "Server %s, container %s: site=%s (ours=%s), skipping",
+            server_id,
+            container.short_id,
+            container_site,
+            our_site,
+        )
+        return "skipped"
+
+    check_id = container.labels.get("wafer.space.check_id")
+
+    # No check_id label = definitely orphaned (and from our site or no site)
+    if not check_id:
+        logger.info(
+            "Server %s, container %s: no check_id label, removing",
+            server_id,
+            container.short_id,
+        )
+        stop_and_remove_container(container, logger)
+        return "removed"
+
+    # Look up the check
+    try:
+        check = ManufacturabilityCheck.objects.get(id=check_id)
+    except ManufacturabilityCheck.DoesNotExist:
+        logger.info(
+            "Server %s, container %s: check %s not found, removing",
+            server_id,
+            container.short_id,
+            check_id,
+        )
+        stop_and_remove_container(container, logger)
+        return "removed"
+
+    # Check exists - is it in an active state?
+    if check.status not in active_states:
+        logger.info(
+            "Server %s, container %s: check %s in %s state, removing",
+            server_id,
+            container.short_id,
+            check_id,
+            check.status,
+        )
+        stop_and_remove_container(container, logger)
+        return "removed"
+
+    logger.debug(
+        "Server %s, container %s: check %s in %s state, keeping",
+        server_id,
+        container.short_id,
+        check_id,
+        check.status,
+    )
+    return "kept"
+
+
 @shared_task(queue="docker-ephemeral")
 def checks_cleanup_orphaned_docker() -> dict:
     """Remove Docker containers not linked to active checks (fallback cleanup).
@@ -210,6 +284,10 @@ def checks_cleanup_orphaned_docker() -> dict:
 
     CANCELLING containers are handled by checks_cancelling task, not here.
 
+    Only cleans up containers created by this platform instance (matching
+    wafer.space.site label). This prevents prod from cleaning up staging
+    containers and vice versa when sharing Docker servers.
+
     Returns:
         dict with per-server results and totals
     """
@@ -218,11 +296,12 @@ def checks_cleanup_orphaned_docker() -> dict:
 
     total_scanned = 0
     total_removed = 0
+    total_skipped = 0
     server_results: dict[str, dict] = {}
 
-    # Active states (containers we should keep) - includes DISPATCHING, STARTING,
-    # RUNNING, CANCELLING.
     active_states = list(ManufacturabilityCheck.Status.active())
+    our_site = urlparse(settings.SITE_URL).netloc if settings.SITE_URL else "unknown"
+    logger.info("Filtering for containers with wafer.space.site=%s", our_site)
 
     for server in settings.DOCKER_SERVERS:
         server_id = str(server["id"])
@@ -235,7 +314,6 @@ def checks_cleanup_orphaned_docker() -> dict:
             server_results[server_id] = {"status": "error", "error": str(exc)}
             continue
 
-        # Get all containers with our label
         try:
             containers = client.containers.list(
                 all=True,
@@ -247,71 +325,37 @@ def checks_cleanup_orphaned_docker() -> dict:
             continue
 
         logger.info("Server %s: found %d containers", server_id, len(containers))
-
-        scanned = len(containers)
-        removed = 0
+        removed, skipped = 0, 0
 
         for container in containers:
-            check_id = container.labels.get("wafer.space.check_id")
-
-            # No check_id label = definitely orphaned
-            if not check_id:
-                logger.info(
-                    "Server %s, container %s: no check_id label, removing",
-                    server_id,
-                    container.short_id,
-                )
-                stop_and_remove_container(container, logger)
+            result = _cleanup_container_if_orphaned(
+                container, server_id, our_site, active_states, logger
+            )
+            if result == "removed":
                 removed += 1
-                continue
+            elif result == "skipped":
+                skipped += 1
 
-            # Look up the check
-            try:
-                check = ManufacturabilityCheck.objects.get(id=check_id)
-            except ManufacturabilityCheck.DoesNotExist:
-                logger.info(
-                    "Server %s, container %s: check %s not found, removing",
-                    server_id,
-                    container.short_id,
-                    check_id,
-                )
-                stop_and_remove_container(container, logger)
-                removed += 1
-                continue
-
-            # Check exists - is it in an active state?
-            if check.status not in active_states:
-                logger.info(
-                    "Server %s, container %s: check %s in %s state, removing",
-                    server_id,
-                    container.short_id,
-                    check_id,
-                    check.status,
-                )
-                stop_and_remove_container(container, logger)
-                removed += 1
-            else:
-                logger.debug(
-                    "Server %s, container %s: check %s in %s state, keeping",
-                    server_id,
-                    container.short_id,
-                    check_id,
-                    check.status,
-                )
-
-        server_results[server_id] = {"scanned": scanned, "removed": removed}
-        total_scanned += scanned
+        server_results[server_id] = {
+            "scanned": len(containers),
+            "removed": removed,
+            "skipped": skipped,
+        }
+        total_scanned += len(containers)
         total_removed += removed
+        total_skipped += skipped
 
     logger.info(
-        "[checks_cleanup_orphaned_docker] Complete: scanned=%d, removed=%d",
+        "[checks_cleanup_orphaned_docker] Complete: scanned=%d, removed=%d, skipped=%d",
         total_scanned,
         total_removed,
+        total_skipped,
     )
 
     return {
         "containers_scanned": total_scanned,
         "removed": total_removed,
+        "skipped": total_skipped,
         "servers": server_results,
     }
 
@@ -898,6 +942,8 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
         "[do_starting] Creating container from image %s (mem_limit=64g)...",
         check.docker_image,
     )
+    # Extract site hostname for container labeling (prevents cross-environment cleanup)
+    site_host = urlparse(settings.SITE_URL).netloc if settings.SITE_URL else "unknown"
     container = client.containers.create(
         check.docker_image,
         command=command,
@@ -906,6 +952,7 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
             "wafer.space.service": "manufacturability-check",
             "wafer.space.check_id": str(check.id),
             "wafer.space.project_id": str(check.project.id),
+            "wafer.space.site": site_host,
         },
         mem_limit="64g",
         network_disabled=True,
