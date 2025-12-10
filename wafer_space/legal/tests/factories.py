@@ -71,7 +71,8 @@ These terms are for testing purposes only."""
             post.metadata["requires_reacceptance"] = True
 
             # Write markdown file with front matter
-            # This will be intercepted by the mock in tests
+            # In unit tests: intercepted by mock_tos_directory fixture (conftest.py)
+            # In browser tests: intercepted by mock_tos_directory_for_browser_tests
             # Use dump_frontmatter_post for consistent formatting (issue #153)
             with file_path.open("w") as f:
                 f.write(dump_frontmatter_post(post))

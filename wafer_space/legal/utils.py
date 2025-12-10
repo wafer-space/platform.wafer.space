@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -9,6 +10,8 @@ import frontmatter
 
 if TYPE_CHECKING:
     from frontmatter import Post
+
+logger = logging.getLogger(__name__)
 
 
 def get_tos_versions_directory() -> Path:
@@ -59,8 +62,10 @@ def write_frontmatter_file(file_path: Path, post: Post) -> bool:
     if file_path.exists():
         existing_content = file_path.read_text(encoding="utf-8")
         if existing_content == new_content:
+            logger.debug("TOS file unchanged, skipping write: %s", file_path)
             return False
 
     # Write the file
     file_path.write_text(new_content, encoding="utf-8")
+    logger.debug("Wrote TOS file: %s", file_path)
     return True

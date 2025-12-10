@@ -134,13 +134,78 @@ def pytest_addoption(parser):
     )
 
 
+@pytest.fixture(scope="session")
+def _browser_tos_temp_dir():
+    """Create a session-scoped temporary directory for TOS files in browser tests.
+
+    This prevents browser tests from writing to the real tos_versions directory.
+    See GitHub issue #153.
+    """
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_tos_dir = Path(temp_dir) / "tos_versions"
+        temp_tos_dir.mkdir()
+        yield temp_tos_dir
+
+
 @pytest.fixture(scope="session", autouse=True)
-def ensure_test_tos_exists(django_db_setup, django_db_blocker, request):
+def mock_tos_directory_for_browser_tests(_browser_tos_temp_dir, request):
+    """Mock the TOS directory for browser tests to use a temporary directory.
+
+    This prevents browser tests from modifying real TOS markdown files.
+    See GitHub issue #153.
+
+    Note: This is session-scoped because browser tests share the same
+    TOS files across all tests in a session.
+    """
+    # Only apply to browser test runs
+    test_paths = request.config.args
+    is_browser_test = (
+        any("browser" in str(path) for path in test_paths) or not test_paths
+    )
+
+    if not is_browser_test:
+        yield
+        return
+
+    # Patch get_tos_versions_directory to return temp dir
+    import wafer_space.legal.models  # noqa: PLC0415
+    import wafer_space.legal.tests.factories  # noqa: PLC0415
+    import wafer_space.legal.utils  # noqa: PLC0415
+
+    original_func = wafer_space.legal.utils.get_tos_versions_directory
+
+    def mock_get_tos_dir():
+        return _browser_tos_temp_dir
+
+    # Apply patches
+    wafer_space.legal.utils.get_tos_versions_directory = mock_get_tos_dir
+    wafer_space.legal.models.get_tos_versions_directory = mock_get_tos_dir
+    wafer_space.legal.tests.factories.get_tos_versions_directory = mock_get_tos_dir
+
+    yield _browser_tos_temp_dir
+
+    # Restore original
+    wafer_space.legal.utils.get_tos_versions_directory = original_func
+    wafer_space.legal.models.get_tos_versions_directory = original_func
+    wafer_space.legal.tests.factories.get_tos_versions_directory = original_func
+
+
+@pytest.fixture(scope="session", autouse=True)
+def ensure_test_tos_exists(
+    django_db_setup,
+    django_db_blocker,
+    request,
+    mock_tos_directory_for_browser_tests,
+):
     """Ensure test TOS data exists in the database.
 
     This runs after django_db_setup to ensure TOS data is available
     for all browser tests that need it. The data persists in the test
     database and is visible to the live_server.
+
+    Note: TOS files are now written to a temporary directory (not real
+    filesystem) thanks to mock_tos_directory_for_browser_tests fixture.
+    See GitHub issue #153.
     """
     from django.core.management import call_command  # noqa: PLC0415
     from django.db import connection  # noqa: PLC0415
