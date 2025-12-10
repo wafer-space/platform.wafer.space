@@ -55,6 +55,41 @@
                 <span class="badge bg-secondary"><i class="bi bi-lock"></i> Private</span>
               {% endif %}
             </p>
+            <p>
+              <strong>License:</strong>
+              {% if project.license_type == "proprietary" %}
+                <span class="badge bg-secondary">Proprietary</span>
+                {% if project.proprietary_terms_url %}
+                  <a href="{{ project.proprietary_terms_url }}"
+                     target="_blank"
+                     rel="noopener">
+                    <i class="bi bi-box-arrow-up-right"></i> View Terms
+                  </a>
+                {% endif %}
+              {% elif project.license_type == "other" %}
+                <span class="badge bg-info">{{ project.other_license_spdx_id }}</span>
+                <a href="https://spdx.org/licenses/{{ project.other_license_spdx_id }}.html"
+                   target="_blank"
+                   rel="noopener">
+                  <i class="bi bi-box-arrow-up-right"></i> View License
+                </a>
+              {% else %}
+                <span class="badge bg-success">{{ project.get_license_type_display }}</span>
+                <a href="https://spdx.org/licenses/{{ project.license_type }}.html"
+                   target="_blank"
+                   rel="noopener">
+                  <i class="bi bi-box-arrow-up-right"></i> View License
+                </a>
+              {% endif %}
+            </p>
+            {% if project.repository_url %}
+              <p>
+                <strong>Repository:</strong>
+                <a href="{{ project.repository_url }}" target="_blank" rel="noopener">
+                  <i class="bi bi-github"></i> {{ project.repository_url }}
+                </a>
+              </p>
+            {% endif %}
             {% if project.shuttle %}
               <p>
                 <strong>Shuttle Run:</strong> {{ project.shuttle.name }} - {{ project.shuttle.description }}
