@@ -10,6 +10,7 @@ from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
 
 from wafer_space.legal.models import TermsOfService
+from wafer_space.legal.utils import dump_frontmatter_post
 
 User = get_user_model()
 
@@ -179,8 +180,9 @@ class Command(BaseCommand):
         post.metadata["requires_reacceptance"] = True
 
         # Write markdown file with front matter
+        # Use dump_frontmatter_post for consistent formatting (issue #153)
         with file_path.open("w") as f:
-            f.write(frontmatter.dumps(post))
+            f.write(dump_frontmatter_post(post))
 
         self.stdout.write(
             self.style.SUCCESS(

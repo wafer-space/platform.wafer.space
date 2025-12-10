@@ -7,6 +7,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions
 
 from tests.browser.base import AuthenticatedBrowserTest
+from wafer_space.legal.models import TermsOfService
+from wafer_space.legal.models import TermsOfServiceAcceptance
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectAccessLog
 from wafer_space.shuttles.models import Shuttle
@@ -19,30 +21,48 @@ pytestmark = [pytest.mark.browser, pytest.mark.django_db]
 TEST_PASSWORD = "testpass123"  # noqa: S105
 
 
+def accept_current_tos(user: User) -> None:
+    """Accept the current TOS for a user."""
+    tos = TermsOfService.objects.filter(is_active=True).first()
+    if tos:
+        TermsOfServiceAcceptance.objects.get_or_create(
+            user=user,
+            tos_version=tos,
+            defaults={"ip_address": "127.0.0.1"},
+        )
+
+
 @pytest.fixture
 def owner(db):
     """Create project owner user."""
-    return User.objects.create_user(
+    del db  # Fixture ensures database is available
+    user = User.objects.create_user(
         username="owner",
         email="owner@example.com",
         password=TEST_PASSWORD,
     )
+    accept_current_tos(user)
+    return user
 
 
 @pytest.fixture
 def staff_user(db):
     """Create staff user."""
-    return User.objects.create_user(
+    del db  # Fixture ensures database is available
+    user = User.objects.create_user(
         username="admin",
         email="admin@example.com",
         password=TEST_PASSWORD,
         is_staff=True,
     )
+    accept_current_tos(user)
+    return user
 
 
 @pytest.fixture
 def shuttle(db):
     """Create test shuttle."""
+    del db  # Fixture ensures database is available
     return Shuttle.objects.create(
         name="G893",
         description="Test Shuttle",
@@ -96,6 +116,11 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
         # Navigate to the site first (required to set cookie)
         driver.get(f"{self.live_server_url}/")
 
+        # Wait for page to load before adding cookie
+        wait.until(
+            lambda d: d.execute_script("return document.readyState") == "complete"
+        )
+
         # Transfer session cookie to Selenium WebDriver
         driver.add_cookie(
             {
@@ -107,8 +132,13 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
             }
         )
 
-        # Verify session is active by navigating to a page that requires auth
-        driver.get(f"{self.live_server_url}/accounts/confirm-email/")
+        # Refresh to apply the cookie
+        driver.refresh()
+
+        # Wait for page to load after refresh
+        wait.until(
+            lambda d: d.execute_script("return document.readyState") == "complete"
+        )
 
     def test_staff_user_sees_warning_banner(self, driver, staff_user, project, wait):
         """Test that staff user sees warning banner on other user's project."""
@@ -117,6 +147,11 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
 
         # Navigate to owner's project
         driver.get(f"{self.live_server_url}/projects/{project.pk}/")
+
+        # Wait for page to be fully loaded
+        wait.until(
+            lambda d: d.execute_script("return document.readyState") == "complete"
+        )
 
         # Verify warning banner visible
         banner = wait.until(
@@ -205,6 +240,11 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
         # Navigate to update page
         driver.get(f"{self.live_server_url}/projects/{project.pk}/update/")
 
+        # Wait for page to be fully loaded
+        wait.until(
+            lambda d: d.execute_script("return document.readyState") == "complete"
+        )
+
         # Verify warning banner present
         banner = wait.until(
             expected_conditions.presence_of_element_located(
@@ -264,11 +304,12 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
            all logged users undeletable
         """
         # Create another regular user
-        User.objects.create_user(
+        other_user = User.objects.create_user(
             username="otheruser",
             email="otheruser@example.com",
             password=TEST_PASSWORD,
         )
+        accept_current_tos(other_user)
 
         # Verify no logs initially
         assert ProjectAccessLog.objects.count() == 0
