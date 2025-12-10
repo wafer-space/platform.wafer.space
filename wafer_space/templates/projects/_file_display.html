@@ -74,9 +74,7 @@
           {% endif %}
         </strong>
       </div>
-      <div class="card-body">
-        {% include "projects/_manufacturability_check.html" with check=check %}
-      </div>
+      <div class="card-body">{% include "projects/_manufacturability_check.html" with check=check %}</div>
     </div>
     {# Check History - show previous checks (not current) if more than one exists #}
     {% with all_checks=file.manufacturability_checks.all %}
@@ -126,9 +124,7 @@
                       </span>
                     </div>
                   </summary>
-                  <div class="card-body py-2">
-                    {% include "projects/_manufacturability_check.html" with check=hist_check %}
-                  </div>
+                  <div class="card-body py-2">{% include "projects/_manufacturability_check.html" with check=hist_check %}</div>
                 </details>
               </div>
             {% endif %}
