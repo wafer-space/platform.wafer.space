@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING
 from typing import Any
 
 from allauth.account.models import EmailAddress
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
@@ -485,10 +487,23 @@ class Command(BaseCommand):
         # Create manufacturability checks based on scenario
         self._create_manufacturability_checks(project, project_file, scenario, now)
 
+    def _create_output_files(self, project_id: str) -> None:
+        """Create empty placeholder output files for a manufacturability check."""
+        media_root = Path(settings.MEDIA_ROOT)
+        check_dir = media_root / "projects" / project_id / "checks"
+        check_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create empty placeholder files
+        for filename in ["precheck.log", "runs.tar.gz", "output.gds", "layer.tar.gz"]:
+            (check_dir / filename).touch()
+
     def _finished_check_fields(
         self, completed_at: Any, project_id: str = "XX01"
     ) -> dict:
         """Return common fields for a finished check."""
+        # Create output files on disk
+        self._create_output_files(project_id)
+
         return {
             "docker_server_id": "docker-server-1",
             "docker_container_id": "abc123def456789012345678901234567890abcd",
@@ -518,7 +533,7 @@ class Command(BaseCommand):
                 "ghcr.io/wafer-space/gf180mcu-precheck:latest "
                 "--design /workspace/design.gds --pdk gf180mcuD"
             ),
-            # Placeholder file paths (files don't exist but show in UI)
+            # Output files created by _create_output_files method
             "log_file": f"projects/{project_id}/checks/precheck.log",
             "runs_archive": f"projects/{project_id}/checks/runs.tar.gz",
             "output_gds": f"projects/{project_id}/checks/output.gds",
