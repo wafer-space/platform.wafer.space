@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import TYPE_CHECKING
 from typing import Any
 
@@ -9,13 +10,16 @@ from allauth.account.models import EmailAddress
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
+from django.utils import timezone
 
 from wafer_space.core.enums import SlotSize
 from wafer_space.core.utils import is_production_environment
 from wafer_space.legal.models import TermsOfService
 from wafer_space.legal.models import TermsOfServiceAcceptance
+from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectComplianceCertification
+from wafer_space.projects.models import ProjectFile
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.models import ShuttleSlot
 
@@ -230,33 +234,42 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("  Created 16 shuttle slots (4×4 grid)"))
 
     def _create_projects(self, shuttle: Shuttle, mithro: Any, testuser: Any) -> None:
-        """Create test projects with various states."""
-        # Project definitions: (id, name, owner, size, is_manufacturable)
-        # Project IDs must be exactly 4 uppercase alphanumeric characters
+        """Create test projects with various states and manufacturability checks.
+
+        Creates projects demonstrating various multi-check scenarios:
+        - Single FINISHED check (manufacturable/not manufacturable)
+        - Check in progress (PENDING, RUNNING, ANALYZING)
+        - ERROR check with retry chain
+        - DRC_UPDATE re-run (multiple checks for same file)
+        - No file/checks yet
+        """
+        # Project definitions with check scenarios
+        # check_scenario: "single_pass", "single_fail", "in_progress", "error_retry",
+        #                 "drc_update", "no_file"
         projects_data = [
             # Full size projects
-            ("RV32", "RISC-V Core", mithro, SlotSize.FULL, True),
-            ("GP10", "GPIO Controller", mithro, SlotSize.FULL, True),
-            ("UA01", "UART Serial", testuser, SlotSize.FULL, True),
-            ("SP01", "SPI Controller", testuser, SlotSize.FULL, False),
-            ("I2C1", "I2C Interface", mithro, SlotSize.FULL, None),
-            ("PW01", "PWM Generator", testuser, SlotSize.FULL, None),
+            ("RV32", "RISC-V Core", mithro, SlotSize.FULL, "single_pass"),
+            ("GP10", "GPIO Controller", mithro, SlotSize.FULL, "drc_update"),
+            ("UA01", "UART Serial", testuser, SlotSize.FULL, "single_pass"),
+            ("SP01", "SPI Controller", testuser, SlotSize.FULL, "single_fail"),
+            ("I2C1", "I2C Interface", mithro, SlotSize.FULL, "in_progress"),
+            ("PW01", "PWM Generator", testuser, SlotSize.FULL, "no_file"),
             # Half width projects
-            ("AD01", "ADC Frontend", mithro, SlotSize.HALF_WIDTH, True),
-            ("DA01", "DAC Output", testuser, SlotSize.HALF_WIDTH, True),
-            ("CM01", "Comparator", mithro, SlotSize.HALF_WIDTH, False),
+            ("AD01", "ADC Frontend", mithro, SlotSize.HALF_WIDTH, "error_retry"),
+            ("DA01", "DAC Output", testuser, SlotSize.HALF_WIDTH, "single_pass"),
+            ("CM01", "Comparator", mithro, SlotSize.HALF_WIDTH, "single_fail"),
             # Half height projects
-            ("CK01", "Clock Generator", testuser, SlotSize.HALF_HEIGHT, True),
-            ("RS01", "Reset Controller", mithro, SlotSize.HALF_HEIGHT, None),
+            ("CK01", "Clock Generator", testuser, SlotSize.HALF_HEIGHT, "single_pass"),
+            ("RS01", "Reset Controller", mithro, SlotSize.HALF_HEIGHT, "in_progress"),
             # Quarter size projects
-            ("RF01", "Voltage Reference", testuser, SlotSize.QUARTER, True),
-            ("OS01", "RC Oscillator", mithro, SlotSize.QUARTER, True),
-            ("BF01", "Buffer Cell", testuser, SlotSize.QUARTER, False),
-            ("LD01", "LDO Regulator", mithro, SlotSize.QUARTER, None),
+            ("RF01", "Voltage Reference", testuser, SlotSize.QUARTER, "single_pass"),
+            ("OS01", "RC Oscillator", mithro, SlotSize.QUARTER, "drc_update"),
+            ("BF01", "Buffer Cell", testuser, SlotSize.QUARTER, "single_fail"),
+            ("LD01", "LDO Regulator", mithro, SlotSize.QUARTER, "no_file"),
         ]
 
         created_count = 0
-        for proj_id, name, owner, size, is_mfg in projects_data:
+        for proj_id, name, owner, size, check_scenario in projects_data:
             project, created = Project.objects.get_or_create(
                 project_id=proj_id,
                 shuttle=shuttle,
@@ -265,7 +278,6 @@ class Command(BaseCommand):
                     "name": name,
                     "description": f"Test project: {name}",
                     "slot_size": size,
-                    "is_manufacturable": is_mfg,
                     "status": Project.Status.SUBMITTED,
                 },
             )
@@ -279,6 +291,9 @@ class Command(BaseCommand):
                     end_use_statement="Development/testing purposes",
                     certified_by=owner,
                 )
+
+                # Create file and checks based on scenario
+                self._create_checks_for_project(project, check_scenario)
                 created_count += 1
 
         if created_count > 0:
@@ -287,3 +302,132 @@ class Command(BaseCommand):
             )
         else:
             self.stdout.write("  Test projects already exist")
+
+    def _create_checks_for_project(self, project: Project, scenario: str) -> None:
+        """Create ProjectFile and ManufacturabilityChecks based on scenario."""
+        if scenario == "no_file":
+            # No file submitted yet
+            return
+
+        # Create a project file (status is derived from download attempts)
+        project_file = ProjectFile.objects.create(
+            project=project,
+            original_url=f"https://example.com/files/{project.project_id}.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+        project.submitted_file = project_file
+        project.save(update_fields=["submitted_file"])
+
+        now = timezone.now()
+
+        if scenario == "single_pass":
+            # Single successful check
+            ManufacturabilityCheck.objects.create(
+                project=project,
+                project_file=project_file,
+                status=ManufacturabilityCheck.Status.FINISHED,
+                trigger_reason=ManufacturabilityCheck.TriggerReason.INITIAL,
+                is_manufacturable=True,
+                errors=[],
+                warnings=["Minor: Consider adding ESD protection"],
+                analysis_completed_at=now - timedelta(hours=2),
+            )
+
+        elif scenario == "single_fail":
+            # Single failed check (not manufacturable)
+            ManufacturabilityCheck.objects.create(
+                project=project,
+                project_file=project_file,
+                status=ManufacturabilityCheck.Status.FINISHED,
+                trigger_reason=ManufacturabilityCheck.TriggerReason.INITIAL,
+                is_manufacturable=False,
+                errors=[
+                    "DRC violation: Metal spacing too narrow at (100, 200)",
+                    "DRC violation: Via enclosure insufficient at (150, 300)",
+                ],
+                warnings=[],
+                analysis_completed_at=now - timedelta(hours=1),
+            )
+
+        elif scenario == "in_progress":
+            # Check currently running
+            ManufacturabilityCheck.objects.create(
+                project=project,
+                project_file=project_file,
+                status=ManufacturabilityCheck.Status.RUNNING,
+                trigger_reason=ManufacturabilityCheck.TriggerReason.INITIAL,
+                container_started_at=now - timedelta(minutes=5),
+            )
+
+        elif scenario == "error_retry":
+            # Original check failed with error, then retry succeeded
+            original_check = ManufacturabilityCheck.objects.create(
+                project=project,
+                project_file=project_file,
+                status=ManufacturabilityCheck.Status.ERROR,
+                trigger_reason=ManufacturabilityCheck.TriggerReason.INITIAL,
+                error_message="Docker container timeout after 300s",
+                created_at=now - timedelta(hours=3),
+            )
+            # Force the created_at to be in the past
+            ManufacturabilityCheck.objects.filter(pk=original_check.pk).update(
+                created_at=now - timedelta(hours=3)
+            )
+
+            # Retry check - succeeded
+            ManufacturabilityCheck.objects.create(
+                project=project,
+                project_file=project_file,
+                status=ManufacturabilityCheck.Status.FINISHED,
+                trigger_reason=ManufacturabilityCheck.TriggerReason.RETRY,
+                parent_check=original_check,
+                is_manufacturable=True,
+                errors=[],
+                warnings=[],
+                analysis_completed_at=now - timedelta(hours=2),
+            )
+
+        elif scenario == "drc_update":
+            # Multiple checks due to DRC rules being updated
+            # First check passed
+            first_check = ManufacturabilityCheck.objects.create(
+                project=project,
+                project_file=project_file,
+                status=ManufacturabilityCheck.Status.FINISHED,
+                trigger_reason=ManufacturabilityCheck.TriggerReason.INITIAL,
+                is_manufacturable=True,
+                errors=[],
+                warnings=[],
+                analysis_completed_at=now - timedelta(days=7),
+            )
+            ManufacturabilityCheck.objects.filter(pk=first_check.pk).update(
+                created_at=now - timedelta(days=7, hours=1)
+            )
+
+            # DRC update re-run - found new issues
+            second_check = ManufacturabilityCheck.objects.create(
+                project=project,
+                project_file=project_file,
+                status=ManufacturabilityCheck.Status.FINISHED,
+                trigger_reason=ManufacturabilityCheck.TriggerReason.DRC_UPDATE,
+                is_manufacturable=False,
+                errors=["New DRC rule violation: Minimum poly width"],
+                warnings=[],
+                analysis_completed_at=now - timedelta(days=3),
+            )
+            ManufacturabilityCheck.objects.filter(pk=second_check.pk).update(
+                created_at=now - timedelta(days=3, hours=1)
+            )
+
+            # Third check after fix - passes again
+            ManufacturabilityCheck.objects.create(
+                project=project,
+                project_file=project_file,
+                status=ManufacturabilityCheck.Status.FINISHED,
+                trigger_reason=ManufacturabilityCheck.TriggerReason.ADMIN_RERUN,
+                is_manufacturable=True,
+                errors=[],
+                warnings=[],
+                analysis_completed_at=now - timedelta(hours=12),
+            )
