@@ -378,78 +378,20 @@
         {% endif %}
       </div>
     </div>
-    {# Check History - show previous checks if more than one exists #}
+    {# Check History - show all checks if more than one exists #}
     {% with all_checks=file.manufacturability_checks.all %}
       {% if all_checks.count > 1 %}
         <div class="mt-3">
-          <details>
-            <summary class="text-primary small" style="cursor: pointer;">
-              <i class="bi bi-clock-history"></i>
-              Check History ({{ all_checks.count }} check{{ all_checks.count|pluralize }})
-            </summary>
-            <div class="table-responsive mt-2">
-              <table class="table table-sm table-striped mb-0">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Trigger</th>
-                    <th>Status</th>
-                    <th>Result</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for hist_check in all_checks %}
-                    <tr {% if hist_check == check %}class="table-active"{% endif %}>
-                      <td>{{ hist_check.created_at|date:"Y-m-d H:i" }}</td>
-                      <td>
-                        {% if hist_check.trigger_reason == 'initial' %}
-                          <span class="badge bg-primary">Initial</span>
-                        {% elif hist_check.trigger_reason == 'retry' %}
-                          <span class="badge bg-warning text-dark">Retry</span>
-                        {% elif hist_check.trigger_reason == 'drc_update' %}
-                          <span class="badge bg-info">DRC Update</span>
-                        {% elif hist_check.trigger_reason == 'admin_rerun' %}
-                          <span class="badge bg-secondary">Admin Re-run</span>
-                        {% else %}
-                          <span class="badge bg-light text-dark">{{ hist_check.get_trigger_reason_display }}</span>
-                        {% endif %}
-                      </td>
-                      <td>
-                        {% if hist_check.status == 'finished' %}
-                          <span class="text-success"><i class="bi bi-check-circle"></i> Finished</span>
-                        {% elif hist_check.status == 'error' %}
-                          <span class="text-danger"><i class="bi bi-x-circle"></i> Error</span>
-                        {% elif hist_check.status == 'cancelled' %}
-                          <span class="text-muted"><i class="bi bi-slash-circle"></i> Cancelled</span>
-                        {% else %}
-                          <span class="text-primary">{{ hist_check.get_status_display }}</span>
-                        {% endif %}
-                      </td>
-                      <td>
-                        {% if hist_check.status == 'finished' %}
-                          {% if hist_check.is_manufacturable %}
-                            <span class="badge bg-success">Pass</span>
-                          {% else %}
-                            <span class="badge bg-danger">Fail</span>
-                          {% endif %}
-                        {% elif hist_check.status == 'error' %}
-                          <span class="text-muted">-</span>
-                        {% else %}
-                          <span class="text-muted">Pending</span>
-                        {% endif %}
-                      </td>
-                    </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-            {% if check.parent_check %}
-              <p class="small text-muted mt-2 mb-0">
-                <i class="bi bi-arrow-return-right"></i>
-                Current check is a retry of check from {{ check.parent_check.created_at|date:"Y-m-d H:i" }}
-              </p>
-            {% endif %}
-          </details>
+          <h6>
+            <i class="bi bi-clock-history"></i>
+            Check History ({{ all_checks.count }} check{{ all_checks.count|pluralize }})
+          </h6>
+          <p class="mb-2 text-muted small">
+            Multiple manufacturability checks have been run on this file.
+          </p>
+          {% for hist_check in all_checks %}
+            {% include "projects/_manufacturability_check_history.html" with check=hist_check is_latest=forloop.first start_open=forloop.first %}
+          {% endfor %}
         </div>
       {% endif %}
     {% endwith %}

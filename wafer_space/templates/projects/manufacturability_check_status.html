@@ -157,6 +157,7 @@
               <thead>
                 <tr>
                   <th>Status</th>
+                  <th>Trigger</th>
                   <th>Project</th>
                   <th>User</th>
                   <th>File</th>
@@ -200,6 +201,19 @@
                         <span class="badge bg-secondary">Cancelled</span>
                       {% else %}
                         <span class="badge bg-light text-dark">{{ check.get_status_display }}</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      {% if check.trigger_reason == 'initial' %}
+                        <span class="badge bg-primary">Initial</span>
+                      {% elif check.trigger_reason == 'retry' %}
+                        <span class="badge bg-warning text-dark">Retry</span>
+                      {% elif check.trigger_reason == 'drc_update' %}
+                        <span class="badge bg-info">DRC Update</span>
+                      {% elif check.trigger_reason == 'admin_rerun' %}
+                        <span class="badge bg-secondary">Admin</span>
+                      {% else %}
+                        <span class="badge bg-light text-dark">{{ check.get_trigger_reason_display }}</span>
                       {% endif %}
                     </td>
                     <td>
