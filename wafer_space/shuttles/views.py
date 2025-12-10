@@ -80,13 +80,13 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
             assigned_projects = projects.filter(shuttle_slots__isnull=False).distinct()
             assigned_count = assigned_projects.count()
 
-            # Count manufacturable projects (is_manufacturable=True)
-            manufacturable_projects = projects.filter(is_manufacturable=True)
-            manufacturable_total = manufacturable_projects.count()
-            manufacturable_assigned = (
-                manufacturable_projects.filter(shuttle_slots__isnull=False)
-                .distinct()
-                .count()
+            # Count manufacturable projects
+            # Note: is_manufacturable is now a derived property, so we filter in Python
+            project_list = list(projects)
+            manufacturable_projects = [p for p in project_list if p.is_manufacturable]
+            manufacturable_total = len(manufacturable_projects)
+            manufacturable_assigned = sum(
+                1 for p in manufacturable_projects if p.shuttle_slots.exists()
             )
 
             stats[slot_size] = {

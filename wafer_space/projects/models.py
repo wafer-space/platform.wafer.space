@@ -3,6 +3,7 @@ import json
 import urllib.parse
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from typing import ClassVar
 
 from django.conf import settings
@@ -179,10 +180,10 @@ class Project(models.Model):
         help_text="The file that was submitted for manufacturing",
     )
 
-    # Manufacturability check results
-    is_manufacturable = models.BooleanField(null=True, blank=True)
-    manufacturability_errors = models.JSONField(default=list, blank=True)
-    check_completed_at = models.DateTimeField(null=True, blank=True)
+    # NOTE: is_manufacturable, manufacturability_errors, and check_completed_at
+    # are now derived properties (see @property methods below) that read from
+    # the latest ManufacturabilityCheck on the submitted_file. This enables
+    # multiple checks per file (retries, DRC updates, etc.) without losing history.
 
     # Manufacturing details
     estimated_cost = models.DecimalField(
@@ -253,6 +254,37 @@ class Project(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.user.username})"
+
+    # Derived manufacturability properties (from latest check on submitted_file)
+    @property
+    def is_manufacturable(self) -> bool | None:
+        """Derived from latest completed check on submitted file."""
+        if not self.submitted_file:
+            return None
+        check = self.submitted_file.latest_manufacturability_check
+        if not check or check.status != ManufacturabilityCheck.Status.FINISHED:
+            return None
+        return check.is_manufacturable
+
+    @property
+    def manufacturability_errors(self) -> list[str]:
+        """Derived from latest completed check."""
+        if not self.submitted_file:
+            return []
+        check = self.submitted_file.latest_manufacturability_check
+        if not check or check.status != ManufacturabilityCheck.Status.FINISHED:
+            return []
+        return check.errors
+
+    @property
+    def check_completed_at(self) -> datetime | None:
+        """Derived from latest completed check."""
+        if not self.submitted_file:
+            return None
+        check = self.submitted_file.latest_manufacturability_check
+        if not check or check.status != ManufacturabilityCheck.Status.FINISHED:
+            return None
+        return check.analysis_completed_at
 
     @property
     def full_id(self) -> str:
@@ -914,7 +946,7 @@ class ProjectFile(models.Model):
         Returns None if no checks exist yet.
         Ordered by -created_at (newest first).
         """
-        return self.manufacturability_checks.first()
+        return self.manufacturability_checks.order_by("-created_at").first()
 
 
 class FileProcessingError(models.Model):
@@ -1727,14 +1759,13 @@ class ManufacturabilityCheck(models.Model):
         )
 
         # Update project status
+        # Note: is_manufacturable, manufacturability_errors, and check_completed_at
+        # are now derived properties on Project, so we only update the status.
         if is_manufacturable:
             self.project.status = Project.Status.MANUFACTURABLE
         else:
             self.project.status = Project.Status.NOT_MANUFACTURABLE
-        self.project.is_manufacturable = is_manufacturable
-        self.project.manufacturability_errors = self.errors
-        self.project.check_completed_at = self.analysis_completed_at
-        self.project.save()
+        self.project.save(update_fields=["status"])
 
     def mark_error(
         self,

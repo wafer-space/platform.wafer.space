@@ -7,7 +7,6 @@ from django.utils import timezone
 
 from wafer_space.core.enums import SlotSize
 from wafer_space.projects.exceptions import InvalidStateTransitionError
-from wafer_space.projects.exceptions import MaxRetriesExceededError
 from wafer_space.projects.models import CheckExecutionContext
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import LicenseType
