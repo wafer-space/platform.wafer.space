@@ -258,8 +258,13 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
         name_field.clear()
         name_field.send_keys("Updated by Admin")
 
-        # Submit form
-        driver.find_element(By.CSS_SELECTOR, "button[type='submit']").click()
+        # Submit form - use JavaScript click to avoid interception issues
+        submit_button = wait.until(
+            expected_conditions.presence_of_element_located(
+                (By.CSS_SELECTOR, "button[type='submit']")
+            )
+        )
+        driver.execute_script("arguments[0].click();", submit_button)
 
         # Wait for redirect to detail page with success message
         success_alert = wait.until(
