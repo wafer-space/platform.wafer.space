@@ -1,22 +1,6 @@
 {# Reusable manufacturability check display partial #}
 {# Parameters: #}
 {#   - check: ManufacturabilityCheck instance to display #}
-{#   - show_title: (optional, default=True) Show "Manufacturability Check" title #}
-{#   - show_trigger: (optional, default=False) Show trigger reason badge #}
-{% if show_title is not False %}
-  <h6 class="card-title">
-    <i class="bi bi-check-circle"></i> Manufacturability Check
-    {% if show_trigger and check.trigger_reason != 'initial' %}
-      {% if check.trigger_reason == 'retry' %}
-        <span class="badge bg-warning text-dark ms-2">Retry</span>
-      {% elif check.trigger_reason == 'drc_update' %}
-        <span class="badge bg-info ms-2">DRC Update</span>
-      {% elif check.trigger_reason == 'admin_rerun' %}
-        <span class="badge bg-secondary ms-2">Admin Re-run</span>
-      {% endif %}
-    {% endif %}
-  </h6>
-{% endif %}
 
     {# === MOST IMPORTANT: Status and Result === #}
     <p class="mb-2">
