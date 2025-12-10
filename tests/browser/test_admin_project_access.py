@@ -35,6 +35,7 @@ def accept_current_tos(user: User) -> None:
 @pytest.fixture
 def owner(db):
     """Create project owner user."""
+    del db  # Fixture ensures database is available
     user = User.objects.create_user(
         username="owner",
         email="owner@example.com",
@@ -47,6 +48,7 @@ def owner(db):
 @pytest.fixture
 def staff_user(db):
     """Create staff user."""
+    del db  # Fixture ensures database is available
     user = User.objects.create_user(
         username="admin",
         email="admin@example.com",
@@ -60,6 +62,7 @@ def staff_user(db):
 @pytest.fixture
 def shuttle(db):
     """Create test shuttle."""
+    del db  # Fixture ensures database is available
     return Shuttle.objects.create(
         name="G893",
         description="Test Shuttle",
