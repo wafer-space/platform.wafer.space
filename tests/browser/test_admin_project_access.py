@@ -5,7 +5,6 @@ from django.contrib.auth import get_user_model
 from django.test import Client
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions
-from selenium.webdriver.support.wait import WebDriverWait
 
 from tests.browser.base import AuthenticatedBrowserTest
 from wafer_space.legal.models import TermsOfService
@@ -151,8 +150,8 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
             lambda d: d.execute_script("return document.readyState") == "complete"
         )
 
-        # Verify warning banner visible (with longer timeout for CI)
-        banner = WebDriverWait(driver, 15).until(
+        # Verify warning banner visible
+        banner = wait.until(
             expected_conditions.presence_of_element_located(
                 (By.CSS_SELECTOR, ".alert-warning")
             )
@@ -243,8 +242,8 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
             lambda d: d.execute_script("return document.readyState") == "complete"
         )
 
-        # Verify warning banner present (with longer timeout for CI)
-        banner = WebDriverWait(driver, 15).until(
+        # Verify warning banner present
+        banner = wait.until(
             expected_conditions.presence_of_element_located(
                 (By.CSS_SELECTOR, ".alert-warning")
             )
