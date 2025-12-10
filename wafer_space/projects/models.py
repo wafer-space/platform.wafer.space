@@ -75,7 +75,41 @@ class LicenseType(models.TextChoices):
 
 
 class Project(models.Model):
-    """User-submitted design projects for manufacturing."""
+    """User-submitted design projects for manufacturing.
+
+    Project Identifiers
+    -------------------
+    This model uses three different identifiers, each serving a distinct purpose:
+
+    1. **id** (UUIDField) - Primary Key
+       - Auto-generated UUID (e.g., "550e8400-e29b-41d4-a716-446655440000")
+       - Used internally for database references, API requests, and foreign keys
+       - Globally unique across all projects in the system
+       - Never exposed to end users in the UI
+       - Immutable once created
+
+    2. **project_id** (CharField) - User-Chosen Identifier
+       - 4-character alphanumeric code (e.g., "ABCD", "X123")
+       - Uppercase letters (A-Z) and digits (0-9) only
+       - Chosen by the user when assigning project to a shuttle
+       - Unique within a shuttle, but NOT globally unique
+       - Example: Shuttle G801 and G802 can both have project "ABCD"
+       - Used for human-readable identification on wafers/dies
+
+    3. **full_id** (property) - Manufacturing Identifier
+       - 8-character code: shuttle name (4 chars) + project_id (4 chars)
+       - Example: "G801ABCD" (shuttle "G801" + project "ABCD")
+       - Globally unique across all manufactured projects
+       - Used for physical identification on manufactured wafers
+       - Only available when project is assigned to a shuttle with a project_id
+
+    Usage in Code
+    -------------
+    - Database queries: Use `id` (pk) - e.g., Project.objects.get(pk=uuid)
+    - API requests: Use `id` (pk) as the identifier
+    - User-facing displays: Use `project_id` or `full_id`
+    - Manufacturing labels: Use `full_id`
+    """
 
     class Status(models.TextChoices):
         DRAFT = "draft", "Draft"
@@ -88,7 +122,13 @@ class Project(models.Model):
         COMPLETED = "completed", "Completed"
         CANCELLED = "cancelled", "Cancelled"
 
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # See class docstring for explanation of different project identifiers
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+        help_text="Internal UUID primary key. Use for DB queries and API requests.",
+    )
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -117,7 +157,10 @@ class Project(models.Model):
         blank=True,
         default="",
         validators=[validate_project_id],
-        help_text="4-character alphanumeric project identifier (A-Z, 0-9)",
+        help_text=(
+            "User-chosen 4-character code (A-Z, 0-9). "
+            "Unique per shuttle, not globally. See class docstring."
+        ),
         db_index=True,
     )
 
