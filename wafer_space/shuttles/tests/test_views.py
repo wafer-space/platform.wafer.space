@@ -213,7 +213,7 @@ class TestAssignProjectView:
         url = reverse("shuttles:assign_project", kwargs={"name": shuttle.name})
         response = client.post(
             url,
-            data=json.dumps({"project_id": str(project.pk), "slot_id": slot.pk}),
+            data=json.dumps({"project_pk": str(project.pk), "slot_id": slot.pk}),
             content_type="application/json",
         )
 
@@ -245,7 +245,7 @@ class TestAssignProjectView:
         url = reverse("shuttles:assign_project", kwargs={"name": shuttle.name})
         response = client.post(
             url,
-            data=json.dumps({"project_id": str(project.pk), "slot_id": slot.pk}),
+            data=json.dumps({"project_pk": str(project.pk), "slot_id": slot.pk}),
             content_type="application/json",
         )
 
@@ -277,7 +277,7 @@ class TestAssignProjectView:
         url = reverse("shuttles:assign_project", kwargs={"name": shuttle.name})
         response = client.post(
             url,
-            data=json.dumps({"project_id": str(new_project.pk), "slot_id": slot.pk}),
+            data=json.dumps({"project_pk": str(new_project.pk), "slot_id": slot.pk}),
             content_type="application/json",
         )
 
@@ -310,7 +310,7 @@ class TestAssignProjectView:
         url = reverse("shuttles:assign_project", kwargs={"name": shuttle.name})
         response = client.post(
             url,
-            data=json.dumps({"project_id": str(new_project.pk), "slot_id": slot.pk}),
+            data=json.dumps({"project_pk": str(new_project.pk), "slot_id": slot.pk}),
             content_type="application/json",
         )
 

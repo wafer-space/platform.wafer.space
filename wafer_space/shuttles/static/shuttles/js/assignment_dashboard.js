@@ -32,7 +32,7 @@
   // State for current modal context
   let currentSlotId = null;
   let currentSlotSize = null;
-  let currentProjectIdForAssign = null;
+  let currentProjectPkForAssign = null;
   let currentProjectSize = null;
 
   // Autocomplete state
@@ -240,7 +240,7 @@
 
       html += '<div class="autocomplete-item' + (index === activeIndex ? ' active' : '') + '" ' +
               'role="option" aria-selected="' + (index === activeIndex ? 'true' : 'false') + '" ' +
-              'data-index="' + index + '" data-project-id="' + proj.id + '">' +
+              'data-index="' + index + '" data-project-pk="' + proj.pk + '">' +
               '<span class="project-id">' + escapeHtml(proj.project_id) + '</span>' +
               '<span class="' + mfgClass + '">' + mfgText + '</span> ' +
               '<span class="project-name">' + escapeHtml(proj.name) + '</span>' +
@@ -254,19 +254,19 @@
     updateSearchStatus(filteredProjects.length);
 
     // Bind click handlers
-    resultsDiv.querySelectorAll('.autocomplete-item[data-project-id]').forEach(function(item) {
+    resultsDiv.querySelectorAll('.autocomplete-item[data-project-pk]').forEach(function(item) {
       item.addEventListener('click', function() {
-        selectProject(this.dataset.projectId);
+        selectProject(this.dataset.projectPk);
       });
     });
   }
 
   // Select a project from autocomplete
-  function selectProject(projectId) {
-    const project = projectsData.find(function(p) { return p.id === projectId; });
+  function selectProject(projectPk) {
+    const project = projectsData.find(function(p) { return p.pk === projectPk; });
     if (!project) return;
 
-    document.getElementById('selected-project-id').value = projectId;
+    document.getElementById('selected-project-pk').value = projectPk;
     document.getElementById('project-search').value = '';
     document.getElementById('project-results').classList.remove('show');
     document.getElementById('project-search').setAttribute('aria-expanded', 'false');
@@ -317,7 +317,7 @@
     } else if (event.key === 'Enter') {
       event.preventDefault();
       if (activeIndex >= 0 && activeIndex < filteredProjects.length) {
-        selectProject(filteredProjects[activeIndex].id);
+        selectProject(filteredProjects[activeIndex].pk);
       }
     } else if (event.key === 'Escape') {
       resultsDiv.classList.remove('show');
@@ -350,7 +350,7 @@
     const slotSize = cell.dataset.slotSize;
 
     // Check if slot is already occupied
-    if (cell.dataset.projectId) {
+    if (cell.dataset.projectPk) {
       alert('This slot is already assigned. Please choose an empty slot.');
       return;
     }
@@ -362,7 +362,7 @@
       }
     }
 
-    doAssignment(currentProjectIdForAssign, slotId);
+    doAssignment(currentProjectPkForAssign, slotId);
   }
 
   // Show modal when clicking on a grid slot
@@ -370,22 +370,22 @@
     currentSlotId = cell.dataset.slotId;
     currentSlotSize = cell.dataset.slotSize;
     const position = cell.dataset.slotPosition;
-    const projectId = cell.dataset.projectId;
+    const projectPk = cell.dataset.projectPk;
 
     document.getElementById('modal-slot-position').textContent = position;
     document.getElementById('modal-slot-size').textContent = getSizeLabel(currentSlotSize);
 
     // Show/hide current project section
     const currentProjectSection = document.getElementById('modal-current-project');
-    if (projectId) {
+    if (projectPk) {
       currentProjectSection.style.display = 'block';
       // Look up full project info from projectsData
-      var project = projectsData.find(function(p) { return p.id === projectId; });
+      var project = projectsData.find(function(p) { return p.pk === projectPk; });
       if (project) {
         document.getElementById('modal-current-project-id').textContent =
           project.project_id + ' - ' + project.name;
       } else {
-        document.getElementById('modal-current-project-id').textContent = projectId;
+        document.getElementById('modal-current-project-id').textContent = projectPk;
       }
     } else {
       currentProjectSection.style.display = 'none';
@@ -393,7 +393,7 @@
 
     // Reset autocomplete
     document.getElementById('project-search').value = '';
-    document.getElementById('selected-project-id').value = '';
+    document.getElementById('selected-project-pk').value = '';
     document.getElementById('selected-project-display').style.display = 'none';
     document.getElementById('project-results').classList.remove('show');
     document.getElementById('project-search').setAttribute('aria-expanded', 'false');
@@ -408,8 +408,8 @@
   }
 
   // Show modal when clicking assign button in table
-  function assignSlot(projectId, projectName, slotSize) {
-    currentProjectIdForAssign = projectId;
+  function assignSlot(projectPk, projectName, slotSize) {
+    currentProjectPkForAssign = projectPk;
     currentProjectSize = slotSize;
 
     document.getElementById('assign-modal-project-name').textContent = projectName;
@@ -418,7 +418,7 @@
     // Show current slot assignments
     const currentSlotsSection = document.getElementById('assign-modal-current-slots');
     const slotsList = document.getElementById('assign-modal-slots-list');
-    const projectSlots = slotsByProject[projectId] || [];
+    const projectSlots = slotsByProject[projectPk] || [];
 
     if (projectSlots.length > 0) {
       currentSlotsSection.style.display = 'block';
@@ -477,7 +477,7 @@
   }
 
   // Perform the assignment API call
-  function doAssignment(projectId, slotId) {
+  function doAssignment(projectPk, slotId) {
     fetch(assignUrl, {
       method: 'POST',
       headers: {
@@ -485,7 +485,7 @@
         'X-CSRFToken': csrfToken
       },
       body: JSON.stringify({
-        project_id: projectId,
+        project_pk: projectPk,
         slot_id: slotId
       })
     })
@@ -511,14 +511,14 @@
 
   // Assign project to slot (from grid click)
   function assignProject() {
-    const projectId = document.getElementById('selected-project-id').value;
+    const projectPk = document.getElementById('selected-project-pk').value;
 
-    if (!projectId) {
+    if (!projectPk) {
       alert('Please select a project');
       return;
     }
 
-    doAssignment(projectId, currentSlotId);
+    doAssignment(projectPk, currentSlotId);
   }
 
   // Remove assignment from slot
@@ -646,8 +646,8 @@
         // Also highlight assigned slots for this project
         var assignBtn = this.querySelector('[data-assign-project]');
         if (assignBtn) {
-          var projectId = assignBtn.dataset.assignProject;
-          var slots = slotsByProject[projectId] || [];
+          var projectPk = assignBtn.dataset.assignProject;
+          var slots = slotsByProject[projectPk] || [];
           var positions = slots.map(function(s) { return s.position; });
           highlightAssignedSlots(positions);
         }
@@ -686,7 +686,7 @@
     const clearBtn = document.getElementById('clear-project-selection');
     if (clearBtn) {
       clearBtn.addEventListener('click', function() {
-        document.getElementById('selected-project-id').value = '';
+        document.getElementById('selected-project-pk').value = '';
         document.getElementById('selected-project-display').style.display = 'none';
         document.getElementById('size-mismatch-warning').style.display = 'none';
         document.getElementById('project-search').focus();

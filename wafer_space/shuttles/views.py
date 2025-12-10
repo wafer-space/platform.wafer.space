@@ -133,7 +133,7 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
             ]
             projects_data.append(
                 {
-                    "id": project.pk,
+                    "pk": project.pk,
                     "project_id": project.project_id or "",
                     "name": project.name,
                     "slot_size": project.slot_size,
@@ -203,12 +203,12 @@ class AssignProjectView(StaffRequiredMixin, View):
             shuttle = Shuttle.objects.get(name=name)
 
             data = json.loads(request.body)
-            project_id = data.get("project_id")
+            project_pk = data.get("project_pk")
             slot_id = data.get("slot_id")
 
-            if not project_id or not slot_id:
+            if not project_pk or not slot_id:
                 return JsonResponse(
-                    {"success": False, "error": "Missing project_id or slot_id"},
+                    {"success": False, "error": "Missing project_pk or slot_id"},
                     status=400,
                 )
 
@@ -217,7 +217,7 @@ class AssignProjectView(StaffRequiredMixin, View):
                 slot = ShuttleSlot.objects.select_for_update().get(
                     pk=slot_id, shuttle=shuttle
                 )
-                project = Project.objects.get(pk=project_id, shuttle=shuttle)
+                project = Project.objects.get(pk=project_pk, shuttle=shuttle)
 
                 # Attempt reservation
                 try:

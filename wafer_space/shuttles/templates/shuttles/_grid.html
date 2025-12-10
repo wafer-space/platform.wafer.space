@@ -24,7 +24,7 @@
               data-slot-id="{{ slot.pk }}"
               data-slot-position="{{ slot.grid_position }}"
               data-slot-size="{{ slot.slot_size }}"
-              data-project-id="{% if slot.project %}{{ slot.project.pk }}{% endif %}"
+              data-project-pk="{% if slot.project %}{{ slot.project.pk }}{% endif %}"
               data-click-handler="{{ click_handler }}"
               tabindex="0"
               role="button"
