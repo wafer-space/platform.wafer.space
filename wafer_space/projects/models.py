@@ -159,6 +159,40 @@ class Project(models.Model):
         help_text="Whether this design should be publicly visible on the platform",
     )
 
+    # Repository URL (Issue #137)
+    repository_url = models.URLField(
+        blank=True,
+        max_length=500,
+        help_text="URL to the project's source repository",
+    )
+
+    # License tracking (Issue #193)
+    license_type = models.CharField(
+        max_length=50,
+        choices=LicenseType.choices,
+        default=LicenseType.PROPRIETARY,
+        help_text="License under which this project is released",
+    )
+    other_license_spdx_id = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="SPDX identifier when license_type is 'Other'",
+    )
+    proprietary_terms_url = models.URLField(
+        blank=True,
+        max_length=500,
+        help_text="URL to proprietary license terms",
+    )
+    proprietary_terms_cached = models.TextField(
+        blank=True,
+        help_text="Cached content from proprietary_terms_url",
+    )
+    proprietary_terms_cached_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When proprietary terms were last cached",
+    )
+
     # Change history tracking
     history = HistoricalRecords()
 
