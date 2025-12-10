@@ -283,15 +283,103 @@ class ProjectForm(forms.ModelForm):
 class ProjectUserEditForm(forms.ModelForm):
     """Limited form for regular users to edit their projects.
 
-    Regular users can only edit visibility settings (is_public).
+    Regular users can edit visibility, repository URL, and license settings.
     Staff can edit all fields using the full ProjectForm.
     """
 
+    # Override license_type to make it not required (model has default)
+    license_type = forms.ChoiceField(
+        choices=LicenseType.choices,
+        required=False,
+        widget=LICENSE_TYPE_WIDGET,
+        help_text=LICENSE_TYPE_HELP_TEXT,
+    )
+
     class Meta:
         model = Project
-        fields = ["is_public"]
-        widgets = {"is_public": IS_PUBLIC_WIDGET}
-        help_texts = {"is_public": IS_PUBLIC_HELP_TEXT}
+        fields = [
+            "is_public",
+            "repository_url",
+            "license_type",
+            "other_license_spdx_id",
+            "proprietary_terms_url",
+        ]
+        widgets = {
+            "is_public": IS_PUBLIC_WIDGET,
+            "repository_url": REPOSITORY_URL_WIDGET,
+            "license_type": LICENSE_TYPE_WIDGET,
+            "other_license_spdx_id": OTHER_LICENSE_WIDGET,
+            "proprietary_terms_url": PROPRIETARY_TERMS_URL_WIDGET,
+        }
+        help_texts = {
+            "is_public": IS_PUBLIC_HELP_TEXT,
+            "repository_url": REPOSITORY_URL_HELP_TEXT,
+            "license_type": LICENSE_TYPE_HELP_TEXT,
+            "other_license_spdx_id": OTHER_LICENSE_HELP_TEXT,
+            "proprietary_terms_url": PROPRIETARY_TERMS_URL_HELP_TEXT,
+        }
+
+    def clean(self):
+        """Validate license fields and cache proprietary terms."""
+        cleaned_data = super().clean()
+        if cleaned_data is None:
+            return cleaned_data
+
+        license_type = cleaned_data.get("license_type")
+        other_spdx_id = cleaned_data.get("other_license_spdx_id", "").strip()
+        terms_url = cleaned_data.get("proprietary_terms_url", "").strip()
+
+        # Validate "other" license type requires valid SPDX ID
+        if license_type == LicenseType.OTHER:
+            if not other_spdx_id:
+                self.add_error(
+                    "other_license_spdx_id",
+                    "SPDX identifier is required for 'Other' license type",
+                )
+            else:
+                try:
+                    validate_spdx_id(other_spdx_id)
+                except LicenseValidationError as e:
+                    self.add_error("other_license_spdx_id", str(e))
+        else:
+            # Clear other_license_spdx_id if not "other" type
+            cleaned_data["other_license_spdx_id"] = ""
+
+        # Clear proprietary_terms_url if not proprietary
+        if license_type != LicenseType.PROPRIETARY:
+            cleaned_data["proprietary_terms_url"] = ""
+        elif terms_url:
+            # Validate and cache proprietary terms URL
+            try:
+                # Store for use in save()
+                self._proprietary_terms_content = fetch_url_content(terms_url)
+            except LicenseValidationError as e:
+                self.add_error("proprietary_terms_url", str(e))
+
+        return cleaned_data
+
+    def save(self, commit=True):  # noqa: FBT002
+        """Save form and update cached proprietary terms."""
+        instance = super().save(commit=False)
+
+        # Update cached terms if we fetched them during validation
+        if (
+            hasattr(self, "_proprietary_terms_content")
+            and self._proprietary_terms_content
+        ):
+            instance.proprietary_terms_cached = self._proprietary_terms_content
+            instance.proprietary_terms_cached_at = timezone.now()
+        elif (
+            instance.license_type != LicenseType.PROPRIETARY
+            or not instance.proprietary_terms_url
+        ):
+            # Clear cache if no longer proprietary or no URL
+            instance.proprietary_terms_cached = ""
+            instance.proprietary_terms_cached_at = None
+
+        if commit:
+            instance.save()
+        return instance
 
 
 class ProjectFileURLSubmitForm(forms.Form):
