@@ -20,6 +20,7 @@ from wafer_space.legal.models import TermsOfService
 from wafer_space.legal.models import TermsOfServiceAcceptance
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
+from wafer_space.projects.models import ManufacturabilityCheckpoint
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectComplianceCertification
 from wafer_space.projects.models import ProjectFile
@@ -523,6 +524,24 @@ class Command(BaseCommand):
         for filename in ["precheck.log", "runs.tar.gz", "output.gds", "layer.tar.gz"]:
             (check_dir / filename).touch()
 
+    def _create_checkpoints(self, check: ManufacturabilityCheck) -> None:
+        """Create resource usage checkpoints for a manufacturability check."""
+        # Simulate 10 minutes of check runtime with checkpoints every 30 seconds
+        for i in range(20):
+            elapsed = i * 30.0  # 30 second intervals
+            # Simulate varying CPU/memory usage
+            cpu = 25.0 + (i % 5) * 15.0  # Varies 25-85%
+            mem_mb = 512 + (i * 50)  # Grows from 512MB to ~1.5GB
+            ManufacturabilityCheckpoint.objects.create(
+                manufacturability_check=check,
+                checkpoint_number=i + 1,
+                elapsed_seconds=elapsed,
+                cpu_percent=cpu,
+                cpu_online_cpus=4,
+                memory_usage_bytes=mem_mb * 1024 * 1024,
+                memory_limit_bytes=4 * 1024 * 1024 * 1024,  # 4GB limit
+            )
+
     def _finished_check_fields(
         self, completed_at: Any, project_id: str = "XX01"
     ) -> dict:
@@ -588,7 +607,7 @@ class Command(BaseCommand):
         """Create ManufacturabilityChecks based on scenario."""
         if scenario == "single_pass":
             completed = now - timedelta(hours=2)
-            ManufacturabilityCheck.objects.create(
+            check = ManufacturabilityCheck.objects.create(
                 project=project,
                 project_file=project_file,
                 status=ManufacturabilityCheck.Status.FINISHED,
@@ -599,10 +618,11 @@ class Command(BaseCommand):
                 analysis_completed_at=completed,
                 **self._finished_check_fields(completed, project.project_id),
             )
+            self._create_checkpoints(check)
 
         elif scenario == "single_fail":
             completed = now - timedelta(hours=1)
-            ManufacturabilityCheck.objects.create(
+            check = ManufacturabilityCheck.objects.create(
                 project=project,
                 project_file=project_file,
                 status=ManufacturabilityCheck.Status.FINISHED,
@@ -616,6 +636,7 @@ class Command(BaseCommand):
                 analysis_completed_at=completed,
                 **self._finished_check_fields(completed, project.project_id),
             )
+            self._create_checkpoints(check)
 
         elif scenario == "in_progress":
             started = now - timedelta(minutes=5)
@@ -671,7 +692,7 @@ class Command(BaseCommand):
 
         # Retry succeeded
         completed = now - timedelta(hours=2)
-        ManufacturabilityCheck.objects.create(
+        retry_check = ManufacturabilityCheck.objects.create(
             project=project,
             project_file=project_file,
             status=ManufacturabilityCheck.Status.FINISHED,
@@ -683,6 +704,7 @@ class Command(BaseCommand):
             analysis_completed_at=completed,
             **self._finished_check_fields(completed, project.project_id),
         )
+        self._create_checkpoints(retry_check)
 
     def _create_drc_update_checks(
         self, project: Project, project_file: ProjectFile, now: Any
@@ -704,6 +726,7 @@ class Command(BaseCommand):
         ManufacturabilityCheck.objects.filter(pk=first_check.pk).update(
             created_at=completed1 - timedelta(minutes=15)
         )
+        self._create_checkpoints(first_check)
 
         # Second check - DRC rules updated, now fails
         completed2 = now - timedelta(days=3)
@@ -721,10 +744,11 @@ class Command(BaseCommand):
         ManufacturabilityCheck.objects.filter(pk=second_check.pk).update(
             created_at=completed2 - timedelta(minutes=15)
         )
+        self._create_checkpoints(second_check)
 
         # Third check - admin re-run after design fix
         completed3 = now - timedelta(hours=12)
-        ManufacturabilityCheck.objects.create(
+        third_check = ManufacturabilityCheck.objects.create(
             project=project,
             project_file=project_file,
             status=ManufacturabilityCheck.Status.FINISHED,
@@ -735,3 +759,4 @@ class Command(BaseCommand):
             analysis_completed_at=completed3,
             **self._finished_check_fields(completed3, project.project_id),
         )
+        self._create_checkpoints(third_check)
