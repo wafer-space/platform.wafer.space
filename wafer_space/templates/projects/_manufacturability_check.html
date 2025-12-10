@@ -570,7 +570,7 @@
             {% for cp in check.checkpoints.all %}
               <tr>
                 <td>{{ cp.checkpoint_number }}</td>
-                <td>{{ cp.elapsed_seconds|floatformat:1 }}s</td>
+                <td>{{ cp.elapsed_seconds|duration }}</td>
                 <td>{{ cp.cpu_percent_formatted|default:"-" }}</td>
                 <td>
                   {% if cp.memory_usage_bytes %}
