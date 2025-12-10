@@ -360,7 +360,7 @@ class TestProjectFileService(TestCase):
         assert isinstance(message, str)
         assert "not started" in message.lower()
 
-    @patch("wafer_space.projects.services.AsyncResult")
+    @patch("wafer_space.projects.services.file_service.AsyncResult")
     def test_get_download_progress_pending(self, mock_async_result):
         """Test getting progress when task is pending."""
         project_file = ProjectFile.objects.create(
@@ -383,7 +383,7 @@ class TestProjectFileService(TestCase):
         assert progress["progress"] == 0
         assert progress["message"] == "Download pending"
 
-    @patch("wafer_space.projects.services.AsyncResult")
+    @patch("wafer_space.projects.services.file_service.AsyncResult")
     def test_get_download_progress_in_progress(self, mock_async_result):
         """Test getting progress when task is downloading."""
         project_file = ProjectFile.objects.create(
@@ -422,7 +422,7 @@ class TestProjectFileService(TestCase):
         assert isinstance(message, str)
         assert "4,718,592" in message
 
-    @patch("wafer_space.projects.services.AsyncResult")
+    @patch("wafer_space.projects.services.file_service.AsyncResult")
     def test_get_download_progress_completed(self, mock_async_result):
         """Test getting progress when task is completed."""
         project_file = ProjectFile.objects.create(
@@ -455,7 +455,7 @@ class TestProjectFileService(TestCase):
         assert isinstance(message, str)
         assert "completed" in message.lower()
 
-    @patch("wafer_space.projects.services.AsyncResult")
+    @patch("wafer_space.projects.services.file_service.AsyncResult")
     def test_get_download_progress_failed(self, mock_async_result):
         """Test getting progress when task failed."""
         project_file = ProjectFile.objects.create(
