@@ -55,6 +55,25 @@ def validate_project_id(value: str) -> None:
         raise ValidationError(msg)
 
 
+class LicenseType(models.TextChoices):
+    """License types for projects.
+
+    Uses SPDX identifiers where applicable for standard open source licenses.
+    """
+
+    PROPRIETARY = "proprietary", "Proprietary (All Rights Reserved)"
+    APACHE_2_0 = "Apache-2.0", "Apache License 2.0"
+    MIT = "MIT", "MIT License"
+    BSD_3_CLAUSE = "BSD-3-Clause", "BSD 3-Clause License"
+    ISC = "ISC", "ISC License"
+    CERN_OHL_P = "CERN-OHL-P-2.0", "CERN Open Hardware License (Permissive)"
+    SOLDERPAD_2_0 = "SHL-2.0", "Solderpad Hardware License 2.0"
+    SOLDERPAD_2_1 = "SHL-2.1", "Solderpad Hardware License 2.1"
+    CC0 = "CC0-1.0", "CC0 1.0 (Public Domain)"
+    CC_BY = "CC-BY-4.0", "Creative Commons Attribution 4.0"
+    OTHER = "other", "Other Open Source License"
+
+
 class Project(models.Model):
     """User-submitted design projects for manufacturing."""
 
