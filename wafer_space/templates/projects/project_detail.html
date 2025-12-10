@@ -23,6 +23,13 @@
                role="button">
               <i class="bi bi-trash"></i> Delete
             </a>
+            {% if request.user.is_staff %}
+              <a class="btn btn-secondary"
+                 href="{% url 'admin:projects_project_change' project.pk %}"
+                 role="button">
+                <i class="bi bi-gear"></i> Admin
+              </a>
+            {% endif %}
           </div>
         </div>
         {% if project.description %}
