@@ -63,7 +63,7 @@
     {# Show current check using the shared partial, wrapped in card #}
     <div class="card bg-light mb-3">
       <div class="card-body">
-        {% include "projects/_manufacturability_check.html" with check=check show_title=True show_cancel=True show_trigger=True %}
+        {% include "projects/_manufacturability_check.html" with check=check show_trigger=True %}
       </div>
     </div>
     {# Check History - show previous checks (not current) if more than one exists #}
@@ -114,8 +114,8 @@
                       </span>
                     </div>
                   </summary>
-                  <div class="card-body pt-0">
-                    {% include "projects/_manufacturability_check.html" with check=hist_check show_title=False show_cancel=True show_trigger=False %}
+                  <div class="card-body py-2">
+                    {% include "projects/_manufacturability_check.html" with check=hist_check show_title=False %}
                   </div>
                 </details>
               </div>
