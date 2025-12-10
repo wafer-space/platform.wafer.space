@@ -1,5 +1,7 @@
 """Forms for project management."""
 
+from __future__ import annotations
+
 from django import forms
 from django.core.exceptions import ValidationError
 from django.utils import timezone
@@ -11,6 +13,8 @@ from .models import PROJECT_ID_LENGTH
 from .models import LicenseType
 from .models import Project
 from .models import ProjectComplianceCertification
+from .security import SecurityValidationError
+from .security import URLValidator
 from .services.license_service import LicenseValidationError
 from .services.license_service import fetch_url_content
 from .services.license_service import validate_spdx_id
@@ -58,7 +62,109 @@ PROPRIETARY_TERMS_URL_WIDGET = forms.URLInput(
 PROPRIETARY_TERMS_URL_HELP_TEXT = "URL to your proprietary license terms"
 
 
-class ProjectForm(forms.ModelForm):
+class LicenseValidationMixin:
+    """Mixin for forms that validate license fields.
+
+    Provides shared validation logic for license type, SPDX ID validation,
+    URL security validation, and proprietary terms caching.
+
+    This mixin is designed to be used with forms.ModelForm subclasses.
+    """
+
+    _proprietary_terms_content: str | None = None
+
+    def _add_field_error(self, field: str, message: str) -> None:
+        """Add an error to a form field.
+
+        Wrapper around add_error for type-safe access in mixin.
+        """
+        if hasattr(self, "add_error"):
+            self.add_error(field, message)
+
+    def _validate_license_fields(self, cleaned_data: dict) -> dict:
+        """Validate license fields and fetch proprietary terms.
+
+        Args:
+            cleaned_data: The form's cleaned_data dict to validate
+
+        Returns:
+            dict: The validated cleaned_data with fields cleared as needed
+        """
+        license_type = cleaned_data.get("license_type")
+        other_spdx_id = cleaned_data.get("other_license_spdx_id", "").strip()
+        terms_url = cleaned_data.get("proprietary_terms_url", "").strip()
+
+        # Validate "other" license type requires valid SPDX ID
+        if license_type == LicenseType.OTHER:
+            if not other_spdx_id:
+                self._add_field_error(
+                    "other_license_spdx_id",
+                    "SPDX identifier is required for 'Other' license type",
+                )
+            else:
+                try:
+                    validate_spdx_id(other_spdx_id)
+                except LicenseValidationError as e:
+                    self._add_field_error("other_license_spdx_id", str(e))
+        else:
+            # Clear other_license_spdx_id if not "other" type
+            cleaned_data["other_license_spdx_id"] = ""
+
+        # Clear proprietary_terms_url if not proprietary
+        if license_type != LicenseType.PROPRIETARY:
+            cleaned_data["proprietary_terms_url"] = ""
+        elif terms_url:
+            # Validate URL security (scheme and hostname)
+            try:
+                URLValidator.validate_url_scheme(terms_url)
+                URLValidator.validate_hostname(terms_url)
+            except SecurityValidationError as e:
+                self._add_field_error("proprietary_terms_url", str(e))
+                return cleaned_data
+
+            # Fetch and cache proprietary terms
+            try:
+                # Store for use in save()
+                self._proprietary_terms_content = fetch_url_content(terms_url)
+            except LicenseValidationError as e:
+                self._add_field_error("proprietary_terms_url", str(e))
+
+        return cleaned_data
+
+    def _save_license_fields(self, instance: Project) -> None:
+        """Update cached proprietary terms on the instance.
+
+        Handles cache invalidation when URL changes or license type changes.
+
+        Args:
+            instance: The Project instance to update
+        """
+        # Check if proprietary_terms_url has changed (for existing instances)
+        url_changed = False
+        if instance.pk:
+            try:
+                old_instance = Project.objects.get(pk=instance.pk)
+                url_changed = (
+                    old_instance.proprietary_terms_url != instance.proprietary_terms_url
+                )
+            except Project.DoesNotExist:
+                pass
+
+        # Update cached terms if we fetched them during validation
+        if self._proprietary_terms_content:
+            instance.proprietary_terms_cached = self._proprietary_terms_content
+            instance.proprietary_terms_cached_at = timezone.now()
+        elif instance.license_type != LicenseType.PROPRIETARY:
+            # Clear cache if no longer proprietary
+            instance.proprietary_terms_cached = ""
+            instance.proprietary_terms_cached_at = None
+        elif not instance.proprietary_terms_url or url_changed:
+            # Clear cache if URL removed or changed (and fetch failed/not attempted)
+            instance.proprietary_terms_cached = ""
+            instance.proprietary_terms_cached_at = None
+
+
+class ProjectForm(LicenseValidationMixin, forms.ModelForm):
     """Form for creating and editing projects."""
 
     shuttle = forms.ModelChoiceField(
@@ -222,65 +328,18 @@ class ProjectForm(forms.ModelForm):
         cleaned_data = super().clean()
         if cleaned_data is None:
             return cleaned_data
-
-        license_type = cleaned_data.get("license_type")
-        other_spdx_id = cleaned_data.get("other_license_spdx_id", "").strip()
-        terms_url = cleaned_data.get("proprietary_terms_url", "").strip()
-
-        # Validate "other" license type requires valid SPDX ID
-        if license_type == LicenseType.OTHER:
-            if not other_spdx_id:
-                self.add_error(
-                    "other_license_spdx_id",
-                    "SPDX identifier is required for 'Other' license type",
-                )
-            else:
-                try:
-                    validate_spdx_id(other_spdx_id)
-                except LicenseValidationError as e:
-                    self.add_error("other_license_spdx_id", str(e))
-        else:
-            # Clear other_license_spdx_id if not "other" type
-            cleaned_data["other_license_spdx_id"] = ""
-
-        # Clear proprietary_terms_url if not proprietary
-        if license_type != LicenseType.PROPRIETARY:
-            cleaned_data["proprietary_terms_url"] = ""
-        elif terms_url:
-            # Validate and cache proprietary terms URL
-            try:
-                # Store for use in save()
-                self._proprietary_terms_content = fetch_url_content(terms_url)
-            except LicenseValidationError as e:
-                self.add_error("proprietary_terms_url", str(e))
-
-        return cleaned_data
+        return self._validate_license_fields(cleaned_data)
 
     def save(self, commit=True):  # noqa: FBT002
         """Save form and update cached proprietary terms."""
         instance = super().save(commit=False)
-
-        # Update cached terms if we fetched them during validation
-        if (
-            hasattr(self, "_proprietary_terms_content")
-            and self._proprietary_terms_content
-        ):
-            instance.proprietary_terms_cached = self._proprietary_terms_content
-            instance.proprietary_terms_cached_at = timezone.now()
-        elif (
-            instance.license_type != LicenseType.PROPRIETARY
-            or not instance.proprietary_terms_url
-        ):
-            # Clear cache if no longer proprietary or no URL
-            instance.proprietary_terms_cached = ""
-            instance.proprietary_terms_cached_at = None
-
+        self._save_license_fields(instance)
         if commit:
             instance.save()
         return instance
 
 
-class ProjectUserEditForm(forms.ModelForm):
+class ProjectUserEditForm(LicenseValidationMixin, forms.ModelForm):
     """Limited form for regular users to edit their projects.
 
     Regular users can edit visibility, repository URL, and license settings.
@@ -324,59 +383,12 @@ class ProjectUserEditForm(forms.ModelForm):
         cleaned_data = super().clean()
         if cleaned_data is None:
             return cleaned_data
-
-        license_type = cleaned_data.get("license_type")
-        other_spdx_id = cleaned_data.get("other_license_spdx_id", "").strip()
-        terms_url = cleaned_data.get("proprietary_terms_url", "").strip()
-
-        # Validate "other" license type requires valid SPDX ID
-        if license_type == LicenseType.OTHER:
-            if not other_spdx_id:
-                self.add_error(
-                    "other_license_spdx_id",
-                    "SPDX identifier is required for 'Other' license type",
-                )
-            else:
-                try:
-                    validate_spdx_id(other_spdx_id)
-                except LicenseValidationError as e:
-                    self.add_error("other_license_spdx_id", str(e))
-        else:
-            # Clear other_license_spdx_id if not "other" type
-            cleaned_data["other_license_spdx_id"] = ""
-
-        # Clear proprietary_terms_url if not proprietary
-        if license_type != LicenseType.PROPRIETARY:
-            cleaned_data["proprietary_terms_url"] = ""
-        elif terms_url:
-            # Validate and cache proprietary terms URL
-            try:
-                # Store for use in save()
-                self._proprietary_terms_content = fetch_url_content(terms_url)
-            except LicenseValidationError as e:
-                self.add_error("proprietary_terms_url", str(e))
-
-        return cleaned_data
+        return self._validate_license_fields(cleaned_data)
 
     def save(self, commit=True):  # noqa: FBT002
         """Save form and update cached proprietary terms."""
         instance = super().save(commit=False)
-
-        # Update cached terms if we fetched them during validation
-        if (
-            hasattr(self, "_proprietary_terms_content")
-            and self._proprietary_terms_content
-        ):
-            instance.proprietary_terms_cached = self._proprietary_terms_content
-            instance.proprietary_terms_cached_at = timezone.now()
-        elif (
-            instance.license_type != LicenseType.PROPRIETARY
-            or not instance.proprietary_terms_url
-        ):
-            # Clear cache if no longer proprietary or no URL
-            instance.proprietary_terms_cached = ""
-            instance.proprietary_terms_cached_at = None
-
+        self._save_license_fields(instance)
         if commit:
             instance.save()
         return instance

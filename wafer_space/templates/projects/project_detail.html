@@ -68,14 +68,14 @@
                 {% endif %}
               {% elif project.license_type == "other" %}
                 <span class="badge bg-info">{{ project.other_license_spdx_id }}</span>
-                <a href="https://spdx.org/licenses/{{ project.other_license_spdx_id }}.html"
+                <a href="https://spdx.org/licenses/{{ project.other_license_spdx_id|urlencode }}.html"
                    target="_blank"
                    rel="noopener">
                   <i class="bi bi-box-arrow-up-right"></i> View License
                 </a>
               {% else %}
                 <span class="badge bg-success">{{ project.get_license_type_display }}</span>
-                <a href="https://spdx.org/licenses/{{ project.license_type }}.html"
+                <a href="https://spdx.org/licenses/{{ project.license_type|urlencode }}.html"
                    target="_blank"
                    rel="noopener">
                   <i class="bi bi-box-arrow-up-right"></i> View License

@@ -4,10 +4,13 @@ from unittest.mock import patch
 
 import pytest
 from django.test import TestCase
+from django.utils import timezone
 
 from wafer_space.projects.forms import ProjectFileURLSubmitForm
 from wafer_space.projects.forms import ProjectForm
+from wafer_space.projects.forms import ProjectUserEditForm
 from wafer_space.projects.models import Project
+from wafer_space.projects.security import SecurityValidationError
 from wafer_space.projects.services.license_service import LicenseValidationError
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.users.models import User
@@ -709,3 +712,247 @@ class TestProjectFormLicenseValidation:
         form = ProjectForm(data=base_form_data)
         assert form.is_valid(), form.errors
         assert form.cleaned_data["repository_url"] == "https://github.com/user/repo"
+
+    @patch("wafer_space.projects.forms.URLValidator.validate_hostname")
+    @patch("wafer_space.projects.forms.URLValidator.validate_url_scheme")
+    @patch("wafer_space.projects.forms.fetch_url_content")
+    def test_proprietary_url_validates_scheme_and_hostname(
+        self, mock_fetch, mock_scheme, mock_hostname, base_form_data
+    ):
+        """Proprietary terms URL validates scheme and hostname."""
+        mock_fetch.return_value = "Terms content"
+        base_form_data["license_type"] = "proprietary"
+        base_form_data["proprietary_terms_url"] = "https://example.com/terms.txt"
+
+        form = ProjectForm(data=base_form_data)
+        assert form.is_valid(), form.errors
+
+        mock_scheme.assert_called_once_with("https://example.com/terms.txt")
+        mock_hostname.assert_called_once_with("https://example.com/terms.txt")
+
+    @patch("wafer_space.projects.forms.URLValidator.validate_url_scheme")
+    def test_proprietary_url_rejects_invalid_scheme(self, mock_scheme, base_form_data):
+        """Proprietary terms URL rejects invalid schemes."""
+        mock_scheme.side_effect = SecurityValidationError("Invalid scheme")
+        base_form_data["license_type"] = "proprietary"
+        base_form_data["proprietary_terms_url"] = "ftp://example.com/terms.txt"
+
+        form = ProjectForm(data=base_form_data)
+        assert not form.is_valid()
+        assert "proprietary_terms_url" in form.errors
+
+    @patch("wafer_space.projects.forms.URLValidator.validate_hostname")
+    @patch("wafer_space.projects.forms.URLValidator.validate_url_scheme")
+    def test_proprietary_url_rejects_private_ip(
+        self, mock_scheme, mock_hostname, base_form_data
+    ):
+        """Proprietary terms URL rejects private IP addresses."""
+        mock_hostname.side_effect = SecurityValidationError(
+            "Cannot download from private IP"
+        )
+        base_form_data["license_type"] = "proprietary"
+        base_form_data["proprietary_terms_url"] = "https://192.168.1.1/terms.txt"
+
+        form = ProjectForm(data=base_form_data)
+        assert not form.is_valid()
+        assert "proprietary_terms_url" in form.errors
+
+
+@pytest.mark.django_db
+class TestProjectUserEditFormLicenseValidation:
+    """Tests for license field validation in ProjectUserEditForm.
+
+    Ensures regular users get the same license validation as staff users.
+    """
+
+    @pytest.fixture
+    def project_with_owner(self, db, user):
+        """Create a project with a user owner for testing."""
+        shuttle = Shuttle.objects.create(
+            name="G898",
+            description="Test Shuttle for User Edit Form",
+            status=Shuttle.Status.OPEN,
+        )
+        return Project.objects.create(
+            user=user,
+            name="Test Project",
+            description="A test project",
+            shuttle=shuttle,
+            project_id="EDIT",
+            slot_size="1x1",
+            is_public=False,
+        )
+
+    @pytest.fixture
+    def base_user_form_data(self):
+        """Base valid form data for user edit form."""
+        return {
+            "is_public": False,
+            "repository_url": "",
+            "license_type": "proprietary",
+            "other_license_spdx_id": "",
+            "proprietary_terms_url": "",
+        }
+
+    def test_other_license_requires_spdx_id(
+        self, project_with_owner, base_user_form_data
+    ):
+        """'Other' license type requires SPDX ID in user edit form."""
+        base_user_form_data["license_type"] = "other"
+        base_user_form_data["other_license_spdx_id"] = ""
+
+        form = ProjectUserEditForm(
+            data=base_user_form_data, instance=project_with_owner
+        )
+        assert not form.is_valid()
+        assert "other_license_spdx_id" in form.errors
+
+    @patch("wafer_space.projects.forms.validate_spdx_id")
+    def test_other_license_validates_spdx_id(
+        self, mock_validate, project_with_owner, base_user_form_data
+    ):
+        """'Other' license validates SPDX ID in user edit form."""
+        mock_validate.side_effect = LicenseValidationError("Invalid SPDX identifier")
+        base_user_form_data["license_type"] = "other"
+        base_user_form_data["other_license_spdx_id"] = "INVALID-ID"
+
+        form = ProjectUserEditForm(
+            data=base_user_form_data, instance=project_with_owner
+        )
+        assert not form.is_valid()
+        assert "Invalid SPDX identifier" in str(form.errors["other_license_spdx_id"])
+
+    @patch("wafer_space.projects.forms.validate_spdx_id")
+    def test_valid_other_license_passes(
+        self, mock_validate, project_with_owner, base_user_form_data
+    ):
+        """Valid 'Other' license with SPDX ID passes in user edit form."""
+        mock_validate.return_value = True
+        base_user_form_data["license_type"] = "other"
+        base_user_form_data["other_license_spdx_id"] = "GPL-3.0-only"
+
+        form = ProjectUserEditForm(
+            data=base_user_form_data, instance=project_with_owner
+        )
+        assert form.is_valid(), form.errors
+
+    @patch("wafer_space.projects.forms.URLValidator.validate_hostname")
+    @patch("wafer_space.projects.forms.URLValidator.validate_url_scheme")
+    @patch("wafer_space.projects.forms.fetch_url_content")
+    def test_proprietary_terms_url_fetched_and_cached(
+        self,
+        mock_fetch,
+        mock_scheme,
+        mock_hostname,
+        project_with_owner,
+        base_user_form_data,
+    ):
+        """Proprietary terms URL is fetched and content cached in user edit form."""
+        mock_fetch.return_value = "License terms content..."
+        base_user_form_data["license_type"] = "proprietary"
+        base_user_form_data["proprietary_terms_url"] = "https://example.com/terms.txt"
+
+        form = ProjectUserEditForm(
+            data=base_user_form_data, instance=project_with_owner
+        )
+        assert form.is_valid(), form.errors
+
+        # Save and check cache
+        project = form.save()
+        assert project.proprietary_terms_cached == "License terms content..."
+        assert project.proprietary_terms_cached_at is not None
+
+    @patch("wafer_space.projects.forms.URLValidator.validate_hostname")
+    @patch("wafer_space.projects.forms.URLValidator.validate_url_scheme")
+    @patch("wafer_space.projects.forms.fetch_url_content")
+    def test_proprietary_terms_url_fetch_failure_shows_error(
+        self,
+        mock_fetch,
+        mock_scheme,
+        mock_hostname,
+        project_with_owner,
+        base_user_form_data,
+    ):
+        """Failed fetch of proprietary terms shows error in user edit form."""
+        mock_fetch.side_effect = LicenseValidationError("Could not fetch")
+        base_user_form_data["license_type"] = "proprietary"
+        base_user_form_data["proprietary_terms_url"] = "https://example.com/bad.txt"
+
+        form = ProjectUserEditForm(
+            data=base_user_form_data, instance=project_with_owner
+        )
+        assert not form.is_valid()
+        assert "proprietary_terms_url" in form.errors
+
+    @patch("wafer_space.projects.forms.URLValidator.validate_url_scheme")
+    def test_proprietary_url_rejects_invalid_scheme(
+        self, mock_scheme, project_with_owner, base_user_form_data
+    ):
+        """Proprietary terms URL rejects invalid schemes in user edit form."""
+        mock_scheme.side_effect = SecurityValidationError("Invalid scheme")
+        base_user_form_data["license_type"] = "proprietary"
+        base_user_form_data["proprietary_terms_url"] = "ftp://example.com/terms.txt"
+
+        form = ProjectUserEditForm(
+            data=base_user_form_data, instance=project_with_owner
+        )
+        assert not form.is_valid()
+        assert "proprietary_terms_url" in form.errors
+
+    def test_non_other_license_clears_spdx_id(
+        self, project_with_owner, base_user_form_data
+    ):
+        """Non-'other' license types clear the SPDX ID field in user edit form."""
+        base_user_form_data["license_type"] = "MIT"
+        base_user_form_data["other_license_spdx_id"] = "should-be-cleared"
+
+        form = ProjectUserEditForm(
+            data=base_user_form_data, instance=project_with_owner
+        )
+        assert form.is_valid(), form.errors
+        assert form.cleaned_data["other_license_spdx_id"] == ""
+
+    def test_non_proprietary_license_clears_terms_url(
+        self, project_with_owner, base_user_form_data
+    ):
+        """Non-proprietary license types clear the terms URL field in user edit form."""
+        base_user_form_data["license_type"] = "MIT"
+        base_user_form_data["proprietary_terms_url"] = "https://example.com/terms.txt"
+
+        form = ProjectUserEditForm(
+            data=base_user_form_data, instance=project_with_owner
+        )
+        assert form.is_valid(), form.errors
+        assert form.cleaned_data["proprietary_terms_url"] == ""
+
+    @patch("wafer_space.projects.forms.URLValidator.validate_hostname")
+    @patch("wafer_space.projects.forms.URLValidator.validate_url_scheme")
+    @patch("wafer_space.projects.forms.fetch_url_content")
+    def test_url_change_clears_cache_when_fetch_fails(
+        self,
+        mock_fetch,
+        mock_scheme,
+        mock_hostname,
+        project_with_owner,
+        base_user_form_data,
+    ):
+        """Changing URL clears cache when new fetch fails."""
+        # Set up existing cached terms
+        project_with_owner.proprietary_terms_url = "https://old.example.com/terms.txt"
+        project_with_owner.proprietary_terms_cached = "Old cached content"
+        project_with_owner.proprietary_terms_cached_at = timezone.now()
+        project_with_owner.save()
+
+        # Try to update to new URL that fails
+        mock_fetch.side_effect = LicenseValidationError("Could not fetch")
+        base_user_form_data["license_type"] = "proprietary"
+        base_user_form_data["proprietary_terms_url"] = (
+            "https://new.example.com/terms.txt"
+        )
+
+        form = ProjectUserEditForm(
+            data=base_user_form_data, instance=project_with_owner
+        )
+        # Form should be invalid because fetch failed
+        assert not form.is_valid()
+        assert "proprietary_terms_url" in form.errors
