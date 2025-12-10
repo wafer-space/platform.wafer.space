@@ -425,9 +425,16 @@ class Command(BaseCommand):
             old_file_1 = ProjectFile.objects.create(
                 project=project,
                 original_url=f"https://example.com/files/{project.project_id}_v1.gds",
+                source_url=f"https://example.com/files/{project.project_id}_v1.gds",
+                original_filename=f"{project.project_id}_v1.gds",
+                processed_filename=f"{project.project_id}_v1.gds",
                 is_active=False,
                 hash_verified=True,
                 file_size=980000,
+                hash_sha256="a" * 64,
+                top_cell=f"{project.project_id}_top",
+                content_type="application/octet-stream",
+                download_completed_at=now - timedelta(days=14, hours=2),
             )
             self._create_download_attempts(old_file_1, "single_success")
             # v1 had a passing check but was superseded by v2
@@ -449,9 +456,16 @@ class Command(BaseCommand):
             old_file_2 = ProjectFile.objects.create(
                 project=project,
                 original_url=f"https://example.com/files/{project.project_id}_v2.gds",
+                source_url=f"https://example.com/files/{project.project_id}_v2.gds",
+                original_filename=f"{project.project_id}_v2.gds",
+                processed_filename=f"{project.project_id}_v2.gds",
                 is_active=False,
                 hash_verified=True,
                 file_size=1050000,
+                hash_sha256="b" * 64,
+                top_cell=f"{project.project_id}_top",
+                content_type="application/octet-stream",
+                download_completed_at=now - timedelta(days=10, hours=2),
             )
             self._create_download_attempts(old_file_2, "retry_success")
             # v2 failed manufacturability - that's why v3 was submitted
@@ -472,13 +486,25 @@ class Command(BaseCommand):
         # Create the active project file
         # hash_verified=False if still downloading
         is_downloading = scenario == "in_progress"
-        project_file = ProjectFile.objects.create(
-            project=project,
-            original_url=f"https://example.com/files/{project.project_id}.gds",
-            is_active=True,
-            hash_verified=not is_downloading,
-            file_size=5000000 if is_downloading else 1024000,
-        )
+        file_kwargs: dict[str, Any] = {
+            "project": project,
+            "original_url": f"https://example.com/files/{project.project_id}.gds",
+            "source_url": f"https://example.com/files/{project.project_id}.gds",
+            "original_filename": f"{project.project_id}.gds",
+            "is_active": True,
+            "content_type": "application/octet-stream",
+        }
+        if is_downloading:
+            file_kwargs["file_size"] = 5000000
+            file_kwargs["hash_verified"] = False
+        else:
+            file_kwargs["processed_filename"] = f"{project.project_id}.gds"
+            file_kwargs["file_size"] = 1024000
+            file_kwargs["hash_verified"] = True
+            file_kwargs["hash_sha256"] = "c" * 64
+            file_kwargs["top_cell"] = f"{project.project_id}_top"
+            file_kwargs["download_completed_at"] = now - timedelta(hours=3)
+        project_file = ProjectFile.objects.create(**file_kwargs)
         self._create_download_attempts(project_file, download_scenario)
 
         project.submitted_file = project_file
