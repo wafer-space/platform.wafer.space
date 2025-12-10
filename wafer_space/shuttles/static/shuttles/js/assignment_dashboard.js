@@ -657,7 +657,7 @@
       });
     });
 
-    // Highlight slots on summary table row hover
+    // Highlight slots on summary table row hover and filter on click
     document.querySelectorAll('#summary-table-body tr').forEach(function(row) {
       row.addEventListener('mouseenter', function() {
         var size = this.dataset.size;
@@ -667,6 +667,16 @@
       });
       row.addEventListener('mouseleave', function() {
         clearSlotHighlights();
+      });
+      // Click to filter projects table by size (toggle behavior)
+      row.addEventListener('click', function() {
+        var size = this.dataset.size;
+        var sizeFilter = document.getElementById('size-filter');
+        if (size && sizeFilter) {
+          // Toggle: if already selected, clear filter; otherwise set it
+          sizeFilter.value = (sizeFilter.value === size) ? '' : size;
+          filterTable();
+        }
       });
     });
 
