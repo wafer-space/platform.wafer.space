@@ -419,7 +419,7 @@ class Command(BaseCommand):
 
         # Create old/inactive files for some scenarios (file revision history)
         if create_old_files:
-            # Old file v1 - superseded
+            # Old file v1 - superseded, had a passing check
             old_file_1 = ProjectFile.objects.create(
                 project=project,
                 original_url=f"https://example.com/files/{project.project_id}_v1.gds",
@@ -428,8 +428,22 @@ class Command(BaseCommand):
                 file_size=980000,
             )
             self._create_download_attempts(old_file_1, "single_success")
+            # v1 had a passing check but was superseded by v2
+            v1_check = ManufacturabilityCheck.objects.create(
+                project=project,
+                project_file=old_file_1,
+                status=ManufacturabilityCheck.Status.FINISHED,
+                trigger_reason=ManufacturabilityCheck.TriggerReason.INITIAL,
+                is_manufacturable=True,
+                errors=[],
+                warnings=[],
+                analysis_completed_at=now - timedelta(days=14),
+            )
+            ManufacturabilityCheck.objects.filter(pk=v1_check.pk).update(
+                created_at=now - timedelta(days=14, hours=1)
+            )
 
-            # Old file v2 - had download issues
+            # Old file v2 - had download issues, then failed DRC check
             old_file_2 = ProjectFile.objects.create(
                 project=project,
                 original_url=f"https://example.com/files/{project.project_id}_v2.gds",
@@ -438,6 +452,20 @@ class Command(BaseCommand):
                 file_size=1050000,
             )
             self._create_download_attempts(old_file_2, "retry_success")
+            # v2 failed manufacturability - that's why v3 was submitted
+            v2_check = ManufacturabilityCheck.objects.create(
+                project=project,
+                project_file=old_file_2,
+                status=ManufacturabilityCheck.Status.FINISHED,
+                trigger_reason=ManufacturabilityCheck.TriggerReason.INITIAL,
+                is_manufacturable=False,
+                errors=["DRC violation: Metal density too low in region (500, 500)"],
+                warnings=["Consider adding dummy fill"],
+                analysis_completed_at=now - timedelta(days=10),
+            )
+            ManufacturabilityCheck.objects.filter(pk=v2_check.pk).update(
+                created_at=now - timedelta(days=10, hours=1)
+            )
 
         # Create the active project file
         # hash_verified=False if still downloading
