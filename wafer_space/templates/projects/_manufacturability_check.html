@@ -1,3 +1,4 @@
+{% load duration_filters %}
 {# Reusable manufacturability check display partial #}
 {# Parameters: #}
 {#   - check: ManufacturabilityCheck instance to display #}
@@ -341,7 +342,7 @@
           </td>
           <td>
             {% if check.dispatching_started_at %}
-              <span title="{{ check.dispatching_started_at|date:'Y-m-d H:i:s' }}">+{{ check.dispatching_started_at|timesince:check.created_at }}</span>
+              <span title="{{ check.dispatching_started_at|date:'Y-m-d H:i:s' }}">+{{ check.dispatching_started_at|duration_between:check.created_at }}</span>
             {% else %}
               <span class="text-muted">-</span>
             {% endif %}
@@ -353,7 +354,7 @@
           </td>
           <td>
             {% if check.starting_started_at %}
-              <span title="{{ check.starting_started_at|date:'Y-m-d H:i:s' }}">+{{ check.starting_started_at|timesince:check.created_at }}</span>
+              <span title="{{ check.starting_started_at|date:'Y-m-d H:i:s' }}">+{{ check.starting_started_at|duration_between:check.created_at }}</span>
             {% else %}
               <span class="text-muted">-</span>
             {% endif %}
@@ -365,7 +366,7 @@
           </td>
           <td>
             {% if check.container_started_at %}
-              <span title="{{ check.container_started_at|date:'Y-m-d H:i:s' }}">+{{ check.container_started_at|timesince:check.created_at }}</span>
+              <span title="{{ check.container_started_at|date:'Y-m-d H:i:s' }}">+{{ check.container_started_at|duration_between:check.created_at }}</span>
             {% else %}
               <span class="text-muted">-</span>
             {% endif %}
@@ -377,7 +378,7 @@
           </td>
           <td>
             {% if check.container_finished_at %}
-              <span title="{{ check.container_finished_at|date:'Y-m-d H:i:s' }}">+{{ check.container_finished_at|timesince:check.created_at }}</span>
+              <span title="{{ check.container_finished_at|date:'Y-m-d H:i:s' }}">+{{ check.container_finished_at|duration_between:check.created_at }}</span>
             {% else %}
               <span class="text-muted">-</span>
             {% endif %}
@@ -389,7 +390,7 @@
           </td>
           <td>
             {% if check.analysis_completed_at %}
-              <span title="{{ check.analysis_completed_at|date:'Y-m-d H:i:s' }}">+{{ check.analysis_completed_at|timesince:check.created_at }}</span>
+              <span title="{{ check.analysis_completed_at|date:'Y-m-d H:i:s' }}">+{{ check.analysis_completed_at|duration_between:check.created_at }}</span>
             {% else %}
               <span class="text-muted">-</span>
             {% endif %}
@@ -401,7 +402,7 @@
           </td>
           <td>
             {% if check.analysis_completed_at and check.created_at %}
-              <strong>{{ check.analysis_completed_at|timesince:check.created_at }}</strong>
+              <strong>{{ check.analysis_completed_at|duration_between:check.created_at }}</strong>
             {% else %}
               <span class="text-muted">-</span>
             {% endif %}
