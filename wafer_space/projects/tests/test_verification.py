@@ -9,11 +9,9 @@ from django.db import connection
 from django.test import TestCase
 
 from wafer_space.projects.models import DownloadAttempt
-from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.verification import _is_task_in_broker_queue
-from wafer_space.projects.verification import is_check_task_queued
 from wafer_space.projects.verification import is_download_task_actively_running
 from wafer_space.projects.verification import is_download_task_queued
 
@@ -350,136 +348,4 @@ class DownloadTaskActivelyRunningTests(TestCase):
 
         result = is_download_task_actively_running(project_file)
 
-        assert result is False
-
-
-@pytest.mark.django_db
-class CheckTaskQueuedVerificationTests(TestCase):
-    """Tests for is_check_task_queued() function."""
-
-    def setUp(self):
-        """Set up test fixtures."""
-        self.user = User.objects.create_user(
-            username="testuser", email="test@example.com", password=TEST_PASSWORD
-        )
-        self.project = Project.objects.create(
-            user=self.user, name="Test Project", description="Test Description"
-        )
-        self.project_file = ProjectFile.objects.create(
-            project=self.project,
-            source_url="http://example.com/test.gds",
-            original_filename="test.gds",
-            is_active=True,
-        )
-
-    @patch("wafer_space.projects.verification._is_task_in_broker_queue")
-    @patch("wafer_space.projects.verification.current_app")
-    @pytest.mark.skip(reason="Obsolete - function always returns False")
-    def test_check_task_in_reserved_queue(self, mock_app, mock_broker_check):
-        """Test that check task found in reserved queue returns True."""
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHING,
-        )
-
-        # Mock broker queue check to return False (not in broker)
-        mock_broker_check.return_value = False
-
-        # Mock Celery inspect to return task in reserved
-        mock_inspect = Mock()
-        mock_inspect.reserved.return_value = {
-            "worker1": [
-                {"id": "check-task-123", "name": "do_starting"},
-            ],
-        }
-        mock_inspect.active.return_value = {}
-        mock_app.control.inspect.return_value = mock_inspect
-
-        result = is_check_task_queued(check)
-
-        assert result is True
-
-    @patch("wafer_space.projects.verification._is_task_in_broker_queue")
-    @patch("wafer_space.projects.verification.current_app")
-    @pytest.mark.skip(reason="Obsolete - function always returns False")
-    def test_check_task_in_active_returns_true(self, mock_app, mock_broker_check):
-        """Test that check task in active list returns True."""
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHING,
-        )
-
-        # Mock broker queue check to return False (not in broker)
-        mock_broker_check.return_value = False
-
-        # Mock Celery inspect to return task in active
-        mock_inspect = Mock()
-        mock_inspect.reserved.return_value = {}
-        mock_inspect.active.return_value = {
-            "worker1": [
-                {"id": "check-task-456", "name": "do_running"},
-            ],
-        }
-        mock_app.control.inspect.return_value = mock_inspect
-
-        result = is_check_task_queued(check)
-
-        assert result is True
-
-    @patch("wafer_space.projects.verification._is_task_in_broker_queue")
-    @patch("wafer_space.projects.verification.current_app")
-    def test_check_task_not_found_returns_false(self, mock_app, mock_broker_check):
-        """Test that missing check task returns False."""
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHING,
-        )
-
-        # Mock broker queue check to return False (not in broker)
-        mock_broker_check.return_value = False
-
-        # Mock Celery inspect to return empty
-        mock_inspect = Mock()
-        mock_inspect.reserved.return_value = {}
-        mock_inspect.active.return_value = {}
-        mock_app.control.inspect.return_value = mock_inspect
-
-        result = is_check_task_queued(check)
-
-        assert result is False
-
-    @patch("wafer_space.projects.verification.current_app")
-    @patch("wafer_space.projects.verification._is_task_in_broker_queue")
-    @pytest.mark.skip(reason="Obsolete - function always returns False")
-    def test_check_task_in_broker_queue_returns_true(self, mock_broker_check, mock_app):
-        """Test that check task found in broker queue returns True."""
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHING,
-        )
-
-        # Mock broker queue check to return True (found in broker)
-        mock_broker_check.return_value = True
-
-        result = is_check_task_queued(check)
-
-        assert result is True
-        # Should not even call inspect when broker check returns True
-        mock_app.control.inspect.assert_not_called()
-
-    def test_check_task_without_task_id_returns_false(self):
-        """Test that check returns False (function is obsolete)."""
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PENDING,
-        )
-
-        result = is_check_task_queued(check)
-
-        # Function is now obsolete and always returns False
         assert result is False

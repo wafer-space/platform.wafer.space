@@ -15,7 +15,6 @@ from django.utils import timezone
 from django_celery_results.models import TaskResult
 
 if TYPE_CHECKING:
-    from wafer_space.projects.models import ManufacturabilityCheck
     from wafer_space.projects.models import ProjectFile
 
 logger = logging.getLogger(__name__)
@@ -285,22 +284,3 @@ def is_download_task_actively_running(project_file: ProjectFile) -> bool:
         )
 
     return True
-
-
-def is_check_task_queued(check: ManufacturabilityCheck) -> bool:
-    """Verify manufacturability check task is in Celery queue or broker queue.
-
-    This function checks three places for the task:
-    1. Broker queue (kombu_message table) - tasks waiting to be picked up
-    2. Reserved queue - tasks fetched by worker but not started
-    3. Active queue - tasks currently executing
-
-    Args:
-        check: ManufacturabilityCheck to verify
-
-    Returns:
-        True if task is found in any queue, False if missing
-    """
-    # NOTE: This function is now obsolete with polling architecture
-    # but kept for compatibility during transition. Always returns False.
-    return False
