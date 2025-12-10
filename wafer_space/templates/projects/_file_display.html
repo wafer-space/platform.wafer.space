@@ -378,19 +378,22 @@
         {% endif %}
       </div>
     </div>
-    {# Check History - show all checks if more than one exists #}
+    {# Check History - show previous checks (not current) if more than one exists #}
     {% with all_checks=file.manufacturability_checks.all %}
       {% if all_checks.count > 1 %}
         <div class="mt-3">
           <h6>
             <i class="bi bi-clock-history"></i>
-            Check History ({{ all_checks.count }} check{{ all_checks.count|pluralize }})
+            Previous Checks ({{ all_checks.count|add:"-1" }})
           </h6>
           <p class="mb-2 text-muted small">
-            Multiple manufacturability checks have been run on this file.
+            This file has been checked {{ all_checks.count }} time{{ all_checks.count|pluralize }}.
           </p>
           {% for hist_check in all_checks %}
-            {% include "projects/_manufacturability_check_history.html" with check=hist_check is_latest=forloop.first start_open=forloop.first %}
+            {# Skip the first (latest/current) check - it's shown above #}
+            {% if not forloop.first %}
+              {% include "projects/_manufacturability_check_history.html" with check=hist_check is_latest=False start_open=False %}
+            {% endif %}
           {% endfor %}
         </div>
       {% endif %}
