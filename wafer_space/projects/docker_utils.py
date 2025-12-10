@@ -113,7 +113,10 @@ def get_docker_client(server: dict) -> docker.DockerClient:
     Raises:
         docker.errors.DockerException: If connection fails.
     """
-    return docker.DockerClient(base_url=str(server["url"]))
+    return docker.DockerClient(
+        base_url=str(server["url"]),
+        timeout=settings.DOCKER_CLIENT_TIMEOUT,
+    )
 
 
 def stop_and_remove_container(
