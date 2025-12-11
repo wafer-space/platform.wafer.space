@@ -360,12 +360,42 @@ def checks_cleanup_orphaned_docker() -> dict:
     }
 
 
+def _get_server_active_count(server_id: str) -> int:
+    """Count active checks on a server."""
+    return ManufacturabilityCheck.objects.filter(
+        docker_server_id=server_id,
+        status__in=ManufacturabilityCheck.Status.active(),
+    ).count()
+
+
+def _server_has_initializing(server_id: str) -> bool:
+    """Check if server has any check in DISPATCHING or STARTING state."""
+    return ManufacturabilityCheck.objects.filter(
+        docker_server_id=server_id,
+        status__in=[
+            ManufacturabilityCheck.Status.DISPATCHING,
+            ManufacturabilityCheck.Status.STARTING,
+        ],
+    ).exists()
+
+
+def _get_next_pending_check() -> ManufacturabilityCheck | None:
+    """Get the oldest pending check."""
+    return (
+        ManufacturabilityCheck.objects.filter(
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        .order_by("created_at")
+        .first()
+    )
+
+
 @checks_task()
 def checks_pending() -> dict[str, int]:
     """Transition PENDING checks to DISPATCHING with server assignment.
 
     Server selection uses least-loaded balancing:
-    - Selects server with fewest active checks
+    - Iterates servers in order of active check count (ascending)
     - Uses priority as tiebreaker (lowest priority number wins)
     - Dispatches one check per available server per cycle
 
@@ -374,9 +404,6 @@ def checks_pending() -> dict[str, int]:
     - Must wait for check to reach RUNNING before dispatching the next
     - Still respects per-server max_concurrent for total active checks
 
-    This prevents multiple concurrent Docker operations (image pulls,
-    container creation) from overloading the Docker API.
-
     Returns:
         Dict with count of dispatched checks.
     """
@@ -384,98 +411,48 @@ def checks_pending() -> dict[str, int]:
 
     dispatched = 0
 
-    # Build list of available servers with their load info
-    available_servers: list[dict] = []
+    # Sort servers by active count (ascending), priority as tiebreaker
+    servers = sorted(
+        settings.DOCKER_SERVERS,
+        key=lambda s: (_get_server_active_count(str(s["id"])), s["priority"]),
+    )
 
-    for server in settings.DOCKER_SERVERS:
+    for server in servers:
         server_id = str(server["id"])
         max_concurrent = int(server["max_concurrent"])
-        priority = int(server["priority"])
 
-        # Serialize dispatch: skip if any check is DISPATCHING or STARTING
-        # This prevents concurrent Docker operations (image pull, container create)
-        initializing_count = ManufacturabilityCheck.objects.filter(
-            docker_server_id=server_id,
-            status__in=[
-                ManufacturabilityCheck.Status.DISPATCHING,
-                ManufacturabilityCheck.Status.STARTING,
-            ],
-        ).count()
-
-        if initializing_count > 0:
-            logger.debug(
-                "Server %s: %d check(s) initializing (DISPATCHING/STARTING), "
-                "skipping dispatch",
-                server_id,
-                initializing_count,
-            )
+        # Skip if server has a check initializing (serialized dispatch)
+        if _server_has_initializing(server_id):
+            logger.debug("Server %s: has initializing check, skipping", server_id)
             continue
 
-        # Count active checks on this server (DISPATCHING, STARTING, RUNNING, etc.)
-        active_count = ManufacturabilityCheck.objects.filter(
-            docker_server_id=server_id,
-            status__in=ManufacturabilityCheck.Status.active(),
-        ).count()
-
+        # Skip if server is at capacity
+        active_count = _get_server_active_count(server_id)
         if active_count >= max_concurrent:
             logger.debug(
-                "Server %s: at capacity (%d/%d active)",
+                "Server %s: at capacity (%d/%d)",
                 server_id,
                 active_count,
                 max_concurrent,
             )
             continue
 
-        available_servers.append(
-            {
-                "server_id": server_id,
-                "active_count": active_count,
-                "max_concurrent": max_concurrent,
-                "priority": priority,
-            }
-        )
-
-    if not available_servers:
-        logger.debug("No servers available for dispatch")
-        return {"dispatched": dispatched}
-
-    # Dispatch checks to available servers using least-loaded balancing
-    # Each iteration picks the least-loaded server, dispatches one check,
-    # then removes that server (serialized dispatch: one check initializing per server)
-    while available_servers:
-        # Sort by active_count (ascending), then priority (ascending) as tiebreaker
-        available_servers.sort(key=lambda s: (s["active_count"], s["priority"]))
-
-        # Get the least-loaded server
-        target = available_servers[0]
-        server_id = target["server_id"]
-
         # Get next pending check
-        pending_check = (
-            ManufacturabilityCheck.objects.filter(
-                status=ManufacturabilityCheck.Status.PENDING,
-            )
-            .order_by("created_at")
-            .first()
-        )
-
+        pending_check = _get_next_pending_check()
         if not pending_check:
-            logger.debug("No more pending checks")
+            logger.debug("No pending checks")
             break
 
-        logger.info(
-            "Server %s: %d/%d active (least loaded), dispatching check %s",
-            server_id,
-            target["active_count"],
-            target["max_concurrent"],
-            pending_check.id,
-        )
-
+        # Assign check to this server
         pending_check.mark_dispatching(server_id=server_id)
         dispatched += 1
-
-        # Remove this server from available list (serialized: only one initializing)
-        available_servers.pop(0)
+        logger.info(
+            "Server %s: assigned check %s (%d/%d active)",
+            server_id,
+            pending_check.id,
+            active_count + 1,
+            max_concurrent,
+        )
 
     return {"dispatched": dispatched}
 
