@@ -252,8 +252,8 @@
                       {% endif %}
                     </td>
                     <td>
-                      {% if check.container_finished_at %}
-                        <small>{{ check.container_finished_at|date:"Y-m-d H:i" }}</small>
+                      {% if check.analysis_completed_at %}
+                        <small>{{ check.analysis_completed_at|date:"Y-m-d H:i" }}</small>
                       {% else %}
                         <span class="text-muted">-</span>
                       {% endif %}
