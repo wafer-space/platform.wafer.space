@@ -1,5 +1,5 @@
 [Unit]
-Description=platform.wafer.space Celery Beat Scheduler
+Description=platform.wafer.space Celery Beat Scheduler (none:ro:beat)
 After=network.target postgresql.service
 Requires=postgresql.service
 
@@ -13,9 +13,9 @@ EnvironmentFile=/home/django/platform.wafer.space/.env
 
 # Isolated runtime and log directories (created automatically)
 # Sets $RUNTIME_DIRECTORY and $LOGS_DIRECTORY environment variables
-RuntimeDirectory=platform.wafer.space-celery-beat
+RuntimeDirectory=platform.wafer.space-celery-none-ro-beat
 RuntimeDirectoryMode=0750
-LogsDirectory=platform.wafer.space-celery-beat
+LogsDirectory=platform.wafer.space-celery-none-ro-beat
 LogsDirectoryMode=0750
 
 ExecStart=/home/django/platform.wafer.space/.venv/bin/celery \
@@ -27,13 +27,17 @@ ExecStart=/home/django/platform.wafer.space/.venv/bin/celery \
     --schedule=${RUNTIME_DIRECTORY}/celerybeat-schedule
 
 # Security hardening
-# Beat only schedules tasks - no additional filesystem writes needed
+# Queue: none:ro:beat - Celery Beat scheduler (schedules tasks, no execution)
+# Network: none - no IP network traffic allowed (DB access via Unix socket only)
+# Filesystem: ro - read-only access to application
+# Intended ports: none (see issue #209)
 # RuntimeDirectory and LogsDirectory are auto-excluded from ProtectSystem
 NoNewPrivileges=true
 PrivateDevices=true
 PrivateTmp=true
 ProtectSystem=strict
 ReadOnlyPaths=/home/django/platform.wafer.space
+IPAddressDeny=any
 
 # Restart policy
 Restart=on-failure

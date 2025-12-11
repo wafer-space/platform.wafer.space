@@ -1,0 +1,67 @@
+[Unit]
+Description=platform.wafer.space Celery Worker (dock:rw:checks-save)
+After=network.target postgresql.service django-gunicorn.service
+Requires=postgresql.service
+
+[Service]
+Type=forking
+User=celery-mfg
+Group=celery-mfg
+WorkingDirectory=/home/django/platform.wafer.space
+Environment="DJANGO_SETTINGS_MODULE=config.settings.production"
+EnvironmentFile=/home/django/platform.wafer.space/.env
+
+# Isolated runtime and log directories (created automatically)
+# Sets $RUNTIME_DIRECTORY and $LOGS_DIRECTORY environment variables
+RuntimeDirectory=platform.wafer.space-celery-dock-rw-checks-save
+RuntimeDirectoryMode=0750
+LogsDirectory=platform.wafer.space-celery-dock-rw-checks-save
+LogsDirectoryMode=0750
+
+PIDFile=${RUNTIME_DIRECTORY}/worker.pid
+
+ExecStart=/home/django/platform.wafer.space/.venv/bin/celery \
+    -A config \
+    worker \
+    --loglevel=info \
+    --logfile=${LOGS_DIRECTORY}/worker.log \
+    --pidfile=${RUNTIME_DIRECTORY}/worker.pid \
+    --detach \
+    --queues=dock:rw:checks-save \
+    --hostname=dock-rw-checks-save@%h
+
+ExecStop=/bin/kill -s TERM $MAINPID
+ExecReload=/bin/kill -s HUP $MAINPID
+
+# Startup timeout - give celery time to write PID file
+TimeoutStartSec=30s
+
+# Security hardening
+# Queue: dock:rw:checks-save - Docker operations with media write (do_analyzing)
+# Network: dock - remote Docker API only (no local docker socket)
+# Filesystem: rw - saves check.log_file and check.runs_archive after container run
+# Intended ports: 2375, 2376 (see issue #209)
+# RuntimeDirectory and LogsDirectory are auto-excluded from ProtectSystem
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadOnlyPaths=/home/django/platform.wafer.space
+ReadWritePaths=/home/django/platform.wafer.space/wafer_space/media
+
+# Docker server IP restrictions
+# Docker servers (see issue #209 for port filtering):
+#   10.3.27.44 - harken (production)
+#   10.4.27.44 - micky (staging/production)
+#   10.3.27.45 - buddy (reserved)
+#   10.4.27.45 - doc (reserved)
+# Ports: 2375 (unencrypted), 2376 (TLS)
+IPAddressAllow=10.3.27.44 10.4.27.44 10.3.27.45 10.4.27.45
+IPAddressDeny=any
+
+# Restart policy
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target

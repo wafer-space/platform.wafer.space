@@ -1,7 +1,7 @@
 [Unit]
-Description=platform.wafer.space Celery Worker (Docker Ephemeral)
-After=network.target postgresql.service django-gunicorn.service docker.service
-Requires=postgresql.service docker.service
+Description=platform.wafer.space Celery Worker (dock:ro:checks-fast)
+After=network.target postgresql.service django-gunicorn.service
+Requires=postgresql.service
 
 [Service]
 Type=forking
@@ -13,9 +13,9 @@ EnvironmentFile=/home/django/platform.wafer.space/.env
 
 # Isolated runtime and log directories (created automatically)
 # Sets $RUNTIME_DIRECTORY and $LOGS_DIRECTORY environment variables
-RuntimeDirectory=platform.wafer.space-celery-docker-ephemeral
+RuntimeDirectory=platform.wafer.space-celery-dock-ro-checks-fast
 RuntimeDirectoryMode=0750
-LogsDirectory=platform.wafer.space-celery-docker-ephemeral
+LogsDirectory=platform.wafer.space-celery-dock-ro-checks-fast
 LogsDirectoryMode=0750
 
 PIDFile=${RUNTIME_DIRECTORY}/worker.pid
@@ -27,8 +27,8 @@ ExecStart=/home/django/platform.wafer.space/.venv/bin/celery \
     --logfile=${LOGS_DIRECTORY}/worker.log \
     --pidfile=${RUNTIME_DIRECTORY}/worker.pid \
     --detach \
-    --queues=docker-ephemeral \
-    --hostname=docker-ephemeral@%h
+    --queues=dock:ro:checks-fast \
+    --hostname=dock-ro-checks-fast@%h
 
 ExecStop=/bin/kill -s TERM $MAINPID
 ExecReload=/bin/kill -s HUP $MAINPID
@@ -37,19 +37,26 @@ ExecReload=/bin/kill -s HUP $MAINPID
 TimeoutStartSec=30s
 
 # Security hardening
-# NOTE: This service requires Docker socket access for container cleanup.
-# No media write needed - orchestration and cleanup tasks only (DB + Docker API).
-# RuntimeDirectory and LogsDirectory are auto-excluded from ProtectSystem.
-# The celery-mfg user must be in the 'docker' group.
+# Queue: dock:ro:checks-fast - fast Docker operations (do_starting, do_running, cleanup)
+# Network: dock - remote Docker API only (no local docker socket)
+# Filesystem: ro - read-only access to application
+# Intended ports: 2375, 2376 (see issue #209)
+# RuntimeDirectory and LogsDirectory are auto-excluded from ProtectSystem
 NoNewPrivileges=true
 PrivateDevices=true
 PrivateTmp=true
 ProtectSystem=strict
 ReadOnlyPaths=/home/django/platform.wafer.space
 
-# Docker socket access - BindPaths ensures socket is accessible despite ProtectSystem=strict
-SupplementaryGroups=docker
-BindPaths=/var/run/docker.sock
+# Docker server IP restrictions
+# Docker servers (see issue #209 for port filtering):
+#   10.3.27.44 - harken (production)
+#   10.4.27.44 - micky (staging/production)
+#   10.3.27.45 - buddy (reserved)
+#   10.4.27.45 - doc (reserved)
+# Ports: 2375 (unencrypted), 2376 (TLS)
+IPAddressAllow=10.3.27.44 10.4.27.44 10.3.27.45 10.4.27.45
+IPAddressDeny=any
 
 # Restart policy
 Restart=on-failure
