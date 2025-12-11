@@ -10,6 +10,7 @@
     <div class="row">
       <div class="col-sm-12">
         {% include "projects/_admin_warning_banner.html" %}
+        {# Page header with title and action buttons #}
         <div class="d-flex justify-content-between align-items-center mb-3">
           <h2>{{ project.name }}</h2>
           <div>
@@ -27,29 +28,99 @@
             {% endif %}
           </div>
         </div>
-        {% if project.description %}
-          <div class="card mb-3">
-            <div class="card-body">
-              <h5 class="card-title">Description</h5>
-              <p class="card-text">{{ project.description }}</p>
+        {# Row 1: Project Info | Meta Info | Project Status (three columns) #}
+        <div class="row mb-3">
+          <div class="col-lg-4 mb-3 mb-lg-0">
+            <div class="card h-100">
+              <div class="card-header">
+                <h6 class="mb-0">Project Info</h6>
+              </div>
+              <div class="card-body">
+                <p class="mb-2">
+                  <strong>Shuttle Run:</strong>
+                  {% if project.shuttle %}
+                    {{ project.shuttle.name }}
+                  {% else %}
+                    <span class="text-muted">Not assigned</span>
+                  {% endif %}
+                </p>
+                <p class="mb-2">
+                  <strong>Slot Size:</strong> {{ project.slot_size_full_label }}
+                </p>
+                <p class="mb-0">
+                  <strong>Project Code:</strong>
+                  {% if project.project_id %}
+                    <code>{{ project.project_id }}</code>
+                  {% else %}
+                    <span class="text-muted">Not assigned</span>
+                  {% endif %}
+                </p>
+              </div>
             </div>
           </div>
-        {% endif %}
+          <div class="col-lg-4 mb-3 mb-lg-0">
+            <div class="card h-100">
+              <div class="card-header">
+                <h6 class="mb-0">Meta Info</h6>
+              </div>
+              <div class="card-body">
+                <p class="mb-2">
+                  <strong>Owner:</strong>
+                  {{ project.user.get_full_name|default:project.user.username }}
+                </p>
+                <p class="mb-2">
+                  <strong>Created:</strong> {{ project.created_at|date:"Y-m-d H:i" }}
+                </p>
+                <p class="mb-0">
+                  <strong>Last Updated:</strong> {{ project.updated_at|date:"Y-m-d H:i" }}
+                </p>
+              </div>
+            </div>
+          </div>
+          <div class="col-lg-4">
+            <div class="card h-100">
+              <div class="card-header">
+                <h6 class="mb-0">Project Status</h6>
+              </div>
+              <div class="card-body">
+                <p class="mb-2">
+                  <strong>Status:</strong>
+                  <span class="badge {% if project.status == 'draft' %}bg-secondary{% elif project.status == 'submitted' %}bg-primary{% elif project.status == 'manufacturable' %}bg-success{% elif project.status == 'not_manufacturable' %}bg-danger{% else %}bg-info{% endif %}">
+                    {{ project.get_status_display }}
+                  </span>
+                </p>
+                <p class="mb-2">
+                  <strong>Submitted:</strong>
+                  {% if project.submitted_at %}
+                    {{ project.submitted_at|date:"Y-m-d H:i" }}
+                  {% else %}
+                    <span class="text-muted">Not submitted</span>
+                  {% endif %}
+                </p>
+                <p class="mb-0">
+                  <strong>Manufacturing ID:</strong>
+                  {% if project.full_id %}
+                    <span class="badge bg-info">{{ project.full_id }}</span>
+                  {% else %}
+                    <span class="text-muted">-</span>
+                  {% endif %}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+        {# Project Details card (editable info) #}
         <div class="card mb-3">
           <div class="card-header">
-            <h5 class="mb-0">Project Status</h5>
+            <h6 class="mb-0">Project Details</h6>
           </div>
           <div class="card-body">
-            <p>
-              <strong>Status:</strong>
-              <span class="badge {% if project.status == 'draft' %}bg-secondary {% elif project.status == 'submitted' %}bg-primary {% elif project.status == 'manufacturable' %}bg-success {% elif project.status == 'not_manufacturable' %}bg-danger {% else %}bg-info{% endif %}">
-                {{ project.get_status_display }}
-              </span>
-            </p>
-            <p>
-              <strong>Slot Size:</strong> {{ project.slot_size_full_label }}
-            </p>
-            <p>
+            {% if project.description %}
+              <p class="mb-2">
+                <strong>Description:</strong> {{ project.description }}
+              </p>
+            {% endif %}
+            <p class="mb-2">
               <strong>Visibility:</strong>
               {% if project.is_public %}
                 <span class="badge bg-success"><i class="bi bi-globe"></i> Public</span>
@@ -57,7 +128,15 @@
                 <span class="badge bg-secondary"><i class="bi bi-lock"></i> Private</span>
               {% endif %}
             </p>
-            <p>
+            {% if project.repository_url %}
+              <p class="mb-2">
+                <strong>Repository:</strong>
+                <a href="{{ project.repository_url }}" target="_blank" rel="noopener">
+                  <i class="bi bi-github"></i> {{ project.repository_url|truncatechars:60 }}
+                </a>
+              </p>
+            {% endif %}
+            <p class="mb-0">
               <strong>License:</strong>
               {% if project.is_proprietary_license %}
                 <span class="badge bg-secondary">Proprietary</span>
@@ -84,38 +163,33 @@
                 </a>
               {% endif %}
             </p>
-            {% if project.repository_url %}
-              <p>
-                <strong>Repository:</strong>
-                <a href="{{ project.repository_url }}" target="_blank" rel="noopener">
-                  <i class="bi bi-github"></i> {{ project.repository_url }}
-                </a>
-              </p>
-            {% endif %}
-            {% if project.shuttle %}
-              <p>
-                <strong>Shuttle Run:</strong> {{ project.shuttle.name }} - {{ project.shuttle.description }}
-              </p>
-            {% endif %}
-            {% if project.project_id %}
-              <p>
-                <strong>Project ID:</strong> {{ project.project_id }}
-              </p>
-            {% endif %}
-            {% if project.full_id %}
-              <p>
-                <strong>Manufacturing ID:</strong>
-                <span class="badge bg-info">{{ project.full_id }}</span>
-              </p>
-            {% endif %}
-            {% if project.submitted_at %}
-              <p>
-                <strong>Submitted:</strong> {{ project.submitted_at|date:"Y-m-d H:i" }}
-              </p>
-            {% endif %}
           </div>
         </div>
-        {# Submit New File Button - placed below Project Status #}
+        {# Staff Only: Proprietary Terms Cache #}
+        {% if request.user.is_staff and project.is_proprietary_license and project.proprietary_terms_cached %}
+          <div class="card mb-3 border-warning">
+            <div class="card-header bg-warning bg-opacity-25">
+              <h6 class="mb-0">
+                <i class="bi bi-shield-lock"></i> Proprietary Terms Cache (Staff Only)
+              </h6>
+            </div>
+            <div class="card-body">
+              <p class="mb-2">
+                <strong>Cached At:</strong>
+                {% if project.proprietary_terms_cached_at %}
+                  {{ project.proprietary_terms_cached_at|date:"Y-m-d H:i" }}
+                {% else %}
+                  <span class="text-muted">Unknown</span>
+                {% endif %}
+              </p>
+              <details>
+                <summary class="text-primary" style="cursor: pointer;">View Cached Terms</summary>
+                <pre class="mt-2 p-2 bg-light border rounded small">{{ project.proprietary_terms_cached }}</pre>
+              </details>
+            </div>
+          </div>
+        {% endif %}
+        {# Submit New File Button #}
         <div class="card mb-3">
           <div class="card-body text-center">
             <p class="mb-3">
