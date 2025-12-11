@@ -6,60 +6,57 @@
 {#   - download_attempts: (optional) QuerySet of DownloadAttempt instances #}
 {#   - show_attempts: (optional, default=False) Show download attempts in foldable sections #}
 {#   - first_open: (optional, default=True) Keep first attempt section open #}
-{# Status and Filename Header #}
-{# Header row: filename left, badges right #}
+{# File Information Card with filename header #}
 {% with latest_attempt=file.latest_attempt %}
   {% with status=latest_attempt.status|default:"pending" %}
-    <div class="d-flex justify-content-between align-items-start mb-2">
-      {# Left side: filename and subtitle #}
-      <div class="flex-grow-1 me-3">
-        {% if file.processed_filename %}
-          <h6 class="mb-1">
-            <i class="bi bi-file-earmark-check text-success"></i>
-            {{ file.processed_filename }}
-          </h6>
-          {% if file.processed_filename != file.original_filename %}
-            <p class="text-muted small mb-0">
-              Extracted from <code>{{ file.original_filename }}</code>
-            </p>
-          {% endif %}
-        {% else %}
-          <h6 class="mb-1">
-            {% if status == 'downloading' %}
-              <span class="spinner-border spinner-border-sm text-primary" role="status"></span>
-            {% elif status == 'failed' %}
-              <i class="bi bi-file-earmark-x text-danger"></i>
+    <div class="card bg-light mb-3">
+      <div class="card-header py-2">
+        <div class="d-flex justify-content-between align-items-start">
+          {# Left side: filename and subtitle #}
+          <div class="flex-grow-1 me-3">
+            {% if file.processed_filename %}
+              <strong>
+                <i class="bi bi-file-earmark-check text-success"></i>
+                {{ file.processed_filename }}
+              </strong>
+              {% if file.processed_filename != file.original_filename %}
+                <p class="text-muted small mb-0">
+                  Extracted from <code>{{ file.original_filename }}</code>
+                </p>
+              {% endif %}
             {% else %}
-              <i class="bi bi-file-earmark text-muted"></i>
+              <strong>
+                {% if status == 'downloading' %}
+                  <span class="spinner-border spinner-border-sm text-primary" role="status"></span>
+                {% elif status == 'failed' %}
+                  <i class="bi bi-file-earmark-x text-danger"></i>
+                {% else %}
+                  <i class="bi bi-file-earmark text-muted"></i>
+                {% endif %}
+                {% if file.original_filename == 'download' and file.original_url %}
+                  GitHub Artifact
+                {% else %}
+                  {{ file.original_filename }}
+                {% endif %}
+              </strong>
+              {% if status == 'downloading' or status == 'pending' %}
+                <p class="text-muted small mb-0">
+                  <i class="bi bi-hourglass-split"></i>
+                  Processing <code>{{ file.original_filename }}</code>...
+                </p>
+              {% elif status == 'failed' %}
+                <p class="text-danger small mb-0">
+                  <i class="bi bi-exclamation-circle"></i>
+                  Download failed
+                </p>
+              {% endif %}
             {% endif %}
-            {% if file.original_filename == 'download' and file.original_url %}
-              GitHub Artifact
-            {% else %}
-              {{ file.original_filename }}
-            {% endif %}
-          </h6>
-          {% if status == 'downloading' or status == 'pending' %}
-            <p class="text-muted small mb-0">
-              <i class="bi bi-hourglass-split"></i>
-              Processing <code>{{ file.original_filename }}</code>...
-            </p>
-          {% elif status == 'failed' %}
-            <p class="text-danger small mb-0">
-              <i class="bi bi-exclamation-circle"></i>
-              Download failed
-            </p>
-          {% endif %}
-        {% endif %}
+          </div>
+          {# Right side: status badges #}
+          <div class="flex-shrink-0">{% include "projects/_file_badges.html" with file=file layout="vertical" %}</div>
+        </div>
       </div>
-      {# Right side: status badges #}
-      <div class="flex-shrink-0">{% include "projects/_file_badges.html" with file=file layout="vertical" %}</div>
-    </div>
-  {% endwith %}
-{% endwith %}
-{# File Information Card #}
-<div class="card bg-light mb-3">
-  <div class="card-body">
-    <h6 class="card-title">File Information</h6>
+      <div class="card-body">
     {% if file.original_url %}
       <p class="mb-2">
         <strong>Original URL:</strong>
@@ -139,8 +136,10 @@
         </p>
       {% endif %}
     {% endif %}
-  </div>
-</div>
+      </div>
+    </div>
+  {% endwith %}
+{% endwith %}
 {# Manufacturability Check Section #}
 {# Check is created immediately when download completes with verified hash #}
 {% with check=file.latest_manufacturability_check %}
