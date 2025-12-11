@@ -6,26 +6,27 @@
 {#   - download_attempts: (optional) QuerySet of DownloadAttempt instances #}
 {#   - show_attempts: (optional, default=False) Show download attempts in foldable sections #}
 {#   - first_open: (optional, default=True) Keep first attempt section open #}
-{# File Information Card with filename header #}
+{# File Information Card #}
 {% with latest_attempt=file.latest_attempt %}
   {% with status=latest_attempt.status|default:"pending" %}
     <div class="card bg-light mb-3">
-      <div class="card-header py-2">
-        <div class="d-flex justify-content-between align-items-start">
+      <div class="card-body">
+        {# Filename and badges row #}
+        <div class="d-flex justify-content-between align-items-start mb-3">
           {# Left side: filename and subtitle #}
           <div class="flex-grow-1 me-3">
             {% if file.processed_filename %}
-              <strong>
+              <h6 class="mb-0">
                 <i class="bi bi-file-earmark-check text-success"></i>
                 {{ file.processed_filename }}
-              </strong>
+              </h6>
               {% if file.processed_filename != file.original_filename %}
-                <p class="text-muted small mb-0">
+                <small class="text-muted">
                   Extracted from <code>{{ file.original_filename }}</code>
-                </p>
+                </small>
               {% endif %}
             {% else %}
-              <strong>
+              <h6 class="mb-0">
                 {% if status == 'downloading' %}
                   <span class="spinner-border spinner-border-sm text-primary" role="status"></span>
                 {% elif status == 'failed' %}
@@ -38,25 +39,24 @@
                 {% else %}
                   {{ file.original_filename }}
                 {% endif %}
-              </strong>
+              </h6>
               {% if status == 'downloading' or status == 'pending' %}
-                <p class="text-muted small mb-0">
+                <small class="text-muted">
                   <i class="bi bi-hourglass-split"></i>
                   Processing <code>{{ file.original_filename }}</code>...
-                </p>
+                </small>
               {% elif status == 'failed' %}
-                <p class="text-danger small mb-0">
+                <small class="text-danger">
                   <i class="bi bi-exclamation-circle"></i>
                   Download failed
-                </p>
+                </small>
               {% endif %}
             {% endif %}
           </div>
           {# Right side: status badges #}
           <div class="flex-shrink-0">{% include "projects/_file_badges.html" with file=file layout="vertical" %}</div>
         </div>
-      </div>
-      <div class="card-body">
+        {# File details #}
     {% if file.original_url %}
       <p class="mb-2">
         <strong>Original URL:</strong>
