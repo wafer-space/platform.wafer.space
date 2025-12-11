@@ -115,6 +115,25 @@
             {% endif %}
           </div>
         </div>
+        {# Submit New File Button - placed below Project Status #}
+        <div class="card mb-3">
+          <div class="card-body text-center">
+            <p class="mb-3">
+              {% if in_progress_file %}
+                <i class="bi bi-info-circle text-primary"></i>
+                Submitting a new file will replace the current file in progress.
+              {% else %}
+                <i class="bi bi-info-circle text-primary"></i>
+                Upload a design file to get started.
+              {% endif %}
+            </p>
+            <a class="btn btn-primary btn-lg"
+               href="{% url 'projects:submit_url' pk=project.pk %}"
+               role="button">
+              <i class="bi bi-link"></i> Submit New File URL
+            </a>
+          </div>
+        </div>
         {# Error Display Section #}
         {% if show_error and active_file %}
           <div class="card mb-3 border-danger">
@@ -154,25 +173,6 @@
             </div>
           </div>
         {% endif %}
-        {# Submit New File Button - placed above File In Progress #}
-        <div class="card mb-3">
-          <div class="card-body text-center">
-            <p class="mb-3">
-              {% if in_progress_file %}
-                <i class="bi bi-info-circle text-primary"></i>
-                Submitting a new file will replace the current file in progress.
-              {% else %}
-                <i class="bi bi-info-circle text-primary"></i>
-                Upload a design file to get started.
-              {% endif %}
-            </p>
-            <a class="btn btn-primary btn-lg"
-               href="{% url 'projects:submit_url' pk=project.pk %}"
-               role="button">
-              <i class="bi bi-link"></i> Submit New File URL
-            </a>
-          </div>
-        </div>
         {# In-Progress File Section #}
         {% if in_progress_file %}
           <div class="card mb-3">
