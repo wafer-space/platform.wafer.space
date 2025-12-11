@@ -91,7 +91,12 @@ echo "✓ Installation markers logged to journal"
 echo ""
 echo "Enabling services..."
 for service in "${NEW_SERVICES[@]}"; do
-    systemctl enable "$service"
+    systemctl enable "$service" && {
+        echo "  ✓ Enabled: $service"
+    } || {
+        echo "  ✗ Failed to enable: $service"
+        systemctl status "$service" --no-pager || true
+    }
 done
 echo "✓ Services enabled"
 
