@@ -1612,7 +1612,7 @@ def _finalize_analyzing(
     }
 
 
-@queued_check_task(expected_status="ANALYZING", queue="docker-ephemeral")
+@queued_check_task(expected_status="ANALYZING", queue="docker-persistent")
 def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
     """Analyze container logs, extract outputs, and determine results.
 
