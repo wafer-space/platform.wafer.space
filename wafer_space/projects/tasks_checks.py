@@ -411,15 +411,26 @@ def checks_pending() -> dict[str, int]:
 
     dispatched = 0
 
-    # Sort servers by active count (ascending), priority as tiebreaker
-    servers = sorted(
-        settings.DOCKER_SERVERS,
-        key=lambda s: (_get_server_active_count(str(s["id"])), s["priority"]),
-    )
+    # Build server info with active counts (one query per server)
+    server_info: list[dict[str, str | int]] = []
+    for server in settings.DOCKER_SERVERS:
+        server_id = str(server["id"])
+        server_info.append(
+            {
+                "id": server_id,
+                "max_concurrent": int(server["max_concurrent"]),
+                "priority": int(server["priority"]),
+                "active_count": _get_server_active_count(server_id),
+            }
+        )
 
-    for server in servers:
+    # Sort by active count (ascending), priority as tiebreaker
+    server_info.sort(key=lambda s: (s["active_count"], s["priority"]))
+
+    for server in server_info:
         server_id = str(server["id"])
         max_concurrent = int(server["max_concurrent"])
+        active_count = int(server["active_count"])
 
         # Skip if server has a check initializing (serialized dispatch)
         if _server_has_initializing(server_id):
@@ -427,7 +438,6 @@ def checks_pending() -> dict[str, int]:
             continue
 
         # Skip if server is at capacity
-        active_count = _get_server_active_count(server_id)
         if active_count >= max_concurrent:
             logger.debug(
                 "Server %s: at capacity (%d/%d)",
