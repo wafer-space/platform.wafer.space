@@ -186,14 +186,6 @@ class Project(models.Model):
     # the latest ManufacturabilityCheck on the submitted_file. This enables
     # multiple checks per file (retries, DRC updates, etc.) without losing history.
 
-    # Manufacturing details
-    estimated_cost = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        null=True,
-        blank=True,
-    )
-
     # Visibility settings
     is_public = models.BooleanField(
         default=False,
