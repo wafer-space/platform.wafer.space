@@ -40,7 +40,7 @@ NEW_SERVICES=(
 echo ""
 echo "=== Cleaning up old services ==="
 for service in "${OLD_SERVICES[@]}"; do
-    if systemctl list-unit-files "$service" &>/dev/null; then
+    if [ -f "/etc/systemd/system/$service" ]; then
         echo "  Stopping and disabling: $service"
         systemctl stop "$service" 2>/dev/null || true
         systemctl disable "$service" 2>/dev/null || true
