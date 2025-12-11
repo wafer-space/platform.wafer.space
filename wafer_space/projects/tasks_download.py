@@ -159,7 +159,7 @@ def _verify_file_hashes(
     return verified, errors
 
 
-@shared_task(queue="maintenance")
+@shared_task(queue="none:ro:default")
 def cleanup_old_task_results():
     """
     Periodic task to clean up old Celery task results.
@@ -1516,7 +1516,7 @@ def _log_download_completion(
 
 @shared_task(
     bind=True,
-    queue="downloads",
+    queue="http:rw:downloads",
     max_retries=settings.DOWNLOAD_TASK_MAX_RETRIES,
     default_retry_delay=settings.DOWNLOAD_TASK_RETRY_BASE_DELAY_SECONDS,
 )
@@ -1785,7 +1785,7 @@ def download_project_file(self, project_id):  # noqa: PLR0915, C901
 # This eliminates duplicate retry logic (18 attempts → 3 attempts).
 
 
-@shared_task(queue="maintenance")
+@shared_task(queue="none:ro:default")
 def ensure_download_tasks_queued():
     """Ensure all active files have download tasks queued (fallback recovery).
 
