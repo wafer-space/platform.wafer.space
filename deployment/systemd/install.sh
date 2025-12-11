@@ -1,6 +1,9 @@
 #!/bin/bash
 # Install systemd service files
-# Run as: sudo ./install.sh
+# Run as: sudo ./install.sh [--no-start]
+#
+# Options:
+#   --no-start    Install and enable services without starting them
 #
 # Queue naming convention: {network}:{fs}:{purpose}
 #   - Network: none (DB only), mail (Mailgun), http (HTTP/S), dock (Docker IPs)
@@ -9,6 +12,30 @@
 # This script handles migration from old service names to new ones.
 
 set -e
+
+# Parse arguments
+START_SERVICES=true
+for arg in "$@"; do
+    case $arg in
+        --no-start)
+            START_SERVICES=false
+            shift
+            ;;
+        --help|-h)
+            echo "Usage: sudo ./install.sh [--no-start]"
+            echo ""
+            echo "Options:"
+            echo "  --no-start    Install and enable services without starting them"
+            echo "  --help, -h    Show this help message"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $arg"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -100,24 +127,34 @@ for service in "${NEW_SERVICES[@]}"; do
 done
 echo "✓ Services enabled"
 
-# Restart services
-echo ""
-echo "Restarting services..."
+# Restart services (unless --no-start)
+if [ "$START_SERVICES" = true ]; then
+    echo ""
+    echo "Restarting services..."
 
-for service in "${NEW_SERVICES[@]}"; do
-    echo "  Restarting $service..."
-    systemctl restart "$service" && {
-        echo "  ✓ Restarted: $service"
-    } || {
-        echo "  ✗ Failed to restart: $service"
-        echo "  Checking status..."
-        systemctl status "$service" --no-pager || true
-    }
-done
+    for service in "${NEW_SERVICES[@]}"; do
+        echo "  Restarting $service..."
+        systemctl restart "$service" && {
+            echo "  ✓ Restarted: $service"
+        } || {
+            echo "  ✗ Failed to restart: $service"
+            echo "  Checking status..."
+            systemctl status "$service" --no-pager || true
+        }
+    done
 
-echo ""
-echo "=== Systemd services installed and restarted ==="
-echo "Services have been installed, enabled, and restarted."
+    echo ""
+    echo "=== Systemd services installed and restarted ==="
+    echo "Services have been installed, enabled, and restarted."
+else
+    echo ""
+    echo "=== Systemd services installed (not started) ==="
+    echo "Services have been installed and enabled but NOT started."
+    echo "To start services manually:"
+    for service in "${NEW_SERVICES[@]}"; do
+        echo "  sudo systemctl start $service"
+    done
+fi
 echo ""
 echo "Installation marker logged to journal at: $TIMESTAMP"
 echo ""
