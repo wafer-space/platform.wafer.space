@@ -42,7 +42,7 @@ urlpatterns = [
         name="check_status",
     ),
     path(
-        "<uuid:pk>/cancel-check/",
+        "<uuid:pk>/cancel-check/<int:check_id>/",
         views.ManufacturabilityCheckCancelView.as_view(),
         name="cancel_check",
     ),

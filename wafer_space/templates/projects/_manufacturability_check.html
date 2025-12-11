@@ -71,7 +71,7 @@
   {# Cancel button for in-progress checks #}
   {% if check.is_cancellable %}
     <form method="post"
-          action="{% url 'projects:cancel_check' pk=check.project.pk %}"
+          action="{% url 'projects:cancel_check' pk=check.project.pk check_id=check.pk %}"
           class="d-inline ms-2"
           onsubmit="return confirm('Are you sure you want to cancel this manufacturability check?');">
       {% csrf_token %}

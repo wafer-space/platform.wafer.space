@@ -483,24 +483,16 @@ class ManufacturabilityCheckCancelView(LoginRequiredMixin, UserPassesTestMixin, 
         project = get_object_or_404(Project, pk=self.kwargs["pk"])
         return project.user == user
 
-    def post(self, request, pk):
+    def post(self, request, pk, check_id):
         """Handle check cancellation."""
         project = get_object_or_404(Project, pk=pk)
 
-        # Get active file's manufacturability check
-        active_file = ProjectFile.objects.filter(
+        # Get the specific check by ID
+        check = get_object_or_404(
+            ManufacturabilityCheck,
+            pk=check_id,
             project=project,
-            is_active=True,
-        ).first()
-
-        if not active_file:
-            messages.error(request, "No active file found.")
-            return redirect("projects:detail", pk=pk)
-
-        check = active_file.latest_manufacturability_check
-        if not check:
-            messages.error(request, "No manufacturability check found.")
-            return redirect("projects:detail", pk=pk)
+        )
 
         try:
             # Indicate whether cancelled by owner or admin
