@@ -60,19 +60,42 @@
 {# Check is created immediately when download completes with verified hash #}
 {% with check=file.latest_manufacturability_check %}
   {% if check %}
-    {# Show current check using the shared partial, wrapped in card #}
-    <div class="card bg-light mb-3">
-      <div class="card-header py-2">
-        <strong>
-          <i class="bi bi-check-circle"></i> Manufacturability Check
-          {% if check.trigger_reason == 'retry' %}
-            <span class="badge bg-warning text-dark ms-2">Retry</span>
-          {% elif check.trigger_reason == 'drc_update' %}
-            <span class="badge bg-info ms-2">DRC Update</span>
-          {% elif check.trigger_reason == 'admin_rerun' %}
-            <span class="badge bg-secondary ms-2">Admin Re-run</span>
-          {% endif %}
-        </strong>
+    {# Show current check using the shared partial, wrapped in card with blue border like download attempts #}
+    <div class="card border-primary mb-3">
+      <div class="card-header py-2 bg-primary bg-opacity-10">
+        <div class="d-flex justify-content-between align-items-center">
+          <strong>
+            Check #{{ check.pk }}
+            <span class="badge bg-primary ms-1">Latest</span>
+            {% if check.trigger_reason == 'retry' %}
+              <span class="badge bg-warning text-dark ms-1">Retry</span>
+            {% elif check.trigger_reason == 'drc_update' %}
+              <span class="badge bg-info ms-1">DRC Update</span>
+            {% elif check.trigger_reason == 'admin_rerun' %}
+              <span class="badge bg-secondary ms-1">Admin Re-run</span>
+            {% endif %}
+          </strong>
+          <span class="badge {% if check.status == 'finished' and check.is_manufacturable %}bg-success{% elif check.status == 'finished' and not check.is_manufacturable %}bg-danger{% elif check.status == 'error' %}bg-danger{% elif check.status == 'cancelled' %}bg-secondary{% elif check.status == 'pending' %}bg-secondary{% else %}bg-primary{% endif %}">
+            {% if check.status == 'finished' %}
+              {% if check.is_manufacturable %}
+                <i class="bi bi-check-circle"></i> Pass
+              {% else %}
+                <i class="bi bi-x-circle"></i> Fail
+              {% endif %}
+            {% elif check.status == 'error' %}
+              <i class="bi bi-exclamation-triangle"></i> Error
+            {% elif check.status == 'cancelled' %}
+              <i class="bi bi-slash-circle"></i> Cancelled
+            {% elif check.status == 'pending' %}
+              <i class="bi bi-clock"></i> Pending
+            {% elif check.status == 'running' or check.status == 'dispatching' or check.status == 'starting' or check.status == 'analyzing' %}
+              <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+              {{ check.get_status_display }}
+            {% else %}
+              {{ check.get_status_display }}
+            {% endif %}
+          </span>
+        </div>
       </div>
       <div class="card-body">{% include "projects/_manufacturability_check.html" with check=check %}</div>
     </div>
@@ -96,16 +119,16 @@
                   <summary class="card-header py-2" style="cursor: pointer; list-style: none;">
                     <div class="d-flex justify-content-between align-items-center">
                       <strong>
+                        Check #{{ hist_check.pk }}
                         {% if hist_check.trigger_reason == 'initial' %}
-                          <span class="badge bg-primary">Initial</span>
+                          <span class="badge bg-primary ms-1">Initial</span>
                         {% elif hist_check.trigger_reason == 'retry' %}
-                          <span class="badge bg-warning text-dark">Retry</span>
+                          <span class="badge bg-warning text-dark ms-1">Retry</span>
                         {% elif hist_check.trigger_reason == 'drc_update' %}
-                          <span class="badge bg-info">DRC Update</span>
+                          <span class="badge bg-info ms-1">DRC Update</span>
                         {% elif hist_check.trigger_reason == 'admin_rerun' %}
-                          <span class="badge bg-secondary">Admin Re-run</span>
+                          <span class="badge bg-secondary ms-1">Admin Re-run</span>
                         {% endif %}
-                        <span class="ms-2">{{ hist_check.title }}</span>
                       </strong>
                       <span class="badge {% if hist_check.status == 'finished' and hist_check.is_manufacturable %}bg-success{% elif hist_check.status == 'finished' and not hist_check.is_manufacturable %}bg-danger{% elif hist_check.status == 'error' %}bg-danger{% elif hist_check.status == 'cancelled' %}bg-secondary{% else %}bg-secondary{% endif %}">
                         {% if hist_check.status == 'finished' %}
