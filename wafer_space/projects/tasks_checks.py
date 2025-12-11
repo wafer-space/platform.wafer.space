@@ -1643,33 +1643,26 @@ def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
         check.docker_exit_code,
     )
 
-    # Get container for output extraction
-    container = None
-    if check.docker_container_id and check.docker_server_id:
-        logger.info(
-            "[do_analyzing] Connecting to Docker server %s to retrieve container...",
-            check.docker_server_id,
+    # Get container for output extraction - container must exist
+    if not check.docker_container_id or not check.docker_server_id:
+        msg = (
+            f"Cannot analyze check {check.id}: missing container info "
+            f"(container_id={check.docker_container_id}, "
+            f"server_id={check.docker_server_id})"
         )
-        try:
-            client = _get_docker_client_for_server(check.docker_server_id, logger)
-            container = _get_container(client, check.docker_container_id, logger)
-            logger.info(
-                "[do_analyzing] Successfully retrieved container %s (status=%s)",
-                check.docker_container_id[:12],
-                container.status,
-            )
-        except docker.errors.DockerException as e:
-            logger.warning(
-                "[do_analyzing] Could not get container for output extraction: %s",
-                e,
-            )
-    else:
-        logger.info(
-            "[do_analyzing] No container info available "
-            "(container_id=%s, server_id=%s)",
-            check.docker_container_id,
-            check.docker_server_id,
-        )
+        raise TaskExecutionError(reason="missing_container_info", message=msg)
+
+    logger.info(
+        "[do_analyzing] Connecting to Docker server %s to retrieve container...",
+        check.docker_server_id,
+    )
+    client = _get_docker_client_for_server(check.docker_server_id, logger)
+    container = _get_container(client, check.docker_container_id, logger)
+    logger.info(
+        "[do_analyzing] Successfully retrieved container %s (status=%s)",
+        check.docker_container_id[:12],
+        container.status,
+    )
 
     try:
         # 1. Save processing logs to log_file
@@ -1677,14 +1670,11 @@ def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
         logger.info("[do_analyzing] Step 1/5: Saving logs (%d bytes)...", log_size)
         _save_log_file(check, logger)
 
-        # 2-4. Extract outputs from container if available
-        if container is not None:
-            logger.info("[do_analyzing] Steps 2-4: Extracting container outputs...")
-            _save_runs_archive(check, container, logger)
-            _save_output_gds(check, container, logger)
-            logger.info("[do_analyzing] Skipping layer export (disabled)")
-        else:
-            logger.info("[do_analyzing] Steps 2-4: No container, skipping extraction")
+        # 2-4. Extract outputs from container
+        logger.info("[do_analyzing] Steps 2-4: Extracting container outputs...")
+        _save_runs_archive(check, container, logger)
+        _save_output_gds(check, container, logger)
+        logger.info("[do_analyzing] Skipping layer export (disabled)")
 
     finally:
         _cleanup_temp_dir(check)

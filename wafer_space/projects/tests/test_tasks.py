@@ -1760,12 +1760,25 @@ Precheck successfully completed."""
             status=ManufacturabilityCheck.Status.ANALYZING,
             docker_exit_code=0,
             processing_logs=success_logs,
+            docker_server_id="test-local",
+            docker_container_id="test-container-id",
         )
         ManufacturabilityCheckTask.objects.create(
             manufacturability_check=check, task_id="test", task_name="do_analyzing"
         )
 
-        result = do_analyzing(check.id)
+        # Mock container that has no outputs
+        mock_container = MagicMock()
+        mock_container.status = "exited"
+        mock_container.get_archive.side_effect = docker.errors.NotFound("no archive")
+        mock_client = MagicMock()
+        mock_client.containers.get.return_value = mock_container
+
+        with patch(
+            "wafer_space.projects.tasks_checks.get_docker_client",
+            return_value=mock_client,
+        ):
+            result = do_analyzing(check.id)
 
         assert result["status"] == "success"
         assert result["is_manufacturable"] is True
@@ -1785,12 +1798,25 @@ Check for KLayout DRC errors clear.
             status=ManufacturabilityCheck.Status.ANALYZING,
             docker_exit_code=1,
             processing_logs=logs,
+            docker_server_id="test-local",
+            docker_container_id="test-container-id",
         )
         ManufacturabilityCheckTask.objects.create(
             manufacturability_check=check, task_id="test", task_name="do_analyzing"
         )
 
-        result = do_analyzing(check.id)
+        # Mock container that has no outputs
+        mock_container = MagicMock()
+        mock_container.status = "exited"
+        mock_container.get_archive.side_effect = docker.errors.NotFound("no archive")
+        mock_client = MagicMock()
+        mock_client.containers.get.return_value = mock_container
+
+        with patch(
+            "wafer_space.projects.tasks_checks.get_docker_client",
+            return_value=mock_client,
+        ):
+            result = do_analyzing(check.id)
 
         assert result["status"] == "success"
         check.refresh_from_db()
@@ -1810,7 +1836,7 @@ Check for KLayout DRC errors clear.
         assert result["status"] == "skipped"
 
     @pytest.mark.django_db
-    def test_saves_log_file_with_checksum(self, tmp_path: Path) -> None:
+    def test_saves_log_file_with_checksum(self) -> None:
         """Saves processing logs to log_file with SHA256 checksum."""
         # Success requires all evidence: DRC clear messages + success message
         success_logs = """Check for Magic DRC errors clear.
@@ -1820,12 +1846,25 @@ Precheck successfully completed."""
             status=ManufacturabilityCheck.Status.ANALYZING,
             docker_exit_code=0,
             processing_logs=success_logs,
+            docker_server_id="test-local",
+            docker_container_id="test-container-id",
         )
         ManufacturabilityCheckTask.objects.create(
             manufacturability_check=check, task_id="test", task_name="do_analyzing"
         )
 
-        result = do_analyzing(check.id)
+        # Mock container that has no outputs
+        mock_container = MagicMock()
+        mock_container.status = "exited"
+        mock_container.get_archive.side_effect = docker.errors.NotFound("no archive")
+        mock_client = MagicMock()
+        mock_client.containers.get.return_value = mock_container
+
+        with patch(
+            "wafer_space.projects.tasks_checks.get_docker_client",
+            return_value=mock_client,
+        ):
+            result = do_analyzing(check.id)
 
         assert result["status"] == "success"
         check.refresh_from_db()
@@ -1847,28 +1886,41 @@ Precheck successfully completed."""
             status=ManufacturabilityCheck.Status.ANALYZING,
             docker_exit_code=0,
             processing_logs=success_logs,
+            docker_server_id="test-local",
+            docker_container_id="test-container-id",
         )
         ManufacturabilityCheckTask.objects.create(
             manufacturability_check=check, task_id="test", task_name="do_analyzing"
         )
 
-        result = do_analyzing(check.id)
+        # Mock container that has no outputs
+        mock_container = MagicMock()
+        mock_container.status = "exited"
+        mock_container.get_archive.side_effect = docker.errors.NotFound("no archive")
+        mock_client = MagicMock()
+        mock_client.containers.get.return_value = mock_container
+
+        with patch(
+            "wafer_space.projects.tasks_checks.get_docker_client",
+            return_value=mock_client,
+        ):
+            result = do_analyzing(check.id)
 
         assert "outputs_saved" in result
         assert "log_file" in result["outputs_saved"]
-        # Without a container, only log_file should be saved
+        # Container exists but has no extractable outputs
         assert result["outputs_saved"]["log_file"] is True
         assert result["outputs_saved"]["runs_archive"] is False
         assert result["outputs_saved"]["output_gds"] is False
         assert result["outputs_saved"]["docker_layer_export"] is False
 
     @pytest.mark.django_db
-    def test_handles_missing_container_gracefully(self) -> None:
-        """Returns error when container is not available (deleted/cleaned up).
+    def test_errors_when_container_not_found(self) -> None:
+        """Returns error when container has been deleted/cleaned up.
 
         When the container has been removed before analyzing completes,
-        the task returns an error result rather than crashing. This is
-        graceful handling - the error is logged and reported.
+        the task returns an error result. A missing container during
+        analysis is an error condition, not something to gracefully handle.
         """
         # Mock docker client to raise NotFound when getting container
         mock_client = MagicMock()
@@ -1893,9 +1945,31 @@ Precheck successfully completed."""
         ):
             result = do_analyzing(check.id)
 
-        # Graceful handling: returns error result instead of crashing
         assert result["status"] == "error"
         assert "container_not_found" in result.get("reason", "")
+
+    @pytest.mark.django_db
+    def test_errors_when_container_info_missing(self) -> None:
+        """Returns error when container info is not set on the check.
+
+        If a check reaches ANALYZING state without docker_server_id or
+        docker_container_id, that's an error - the container should exist.
+        """
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            docker_exit_code=0,
+            processing_logs="Precheck successfully completed.",
+            docker_server_id="",
+            docker_container_id="",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_analyzing"
+        )
+
+        result = do_analyzing(check.id)
+
+        assert result["status"] == "error"
+        assert "missing_container_info" in result.get("reason", "")
 
 
 class TestChecksCleanupStalePendingTasks:
