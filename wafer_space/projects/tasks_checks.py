@@ -73,9 +73,9 @@ def checks_task(**celery_kwargs: Any) -> "Callable[[Callable[..., T]], Any]":
             # ... do work
             return {"dispatched": 5}
     """
-    # Default to default queue if not specified
+    # Default to checks orchestration queue if not specified
     if "queue" not in celery_kwargs:
-        celery_kwargs["queue"] = "default"
+        celery_kwargs["queue"] = "none:ro:checks-orch"
 
     def decorator(func: "Callable[..., T]") -> Any:
         @wraps(func)
@@ -123,9 +123,9 @@ def queued_check_task(
             # ... do work
             return {"status": "completed"}
     """
-    # Default to docker-ephemeral queue if not specified
+    # Default to docker checks-fast queue if not specified
     if "queue" not in celery_kwargs:
-        celery_kwargs["queue"] = "docker-ephemeral"
+        celery_kwargs["queue"] = "dock:ro:checks-fast"
 
     def decorator(func: "Callable[..., T]") -> Any:
         @wraps(func)
@@ -271,7 +271,7 @@ def _cleanup_container_if_orphaned(
     return "kept"
 
 
-@shared_task(queue="docker-ephemeral")
+@shared_task(queue="dock:ro:checks-fast")
 def checks_cleanup_orphaned_docker() -> dict:
     """Remove Docker containers not linked to active checks (fallback cleanup).
 
@@ -360,7 +360,7 @@ def checks_cleanup_orphaned_docker() -> dict:
     }
 
 
-@checks_task(queue="default")
+@checks_task()
 def checks_pending() -> dict[str, int]:
     """Transition PENDING checks to DISPATCHING with server assignment.
 
@@ -444,7 +444,7 @@ def checks_pending() -> dict[str, int]:
     return {"dispatched": dispatched}
 
 
-@checks_task(queue="default")
+@checks_task()
 def checks_dispatching() -> dict[str, int]:
     """Queue do_dispatching work tasks for DISPATCHING checks.
 
@@ -486,7 +486,7 @@ def checks_dispatching() -> dict[str, int]:
     return {"queued": queued}
 
 
-@checks_task(queue="default")
+@checks_task()
 def checks_starting() -> dict[str, int]:
     """Queue do_starting work tasks for STARTING checks.
 
@@ -526,7 +526,7 @@ def checks_starting() -> dict[str, int]:
     return {"queued": queued}
 
 
-@checks_task(queue="default")
+@checks_task()
 def checks_running() -> dict[str, int]:
     """Queue do_running work tasks for RUNNING checks.
 
@@ -566,7 +566,7 @@ def checks_running() -> dict[str, int]:
     return {"queued": queued}
 
 
-@checks_task(queue="default")
+@checks_task()
 def checks_analyzing() -> dict[str, int]:
     """Queue do_analyzing work tasks for ANALYZING checks.
 
@@ -606,7 +606,7 @@ def checks_analyzing() -> dict[str, int]:
     return {"queued": queued}
 
 
-@checks_task(queue="default")
+@checks_task()
 def checks_retry() -> dict:
     """Move retryable ERROR checks back to PENDING state.
 
@@ -647,7 +647,7 @@ def checks_retry() -> dict:
     return {"retried": retried, "exhausted": exhausted}
 
 
-@checks_task(queue="default")
+@checks_task()
 def checks_create() -> dict:
     """Create ManufacturabilityChecks for verified downloads that need them.
 
@@ -686,7 +686,7 @@ def checks_create() -> dict:
     return {"created": created}
 
 
-@checks_task(queue="default")
+@checks_task()
 def checks_cancelling() -> dict[str, int]:
     """Transition CANCELLING checks to CANCELLED.
 
@@ -717,7 +717,7 @@ def checks_cancelling() -> dict[str, int]:
 # These will be implemented in later phases
 
 
-@queued_check_task(expected_status="DISPATCHING", queue="docker-ephemeral")
+@queued_check_task(expected_status="DISPATCHING", queue="dock:ro:checks-slow")
 def do_dispatching(check: ManufacturabilityCheck) -> dict[str, str]:
     """Pull Docker image for a DISPATCHING check.
 
@@ -860,7 +860,7 @@ def _wait_for_container_running(
         raise TaskExecutionError(reason="failed_to_start", message=msg)
 
 
-@queued_check_task(expected_status="STARTING", queue="docker-ephemeral")
+@queued_check_task(expected_status="STARTING", queue="dock:ro:checks-fast")
 def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
     """Create and start Docker container for a STARTING check.
 
@@ -1228,7 +1228,7 @@ def _record_checkpoint(
     return checkpoint
 
 
-@queued_check_task(expected_status="RUNNING", queue="docker-ephemeral")
+@queued_check_task(expected_status="RUNNING", queue="dock:ro:checks-fast")
 def do_running(check: ManufacturabilityCheck) -> dict[str, Any]:
     """Monitor running container and download logs incrementally.
 
@@ -1612,7 +1612,7 @@ def _finalize_analyzing(
     }
 
 
-@queued_check_task(expected_status="ANALYZING", queue="docker-persistent")
+@queued_check_task(expected_status="ANALYZING", queue="dock:rw:checks-save")
 def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
     """Analyze container logs, extract outputs, and determine results.
 
@@ -1740,7 +1740,7 @@ def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
     )
 
 
-@checks_task(queue="default")
+@checks_task()
 def checks_cleanup_stale_files() -> dict:
     """Cancel checks on project files that are no longer active.
 
@@ -1782,7 +1782,7 @@ def checks_cleanup_stale_files() -> dict:
     return {"cancelled": cancelled}
 
 
-@checks_task(queue="default")
+@checks_task()
 def checks_cleanup_stale_pending_tasks() -> dict:
     """Remove orphaned ManufacturabilityCheckTask records that block check re-queuing.
 
