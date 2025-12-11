@@ -62,3 +62,20 @@ class InvalidStateTransitionError(Exception):
             f"cannot transition from {from_status} to {to_status}"
         )
         super().__init__(msg)
+
+
+class TaskExecutionError(Exception):
+    """Raised when a task execution step fails.
+
+    Used internally to signal errors during task processing,
+    allowing centralized error handling with consistent return format.
+
+    Attributes:
+        reason: Short identifier for the error type (e.g., "unknown_server")
+        message: Human-readable error message for logging
+    """
+
+    def __init__(self, reason: str, message: str) -> None:
+        self.reason = reason
+        self.message = message
+        super().__init__(message)

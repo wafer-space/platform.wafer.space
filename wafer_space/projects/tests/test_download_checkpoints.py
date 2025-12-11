@@ -342,7 +342,7 @@ class DownloadChunksIntegrationTests(TestCase):
             status=DownloadAttempt.Status.DOWNLOADING,
         )
 
-    @patch("wafer_space.projects.tasks.timezone")
+    @patch("wafer_space.projects.tasks_download.timezone")
     def test_creates_database_checkpoints_during_download(self, mock_timezone):
         """Test that database checkpoints are created during download."""
         # Mock time to avoid test flakiness
@@ -401,7 +401,7 @@ class DownloadChunksIntegrationTests(TestCase):
             # Cleanup
             temp_path.unlink(missing_ok=True)
 
-    @patch("wafer_space.projects.tasks.timezone")
+    @patch("wafer_space.projects.tasks_download.timezone")
     def test_checkpoints_with_resume(self, mock_timezone):
         """Test checkpoints align correctly when resuming download."""
         mock_timezone.now.return_value = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
@@ -461,7 +461,7 @@ class DownloadChunksIntegrationTests(TestCase):
             # Cleanup
             temp_path.unlink(missing_ok=True)
 
-    @patch("wafer_space.projects.tasks.timezone")
+    @patch("wafer_space.projects.tasks_download.timezone")
     def test_checkpoint_data_accuracy(self, mock_timezone):
         """Test checkpoint stores accurate data (bytes, chunk number)."""
         mock_timezone.now.return_value = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
@@ -545,7 +545,7 @@ class KnownSizeCheckpointTests(TestCase):
             status=DownloadAttempt.Status.DOWNLOADING,
         )
 
-    @patch("wafer_space.projects.tasks.timezone")
+    @patch("wafer_space.projects.tasks_download.timezone")
     def test_checkpoint_data_with_known_size(self, mock_timezone):
         """Test checkpoint stores correct bytes_downloaded for known-size files.
 
@@ -655,7 +655,7 @@ class ProgressLoggingIntegrationTests(TestCase):
             status=DownloadAttempt.Status.DOWNLOADING,
         )
 
-    @patch("wafer_space.projects.tasks.timezone")
+    @patch("wafer_space.projects.tasks_download.timezone")
     def test_progress_logs_at_correct_intervals(self, mock_timezone):
         """Test progress logs occur at 10MB intervals."""
         mock_timezone.now.return_value = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
@@ -690,7 +690,7 @@ class ProgressLoggingIntegrationTests(TestCase):
             )
 
             # Capture log output
-            logger_name = "wafer_space.projects.tasks"
+            logger_name = "wafer_space.projects.tasks_download"
             with self.assertLogs(logger_name, level=logging.INFO) as log_context:
                 _download_chunks(state)
 

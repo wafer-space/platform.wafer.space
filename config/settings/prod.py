@@ -93,8 +93,23 @@ INSTALLED_APPS += [
 # DOWNLOAD_TASK_*: uses base.py defaults (Celery retry configuration)
 # CELERY_BEAT_SCHEDULE: uses base.py defaults (all check lifecycle tasks)
 
-# Manufacturability check configuration
-PRECHECK_CONCURRENT_LIMIT = 9  # 9 × 24GB = 216GB RAM required
+# Docker servers for manufacturability checks
+# Production uses two remote Docker servers with 7 concurrent checks each
+# Total capacity: 14 concurrent checks (7 + 7), each using 24GB memory
+DOCKER_SERVERS = [
+    {
+        "id": "checker.wafer.space@harken",
+        "url": "tcp://10.3.27.44:2375",
+        "max_concurrent": 7,
+        "priority": 1,
+    },
+    {
+        "id": "checker.wafer.space@micky",
+        "url": "tcp://10.4.27.44:2375",
+        "max_concurrent": 7,
+        "priority": 2,
+    },
+]
 
 # LOGGING
 # ------------------------------------------------------------------------------

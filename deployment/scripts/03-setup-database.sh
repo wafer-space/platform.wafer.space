@@ -114,10 +114,10 @@ EOF
 
 echo "✓ Database created successfully"
 
-# Test connection
-echo "Testing database connection..."
-if PGPASSWORD="$DB_PASSWORD" psql -h localhost -U $DB_USER -d $DB_NAME -c "SELECT version();" >/dev/null 2>&1; then
-    echo "✓ Database connection successful"
+# Test connection via Unix socket
+echo "Testing database connection via Unix socket..."
+if PGPASSWORD="$DB_PASSWORD" psql -h /var/run/postgresql -U $DB_USER -d $DB_NAME -c "SELECT version();" >/dev/null 2>&1; then
+    echo "✓ Database connection successful (Unix socket)"
 else
     echo "✗ Database connection failed"
     exit 1
@@ -129,8 +129,9 @@ echo "Database: $DB_NAME"
 echo "User: $DB_USER"
 echo ""
 
-# Write DATABASE_URL to .env file
-DATABASE_URL="postgres://$DB_USER:$DB_PASSWORD@localhost:5432/$DB_NAME"
+# Write DATABASE_URL to .env file (Unix socket connection)
+# Using ?host=/var/run/postgresql to specify the socket directory
+DATABASE_URL="postgres://$DB_USER:$DB_PASSWORD@/$DB_NAME?host=/var/run/postgresql"
 
 # Create .env file from template if it doesn't exist
 if [ ! -f "$ENV_FILE" ]; then

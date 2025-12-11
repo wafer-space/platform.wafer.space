@@ -1,57 +1,48 @@
 #!/bin/bash
 # Install systemd service files
-# Run as: sudo ./install.sh
+# Run as: sudo ./install.sh [--no-start]
+#
+# Options:
+#   --no-start    Install and enable services without starting them
+#
+# Queue naming convention: {network}:{fs}:{purpose}
+#   - Network: none (DB only), mail (Mailgun), http (HTTP/S), dock (Docker IPs)
+#   - Filesystem: ro (read-only), rw (media write)
+#
+# This script handles migration from old service names to new ones.
 
 set -e
+
+# Parse arguments
+START_SERVICES=true
+for arg in "$@"; do
+    case $arg in
+        --no-start)
+            START_SERVICES=false
+            shift
+            ;;
+        --help|-h)
+            echo "Usage: sudo ./install.sh [--no-start]"
+            echo ""
+            echo "Options:"
+            echo "  --no-start    Install and enable services without starting them"
+            echo "  --help, -h    Show this help message"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $arg"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "=== Installing systemd service files ==="
 
-# Copy service files
-echo "Copying service files to /etc/systemd/system/..."
-cp "$SCRIPT_DIR/django-gunicorn.service" /etc/systemd/system/
-cp "$SCRIPT_DIR/django-celery.service" /etc/systemd/system/
-cp "$SCRIPT_DIR/django-celery-downloads.service" /etc/systemd/system/
-cp "$SCRIPT_DIR/django-celery-docker-persistent.service" /etc/systemd/system/
-cp "$SCRIPT_DIR/django-celery-docker-ephemeral.service" /etc/systemd/system/
-cp "$SCRIPT_DIR/django-celery-beat.service" /etc/systemd/system/
-
-echo "✓ Service files copied"
-
-# Reload systemd
-echo "Reloading systemd daemon..."
-systemctl daemon-reload
-echo "✓ Systemd daemon reloaded"
-
-# Log installation markers to journal for each service
-echo "Logging installation markers..."
-TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
-echo "Service files installed/updated at $TIMESTAMP" | systemd-cat -t django-gunicorn -p info
-echo "Service files installed/updated at $TIMESTAMP" | systemd-cat -t django-celery -p info
-echo "Service files installed/updated at $TIMESTAMP" | systemd-cat -t django-celery-downloads -p info
-echo "Service files installed/updated at $TIMESTAMP" | systemd-cat -t django-celery-docker-persistent -p info
-echo "Service files installed/updated at $TIMESTAMP" | systemd-cat -t django-celery-docker-ephemeral -p info
-echo "Service files installed/updated at $TIMESTAMP" | systemd-cat -t django-celery-beat -p info
-echo "✓ Installation markers logged to journal"
-
-# Enable services
-echo "Enabling services..."
-systemctl enable django-gunicorn.service
-systemctl enable django-celery.service
-systemctl enable django-celery-downloads.service
-systemctl enable django-celery-docker-persistent.service
-systemctl enable django-celery-docker-ephemeral.service
-systemctl enable django-celery-beat.service
-
-echo "✓ Services enabled"
-
-# Restart services
-echo ""
-echo "Restarting services..."
-
-SERVICES=(
-    "django-gunicorn.service"
+# Old service files to remove (migration)
+OLD_SERVICES=(
     "django-celery.service"
     "django-celery-downloads.service"
     "django-celery-docker-persistent.service"
@@ -59,37 +50,128 @@ SERVICES=(
     "django-celery-beat.service"
 )
 
-for service in "${SERVICES[@]}"; do
-    echo "  Restarting $service..."
-    systemctl restart "$service" && {
-        echo "  ✓ Restarted: $service"
+# New service files to install
+NEW_SERVICES=(
+    "django-gunicorn.service"
+    "django-celery-none-ro-default.service"
+    "django-celery-none-ro-checks-orch.service"
+    "django-celery-none-ro-beat.service"
+    "django-celery-mail-ro-email.service"
+    "django-celery-http-rw-downloads.service"
+    "django-celery-dock-ro-checks-fast.service"
+    "django-celery-dock-ro-checks-slow.service"
+    "django-celery-dock-rw-checks-save.service"
+)
+
+# Stop and disable old services
+echo ""
+echo "=== Cleaning up old services ==="
+for service in "${OLD_SERVICES[@]}"; do
+    if [ -f "/etc/systemd/system/$service" ]; then
+        echo "  Stopping and disabling: $service"
+        systemctl stop "$service" 2>/dev/null || true
+        systemctl disable "$service" 2>/dev/null || true
+    fi
+done
+
+# Remove old service files from systemd
+echo "  Removing old service files from /etc/systemd/system/..."
+for service in "${OLD_SERVICES[@]}"; do
+    if [ -f "/etc/systemd/system/$service" ]; then
+        rm -f "/etc/systemd/system/$service"
+        echo "    Removed: $service"
+    fi
+done
+echo "✓ Old services cleaned up"
+
+# Copy new service files
+echo ""
+echo "=== Installing new service files ==="
+echo "Copying service files to /etc/systemd/system/..."
+for service in "${NEW_SERVICES[@]}"; do
+    if [ -f "$SCRIPT_DIR/$service" ]; then
+        cp "$SCRIPT_DIR/$service" /etc/systemd/system/
+        echo "  Installed: $service"
+    else
+        echo "  WARNING: $service not found in $SCRIPT_DIR"
+    fi
+done
+echo "✓ Service files copied"
+
+# Reload systemd
+echo ""
+echo "Reloading systemd daemon..."
+systemctl daemon-reload
+echo "✓ Systemd daemon reloaded"
+
+# Log installation markers to journal for each service
+echo ""
+echo "Logging installation markers..."
+TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+for service in "${NEW_SERVICES[@]}"; do
+    service_name="${service%.service}"
+    echo "Service files installed/updated at $TIMESTAMP" | systemd-cat -t "$service_name" -p info
+done
+echo "✓ Installation markers logged to journal"
+
+# Enable services
+echo ""
+echo "Enabling services..."
+for service in "${NEW_SERVICES[@]}"; do
+    systemctl enable "$service" && {
+        echo "  ✓ Enabled: $service"
     } || {
-        echo "  ✗ Failed to restart: $service"
-        echo "  Checking status..."
+        echo "  ✗ Failed to enable: $service"
         systemctl status "$service" --no-pager || true
     }
 done
+echo "✓ Services enabled"
 
-echo ""
-echo "=== Systemd services installed and restarted ==="
-echo "Services have been installed, enabled, and restarted."
+# Restart services (unless --no-start)
+if [ "$START_SERVICES" = true ]; then
+    echo ""
+    echo "Restarting services..."
+
+    for service in "${NEW_SERVICES[@]}"; do
+        echo "  Restarting $service..."
+        systemctl restart "$service" && {
+            echo "  ✓ Restarted: $service"
+        } || {
+            echo "  ✗ Failed to restart: $service"
+            echo "  Checking status..."
+            systemctl status "$service" --no-pager || true
+        }
+    done
+
+    echo ""
+    echo "=== Systemd services installed and restarted ==="
+    echo "Services have been installed, enabled, and restarted."
+else
+    echo ""
+    echo "=== Systemd services installed (not started) ==="
+    echo "Services have been installed and enabled but NOT started."
+    echo "To start services manually:"
+    for service in "${NEW_SERVICES[@]}"; do
+        echo "  sudo systemctl start $service"
+    done
+fi
 echo ""
 echo "Installation marker logged to journal at: $TIMESTAMP"
+echo ""
+echo "Queue naming convention: {network}:{fs}:{purpose}"
+echo "  Network: none (DB only), mail (Mailgun), http (HTTP/S), dock (Docker IPs)"
+echo "  Filesystem: ro (read-only), rw (media write)"
 echo ""
 echo "Each service has isolated directories:"
 echo "  /run/platform.wafer.space-<service>/     - runtime (PID, socket)"
 echo "  /var/log/platform.wafer.space-<service>/ - logs"
 echo ""
 echo "To check status:"
-echo "  sudo systemctl status django-gunicorn.service"
-echo "  sudo systemctl status django-celery.service"
-echo "  sudo systemctl status django-celery-downloads.service"
-echo "  sudo systemctl status django-celery-docker-persistent.service"
-echo "  sudo systemctl status django-celery-docker-ephemeral.service"
-echo "  sudo systemctl status django-celery-beat.service"
+for service in "${NEW_SERVICES[@]}"; do
+    echo "  sudo systemctl status $service"
+done
 echo ""
 echo "To view logs:"
 echo "  sudo journalctl -u django-gunicorn.service -f"
-echo "  sudo tail -f /var/log/platform.wafer.space-celery/worker.log"
-echo "  sudo tail -f /var/log/platform.wafer.space-celery-downloads/worker.log"
+echo "  sudo tail -f /var/log/platform.wafer.space-celery-*/worker.log"
 echo ""

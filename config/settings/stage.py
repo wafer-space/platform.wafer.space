@@ -101,8 +101,24 @@ DOWNLOAD_TASK_RETRY_BACKOFF_MULTIPLIER = 2  # 30s, 60s
 # Download state verification (faster for staging)
 DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS = 30.0  # Check every 30s in staging
 
-# Manufacturability check configuration
-PRECHECK_CONCURRENT_LIMIT = 2  # 2 × 24GB = 48GB RAM required
+# Docker servers for manufacturability checks
+# Staging uses the same remote Docker servers as production with 1 concurrent each
+# Total capacity: 2 concurrent checks (1 + 1), each using 24GB memory
+# Priorities inverted vs prod to spread load across servers
+DOCKER_SERVERS = [
+    {
+        "id": "checker.wafer.space@micky",
+        "url": "tcp://10.4.27.44:2375",
+        "max_concurrent": 1,
+        "priority": 1,
+    },
+    {
+        "id": "checker.wafer.space@harken",
+        "url": "tcp://10.3.27.44:2375",
+        "max_concurrent": 1,
+        "priority": 2,
+    },
+]
 # CELERY_BEAT_SCHEDULE: uses base.py defaults (all check lifecycle tasks)
 
 # LOGGING

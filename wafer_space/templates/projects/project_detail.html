@@ -441,13 +441,15 @@
     </script>
   {% endif %}
   {# Auto-update logs when manufacturability check is processing #}
-  {% if check and check.status in 'pending,dispatched,running' %}
+  {% if check and check.status in 'pending,dispatching,starting,running,analyzing,cancelling' %}
     <script>
       // Poll for updated logs every 5 seconds while check is processing
       (function() {
         let pollInterval;
         const checkStatusUrl = '{% url "projects:check_status" pk=project.pk %}';
         const logsElement = document.getElementById('processing-logs');
+        const initialStatus = '{{ check.status }}';
+        let lastStatus = initialStatus;
 
         function updateCheckStatus() {
           fetch(checkStatusUrl)
@@ -463,8 +465,9 @@
                 }
               }
 
-              // If check is complete, reload page once to update UI
-              if (data.status === 'finished' || data.status === 'error' || data.status === 'cancelled') {
+              // If status changed, reload page to update UI (badges, buttons, etc.)
+              if (data.status !== lastStatus) {
+                console.log('[Check Status] Status changed from', lastStatus, 'to', data.status, '- reloading page');
                 clearInterval(pollInterval);
                 location.reload();
               }

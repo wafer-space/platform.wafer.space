@@ -9,7 +9,11 @@ class TestPrecheckLogParser:
 
     def test_parse_success(self):
         """Test parsing successful precheck output."""
-        logs = "Precheck successfully completed."
+        logs = """
+Check for Magic DRC errors clear.
+Check for KLayout DRC errors clear.
+Precheck successfully completed.
+"""
         result = PrecheckLogParser.parse_logs(logs, exit_code=0)
 
         assert result["success"] is True
@@ -39,6 +43,67 @@ class TestPrecheckLogParser:
         result = PrecheckLogParser.parse_logs(logs, exit_code=0)
 
         assert result["raw_output"] == logs
+
+    def test_exit_code_zero_without_positive_evidence_is_failure(self):
+        """Test that exit_code=0 without positive evidence returns failure.
+
+        This prevents false positives when:
+        - Container never ran (exit_code defaults to 0)
+        - Container exited cleanly but didn't complete checks
+        - Logs are empty or missing
+
+        Success requires ALL of:
+        - "Precheck successfully completed." message
+        - Both DRC tools (Magic AND KLayout) reported results
+        """
+        # Empty logs with exit_code=0 should NOT be success
+        result = PrecheckLogParser.parse_logs("", exit_code=0)
+        assert result["success"] is False
+        assert len(result["errors"]) == 1
+        assert "did not complete" in result["errors"][0]["message"]
+
+        # Random logs without success message or DRC results
+        logs = "Some random output\nMore lines\nNo DRC here"
+        result = PrecheckLogParser.parse_logs(logs, exit_code=0)
+        assert result["success"] is False
+        assert len(result["errors"]) == 1
+        assert "did not complete" in result["errors"][0]["message"]
+
+    def test_exit_code_zero_with_drc_but_no_success_message_is_failure(self):
+        """Test that exit_code=0 with DRC results but no success message is failure.
+
+        Success requires BOTH the success message AND both DRC tools completing.
+        """
+        logs = """
+Check for Magic DRC errors clear.
+Check for KLayout DRC errors clear.
+"""
+        result = PrecheckLogParser.parse_logs(logs, exit_code=0)
+        assert result["success"] is False
+        assert len(result["errors"]) == 1
+        assert "no success message" in result["errors"][0]["message"]
+
+    def test_exit_code_zero_with_success_message_but_no_drc_is_failure(self):
+        """Test that exit_code=0 with success message but no DRC results is failure.
+
+        Success requires BOTH the success message AND both DRC tools completing.
+        """
+        logs = "Precheck successfully completed."
+        result = PrecheckLogParser.parse_logs(logs, exit_code=0)
+        assert result["success"] is False
+        assert len(result["errors"]) == 1
+        assert "DRC tools did not report results" in result["errors"][0]["message"]
+
+    def test_full_success_requires_all_evidence(self):
+        """Test that success requires success message AND both DRC tools."""
+        logs = """
+Check for Magic DRC errors clear.
+Check for KLayout DRC errors clear.
+Precheck successfully completed.
+"""
+        result = PrecheckLogParser.parse_logs(logs, exit_code=0)
+        assert result["success"] is True
+        assert len(result["errors"]) == 0
 
 
 class TestParseDeferredDRCErrors:
@@ -184,3 +249,33 @@ One or more deferred errors were encountered:
         result = classify_failure(logs, exit_code=1)
         # Both tools reported (errors), so this is a design error, not system
         assert result == "design"
+
+    def test_exit_code_zero_with_drc_but_no_success_message_is_system_error(self):
+        """exit_code=0 with DRC results but no success message = system error.
+
+        Container exited cleanly but precheck didn't complete properly.
+        """
+        logs = """
+Check for Magic DRC errors clear.
+Check for KLayout DRC errors clear.
+"""
+        result = classify_failure(logs, exit_code=0)
+        assert result == "system"
+
+    def test_exit_code_zero_with_no_evidence_is_system_error(self):
+        """exit_code=0 with no evidence = system error.
+
+        Container exited cleanly but precheck never ran or produced output.
+        """
+        logs = "Some random output"
+        result = classify_failure(logs, exit_code=0)
+        assert result == "system"
+
+    def test_exit_code_zero_with_success_message_but_no_drc_is_system_error(self):
+        """exit_code=0 with success message but no DRC = system error.
+
+        Partial completion - DRC tools didn't run.
+        """
+        logs = "Precheck successfully completed."
+        result = classify_failure(logs, exit_code=0)
+        assert result == "system"

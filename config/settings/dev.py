@@ -79,58 +79,53 @@ DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS = 30.0  # Check every 30s in dev
 
 # Manufacturability check scanning (faster for development)
 PRECHECK_SCAN_INTERVAL_SECONDS = 15.0  # Scan every 15s in dev
-PRECHECK_CONCURRENT_LIMIT = 1  # 1 × 24GB = 24GB RAM required
 PRECHECK_CONTAINER_CLEANUP_INTERVAL_SECONDS = 15.0  # Cleanup every 15s in dev
 PRECHECK_TIMEOUT_SECONDS = 5 * 60  # 5 minutes hard limit for local dev
 PRECHECK_SOFT_TIMEOUT_BUFFER = 60  # 1 minute buffer (4 min soft, 5 min hard)
 
-CELERY_BEAT_SCHEDULE = {
-    # Download recovery
-    "ensure-download-tasks-queued": {
-        "task": "wafer_space.projects.tasks.ensure_download_tasks_queued",
-        "schedule": DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS,
+# Local Docker server for development
+DOCKER_SERVERS = [
+    {
+        "id": "local",
+        "url": "unix:///var/run/docker.sock",
+        "max_concurrent": 1,
+        "priority": 1,
     },
-    # Manufacturability check lifecycle
-    "checks-create": {
-        "task": "wafer_space.projects.tasks.checks_create",
-        "schedule": 15.0,  # Faster in dev (30s in prod)
-    },
-    "checks-dispatch": {
-        "task": "wafer_space.projects.tasks.checks_dispatch",
-        "schedule": 15.0,  # Faster in dev (30s in prod)
-    },
-    "checks-retry": {
-        "task": "wafer_space.projects.tasks.checks_retry",
-        "schedule": 30.0,  # Faster in dev (60s in prod)
-    },
-    # Cancellation cleanup (fast - critical for releasing slots)
-    "checks-cancelling": {
-        "task": "wafer_space.projects.tasks.checks_cancelling",
-        "schedule": 10.0,  # Faster in dev (15s in prod)
-    },
-    # Orphan detection
-    "checks-cleanup-orphaned-dispatch": {
-        "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_dispatch",
-        "schedule": 30.0,  # Faster in dev (60s in prod)
-    },
-    "checks-cleanup-orphaned-processing": {
-        "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_processing",
-        "schedule": 30.0,  # Faster in dev (60s in prod)
-    },
-    "checks-cleanup-orphaned-docker": {
-        "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_docker",
-        # 15s in dev (300s in prod)
-        "schedule": PRECHECK_CONTAINER_CLEANUP_INTERVAL_SECONDS,
-    },
-    "checks-cleanup-stale-files": {
-        "task": "wafer_space.projects.tasks.checks_cleanup_stale_files",
-        "schedule": 30.0,  # Faster in dev (60s in prod)
-    },
-}
+]
+
+# CELERY_BEAT_SCHEDULE: uses base.py defaults (all tasks are fast-running now)
 
 # LOGGING
 # ------------------------------------------------------------------------------
 # Uses base.py defaults
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": (
+                "%(levelname)s %(asctime)s %(module)s "
+                "%(process)d %(thread)d %(message)s"
+            ),
+        },
+    },
+    "handlers": {
+        "console": {
+            "level": "DEBUG",
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+        },
+    },
+    "root": {"level": "INFO", "handlers": ["console"]},
+    "loggers": {
+        "wafer_space.projects.verification": {
+            "level": "DEBUG",
+            "handlers": ["console"],
+            "propagate": False,
+        },
+    },
+}
+
 
 # OAUTH PROVIDERS
 # ------------------------------------------------------------------------------

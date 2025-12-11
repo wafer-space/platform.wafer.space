@@ -453,53 +453,68 @@ DOCKER_CLIENT_TIMEOUT = 300  # 5 minutes
 # Precheck (Manufacturability Checking) configuration
 # See: Design document for manufacturability checking implementation
 PRECHECK_DOCKER_IMAGE = "ghcr.io/wafer-space/gf180mcu-precheck:latest"
-PRECHECK_CONCURRENT_LIMIT = 4
 PRECHECK_TIMEOUT_SECONDS = 20 * 60 * 60  # 20 hours hard limit
 PRECHECK_SOFT_TIMEOUT_BUFFER = 60 * 60  # 1 hour buffer before hard limit
 PRECHECK_SCAN_INTERVAL_SECONDS = 30.0  # Scan for files ready to check every 30s
+
+# Docker server configuration
+# Servers are selected in priority order (lowest number = highest priority)
+# Override in environment-specific settings
+DOCKER_SERVERS: list[dict[str, str | int]] = []
 
 # Celery Beat periodic tasks
 CELERY_BEAT_SCHEDULE = {
     # Download recovery
     "ensure-download-tasks-queued": {
-        "task": "wafer_space.projects.tasks.ensure_download_tasks_queued",
+        "task": "wafer_space.projects.tasks_download.ensure_download_tasks_queued",
         "schedule": DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS,
     },
-    # Manufacturability check lifecycle
+    # Manufacturability check creation (creates checks for verified files)
     "checks-create": {
-        "task": "wafer_space.projects.tasks.checks_create",
-        "schedule": 30.0,
-    },
-    "checks-dispatch": {
-        "task": "wafer_space.projects.tasks.checks_dispatch",
-        "schedule": 30.0,
-    },
-    "checks-retry": {
-        "task": "wafer_space.projects.tasks.checks_retry",
-        "schedule": 60.0,
-    },
-    # Cancellation cleanup (fast - critical for releasing slots)
-    "checks-cancelling": {
-        "task": "wafer_space.projects.tasks.checks_cancelling",
+        "task": "wafer_space.projects.tasks_checks.checks_create",
         "schedule": 15.0,
     },
-    # Orphan detection
-    # NOTE: checks-cleanup-orphaned-dispatch disabled - needs investigation on
-    # how to reliably verify task is still in broker queue. See issue #133.
-    # "checks-cleanup-orphaned-dispatch": {
-    #     "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_dispatch",
-    #     "schedule": 60.0,
-    # },
-    "checks-cleanup-orphaned-processing": {
-        "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_processing",
+    # Manufacturability check lifecycle - polling architecture (15s intervals)
+    # Each task polls for checks in a specific state and advances them to the next state
+    "checks-pending": {
+        "task": "wafer_space.projects.tasks_checks.checks_pending",
+        "schedule": 15.0,
+    },
+    "checks-dispatching": {
+        "task": "wafer_space.projects.tasks_checks.checks_dispatching",
+        "schedule": 15.0,
+    },
+    "checks-starting": {
+        "task": "wafer_space.projects.tasks_checks.checks_starting",
+        "schedule": 15.0,
+    },
+    "checks-running": {
+        "task": "wafer_space.projects.tasks_checks.checks_running",
+        "schedule": 15.0,
+    },
+    "checks-analyzing": {
+        "task": "wafer_space.projects.tasks_checks.checks_analyzing",
+        "schedule": 15.0,
+    },
+    "checks-cancelling": {
+        "task": "wafer_space.projects.tasks_checks.checks_cancelling",
+        "schedule": 15.0,
+    },
+    # Cleanup and retry tasks (60s intervals)
+    "checks-retry": {
+        "task": "wafer_space.projects.tasks_checks.checks_retry",
         "schedule": 60.0,
     },
     "checks-cleanup-orphaned-docker": {
-        "task": "wafer_space.projects.tasks.checks_cleanup_orphaned_docker",
-        "schedule": 300.0,
+        "task": "wafer_space.projects.tasks_checks.checks_cleanup_orphaned_docker",
+        "schedule": 60.0,
     },
     "checks-cleanup-stale-files": {
-        "task": "wafer_space.projects.tasks.checks_cleanup_stale_files",
+        "task": "wafer_space.projects.tasks_checks.checks_cleanup_stale_files",
+        "schedule": 60.0,
+    },
+    "checks-cleanup-stale-pending-tasks": {
+        "task": "wafer_space.projects.tasks_checks.checks_cleanup_stale_pending_tasks",
         "schedule": 60.0,
     },
 }

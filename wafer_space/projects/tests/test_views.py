@@ -10,7 +10,6 @@ from django.test import TestCase
 from django.urls import reverse
 
 from wafer_space.core.enums import SlotSize
-from wafer_space.projects.models import CheckExecutionContext
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
@@ -638,10 +637,8 @@ class TestProjectSubmitView(TestCase):
         # Should return 403 Forbidden
         assert response.status_code == HTTP_FORBIDDEN
 
-    @patch("wafer_space.projects.tasks.check_process_job.delay")
-    def test_successful_submission(self, mock_task):
+    def test_successful_submission(self):
         """Test successful project submission."""
-        mock_task.return_value = Mock(id="task-123")
 
         # Create completed and verified file
         project_file = ProjectFile.objects.create(
@@ -838,10 +835,8 @@ class TestProjectSubmitView(TestCase):
         assert len(messages) == 1
         assert "already" in str(messages[0]).lower()
 
-    @patch("wafer_space.projects.tasks.check_process_job.delay")
-    def test_prevents_double_submission_race_condition(self, mock_task):
+    def test_prevents_double_submission_race_condition(self):
         """Test that double submission is prevented even with race condition."""
-        mock_task.return_value = Mock(id="task-123")
 
         # Create completed file
         project_file = ProjectFile.objects.create(
@@ -1197,21 +1192,22 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.PENDING,
         )
-        check.mark_dispatched(celery_job_id="test-job-id")
-        exec_context = CheckExecutionContext(
-            celery_worker_pid=12345,
-            celery_worker_hostname="test-worker",
-            docker_container_id="test-container-id",
+        # New pathway: PENDING -> DISPATCHING -> STARTING -> RUNNING
+        check.mark_dispatching(server_id="server-1")
+        check.mark_starting(
             docker_image="test-image:latest",
-            docker_image_digest="sha256:test",
+            docker_image_digest="sha256:abc123",
+        )
+        check.mark_running(
+            docker_container_id="test-container-id",
             docker_command="docker run ...",
         )
-        check.mark_running(context=exec_context)
+        check.mark_analyzing(docker_exit_code=1)
         check.mark_finished(
             is_manufacturable=False,
-            errors=[{"message": "Error 1"}, {"message": "Error 2"}],
-            warnings=[{"message": "Warning 1"}],
-            processing_logs="Test processing logs",
+            errors=["Error 1", "Error 2"],
+            warnings=["Warning 1"],
+            tool_versions={"precheck": "1.0.0"},
         )
 
         # Log in and access detail view
@@ -1224,9 +1220,9 @@ class TestProjectDetailViewManufacturabilityCheck(TestCase):
         assert check is not None
         assert check.status == ManufacturabilityCheck.Status.FINISHED
         assert check.is_manufacturable is False
-        expected_errors = [{"message": "Error 1"}, {"message": "Error 2"}]
+        expected_errors = ["Error 1", "Error 2"]
         assert check.errors == expected_errors
-        assert check.warnings == [{"message": "Warning 1"}]
+        assert check.warnings == ["Warning 1"]
 
     def test_detail_view_shows_error_message_to_staff(self):
         """Test that staff users can see system error messages."""
@@ -1306,7 +1302,6 @@ class TestManufacturabilityCheckCancelView(TestCase):
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.PENDING,
-            celery_job_id="celery-task-123",
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -1324,7 +1319,6 @@ class TestManufacturabilityCheckCancelView(TestCase):
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.RUNNING,
-            celery_job_id="celery-task-456",
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)

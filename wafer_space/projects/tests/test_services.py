@@ -658,7 +658,6 @@ class TestFileReplacementCancelsCheck(TestCase):
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.PENDING,
-            celery_job_id="celery-task-to-cancel",
         )
 
         # Mock URL validation for new file submission
@@ -699,7 +698,6 @@ class TestFileReplacementCancelsCheck(TestCase):
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.RUNNING,
-            celery_job_id="processing-task-to-cancel",
         )
 
         # Mock URL validation for new file submission

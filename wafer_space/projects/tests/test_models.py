@@ -1,8 +1,5 @@
 """Tests for project models."""
 
-from unittest.mock import Mock
-from unittest.mock import patch
-
 import pytest
 from django.core.exceptions import ValidationError
 from django.test import TestCase
@@ -17,10 +14,12 @@ from wafer_space.projects.models import LicenseType
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
+from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.users.models import User
 from wafer_space.users.tests.factories import UserFactory
 
+from .constants import FLOAT_PRECISION_TOLERANCE
 from .constants import PROGRESS_COMPLETE
 from .constants import TEST_PASSWORD
 from .constants import TEST_WORKER_PID
@@ -29,8 +28,6 @@ from .constants import TEST_WORKER_PID
 def _make_exec_context(**kwargs) -> CheckExecutionContext:
     """Create a CheckExecutionContext for tests with sensible defaults."""
     return CheckExecutionContext(
-        celery_worker_pid=kwargs.get("celery_worker_pid", TEST_WORKER_PID),
-        celery_worker_hostname=kwargs.get("celery_worker_hostname", "worker-01"),
         docker_container_id=kwargs.get("docker_container_id", "abc123def456"),
         docker_image=kwargs.get("docker_image", "test-image:latest"),
         docker_image_digest=kwargs.get("docker_image_digest", "sha256:test"),
@@ -243,10 +240,8 @@ class TestProjectSubmit(TestCase):
 
         assert "hash" in str(exc_info.value).lower()
 
-    @patch("wafer_space.projects.tasks.check_process_job.delay")
-    def test_submit_sets_status_to_submitted(self, mock_task):
+    def test_submit_sets_status_to_submitted(self):
         """Test that submit() sets status to SUBMITTED."""
-        mock_task.return_value = Mock(id="task-123")
 
         _pf = ProjectFile.objects.create(
             project=self.project,
@@ -343,10 +338,8 @@ class TestProjectSubmit(TestCase):
         ).count()
         assert final_check_count == initial_check_count
 
-    @patch("wafer_space.projects.tasks.check_process_job.delay")
-    def test_submit_does_not_create_duplicate_check(self, mock_task):
+    def test_submit_does_not_create_duplicate_check(self):
         """Test that submit() does not create duplicate manufacturability check."""
-        mock_task.return_value = Mock(id="task-123")
 
         _pf = ProjectFile.objects.create(
             project=self.project,
@@ -373,7 +366,6 @@ class TestProjectSubmit(TestCase):
             project=self.project,
             project_file=_pf,
             status=ManufacturabilityCheck.Status.RUNNING,
-            celery_job_id="existing-task-123",
         )
 
         self.project.submit()
@@ -688,11 +680,11 @@ class TestManufacturabilityCheckCancellingState(TestCase):
         assert check.can_transition_to(ManufacturabilityCheck.Status.CANCELLING) is True
 
     def test_can_transition_to_cancelling_from_dispatched(self):
-        """Test DISPATCHED can transition to CANCELLING."""
+        """Test DISPATCHING can transition to CANCELLING."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHED,
+            status=ManufacturabilityCheck.Status.DISPATCHING,
         )
         assert check.can_transition_to(ManufacturabilityCheck.Status.CANCELLING) is True
 
@@ -772,8 +764,7 @@ class TestManufacturabilityCheckMarkCancelling(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHED,
-            celery_job_id="test-job-123",
+            status=ManufacturabilityCheck.Status.DISPATCHING,
         )
 
         check.mark_cancelling(reason="New file submitted")
@@ -781,7 +772,6 @@ class TestManufacturabilityCheckMarkCancelling(TestCase):
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.CANCELLING
         # Job ID preserved for cleanup task
-        assert check.celery_job_id == "test-job-123"
 
     def test_mark_cancelling_from_running(self):
         """Test mark_cancelling transitions RUNNING to CANCELLING."""
@@ -885,23 +875,18 @@ class TestManufacturabilityCheckMarkCancelled(TestCase):
 
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.CANCELLED
-        assert check.celery_job_finished_at is not None
 
     def test_mark_cancelled_sets_timestamp(self):
-        """Test mark_cancelled sets celery_job_finished_at timestamp."""
+        """Test mark_cancelled completes successfully."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.CANCELLING,
         )
 
-        before = timezone.now()
         check.mark_cancelled()
-        after = timezone.now()
 
         check.refresh_from_db()
-        assert check.celery_job_finished_at is not None
-        assert before <= check.celery_job_finished_at <= after
 
     def test_mark_cancelled_from_pending_raises(self):
         """Test mark_cancelled raises from PENDING.
@@ -925,7 +910,7 @@ class TestManufacturabilityCheckMarkCancelled(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHED,
+            status=ManufacturabilityCheck.Status.DISPATCHING,
         )
 
         with pytest.raises(InvalidStateTransitionError):
@@ -1015,7 +1000,7 @@ class TestManufacturabilityCheckMarkCancelled(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHED,
+            status=ManufacturabilityCheck.Status.DISPATCHING,
         )
 
         assert check.is_cancellable is True
@@ -1090,8 +1075,16 @@ class TestManufacturabilityCheckQueueProperties(TestCase):
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.PENDING,
         )
-        check.mark_dispatched(celery_job_id="test-job-1")
-        check.mark_running(context=_make_exec_context(celery_worker_pid=12345))
+        # Use new polling pathway to transition to RUNNING
+        check.mark_dispatching(server_id="server-1")
+        check.mark_starting(
+            docker_image="test:latest",
+            docker_image_digest="sha256:abc",
+        )
+        check.mark_running(
+            docker_container_id="test-container",
+            docker_command="precheck",
+        )
 
         assert check.queue_position is None
 
@@ -1155,13 +1148,12 @@ class TestManufacturabilityCheckQueueProperties(TestCase):
             is_active=True,
         )
 
-        # Create DISPATCHED check using state machine
-        check2 = ManufacturabilityCheck.objects.create(
+        # Create DISPATCHING check using state machine
+        ManufacturabilityCheck.objects.create(
             project=project2,
             project_file=file2,
-            status=ManufacturabilityCheck.Status.PENDING,
+            status=ManufacturabilityCheck.Status.DISPATCHING,
         )
-        check2.mark_dispatched(celery_job_id="test-job-2")
 
         # Create RUNNING check using state machine
         check3 = ManufacturabilityCheck.objects.create(
@@ -1169,8 +1161,16 @@ class TestManufacturabilityCheckQueueProperties(TestCase):
             project_file=file3,
             status=ManufacturabilityCheck.Status.PENDING,
         )
-        check3.mark_dispatched(celery_job_id="test-job-3")
-        check3.mark_running(context=_make_exec_context(celery_worker_pid=12345))
+        # Use new polling pathway to transition to RUNNING
+        check3.mark_dispatching(server_id="server-1")
+        check3.mark_starting(
+            docker_image="test:latest",
+            docker_image_digest="sha256:abc",
+        )
+        check3.mark_running(
+            docker_container_id="test-container",
+            docker_command="precheck",
+        )
 
         # Create our PENDING check
         check = ManufacturabilityCheck.objects.create(
@@ -1207,7 +1207,7 @@ class TestManufacturabilityCheckResultDisplay(TestCase):
         """Test result_display returns empty string for non-completed checks."""
         statuses = [
             ManufacturabilityCheck.Status.PENDING,
-            ManufacturabilityCheck.Status.DISPATCHED,
+            ManufacturabilityCheck.Status.DISPATCHING,
             ManufacturabilityCheck.Status.RUNNING,
             ManufacturabilityCheck.Status.ERROR,
             ManufacturabilityCheck.Status.CANCELLED,
@@ -1301,13 +1301,14 @@ class TestManufacturabilityCheckStateTransitions(TestCase):
         )
 
     def test_can_transition_pending_to_dispatched(self):
-        """PENDING can transition to DISPATCHED."""
+        """PENDING can transition to DISPATCHING."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.PENDING,
         )
-        assert check.can_transition_to(ManufacturabilityCheck.Status.DISPATCHED) is True
+        expected = ManufacturabilityCheck.Status.DISPATCHING
+        assert check.can_transition_to(expected) is True
 
     def test_can_transition_pending_to_error(self):
         """PENDING can transition to ERROR."""
@@ -1348,22 +1349,22 @@ class TestManufacturabilityCheckStateTransitions(TestCase):
         assert check.can_transition_to(ManufacturabilityCheck.Status.FINISHED) is False
 
     def test_can_transition_dispatched_to_running(self):
-        """DISPATCHED can transition to RUNNING."""
+        """STARTING can transition to RUNNING."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHED,
+            status=ManufacturabilityCheck.Status.STARTING,
         )
         assert check.can_transition_to(ManufacturabilityCheck.Status.RUNNING) is True
 
-    def test_can_transition_running_to_finished(self):
-        """RUNNING can transition to FINISHED."""
+    def test_can_transition_running_to_analyzing(self):
+        """RUNNING can transition to ANALYZING."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.RUNNING,
         )
-        assert check.can_transition_to(ManufacturabilityCheck.Status.FINISHED) is True
+        assert check.can_transition_to(ManufacturabilityCheck.Status.ANALYZING) is True
 
     def test_can_transition_running_to_error(self):
         """RUNNING can transition to ERROR."""
@@ -1410,70 +1411,8 @@ class TestManufacturabilityCheckStateTransitions(TestCase):
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.ERROR,
         )
-        result = check.can_transition_to(ManufacturabilityCheck.Status.DISPATCHED)
+        result = check.can_transition_to(ManufacturabilityCheck.Status.DISPATCHING)
         assert result is False
-
-
-@pytest.mark.django_db
-class TestManufacturabilityCheckMarkDispatched(TestCase):
-    """Tests for mark_dispatched() method."""
-
-    def setUp(self):
-        """Set up test fixtures."""
-        self.user = User.objects.create_user(
-            username="testuser",
-            email="test@example.com",
-            password=TEST_PASSWORD,
-        )
-        self.project = Project.objects.create(
-            user=self.user,
-            name="Test Project",
-            description="Test project",
-        )
-        self.project_file = ProjectFile.objects.create(
-            project=self.project,
-            original_url="https://example.com/file.gds",
-            source_url="https://example.com/file.gds",
-            original_filename="file.gds",
-            is_active=True,
-        )
-
-    def test_mark_dispatched_from_pending(self):
-        """Can mark PENDING check as DISPATCHED."""
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.PENDING,
-        )
-        check.mark_dispatched(celery_job_id="test-job-123")
-
-        check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.DISPATCHED
-        assert check.celery_job_id == "test-job-123"
-        assert check.celery_job_dispatched_at is not None
-
-    def test_mark_dispatched_from_invalid_state_raises(self):
-        """Cannot mark FINISHED check as DISPATCHED."""
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.FINISHED,
-        )
-        with pytest.raises(InvalidStateTransitionError) as exc_info:
-            check.mark_dispatched(celery_job_id="test-job-123")
-
-        assert "finished" in str(exc_info.value).lower()
-        assert "dispatched" in str(exc_info.value).lower()
-
-    def test_mark_dispatched_from_cancelled_raises(self):
-        """Cannot mark CANCELLED check as DISPATCHED."""
-        check = ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.CANCELLED,
-        )
-        with pytest.raises(InvalidStateTransitionError):
-            check.mark_dispatched(celery_job_id="test-job-123")
 
 
 @pytest.mark.django_db
@@ -1501,13 +1440,16 @@ class TestManufacturabilityCheckMarkRunning(TestCase):
         )
 
     def test_mark_running_from_dispatched(self):
-        """Can mark DISPATCHED check as RUNNING."""
+        """Can mark STARTING check as RUNNING."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHED,
+            status=ManufacturabilityCheck.Status.STARTING,
         )
-        check.mark_running(context=_make_exec_context())
+        check.mark_running(
+            docker_container_id="test-container",
+            docker_command="precheck",
+        )
 
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.RUNNING
@@ -1517,22 +1459,22 @@ class TestManufacturabilityCheckMarkRunning(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHED,
+            status=ManufacturabilityCheck.Status.STARTING,
         )
 
         before = timezone.now()
-        check.mark_running(context=_make_exec_context())
+        check.mark_running(
+            docker_container_id="test-container-123",
+            docker_command="precheck /path/to/file",
+        )
         after = timezone.now()
 
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.RUNNING
-        assert check.celery_worker_pid == TEST_WORKER_PID
-        assert check.celery_worker_hostname == "worker-01"
-        assert check.docker_container_id == "abc123def456"
-        assert check.docker_container_started_at is not None
-        assert before <= check.docker_container_started_at <= after
-        assert check.celery_job_started_at is not None
-        assert before <= check.celery_job_started_at <= after
+        assert check.docker_container_id == "test-container-123"
+        assert check.docker_command == "precheck /path/to/file"
+        assert check.container_started_at is not None
+        assert before <= check.container_started_at <= after
 
     def test_mark_running_from_pending_raises(self):
         """Cannot mark PENDING check as RUNNING."""
@@ -1542,7 +1484,10 @@ class TestManufacturabilityCheckMarkRunning(TestCase):
             status=ManufacturabilityCheck.Status.PENDING,
         )
         with pytest.raises(InvalidStateTransitionError) as exc_info:
-            check.mark_running(context=_make_exec_context())
+            check.mark_running(
+                docker_container_id="test-container",
+                docker_command="precheck",
+            )
 
         assert "pending" in str(exc_info.value).lower()
         assert "running" in str(exc_info.value).lower()
@@ -1555,7 +1500,10 @@ class TestManufacturabilityCheckMarkRunning(TestCase):
             status=ManufacturabilityCheck.Status.RUNNING,
         )
         with pytest.raises(InvalidStateTransitionError):
-            check.mark_running(context=_make_exec_context())
+            check.mark_running(
+                docker_container_id="test-container",
+                docker_command="precheck",
+            )
 
     def test_mark_running_from_finished_raises(self):
         """Cannot mark FINISHED check as RUNNING."""
@@ -1565,7 +1513,10 @@ class TestManufacturabilityCheckMarkRunning(TestCase):
             status=ManufacturabilityCheck.Status.FINISHED,
         )
         with pytest.raises(InvalidStateTransitionError) as exc_info:
-            check.mark_running(context=_make_exec_context())
+            check.mark_running(
+                docker_container_id="test-container",
+                docker_command="precheck",
+            )
 
         assert "finished" in str(exc_info.value).lower()
         assert "running" in str(exc_info.value).lower()
@@ -1578,7 +1529,10 @@ class TestManufacturabilityCheckMarkRunning(TestCase):
             status=ManufacturabilityCheck.Status.ERROR,
         )
         with pytest.raises(InvalidStateTransitionError):
-            check.mark_running(context=_make_exec_context())
+            check.mark_running(
+                docker_container_id="test-container",
+                docker_command="precheck",
+            )
 
     def test_mark_running_from_cancelled_raises(self):
         """Cannot mark CANCELLED check as RUNNING."""
@@ -1588,7 +1542,238 @@ class TestManufacturabilityCheckMarkRunning(TestCase):
             status=ManufacturabilityCheck.Status.CANCELLED,
         )
         with pytest.raises(InvalidStateTransitionError):
-            check.mark_running(context=_make_exec_context())
+            check.mark_running(
+                docker_container_id="test-container",
+                docker_command="precheck",
+            )
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckMarkRunningUpdated(TestCase):
+    """Test updated mark_running transition method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_mark_running_from_starting(self):
+        """mark_running transitions STARTING -> RUNNING."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.STARTING,
+            project=self.project,
+            project_file=self.project_file,
+        )
+        check.mark_running(
+            docker_container_id="abc123",
+            docker_command="precheck /input/design.gds",
+        )
+        assert check.status == ManufacturabilityCheck.Status.RUNNING
+
+    def test_mark_running_sets_container_info(self):
+        """mark_running stores container ID and command."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.STARTING,
+            project=self.project,
+            project_file=self.project_file,
+        )
+        check.mark_running(
+            docker_container_id="abc123",
+            docker_command="precheck /input/design.gds",
+        )
+        assert check.docker_container_id == "abc123"
+        assert check.docker_command == "precheck /input/design.gds"
+
+    def test_mark_running_sets_container_started_at(self):
+        """mark_running sets container_started_at automatically."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.STARTING,
+            project=self.project,
+            project_file=self.project_file,
+        )
+        assert check.container_started_at is None
+        check.mark_running(docker_container_id="abc123", docker_command="precheck")
+        assert check.container_started_at is not None
+
+    def test_mark_running_raises_for_invalid_transition(self):
+        """mark_running raises for non-STARTING status."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.DISPATCHING,
+            project=self.project,
+            project_file=self.project_file,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_running(docker_container_id="abc", docker_command="test")
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckMarkAnalyzing(TestCase):
+    """Test mark_analyzing transition method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_mark_analyzing_changes_status(self):
+        """mark_analyzing transitions RUNNING -> ANALYZING."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING,
+            project=self.project,
+            project_file=self.project_file,
+        )
+        check.mark_analyzing(docker_exit_code=0)
+        assert check.status == ManufacturabilityCheck.Status.ANALYZING
+
+    def test_mark_analyzing_sets_exit_code(self):
+        """mark_analyzing stores container exit code."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING,
+            project=self.project,
+            project_file=self.project_file,
+        )
+        check.mark_analyzing(docker_exit_code=1)
+        assert check.docker_exit_code == 1
+
+    def test_mark_analyzing_sets_container_finished_at(self):
+        """mark_analyzing sets container_finished_at automatically."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING,
+            project=self.project,
+            project_file=self.project_file,
+        )
+        assert check.container_finished_at is None
+        check.mark_analyzing(docker_exit_code=0)
+        assert check.container_finished_at is not None
+
+    def test_mark_analyzing_raises_for_invalid_transition(self):
+        """mark_analyzing raises for non-RUNNING status."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.STARTING,
+            project=self.project,
+            project_file=self.project_file,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_analyzing(docker_exit_code=0)
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckMarkFinishedUpdated(TestCase):
+    """Test updated mark_finished transition method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_mark_finished_from_analyzing(self):
+        """mark_finished transitions ANALYZING -> FINISHED."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            project=self.project,
+            project_file=self.project_file,
+        )
+        check.mark_finished(
+            is_manufacturable=True,
+            errors=[],
+            warnings=["minor issue"],
+            tool_versions={"precheck": "1.0"},
+        )
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
+
+    def test_mark_finished_sets_results(self):
+        """mark_finished stores analysis results."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            project=self.project,
+            project_file=self.project_file,
+        )
+        check.mark_finished(
+            is_manufacturable=False,
+            errors=["fatal error"],
+            warnings=[],
+            tool_versions={"precheck": "2.0"},
+        )
+        assert check.is_manufacturable is False
+        assert check.errors == ["fatal error"]
+        assert check.warnings == []
+        assert check.tool_versions == {"precheck": "2.0"}
+
+    def test_mark_finished_sets_analysis_completed_at(self):
+        """mark_finished sets analysis_completed_at automatically."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            project=self.project,
+            project_file=self.project_file,
+        )
+        assert check.analysis_completed_at is None
+        check.mark_finished(
+            is_manufacturable=True,
+            errors=[],
+            warnings=[],
+            tool_versions={},
+        )
+        assert check.analysis_completed_at is not None
+
+    def test_mark_finished_raises_for_invalid_transition(self):
+        """mark_finished raises for non-ANALYZING/RUNNING status."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.STARTING,
+            project=self.project,
+            project_file=self.project_file,
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_finished(
+                is_manufacturable=True,
+                errors=[],
+                warnings=[],
+                tool_versions={},
+            )
 
 
 @pytest.mark.django_db
@@ -1698,46 +1883,42 @@ class TestManufacturabilityCheckMarkFinished(TestCase):
         )
 
     def test_mark_finished_from_running(self):
-        """Can mark RUNNING check as FINISHED."""
+        """Can mark ANALYZING check as FINISHED."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.RUNNING,
+            status=ManufacturabilityCheck.Status.ANALYZING,
         )
         check.mark_finished(
             is_manufacturable=True,
             errors=[],
             warnings=[],
-            processing_logs="Processing completed successfully",
+            tool_versions={"precheck": "1.0.0"},
         )
 
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.FINISHED
         assert check.is_manufacturable is True
-        assert check.celery_job_finished_at is not None
+        assert check.analysis_completed_at is not None
 
     def test_mark_finished_sets_all_fields(self):
         """mark_finished() sets all required fields."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.RUNNING,
+            status=ManufacturabilityCheck.Status.ANALYZING,
         )
 
-        test_errors = [
-            {"rule": "metal1.width", "message": "Width violation"},
-        ]
-        test_warnings = [
-            {"rule": "density", "message": "Low metal density"},
-        ]
-        test_logs = "Step 1: Loading GDS\nStep 2: Running checks\nComplete"
+        test_errors = ["Width violation"]
+        test_warnings = ["Low metal density"]
+        test_tool_versions = {"precheck": "1.0.0"}
 
         before = timezone.now()
         check.mark_finished(
             is_manufacturable=False,
             errors=test_errors,
             warnings=test_warnings,
-            processing_logs=test_logs,
+            tool_versions=test_tool_versions,
         )
         after = timezone.now()
 
@@ -1746,9 +1927,9 @@ class TestManufacturabilityCheckMarkFinished(TestCase):
         assert check.is_manufacturable is False
         assert check.errors == test_errors
         assert check.warnings == test_warnings
-        assert check.processing_logs == test_logs
-        assert check.celery_job_finished_at is not None
-        assert before <= check.celery_job_finished_at <= after
+        assert check.tool_versions == test_tool_versions
+        assert check.analysis_completed_at is not None
+        assert before <= check.analysis_completed_at <= after
 
     def test_mark_finished_from_pending_raises(self):
         """Cannot mark PENDING check as FINISHED."""
@@ -1762,28 +1943,28 @@ class TestManufacturabilityCheckMarkFinished(TestCase):
                 is_manufacturable=True,
                 errors=[],
                 warnings=[],
-                processing_logs="Should fail",
+                tool_versions={},
             )
 
         assert "pending" in str(exc_info.value).lower()
         assert "finished" in str(exc_info.value).lower()
 
     def test_mark_finished_from_dispatched_raises(self):
-        """Cannot mark DISPATCHED check as FINISHED."""
+        """Cannot mark DISPATCHING check as FINISHED."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHED,
+            status=ManufacturabilityCheck.Status.DISPATCHING,
         )
         with pytest.raises(InvalidStateTransitionError) as exc_info:
             check.mark_finished(
                 is_manufacturable=True,
                 errors=[],
                 warnings=[],
-                processing_logs="Should fail",
+                tool_versions={},
             )
 
-        assert "dispatched" in str(exc_info.value).lower()
+        assert "dispatching" in str(exc_info.value).lower()
         assert "finished" in str(exc_info.value).lower()
 
     def test_mark_finished_from_finished_raises(self):
@@ -1798,7 +1979,7 @@ class TestManufacturabilityCheckMarkFinished(TestCase):
                 is_manufacturable=True,
                 errors=[],
                 warnings=[],
-                processing_logs="Should fail",
+                tool_versions={},
             )
 
     def test_mark_finished_from_error_raises(self):
@@ -1813,7 +1994,7 @@ class TestManufacturabilityCheckMarkFinished(TestCase):
                 is_manufacturable=True,
                 errors=[],
                 warnings=[],
-                processing_logs="Should fail",
+                tool_versions={},
             )
 
         assert "error" in str(exc_info.value).lower()
@@ -1831,7 +2012,7 @@ class TestManufacturabilityCheckMarkFinished(TestCase):
                 is_manufacturable=True,
                 errors=[],
                 warnings=[],
-                processing_logs="Should fail",
+                tool_versions={},
             )
 
 
@@ -1877,14 +2058,13 @@ class TestManufacturabilityCheckMarkError(TestCase):
         error_suffix = "\n\n=== SYSTEM ERROR - See error_message field ==="
         expected_logs = "Error starting container\nExit code: 1" + error_suffix
         assert check.processing_logs == expected_logs
-        assert check.celery_job_finished_at is not None
 
     def test_mark_error_from_dispatched(self):
-        """Can mark DISPATCHED check as ERROR."""
+        """Can mark DISPATCHING check as ERROR."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHED,
+            status=ManufacturabilityCheck.Status.DISPATCHING,
         )
         check.mark_error(
             error_message="Worker crashed during startup",
@@ -1924,20 +2104,16 @@ class TestManufacturabilityCheckMarkError(TestCase):
         test_error = "System error: out of memory"
         test_logs = "Started processing\nMemory usage: 95%\nOOM kill"
 
-        before = timezone.now()
         check.mark_error(
             error_message=test_error,
             processing_logs=test_logs,
         )
-        after = timezone.now()
 
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.ERROR
         assert check.error_message == test_error
         error_suffix = "\n\n=== SYSTEM ERROR - See error_message field ==="
         assert check.processing_logs == test_logs + error_suffix
-        assert check.celery_job_finished_at is not None
-        assert before <= check.celery_job_finished_at <= after
 
     def test_mark_error_with_default_logs(self):
         """mark_error() appends error suffix even when no logs provided."""
@@ -2053,27 +2229,13 @@ class TestManufacturabilityCheckResetForRetry(TestCase):
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.ERROR,
             retry_count=0,
-            celery_job_id="abc-123",
-            celery_job_dispatched_at=timezone.now(),
-            celery_job_started_at=timezone.now(),
-            celery_job_finished_at=timezone.now(),
-            celery_worker_pid=TEST_WORKER_PID,
-            celery_worker_hostname="worker-1",
             docker_container_id="container-123",
-            docker_container_started_at=timezone.now(),
             error_message="Previous error",
         )
         check.reset_for_retry()
 
         check.refresh_from_db()
-        assert check.celery_job_id == ""
-        assert check.celery_job_dispatched_at is None
-        assert check.celery_job_started_at is None
-        assert check.celery_job_finished_at is None
-        assert check.celery_worker_pid is None
-        assert check.celery_worker_hostname == ""
         assert check.docker_container_id == ""
-        assert check.docker_container_started_at is None
         assert check.error_message == ""
 
     def test_reset_for_retry_at_max_retries_raises(self):
@@ -2107,7 +2269,7 @@ class TestManufacturabilityCheckResetForRetry(TestCase):
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.DISPATCHED,
+            status=ManufacturabilityCheck.Status.DISPATCHING,
         )
         with pytest.raises(InvalidStateTransitionError):
             check.reset_for_retry()
@@ -2348,3 +2510,310 @@ class TestProjectLicenseFields:
         assert project.proprietary_terms_url == ""
         assert project.proprietary_terms_cached == ""
         assert project.proprietary_terms_cached_at is None
+
+
+class TestManufacturabilityCheckStatusValues:
+    """Test new status values exist."""
+
+    def test_dispatching_status_exists(self) -> None:
+        """DISPATCHING status should exist for image pulling phase."""
+        assert ManufacturabilityCheck.Status.DISPATCHING == "dispatching"
+
+    def test_starting_status_exists(self) -> None:
+        """STARTING status should exist for container creation phase."""
+        assert ManufacturabilityCheck.Status.STARTING == "starting"
+
+    def test_analyzing_status_exists(self) -> None:
+        """ANALYZING status should exist for post-container log analysis."""
+        assert ManufacturabilityCheck.Status.ANALYZING == "analyzing"
+
+
+class TestManufacturabilityCheckStatusClassification:
+    """Test status classification methods."""
+
+    def test_active_returns_processing_statuses(self) -> None:
+        """active() returns statuses where check is actively being processed."""
+        active = ManufacturabilityCheck.Status.active()
+        assert ManufacturabilityCheck.Status.DISPATCHING in active
+        assert ManufacturabilityCheck.Status.STARTING in active
+        assert ManufacturabilityCheck.Status.RUNNING in active
+        assert ManufacturabilityCheck.Status.ANALYZING in active
+        assert ManufacturabilityCheck.Status.CANCELLING in active
+        # These should NOT be in active:
+        assert ManufacturabilityCheck.Status.PENDING not in active
+        assert ManufacturabilityCheck.Status.FINISHED not in active
+
+    def test_terminal_returns_completion_statuses(self) -> None:
+        """terminal() returns statuses representing completion."""
+        terminal = ManufacturabilityCheck.Status.terminal()
+        assert ManufacturabilityCheck.Status.FINISHED in terminal
+        assert ManufacturabilityCheck.Status.CANCELLED in terminal
+        # These should NOT be in terminal:
+        assert ManufacturabilityCheck.Status.PENDING not in terminal
+        assert ManufacturabilityCheck.Status.RUNNING not in terminal
+        assert ManufacturabilityCheck.Status.ERROR not in terminal
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckNewTransitions(TestCase):
+    """Test new state transitions are allowed."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+        )
+
+    def test_pending_can_transition_to_dispatching(self):
+        """PENDING -> DISPATCHING is allowed."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.DISPATCHING)
+
+    def test_dispatching_can_transition_to_starting(self):
+        """DISPATCHING -> STARTING is allowed."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.STARTING)
+
+    def test_starting_can_transition_to_running(self):
+        """STARTING -> RUNNING is allowed."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.STARTING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.RUNNING)
+
+    def test_running_can_transition_to_analyzing(self):
+        """RUNNING -> ANALYZING is allowed."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.ANALYZING)
+
+    def test_analyzing_can_transition_to_finished(self):
+        """ANALYZING -> FINISHED is allowed."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ANALYZING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.FINISHED)
+
+    def test_analyzing_can_transition_to_error(self):
+        """ANALYZING -> ERROR is allowed."""
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ANALYZING,
+        )
+        assert check.can_transition_to(ManufacturabilityCheck.Status.ERROR)
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckServerField:
+    """Test docker_server_id field."""
+
+    def test_docker_server_id_field_exists(self) -> None:
+        """Check should have docker_server_id field."""
+        check = ManufacturabilityCheckFactory()
+        assert hasattr(check, "docker_server_id")
+        assert check.docker_server_id == ""  # Default is empty string
+
+    def test_docker_server_id_can_be_set(self) -> None:
+        """docker_server_id can store server identifier."""
+        check = ManufacturabilityCheckFactory(docker_server_id="local")
+        assert check.docker_server_id == "local"
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckTimestampFields:
+    """Test new granular timestamp fields."""
+
+    def test_dispatching_started_at_field_exists(self) -> None:
+        """Check should have dispatching_started_at field."""
+        check = ManufacturabilityCheckFactory()
+        assert hasattr(check, "dispatching_started_at")
+        assert check.dispatching_started_at is None
+
+    def test_starting_started_at_field_exists(self) -> None:
+        """Check should have starting_started_at field."""
+        check = ManufacturabilityCheckFactory()
+        assert hasattr(check, "starting_started_at")
+        assert check.starting_started_at is None
+
+    def test_container_started_at_field_exists(self) -> None:
+        """Check should have container_started_at field."""
+        check = ManufacturabilityCheckFactory()
+        assert hasattr(check, "container_started_at")
+        assert check.container_started_at is None
+
+    def test_container_finished_at_field_exists(self) -> None:
+        """Check should have container_finished_at field."""
+        check = ManufacturabilityCheckFactory()
+        assert hasattr(check, "container_finished_at")
+        assert check.container_finished_at is None
+
+    def test_analysis_completed_at_field_exists(self) -> None:
+        """Check should have analysis_completed_at field."""
+        check = ManufacturabilityCheckFactory()
+        assert hasattr(check, "analysis_completed_at")
+        assert check.analysis_completed_at is None
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckDockerFields:
+    """Test Docker-related fields."""
+
+    def test_docker_exit_code_field_exists(self) -> None:
+        """Check should have docker_exit_code field."""
+        check = ManufacturabilityCheckFactory()
+        assert hasattr(check, "docker_exit_code")
+        assert check.docker_exit_code is None
+
+    def test_logs_downloaded_until_field_exists(self) -> None:
+        """Check should have logs_downloaded_until field for incremental log fetch."""
+        check = ManufacturabilityCheckFactory()
+        assert hasattr(check, "logs_downloaded_until")
+        assert check.logs_downloaded_until is None
+
+    def test_logs_downloaded_until_stores_float(self) -> None:
+        """logs_downloaded_until stores Unix timestamp with nanosecond precision."""
+        check = ManufacturabilityCheckFactory()
+        check.logs_downloaded_until = 1733400000.123456789
+        check.save()
+        check.refresh_from_db()
+        # Float precision may vary, but should be close
+        assert (
+            abs(check.logs_downloaded_until - 1733400000.123456789)
+            < FLOAT_PRECISION_TOLERANCE
+        )
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckMarkDispatching:
+    """Test mark_dispatching transition method."""
+
+    def test_mark_dispatching_changes_status(self) -> None:
+        """mark_dispatching transitions PENDING -> DISPATCHING."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.PENDING
+        )
+        check.mark_dispatching(server_id="local")
+        assert check.status == ManufacturabilityCheck.Status.DISPATCHING
+
+    def test_mark_dispatching_sets_server_id(self) -> None:
+        """mark_dispatching stores the assigned server ID."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.PENDING
+        )
+        check.mark_dispatching(server_id="remote-1")
+        assert check.docker_server_id == "remote-1"
+
+    def test_mark_dispatching_sets_timestamp(self) -> None:
+        """mark_dispatching sets dispatching_started_at automatically."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.PENDING
+        )
+        assert check.dispatching_started_at is None
+        check.mark_dispatching(server_id="local")
+        assert check.dispatching_started_at is not None
+
+    def test_mark_dispatching_saves_to_db(self) -> None:
+        """mark_dispatching saves changes to database."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.PENDING
+        )
+        check.mark_dispatching(server_id="local")
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.DISPATCHING
+        assert check.docker_server_id == "local"
+
+    def test_mark_dispatching_raises_for_invalid_transition(self) -> None:
+        """mark_dispatching raises for non-PENDING status."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_dispatching(server_id="local")
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckMarkStarting:
+    """Test mark_starting transition method."""
+
+    def test_mark_starting_changes_status(self) -> None:
+        """mark_starting transitions DISPATCHING -> STARTING."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.DISPATCHING
+        )
+        check.mark_starting(
+            docker_image="ghcr.io/test:latest", docker_image_digest="sha256:abc123"
+        )
+        assert check.status == ManufacturabilityCheck.Status.STARTING
+
+    def test_mark_starting_sets_image_info(self) -> None:
+        """mark_starting stores image and digest."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.DISPATCHING
+        )
+        check.mark_starting(
+            docker_image="ghcr.io/test:latest", docker_image_digest="sha256:abc123"
+        )
+        assert check.docker_image == "ghcr.io/test:latest"
+        assert check.docker_image_digest == "sha256:abc123"
+
+    def test_mark_starting_sets_timestamp(self) -> None:
+        """mark_starting sets starting_started_at automatically."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.DISPATCHING
+        )
+        assert check.starting_started_at is None
+        check.mark_starting(
+            docker_image="ghcr.io/test:latest", docker_image_digest="sha256:abc123"
+        )
+        assert check.starting_started_at is not None
+
+    def test_mark_starting_saves_to_db(self) -> None:
+        """mark_starting saves changes to database."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.DISPATCHING
+        )
+        check.mark_starting(
+            docker_image="ghcr.io/test:latest", docker_image_digest="sha256:abc123"
+        )
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.STARTING
+        assert check.docker_image == "ghcr.io/test:latest"
+        assert check.docker_image_digest == "sha256:abc123"
+
+    def test_mark_starting_raises_for_invalid_transition(self) -> None:
+        """mark_starting raises for non-DISPATCHING status."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.PENDING
+        )
+        with pytest.raises(InvalidStateTransitionError):
+            check.mark_starting(docker_image="test", docker_image_digest="sha256:abc")
