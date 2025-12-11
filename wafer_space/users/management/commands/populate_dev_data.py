@@ -2,20 +2,28 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING
 from typing import Any
 
 from allauth.account.models import EmailAddress
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
+from django.utils import timezone
 
 from wafer_space.core.enums import SlotSize
 from wafer_space.core.utils import is_production_environment
 from wafer_space.legal.models import TermsOfService
 from wafer_space.legal.models import TermsOfServiceAcceptance
+from wafer_space.projects.models import DownloadAttempt
+from wafer_space.projects.models import ManufacturabilityCheck
+from wafer_space.projects.models import ManufacturabilityCheckpoint
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectComplianceCertification
+from wafer_space.projects.models import ProjectFile
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.models import ShuttleSlot
 
@@ -230,33 +238,42 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("  Created 16 shuttle slots (4×4 grid)"))
 
     def _create_projects(self, shuttle: Shuttle, mithro: Any, testuser: Any) -> None:
-        """Create test projects with various states."""
-        # Project definitions: (id, name, owner, size, is_manufacturable)
-        # Project IDs must be exactly 4 uppercase alphanumeric characters
+        """Create test projects with various states and manufacturability checks.
+
+        Creates projects demonstrating various multi-check scenarios:
+        - Single FINISHED check (manufacturable/not manufacturable)
+        - Check in progress (PENDING, RUNNING, ANALYZING)
+        - ERROR check with retry chain
+        - DRC_UPDATE re-run (multiple checks for same file)
+        - No file/checks yet
+        """
+        # Project definitions with check scenarios
+        # check_scenario: "single_pass", "single_fail", "in_progress", "error_retry",
+        #                 "drc_update", "no_file"
         projects_data = [
             # Full size projects
-            ("RV32", "RISC-V Core", mithro, SlotSize.FULL, True),
-            ("GP10", "GPIO Controller", mithro, SlotSize.FULL, True),
-            ("UA01", "UART Serial", testuser, SlotSize.FULL, True),
-            ("SP01", "SPI Controller", testuser, SlotSize.FULL, False),
-            ("I2C1", "I2C Interface", mithro, SlotSize.FULL, None),
-            ("PW01", "PWM Generator", testuser, SlotSize.FULL, None),
+            ("RV32", "RISC-V Core", mithro, SlotSize.FULL, "single_pass"),
+            ("GP10", "GPIO Controller", mithro, SlotSize.FULL, "drc_update"),
+            ("UA01", "UART Serial", testuser, SlotSize.FULL, "single_pass"),
+            ("SP01", "SPI Controller", testuser, SlotSize.FULL, "single_fail"),
+            ("I2C1", "I2C Interface", mithro, SlotSize.FULL, "in_progress"),
+            ("PW01", "PWM Generator", testuser, SlotSize.FULL, "no_file"),
             # Half width projects
-            ("AD01", "ADC Frontend", mithro, SlotSize.HALF_WIDTH, True),
-            ("DA01", "DAC Output", testuser, SlotSize.HALF_WIDTH, True),
-            ("CM01", "Comparator", mithro, SlotSize.HALF_WIDTH, False),
+            ("AD01", "ADC Frontend", mithro, SlotSize.HALF_WIDTH, "error_retry"),
+            ("DA01", "DAC Output", testuser, SlotSize.HALF_WIDTH, "single_pass"),
+            ("CM01", "Comparator", mithro, SlotSize.HALF_WIDTH, "single_fail"),
             # Half height projects
-            ("CK01", "Clock Generator", testuser, SlotSize.HALF_HEIGHT, True),
-            ("RS01", "Reset Controller", mithro, SlotSize.HALF_HEIGHT, None),
+            ("CK01", "Clock Generator", testuser, SlotSize.HALF_HEIGHT, "single_pass"),
+            ("RS01", "Reset Controller", mithro, SlotSize.HALF_HEIGHT, "in_progress"),
             # Quarter size projects
-            ("RF01", "Voltage Reference", testuser, SlotSize.QUARTER, True),
-            ("OS01", "RC Oscillator", mithro, SlotSize.QUARTER, True),
-            ("BF01", "Buffer Cell", testuser, SlotSize.QUARTER, False),
-            ("LD01", "LDO Regulator", mithro, SlotSize.QUARTER, None),
+            ("RF01", "Voltage Reference", testuser, SlotSize.QUARTER, "single_pass"),
+            ("OS01", "RC Oscillator", mithro, SlotSize.QUARTER, "drc_update"),
+            ("BF01", "Buffer Cell", testuser, SlotSize.QUARTER, "single_fail"),
+            ("LD01", "LDO Regulator", mithro, SlotSize.QUARTER, "no_file"),
         ]
 
         created_count = 0
-        for proj_id, name, owner, size, is_mfg in projects_data:
+        for proj_id, name, owner, size, check_scenario in projects_data:
             project, created = Project.objects.get_or_create(
                 project_id=proj_id,
                 shuttle=shuttle,
@@ -265,7 +282,6 @@ class Command(BaseCommand):
                     "name": name,
                     "description": f"Test project: {name}",
                     "slot_size": size,
-                    "is_manufacturable": is_mfg,
                     "status": Project.Status.SUBMITTED,
                 },
             )
@@ -279,6 +295,9 @@ class Command(BaseCommand):
                     end_use_statement="Development/testing purposes",
                     certified_by=owner,
                 )
+
+                # Create file and checks based on scenario
+                self._create_checks_for_project(project, check_scenario)
                 created_count += 1
 
         if created_count > 0:
@@ -287,3 +306,457 @@ class Command(BaseCommand):
             )
         else:
             self.stdout.write("  Test projects already exist")
+
+    def _create_download_attempts(
+        self, project_file: ProjectFile, scenario: str
+    ) -> None:
+        """Create DownloadAttempts for a ProjectFile based on scenario."""
+        now = timezone.now()
+
+        if scenario == "single_success":
+            # Single successful download
+            DownloadAttempt.objects.create(
+                project_file=project_file,
+                attempt_number=1,
+                status=DownloadAttempt.Status.COMPLETED,
+                download_started_at=now - timedelta(hours=5, minutes=2),
+                download_completed_at=now - timedelta(hours=5),
+                download_duration_seconds=120.5,
+                bytes_downloaded=project_file.file_size or 1024000,
+                worker_hostname="celery-worker-1",
+            )
+
+        elif scenario == "retry_success":
+            # First attempt failed, second succeeded
+            DownloadAttempt.objects.create(
+                project_file=project_file,
+                attempt_number=1,
+                status=DownloadAttempt.Status.FAILED,
+                download_started_at=now - timedelta(hours=6),
+                download_completed_at=now - timedelta(hours=6) + timedelta(seconds=30),
+                download_error="Connection timeout after 30s - server unreachable",
+                download_duration_seconds=30.0,
+                bytes_downloaded=0,
+                worker_hostname="celery-worker-1",
+            )
+            DownloadAttempt.objects.create(
+                project_file=project_file,
+                attempt_number=2,
+                status=DownloadAttempt.Status.COMPLETED,
+                download_started_at=now - timedelta(hours=5, minutes=5),
+                download_completed_at=now - timedelta(hours=5),
+                download_duration_seconds=300.0,
+                bytes_downloaded=project_file.file_size or 2048000,
+                worker_hostname="celery-worker-2",
+            )
+
+        elif scenario == "multiple_retries":
+            # Multiple failed attempts then success
+            start1 = now - timedelta(days=1, hours=2)
+            DownloadAttempt.objects.create(
+                project_file=project_file,
+                attempt_number=1,
+                status=DownloadAttempt.Status.FAILED,
+                download_started_at=start1,
+                download_completed_at=start1 + timedelta(seconds=10),
+                download_error="HTTP 503 Service Unavailable",
+                download_duration_seconds=10.0,
+                bytes_downloaded=0,
+                worker_hostname="celery-worker-1",
+            )
+            start2 = now - timedelta(days=1, hours=1)
+            DownloadAttempt.objects.create(
+                project_file=project_file,
+                attempt_number=2,
+                status=DownloadAttempt.Status.FAILED,
+                download_started_at=start2,
+                download_completed_at=start2 + timedelta(minutes=5),
+                download_error="Hash mismatch: expected abc123, got def456",
+                download_duration_seconds=300.0,
+                bytes_downloaded=project_file.file_size or 1024000,
+                worker_hostname="celery-worker-1",
+            )
+            DownloadAttempt.objects.create(
+                project_file=project_file,
+                attempt_number=3,
+                status=DownloadAttempt.Status.COMPLETED,
+                download_started_at=now - timedelta(hours=12),
+                download_completed_at=now - timedelta(hours=12) + timedelta(minutes=3),
+                download_duration_seconds=180.0,
+                bytes_downloaded=project_file.file_size or 1024000,
+                worker_hostname="celery-worker-2",
+            )
+
+        elif scenario == "in_progress":
+            # Download currently in progress
+            DownloadAttempt.objects.create(
+                project_file=project_file,
+                attempt_number=1,
+                status=DownloadAttempt.Status.DOWNLOADING,
+                download_started_at=now - timedelta(minutes=2),
+                bytes_downloaded=int((project_file.file_size or 5000000) * 0.45),
+                worker_hostname="celery-worker-1",
+                worker_pid=12345,
+            )
+
+    def _create_checks_for_project(self, project: Project, scenario: str) -> None:
+        """Create ProjectFile and ManufacturabilityChecks based on scenario."""
+        if scenario == "no_file":
+            # No file submitted yet
+            return
+
+        now = timezone.now()
+
+        # Determine download and file scenarios based on check scenario
+        download_scenario = "single_success"
+        create_old_files = False
+
+        if scenario == "drc_update":
+            # Multiple files showing file revisions
+            download_scenario = "retry_success"
+            create_old_files = True
+        elif scenario == "error_retry":
+            download_scenario = "multiple_retries"
+        elif scenario == "in_progress":
+            download_scenario = "in_progress"
+
+        # Create old/inactive files for some scenarios (file revision history)
+        if create_old_files:
+            # Old file v1 - superseded, had a passing check
+            old_file_1 = ProjectFile.objects.create(
+                project=project,
+                original_url=f"https://example.com/files/{project.project_id}_v1.gds",
+                source_url=f"https://example.com/files/{project.project_id}_v1.gds",
+                original_filename=f"{project.project_id}_v1.gds",
+                processed_filename=f"{project.project_id}_v1.gds",
+                is_active=False,
+                hash_verified=True,
+                file_size=980000,
+                hash_sha256="a" * 64,
+                top_cell=f"{project.project_id}_top",
+                content_type="application/octet-stream",
+                download_completed_at=now - timedelta(days=14, hours=2),
+            )
+            self._create_download_attempts(old_file_1, "single_success")
+            # v1 had a passing check but was superseded by v2
+            v1_check = ManufacturabilityCheck.objects.create(
+                project=project,
+                project_file=old_file_1,
+                status=ManufacturabilityCheck.Status.FINISHED,
+                trigger_reason=ManufacturabilityCheck.TriggerReason.INITIAL,
+                is_manufacturable=True,
+                errors=[],
+                warnings=[],
+                analysis_completed_at=now - timedelta(days=14),
+            )
+            ManufacturabilityCheck.objects.filter(pk=v1_check.pk).update(
+                created_at=now - timedelta(days=14, hours=1)
+            )
+
+            # Old file v2 - had download issues, then failed DRC check
+            old_file_2 = ProjectFile.objects.create(
+                project=project,
+                original_url=f"https://example.com/files/{project.project_id}_v2.gds",
+                source_url=f"https://example.com/files/{project.project_id}_v2.gds",
+                original_filename=f"{project.project_id}_v2.gds",
+                processed_filename=f"{project.project_id}_v2.gds",
+                is_active=False,
+                hash_verified=True,
+                file_size=1050000,
+                hash_sha256="b" * 64,
+                top_cell=f"{project.project_id}_top",
+                content_type="application/octet-stream",
+                download_completed_at=now - timedelta(days=10, hours=2),
+            )
+            self._create_download_attempts(old_file_2, "retry_success")
+            # v2 failed manufacturability - that's why v3 was submitted
+            v2_check = ManufacturabilityCheck.objects.create(
+                project=project,
+                project_file=old_file_2,
+                status=ManufacturabilityCheck.Status.FINISHED,
+                trigger_reason=ManufacturabilityCheck.TriggerReason.INITIAL,
+                is_manufacturable=False,
+                errors=["DRC violation: Metal density too low in region (500, 500)"],
+                warnings=["Consider adding dummy fill"],
+                analysis_completed_at=now - timedelta(days=10),
+            )
+            ManufacturabilityCheck.objects.filter(pk=v2_check.pk).update(
+                created_at=now - timedelta(days=10, hours=1)
+            )
+
+        # Create the active project file
+        # hash_verified=False if still downloading
+        is_downloading = scenario == "in_progress"
+        file_kwargs: dict[str, Any] = {
+            "project": project,
+            "original_url": f"https://example.com/files/{project.project_id}.gds",
+            "source_url": f"https://example.com/files/{project.project_id}.gds",
+            "original_filename": f"{project.project_id}.gds",
+            "is_active": True,
+            "content_type": "application/octet-stream",
+        }
+        if is_downloading:
+            file_kwargs["file_size"] = 5000000
+            file_kwargs["hash_verified"] = False
+        else:
+            file_kwargs["processed_filename"] = f"{project.project_id}.gds"
+            file_kwargs["file_size"] = 1024000
+            file_kwargs["hash_verified"] = True
+            file_kwargs["hash_sha256"] = "c" * 64
+            file_kwargs["top_cell"] = f"{project.project_id}_top"
+            file_kwargs["download_completed_at"] = now - timedelta(hours=3)
+        project_file = ProjectFile.objects.create(**file_kwargs)
+        self._create_download_attempts(project_file, download_scenario)
+
+        project.submitted_file = project_file
+        project.save(update_fields=["submitted_file"])
+
+        # Create manufacturability checks based on scenario
+        self._create_manufacturability_checks(project, project_file, scenario, now)
+
+    def _create_output_files(self, project_id: str) -> None:
+        """Create empty placeholder output files for a manufacturability check."""
+        media_root = Path(settings.MEDIA_ROOT)
+        check_dir = media_root / "projects" / project_id / "checks"
+        check_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create empty placeholder files
+        for filename in ["precheck.log", "runs.tar.gz", "output.gds", "layer.tar.gz"]:
+            (check_dir / filename).touch()
+
+    def _create_checkpoints(self, check: ManufacturabilityCheck) -> None:
+        """Create resource usage checkpoints for a manufacturability check."""
+        # Simulate 10 minutes of check runtime with checkpoints every 30 seconds
+        for i in range(20):
+            elapsed = i * 30.0  # 30 second intervals
+            # Simulate varying CPU/memory usage
+            cpu = 25.0 + (i % 5) * 15.0  # Varies 25-85%
+            mem_mb = 512 + (i * 50)  # Grows from 512MB to ~1.5GB
+            ManufacturabilityCheckpoint.objects.create(
+                manufacturability_check=check,
+                checkpoint_number=i + 1,
+                elapsed_seconds=elapsed,
+                cpu_percent=cpu,
+                cpu_online_cpus=4,
+                memory_usage_bytes=mem_mb * 1024 * 1024,
+                memory_limit_bytes=4 * 1024 * 1024 * 1024,  # 4GB limit
+            )
+
+    def _finished_check_fields(
+        self, completed_at: Any, project_id: str = "XX01"
+    ) -> dict:
+        """Return common fields for a finished check."""
+        # Create output files on disk
+        self._create_output_files(project_id)
+
+        return {
+            "docker_server_id": "docker-server-1",
+            "docker_container_id": "abc123def456789012345678901234567890abcd",
+            "docker_exit_code": 0,
+            "docker_image": "ghcr.io/wafer-space/gf180mcu-precheck:latest",
+            "docker_image_digest": "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+            "precheck_version": "v2.5.1",
+            "tool_versions": {
+                "magic": "8.3.460",
+                "klayout": "0.28.17",
+                "netgen": "1.5.272",
+                "pdk": "gf180mcuD",
+            },
+            "dispatching_started_at": completed_at - timedelta(minutes=12),
+            "starting_started_at": completed_at - timedelta(minutes=11),
+            "container_started_at": completed_at - timedelta(minutes=10),
+            "container_finished_at": completed_at - timedelta(seconds=30),
+            "last_activity": completed_at,
+            "processing_logs": (
+                "[INFO] Starting manufacturability check...\n"
+                "[INFO] Running DRC checks...\n"
+                "[INFO] Running LVS checks...\n"
+                "[INFO] Analysis complete.\n"
+            ),
+            "docker_command": (
+                "docker run --rm -v /data/projects:/workspace "
+                "ghcr.io/wafer-space/gf180mcu-precheck:latest "
+                "--design /workspace/design.gds --pdk gf180mcuD"
+            ),
+            # Output files created by _create_output_files method
+            "log_file": f"projects/{project_id}/checks/precheck.log",
+            "runs_archive": f"projects/{project_id}/checks/runs.tar.gz",
+            "output_gds": f"projects/{project_id}/checks/output.gds",
+            "docker_layer_export": f"projects/{project_id}/checks/layer.tar.gz",
+            "log_file_sha256": (
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            ),
+            "runs_archive_sha256": (
+                "27ae41e4649b934ca495991b7852b855d41d8cd98f00b204e9800998ecf8427e"
+            ),
+            "output_gds_sha256": (
+                "d41d8cd98f00b204e9800998ecf8427e098f6bcd4621d373cade4e832627b4f6"
+            ),
+            "docker_layer_sha256": (
+                "098f6bcd4621d373cade4e832627b4f6e3b0c44298fc1c149afbf4c8996fb924"
+            ),
+        }
+
+    def _create_manufacturability_checks(
+        self,
+        project: Project,
+        project_file: ProjectFile,
+        scenario: str,
+        now: Any,
+    ) -> None:
+        """Create ManufacturabilityChecks based on scenario."""
+        if scenario == "single_pass":
+            completed = now - timedelta(hours=2)
+            check = ManufacturabilityCheck.objects.create(
+                project=project,
+                project_file=project_file,
+                status=ManufacturabilityCheck.Status.FINISHED,
+                trigger_reason=ManufacturabilityCheck.TriggerReason.INITIAL,
+                is_manufacturable=True,
+                errors=[],
+                warnings=["Minor: Consider adding ESD protection"],
+                analysis_completed_at=completed,
+                **self._finished_check_fields(completed, project.project_id),
+            )
+            self._create_checkpoints(check)
+
+        elif scenario == "single_fail":
+            completed = now - timedelta(hours=1)
+            check = ManufacturabilityCheck.objects.create(
+                project=project,
+                project_file=project_file,
+                status=ManufacturabilityCheck.Status.FINISHED,
+                trigger_reason=ManufacturabilityCheck.TriggerReason.INITIAL,
+                is_manufacturable=False,
+                errors=[
+                    "DRC violation: Metal spacing too narrow at (100, 200)",
+                    "DRC violation: Via enclosure insufficient at (150, 300)",
+                ],
+                warnings=[],
+                analysis_completed_at=completed,
+                **self._finished_check_fields(completed, project.project_id),
+            )
+            self._create_checkpoints(check)
+
+        elif scenario == "in_progress":
+            started = now - timedelta(minutes=5)
+            ManufacturabilityCheck.objects.create(
+                project=project,
+                project_file=project_file,
+                status=ManufacturabilityCheck.Status.RUNNING,
+                trigger_reason=ManufacturabilityCheck.TriggerReason.INITIAL,
+                docker_server_id="docker-server-1",
+                docker_container_id="running123456789012345678901234567890ab",
+                docker_image="ghcr.io/wafer-space/gf180mcu-precheck:latest",
+                dispatching_started_at=started - timedelta(minutes=2),
+                starting_started_at=started - timedelta(minutes=1),
+                container_started_at=started,
+                last_activity=now - timedelta(seconds=10),
+                processing_logs="[INFO] Starting manufacturability check...\n",
+            )
+
+        elif scenario == "error_retry":
+            self._create_error_retry_checks(project, project_file, now)
+
+        elif scenario == "drc_update":
+            self._create_drc_update_checks(project, project_file, now)
+
+    def _create_error_retry_checks(
+        self, project: Project, project_file: ProjectFile, now: Any
+    ) -> None:
+        """Create error + retry check scenario."""
+        error_time = now - timedelta(hours=3)
+        original_check = ManufacturabilityCheck.objects.create(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.ERROR,
+            trigger_reason=ManufacturabilityCheck.TriggerReason.INITIAL,
+            error_message="Docker container timeout after 300s",
+            docker_server_id="docker-server-1",
+            docker_container_id="timeout12345678901234567890123456789012",
+            docker_image="ghcr.io/wafer-space/gf180mcu-precheck:latest",
+            docker_exit_code=137,  # SIGKILL from timeout
+            dispatching_started_at=error_time - timedelta(minutes=7),
+            starting_started_at=error_time - timedelta(minutes=6),
+            container_started_at=error_time - timedelta(minutes=5),
+            last_activity=error_time,
+            processing_logs=(
+                "[INFO] Starting manufacturability check...\n"
+                "[INFO] Running DRC checks...\n"
+                "[ERROR] Container killed after 300s timeout\n"
+            ),
+        )
+        ManufacturabilityCheck.objects.filter(pk=original_check.pk).update(
+            created_at=error_time - timedelta(minutes=10)
+        )
+
+        # Retry succeeded
+        completed = now - timedelta(hours=2)
+        retry_check = ManufacturabilityCheck.objects.create(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            trigger_reason=ManufacturabilityCheck.TriggerReason.RETRY,
+            parent_check=original_check,
+            is_manufacturable=True,
+            errors=[],
+            warnings=[],
+            analysis_completed_at=completed,
+            **self._finished_check_fields(completed, project.project_id),
+        )
+        self._create_checkpoints(retry_check)
+
+    def _create_drc_update_checks(
+        self, project: Project, project_file: ProjectFile, now: Any
+    ) -> None:
+        """Create DRC update multi-check scenario."""
+        # First check - passed initially
+        completed1 = now - timedelta(days=7)
+        first_check = ManufacturabilityCheck.objects.create(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            trigger_reason=ManufacturabilityCheck.TriggerReason.INITIAL,
+            is_manufacturable=True,
+            errors=[],
+            warnings=[],
+            analysis_completed_at=completed1,
+            **self._finished_check_fields(completed1, project.project_id),
+        )
+        ManufacturabilityCheck.objects.filter(pk=first_check.pk).update(
+            created_at=completed1 - timedelta(minutes=15)
+        )
+        self._create_checkpoints(first_check)
+
+        # Second check - DRC rules updated, now fails
+        completed2 = now - timedelta(days=3)
+        second_check = ManufacturabilityCheck.objects.create(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            trigger_reason=ManufacturabilityCheck.TriggerReason.DRC_UPDATE,
+            is_manufacturable=False,
+            errors=["New DRC rule violation: Minimum poly width"],
+            warnings=[],
+            analysis_completed_at=completed2,
+            **self._finished_check_fields(completed2, project.project_id),
+        )
+        ManufacturabilityCheck.objects.filter(pk=second_check.pk).update(
+            created_at=completed2 - timedelta(minutes=15)
+        )
+        self._create_checkpoints(second_check)
+
+        # Third check - admin re-run after design fix
+        completed3 = now - timedelta(hours=12)
+        third_check = ManufacturabilityCheck.objects.create(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            trigger_reason=ManufacturabilityCheck.TriggerReason.ADMIN_RERUN,
+            is_manufacturable=True,
+            errors=[],
+            warnings=[],
+            analysis_completed_at=completed3,
+            **self._finished_check_fields(completed3, project.project_id),
+        )
+        self._create_checkpoints(third_check)

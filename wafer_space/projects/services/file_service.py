@@ -349,8 +349,8 @@ class ProjectFileService:
         if active_file:
             # Cancel any running manufacturability check on this file
             try:
-                check = active_file.manufacturability_check
-                if check.is_cancellable:
+                check = active_file.latest_manufacturability_check
+                if check and check.is_cancellable:
                     check.mark_cancelling(reason="Cancelled: new file submitted")
             except ManufacturabilityCheck.DoesNotExist:
                 pass  # No check to cancel

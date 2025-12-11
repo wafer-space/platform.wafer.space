@@ -157,6 +157,7 @@
               <thead>
                 <tr>
                   <th>Status</th>
+                  <th>Trigger</th>
                   <th>Project</th>
                   <th>User</th>
                   <th>File</th>
@@ -203,6 +204,19 @@
                       {% endif %}
                     </td>
                     <td>
+                      {% if check.trigger_reason == 'initial' %}
+                        <span class="badge bg-primary">Initial</span>
+                      {% elif check.trigger_reason == 'retry' %}
+                        <span class="badge bg-warning text-dark">Retry</span>
+                      {% elif check.trigger_reason == 'drc_update' %}
+                        <span class="badge bg-info">DRC Update</span>
+                      {% elif check.trigger_reason == 'admin_rerun' %}
+                        <span class="badge bg-secondary">Admin</span>
+                      {% else %}
+                        <span class="badge bg-light text-dark">{{ check.get_trigger_reason_display }}</span>
+                      {% endif %}
+                    </td>
+                    <td>
                       <a href="{% url 'projects:detail' pk=check.project.pk %}">{{ check.project.name|truncatechars:30 }}</a>
                     </td>
                     <td>{{ check.project.user.username }}</td>
@@ -238,8 +252,8 @@
                       {% endif %}
                     </td>
                     <td>
-                      {% if check.container_finished_at %}
-                        <small>{{ check.container_finished_at|date:"Y-m-d H:i" }}</small>
+                      {% if check.analysis_completed_at %}
+                        <small>{{ check.analysis_completed_at|date:"Y-m-d H:i" }}</small>
                       {% else %}
                         <span class="text-muted">-</span>
                       {% endif %}

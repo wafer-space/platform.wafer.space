@@ -3,6 +3,7 @@ import json
 import urllib.parse
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from typing import ClassVar
 
 from django.conf import settings
@@ -10,11 +11,11 @@ from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.utils import timezone
+from django.utils.formats import date_format
 from simple_history.models import HistoricalRecords
 
 from wafer_space.core.enums import SlotSize
 from wafer_space.projects.exceptions import InvalidStateTransitionError
-from wafer_space.projects.exceptions import MaxRetriesExceededError
 from wafer_space.projects.storage import ProjectFileStorage
 
 
@@ -180,18 +181,10 @@ class Project(models.Model):
         help_text="The file that was submitted for manufacturing",
     )
 
-    # Manufacturability check results
-    is_manufacturable = models.BooleanField(null=True, blank=True)
-    manufacturability_errors = models.JSONField(default=list, blank=True)
-    check_completed_at = models.DateTimeField(null=True, blank=True)
-
-    # Manufacturing details
-    estimated_cost = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        null=True,
-        blank=True,
-    )
+    # NOTE: is_manufacturable, manufacturability_errors, and check_completed_at
+    # are now derived properties (see @property methods below) that read from
+    # the latest ManufacturabilityCheck on the submitted_file. This enables
+    # multiple checks per file (retries, DRC updates, etc.) without losing history.
 
     # Visibility settings
     is_public = models.BooleanField(
@@ -254,6 +247,37 @@ class Project(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.user.username})"
+
+    # Derived manufacturability properties (from latest check on submitted_file)
+    @property
+    def is_manufacturable(self) -> bool | None:
+        """Derived from latest completed check on submitted file."""
+        if not self.submitted_file:
+            return None
+        check = self.submitted_file.latest_manufacturability_check
+        if not check or check.status != ManufacturabilityCheck.Status.FINISHED:
+            return None
+        return check.is_manufacturable
+
+    @property
+    def manufacturability_errors(self) -> list[str]:
+        """Derived from latest completed check."""
+        if not self.submitted_file:
+            return []
+        check = self.submitted_file.latest_manufacturability_check
+        if not check or check.status != ManufacturabilityCheck.Status.FINISHED:
+            return []
+        return check.errors
+
+    @property
+    def check_completed_at(self) -> datetime | None:
+        """Derived from latest completed check."""
+        if not self.submitted_file:
+            return None
+        check = self.submitted_file.latest_manufacturability_check
+        if not check or check.status != ManufacturabilityCheck.Status.FINISHED:
+            return None
+        return check.analysis_completed_at
 
     @property
     def full_id(self) -> str:
@@ -908,6 +932,15 @@ class ProjectFile(models.Model):
             or self.expected_hash_sha256
         )
 
+    @property
+    def latest_manufacturability_check(self) -> "ManufacturabilityCheck | None":
+        """Get the most recent manufacturability check.
+
+        Returns None if no checks exist yet.
+        Ordered by -created_at (newest first).
+        """
+        return self.manufacturability_checks.order_by("-created_at").first()
+
 
 class FileProcessingError(models.Model):
     """Log of errors that occurred during file processing.
@@ -1289,6 +1322,12 @@ class ManufacturabilityCheck(models.Model):
             """Statuses where check is in progress (not yet completed)."""
             return [cls.PENDING, cls.DISPATCHING, cls.STARTING, cls.RUNNING]
 
+    class TriggerReason(models.TextChoices):
+        INITIAL = "initial", "Initial Check"
+        DRC_UPDATE = "drc_update", "DRC Rules Updated"
+        ADMIN_RERUN = "admin_rerun", "Admin Requested Re-run"
+        RETRY = "retry", "Retry After Error"
+
     # State machine: defines valid transitions
     # PENDING: waiting for capacity to dispatch
     # DISPATCHING: image being pulled
@@ -1326,15 +1365,29 @@ class ManufacturabilityCheck(models.Model):
         on_delete=models.CASCADE,
         related_name="manufacturability_checks",
     )
-    project_file = models.OneToOneField(
+    project_file = models.ForeignKey(
         "ProjectFile",
         on_delete=models.CASCADE,
-        related_name="manufacturability_check",
+        related_name="manufacturability_checks",
     )
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
         default=Status.PENDING,
+    )
+    trigger_reason = models.CharField(
+        max_length=20,
+        choices=TriggerReason.choices,
+        default=TriggerReason.INITIAL,
+        help_text="Why this check was triggered",
+    )
+    parent_check = models.ForeignKey(
+        "self",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="retry_checks",
+        help_text="Original check this is a retry of (null if not a retry)",
     )
 
     # Timestamps
@@ -1465,10 +1518,6 @@ class ManufacturabilityCheck(models.Model):
         help_text="System error message if check failed to run (Docker, timeout, etc.)",
     )
 
-    # Retry handling
-    retry_count = models.PositiveIntegerField(default=0)
-    max_retries = models.PositiveIntegerField(default=3)
-
     # Version tracking
     docker_image = models.CharField(
         max_length=500,
@@ -1533,10 +1582,6 @@ class ManufacturabilityCheck(models.Model):
 
     def __str__(self):
         return f"Check for {self.project.name} - {self.get_status_display()}"
-
-    def can_retry(self) -> bool:
-        """Check if this check can be retried."""
-        return self.retry_count < self.max_retries
 
     def can_transition_to(self, new_status: Status) -> bool:
         """Check if transition from current status to new_status is valid.
@@ -1707,14 +1752,13 @@ class ManufacturabilityCheck(models.Model):
         )
 
         # Update project status
+        # Note: is_manufacturable, manufacturability_errors, and check_completed_at
+        # are now derived properties on Project, so we only update the status.
         if is_manufacturable:
             self.project.status = Project.Status.MANUFACTURABLE
         else:
             self.project.status = Project.Status.NOT_MANUFACTURABLE
-        self.project.is_manufacturable = is_manufacturable
-        self.project.manufacturability_errors = self.errors
-        self.project.check_completed_at = self.analysis_completed_at
-        self.project.save()
+        self.project.save(update_fields=["status"])
 
     def mark_error(
         self,
@@ -1727,7 +1771,6 @@ class ManufacturabilityCheck(models.Model):
         Pathways: PENDING/DISPATCHING/STARTING/RUNNING → ERROR
 
         Preserves tracking fields (docker_container_id) for debugging.
-        These are only cleared by reset_for_retry() when retrying.
 
         Args:
             error_message: System error message describing the failure
@@ -1811,46 +1854,6 @@ class ManufacturabilityCheck(models.Model):
             ]
         )
 
-    def reset_for_retry(self, *, reason: str = "") -> None:
-        """Reset check to PENDING state for retry after error.
-
-        Pathway 7: ERROR → PENDING (retry)
-
-        Args:
-            reason: Optional description of why the check is being retried
-
-        Raises:
-            InvalidStateTransitionError: If transition is not allowed
-            MaxRetriesExceededError: If retry_count has reached max_retries
-        """
-        # Check state transition is valid FIRST
-        if not self.can_transition_to(self.Status.PENDING):
-            raise InvalidStateTransitionError(
-                from_status=self.status,
-                to_status=self.Status.PENDING,
-            )
-
-        # Then check retry limit using can_retry() and self.max_retries
-        if not self.can_retry():
-            raise MaxRetriesExceededError(
-                retry_count=self.retry_count,
-                max_retries=self.max_retries,
-            )
-
-        # Reset to PENDING state
-        self.status = self.Status.PENDING
-        self.retry_count += 1
-
-        # Clear all job-related fields
-        self.docker_container_id = ""
-        self.error_message = ""
-
-        self.save()
-
-        # Append retry reason using helper
-        if reason:
-            self.append_to_processing_logs(f"RETRY #{self.retry_count}: {reason}")
-
     def append_to_processing_logs(self, text: str) -> None:
         """Append text to processing logs (thread-safe, never overwrites).
 
@@ -1904,6 +1907,98 @@ class ManufacturabilityCheck(models.Model):
         Returns True if check can transition to CANCELLING state.
         """
         return self.can_transition_to(self.Status.CANCELLING)
+
+    @property
+    def title(self) -> str:
+        """Human-readable title for this check.
+
+        Format: "Check #<pk> (<created_at date>)"
+        Example: "Check #10 (2025-12-02 18:22)"
+        """
+        date_str = date_format(self.created_at, "Y-m-d H:i") if self.created_at else ""
+        return f"Check #{self.pk} ({date_str})"
+
+    @property
+    def root_check(self) -> "ManufacturabilityCheck":
+        """Get the original check in a retry chain.
+
+        For initial checks, returns self.
+        For retries, walks up parent_check chain to find the root.
+        """
+        check = self
+        while check.parent_check is not None:
+            check = check.parent_check
+        return check
+
+    @property
+    def queue_wait_seconds(self) -> float | None:
+        """Time spent waiting in queue before running (in seconds).
+
+        Calculated as: container_started_at - created_at
+        For checks still waiting: now - created_at
+        Returns None if created_at is not set.
+        """
+        if not self.created_at:
+            return None
+
+        if self.container_started_at:
+            delta = self.container_started_at - self.created_at
+            return delta.total_seconds()
+
+        # Still waiting - show time since creation
+        waiting_statuses = [
+            self.Status.PENDING,
+            self.Status.DISPATCHING,
+            self.Status.STARTING,
+        ]
+        if self.status in waiting_statuses:
+            delta = timezone.now() - self.created_at
+            return delta.total_seconds()
+
+        return None
+
+    @property
+    def run_duration_seconds(self) -> float | None:
+        """Time the container spent running (in seconds).
+
+        Calculated as: container_finished_at - container_started_at
+        For checks still running: now - container_started_at
+        Returns None if container hasn't started.
+        """
+        if not self.container_started_at:
+            return None
+
+        if self.container_finished_at:
+            delta = self.container_finished_at - self.container_started_at
+            return delta.total_seconds()
+
+        # Still running - show time since container started
+        if self.status == self.Status.RUNNING:
+            delta = timezone.now() - self.container_started_at
+            return delta.total_seconds()
+
+        return None
+
+    @property
+    def retry_delay_seconds(self) -> float | None:
+        """Time between parent check completion and this check's creation.
+
+        Only applicable for retry checks (has parent_check).
+        Returns None if not a retry or if timestamps unavailable.
+        """
+        if not self.parent_check or not self.created_at:
+            return None
+
+        # Use parent's container_finished_at or analysis_completed_at
+        parent_end = (
+            self.parent_check.analysis_completed_at
+            or self.parent_check.container_finished_at
+        )
+        if not parent_end:
+            return None
+
+        delta = self.created_at - parent_end
+        return delta.total_seconds()
 
     @property
     def result_display(self) -> str:

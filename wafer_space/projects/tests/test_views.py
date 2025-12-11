@@ -15,6 +15,7 @@ from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.security import SecurityValidationError
+from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.models import ShuttleSlot
@@ -656,9 +657,15 @@ class TestProjectSubmitView(TestCase):
         )
 
         # Mark as manufacturable (simulates completed check via mark_finished)
-        self.project.is_manufacturable = True
+        self.project.submitted_file = project_file
         self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:submit", kwargs={"pk": self.project.pk})
@@ -810,9 +817,15 @@ class TestProjectSubmitView(TestCase):
         )
 
         # Mark as manufacturable (simulates completed check via mark_finished)
-        self.project.is_manufacturable = True
+        self.project.submitted_file = project_file
         self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
 
         # Submit once
         self.project.submit()
@@ -854,9 +867,15 @@ class TestProjectSubmitView(TestCase):
         )
 
         # Mark as manufacturable (simulates completed check via mark_finished)
-        self.project.is_manufacturable = True
+        self.project.submitted_file = project_file
         self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:submit", kwargs={"pk": self.project.pk})
@@ -1305,7 +1324,10 @@ class TestManufacturabilityCheckCancelView(TestCase):
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
-        url = reverse("projects:cancel_check", kwargs={"pk": self.project.pk})
+        url = reverse(
+            "projects:cancel_check",
+            kwargs={"pk": self.project.pk, "check_id": check.pk},
+        )
         response = self.client.post(url)
 
         assert response.status_code == HTTP_FOUND
@@ -1322,7 +1344,10 @@ class TestManufacturabilityCheckCancelView(TestCase):
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
-        url = reverse("projects:cancel_check", kwargs={"pk": self.project.pk})
+        url = reverse(
+            "projects:cancel_check",
+            kwargs={"pk": self.project.pk, "check_id": check.pk},
+        )
         response = self.client.post(url)
 
         assert response.status_code == HTTP_FOUND
@@ -1332,7 +1357,7 @@ class TestManufacturabilityCheckCancelView(TestCase):
 
     def test_cancel_check_already_completed(self):
         """Test cancelling already completed check shows warning."""
-        ManufacturabilityCheck.objects.create(
+        check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.FINISHED,
@@ -1340,7 +1365,10 @@ class TestManufacturabilityCheckCancelView(TestCase):
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
-        url = reverse("projects:cancel_check", kwargs={"pk": self.project.pk})
+        url = reverse(
+            "projects:cancel_check",
+            kwargs={"pk": self.project.pk, "check_id": check.pk},
+        )
         response = self.client.post(url, follow=True)
 
         assert response.status_code == HTTP_OK
@@ -1348,34 +1376,51 @@ class TestManufacturabilityCheckCancelView(TestCase):
         assert len(messages_list) == 1
         assert "could not be cancelled" in str(messages_list[0]).lower()
 
-    def test_cancel_check_no_active_file(self):
-        """Test cancelling with no active file shows error."""
-        self.project_file.is_active = False
-        self.project_file.save()
+    def test_cancel_check_nonexistent_returns_404(self):
+        """Test cancelling nonexistent check returns 404."""
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse(
+            "projects:cancel_check",
+            kwargs={"pk": self.project.pk, "check_id": 99999},
+        )
+        response = self.client.post(url)
+
+        assert response.status_code == HTTP_NOT_FOUND
+
+    def test_cancel_check_wrong_project_returns_404(self):
+        """Test cancelling check with wrong project pk returns 404."""
+        # Create another project
+        other_project = Project.objects.create(
+            user=self.user, name="Other Project", description="Other"
+        )
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
-        url = reverse("projects:cancel_check", kwargs={"pk": self.project.pk})
-        response = self.client.post(url, follow=True)
+        # Try to cancel check from self.project using other_project's pk
+        url = reverse(
+            "projects:cancel_check",
+            kwargs={"pk": other_project.pk, "check_id": check.pk},
+        )
+        response = self.client.post(url)
 
-        assert response.status_code == HTTP_OK
-        messages_list = list(response.context["messages"])
-        assert len(messages_list) == 1
-        assert "no active file" in str(messages_list[0]).lower()
-
-    def test_cancel_check_no_check_exists(self):
-        """Test cancelling with no check shows error."""
-        self.client.login(username="testuser", password=TEST_PASSWORD)
-        url = reverse("projects:cancel_check", kwargs={"pk": self.project.pk})
-        response = self.client.post(url, follow=True)
-
-        assert response.status_code == HTTP_OK
-        messages_list = list(response.context["messages"])
-        assert len(messages_list) == 1
-        assert "no manufacturability check" in str(messages_list[0]).lower()
+        # Should be 404 because check doesn't belong to other_project
+        assert response.status_code == HTTP_NOT_FOUND
 
     def test_cancel_check_requires_authentication(self):
         """Test that cancel requires authentication."""
-        url = reverse("projects:cancel_check", kwargs={"pk": self.project.pk})
+        check = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        url = reverse(
+            "projects:cancel_check",
+            kwargs={"pk": self.project.pk, "check_id": check.pk},
+        )
         response = self.client.post(url)
 
         assert response.status_code == HTTP_FOUND
@@ -1383,7 +1428,7 @@ class TestManufacturabilityCheckCancelView(TestCase):
 
     def test_cancel_check_requires_ownership(self):
         """Test that non-owner, non-staff users cannot cancel check."""
-        ManufacturabilityCheck.objects.create(
+        check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.PENDING,
@@ -1391,7 +1436,10 @@ class TestManufacturabilityCheckCancelView(TestCase):
 
         # Log in as other user
         self.client.login(username="otheruser", password=TEST_PASSWORD)
-        url = reverse("projects:cancel_check", kwargs={"pk": self.project.pk})
+        url = reverse(
+            "projects:cancel_check",
+            kwargs={"pk": self.project.pk, "check_id": check.pk},
+        )
         response = self.client.post(url)
 
         # Should be forbidden (403)
@@ -1399,14 +1447,17 @@ class TestManufacturabilityCheckCancelView(TestCase):
 
     def test_cancel_check_get_not_allowed(self):
         """Test that GET requests are not allowed."""
-        ManufacturabilityCheck.objects.create(
+        check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.PENDING,
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
-        url = reverse("projects:cancel_check", kwargs={"pk": self.project.pk})
+        url = reverse(
+            "projects:cancel_check",
+            kwargs={"pk": self.project.pk, "check_id": check.pk},
+        )
         response = self.client.get(url)
 
         # GET should return 405 Method Not Allowed
@@ -1427,7 +1478,10 @@ class TestManufacturabilityCheckCancelView(TestCase):
         )
 
         self.client.login(username="staffuser", password=TEST_PASSWORD)
-        url = reverse("projects:cancel_check", kwargs={"pk": self.project.pk})
+        url = reverse(
+            "projects:cancel_check",
+            kwargs={"pk": self.project.pk, "check_id": check.pk},
+        )
         response = self.client.post(url)
 
         assert response.status_code == HTTP_FOUND
@@ -1450,7 +1504,10 @@ class TestManufacturabilityCheckCancelView(TestCase):
         )
 
         self.client.login(username="superuser", password=TEST_PASSWORD)
-        url = reverse("projects:cancel_check", kwargs={"pk": self.project.pk})
+        url = reverse(
+            "projects:cancel_check",
+            kwargs={"pk": self.project.pk, "check_id": check.pk},
+        )
         response = self.client.post(url)
 
         assert response.status_code == HTTP_FOUND
@@ -1468,7 +1525,10 @@ class TestManufacturabilityCheckCancelView(TestCase):
         )
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
-        url = reverse("projects:cancel_check", kwargs={"pk": self.project.pk})
+        url = reverse(
+            "projects:cancel_check",
+            kwargs={"pk": self.project.pk, "check_id": check.pk},
+        )
         self.client.post(url)
 
         check.refresh_from_db()

@@ -46,6 +46,8 @@ class ManufacturabilityCheckFactory(DjangoModelFactory[ManufacturabilityCheck]):
     project_file = SubFactory(ProjectFileFactory, project=project)
     status = ManufacturabilityCheck.Status.PENDING
     docker_server_id = ""
+    trigger_reason = ManufacturabilityCheck.TriggerReason.INITIAL
+    parent_check = None
 
     class Meta:
         model = ManufacturabilityCheck

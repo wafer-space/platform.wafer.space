@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from collections import Counter
 from typing import TYPE_CHECKING
@@ -173,8 +172,7 @@ class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView
         check = None
         active_file = in_progress_file or submitted_file
         if active_file:
-            with contextlib.suppress(ManufacturabilityCheck.DoesNotExist):
-                check = active_file.manufacturability_check
+            check = active_file.latest_manufacturability_check
         context["check"] = check
 
         return context
@@ -348,12 +346,9 @@ class ProjectFileSubmitURLView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, Vie
         ).first()
 
         if active_file:
-            try:
-                check = active_file.manufacturability_check
-                if check.is_cancellable:
-                    running_check = check
-            except ManufacturabilityCheck.DoesNotExist:
-                pass
+            check = active_file.latest_manufacturability_check
+            if check and check.is_cancellable:
+                running_check = check
 
         return render(
             request,
@@ -448,9 +443,8 @@ class ManufacturabilityCheckStatusView(LoginRequiredMixin, UserPassesTestMixin, 
         if not active_file:
             return JsonResponse({"error": "No active file found"}, status=404)
 
-        try:
-            check = active_file.manufacturability_check
-        except ManufacturabilityCheck.DoesNotExist:
+        check = active_file.latest_manufacturability_check
+        if not check:
             return JsonResponse(
                 {"error": "No manufacturability check found"}, status=404
             )
@@ -489,25 +483,16 @@ class ManufacturabilityCheckCancelView(LoginRequiredMixin, UserPassesTestMixin, 
         project = get_object_or_404(Project, pk=self.kwargs["pk"])
         return project.user == user
 
-    def post(self, request, pk):
+    def post(self, request, pk, check_id):
         """Handle check cancellation."""
         project = get_object_or_404(Project, pk=pk)
 
-        # Get active file's manufacturability check
-        active_file = ProjectFile.objects.filter(
+        # Get the specific check by ID
+        check = get_object_or_404(
+            ManufacturabilityCheck,
+            pk=check_id,
             project=project,
-            is_active=True,
-        ).first()
-
-        if not active_file:
-            messages.error(request, "No active file found.")
-            return redirect("projects:detail", pk=pk)
-
-        try:
-            check = active_file.manufacturability_check
-        except ManufacturabilityCheck.DoesNotExist:
-            messages.error(request, "No manufacturability check found.")
-            return redirect("projects:detail", pk=pk)
+        )
 
         try:
             # Indicate whether cancelled by owner or admin
@@ -768,8 +753,8 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
         qs = Project.objects.select_related("user", "shuttle").prefetch_related(
             Prefetch(
                 "files",
-                queryset=ProjectFile.objects.filter(is_active=True).select_related(
-                    "manufacturability_check"
+                queryset=ProjectFile.objects.filter(is_active=True).prefetch_related(
+                    "manufacturability_checks"
                 ),
                 to_attr="active_files",
             )
@@ -804,11 +789,7 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
         for project in projects:
             size = project.slot_size
             active_file = project.active_files[0] if project.active_files else None
-            check = (
-                active_file.manufacturability_check
-                if active_file and hasattr(active_file, "manufacturability_check")
-                else None
-            )
+            check = active_file.latest_manufacturability_check if active_file else None
 
             if check:
                 status_counts[check.status] += 1

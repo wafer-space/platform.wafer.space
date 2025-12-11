@@ -1,5 +1,6 @@
 from celery.result import AsyncResult
 
+from wafer_space.projects.check_operations import create_retry_check
 from wafer_space.projects.security import URLValidator
 from wafer_space.projects.tasks import download_project_file
 from wafer_space.projects.url_rewriters import URLRewriter
@@ -19,6 +20,7 @@ __all__ = [
     "URLRewriter",
     "URLValidator",
     "cache_proprietary_terms",
+    "create_retry_check",
     "download_project_file",
     "fetch_url_content",
     "validate_spdx_id",

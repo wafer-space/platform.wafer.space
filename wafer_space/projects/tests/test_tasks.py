@@ -49,8 +49,10 @@ from wafer_space.projects.tasks import do_dispatching
 from wafer_space.projects.tasks import do_running
 from wafer_space.projects.tasks import do_starting
 from wafer_space.projects.tasks import download_project_file
+from wafer_space.projects.tasks_checks import checks_cleanup
 from wafer_space.projects.tasks_checks import checks_cleanup_stale_pending_tasks
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
+from wafer_space.projects.tests.factories import ProjectFileFactory
 from wafer_space.shuttles.tests.factories import ShuttleFactory
 
 User = get_user_model()
@@ -283,9 +285,15 @@ class TestProjectSubmissionIntegration(TestCase):
         periodic task for verified files, not during submission.
         """
         # Mark as manufacturable (simulates completed check via mark_finished)
-        self.project.is_manufacturable = True
+        self.project.submitted_file = self.project_file
         self.project.status = Project.Status.MANUFACTURABLE
         self.project.save()
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
 
         # Submit the project
         self.project.submit()
@@ -717,37 +725,66 @@ class TestChecksRetry(TestCase):
         )
 
     def test_retries_error_checks_under_limit(self):
-        """Test ERROR checks are retried when under retry limit."""
+        """Test ERROR checks create a new retry check when under retry limit."""
         check = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
             status=ManufacturabilityCheck.Status.ERROR,
-            retry_count=0,
-            max_retries=3,
         )
 
         result = checks_retry()
 
+        # Old check stays in ERROR state
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.PENDING
-        assert check.retry_count == 1
+        assert check.status == ManufacturabilityCheck.Status.ERROR
+
+        # New retry check was created
         assert result["retried"] == 1
+        retry_check = ManufacturabilityCheck.objects.get(parent_check=check)
+        assert retry_check.status == ManufacturabilityCheck.Status.PENDING
+        assert retry_check.trigger_reason == ManufacturabilityCheck.TriggerReason.RETRY
+        assert retry_check.project == check.project
+        assert retry_check.project_file == check.project_file
 
     def test_does_not_retry_exhausted_checks(self):
         """Test ERROR checks at retry limit are not retried."""
-        check = ManufacturabilityCheck.objects.create(
+        max_retries = 3
+        # Create original check
+        original = ManufacturabilityCheck.objects.create(
             project=self.project,
             project_file=self.project_file,
-            status=ManufacturabilityCheck.Status.ERROR,
-            retry_count=3,
-            max_retries=3,
+            status=ManufacturabilityCheck.Status.FINISHED,  # Original is done
+        )
+        # Create retry chain: original -> retry1 -> retry2 -> retry3 (all failed)
+        ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,  # Retry 1 done
+            trigger_reason=ManufacturabilityCheck.TriggerReason.RETRY,
+            parent_check=original,
+        )
+        ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,  # Retry 2 done
+            trigger_reason=ManufacturabilityCheck.TriggerReason.RETRY,
+            parent_check=original,
+        )
+        retry3 = ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.ERROR,  # Retry 3 failed (leaf)
+            trigger_reason=ManufacturabilityCheck.TriggerReason.RETRY,
+            parent_check=original,
         )
 
         result = checks_retry()
 
-        check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.ERROR
+        # No new retry should be created (already at limit of 3)
+        retry3.refresh_from_db()
+        assert retry3.status == ManufacturabilityCheck.Status.ERROR
         assert result["exhausted"] == 1
+        assert original.retry_checks.count() == max_retries  # Still 3, no new ones
 
 
 @pytest.mark.django_db
@@ -776,17 +813,16 @@ class TestChecksCreate(TestCase):
             status=DownloadAttempt.Status.COMPLETED,
         )
         # Ensure no check exists
-        assert not hasattr(project_file, "manufacturability_check")
+        assert project_file.manufacturability_checks.count() == 0
 
         result = checks_create()
 
         assert result["created"] == 1
         project_file.refresh_from_db()
-        assert hasattr(project_file, "manufacturability_check")
-        assert (
-            project_file.manufacturability_check.status
-            == ManufacturabilityCheck.Status.PENDING
-        )
+        assert project_file.manufacturability_checks.count() == 1
+        check = project_file.latest_manufacturability_check
+        assert check is not None
+        assert check.status == ManufacturabilityCheck.Status.PENDING
 
     def test_does_not_create_for_unverified_file(self):
         """Test no check created for unverified file."""
@@ -2077,3 +2113,62 @@ class TestChecksCleanupStalePendingTasks:
 
         assert result["deleted"] == 0
         assert result["still_active"] == 0
+
+
+class TestCancelSupersededChecks:
+    """Tests for cancel_superseded_checks functionality."""
+
+    @pytest.mark.django_db
+    def test_cancels_older_in_progress_check_when_newer_exists(self) -> None:
+        """Older in-progress check is cancelled when newer check exists."""
+        project_file = ProjectFileFactory()
+        old_check = ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+
+        checks_cleanup()
+
+        old_check.refresh_from_db()
+        assert old_check.status == ManufacturabilityCheck.Status.CANCELLING
+
+    @pytest.mark.django_db
+    def test_does_not_cancel_if_no_newer_check(self) -> None:
+        """In-progress check is not cancelled if no newer check exists."""
+        project_file = ProjectFileFactory()
+        check = ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+
+        checks_cleanup()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.RUNNING
+
+    @pytest.mark.django_db
+    def test_does_not_cancel_finished_checks(self) -> None:
+        """Finished checks are not cancelled even if newer exists."""
+        project_file = ProjectFileFactory()
+        old_check = ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+        ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+
+        checks_cleanup()
+
+        old_check.refresh_from_db()
+        assert old_check.status == ManufacturabilityCheck.Status.FINISHED

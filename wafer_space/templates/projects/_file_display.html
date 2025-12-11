@@ -6,465 +6,243 @@
 {#   - download_attempts: (optional) QuerySet of DownloadAttempt instances #}
 {#   - show_attempts: (optional, default=False) Show download attempts in foldable sections #}
 {#   - first_open: (optional, default=True) Keep first attempt section open #}
-{# Status and Filename Header #}
-{# Header row: filename left, badges right #}
+{# File Information Card #}
 {% with latest_attempt=file.latest_attempt %}
   {% with status=latest_attempt.status|default:"pending" %}
-    <div class="d-flex justify-content-between align-items-start mb-2">
-      {# Left side: filename and subtitle #}
-      <div class="flex-grow-1 me-3">
-        {% if file.processed_filename %}
-          <h6 class="mb-1">
-            <i class="bi bi-file-earmark-check text-success"></i>
-            {{ file.processed_filename }}
-          </h6>
-          {% if file.processed_filename != file.original_filename %}
-            <p class="text-muted small mb-0">
-              Extracted from <code>{{ file.original_filename }}</code>
+    <div class="card bg-light mb-3">
+      <div class="card-body">
+        {# Filename and badges row #}
+        <div class="d-flex justify-content-between align-items-start mb-3">
+          {# Left side: filename and subtitle #}
+          <div class="flex-grow-1 me-3">
+            {% if file.processed_filename %}
+              <h6 class="mb-0">
+                <i class="bi bi-file-earmark-check text-success"></i>
+                {{ file.processed_filename }}
+              </h6>
+              {% if file.processed_filename != file.original_filename %}
+                <small class="text-muted">
+                  Extracted from <code>{{ file.original_filename }}</code>
+                </small>
+              {% endif %}
+            {% else %}
+              <h6 class="mb-0">
+                {% if status == 'downloading' %}
+                  <span class="spinner-border spinner-border-sm text-primary" role="status"></span>
+                {% elif status == 'failed' %}
+                  <i class="bi bi-file-earmark-x text-danger"></i>
+                {% else %}
+                  <i class="bi bi-file-earmark text-muted"></i>
+                {% endif %}
+                {% if file.original_filename == 'download' and file.original_url %}
+                  GitHub Artifact
+                {% else %}
+                  {{ file.original_filename }}
+                {% endif %}
+              </h6>
+              {% if status == 'downloading' or status == 'pending' %}
+                <small class="text-muted">
+                  <i class="bi bi-hourglass-split"></i>
+                  Processing <code>{{ file.original_filename }}</code>...
+                </small>
+              {% elif status == 'failed' %}
+                <small class="text-danger">
+                  <i class="bi bi-exclamation-circle"></i>
+                  Download failed
+                </small>
+              {% endif %}
+            {% endif %}
+          </div>
+          {# Right side: status badges #}
+          <div class="flex-shrink-0">{% include "projects/_file_badges.html" with file=file %}</div>
+        </div>
+        {# File details #}
+        {% if file.original_url %}
+          <p class="mb-2">
+            <strong>Original URL:</strong>
+            <a href="{{ file.original_url }}"
+               target="_blank"
+               rel="noopener noreferrer">
+              {{ file.original_url|truncatechars:80 }}
+              <i class="bi bi-box-arrow-up-right"></i>
+            </a>
+          </p>
+        {% endif %}
+        {% if file.file_size %}
+          <p class="mb-2">
+            <strong>File Size:</strong> {{ file.file_size|filesizeformat }}
+          </p>
+        {% endif %}
+        {% if file.uploaded_at %}
+          <p class="mb-2">
+            <strong>Created:</strong> {{ file.uploaded_at|date:"Y-m-d H:i:s" }}
+          </p>
+        {% endif %}
+        {% if file.top_cell %}
+          <p class="mb-2">
+            <strong>Top Cell:</strong> <code>{{ file.top_cell }}</code>
+          </p>
+        {% endif %}
+        {# File Hashes #}
+        {% if file.hash_md5 or file.hash_sha1 or file.hash_sha256 %}
+          <hr />
+          <h6>File Hashes</h6>
+          {% if file.hash_md5 %}
+            <p class="mb-1">
+              <strong>MD5:</strong> <code>{{ file.hash_md5 }}</code>
+              {% if file.expected_hash_md5 %}
+                {% if file.hash_md5|lower == file.expected_hash_md5|lower %}
+                  <span class="badge bg-success">
+                    <i class="bi bi-check-circle"></i> Verified
+                  </span>
+                {% else %}
+                  <span class="badge bg-danger">
+                    <i class="bi bi-x-circle"></i> Mismatch
+                  </span>
+                {% endif %}
+              {% endif %}
             </p>
           {% endif %}
-        {% else %}
-          <h6 class="mb-1">
-            {% if status == 'downloading' %}
-              <span class="spinner-border spinner-border-sm text-primary" role="status"></span>
-            {% elif status == 'failed' %}
-              <i class="bi bi-file-earmark-x text-danger"></i>
-            {% else %}
-              <i class="bi bi-file-earmark text-muted"></i>
-            {% endif %}
-            {% if file.original_filename == 'download' and file.original_url %}
-              GitHub Artifact
-            {% else %}
-              {{ file.original_filename }}
-            {% endif %}
-          </h6>
-          {% if status == 'downloading' or status == 'pending' %}
-            <p class="text-muted small mb-0">
-              <i class="bi bi-hourglass-split"></i>
-              Processing <code>{{ file.original_filename }}</code>...
+          {% if file.hash_sha1 %}
+            <p class="mb-1">
+              <strong>SHA1:</strong> <code>{{ file.hash_sha1 }}</code>
+              {% if file.expected_hash_sha1 %}
+                {% if file.hash_sha1|lower == file.expected_hash_sha1|lower %}
+                  <span class="badge bg-success">
+                    <i class="bi bi-check-circle"></i> Verified
+                  </span>
+                {% else %}
+                  <span class="badge bg-danger">
+                    <i class="bi bi-x-circle"></i> Mismatch
+                  </span>
+                {% endif %}
+              {% endif %}
             </p>
-          {% elif status == 'failed' %}
-            <p class="text-danger small mb-0">
-              <i class="bi bi-exclamation-circle"></i>
-              Download failed
+          {% endif %}
+          {% if file.hash_sha256 %}
+            <p class="mb-1">
+              <strong>SHA256:</strong> <code>{{ file.hash_sha256 }}</code>
+              {% if file.expected_hash_sha256 %}
+                {% if file.hash_sha256|lower == file.expected_hash_sha256|lower %}
+                  <span class="badge bg-success">
+                    <i class="bi bi-check-circle"></i> Verified
+                  </span>
+                {% else %}
+                  <span class="badge bg-danger">
+                    <i class="bi bi-x-circle"></i> Mismatch
+                  </span>
+                {% endif %}
+              {% endif %}
             </p>
           {% endif %}
         {% endif %}
       </div>
-      {# Right side: status badges #}
-      <div class="flex-shrink-0">{% include "projects/_file_badges.html" with file=file layout="vertical" %}</div>
     </div>
   {% endwith %}
 {% endwith %}
 {# Manufacturability Check Section #}
 {# Check is created immediately when download completes with verified hash #}
-{% with check=file.manufacturability_check %}
+{% with check=file.latest_manufacturability_check %}
   {% if check %}
-    {# Show check status when check exists #}
-    <div class="card bg-light mb-3">
-      <div class="card-body">
-        <h6 class="card-title">
-          <i class="bi bi-check-circle"></i> Manufacturability Check
-        </h6>
-        <p class="mb-2">
-          <strong>Status:</strong>
-          {% if check.status == 'pending' %}
-            <span class="badge bg-secondary">
-              <i class="bi bi-clock"></i> Pending
-            </span>
-            {# Cancel button for pending checks #}
-            <form method="post"
-                  action="{% url 'projects:cancel_check' pk=file.project.pk %}"
-                  class="d-inline ms-2"
-                  onsubmit="return confirm('Are you sure you want to cancel this manufacturability check?');">
-              {% csrf_token %}
-              <button type="submit" class="btn btn-sm btn-outline-danger">
-                <i class="bi bi-x-circle"></i> Cancel
-              </button>
-            </form>
-          {% elif check.status == 'dispatching' %}
-            <span class="badge bg-info">
-              <span class="spinner-border spinner-border-sm"
-                    role="status"
-                    aria-hidden="true"></span>
-              Pulling Docker image...
-            </span>
-            {# Cancel button for dispatching checks #}
-            <form method="post"
-                  action="{% url 'projects:cancel_check' pk=file.project.pk %}"
-                  class="d-inline ms-2"
-                  onsubmit="return confirm('Are you sure you want to cancel this manufacturability check?');">
-              {% csrf_token %}
-              <button type="submit" class="btn btn-sm btn-outline-danger">
-                <i class="bi bi-x-circle"></i> Cancel
-              </button>
-            </form>
-          {% elif check.status == 'starting' %}
-            <span class="badge bg-info">
-              <span class="spinner-border spinner-border-sm"
-                    role="status"
-                    aria-hidden="true"></span>
-              Starting container...
-            </span>
-            {# Cancel button for starting checks #}
-            <form method="post"
-                  action="{% url 'projects:cancel_check' pk=file.project.pk %}"
-                  class="d-inline ms-2"
-                  onsubmit="return confirm('Are you sure you want to cancel this manufacturability check?');">
-              {% csrf_token %}
-              <button type="submit" class="btn btn-sm btn-outline-danger">
-                <i class="bi bi-x-circle"></i> Cancel
-              </button>
-            </form>
-          {% elif check.status == 'running' %}
-            <span id="check-status-badge" class="badge bg-primary">
-              <span class="spinner-border spinner-border-sm"
-                    role="status"
-                    aria-hidden="true"></span>
-              <span id="check-status-text">Checking manufacturability...</span>
-            </span>
-            {# Cancel button for running checks #}
-            <form method="post"
-                  action="{% url 'projects:cancel_check' pk=file.project.pk %}"
-                  class="d-inline ms-2"
-                  onsubmit="return confirm('Are you sure you want to cancel this manufacturability check?');">
-              {% csrf_token %}
-              <button type="submit" class="btn btn-sm btn-outline-danger">
-                <i class="bi bi-x-circle"></i> Cancel
-              </button>
-            </form>
-          {% elif check.status == 'analyzing' %}
-            <span class="badge bg-info">
-              <span class="spinner-border spinner-border-sm"
-                    role="status"
-                    aria-hidden="true"></span>
-              Analyzing results...
-            </span>
-            {# Cancel button for analyzing checks #}
-            <form method="post"
-                  action="{% url 'projects:cancel_check' pk=file.project.pk %}"
-                  class="d-inline ms-2"
-                  onsubmit="return confirm('Are you sure you want to cancel this manufacturability check?');">
-              {% csrf_token %}
-              <button type="submit" class="btn btn-sm btn-outline-danger">
-                <i class="bi bi-x-circle"></i> Cancel
-              </button>
-            </form>
-          {% elif check.status == 'finished' %}
-            {# 3-tier result display: Clean, Warnings, or Not Manufacturable #}
-            {% if check.is_manufacturable %}
-              {% if check.warnings %}
-                <span class="badge bg-warning text-dark">
-                  <i class="bi bi-exclamation-triangle"></i> Manufacturable with Warnings
-                </span>
+    {# Show current check using the shared partial, wrapped in card with blue border like download attempts #}
+    <div class="card border-primary mb-3">
+      <div class="card-header py-2 bg-primary bg-opacity-10">
+        <div class="d-flex justify-content-between align-items-center">
+          <strong>
+            Check #{{ check.pk }}
+            <span class="badge bg-primary ms-1">Latest</span>
+            {% if check.trigger_reason == 'retry' %}
+              <span class="badge bg-warning text-dark ms-1">Retry</span>
+            {% elif check.trigger_reason == 'drc_update' %}
+              <span class="badge bg-info ms-1">DRC Update</span>
+            {% elif check.trigger_reason == 'admin_rerun' %}
+              <span class="badge bg-secondary ms-1">Admin Re-run</span>
+            {% endif %}
+          </strong>
+          <span class="badge {% if check.status == 'finished' and check.is_manufacturable %}bg-success{% elif check.status == 'finished' and not check.is_manufacturable %}bg-danger{% elif check.status == 'error' %}bg-danger{% elif check.status == 'cancelled' %}bg-secondary{% elif check.status == 'pending' %}bg-secondary{% else %}bg-primary{% endif %}">
+            {% if check.status == 'finished' %}
+              {% if check.is_manufacturable %}
+                <i class="bi bi-check-circle"></i> Pass
               {% else %}
-                <span class="badge bg-success">
-                  <i class="bi bi-check-circle"></i> Manufacturable - Clean
-                </span>
+                <i class="bi bi-x-circle"></i> Fail
               {% endif %}
+            {% elif check.status == 'error' %}
+              <i class="bi bi-exclamation-triangle"></i> Error
+            {% elif check.status == 'cancelled' %}
+              <i class="bi bi-slash-circle"></i> Cancelled
+            {% elif check.status == 'pending' %}
+              <i class="bi bi-clock"></i> Pending
+            {% elif check.status == 'running' or check.status == 'dispatching' or check.status == 'starting' or check.status == 'analyzing' %}
+              <span class="spinner-border spinner-border-sm"
+                    role="status"
+                    aria-hidden="true"></span>
+              {{ check.get_status_display }}
             {% else %}
-              <span class="badge bg-danger">
-                <i class="bi bi-x-circle"></i> Not Manufacturable
-              </span>
+              {{ check.get_status_display }}
             {% endif %}
-          {% elif check.status == 'error' %}
-            <span class="badge bg-danger">
-              <i class="bi bi-exclamation-triangle"></i> Check Failed
-            </span>
-          {% elif check.status == 'cancelling' %}
-            <span class="badge bg-warning text-dark">
-              <i class="bi bi-hourglass-split"></i> Cancelling...
-            </span>
-          {% elif check.status == 'cancelled' %}
-            <span class="badge bg-secondary">
-              <i class="bi bi-x-circle"></i> Cancelled
-            </span>
-          {% endif %}
-        </p>
-        {# Queue position and wait time info for pending checks #}
-        {% if check.status == 'pending' %}
-          <div class="mt-2 p-2 bg-white rounded border">
-            <p class="mb-1 small">
-              <i class="bi bi-list-ol"></i>
-              <strong>{{ check.checks_ahead }}</strong> check{{ check.checks_ahead|pluralize }} ahead of yours
-              {% if request.user.is_staff %}(of {{ check.queue_position|add:check.checks_behind }} total){% endif %}
-            </p>
-            <p class="mb-1 small">
-              <i class="bi bi-play-circle"></i>
-              <strong>{{ check.checks_running }}</strong> check{{ check.checks_running|pluralize }} currently running
-            </p>
-            {% if check.created_at %}
-              <p class="mb-0 small text-muted">
-                <i class="bi bi-hourglass-split"></i>
-                Waiting for {{ check.created_at|timesince }}
-              </p>
-            {% endif %}
-          </div>
-        {% endif %}
-        {% if check.container_started_at %}
-          <p class="mb-2">
-            <strong>Started:</strong> {{ check.container_started_at|date:"Y-m-d H:i:s" }}
-          </p>
-        {% endif %}
-        {% if check.container_finished_at %}
-          <p class="mb-2">
-            <strong>Completed:</strong> {{ check.container_finished_at|date:"Y-m-d H:i:s" }}
-          </p>
-        {% endif %}
-        {# Output files download section #}
-        {% if check.log_file or check.runs_archive or check.output_gds %}
-          <div class="mt-3 mb-3">
-            <h6>
-              <i class="bi bi-folder2-open"></i> Output Files
-            </h6>
-            <table class="table table-sm table-borderless mb-0">
-              <tbody>
-                {% if check.log_file %}
-                  <tr>
-                    <td style="width: 180px;">
-                      <a href="{{ check.log_file.url }}"
-                         class="btn btn-sm btn-outline-secondary"
-                         download>
-                        <i class="bi bi-file-text"></i> Processing Log
-                      </a>
-                    </td>
-                    <td class="text-muted small">{{ check.log_file.size|filesizeformat }}</td>
-                    <td>
-                      {% if check.log_file_sha256 %}<code class="small text-muted">sha256:{{ check.log_file_sha256 }}</code>{% endif %}
-                    </td>
-                  </tr>
-                {% endif %}
-                {% if check.runs_archive %}
-                  <tr>
-                    <td style="width: 180px;">
-                      <a href="{{ check.runs_archive.url }}"
-                         class="btn btn-sm btn-outline-primary"
-                         download>
-                        <i class="bi bi-file-zip"></i> Runs Archive
-                      </a>
-                    </td>
-                    <td class="text-muted small">{{ check.runs_archive.size|filesizeformat }}</td>
-                    <td>
-                      {% if check.runs_archive_sha256 %}
-                        <code class="small text-muted">sha256:{{ check.runs_archive_sha256 }}</code>
-                      {% endif %}
-                    </td>
-                  </tr>
-                {% endif %}
-                {% if check.output_gds %}
-                  <tr>
-                    <td style="width: 180px;">
-                      <a href="{{ check.output_gds.url }}"
-                         class="btn btn-sm btn-outline-success"
-                         download>
-                        <i class="bi bi-file-earmark-binary"></i> Output GDS
-                      </a>
-                    </td>
-                    <td class="text-muted small">{{ check.output_gds.size|filesizeformat }}</td>
-                    <td>
-                      {% if check.output_gds_sha256 %}<code class="small text-muted">sha256:{{ check.output_gds_sha256 }}</code>{% endif %}
-                    </td>
-                  </tr>
-                {% endif %}
-              </tbody>
-            </table>
-          </div>
-        {% endif %}
-        {# Docker command for reproducibility - always show section #}
-        <div class="mt-3">
-          <details>
-            <summary class="text-primary small" style="cursor: pointer;">
-              <i class="bi bi-terminal"></i> Docker Command (for reproducibility)
-            </summary>
-            {% if check.docker_command %}
-              <pre class="bg-dark text-light p-3 rounded mt-2"
-                   style="font-size: 0.8rem;
-                          white-space: pre-wrap;
-                          word-break: break-all">{{ check.docker_command }}</pre>
-            {% else %}
-              <p class="text-muted small mt-2 mb-0">
-                <i class="bi bi-hourglass-split"></i> Waiting for container to start...
-              </p>
-            {% endif %}
-          </details>
+          </span>
         </div>
-        {# Resource usage checkpoints - always show section #}
-        <div class="mt-3">
-          <details>
-            <summary class="text-primary small" style="cursor: pointer;">
-              <i class="bi bi-graph-up"></i>
-              Resource Usage Timeline ({{ check.checkpoints.count }} checkpoint{{ check.checkpoints.count|pluralize }})
-            </summary>
-            {% if check.checkpoints.exists %}
-              <div class="table-responsive mt-2">
-                <table class="table table-sm table-striped mb-0">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Time</th>
-                      <th>CPU</th>
-                      <th>Memory</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for cp in check.checkpoints.all %}
-                      <tr>
-                        <td>{{ cp.checkpoint_number }}</td>
-                        <td>{{ cp.elapsed_seconds|floatformat:1 }}s</td>
-                        <td>{{ cp.cpu_percent_formatted|default:"-" }}</td>
-                        <td>
-                          {% if cp.memory_usage_bytes %}
-                            {{ cp.memory_usage_formatted }}
-                            {% if cp.memory_percent %}
-                              ({{ cp.memory_percent|floatformat:1 }}%)
-                            {% endif %}
-                          {% else %}
-                            -
-                          {% endif %}
-                        </td>
-                      </tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-              </div>
-            {% else %}
-              <p class="text-muted small mt-2 mb-0">
-                <i class="bi bi-hourglass-split"></i> Waiting for resource data...
-              </p>
-            {% endif %}
-          </details>
-        </div>
-        {# Display processing logs if available or if check is running #}
-        {% if check.processing_logs or check.status == 'running' or check.status == 'pending' or check.status == 'dispatching' or check.status == 'starting' or check.status == 'analyzing' %}
-          <div class="mt-3" id="processing-logs-container">
-            <h6>
-              <i class="bi bi-terminal"></i> Processing Logs
-            </h6>
-            <pre id="processing-logs"
-                 class="bg-dark text-light p-3 rounded"
-                 style="max-height: 400px;
-                        overflow-y: auto;
-                        font-size: 0.85rem">{{ check.processing_logs|default:"Waiting for logs..." }}</pre>
-          </div>
-        {% endif %}
-        {# Display system error message for staff when present #}
-        {% if check.error_message and request.user.is_staff %}
-          <div class="mt-3">
-            <h6 class="text-danger">
-              <i class="bi bi-exclamation-triangle"></i> System Error (Staff Only)
-            </h6>
-            <div class="alert alert-danger mb-2" role="alert">
-              <pre class="mb-0" style="white-space: pre-wrap; word-break: break-word;">{{ check.error_message }}</pre>
-            </div>
-          </div>
-        {% endif %}
-        {# Display errors if check finished with errors #}
-        {% if check.status == 'finished' and check.errors %}
-          <div class="mt-3">
-            <h6 class="text-danger">
-              <i class="bi bi-exclamation-triangle"></i> Errors
-            </h6>
-            {% for error in check.errors %}<div class="alert alert-danger mb-2" role="alert">{{ error }}</div>{% endfor %}
-          </div>
-        {% endif %}
-        {# Display warnings if any #}
-        {% if check.status == 'finished' and check.warnings %}
-          <div class="mt-3">
-            <h6 class="text-warning">
-              <i class="bi bi-exclamation-circle"></i> Warnings
-            </h6>
-            {% for warning in check.warnings %}<div class="alert alert-warning mb-2" role="alert">{{ warning }}</div>{% endfor %}
-          </div>
-        {% endif %}
       </div>
+      <div class="card-body">{% include "projects/_manufacturability_check.html" with check=check %}</div>
     </div>
+    {# Check History - show previous checks (not current) if more than one exists #}
+    {% with all_checks=file.manufacturability_checks.all %}
+      {% if all_checks.count > 1 %}
+        <div class="mt-3">
+          <h6>
+            <i class="bi bi-clock-history"></i>
+            Previous Checks ({{ all_checks.count|add:"-1" }})
+          </h6>
+          <p class="mb-2 text-muted small">
+            This file has been checked {{ all_checks.count }} time{{ all_checks.count|pluralize }}.
+          </p>
+          {% for hist_check in all_checks %}
+            {# Skip the first (latest/current) check - it's shown above #}
+            {% if not forloop.first %}
+              {# Card-based collapsible like download attempts #}
+              <div class="card mb-2">
+                <details>
+                  <summary class="card-header py-2" style="cursor: pointer; list-style: none;">
+                    <div class="d-flex justify-content-between align-items-center">
+                      <strong>
+                        Check #{{ hist_check.pk }}
+                        {% if hist_check.trigger_reason == 'initial' %}
+                          <span class="badge bg-primary ms-1">Initial</span>
+                        {% elif hist_check.trigger_reason == 'retry' %}
+                          <span class="badge bg-warning text-dark ms-1">Retry</span>
+                        {% elif hist_check.trigger_reason == 'drc_update' %}
+                          <span class="badge bg-info ms-1">DRC Update</span>
+                        {% elif hist_check.trigger_reason == 'admin_rerun' %}
+                          <span class="badge bg-secondary ms-1">Admin Re-run</span>
+                        {% endif %}
+                      </strong>
+                      <span class="badge {% if hist_check.status == 'finished' and hist_check.is_manufacturable %}bg-success{% elif hist_check.status == 'finished' and not hist_check.is_manufacturable %}bg-danger{% elif hist_check.status == 'error' %}bg-danger{% elif hist_check.status == 'cancelled' %}bg-secondary{% else %}bg-secondary{% endif %}">
+                        {% if hist_check.status == 'finished' %}
+                          {% if hist_check.is_manufacturable %}
+                            <i class="bi bi-check-circle"></i> Pass
+                          {% else %}
+                            <i class="bi bi-x-circle"></i> Fail
+                          {% endif %}
+                        {% elif hist_check.status == 'error' %}
+                          <i class="bi bi-exclamation-triangle"></i> Error
+                        {% elif hist_check.status == 'cancelled' %}
+                          <i class="bi bi-slash-circle"></i> Cancelled
+                        {% else %}
+                          {{ hist_check.get_status_display }}
+                        {% endif %}
+                      </span>
+                    </div>
+                  </summary>
+                  <div class="card-body py-2">{% include "projects/_manufacturability_check.html" with check=hist_check %}</div>
+                </details>
+              </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
   {% endif %}
 {% endwith %}
-{# File Information Card #}
-<div class="card bg-light">
-  <div class="card-body">
-    <h6 class="card-title">File Information</h6>
-    {% if file.original_url %}
-      <p class="mb-2">
-        <strong>Original URL:</strong>
-        <a href="{{ file.original_url }}"
-           target="_blank"
-           rel="noopener noreferrer">
-          {{ file.original_url|truncatechars:80 }}
-          <i class="bi bi-box-arrow-up-right"></i>
-        </a>
-      </p>
-    {% endif %}
-    {% if file.file_size %}
-      <p class="mb-2">
-        <strong>File Size:</strong> {{ file.file_size|filesizeformat }}
-      </p>
-    {% endif %}
-    {% if file.uploaded_at %}
-      <p class="mb-2">
-        <strong>Created:</strong> {{ file.uploaded_at|date:"Y-m-d H:i:s" }}
-      </p>
-    {% endif %}
-    {% if file.top_cell %}
-      <p class="mb-2">
-        <strong>Top Cell:</strong> <code>{{ file.top_cell }}</code>
-      </p>
-    {% endif %}
-    {# File Hashes #}
-    {% if file.hash_md5 or file.hash_sha1 or file.hash_sha256 %}
-      <hr />
-      <h6>File Hashes</h6>
-      {% if file.hash_md5 %}
-        <p class="mb-1">
-          <strong>MD5:</strong> <code>{{ file.hash_md5 }}</code>
-          {% if file.expected_hash_md5 %}
-            {% if file.hash_md5|lower == file.expected_hash_md5|lower %}
-              <span class="badge bg-success">
-                <i class="bi bi-check-circle"></i> Verified
-              </span>
-            {% else %}
-              <span class="badge bg-danger">
-                <i class="bi bi-x-circle"></i> Mismatch
-              </span>
-            {% endif %}
-          {% endif %}
-        </p>
-      {% endif %}
-      {% if file.hash_sha1 %}
-        <p class="mb-1">
-          <strong>SHA1:</strong> <code>{{ file.hash_sha1 }}</code>
-          {% if file.expected_hash_sha1 %}
-            {% if file.hash_sha1|lower == file.expected_hash_sha1|lower %}
-              <span class="badge bg-success">
-                <i class="bi bi-check-circle"></i> Verified
-              </span>
-            {% else %}
-              <span class="badge bg-danger">
-                <i class="bi bi-x-circle"></i> Mismatch
-              </span>
-            {% endif %}
-          {% endif %}
-        </p>
-      {% endif %}
-      {% if file.hash_sha256 %}
-        <p class="mb-1">
-          <strong>SHA256:</strong> <code>{{ file.hash_sha256 }}</code>
-          {% if file.expected_hash_sha256 %}
-            {% if file.hash_sha256|lower == file.expected_hash_sha256|lower %}
-              <span class="badge bg-success">
-                <i class="bi bi-check-circle"></i> Verified
-              </span>
-            {% else %}
-              <span class="badge bg-danger">
-                <i class="bi bi-x-circle"></i> Mismatch
-              </span>
-            {% endif %}
-          {% endif %}
-        </p>
-      {% endif %}
-    {% endif %}
-  </div>
-</div>
 {# Download Attempts Section #}
 {% if show_attempts|default:False and download_attempts %}
   <div class="mt-3">

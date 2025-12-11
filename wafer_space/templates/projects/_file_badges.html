@@ -7,7 +7,7 @@
   {% with status=latest_attempt.status|default:"pending" %}
     <div class="d-flex {% if layout == 'vertical' %}flex-column align-items-end{% endif %} gap-1 {% if layout != 'vertical' %}align-items-center{% endif %}">
       {# Manufacturability check status badge (most relevant) #}
-      {% with check=file.manufacturability_check %}
+      {% with check=file.latest_manufacturability_check %}
         {% if check %}
           {% if check.status == 'finished' and check.is_manufacturable %}
             <span class="badge bg-success">

@@ -10,8 +10,10 @@ from tests.browser.base import AuthenticatedBrowserTest
 from wafer_space.core.enums import SlotSize
 from wafer_space.legal.models import TermsOfService
 from wafer_space.legal.models import TermsOfServiceAcceptance
+from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectComplianceCertification
+from wafer_space.projects.models import ProjectFile
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.models import ShuttleSlot
 
@@ -300,9 +302,22 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
         self, driver, wait, staff_user, shuttle, project_with_compliance
     ):
         """Test that summary table shows manufacturable column."""
-        # Mark project as manufacturable
-        project_with_compliance.is_manufacturable = True
+        # Mark project as manufacturable by creating a finished check
+        project_file = ProjectFile.objects.create(
+            project=project_with_compliance,
+            original_url="https://example.com/test.gds",
+            source_url="https://example.com/test.gds",
+            original_filename="test.gds",
+            is_active=True,
+        )
+        project_with_compliance.submitted_file = project_file
         project_with_compliance.save()
+        ManufacturabilityCheck.objects.create(
+            project=project_with_compliance,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
 
         self.perform_login(driver, staff_user.username, TEST_PASSWORD)
 
@@ -323,9 +338,23 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
         self, driver, wait, staff_user, shuttle, project_with_compliance
     ):
         """Test that grid cells show manufacturing status indicators."""
-        # Mark project as manufacturable and assign to slot
-        project_with_compliance.is_manufacturable = True
+        # Mark project as manufacturable by creating a finished check
+        project_file = ProjectFile.objects.create(
+            project=project_with_compliance,
+            original_url="https://example.com/test.gds",
+            source_url="https://example.com/test.gds",
+            original_filename="test.gds",
+            is_active=True,
+        )
+        project_with_compliance.submitted_file = project_file
         project_with_compliance.save()
+        ManufacturabilityCheck.objects.create(
+            project=project_with_compliance,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
+        # Assign to slot
         slot = shuttle.slots.first()
         slot.reserve(project_with_compliance, staff_user)
 

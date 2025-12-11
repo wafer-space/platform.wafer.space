@@ -22,8 +22,11 @@ from django.conf import settings
 from django.core.files import File
 from django.core.files.base import ContentFile
 from django.db import IntegrityError
+from django.db.models import Exists
+from django.db.models import OuterRef
 from django.utils import timezone
 
+from .check_operations import create_retry_check
 from .docker_utils import create_directory_tar
 from .docker_utils import create_tar_archive
 from .docker_utils import get_docker_client
@@ -34,6 +37,7 @@ from .docker_utils import stream_archive_to_file
 from .docker_utils import stream_container_diff_to_file
 from .docker_utils import strip_docker_timestamps
 from .exceptions import InvalidStateTransitionError
+from .exceptions import MaxRetriesExceededError
 from .exceptions import TaskExecutionError
 from .hashing import MultiHasher
 from .models import ManufacturabilityCheck
@@ -182,6 +186,7 @@ def queued_check_task(
 __all__ = [
     "checks_analyzing",
     "checks_cancelling",
+    "checks_cleanup",
     "checks_cleanup_orphaned_docker",
     "checks_cleanup_stale_files",
     "checks_cleanup_stale_pending_tasks",
@@ -631,7 +636,10 @@ def checks_analyzing() -> dict[str, int]:
 
 @checks_task()
 def checks_retry() -> dict:
-    """Move retryable ERROR checks back to PENDING state.
+    """Create retry checks for ERROR checks that haven't been retried yet.
+
+    Only processes ERROR checks that don't have any retry children (leaf nodes).
+    This prevents double-processing when multiple checks in a retry chain fail.
 
     Returns:
         dict with 'retried' and 'exhausted' counts
@@ -641,29 +649,39 @@ def checks_retry() -> dict:
     retried = 0
     exhausted = 0
 
+    # Only process ERROR checks that haven't been retried yet
+    # (leaf nodes in the retry tree)
     error_checks = ManufacturabilityCheck.objects.filter(
         status=ManufacturabilityCheck.Status.ERROR,
+    ).exclude(
+        # Exclude checks that already have retries
+        id__in=ManufacturabilityCheck.objects.filter(
+            parent_check__isnull=False
+        ).values_list("parent_check_id", flat=True),
     )
     error_count = error_checks.count()
-    logger.info("Found %d checks in ERROR state", error_count)
+    logger.info("Found %d checks in ERROR state (without retries)", error_count)
 
     for check in error_checks:
-        if check.can_retry():
+        try:
+            original = check.parent_check or check
+            retry_count = original.retry_checks.count()
+            new_check = create_retry_check(check)
             logger.info(
-                "Retrying check %s (project: %s, attempt %d/%d)",
+                "Created retry check %s for %s (project: %s, attempt %d)",
+                new_check.id,
                 check.id,
                 check.project.name,
-                check.retry_count + 1,
-                check.max_retries,
+                retry_count + 1,
             )
-            check.reset_for_retry(reason="Automatic retry after error")
             retried += 1
-        else:
+        except MaxRetriesExceededError:
+            original = check.parent_check or check
+            retry_count = original.retry_checks.count()
             logger.info(
-                "Check %s exhausted retries (%d/%d)",
+                "Check %s exhausted retries (%d)",
                 check.id,
-                check.retry_count,
-                check.max_retries,
+                retry_count,
             )
             exhausted += 1
 
@@ -686,7 +704,7 @@ def checks_create() -> dict:
         is_active=True,
         hash_verified=True,
     ).exclude(
-        manufacturability_check__isnull=False,
+        manufacturability_checks__isnull=False,
     )
 
     files_count = files_needing_checks.count()
@@ -1793,6 +1811,70 @@ def checks_cleanup_stale_files() -> dict:
             )
 
     return {"cancelled": cancelled}
+
+
+def _cancel_superseded_checks() -> int:
+    """Cancel in-progress checks that have been superseded by newer checks.
+
+    Returns:
+        Number of checks marked for cancellation.
+    """
+    logger = logging.getLogger(__name__)
+
+    # Subquery: does a newer check exist for the same file?
+    newer_exists = ManufacturabilityCheck.objects.filter(
+        project_file=OuterRef("project_file"),
+        created_at__gt=OuterRef("created_at"),
+    )
+
+    # Find all superseded in-progress checks
+    superseded = ManufacturabilityCheck.objects.filter(
+        status__in=ManufacturabilityCheck.Status.in_progress(),
+    ).filter(Exists(newer_exists))
+
+    cancelled = 0
+    for check in superseded:
+        try:
+            check.mark_cancelling(reason="Superseded by newer check")
+            logger.info(
+                "Marked check %s as cancelling (superseded)",
+                check.id,
+            )
+            cancelled += 1
+        except Exception:
+            logger.exception("Failed to cancel superseded check %s", check.id)
+
+    return cancelled
+
+
+@checks_task()
+def checks_cleanup() -> dict:
+    """Cleanup task that performs all periodic cleanup operations.
+
+    This task combines multiple cleanup operations:
+    - Cancel checks superseded by newer checks
+    - Cancel checks on inactive project files
+    - Remove orphaned pending task records
+
+    Returns:
+        Dict with counts of cleanup operations performed.
+    """
+    # Cancel superseded checks
+    superseded_cancelled = _cancel_superseded_checks()
+
+    # Cancel checks on stale files
+    stale_files_result = checks_cleanup_stale_files()
+    stale_files_cancelled = stale_files_result.get("cancelled", 0)
+
+    # Clean up orphaned pending tasks
+    pending_tasks_result = checks_cleanup_stale_pending_tasks()
+    pending_tasks_deleted = pending_tasks_result.get("deleted", 0)
+
+    return {
+        "superseded_cancelled": superseded_cancelled,
+        "stale_files_cancelled": stale_files_cancelled,
+        "pending_tasks_deleted": pending_tasks_deleted,
+    }
 
 
 @checks_task()
