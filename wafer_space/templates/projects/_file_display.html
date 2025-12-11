@@ -201,14 +201,14 @@
             {% endif %}
           </div>
         {% endif %}
-        {% if check.celery_job_started_at %}
+        {% if check.container_started_at %}
           <p class="mb-2">
-            <strong>Started:</strong> {{ check.celery_job_started_at|date:"Y-m-d H:i:s" }}
+            <strong>Started:</strong> {{ check.container_started_at|date:"Y-m-d H:i:s" }}
           </p>
         {% endif %}
-        {% if check.celery_job_finished_at %}
+        {% if check.container_finished_at %}
           <p class="mb-2">
-            <strong>Completed:</strong> {{ check.celery_job_finished_at|date:"Y-m-d H:i:s" }}
+            <strong>Completed:</strong> {{ check.container_finished_at|date:"Y-m-d H:i:s" }}
           </p>
         {% endif %}
         {# Output files download section #}

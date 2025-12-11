@@ -66,10 +66,10 @@
                         <span class="text-muted">-</span>
                       {% endif %}
                     </td>
-                    <td>{{ check.celery_job_started_at|date:"Y-m-d H:i:s" }}</td>
+                    <td>{{ check.container_started_at|date:"Y-m-d H:i:s" }}</td>
                     <td>
-                      {% if check.celery_job_started_at %}
-                        {{ check.celery_job_started_at|timesince }}
+                      {% if check.container_started_at %}
+                        {{ check.container_started_at|timesince }}
                       {% else %}
                         <span class="text-muted">-</span>
                       {% endif %}
@@ -231,15 +231,15 @@
                       {% endif %}
                     </td>
                     <td>
-                      {% if check.celery_job_started_at %}
-                        <small>{{ check.celery_job_started_at|date:"Y-m-d H:i" }}</small>
+                      {% if check.container_started_at %}
+                        <small>{{ check.container_started_at|date:"Y-m-d H:i" }}</small>
                       {% else %}
                         <span class="text-muted">-</span>
                       {% endif %}
                     </td>
                     <td>
-                      {% if check.celery_job_finished_at %}
-                        <small>{{ check.celery_job_finished_at|date:"Y-m-d H:i" }}</small>
+                      {% if check.container_finished_at %}
+                        <small>{{ check.container_finished_at|date:"Y-m-d H:i" }}</small>
                       {% else %}
                         <span class="text-muted">-</span>
                       {% endif %}
