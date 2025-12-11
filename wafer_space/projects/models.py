@@ -1927,6 +1927,88 @@ class ManufacturabilityCheck(models.Model):
         return f"Check #{self.pk} ({date_str})"
 
     @property
+    def root_check(self) -> "ManufacturabilityCheck":
+        """Get the original check in a retry chain.
+
+        For initial checks, returns self.
+        For retries, walks up parent_check chain to find the root.
+        """
+        check = self
+        while check.parent_check is not None:
+            check = check.parent_check
+        return check
+
+    @property
+    def queue_wait_seconds(self) -> float | None:
+        """Time spent waiting in queue before running (in seconds).
+
+        Calculated as: container_started_at - created_at
+        For checks still waiting: now - created_at
+        Returns None if created_at is not set.
+        """
+        if not self.created_at:
+            return None
+
+        if self.container_started_at:
+            delta = self.container_started_at - self.created_at
+            return delta.total_seconds()
+
+        # Still waiting - show time since creation
+        waiting_statuses = [
+            self.Status.PENDING,
+            self.Status.DISPATCHING,
+            self.Status.STARTING,
+        ]
+        if self.status in waiting_statuses:
+            delta = timezone.now() - self.created_at
+            return delta.total_seconds()
+
+        return None
+
+    @property
+    def run_duration_seconds(self) -> float | None:
+        """Time the container spent running (in seconds).
+
+        Calculated as: container_finished_at - container_started_at
+        For checks still running: now - container_started_at
+        Returns None if container hasn't started.
+        """
+        if not self.container_started_at:
+            return None
+
+        if self.container_finished_at:
+            delta = self.container_finished_at - self.container_started_at
+            return delta.total_seconds()
+
+        # Still running - show time since container started
+        if self.status == self.Status.RUNNING:
+            delta = timezone.now() - self.container_started_at
+            return delta.total_seconds()
+
+        return None
+
+    @property
+    def retry_delay_seconds(self) -> float | None:
+        """Time between parent check completion and this check's creation.
+
+        Only applicable for retry checks (has parent_check).
+        Returns None if not a retry or if timestamps unavailable.
+        """
+        if not self.parent_check or not self.created_at:
+            return None
+
+        # Use parent's container_finished_at or analysis_completed_at
+        parent_end = (
+            self.parent_check.analysis_completed_at
+            or self.parent_check.container_finished_at
+        )
+        if not parent_end:
+            return None
+
+        delta = self.created_at - parent_end
+        return delta.total_seconds()
+
+    @property
     def result_display(self) -> str:
         """Get human-readable result classification.
 

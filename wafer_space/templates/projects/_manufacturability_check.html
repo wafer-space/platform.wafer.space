@@ -325,13 +325,19 @@
     </h6>
     <table class="table table-sm table-borderless mb-0">
       <tbody>
+        {# Key metrics first #}
         <tr>
           <td>
-            <strong>Created:</strong>
+            <strong>Queue Wait:</strong>
           </td>
           <td>
-            {% if check.created_at %}
-              <span title="{{ check.created_at|date:'Y-m-d H:i:s' }}">{{ check.created_at|timesince }} ago</span>
+            {% if check.queue_wait_seconds is not None %}
+              <span title="Time from creation to container start">
+                {{ check.queue_wait_seconds|duration }}
+                {% if check.status == 'pending' or check.status == 'dispatching' or check.status == 'starting' %}
+                  <span class="text-muted">(waiting)</span>
+                {% endif %}
+              </span>
             {% else %}
               <span class="text-muted">-</span>
             {% endif %}
@@ -339,11 +345,16 @@
         </tr>
         <tr>
           <td>
-            <strong>Dispatching:</strong>
+            <strong>Run Duration:</strong>
           </td>
           <td>
-            {% if check.dispatching_started_at %}
-              <span title="{{ check.dispatching_started_at|date:'Y-m-d H:i:s' }}">+{{ check.dispatching_started_at|duration_between:check.created_at }}</span>
+            {% if check.run_duration_seconds is not None %}
+              <span title="Time container spent running">
+                {{ check.run_duration_seconds|duration }}
+                {% if check.status == 'running' %}
+                  <span class="text-muted">(running)</span>
+                {% endif %}
+              </span>
             {% else %}
               <span class="text-muted">-</span>
             {% endif %}
@@ -351,62 +362,66 @@
         </tr>
         <tr>
           <td>
-            <strong>Starting:</strong>
-          </td>
-          <td>
-            {% if check.starting_started_at %}
-              <span title="{{ check.starting_started_at|date:'Y-m-d H:i:s' }}">+{{ check.starting_started_at|duration_between:check.created_at }}</span>
-            {% else %}
-              <span class="text-muted">-</span>
-            {% endif %}
-          </td>
-        </tr>
-        <tr>
-          <td>
-            <strong>Container Up:</strong>
-          </td>
-          <td>
-            {% if check.container_started_at %}
-              <span title="{{ check.container_started_at|date:'Y-m-d H:i:s' }}">+{{ check.container_started_at|duration_between:check.created_at }}</span>
-            {% else %}
-              <span class="text-muted">-</span>
-            {% endif %}
-          </td>
-        </tr>
-        <tr>
-          <td>
-            <strong>Container Done:</strong>
-          </td>
-          <td>
-            {% if check.container_finished_at %}
-              <span title="{{ check.container_finished_at|date:'Y-m-d H:i:s' }}">+{{ check.container_finished_at|duration_between:check.created_at }}</span>
-            {% else %}
-              <span class="text-muted">-</span>
-            {% endif %}
-          </td>
-        </tr>
-        <tr>
-          <td>
-            <strong>Analysis Done:</strong>
-          </td>
-          <td>
-            {% if check.analysis_completed_at %}
-              <span title="{{ check.analysis_completed_at|date:'Y-m-d H:i:s' }}">+{{ check.analysis_completed_at|duration_between:check.created_at }}</span>
-            {% else %}
-              <span class="text-muted">-</span>
-            {% endif %}
-          </td>
-        </tr>
-        <tr>
-          <td>
-            <strong>Total Duration:</strong>
+            <strong>Total:</strong>
           </td>
           <td>
             {% if check.analysis_completed_at and check.created_at %}
               <strong>{{ check.analysis_completed_at|duration_between:check.created_at }}</strong>
+            {% elif check.created_at %}
+              <span class="text-muted">{{ check.created_at|timesince }} (in progress)</span>
             {% else %}
               <span class="text-muted">-</span>
             {% endif %}
+          </td>
+        </tr>
+        {# Retry context - only shown for retries #}
+        {% if check.parent_check %}
+          <tr>
+            <td colspan="2" class="pt-2">
+              <small class="text-muted">Retry Context:</small>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <strong>Original:</strong>
+            </td>
+            <td>
+              <span title="{{ check.root_check.created_at|date:'Y-m-d H:i:s' }}">
+                {{ check.root_check.created_at|timesince }} ago
+              </span>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <strong>Parent Run:</strong>
+            </td>
+            <td>
+              {% if check.parent_check.run_duration_seconds is not None %}
+                {{ check.parent_check.run_duration_seconds|duration }}
+              {% else %}
+                <span class="text-muted">-</span>
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <strong>Retry Delay:</strong>
+            </td>
+            <td>
+              {% if check.retry_delay_seconds is not None %}
+                {{ check.retry_delay_seconds|duration }}
+              {% else %}
+                <span class="text-muted">-</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endif %}
+        {# Created timestamp #}
+        <tr>
+          <td colspan="2" class="pt-2">
+            <small class="text-muted">
+              Created: {{ check.created_at|date:"Y-m-d H:i:s" }}
+            </small>
           </td>
         </tr>
       </tbody>
