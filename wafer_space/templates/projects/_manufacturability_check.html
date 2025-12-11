@@ -351,9 +351,7 @@
             {% if check.run_duration_seconds is not None %}
               <span title="Time container spent running">
                 {{ check.run_duration_seconds|duration }}
-                {% if check.status == 'running' %}
-                  <span class="text-muted">(running)</span>
-                {% endif %}
+                {% if check.status == 'running' %}<span class="text-muted">(running)</span>{% endif %}
               </span>
             {% else %}
               <span class="text-muted">-</span>
@@ -419,9 +417,7 @@
         {# Created timestamp #}
         <tr>
           <td colspan="2" class="pt-2">
-            <small class="text-muted">
-              Created: {{ check.created_at|date:"Y-m-d H:i:s" }}
-            </small>
+            <small class="text-muted">Created: {{ check.created_at|date:"Y-m-d H:i:s" }}</small>
           </td>
         </tr>
       </tbody>
