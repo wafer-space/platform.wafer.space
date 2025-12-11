@@ -11,6 +11,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.utils import timezone
+from django.utils.formats import date_format
 from simple_history.models import HistoricalRecords
 
 from wafer_space.core.enums import SlotSize
@@ -1914,6 +1915,16 @@ class ManufacturabilityCheck(models.Model):
         Returns True if check can transition to CANCELLING state.
         """
         return self.can_transition_to(self.Status.CANCELLING)
+
+    @property
+    def title(self) -> str:
+        """Human-readable title for this check.
+
+        Format: "Check #<pk> (<created_at date>)"
+        Example: "Check #10 (2025-12-02 18:22)"
+        """
+        date_str = date_format(self.created_at, "Y-m-d H:i") if self.created_at else ""
+        return f"Check #{self.pk} ({date_str})"
 
     @property
     def result_display(self) -> str:

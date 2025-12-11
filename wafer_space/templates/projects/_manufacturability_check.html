@@ -276,7 +276,7 @@
 <p class="mb-2">
   <strong>Parent Check:</strong>
   {% if check.parent_check %}
-    Check #{{ check.parent_check.pk }} ({{ check.parent_check.created_at|date:"Y-m-d H:i" }})
+    {{ check.parent_check.title }}
   {% else %}
     <span class="text-muted">-</span>
   {% endif %}

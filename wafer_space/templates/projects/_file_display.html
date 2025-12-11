@@ -105,7 +105,7 @@
                         {% elif hist_check.trigger_reason == 'admin_rerun' %}
                           <span class="badge bg-secondary">Admin Re-run</span>
                         {% endif %}
-                        <span class="ms-2">{{ hist_check.created_at|date:"Y-m-d H:i" }}</span>
+                        <span class="ms-2">{{ hist_check.title }}</span>
                       </strong>
                       <span class="badge {% if hist_check.status == 'finished' and hist_check.is_manufacturable %}bg-success{% elif hist_check.status == 'finished' and not hist_check.is_manufacturable %}bg-danger{% elif hist_check.status == 'error' %}bg-danger{% elif hist_check.status == 'cancelled' %}bg-secondary{% else %}bg-secondary{% endif %}">
                         {% if hist_check.status == 'finished' %}
