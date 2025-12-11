@@ -364,6 +364,11 @@ def checks_cleanup_orphaned_docker() -> dict:
 def checks_pending() -> dict[str, int]:
     """Transition PENDING checks to DISPATCHING with server assignment.
 
+    Server selection uses least-loaded balancing:
+    - Selects server with fewest active checks
+    - Uses priority as tiebreaker (lowest priority number wins)
+    - Dispatches one check per available server per cycle
+
     Serializes dispatch to prevent Docker API overload:
     - Only ONE check per server can be in DISPATCHING or STARTING state
     - Must wait for check to reach RUNNING before dispatching the next
@@ -379,12 +384,13 @@ def checks_pending() -> dict[str, int]:
 
     dispatched = 0
 
-    # Sort servers by priority (lowest first)
-    servers = sorted(settings.DOCKER_SERVERS, key=lambda s: s["priority"])
+    # Build list of available servers with their load info
+    available_servers: list[dict] = []
 
-    for server in servers:
+    for server in settings.DOCKER_SERVERS:
         server_id = str(server["id"])
         max_concurrent = int(server["max_concurrent"])
+        priority = int(server["priority"])
 
         # Serialize dispatch: skip if any check is DISPATCHING or STARTING
         # This prevents concurrent Docker operations (image pull, container create)
@@ -420,14 +426,31 @@ def checks_pending() -> dict[str, int]:
             )
             continue
 
-        logger.info(
-            "Server %s: %d/%d active, dispatching one check",
-            server_id,
-            active_count,
-            max_concurrent,
+        available_servers.append(
+            {
+                "server_id": server_id,
+                "active_count": active_count,
+                "max_concurrent": max_concurrent,
+                "priority": priority,
+            }
         )
 
-        # Dispatch only ONE check per server per cycle (serialized dispatch)
+    if not available_servers:
+        logger.debug("No servers available for dispatch")
+        return {"dispatched": dispatched}
+
+    # Dispatch checks to available servers using least-loaded balancing
+    # Each iteration picks the least-loaded server, dispatches one check,
+    # then removes that server (serialized dispatch: one check initializing per server)
+    while available_servers:
+        # Sort by active_count (ascending), then priority (ascending) as tiebreaker
+        available_servers.sort(key=lambda s: (s["active_count"], s["priority"]))
+
+        # Get the least-loaded server
+        target = available_servers[0]
+        server_id = target["server_id"]
+
+        # Get next pending check
         pending_check = (
             ManufacturabilityCheck.objects.filter(
                 status=ManufacturabilityCheck.Status.PENDING,
@@ -436,10 +459,23 @@ def checks_pending() -> dict[str, int]:
             .first()
         )
 
-        if pending_check:
-            pending_check.mark_dispatching(server_id=server_id)
-            logger.info("Assigned check %s to server %s", pending_check.id, server_id)
-            dispatched += 1
+        if not pending_check:
+            logger.debug("No more pending checks")
+            break
+
+        logger.info(
+            "Server %s: %d/%d active (least loaded), dispatching check %s",
+            server_id,
+            target["active_count"],
+            target["max_concurrent"],
+            pending_check.id,
+        )
+
+        pending_check.mark_dispatching(server_id=server_id)
+        dispatched += 1
+
+        # Remove this server from available list (serialized: only one initializing)
+        available_servers.pop(0)
 
     return {"dispatched": dispatched}
 
