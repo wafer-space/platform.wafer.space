@@ -18,7 +18,7 @@ RuntimeDirectoryMode=0750
 LogsDirectory=platform.wafer.space-celery-dock-rw-checks-save
 LogsDirectoryMode=0750
 
-PIDFile=${RUNTIME_DIRECTORY}/worker.pid
+PIDFile=/run/platform.wafer.space-celery-dock-rw-checks-save/worker.pid
 
 ExecStart=/home/django/platform.wafer.space/.venv/bin/celery \
     -A config \
