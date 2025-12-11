@@ -2,93 +2,111 @@
 
 This document describes the systemd service units for platform.wafer.space, their security configurations, and the principle of least privilege applied to each.
 
+## Queue Naming Convention
+
+Queue names follow the pattern: `{network}:{fs}:{purpose}`
+
+### Network Access (`{network}`)
+
+| Value  | Description                         | Systemd Restriction             |
+|--------|-------------------------------------|---------------------------------|
+| `none` | Database only (via Unix socket)     | `IPAddressDeny=any`             |
+| `mail` | Mailgun API (HTTPS)                 | None (dynamic API IPs)          |
+| `http` | HTTP/HTTPS traffic                  | None (arbitrary URLs)           |
+| `dock` | Docker server IPs only              | `IPAddressAllow` + `IPAddressDeny=any` |
+
+**Note:** PostgreSQL connections via Unix socket (`/var/run/postgresql/.s.PGSQL.5432`) are not affected by `IPAddressDeny` since it only filters IP traffic (AF_INET/AF_INET6), not Unix sockets (AF_UNIX).
+
+### Filesystem Access (`{fs}`)
+
+| Value | Description                        | Systemd Restriction             |
+|-------|------------------------------------|---------------------------------|
+| `ro`  | Read-only application access       | `ReadOnlyPaths=...`             |
+| `rw`  | Media directory read/write         | `ReadWritePaths=.../media`      |
+
+**Note:** See [issue #210](https://github.com/wafer-space/platform.wafer.space/issues/210) for future granularity between "no media access" and "read-only media access".
+
+### Port Filtering (Future)
+
+Systemd's `IPAddressAllow`/`IPAddressDeny` do not support port filtering. Port-level restrictions would require iptables/nftables - tracked in [issue #209](https://github.com/wafer-space/platform.wafer.space/issues/209).
+
 ## Services Overview
 
-| Service                      | User       | Queue(s)           | Media | Docker | Security Model                    |
-|------------------------------|------------|--------------------|:-----:|:------:|-----------------------------------|
-| **gunicorn**                 | www-data   | -                  | -     | -      | No filesystem writes              |
-| **celery**                   | www-data   | default, referrals | -     | -      | No filesystem writes              |
-| **celery-downloads**         | www-data   | downloads          | W¹    | -      | Write downloads only (append-only)|
-| **celery-docker-persistent** | celery-mfg | docker-persistent  | W²    | Y      | Write outputs/logs only           |
-| **celery-docker-ephemeral**  | celery-mfg | docker-ephemeral   | -     | Y      | Read-only, Docker cleanup         |
-| **celery-beat**              | www-data   | -                  | -     | -      | No filesystem writes              |
-
-**Legend:**
-- W = Write access to media directory
-- Y = Docker socket access
-- \- = None
-
-**Security Notes:**
-1. **celery-downloads**: Write-once for downloaded files. Cannot modify existing files.
-2. **celery-docker-persistent**: Writes check outputs (logs, archives). Cannot modify downloads.
-
-**Principle of Least Privilege:**
-- **gunicorn** and **celery** (default): NO filesystem writes. Database and email only.
-- **celery-downloads**: Can ONLY write new download files. Cannot modify/delete existing files.
-- **celery-docker-persistent**: Can ONLY write manufacturability check outputs. Cannot modify downloads.
-- **celery-docker-ephemeral**: Read-only filesystem access. Docker API for cleanup only.
-
-## File Handling Architecture
-
-**CRITICAL: NO FILE UPLOADS OCCUR IN THE DJANGO WEB APPLICATION.**
-
-The platform does NOT accept direct file uploads through the web interface. All file acquisition happens via background download tasks:
-
-1. **User submits URL** - Users provide a URL to their GDS file (GitHub release, external URL, etc.)
-2. **Django creates download task** - Web application (gunicorn) creates a database record and queues a Celery task
-3. **celery-downloads fetches file** - Background worker downloads the file from the external URL
-4. **Django reads results** - Web application reads download status and file metadata from database
-
-**Why this architecture:**
-- **Security**: No direct file upload vulnerabilities (upload bombs, malicious filenames, etc.)
-- **Performance**: Large files (up to 100GB) don't block web requests
-- **Reliability**: Automatic retry with exponential backoff for failed downloads
-- **Traceability**: Full audit trail of file sources and download attempts
-
-**Service responsibilities:**
-- **gunicorn** (Django web app): Database operations ONLY. NO file handling.
-- **celery-downloads**: File acquisition ONLY. Downloads from external URLs to media directory.
-- **celery-docker-persistent**: Reads downloaded files (read-only). Writes check outputs only.
+| Service                             | User       | Queue                  | Network | FS | Purpose                        |
+|-------------------------------------|------------|------------------------|---------|----|---------------------------------|
+| **gunicorn**                        | www-data   | -                      | -       | ro | Web application                 |
+| **celery-none-ro-default**          | www-data   | `none:ro:default`      | none    | ro | Catch-all for unassigned tasks  |
+| **celery-none-ro-checks-orch**      | www-data   | `none:ro:checks-orch`  | none    | ro | Check orchestration (DB only)   |
+| **celery-none-ro-beat**             | www-data   | `none:ro:beat`         | none    | ro | Celery Beat scheduler           |
+| **celery-mail-ro-email**            | www-data   | `mail:ro:email`        | mail    | ro | Email via Mailgun               |
+| **celery-http-rw-downloads**        | www-data   | `http:rw:downloads`    | http    | rw | File downloads                  |
+| **celery-dock-ro-checks-fast**      | celery-mfg | `dock:ro:checks-fast`  | dock    | ro | Fast Docker ops (<30s)          |
+| **celery-dock-ro-checks-slow**      | celery-mfg | `dock:ro:checks-slow`  | dock    | ro | Slow Docker ops (minutes)       |
+| **celery-dock-rw-checks-save**      | celery-mfg | `dock:rw:checks-save`  | dock    | rw | Docker ops with media write     |
 
 ## Task to Queue Mapping
 
-| Queue             | Task                                | Description                                               |
-|-------------------|-------------------------------------|-----------------------------------------------------------|
-| default           | `send_tos_update_email`             | Send TOS notification email to user                       |
-| default           | `send_bulk_tos_notifications`       | Queue bulk TOS notifications                              |
-| default           | `checks_create`                     | Create new checks from ready files                        |
-| default           | `checks_dispatch`                   | Dispatch PENDING checks to docker-persistent queue        |
-| default           | `checks_retry`                      | Retry ERROR checks within limit                           |
-| default           | `checks_cleanup_orphaned_dispatch`  | Detect and reset stuck DISPATCHED checks                  |
-| default           | `checks_cleanup_orphaned_processing` | Detect and reset stuck PROCESSING checks                  |
-| downloads         | `download_project_file`             | Download with chunked transfer, resume, hash verification |
-| docker-persistent | `check_process_job`                 | Run gf180mcu-precheck in Docker container                 |
-| docker-ephemeral  | `ensure_download_tasks_queued`      | Recover lost download tasks                               |
-| docker-ephemeral  | `cleanup_old_task_results`          | Remove old Celery TaskResult records                      |
-| docker-ephemeral  | `checks_cancelling`                 | Complete cancellation of CANCELLING checks                |
-| docker-ephemeral  | `checks_cleanup_orphaned_docker`    | Remove orphaned Docker containers                         |
+| Queue                  | Task                              | Description                                |
+|------------------------|-----------------------------------|--------------------------------------------|
+| `none:ro:checks-orch`  | `checks_create`                   | Create new checks from ready files         |
+| `none:ro:checks-orch`  | `checks_pending`                  | Transition PENDING → DISPATCHING           |
+| `none:ro:checks-orch`  | `checks_dispatching`              | Poll DISPATCHING checks                    |
+| `none:ro:checks-orch`  | `checks_starting`                 | Poll STARTING checks                       |
+| `none:ro:checks-orch`  | `checks_running`                  | Poll RUNNING checks                        |
+| `none:ro:checks-orch`  | `checks_analyzing`                | Poll ANALYZING checks                      |
+| `none:ro:checks-orch`  | `checks_cancelling`               | Poll CANCELLING checks                     |
+| `none:ro:checks-orch`  | `checks_retry`                    | Retry ERROR checks within limit            |
+| `none:ro:checks-orch`  | `checks_cleanup_stale_files`      | Cleanup stale files                        |
+| `none:ro:checks-orch`  | `checks_cleanup_stale_pending_tasks` | Cleanup stale pending tasks             |
+| `none:ro:default`      | `cleanup_old_task_results`        | Remove old Celery TaskResult records       |
+| `none:ro:default`      | `ensure_download_tasks_queued`    | Recover lost download tasks                |
+| `mail:ro:email`        | `send_tos_update_email`           | Send TOS notification email                |
+| `mail:ro:email`        | `send_bulk_tos_notifications`     | Queue bulk TOS notifications               |
+| `http:rw:downloads`    | `download_project_file`           | Chunked download with resume and hashing   |
+| `dock:ro:checks-fast`  | `do_starting`                     | Start Docker container                     |
+| `dock:ro:checks-fast`  | `do_running`                      | Poll running container                     |
+| `dock:ro:checks-fast`  | `checks_cleanup_orphaned_docker`  | Remove orphaned Docker containers          |
+| `dock:ro:checks-slow`  | `do_dispatching`                  | Create and configure Docker container      |
+| `dock:rw:checks-save`  | `do_analyzing`                    | Extract results and save to media          |
+
+## Docker Server Configuration
+
+The `dock:*` queues connect to remote Docker servers via TCP (not local socket). These are the allowed Docker server IPs:
+
+| IP           | Hostname | Environment           |
+|--------------|----------|-----------------------|
+| 10.3.27.44   | harken   | Production            |
+| 10.4.27.44   | micky    | Staging/Production    |
+| 10.3.27.45   | buddy    | Reserved              |
+| 10.4.27.45   | doc      | Reserved              |
+
+Docker API ports: 2375 (unencrypted), 2376 (TLS)
+
+**Important:** The `dock:*` services use `IPAddressAllow` to restrict network access to only these Docker server IPs, then `IPAddressDeny=any` to block all other IP traffic.
 
 ---
 
 ## Architecture Overview
 
-```
+```text
                                     +-----------------+
                                     |    PostgreSQL   |
+                                    | (Unix Socket)   |
                                     +-----------------+
                                            |
-          +--------------------------------+--------------------------------+
-          |                |               |               |                |
-+---------v----+  +--------v-------+  +----v----+  +------v------+  +------v------+
-|   Gunicorn   |  | Celery Default |  | Celery  |  |   Celery    |  |   Celery    |
-| (Web Server) |  | (Orchestrat.)  |  |Downloads|  |Docker-Persist|  |Docker-Ephem.|
-+--------------+  +----------------+  +---------+  +-------------+  +-------------+
-                                           |              |               |
-                                           v              v               v
-                                      +--------+    +--------+       +--------+
-                                      | Media  |    | Docker |       | Docker |
-                                      | Files  |    | Socket |       | Socket |
-                                      +--------+    +--------+       +--------+
+    +--------------------------------------+--------------------------------------+
+    |              |              |              |              |                 |
++---v---+   +------v------+  +----v----+  +-----v-----+  +-----v-----+  +--------v--------+
+|Gunicorn|  |none:ro:*    |  |mail:ro: |  |http:rw:   |  |dock:ro:*  |  |dock:rw:         |
+|(Web)  |  |(checks-orch,|  |email    |  |downloads  |  |(fast,slow)|  |checks-save      |
+|       |  | default,beat)|  |         |  |           |  |           |  |                 |
++-------+  +-------------+  +---------+  +-----+-----+  +-----+-----+  +--------+--------+
+                                               |              |                 |
+                                               v              v                 v
+                                          +--------+    +----------+       +--------+
+                                          | Media  |    | Docker   |       | Media  |
+                                          | (Write)|    | Servers  |       | (Write)|
+                                          +--------+    +----------+       +--------+
 ```
 
 ## Common Configuration
@@ -105,104 +123,19 @@ RuntimeDirectory and LogsDirectory are automatically excluded from ProtectSystem
 
 ### Users
 
-| User       | Services                                                  | Docker Access |
-|------------|-----------------------------------------------------------|:-------------:|
-| www-data   | gunicorn, celery, celery-downloads, celery-beat           | No            |
-| celery-mfg | celery-docker-persistent, celery-docker-ephemeral         | Yes           |
+| User       | Services                                                    | Docker Access |
+|------------|-------------------------------------------------------------|:-------------:|
+| www-data   | gunicorn, none:ro:*, mail:ro:*, http:rw:*                   | No            |
+| celery-mfg | dock:ro:*, dock:rw:*                                        | Remote only   |
 
-### Filesystem Permissions
-
-The media directory structure must support the principle of least privilege:
-
-```
-/mnt/user-files/                     root:root              drwxr-xr-x
-├── docker/                          root:docker            drwxr-x---  (Docker daemon storage ONLY)
-├── projects/                        root:platform-media    drwxrwxr-x
-│   └── <uuid>/                      root:platform-media    drwxrwxr-x
-│       ├── *.gds                    www-data:platform-media (celery-downloads writes)
-│       ├── *.precheck.*.log         celery-mfg:platform-media (celery-docker-persistent writes)
-│       └── *.precheck.*.runs.tar    celery-mfg:platform-media (celery-docker-persistent writes)
-└── temp/                            root:platform-media    drwxrwxr-x  (temporary extraction, auto-cleaned)
-    └── task_<id>/                   (per-task isolation for content extraction)
-        └── file_<id>/
-```
-
-**Key Requirements:**
-
-1. **docker/** directory:
-   - **Owner**: `root:docker`
-   - **Permissions**: `drwxr-x---` (750) - ONLY Docker daemon can write
-   - **WHY**: Docker storage must not be accessible to www-data or other services
-
-2. **projects/<uuid>/** directory:
-   - **Owner**: `root:platform-media`
-   - **Permissions**: `drwxrwxr-x` (775) - Both www-data and celery-mfg can write
-   - **Contents**:
-     - `*.gds` files created by celery-downloads (www-data)
-     - `*.precheck.*.log` files created by celery-docker-persistent (celery-mfg)
-     - `*.precheck.*.runs.tar` archives created by celery-docker-persistent (celery-mfg)
-   - **WHY**: Shared project directory allows both workers to write their respective outputs
-
-3. **temp/** directory:
-   - **Owner**: `root:platform-media`
-   - **Permissions**: `drwxrwxr-x` (775) with setgid bit
-   - **WHY**: Content extraction pipeline needs temporary workspace (auto-cleaned)
-
-4. **Application code** (`/home/django/platform.wafer.space/`):
-   - **Owner**: `django:django`
-   - **Permissions**: Read-only for all services (enforced by systemd `ReadOnlyPaths`)
-   - **WHY**: Code must never be modified by services
-
-**Setup Script:**
-
-```bash
-# Create platform-media group for shared media access
-sudo groupadd platform-media
-
-# Add users to platform-media group
-sudo usermod -aG platform-media www-data
-sudo usermod -aG platform-media celery-mfg
-
-# Set up media directory structure (only directories actually used by code)
-sudo mkdir -p /mnt/user-files/{docker,projects,temp}
-
-# Docker storage - root:docker only (NO www-data access)
-sudo chown root:docker /mnt/user-files/docker
-sudo chmod 750 /mnt/user-files/docker
-
-# Media directories - root:platform-media with group write
-sudo chown -R root:platform-media /mnt/user-files/{projects,temp}
-sudo chmod -R 775 /mnt/user-files/{projects,temp}
-
-# Set setgid bit so new files inherit group
-sudo chmod g+s /mnt/user-files/{projects,temp}
-
-# Verify permissions
-ls -la /mnt/user-files/
-```
-
-**User Group Memberships:**
-
-| User       | Primary Group | Supplementary Groups    | Purpose                               |
-|------------|---------------|-------------------------|---------------------------------------|
-| django     | django        | -                       | Owns application code (read-only)     |
-| www-data   | www-data      | platform-media          | Web server + write downloads          |
-| celery-mfg | celery-mfg    | docker, platform-media  | Docker access + write check outputs   |
-
-### Docker Socket Access
-
-Services needing Docker access use:
-- `SupplementaryGroups=docker` - Group permission on the socket
-- `BindPaths=/var/run/docker.sock` - Makes socket accessible despite ProtectSystem=strict
-
-Note: Docker socket access is root-equivalent. The `celery-mfg` user must be in the `docker` group.
+**Note:** The `celery-mfg` user no longer needs local Docker socket access. All Docker operations use remote API over TCP.
 
 ### Environment Variables
 
 Systemd provides these variables to all services:
 
-- `$RUNTIME_DIRECTORY` - e.g., `/run/platform.wafer.space-celery`
-- `$LOGS_DIRECTORY` - e.g., `/var/log/platform.wafer.space-celery`
+- `$RUNTIME_DIRECTORY` - e.g., `/run/platform.wafer.space-celery-none-ro-default`
+- `$LOGS_DIRECTORY` - e.g., `/var/log/platform.wafer.space-celery-none-ro-default`
 
 ---
 
@@ -213,7 +146,7 @@ Systemd provides these variables to all services:
 WSGI application server serving HTTP requests via Unix socket.
 
 - **Type:** notify
-- **Queues:** -
+- **Network:** None (reverse proxy via Unix socket)
 - **ProtectSystem:** strict
 
 **Files:**
@@ -222,133 +155,147 @@ WSGI application server serving HTTP requests via Unix socket.
 
 ---
 
-### django-celery.service
+### django-celery-none-ro-default.service
 
-Default Celery worker for email notifications and check orchestration tasks.
+Catch-all worker for unassigned tasks and maintenance tasks.
 
 - **Type:** forking
-- **Queues:** default, referrals
-- **Hostname:** default@%h
+- **Queue:** `none:ro:default`
+- **Hostname:** none-ro-default@%h
+- **Network:** `IPAddressDeny=any` (DB via Unix socket only)
 - **ProtectSystem:** strict
 
 **Tasks:**
 
-`send_tos_update_email` - Send TOS notification email
-- Defined: `wafer_space/legal/tasks.py:31`
-- Called from: `wafer_space/legal/tasks.py:199` (bulk notifications), `wafer_space/legal/admin.py:251` (admin action)
-
-`send_bulk_tos_notifications` - Queue bulk TOS notifications
-- Defined: `wafer_space/legal/tasks.py:136`
-- Called from: Django admin interface
-
-`checks_create` - Create checks from ready files
-- Defined: `wafer_space/projects/tasks.py:3093`
-- Called from: Celery Beat scheduler (periodic, every 30s)
-
-`checks_dispatch` - Dispatch PENDING checks to docker-persistent
-- Defined: `wafer_space/projects/tasks.py:3033`
-- Called from: Celery Beat scheduler (periodic, every 30s)
-
-`checks_retry` - Retry ERROR checks within limit
-- Defined: `wafer_space/projects/tasks.py:3070`
-- Called from: Celery Beat scheduler (periodic, every 60s)
-
-`checks_cleanup_orphaned_dispatch` - Reset stuck DISPATCHED checks
-- Defined: `wafer_space/projects/tasks.py:3121`
-- Called from: Celery Beat scheduler (periodic, every 60s)
-
-`checks_cleanup_orphaned_processing` - Reset stuck PROCESSING checks
-- Defined: `wafer_space/projects/tasks.py:3153`
-- Called from: Celery Beat scheduler (periodic, every 60s)
+- `cleanup_old_task_results` - Remove old Celery TaskResult records (periodic)
+- `ensure_download_tasks_queued` - Recover lost download tasks (periodic)
 
 ---
 
-### django-celery-downloads.service
+### django-celery-none-ro-checks-orch.service
 
-Dedicated worker for downloading large files (up to 100GB) from external URLs.
+Orchestration worker for manufacturability check state machine. All tasks are DB-only operations that poll checks in specific states and queue work tasks.
 
 - **Type:** forking
-- **Queues:** downloads
-- **Hostname:** downloads@%h
+- **Queue:** `none:ro:checks-orch`
+- **Hostname:** none-ro-checks-orch@%h
+- **Network:** `IPAddressDeny=any` (DB via Unix socket only)
 - **ProtectSystem:** strict
-- **ReadWritePaths:** `.../wafer_space/media` (for saving downloaded files)
 
 **Tasks:**
 
-`download_project_file` - Chunked transfer with resume support and hash verification
-- Defined: `wafer_space/projects/tasks.py:2460`
-- Called from: `wafer_space/projects/services.py` (queue_download_task), `wafer_space/projects/tasks.py:2726` (ensure_download_tasks_queued recovery)
-- Writes: `project_file.file.save()` saves downloaded files to media
+- `checks_create` - Create checks from verified files
+- `checks_pending` - Transition PENDING → DISPATCHING
+- `checks_dispatching` - Poll DISPATCHING, queue `do_dispatching`
+- `checks_starting` - Poll STARTING, queue `do_starting`
+- `checks_running` - Poll RUNNING, queue `do_running`
+- `checks_analyzing` - Poll ANALYZING, queue `do_analyzing`
+- `checks_cancelling` - Poll CANCELLING, handle cancellation
+- `checks_retry` - Retry ERROR checks within limit
+- `checks_cleanup_stale_files` - Cleanup stale files
+- `checks_cleanup_stale_pending_tasks` - Cleanup stale pending tasks
 
 ---
 
-### django-celery-docker-persistent.service
-
-Runs long-running Docker jobs (manufacturability checks via gf180mcu-precheck).
-
-- **Type:** forking
-- **User:** celery-mfg
-- **Queues:** docker-persistent
-- **Hostname:** docker-persistent@%h
-- **SupplementaryGroups:** docker
-- **ReadWritePaths:** `.../wafer_space/media` (for saving check results)
-
-**Tasks:**
-
-`check_process_job` - Run gf180mcu-precheck in Docker container
-- Defined: `wafer_space/projects/tasks.py:903`
-- Called from: `wafer_space/projects/tasks.py:3033` (checks_dispatch dispatches PENDING checks)
-- Writes: `check.log_file` (container logs), `check.runs_archive` (run directory tar)
-
-**State Machine:** ManufacturabilityCheck uses a state machine with transitions:
-- PENDING → DISPATCHED → PROCESSING → FINISHED/ERROR
-- CANCELLING → CANCELLED is a terminal state (cannot be restarted)
-- ERROR checks can be retried up to 3 times
-
----
-
-### django-celery-docker-ephemeral.service
-
-Quick Docker operations and cleanup tasks (no long-running containers).
-
-- **Type:** forking
-- **User:** celery-mfg
-- **Queues:** docker-ephemeral
-- **Hostname:** docker-ephemeral@%h
-- **SupplementaryGroups:** docker
-
-**Tasks:**
-
-`ensure_download_tasks_queued` - Recover lost download tasks
-- Defined: `wafer_space/projects/tasks.py:2726`
-- Called from: Celery Beat scheduler (periodic)
-
-`cleanup_old_task_results` - Remove old Celery TaskResult records
-- Defined: `wafer_space/projects/tasks.py:1024`
-- Called from: Celery Beat scheduler (periodic)
-
-`checks_cancelling` - Complete cancellation of CANCELLING checks
-- Defined: `wafer_space/projects/tasks.py:3188`
-- Called from: Celery Beat scheduler (periodic, every 15s)
-- Handles: CANCELLING → CANCELLED transitions, stops containers
-
-`checks_cleanup_orphaned_docker` - Remove orphaned Docker containers
-- Defined: `wafer_space/projects/tasks.py:2935`
-- Called from: Celery Beat scheduler (periodic, every 5min)
-
----
-
-### django-celery-beat.service
+### django-celery-none-ro-beat.service
 
 Celery Beat scheduler that triggers periodic tasks.
 
 - **Type:** simple
+- **Queue:** N/A (scheduler, not worker)
+- **Network:** `IPAddressDeny=any` (DB via Unix socket only)
 - **ProtectSystem:** strict
 
 **Files:**
 - `$RUNTIME_DIRECTORY/beat.pid`
 - `$RUNTIME_DIRECTORY/celerybeat-schedule` - Schedule database
 - `$LOGS_DIRECTORY/beat.log`
+
+---
+
+### django-celery-mail-ro-email.service
+
+Worker for email tasks via Mailgun API.
+
+- **Type:** forking
+- **Queue:** `mail:ro:email`
+- **Hostname:** mail-ro-email@%h
+- **Network:** No restrictions (Mailgun doesn't publish static API IPs)
+- **ProtectSystem:** strict
+
+**Tasks:**
+
+- `send_tos_update_email` - Send TOS notification email to user
+- `send_bulk_tos_notifications` - Queue bulk TOS notifications
+
+---
+
+### django-celery-http-rw-downloads.service
+
+Worker for downloading large files (up to 100GB) from external URLs.
+
+- **Type:** forking
+- **Queue:** `http:rw:downloads`
+- **Hostname:** http-rw-downloads@%h
+- **Network:** No restrictions (downloads from arbitrary URLs)
+- **ReadWritePaths:** `.../wafer_space/media` (for saving downloaded files)
+
+**Tasks:**
+
+- `download_project_file` - Chunked transfer with resume support and hash verification
+
+---
+
+### django-celery-dock-ro-checks-fast.service
+
+Fast Docker operations (<30s) - container start, status polling, cleanup.
+
+- **Type:** forking
+- **User:** celery-mfg
+- **Queue:** `dock:ro:checks-fast`
+- **Hostname:** dock-ro-checks-fast@%h
+- **Network:** `IPAddressAllow=<Docker IPs>` + `IPAddressDeny=any`
+- **ProtectSystem:** strict
+
+**Tasks:**
+
+- `do_starting` - Start Docker container (STARTING state)
+- `do_running` - Poll running container (RUNNING state)
+- `checks_cleanup_orphaned_docker` - Remove orphaned Docker containers
+
+---
+
+### django-celery-dock-ro-checks-slow.service
+
+Slow Docker operations (minutes) - container creation and configuration.
+
+- **Type:** forking
+- **User:** celery-mfg
+- **Queue:** `dock:ro:checks-slow`
+- **Hostname:** dock-ro-checks-slow@%h
+- **Network:** `IPAddressAllow=<Docker IPs>` + `IPAddressDeny=any`
+- **ProtectSystem:** strict
+
+**Tasks:**
+
+- `do_dispatching` - Create and configure Docker container (DISPATCHING state)
+
+---
+
+### django-celery-dock-rw-checks-save.service
+
+Docker operations that save results to media directory.
+
+- **Type:** forking
+- **User:** celery-mfg
+- **Queue:** `dock:rw:checks-save`
+- **Hostname:** dock-rw-checks-save@%h
+- **Network:** `IPAddressAllow=<Docker IPs>` + `IPAddressDeny=any`
+- **ReadWritePaths:** `.../wafer_space/media` (for saving check results)
+
+**Tasks:**
+
+- `do_analyzing` - Extract results from container and save to media (ANALYZING state)
 
 ---
 
@@ -360,27 +307,31 @@ sudo ./install.sh
 ```
 
 This will:
-1. Copy service files to `/etc/systemd/system/`
-2. Reload systemd daemon
-3. Enable all services
-4. Restart all services
+1. Stop and remove old services (migration)
+2. Copy new service files to `/etc/systemd/system/`
+3. Reload systemd daemon
+4. Enable all services
+5. Restart all services
 
 ## Monitoring
 
 ```bash
-# Check status
+# Check status of all services
 sudo systemctl status django-gunicorn
-sudo systemctl status django-celery
-sudo systemctl status django-celery-downloads
-sudo systemctl status django-celery-docker-persistent
-sudo systemctl status django-celery-docker-ephemeral
-sudo systemctl status django-celery-beat
+sudo systemctl status django-celery-none-ro-default
+sudo systemctl status django-celery-none-ro-checks-orch
+sudo systemctl status django-celery-none-ro-beat
+sudo systemctl status django-celery-mail-ro-email
+sudo systemctl status django-celery-http-rw-downloads
+sudo systemctl status django-celery-dock-ro-checks-fast
+sudo systemctl status django-celery-dock-ro-checks-slow
+sudo systemctl status django-celery-dock-rw-checks-save
 
 # View logs via journalctl
-sudo journalctl -u django-celery -f
+sudo journalctl -u django-celery-none-ro-checks-orch -f
 
 # View logs via log files
-sudo tail -f /var/log/platform.wafer.space-celery/worker.log
+sudo tail -f /var/log/platform.wafer.space-celery-*/worker.log
 ```
 
 ## User Setup
@@ -394,39 +345,45 @@ sudo groupadd platform-media
 # Create celery-mfg system user
 sudo useradd -r -s /bin/false celery-mfg
 
-# Add celery-mfg to required groups
-sudo usermod -aG docker celery-mfg           # Docker socket access
-sudo usermod -aG platform-media celery-mfg   # Media directory write access
+# Add celery-mfg to platform-media group (for media directory write)
+# Note: No longer needs docker group - uses remote Docker API
+sudo usermod -aG platform-media celery-mfg
 
-# Add www-data to platform-media group (for celery-downloads)
+# Add www-data to platform-media group (for downloads)
 sudo usermod -aG platform-media www-data
 
 # Verify group memberships
 groups celery-mfg
-# Expected output: celery-mfg : celery-mfg docker platform-media
+# Expected output: celery-mfg : celery-mfg platform-media
 
 groups www-data
 # Expected output: www-data : www-data platform-media
 ```
 
-**Important**: After adding users to groups, restart all services for group membership to take effect:
-
-```bash
-sudo systemctl restart django-gunicorn
-sudo systemctl restart django-celery
-sudo systemctl restart django-celery-downloads
-sudo systemctl restart django-celery-docker-persistent
-sudo systemctl restart django-celery-docker-ephemeral
-sudo systemctl restart django-celery-beat
-```
+**Important**: After adding users to groups, restart all services for group membership to take effect.
 
 ### Permission Summary
 
 | User/Group | Purpose                              | Should NOT Have Access To    |
 |------------|--------------------------------------|------------------------------|
-| django     | Application code owner               | Media files, Docker          |
-| www-data   | Web server + download files          | Application code, Docker     |
+| django     | Application code owner               | Media files                  |
+| www-data   | Web server + download files          | Application code             |
 | celery-mfg | Run Docker checks + write outputs    | Application code, downloads  |
 | platform-media | Shared group for media directory | Application code             |
 
-See the [Filesystem Permissions](#filesystem-permissions) section above for complete media directory setup instructions.
+## Migration from Old Services
+
+The install script automatically handles migration from old service names:
+
+| Old Service                      | New Service                        |
+|----------------------------------|------------------------------------|
+| django-celery.service            | django-celery-none-ro-default.service |
+| django-celery-beat.service       | django-celery-none-ro-beat.service |
+| django-celery-downloads.service  | django-celery-http-rw-downloads.service |
+| django-celery-docker-ephemeral.service | django-celery-dock-ro-checks-fast.service |
+| django-celery-docker-persistent.service | django-celery-dock-rw-checks-save.service |
+
+New services added:
+- `django-celery-none-ro-checks-orch.service` (checks orchestration)
+- `django-celery-mail-ro-email.service` (email tasks)
+- `django-celery-dock-ro-checks-slow.service` (slow Docker operations)
