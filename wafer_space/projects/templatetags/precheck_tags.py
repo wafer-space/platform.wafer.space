@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from django import template
 from django.urls import reverse
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 
 if TYPE_CHECKING:
     from django.utils.safestring import SafeString
@@ -24,7 +25,7 @@ def badge_precheck_status(check: ManufacturabilityCheck | None) -> SafeString:
     Usage: {% badge_precheck_status check %}
     """
     if not check:
-        return format_html(
+        return mark_safe(
             '<span class="badge bg-light text-muted border">No check</span>'
         )
 
@@ -50,7 +51,7 @@ def badge_precheck_version(check: ManufacturabilityCheck | None) -> SafeString:
     Usage: {% badge_precheck_version check %}
     """
     if not check or not check.docker_image_digest:
-        return format_html("")
+        return mark_safe("")
 
     revision = check.precheck_revision
     version_str = _get_version_string(check, revision)
@@ -89,7 +90,7 @@ def badge_precheck_combined(check: ManufacturabilityCheck | None) -> SafeString:
     Usage: {% badge_precheck_combined check %}
     """
     if not check:
-        return format_html(
+        return mark_safe(
             '<span class="badge bg-light text-muted border">No check</span>'
         )
 
@@ -108,7 +109,7 @@ def badge_precheck_combined(check: ManufacturabilityCheck | None) -> SafeString:
             version_icon_class,
         )
     else:
-        version_part = format_html("")
+        version_part = mark_safe("")
 
     return format_html(
         '<a href="{}" class="badge {} text-decoration-none">'
@@ -160,7 +161,7 @@ def _get_status_display(
 def _get_version_indicator_html(check: ManufacturabilityCheck) -> SafeString:
     """Return HTML for version indicator icon."""
     if not check.docker_image_digest:
-        return format_html("")
+        return mark_safe("")
 
     is_latest = check.is_using_latest_precheck
     icon, icon_class = _get_version_icon(is_latest=is_latest)
