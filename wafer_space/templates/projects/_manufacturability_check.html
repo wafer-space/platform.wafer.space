@@ -1,4 +1,5 @@
 {% load duration_filters %}
+{% load precheck_tags %}
 
 {# Reusable manufacturability check display partial #}
 {# Parameters: #}
@@ -427,6 +428,14 @@
             {% else %}
               <span class="text-muted">-</span>
             {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <strong>Version:</strong>
+          </td>
+          <td>
+            {% badge_precheck_version check %}
           </td>
         </tr>
       </tbody>

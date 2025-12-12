@@ -19,9 +19,7 @@ class TestPrecheckBadgeTemplateTags:
         check = ManufacturabilityCheckFactory(
             docker_image_digest="sha256:abc123def456789012345678901234567890123456789012345678901234"
         )
-        template = Template(
-            "{% load precheck_tags %}{% badge_precheck_status check %}"
-        )
+        template = Template("{% load precheck_tags %}{% badge_precheck_status check %}")
         context = Context({"check": check})
         result = template.render(context)
 
@@ -30,9 +28,7 @@ class TestPrecheckBadgeTemplateTags:
 
     def test_badge_precheck_status_none_check(self):
         """badge_precheck_status handles None check."""
-        template = Template(
-            "{% load precheck_tags %}{% badge_precheck_status check %}"
-        )
+        template = Template("{% load precheck_tags %}{% badge_precheck_status check %}")
         context = Context({"check": None})
         result = template.render(context)
 

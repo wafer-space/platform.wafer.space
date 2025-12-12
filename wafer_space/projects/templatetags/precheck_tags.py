@@ -74,8 +74,7 @@ def badge_precheck_version(check: ManufacturabilityCheck | None) -> SafeString:
         )
 
     return format_html(
-        '<span class="badge {} border">'
-        '{} <i class="bi bi-{} {}"></i></span>',
+        '<span class="badge {} border">{} <i class="bi bi-{} {}"></i></span>',
         bg_class,
         version_str,
         icon,
