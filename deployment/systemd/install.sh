@@ -57,6 +57,7 @@ NEW_SERVICES=(
     "django-celery-none-ro-checks-orch.service"
     "django-celery-none-ro-beat.service"
     "django-celery-mail-ro-email.service"
+    "django-celery-http-ro-metadata.service"
     "django-celery-http-rw-downloads.service"
     "django-celery-dock-ro-checks-fast.service"
     "django-celery-dock-ro-checks-slow.service"
