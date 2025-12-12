@@ -812,6 +812,11 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
         # Compute summary statistics from the projects list
         projects = context["projects"]
         context["summary"] = self._compute_summary_stats(projects)
+
+        # Add latest precheck digest for version summary
+        context["latest_precheck_digest"] = (
+            ManufacturabilityCheck.get_latest_precheck_digest()
+        )
         return context
 
     def _compute_summary_stats(self, projects):

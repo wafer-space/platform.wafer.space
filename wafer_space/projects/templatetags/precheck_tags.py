@@ -108,7 +108,7 @@ def badge_precheck_combined(check: ManufacturabilityCheck | None) -> SafeString:
             version_icon_class,
         )
     else:
-        version_part = ""
+        version_part = format_html("")
 
     return format_html(
         '<a href="{}" class="badge {} text-decoration-none">'

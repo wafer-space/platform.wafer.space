@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 
+{% load precheck_tags %}
+
 {% block title %}
   Project Summary
 {% endblock title %}
@@ -128,6 +130,24 @@
               {% endwith %}
             {% else %}
               <p class="text-muted mb-0">No precheck data</p>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      <!-- Precheck Version Summary -->
+      <div class="col-md-4">
+        <div class="card">
+          <div class="card-header">
+            <strong>Precheck Version</strong>
+          </div>
+          <div class="card-body">
+            {% if latest_precheck_digest %}
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="text-muted">Current Version:</span>
+                <code class="small" title="{{ latest_precheck_digest }}">{{ latest_precheck_digest|truncatechars:16 }}</code>
+              </div>
+            {% else %}
+              <p class="text-muted mb-0">No precheck versions tracked</p>
             {% endif %}
           </div>
         </div>
