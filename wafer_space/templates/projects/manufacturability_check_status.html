@@ -171,37 +171,7 @@
                 {% for check in recent_checks %}
                   <tr>
                     <td>
-                      {% if check.status == 'pending' %}
-                        <span class="badge bg-warning text-dark">Pending</span>
-                      {% elif check.status == 'dispatching' %}
-                        <span class="badge bg-info">Dispatching</span>
-                      {% elif check.status == 'starting' %}
-                        <span class="badge bg-info">Starting</span>
-                      {% elif check.status == 'running' %}
-                        <span class="badge bg-primary">
-                          <span class="spinner-border spinner-border-sm"
-                                role="status"
-                                aria-hidden="true"></span>
-                          Running
-                        </span>
-                      {% elif check.status == 'analyzing' %}
-                        <span class="badge bg-primary">
-                          <span class="spinner-border spinner-border-sm"
-                                role="status"
-                                aria-hidden="true"></span>
-                          Analyzing
-                        </span>
-                      {% elif check.status == 'finished' %}
-                        <span class="badge bg-success">Finished</span>
-                      {% elif check.status == 'error' %}
-                        <span class="badge bg-danger">Error</span>
-                      {% elif check.status == 'cancelling' %}
-                        <span class="badge bg-warning text-dark">Cancelling</span>
-                      {% elif check.status == 'cancelled' %}
-                        <span class="badge bg-secondary">Cancelled</span>
-                      {% else %}
-                        <span class="badge bg-light text-dark">{{ check.get_status_display }}</span>
-                      {% endif %}
+                      {{ check.status_badge_html }}
                     </td>
                     <td>
                       {% if check.trigger_reason == 'initial' %}
