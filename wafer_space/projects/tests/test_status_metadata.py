@@ -1,6 +1,7 @@
 """Tests for ManufacturabilityCheck status metadata."""
 
 import pytest
+from django.utils.safestring import SafeString
 
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
@@ -91,3 +92,57 @@ class TestStatusProperties:
     def test_status_show_spinner_true(self, running_check):
         """status_show_spinner returns True for active statuses."""
         assert running_check.status_show_spinner is True
+
+
+class TestStatusBadgeHtml:
+    """Tests for status_badge_html() method."""
+
+    @pytest.fixture
+    def pending_check(self):
+        """Create a check in pending status."""
+        return ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.PENDING
+        )
+
+    @pytest.fixture
+    def running_check(self):
+        """Create a check in running status."""
+        return ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING
+        )
+
+    @pytest.mark.django_db
+    def test_badge_includes_color_class(self, pending_check):
+        """Badge HTML includes Bootstrap color class."""
+        html = pending_check.status_badge_html()
+        assert "bg-warning" in html
+
+    @pytest.mark.django_db
+    def test_badge_includes_icon(self, pending_check):
+        """Badge HTML includes icon when defined."""
+        html = pending_check.status_badge_html()
+        assert "bi-clock" in html
+
+    @pytest.mark.django_db
+    def test_badge_includes_label(self, pending_check):
+        """Badge HTML includes status label."""
+        html = pending_check.status_badge_html()
+        assert "Pending" in html
+
+    @pytest.mark.django_db
+    def test_badge_includes_spinner_when_active(self, running_check):
+        """Badge HTML includes spinner for active statuses."""
+        html = running_check.status_badge_html()
+        assert "spinner-border" in html
+
+    @pytest.mark.django_db
+    def test_badge_no_spinner_when_inactive(self, pending_check):
+        """Badge HTML excludes spinner for inactive statuses."""
+        html = pending_check.status_badge_html()
+        assert "spinner-border" not in html
+
+    @pytest.mark.django_db
+    def test_badge_is_marked_safe(self, pending_check):
+        """Badge HTML is marked safe for template rendering."""
+        html = pending_check.status_badge_html()
+        assert isinstance(html, SafeString)
