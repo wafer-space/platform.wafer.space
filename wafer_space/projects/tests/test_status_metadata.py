@@ -31,6 +31,9 @@ class TestStatusMetadata:
             meta = ManufacturabilityCheck.get_status_metadata(status_value)
             # Icons should start with "bi-" or be empty for spinner-only
             icon = meta["icon"]
+            assert isinstance(icon, str), (
+                f"Icon must be string for status: {status_value}"
+            )
             assert icon == "" or icon.startswith("bi-"), (
                 f"Invalid icon '{icon}' for status: {status_value}"
             )

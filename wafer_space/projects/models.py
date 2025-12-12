@@ -1478,6 +1478,65 @@ class ManufacturabilityCheck(models.Model):
         ADMIN_RERUN = "admin_rerun", "Admin Requested Re-run"
         RETRY = "retry", "Retry After Error"
 
+    # Status presentation metadata for consistent rendering across templates
+    # Maps status values to their display properties
+    _STATUS_METADATA: ClassVar[dict[str, dict[str, str | bool]]] = {
+        Status.PENDING: {
+            "color": "warning",
+            "icon": "bi-clock",
+            "label": "Pending",
+            "show_spinner": False,
+        },
+        Status.DISPATCHING: {
+            "color": "info",
+            "icon": "bi-send",
+            "label": "Dispatching",
+            "show_spinner": True,
+        },
+        Status.STARTING: {
+            "color": "info",
+            "icon": "bi-box-arrow-up",
+            "label": "Starting",
+            "show_spinner": True,
+        },
+        Status.RUNNING: {
+            "color": "primary",
+            "icon": "",  # Spinner only
+            "label": "Running",
+            "show_spinner": True,
+        },
+        Status.ANALYZING: {
+            "color": "primary",
+            "icon": "",  # Spinner only
+            "label": "Analyzing",
+            "show_spinner": True,
+        },
+        Status.FINISHED: {
+            "color": "success",
+            "icon": "bi-check-circle",
+            "label": "Finished",
+            "show_spinner": False,
+        },
+        Status.ERROR: {
+            "color": "danger",
+            "icon": "bi-exclamation-triangle",
+            "label": "Error",
+            "show_spinner": False,
+        },
+        Status.CANCELLING: {
+            "color": "warning",
+            "icon": "bi-x-circle",
+            "label": "Cancelling",
+            "show_spinner": True,
+        },
+        Status.CANCELLED: {
+            "color": "secondary",
+            "icon": "bi-x-circle",
+            "label": "Cancelled",
+            "show_spinner": False,
+        },
+    }
+
     # State machine: defines valid transitions
     # PENDING: waiting for capacity to dispatch
     # DISPATCHING: image being pulled
@@ -1732,6 +1791,26 @@ class ManufacturabilityCheck(models.Model):
 
     def __str__(self):
         return f"Check for {self.project.name} - {self.get_status_display()}"
+
+    @classmethod
+    def get_status_metadata(cls, status: str) -> dict[str, str | bool]:
+        """Return presentation metadata for a status value.
+
+        Args:
+            status: A status value (e.g., 'pending', 'running')
+
+        Returns:
+            Dict with keys: color, icon, label, show_spinner
+        """
+        return cls._STATUS_METADATA.get(
+            status,
+            {
+                "color": "secondary",
+                "icon": "",
+                "label": status.title(),
+                "show_spinner": False,
+            },
+        )
 
     def can_transition_to(self, new_status: Status) -> bool:
         """Check if transition from current status to new_status is valid.
