@@ -5,6 +5,7 @@ from simple_history.admin import SimpleHistoryAdmin
 
 from wafer_space.contrib.admin_mixins import StaffReadOnlyAdminMixin
 from wafer_space.projects.models import ManufacturabilityCheck
+from wafer_space.projects.models import PrecheckImageRevision
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectAccessLog
 
@@ -221,6 +222,40 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
             },
         ),
     ]
+
+
+@admin.register(PrecheckImageRevision)
+class PrecheckImageRevisionAdmin(admin.ModelAdmin):
+    """Admin for PrecheckImageRevision."""
+
+    list_display = [
+        "short_digest",
+        "precheck_version",
+        "git_commit_sha_short",
+        "first_seen_at",
+        "checks_count",
+        "metadata_fetched_at",
+    ]
+    list_filter = ["first_seen_at", "metadata_fetched_at"]
+    search_fields = ["digest", "git_commit_sha", "precheck_version"]
+    readonly_fields = [
+        "digest",
+        "first_seen_at",
+        "short_digest",
+        "github_commit_url",
+        "ghcr_package_url",
+        "checks_count",
+        "checks_passed_count",
+        "checks_failed_count",
+    ]
+    ordering = ["-first_seen_at"]
+
+    @admin.display(description="Commit")
+    def git_commit_sha_short(self, obj: PrecheckImageRevision) -> str:
+        """Display truncated git commit SHA."""
+        if obj.git_commit_sha:
+            return obj.git_commit_sha[:7]
+        return "-"
 
 
 # Import compliance admin to register it
