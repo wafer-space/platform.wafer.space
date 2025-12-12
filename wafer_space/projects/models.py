@@ -1812,6 +1812,30 @@ class ManufacturabilityCheck(models.Model):
             },
         )
 
+    @property
+    def status_color(self) -> str:
+        """Return Bootstrap color for current status (e.g., 'primary', 'warning')."""
+        meta = self.get_status_metadata(self.status)
+        return str(meta["color"])
+
+    @property
+    def status_icon(self) -> str:
+        """Return Bootstrap icon class for current status (e.g., 'bi-clock')."""
+        meta = self.get_status_metadata(self.status)
+        return str(meta["icon"])
+
+    @property
+    def status_label(self) -> str:
+        """Return human-readable label for current status."""
+        meta = self.get_status_metadata(self.status)
+        return str(meta["label"])
+
+    @property
+    def status_show_spinner(self) -> bool:
+        """Return True if current status should display a spinner."""
+        meta = self.get_status_metadata(self.status)
+        return bool(meta["show_spinner"])
+
     def can_transition_to(self, new_status: Status) -> bool:
         """Check if transition from current status to new_status is valid.
 

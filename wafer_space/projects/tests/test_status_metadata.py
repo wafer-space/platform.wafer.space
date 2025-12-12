@@ -1,6 +1,9 @@
 """Tests for ManufacturabilityCheck status metadata."""
 
+import pytest
+
 from wafer_space.projects.models import ManufacturabilityCheck
+from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 
 
 class TestStatusMetadata:
@@ -45,3 +48,46 @@ class TestStatusMetadata:
             assert isinstance(meta["show_spinner"], bool), (
                 f"show_spinner must be bool for status: {status_value}"
             )
+
+
+class TestStatusProperties:
+    """Tests for ManufacturabilityCheck status properties."""
+
+    @pytest.fixture
+    def pending_check(self):
+        """Create a check in pending status."""
+        return ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.PENDING
+        )
+
+    @pytest.fixture
+    def running_check(self):
+        """Create a check in running status."""
+        return ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING
+        )
+
+    @pytest.mark.django_db
+    def test_status_color_property(self, pending_check):
+        """status_color returns the Bootstrap color for current status."""
+        assert pending_check.status_color == "warning"
+
+    @pytest.mark.django_db
+    def test_status_icon_property(self, pending_check):
+        """status_icon returns the Bootstrap icon class for current status."""
+        assert pending_check.status_icon == "bi-clock"
+
+    @pytest.mark.django_db
+    def test_status_label_property(self, pending_check):
+        """status_label returns the human-readable label."""
+        assert pending_check.status_label == "Pending"
+
+    @pytest.mark.django_db
+    def test_status_show_spinner_false(self, pending_check):
+        """status_show_spinner returns False for non-active statuses."""
+        assert pending_check.status_show_spinner is False
+
+    @pytest.mark.django_db
+    def test_status_show_spinner_true(self, running_check):
+        """status_show_spinner returns True for active statuses."""
+        assert running_check.status_show_spinner is True
