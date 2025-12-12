@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% load static %}
+{% load precheck_tags %}
 
 {% block title %}
   {{ shuttle.name }} Assignment
@@ -135,13 +136,9 @@
                 </td>
                 {# Sort order: Ready(0) < Failed(1) < Pending(2) - prioritizes actionable projects #}
                 <td data-sort-value="{% if project.is_manufacturable %}0{% elif project.is_manufacturable is None %}2{% else %}1{% endif %}">
-                  {% if project.is_manufacturable %}
-                    <span class="badge bg-success">Ready</span>
-                  {% elif project.is_manufacturable is None %}
-                    <span class="badge bg-warning">Pending</span>
-                  {% else %}
-                    <span class="badge bg-danger">Failed</span>
-                  {% endif %}
+                  {% with check=project.latest_manufacturability_check %}
+                    {% badge_precheck_combined check %}
+                  {% endwith %}
                 </td>
                 <td>
                   {% if project.shuttle_slots.exists %}
