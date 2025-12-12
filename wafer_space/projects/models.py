@@ -24,6 +24,8 @@ from wafer_space.projects.storage import ProjectFileStorage
 
 logger = logging.getLogger(__name__)
 
+PRECHECK_GITHUB_REPO = "wafer-space/gf180mcu-precheck"
+
 
 @dataclass
 class CheckExecutionContext:
@@ -2772,3 +2774,89 @@ class ProjectComplianceCertification(models.Model):
 
     def __str__(self):
         return f"Compliance Certification for {self.project.name}"
+
+
+class PrecheckImageRevision(models.Model):
+    """
+    Catalog of known precheck Docker image versions.
+
+    Populated asynchronously when new digests are discovered from completed
+    ManufacturabilityChecks. Linked by digest string match, NOT foreign key.
+    """
+
+    # Primary identifier - the immutable digest
+    digest = models.CharField(
+        max_length=100,
+        unique=True,
+        help_text="SHA256 digest (e.g., sha256:abc123...)",
+    )
+
+    # When we first saw this digest used in a check
+    first_seen_at = models.DateTimeField(auto_now_add=True)
+
+    # Metadata fetched from GHCR/GitHub
+    image_created_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the image was pushed to GHCR",
+    )
+    git_commit_sha = models.CharField(
+        max_length=40,
+        blank=True,
+        help_text="Git commit from image labels",
+    )
+
+    # Version information
+    precheck_version = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="Precheck tool version (e.g., 1.5.2)",
+    )
+    pdk_version = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="PDK version (if available)",
+    )
+    tool_versions = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Tool versions dict (e.g., {magic: '8.3.x', klayout: '0.28.x'})",
+    )
+
+    # Tracking
+    metadata_fetched_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When GHCR metadata was last fetched",
+    )
+
+    class Meta:
+        ordering = ["-first_seen_at"]
+        indexes = [
+            models.Index(fields=["digest"]),
+            models.Index(fields=["-first_seen_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.short_digest} (seen {self.first_seen_at.date()})"
+
+    # --- URL helpers ---
+
+    @property
+    def github_commit_url(self) -> str | None:
+        """URL to the specific commit, or None if unknown."""
+        if not self.git_commit_sha:
+            return None
+        return f"https://github.com/{PRECHECK_GITHUB_REPO}/commit/{self.git_commit_sha}"
+
+    @property
+    def ghcr_package_url(self) -> str:
+        """URL to the package on GitHub Container Registry."""
+        return f"https://github.com/{PRECHECK_GITHUB_REPO}/pkgs/container/gf180mcu-precheck"
+
+    @property
+    def short_digest(self) -> str:
+        """Truncated digest for display."""
+        assert self.digest
+        assert self.digest.startswith("sha256:")
+        return f"sha256:{self.digest[7:19]}..."
