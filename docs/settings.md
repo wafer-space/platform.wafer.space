@@ -444,7 +444,7 @@ These MUST be environment-specific (set to None in base.py):
 3. **❌ Committing secrets** - Use `.gitignore`, pre-commit hooks, secrets repository
 4. **❌ Using database-based OAuth** - This project uses settings-based configuration only
 5. **❌ Forgetting to set None-values** - DEBUG, EMAIL_BACKEND, OAuth credentials set to None in base.py must be overridden
-6. **❌ Inconsistent section ordering** - Follow the 15-section structure in all environment files
+6. **❌ Inconsistent section ordering** - Follow the multi-section structure in all environment files
 7. **❌ Sharing secrets between environments** - Each environment has separate secrets
 8. **❌ Using same OAuth apps** - Each environment needs separate OAuth applications with correct callback URLs
 9. **❌ Forgetting HSTS differences** - Stage: 3600 (1 hour), Prod: 31536000 (1 year)
