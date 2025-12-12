@@ -2860,3 +2860,54 @@ class PrecheckImageRevision(models.Model):
         assert self.digest
         assert self.digest.startswith("sha256:")
         return f"sha256:{self.digest[7:19]}..."
+
+    # --- Statistics helpers ---
+
+    def _get_checks_queryset(self) -> models.QuerySet["ManufacturabilityCheck"]:
+        """Get all ManufacturabilityChecks that used this revision."""
+        return ManufacturabilityCheck.objects.filter(docker_image_digest=self.digest)
+
+    @property
+    def checks_count(self) -> int:
+        """Total number of checks that used this revision."""
+        return self._get_checks_queryset().count()
+
+    @property
+    def checks_passed_count(self) -> int:
+        """Number of checks that passed with this revision."""
+        return self._get_checks_queryset().filter(is_manufacturable=True).count()
+
+    @property
+    def checks_failed_count(self) -> int:
+        """Number of checks that failed with this revision."""
+        return self._get_checks_queryset().filter(is_manufacturable=False).count()
+
+    def get_run_duration_stats(self) -> dict[str, float | None]:
+        """Get average and max run duration for checks using this revision.
+
+        Returns:
+            {"average": float|None, "max": float|None} in seconds
+        """
+        completed = self._get_checks_queryset().filter(
+            status=ManufacturabilityCheck.Status.FINISHED,
+            container_started_at__isnull=False,
+            container_finished_at__isnull=False,
+        )
+
+        stats = completed.aggregate(
+            avg_duration=models.Avg(
+                models.F("container_finished_at") - models.F("container_started_at")
+            ),
+            max_duration=models.Max(
+                models.F("container_finished_at") - models.F("container_started_at")
+            ),
+        )
+
+        return {
+            "average": (
+                stats["avg_duration"].total_seconds() if stats["avg_duration"] else None
+            ),
+            "max": (
+                stats["max_duration"].total_seconds() if stats["max_duration"] else None
+            ),
+        }
