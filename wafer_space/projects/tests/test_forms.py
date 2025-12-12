@@ -787,6 +787,8 @@ class TestProjectUserEditFormLicenseValidation:
     def base_user_form_data(self):
         """Base valid form data for user edit form."""
         return {
+            "name": "Test Project",
+            "description": "A test project",
             "is_public": False,
             "repository_url": "",
             "license_type": "proprietary",

@@ -27,6 +27,24 @@ SHA256_HASH_LENGTH = 64
 # Compliance form validation constants
 MIN_END_USE_STATEMENT_LENGTH = 10
 
+# Shared name/description field configuration
+NAME_WIDGET = forms.TextInput(
+    attrs={
+        "class": "form-control",
+        "placeholder": "My Chip Design Project",
+    },
+)
+NAME_HELP_TEXT = "A descriptive name for your project"
+
+DESCRIPTION_WIDGET = forms.Textarea(
+    attrs={
+        "class": "form-control",
+        "rows": 4,
+        "placeholder": "Description of your design project...",
+    },
+)
+DESCRIPTION_HELP_TEXT = "Optional details about your design"
+
 # Shared is_public field configuration (used by ProjectForm and ProjectUserEditForm)
 IS_PUBLIC_WIDGET = forms.CheckboxInput(attrs={"class": "form-check-input"})
 IS_PUBLIC_HELP_TEXT = "Make this design publicly visible on the platform"
@@ -252,19 +270,8 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
             "proprietary_terms_url",
         ]
         widgets = {
-            "name": forms.TextInput(
-                attrs={
-                    "class": "form-control",
-                    "placeholder": "My Chip Design Project",
-                },
-            ),
-            "description": forms.Textarea(
-                attrs={
-                    "class": "form-control",
-                    "rows": 4,
-                    "placeholder": "Description of your design project...",
-                },
-            ),
+            "name": NAME_WIDGET,
+            "description": DESCRIPTION_WIDGET,
             "slot_size": forms.Select(
                 attrs={
                     "class": "form-control",
@@ -277,8 +284,8 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
             "proprietary_terms_url": PROPRIETARY_TERMS_URL_WIDGET,
         }
         help_texts = {
-            "name": "A descriptive name for your project",
-            "description": "Optional details about your design",
+            "name": NAME_HELP_TEXT,
+            "description": DESCRIPTION_HELP_TEXT,
             "slot_size": "Select the die slot size for your design",
             "is_public": IS_PUBLIC_HELP_TEXT,
             "repository_url": REPOSITORY_URL_HELP_TEXT,
@@ -357,6 +364,8 @@ class ProjectUserEditForm(LicenseValidationMixin, forms.ModelForm):
     class Meta:
         model = Project
         fields = [
+            "name",
+            "description",
             "is_public",
             "repository_url",
             "license_type",
@@ -364,6 +373,8 @@ class ProjectUserEditForm(LicenseValidationMixin, forms.ModelForm):
             "proprietary_terms_url",
         ]
         widgets = {
+            "name": NAME_WIDGET,
+            "description": DESCRIPTION_WIDGET,
             "is_public": IS_PUBLIC_WIDGET,
             "repository_url": REPOSITORY_URL_WIDGET,
             "license_type": LICENSE_TYPE_WIDGET,
@@ -371,6 +382,8 @@ class ProjectUserEditForm(LicenseValidationMixin, forms.ModelForm):
             "proprietary_terms_url": PROPRIETARY_TERMS_URL_WIDGET,
         }
         help_texts = {
+            "name": NAME_HELP_TEXT,
+            "description": DESCRIPTION_HELP_TEXT,
             "is_public": IS_PUBLIC_HELP_TEXT,
             "repository_url": REPOSITORY_URL_HELP_TEXT,
             "license_type": LICENSE_TYPE_HELP_TEXT,
