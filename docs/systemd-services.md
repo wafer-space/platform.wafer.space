@@ -387,3 +387,11 @@ New services added:
 - `django-celery-none-ro-checks-orch.service` (checks orchestration)
 - `django-celery-mail-ro-email.service` (email tasks)
 - `django-celery-dock-ro-checks-slow.service` (slow Docker operations)
+
+---
+
+## Related Documentation
+
+- [Celery Architecture](celery_architecture.md) - Task decorators, state machine, queue naming rationale
+- [Celery Tasks Reference](celery_tasks_reference.md) - Complete task listing with queues and retry config
+- [Settings Catalog](settings.md) - CELERY_BEAT_SCHEDULE and other Celery settings
