@@ -2530,6 +2530,55 @@ Your GDS file should have:
 
         return f"https://github.com/wafer-space/gf180mcu-precheck/issues/new?{params}"
 
+    @classmethod
+    def get_latest_precheck_digest(cls) -> str | None:
+        """Get the digest of the most recently used precheck image.
+
+        Returns the docker_image_digest from the check with the most recent
+        container_started_at timestamp. Cached for 60 seconds.
+        """
+        from django.core.cache import cache  # noqa: PLC0415
+
+        cache_key = "precheck_latest_digest"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached or None
+
+        digest = (
+            cls.objects.exclude(docker_image_digest="")
+            .order_by("-container_started_at")
+            .values_list("docker_image_digest", flat=True)
+            .first()
+        )
+
+        cache.set(cache_key, digest or "", 60)  # 1 minute TTL
+        return digest
+
+    @property
+    def is_using_latest_precheck(self) -> bool | None:
+        """Whether this check used the latest precheck image version.
+
+        Returns:
+            True - used latest version
+            False - used outdated version
+            None - cannot determine (no digest or no latest known)
+        """
+        if not self.docker_image_digest:
+            return None
+        latest = self.get_latest_precheck_digest()
+        if latest is None:
+            return None
+        return self.docker_image_digest == latest
+
+    @property
+    def precheck_revision(self) -> "PrecheckImageRevision | None":
+        """Get the PrecheckImageRevision for this check, if cataloged."""
+        if not self.docker_image_digest:
+            return None
+        return PrecheckImageRevision.objects.filter(
+            digest=self.docker_image_digest
+        ).first()
+
 
 class ManufacturabilityCheckTask(models.Model):
     """Tracks pending/running Celery tasks for manufacturability checks.

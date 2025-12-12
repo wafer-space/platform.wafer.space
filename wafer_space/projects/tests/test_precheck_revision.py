@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
+from django.core.cache import cache
 from django.db import IntegrityError
 from django.utils import timezone
 
@@ -151,3 +152,92 @@ class TestPrecheckImageRevisionStatistics:
         stats = revision.get_run_duration_stats()
         assert stats["average"] is None
         assert stats["max"] is None
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckLatestDigest:
+    """Tests for ManufacturabilityCheck.get_latest_precheck_digest."""
+
+    def setup_method(self):
+        """Clear cache before each test."""
+        cache.clear()
+
+    def test_get_latest_precheck_digest_returns_most_recent(self):
+        """get_latest_precheck_digest returns most recently started digest."""
+        now = timezone.now()
+        # Older check
+        ManufacturabilityCheckFactory(
+            docker_image_digest="sha256:older",
+            container_started_at=now - timedelta(hours=2),
+        )
+        # Newer check
+        ManufacturabilityCheckFactory(
+            docker_image_digest="sha256:newer",
+            container_started_at=now - timedelta(hours=1),
+        )
+
+        assert ManufacturabilityCheck.get_latest_precheck_digest() == "sha256:newer"
+
+    def test_get_latest_precheck_digest_ignores_empty(self):
+        """get_latest_precheck_digest ignores checks with empty digest."""
+        now = timezone.now()
+        ManufacturabilityCheckFactory(
+            docker_image_digest="sha256:valid",
+            container_started_at=now - timedelta(hours=2),
+        )
+        # More recent but empty digest
+        ManufacturabilityCheckFactory(
+            docker_image_digest="",
+            container_started_at=now - timedelta(hours=1),
+        )
+
+        assert ManufacturabilityCheck.get_latest_precheck_digest() == "sha256:valid"
+
+    def test_get_latest_precheck_digest_returns_none_when_no_checks(self):
+        """get_latest_precheck_digest returns None when no checks exist."""
+        assert ManufacturabilityCheck.get_latest_precheck_digest() is None
+
+    def test_is_using_latest_precheck_true(self):
+        """is_using_latest_precheck returns True when using latest."""
+        check = ManufacturabilityCheckFactory(
+            docker_image_digest="sha256:latest",
+            container_started_at=timezone.now(),
+        )
+
+        assert check.is_using_latest_precheck is True
+
+    def test_is_using_latest_precheck_false(self):
+        """is_using_latest_precheck returns False when outdated."""
+        now = timezone.now()
+        old_check = ManufacturabilityCheckFactory(
+            docker_image_digest="sha256:old",
+            container_started_at=now - timedelta(hours=2),
+        )
+        ManufacturabilityCheckFactory(
+            docker_image_digest="sha256:new",
+            container_started_at=now - timedelta(hours=1),
+        )
+        cache.clear()  # Clear cache to get fresh result
+
+        assert old_check.is_using_latest_precheck is False
+
+    def test_is_using_latest_precheck_none_when_no_digest(self):
+        """is_using_latest_precheck returns None when check has no digest."""
+        check = ManufacturabilityCheckFactory(docker_image_digest="")
+
+        assert check.is_using_latest_precheck is None
+
+    def test_precheck_revision_property(self):
+        """precheck_revision returns linked revision if exists."""
+        revision = PrecheckImageRevision.objects.create(
+            digest="sha256:abc123def456789012345678901234567890123456789012345678901234"
+        )
+        check = ManufacturabilityCheckFactory(docker_image_digest=revision.digest)
+
+        assert check.precheck_revision == revision
+
+    def test_precheck_revision_property_none_when_not_cataloged(self):
+        """precheck_revision returns None if revision not in catalog."""
+        check = ManufacturabilityCheckFactory(docker_image_digest="sha256:uncataloged")
+
+        assert check.precheck_revision is None
