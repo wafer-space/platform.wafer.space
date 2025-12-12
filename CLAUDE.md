@@ -112,7 +112,7 @@ uv run pytest path/to/test.py::TestClass::test_method -v
 - ❌ **NEVER** run `make test-manual` (for human debugging only)
 
 **Browser test best practices:**
-- Use `WebDriverWait`, never `time.sleep()`
+- Use `WebDriverWait`, avoid `time.sleep()` (legacy uses exist but prefer explicit waits)
 - Screenshots auto-captured on failure to `tests/browser/screenshots/`
 - Use Page Object pattern (see `tests/browser/pages/`)
 
@@ -123,7 +123,7 @@ uv run pytest path/to/test.py::TestClass::test_method -v
 Django 5.2+ application for wafer.space silicon manufacturing.
 
 **Structure:**
-- `config/settings/` - 4 environments (dev, pytest, stage, prod) with unified 15-section structure
+- `config/settings/` - 4 environments (dev, pytest, stage, prod) with unified multi-section structure
 - `wafer_space/` - Main application code
 - `tests/` - pytest-django with factory-boy fixtures
 
@@ -191,7 +191,7 @@ except Exception:  # Too broad
 
 - Use factory-boy for test data, not fixtures
 - One assertion concept per test
-- Test file mirrors source: `wafer_space/users/models.py` → `wafer_space/users/tests/test_models.py`
+- Test locations: prefer `tests/` subdirectory pattern (`wafer_space/users/tests/test_models.py`), though some apps use single `tests.py` files
 
 ### Documentation Standards
 
