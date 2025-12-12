@@ -7,7 +7,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from wafer_space.projects.forms import ProjectFileURLSubmitForm
-from wafer_space.projects.forms import ProjectForm
+from wafer_space.projects.forms import ProjectStaffEditForm
 from wafer_space.projects.forms import ProjectUserEditForm
 from wafer_space.projects.models import Project
 from wafer_space.projects.security import SecurityValidationError
@@ -19,8 +19,8 @@ from .constants import TEST_PASSWORD
 
 
 @pytest.mark.django_db
-class TestProjectForm(TestCase):
-    """Test ProjectForm."""
+class TestProjectStaffEditForm(TestCase):
+    """Test ProjectStaffEditForm."""
 
     def setUp(self):
         """Set up test fixtures."""
@@ -38,7 +38,7 @@ class TestProjectForm(TestCase):
             "project_id": "TEST",
             "slot_size": "1x1",
         }
-        form = ProjectForm(data=form_data)
+        form = ProjectStaffEditForm(data=form_data)
 
         assert form.is_valid()
         assert form.cleaned_data["name"] == "Test Project"
@@ -55,7 +55,7 @@ class TestProjectForm(TestCase):
             "project_id": "ABCD",
             "slot_size": "1x1",
         }
-        form = ProjectForm(data=form_data)
+        form = ProjectStaffEditForm(data=form_data)
 
         assert form.is_valid()
         assert form.cleaned_data["name"] == "Test Project"
@@ -66,7 +66,7 @@ class TestProjectForm(TestCase):
         form_data = {
             "description": "This is a test project",
         }
-        form = ProjectForm(data=form_data)
+        form = ProjectStaffEditForm(data=form_data)
 
         assert not form.is_valid()
         assert "name" in form.errors
@@ -77,7 +77,7 @@ class TestProjectForm(TestCase):
             "name": "",
             "description": "Test",
         }
-        form = ProjectForm(data=form_data)
+        form = ProjectStaffEditForm(data=form_data)
 
         assert not form.is_valid()
         assert "name" in form.errors
@@ -95,7 +95,7 @@ class TestProjectForm(TestCase):
             "project_id": "SAVE",
             "slot_size": "0p5x0p5",
         }
-        form = ProjectForm(data=form_data)
+        form = ProjectStaffEditForm(data=form_data)
 
         assert form.is_valid()
 
@@ -591,8 +591,8 @@ class TestProjectFileURLSubmitForm(TestCase):
 
 
 @pytest.mark.django_db
-class TestProjectFormLicenseValidation:
-    """Tests for license field validation in ProjectForm."""
+class TestProjectStaffEditFormLicenseValidation:
+    """Tests for license field validation in ProjectStaffEditForm."""
 
     @pytest.fixture
     def open_shuttle(self, db):
@@ -624,7 +624,7 @@ class TestProjectFormLicenseValidation:
         base_form_data["license_type"] = "other"
         base_form_data["other_license_spdx_id"] = ""
 
-        form = ProjectForm(data=base_form_data)
+        form = ProjectStaffEditForm(data=base_form_data)
         assert not form.is_valid()
         assert "other_license_spdx_id" in form.errors
 
@@ -635,7 +635,7 @@ class TestProjectFormLicenseValidation:
         base_form_data["license_type"] = "other"
         base_form_data["other_license_spdx_id"] = "INVALID-ID"
 
-        form = ProjectForm(data=base_form_data)
+        form = ProjectStaffEditForm(data=base_form_data)
         assert not form.is_valid()
         assert "Invalid SPDX identifier" in str(form.errors["other_license_spdx_id"])
 
@@ -646,7 +646,7 @@ class TestProjectFormLicenseValidation:
         base_form_data["license_type"] = "other"
         base_form_data["other_license_spdx_id"] = "GPL-3.0-only"
 
-        form = ProjectForm(data=base_form_data)
+        form = ProjectStaffEditForm(data=base_form_data)
         assert form.is_valid(), form.errors
 
     @patch("wafer_space.projects.forms.fetch_url_content")
@@ -658,7 +658,7 @@ class TestProjectFormLicenseValidation:
         base_form_data["license_type"] = "proprietary"
         base_form_data["proprietary_terms_url"] = "https://example.com/terms.txt"
 
-        form = ProjectForm(data=base_form_data)
+        form = ProjectStaffEditForm(data=base_form_data)
         assert form.is_valid(), form.errors
 
         # Save and check cache
@@ -676,7 +676,7 @@ class TestProjectFormLicenseValidation:
         base_form_data["license_type"] = "proprietary"
         base_form_data["proprietary_terms_url"] = "https://example.com/bad.txt"
 
-        form = ProjectForm(data=base_form_data)
+        form = ProjectStaffEditForm(data=base_form_data)
         assert not form.is_valid()
         assert "proprietary_terms_url" in form.errors
 
@@ -685,7 +685,7 @@ class TestProjectFormLicenseValidation:
         base_form_data["license_type"] = "MIT"
         base_form_data["other_license_spdx_id"] = "should-be-cleared"
 
-        form = ProjectForm(data=base_form_data)
+        form = ProjectStaffEditForm(data=base_form_data)
         assert form.is_valid(), form.errors
         assert form.cleaned_data["other_license_spdx_id"] == ""
 
@@ -694,7 +694,7 @@ class TestProjectFormLicenseValidation:
         base_form_data["license_type"] = "MIT"
         base_form_data["proprietary_terms_url"] = "https://example.com/terms.txt"
 
-        form = ProjectForm(data=base_form_data)
+        form = ProjectStaffEditForm(data=base_form_data)
         assert form.is_valid(), form.errors
         assert form.cleaned_data["proprietary_terms_url"] == ""
 
@@ -702,14 +702,14 @@ class TestProjectFormLicenseValidation:
         """Repository URL is optional."""
         base_form_data["repository_url"] = ""
 
-        form = ProjectForm(data=base_form_data)
+        form = ProjectStaffEditForm(data=base_form_data)
         assert form.is_valid(), form.errors
 
     def test_repository_url_accepts_valid_url(self, base_form_data):
         """Repository URL accepts valid URLs."""
         base_form_data["repository_url"] = "https://github.com/user/repo"
 
-        form = ProjectForm(data=base_form_data)
+        form = ProjectStaffEditForm(data=base_form_data)
         assert form.is_valid(), form.errors
         assert form.cleaned_data["repository_url"] == "https://github.com/user/repo"
 
@@ -724,7 +724,7 @@ class TestProjectFormLicenseValidation:
         base_form_data["license_type"] = "proprietary"
         base_form_data["proprietary_terms_url"] = "https://example.com/terms.txt"
 
-        form = ProjectForm(data=base_form_data)
+        form = ProjectStaffEditForm(data=base_form_data)
         assert form.is_valid(), form.errors
 
         mock_scheme.assert_called_once_with("https://example.com/terms.txt")
@@ -737,7 +737,7 @@ class TestProjectFormLicenseValidation:
         base_form_data["license_type"] = "proprietary"
         base_form_data["proprietary_terms_url"] = "ftp://example.com/terms.txt"
 
-        form = ProjectForm(data=base_form_data)
+        form = ProjectStaffEditForm(data=base_form_data)
         assert not form.is_valid()
         assert "proprietary_terms_url" in form.errors
 
@@ -753,7 +753,7 @@ class TestProjectFormLicenseValidation:
         base_form_data["license_type"] = "proprietary"
         base_form_data["proprietary_terms_url"] = "https://192.168.1.1/terms.txt"
 
-        form = ProjectForm(data=base_form_data)
+        form = ProjectStaffEditForm(data=base_form_data)
         assert not form.is_valid()
         assert "proprietary_terms_url" in form.errors
 

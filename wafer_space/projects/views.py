@@ -30,7 +30,7 @@ from wafer_space.shuttles.models import Shuttle
 
 from .exceptions import InvalidStateTransitionError
 from .forms import ProjectFileURLSubmitForm
-from .forms import ProjectForm
+from .forms import ProjectStaffEditForm
 from .forms import ProjectUserEditForm
 from .mixins import ProjectOwnerOrStaffMixin
 from .models import PROJECT_ID_LENGTH
@@ -182,7 +182,7 @@ class ProjectCreateView(LoginRequiredMixin, CreateView):
     """Create a new project."""
 
     model = Project
-    form_class = ProjectForm
+    form_class = ProjectStaffEditForm
     template_name = "projects/project_form.html"
 
     def form_valid(self, form):
@@ -214,10 +214,10 @@ class ProjectUpdateView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, UpdateView
     def get_form_class(self):
         """Return form class based on user role.
 
-        Staff get full ProjectForm, regular users get limited ProjectUserEditForm.
+        Staff get ProjectStaffEditForm, regular users get ProjectUserEditForm.
         """
         if self.request.user.is_staff:
-            return ProjectForm
+            return ProjectStaffEditForm
         return ProjectUserEditForm
 
     def get_context_data(self, **kwargs):

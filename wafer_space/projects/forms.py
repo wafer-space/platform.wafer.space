@@ -134,7 +134,7 @@ class ProjectUserEditForm(LicenseValidationMixin, forms.ModelForm):
     """Base form for editing project details.
 
     This form contains all user-editable fields: name, description, visibility,
-    repository URL, and license settings. ProjectForm extends this to add
+    repository URL, and license settings. ProjectStaffEditForm extends this to add
     staff-only fields (shuttle, project_id, slot_size).
     """
 
@@ -218,7 +218,7 @@ class ProjectUserEditForm(LicenseValidationMixin, forms.ModelForm):
         return instance
 
 
-class ProjectForm(ProjectUserEditForm):
+class ProjectStaffEditForm(ProjectUserEditForm):
     """Staff form for creating and editing projects.
 
     Extends ProjectUserEditForm with staff-only fields: shuttle, project_id,
