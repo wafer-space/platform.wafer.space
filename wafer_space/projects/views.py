@@ -546,31 +546,43 @@ class ManufacturabilityCheckAdminStatusView(
             "project_file",
         ).order_by("-id")[:50]
 
-        # Get currently running checks
-        running_checks = (
-            ManufacturabilityCheck.objects.filter(
-                status=ManufacturabilityCheck.Status.RUNNING,
-            )
-            .select_related(
-                "project",
-                "project__user",
-                "project_file",
-            )
-            .order_by("-container_started_at")
-        )
+        # Build active sections for all non-terminal statuses
+        non_terminal_statuses = [
+            ManufacturabilityCheck.Status.RUNNING,
+            ManufacturabilityCheck.Status.ANALYZING,
+            ManufacturabilityCheck.Status.STARTING,
+            ManufacturabilityCheck.Status.DISPATCHING,
+            ManufacturabilityCheck.Status.PENDING,
+            ManufacturabilityCheck.Status.CANCELLING,
+        ]
 
-        # Get pending checks
-        pending_checks = (
-            ManufacturabilityCheck.objects.filter(
-                status=ManufacturabilityCheck.Status.PENDING,
+        active_sections = []
+        for status in non_terminal_statuses:
+            # Get metadata for this status
+            metadata = ManufacturabilityCheck.get_status_metadata(status)
+
+            # Get checks for this status (ordered newest first)
+            checks = (
+                ManufacturabilityCheck.objects.filter(status=status)
+                .select_related(
+                    "project",
+                    "project__user",
+                    "project_file",
+                )
+                .order_by("-created_at")
             )
-            .select_related(
-                "project",
-                "project__user",
-                "project_file",
+
+            active_sections.append(
+                {
+                    "status": status,
+                    "label": metadata["label"],
+                    "color": metadata["color"],
+                    "icon": metadata["icon"],
+                    "show_spinner": metadata["show_spinner"],
+                    "checks": checks,
+                    "count": checks.count(),
+                }
             )
-            .order_by("-id")
-        )
 
         return render(
             request,
@@ -578,8 +590,7 @@ class ManufacturabilityCheckAdminStatusView(
             {
                 "status_counts": status_counts,
                 "recent_checks": recent_checks,
-                "running_checks": running_checks,
-                "pending_checks": pending_checks,
+                "active_sections": active_sections,
             },
         )
 
