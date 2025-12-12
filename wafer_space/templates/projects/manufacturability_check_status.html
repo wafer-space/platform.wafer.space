@@ -117,9 +117,7 @@
               <tbody>
                 {% for check in recent_checks %}
                   <tr>
-                    <td>
-                      {{ check.status_badge_html }}
-                    </td>
+                    <td>{{ check.status_badge_html }}</td>
                     <td>
                       {% if check.trigger_reason == 'initial' %}
                         <span class="badge bg-primary">Initial</span>
