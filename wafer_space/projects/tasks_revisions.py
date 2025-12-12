@@ -28,9 +28,7 @@ def revisions_needs_fetching() -> dict[str, int]:
     Returns:
         {"new_revisions_queued": int}
     """
-    known_digests = set(
-        PrecheckImageRevision.objects.values_list("digest", flat=True)
-    )
+    known_digests = set(PrecheckImageRevision.objects.values_list("digest", flat=True))
 
     new_digests = (
         ManufacturabilityCheck.objects.exclude(docker_image_digest="")
@@ -110,7 +108,9 @@ def _fetch_ghcr_metadata(digest: str) -> dict[str, Any]:
     }
 
     # Get manifest
-    manifest_url = f"https://ghcr.io/v2/wafer-space/gf180mcu-precheck/manifests/{digest}"
+    manifest_url = (
+        f"https://ghcr.io/v2/wafer-space/gf180mcu-precheck/manifests/{digest}"
+    )
     manifest_resp = requests.get(manifest_url, headers=headers, timeout=30)
     manifest_resp.raise_for_status()
     manifest = manifest_resp.json()
