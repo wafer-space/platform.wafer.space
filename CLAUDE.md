@@ -256,9 +256,23 @@ ln -s "$MAIN_REPO/.env" .env
 
 ---
 
-## CELERY DEBUGGING
+## CELERY ARCHITECTURE
 
-### 5. WORKER RESTART IS NOT THE ISSUE
+For comprehensive Celery documentation, see:
+- [Celery Architecture](docs/celery_architecture.md) - Queue naming, state machine, decorators
+- [Celery Tasks Reference](docs/celery_tasks_reference.md) - Complete task listing
+
+### Queue Naming Convention
+
+Queues follow the pattern: `<protocol>:<mode>:<function>`
+
+- **Protocol:** `none`, `http`, `dock`, `mail` (system access required)
+- **Mode:** `ro` (read-only), `rw` (read-write)
+- **Function:** `default`, `downloads`, `checks-orch`, `checks-fast`, etc.
+
+Example: `dock:ro:checks-fast` = Docker access, read-only, fast check operations
+
+### Debugging: Worker Restart Is Not the Issue
 
 **The development environment auto-restarts Celery workers on code changes. Worker restart is not the problem.**
 
