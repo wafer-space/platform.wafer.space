@@ -42,9 +42,7 @@ class TestCheckBadgeTemplateTags:
         )
         check = ManufacturabilityCheckFactory(docker_image_digest=revision.digest)
 
-        template = Template(
-            "{% load precheck_tags %}{% badge_check_version check %}"
-        )
+        template = Template("{% load precheck_tags %}{% badge_check_version check %}")
         context = Context({"check": check})
         result = template.render(context)
 
@@ -59,9 +57,7 @@ class TestCheckBadgeTemplateTags:
         )
         check = ManufacturabilityCheckFactory(docker_image_digest=revision.digest)
 
-        template = Template(
-            "{% load precheck_tags %}{% badge_check_version check %}"
-        )
+        template = Template("{% load precheck_tags %}{% badge_check_version check %}")
         context = Context({"check": check})
         result = template.render(context)
 
@@ -73,9 +69,7 @@ class TestCheckBadgeTemplateTags:
             docker_image_digest="sha256:uncataloged123456789012345678901234567890123456789012"
         )
 
-        template = Template(
-            "{% load precheck_tags %}{% badge_check_version check %}"
-        )
+        template = Template("{% load precheck_tags %}{% badge_check_version check %}")
         context = Context({"check": check})
         result = template.render(context)
 
