@@ -224,9 +224,7 @@ Workers should be configured to consume specific queues based on their capabilit
 
 ### Development (Procfile)
 
-See `Procfile` for local development worker configuration.
-
-> **Note:** The Procfile queue names may differ from actual task queue assignments. See GitHub issue for alignment work.
+See `Procfile` for local development worker configuration. The Procfile workers are configured to consume the correct queues matching the task decorators.
 
 ### Production (systemd)
 
