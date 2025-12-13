@@ -105,9 +105,11 @@ class LicenseValidationMixin:
         Args:
             instance: The Project instance to update
         """
-        # Check if proprietary_terms_url has changed (for existing instances)
+        # Check if proprietary_terms_url has changed (for existing instances).
+        # Use _state.adding instead of pk check because Project uses UUID pk
+        # which is auto-generated at instance creation, not at save time.
         url_changed = False
-        if instance.pk:
+        if not instance._state.adding:  # noqa: SLF001
             # Use _loaded_values captured by from_db() instead of extra DB query.
             # If _loaded_values is missing, validation should have already failed.
             loaded = getattr(instance, "_loaded_values", None)
@@ -159,9 +161,8 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
     )
 
     shuttle = forms.ModelChoiceField(
-        queryset=Shuttle.objects.filter(
-            status=Shuttle.Status.OPEN,
-        ).order_by("name"),
+        # Use callable so queryset is evaluated fresh each time, not at class definition
+        queryset=Shuttle.objects.none(),  # Overridden in __init__
         widget=forms.Select(attrs={"class": "form-control", "id": "id_shuttle"}),
         help_text="Select the shuttle run for this project",
         empty_label=None,  # Remove "--------" option since we always have a default
@@ -281,6 +282,15 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
         self.user = user
         # Must set before is_valid() - see docstring above
         self.instance._current_user = user  # noqa: SLF001
+
+        # Set shuttle queryset fresh each time (not at class definition time).
+        # This is critical for tests where shuttles are created after import.
+        shuttle_field = self.fields["shuttle"]
+        if isinstance(shuttle_field, forms.ModelChoiceField):
+            shuttle_field.queryset = Shuttle.objects.filter(
+                status=Shuttle.Status.OPEN,
+            ).order_by("name")
+
         self._configure_fields()
         self._set_defaults()
 
@@ -288,8 +298,12 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
         """Configure field editability based on user and instance state.
 
         Core fields are disabled for non-staff users editing existing projects.
+
+        Note: We use _state.adding instead of pk is None because the Project
+        model uses a UUID primary key that's auto-generated at instance creation,
+        not at save time.
         """
-        is_new = self.instance.pk is None
+        is_new = self.instance._state.adding  # noqa: SLF001
         is_staff = self.user and self.user.is_staff
 
         for field_name in Project.CORE_FIELDS:
@@ -305,7 +319,8 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
 
     def _set_defaults(self):
         """Set default values for new projects."""
-        if self.instance.pk is not None:
+        # Use _state.adding instead of pk is None (Project uses UUID pk)
+        if not self.instance._state.adding:  # noqa: SLF001
             return
 
         # Set default shuttle to oldest open shuttle (by created_at)
