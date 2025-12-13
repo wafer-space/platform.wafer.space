@@ -27,40 +27,6 @@ SHA256_HASH_LENGTH = 64
 # Compliance form validation constants
 MIN_END_USE_STATEMENT_LENGTH = 10
 
-# Shared is_public field configuration (used by ProjectForm and ProjectUserEditForm)
-IS_PUBLIC_WIDGET = forms.CheckboxInput(attrs={"class": "form-check-input"})
-IS_PUBLIC_HELP_TEXT = "Make this design publicly visible on the platform"
-
-# Shared license field configuration
-LICENSE_TYPE_WIDGET = forms.Select(
-    attrs={"class": "form-control", "id": "id_license_type"},
-)
-LICENSE_TYPE_HELP_TEXT = "License under which this project is released"
-
-REPOSITORY_URL_WIDGET = forms.URLInput(
-    attrs={
-        "class": "form-control",
-        "placeholder": "https://github.com/username/repo",
-    },
-)
-REPOSITORY_URL_HELP_TEXT = "URL to the project's source repository"
-
-OTHER_LICENSE_WIDGET = forms.TextInput(
-    attrs={
-        "class": "form-control",
-        "placeholder": "GPL-3.0-only",
-    },
-)
-OTHER_LICENSE_HELP_TEXT = "SPDX identifier (e.g., GPL-3.0-only, LGPL-2.1-or-later)"
-
-PROPRIETARY_TERMS_URL_WIDGET = forms.URLInput(
-    attrs={
-        "class": "form-control",
-        "placeholder": "https://example.com/license-terms",
-    },
-)
-PROPRIETARY_TERMS_URL_HELP_TEXT = "URL to your proprietary license terms"
-
 
 class LicenseValidationMixin:
     """Mixin for forms that validate license fields.
@@ -139,16 +105,22 @@ class LicenseValidationMixin:
         Args:
             instance: The Project instance to update
         """
-        # Check if proprietary_terms_url has changed (for existing instances)
+        # Check if proprietary_terms_url has changed (for existing instances).
+        # Use _state.adding instead of pk check because Project uses UUID pk
+        # which is auto-generated at instance creation, not at save time.
         url_changed = False
-        if instance.pk:
-            try:
-                old_instance = Project.objects.get(pk=instance.pk)
-                url_changed = (
-                    old_instance.proprietary_terms_url != instance.proprietary_terms_url
+        if not instance._state.adding:  # noqa: SLF001
+            # Use _loaded_values captured by from_db() instead of extra DB query.
+            # If _loaded_values is missing, validation should have already failed.
+            loaded = getattr(instance, "_loaded_values", None)
+            if loaded is None:
+                msg = (
+                    f"Cannot check URL change for project {instance.pk}: "
+                    "instance was not loaded via QuerySet (missing _loaded_values)."
                 )
-            except Project.DoesNotExist:
-                pass
+                raise RuntimeError(msg)
+            old_url = loaded.get("proprietary_terms_url", "")
+            url_changed = old_url != instance.proprietary_terms_url
 
         # Update cached terms if we fetched them during validation
         if self._proprietary_terms_content:
@@ -165,51 +137,36 @@ class LicenseValidationMixin:
 
 
 class ProjectForm(LicenseValidationMixin, forms.ModelForm):
-    """Form for creating and editing projects."""
+    """Unified form for creating and editing projects.
 
-    shuttle = forms.ModelChoiceField(
-        queryset=Shuttle.objects.filter(
-            status=Shuttle.Status.OPEN,
-        ).order_by("name"),
-        widget=forms.Select(attrs={"class": "form-control", "id": "id_shuttle"}),
-        help_text="Select the shuttle run for this project",
-        empty_label=None,  # Remove "--------" option since we always have a default
-    )
+    Adapts field availability based on:
+    - Whether this is a new project (creation) or existing (edit)
+    - Whether the user is staff
+
+    Core fields (shuttle, project_id, slot_size):
+    - Editable during creation
+    - Editable by staff on existing projects
+    - Disabled for non-staff on existing projects
+
+    User fields (name, description, etc.):
+    - Always editable by project owner
+    """
 
     # Override license_type to make it not required (model has default)
     license_type = forms.ChoiceField(
         choices=LicenseType.choices,
         required=False,
-        widget=LICENSE_TYPE_WIDGET,
-        help_text=LICENSE_TYPE_HELP_TEXT,
+        widget=forms.Select(attrs={"class": "form-control", "id": "id_license_type"}),
+        help_text="License under which this project is released",
     )
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        # Set default shuttle to oldest open shuttle (by created_at)
-        # Use _state.adding because UUID pk is auto-generated for unsaved instances
-        is_new_instance = getattr(self.instance, "_state", None)
-        if is_new_instance and is_new_instance.adding:
-            default_shuttle = (
-                Shuttle.objects.filter(
-                    status=Shuttle.Status.OPEN,
-                )
-                .order_by("created_at")
-                .first()
-            )
-            if default_shuttle:
-                self.fields["shuttle"].initial = default_shuttle
-
-            # Set default license_type for new projects
-            self.fields["license_type"].initial = LicenseType.PROPRIETARY
-
-        # Use full labels for slot_size dropdown (includes dimensions)
-        slot_size_field = self.fields["slot_size"]
-        if isinstance(slot_size_field, forms.TypedChoiceField):
-            slot_size_field.choices = [
-                (size.value, size.full_label) for size in SlotSize
-            ]
+    shuttle = forms.ModelChoiceField(
+        # Use callable so queryset is evaluated fresh each time, not at class definition
+        queryset=Shuttle.objects.none(),  # Overridden in __init__
+        widget=forms.Select(attrs={"class": "form-control", "id": "id_shuttle"}),
+        help_text="Select the shuttle run for this project",
+        empty_label=None,  # Remove "--------" option since we always have a default
+    )
 
     project_id = forms.CharField(
         max_length=PROJECT_ID_LENGTH,
@@ -240,11 +197,13 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
     class Meta:
         model = Project
         fields = [
-            "name",
-            "description",
+            # Core fields (immutable after creation except by staff)
             "shuttle",
             "project_id",
             "slot_size",
+            # User fields (always editable)
+            "name",
+            "description",
             "is_public",
             "repository_url",
             "license_type",
@@ -271,20 +230,124 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
                     "id": "id_slot_size",
                 },
             ),
-            "is_public": IS_PUBLIC_WIDGET,
-            "repository_url": REPOSITORY_URL_WIDGET,
-            "other_license_spdx_id": OTHER_LICENSE_WIDGET,
-            "proprietary_terms_url": PROPRIETARY_TERMS_URL_WIDGET,
+            "is_public": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+            "repository_url": forms.URLInput(
+                attrs={
+                    "class": "form-control",
+                    "placeholder": "https://github.com/username/repo",
+                },
+            ),
+            "other_license_spdx_id": forms.TextInput(
+                attrs={
+                    "class": "form-control",
+                    "placeholder": "GPL-3.0-only",
+                },
+            ),
+            "proprietary_terms_url": forms.URLInput(
+                attrs={
+                    "class": "form-control",
+                    "placeholder": "https://example.com/license-terms",
+                },
+            ),
         }
         help_texts = {
             "name": "A descriptive name for your project",
             "description": "Optional details about your design",
             "slot_size": "Select the die slot size for your design",
-            "is_public": IS_PUBLIC_HELP_TEXT,
-            "repository_url": REPOSITORY_URL_HELP_TEXT,
-            "other_license_spdx_id": OTHER_LICENSE_HELP_TEXT,
-            "proprietary_terms_url": PROPRIETARY_TERMS_URL_HELP_TEXT,
+            "is_public": "Make this design publicly visible on the platform",
+            "repository_url": "URL to the project's source repository",
+            "other_license_spdx_id": (
+                "SPDX identifier (e.g., GPL-3.0-only, LGPL-2.1-or-later)"
+            ),
+            "proprietary_terms_url": "URL to your proprietary license terms",
         }
+
+    def __init__(self, *args, user=None, **kwargs):
+        """Initialize form with user context for field configuration.
+
+        Args:
+            user: The user submitting the form. Required for determining
+                which fields should be editable and for model-level
+                immutability validation.
+
+        Note:
+            We set `instance._current_user` immediately after super().__init__()
+            because Django's ModelForm calls model.full_clean() during is_valid(),
+            BEFORE save() is called. The model's clean() method needs to know
+            the current user to allow staff to modify core fields while blocking
+            non-staff users. Without this early assignment, model validation
+            would fail for staff users editing core fields.
+        """
+        super().__init__(*args, **kwargs)
+        self.user = user
+        # Must set before is_valid() - see docstring above
+        self.instance._current_user = user  # noqa: SLF001
+
+        # Set shuttle queryset fresh each time (not at class definition time).
+        # This is critical for tests where shuttles are created after import.
+        shuttle_field = self.fields["shuttle"]
+        if isinstance(shuttle_field, forms.ModelChoiceField):
+            shuttle_field.queryset = Shuttle.objects.filter(
+                status=Shuttle.Status.OPEN,
+            ).order_by("name")
+
+        self._configure_fields()
+        self._set_defaults()
+
+    def _configure_fields(self):
+        """Configure field editability based on user and instance state.
+
+        Core fields are disabled for non-staff users editing existing projects.
+
+        Note: We use _state.adding instead of pk is None because the Project
+        model uses a UUID primary key that's auto-generated at instance creation,
+        not at save time.
+        """
+        is_new = self.instance._state.adding  # noqa: SLF001
+        is_staff = self.user and self.user.is_staff
+
+        for field_name in Project.CORE_FIELDS:
+            if field_name not in self.fields:
+                continue
+
+            if is_new or is_staff:
+                # Editable - keep field as-is
+                pass
+            else:
+                # Disable for non-staff editing existing project
+                self.fields[field_name].disabled = True
+
+    def _set_defaults(self):
+        """Set default values for new projects."""
+        # Use _state.adding instead of pk is None (Project uses UUID pk)
+        if not self.instance._state.adding:  # noqa: SLF001
+            return
+
+        # Set default shuttle to oldest open shuttle (by created_at)
+        default_shuttle = (
+            Shuttle.objects.filter(status=Shuttle.Status.OPEN)
+            .order_by("created_at")
+            .first()
+        )
+        if default_shuttle:
+            self.fields["shuttle"].initial = default_shuttle
+
+        # Set default license_type for new projects
+        self.fields["license_type"].initial = LicenseType.PROPRIETARY
+
+        # Use full labels for slot_size dropdown (includes dimensions)
+        slot_size_field = self.fields["slot_size"]
+        if isinstance(slot_size_field, forms.TypedChoiceField):
+            slot_size_field.choices = [
+                (size.value, size.full_label) for size in SlotSize
+            ]
+
+    def clean(self):
+        """Validate license fields and cache proprietary terms."""
+        cleaned_data = super().clean()
+        if cleaned_data is None:
+            return cleaned_data
+        return self._validate_license_fields(cleaned_data)
 
     def clean_project_id(self):
         """Validate and normalize project_id field."""
@@ -323,69 +386,7 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
 
         return project_id
 
-    def clean(self):
-        """Validate license fields and cache proprietary terms."""
-        cleaned_data = super().clean()
-        if cleaned_data is None:
-            return cleaned_data
-        return self._validate_license_fields(cleaned_data)
-
-    def save(self, commit=True):  # noqa: FBT002
-        """Save form and update cached proprietary terms."""
-        instance = super().save(commit=False)
-        self._save_license_fields(instance)
-        if commit:
-            instance.save()
-        return instance
-
-
-class ProjectUserEditForm(LicenseValidationMixin, forms.ModelForm):
-    """Limited form for regular users to edit their projects.
-
-    Regular users can edit visibility, repository URL, and license settings.
-    Staff can edit all fields using the full ProjectForm.
-    """
-
-    # Override license_type to make it not required (model has default)
-    license_type = forms.ChoiceField(
-        choices=LicenseType.choices,
-        required=False,
-        widget=LICENSE_TYPE_WIDGET,
-        help_text=LICENSE_TYPE_HELP_TEXT,
-    )
-
-    class Meta:
-        model = Project
-        fields = [
-            "is_public",
-            "repository_url",
-            "license_type",
-            "other_license_spdx_id",
-            "proprietary_terms_url",
-        ]
-        widgets = {
-            "is_public": IS_PUBLIC_WIDGET,
-            "repository_url": REPOSITORY_URL_WIDGET,
-            "license_type": LICENSE_TYPE_WIDGET,
-            "other_license_spdx_id": OTHER_LICENSE_WIDGET,
-            "proprietary_terms_url": PROPRIETARY_TERMS_URL_WIDGET,
-        }
-        help_texts = {
-            "is_public": IS_PUBLIC_HELP_TEXT,
-            "repository_url": REPOSITORY_URL_HELP_TEXT,
-            "license_type": LICENSE_TYPE_HELP_TEXT,
-            "other_license_spdx_id": OTHER_LICENSE_HELP_TEXT,
-            "proprietary_terms_url": PROPRIETARY_TERMS_URL_HELP_TEXT,
-        }
-
-    def clean(self):
-        """Validate license fields and cache proprietary terms."""
-        cleaned_data = super().clean()
-        if cleaned_data is None:
-            return cleaned_data
-        return self._validate_license_fields(cleaned_data)
-
-    def save(self, commit=True):  # noqa: FBT002
+    def save(self, commit: bool = True) -> Project:  # noqa: FBT001, FBT002
         """Save form and update cached proprietary terms."""
         instance = super().save(commit=False)
         self._save_license_fields(instance)

@@ -16,6 +16,7 @@ from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.projects.tests.factories import ProjectFileFactory
+from wafer_space.shuttles.models import Shuttle
 from wafer_space.users.models import User
 from wafer_space.users.tests.factories import UserFactory
 
@@ -2006,20 +2007,31 @@ class TestProjectSlotSize(TestCase):
             == "0.5×0.5 - Quarter Slot (1.94mm × 2.535mm = 4.92mm²)"
         )
 
-    def test_slot_size_can_be_updated(self):
-        """Test that slot_size can be updated after creation."""
+    def test_slot_size_is_immutable_fail_closed(self):
+        """Test fail-closed validation when _current_user is not set.
+
+        When _current_user is not set (e.g., background job, migration), the
+        validation defaults to blocking core field changes. This is the
+        fail-closed security behavior.
+
+        Note: For tests of the normal non-staff path with _current_user set,
+        see TestProjectCoreFieldImmutability.test_non_staff_cannot_modify_slot_size
+        """
         project = Project.objects.create(
             user=self.user,
             name="Test Project",
             slot_size=SlotSize.FULL,
         )
 
+        # Re-fetch from database (triggers from_db, sets _loaded_values)
+        # Note: _current_user is NOT set - testing fail-closed behavior
+        project = Project.objects.get(pk=project.pk)
         project.slot_size = SlotSize.QUARTER
-        project.save()
 
-        project.refresh_from_db()
-        assert project.slot_size == SlotSize.QUARTER
-        assert project.slot_size == "0p5x0p5"
+        with pytest.raises(ValidationError) as exc_info:
+            project.full_clean()
+
+        assert "slot_size" in str(exc_info.value)
 
 
 @pytest.mark.django_db
@@ -2832,3 +2844,241 @@ class TestManufacturabilityCheckTriggerReason:
             trigger_reason=ManufacturabilityCheck.TriggerReason.DRC_UPDATE
         )
         assert check.trigger_reason == ManufacturabilityCheck.TriggerReason.DRC_UPDATE
+
+
+@pytest.mark.django_db
+class TestProjectCoreFieldImmutability:
+    """Tests for Project core field immutability validation.
+
+    Core fields (shuttle, project_id, slot_size) are immutable after creation
+    except for staff users. This is enforced in clean() using values captured
+    by from_db().
+    """
+
+    @pytest.fixture
+    def shuttle(self):
+        """Create a shuttle for testing."""
+        return Shuttle.objects.create(
+            name="G880",
+            description="Test Shuttle for Immutability Tests",
+            status=Shuttle.Status.OPEN,
+        )
+
+    @pytest.fixture
+    def other_shuttle(self):
+        """Create another shuttle for testing shuttle changes."""
+        return Shuttle.objects.create(
+            name="G881",
+            description="Other Shuttle for Immutability Tests",
+            status=Shuttle.Status.OPEN,
+        )
+
+    @pytest.fixture
+    def user(self):
+        """Create a regular user."""
+        return UserFactory()
+
+    @pytest.fixture
+    def staff_user(self):
+        """Create a staff user."""
+        return UserFactory(is_staff=True)
+
+    @pytest.fixture
+    def project(self, user, shuttle):
+        """Create a project for testing."""
+        return Project.objects.create(
+            user=user,
+            name="Test Project",
+            shuttle=shuttle,
+            project_id="TEST",
+            slot_size=SlotSize.FULL,
+        )
+
+    def test_from_db_captures_loaded_values(self, project):
+        """from_db() sets _loaded_values when loading from database."""
+        # Reload from database to trigger from_db()
+        loaded_project = Project.objects.get(pk=project.pk)
+
+        assert hasattr(loaded_project, "_loaded_values")
+        loaded_values = loaded_project._loaded_values  # noqa: SLF001
+        assert "project_id" in loaded_values
+        assert "slot_size" in loaded_values
+        assert "shuttle_id" in loaded_values
+        assert loaded_values["project_id"] == "TEST"
+
+    def test_fail_closed_blocks_modification_without_current_user(self, project):
+        """Fail-closed: no _current_user blocks core field changes.
+
+        When _current_user is not set (e.g., background job, migration),
+        validation defaults to blocking all core field changes for security.
+        This is different from the non-staff path which explicitly sets
+        _current_user to a non-staff user.
+        """
+        loaded_project = Project.objects.get(pk=project.pk)
+        # Explicitly NOT setting _current_user to test fail-closed behavior
+
+        loaded_project.project_id = "FAIL"
+
+        with pytest.raises(ValidationError) as exc_info:
+            loaded_project.full_clean()
+
+        assert "project_id" in str(exc_info.value)
+        assert "Cannot modify" in str(exc_info.value)
+
+    def test_non_staff_cannot_modify_project_id(self, project, user):
+        """Non-staff user cannot modify project_id after creation."""
+        # Reload to get _loaded_values via from_db()
+        loaded_project = Project.objects.get(pk=project.pk)
+        loaded_project._current_user = user  # noqa: SLF001
+
+        # Try to change project_id
+        loaded_project.project_id = "NEWI"
+
+        with pytest.raises(ValidationError) as exc_info:
+            loaded_project.full_clean()
+
+        assert "project_id" in str(exc_info.value)
+        assert "Cannot modify" in str(exc_info.value)
+
+    def test_non_staff_cannot_modify_slot_size(self, project, user):
+        """Non-staff user cannot modify slot_size after creation."""
+        loaded_project = Project.objects.get(pk=project.pk)
+        loaded_project._current_user = user  # noqa: SLF001
+
+        loaded_project.slot_size = SlotSize.HALF_WIDTH
+
+        with pytest.raises(ValidationError) as exc_info:
+            loaded_project.full_clean()
+
+        assert "slot_size" in str(exc_info.value)
+
+    def test_non_staff_cannot_modify_shuttle(self, project, user, other_shuttle):
+        """Non-staff user cannot modify shuttle after creation."""
+        loaded_project = Project.objects.get(pk=project.pk)
+        loaded_project._current_user = user  # noqa: SLF001
+
+        loaded_project.shuttle = other_shuttle
+
+        with pytest.raises(ValidationError) as exc_info:
+            loaded_project.full_clean()
+
+        assert "shuttle" in str(exc_info.value)
+
+    def test_staff_can_modify_project_id(self, project, staff_user):
+        """Staff user can modify project_id after creation."""
+        loaded_project = Project.objects.get(pk=project.pk)
+        loaded_project._current_user = staff_user  # noqa: SLF001
+
+        loaded_project.project_id = "STAF"
+
+        # Should not raise
+        loaded_project.full_clean()
+        loaded_project.save()
+
+        # Verify change persisted
+        reloaded = Project.objects.get(pk=project.pk)
+        assert reloaded.project_id == "STAF"
+
+    def test_staff_can_modify_slot_size(self, project, staff_user):
+        """Staff user can modify slot_size after creation."""
+        loaded_project = Project.objects.get(pk=project.pk)
+        loaded_project._current_user = staff_user  # noqa: SLF001
+
+        loaded_project.slot_size = SlotSize.HALF_WIDTH
+
+        loaded_project.full_clean()
+        loaded_project.save()
+
+        reloaded = Project.objects.get(pk=project.pk)
+        assert reloaded.slot_size == SlotSize.HALF_WIDTH
+
+    def test_staff_can_modify_shuttle(self, project, staff_user, other_shuttle):
+        """Staff user can modify shuttle after creation."""
+        loaded_project = Project.objects.get(pk=project.pk)
+        loaded_project._current_user = staff_user  # noqa: SLF001
+
+        loaded_project.shuttle = other_shuttle
+
+        loaded_project.full_clean()
+        loaded_project.save()
+
+        reloaded = Project.objects.get(pk=project.pk)
+        assert reloaded.shuttle == other_shuttle
+
+    def test_user_fields_can_be_modified_by_non_staff(self, project, user):
+        """Non-staff user can modify user fields (name, description, etc.)."""
+        loaded_project = Project.objects.get(pk=project.pk)
+        loaded_project._current_user = user  # noqa: SLF001
+
+        # Modify user fields
+        loaded_project.name = "Updated Name"
+        loaded_project.description = "Updated description"
+        loaded_project.is_public = True
+
+        # Should not raise
+        loaded_project.full_clean()
+        loaded_project.save()
+
+        reloaded = Project.objects.get(pk=project.pk)
+        assert reloaded.name == "Updated Name"
+        assert reloaded.description == "Updated description"
+        assert reloaded.is_public is True
+
+    def test_new_project_allows_core_field_setting(self, user, shuttle):
+        """New projects can set core fields without restriction."""
+        project = Project(
+            user=user,
+            name="New Project",
+            shuttle=shuttle,
+            project_id="NEW1",
+            slot_size=SlotSize.HALF_HEIGHT,
+        )
+
+        # Should not raise - new projects can set any field
+        project.full_clean()
+        project.save()
+
+        assert project.project_id == "NEW1"
+        assert project.slot_size == SlotSize.HALF_HEIGHT
+
+    def test_validation_without_loaded_values_raises_error(self, user, shuttle):
+        """Validation raises RuntimeError when _loaded_values is missing.
+
+        If an existing instance doesn't have _loaded_values, it means it wasn't
+        loaded via QuerySet - this is a programming error that should fail loudly.
+        This can happen with bulk_create(), raw SQL, or manual construction.
+        """
+        # Create project via factory (save() now sets _loaded_values)
+        project = ProjectFactory(user=user, shuttle=shuttle)
+
+        # Manually delete _loaded_values to simulate edge case
+        # (e.g., bulk_create, raw SQL, or manual object construction)
+        del project._loaded_values  # noqa: SLF001
+
+        # Manually set _current_user to non-staff
+        project._current_user = user  # noqa: SLF001
+
+        # Modify core field
+        project.project_id = "MODI"
+
+        # Should raise RuntimeError because _loaded_values is missing
+        with pytest.raises(RuntimeError) as exc_info:
+            project.full_clean()
+
+        assert "missing _loaded_values" in str(exc_info.value)
+
+    def test_multiple_core_field_changes_reported(self, project, user):
+        """All changed core fields are reported in error message."""
+        loaded_project = Project.objects.get(pk=project.pk)
+        loaded_project._current_user = user  # noqa: SLF001
+
+        # Change multiple core fields
+        loaded_project.project_id = "MULT"
+        loaded_project.slot_size = SlotSize.HALF_WIDTH
+
+        with pytest.raises(ValidationError) as exc_info:
+            loaded_project.full_clean()
+
+        error_message = str(exc_info.value)
+        assert "project_id" in error_message
+        assert "slot_size" in error_message

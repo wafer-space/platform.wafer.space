@@ -277,52 +277,59 @@ class TestProjectUpdateView(TestCase):
         # Check redirect location (use Location header for type safety)
         assert "/accounts/login/" in response["Location"]
 
-    def test_owner_can_update_visibility(self):
-        """Test that owner can update is_public field but not other fields.
+    def test_owner_can_update_project_details(self):
+        """Test that owner can update name, description, and visibility.
 
-        Regular users can only edit visibility settings (is_public).
-        All other fields like name, description, slot_size require staff access.
-        Even if an owner submits other fields, they should be ignored.
+        Regular users can edit name, description, visibility, repository URL,
+        and license settings. Staff-only fields (shuttle, project_id, slot_size)
+        are not available to regular users.
         """
         self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:update", kwargs={"pk": self.project.pk})
 
-        # Store original values
-        original_name = self.project.name
-        original_description = self.project.description
-
-        # Owner submits is_public along with other fields (which should be ignored)
+        # Owner submits updated project details
         form_data = {
+            "name": "Updated Project Name",
+            "description": "Updated project description",
             "is_public": True,
-            "name": "Hacked Name",
-            "description": "Hacked Description",
+            "repository_url": "",
+            "license_type": "proprietary",
+            "other_license_spdx_id": "",
+            "proprietary_terms_url": "",
         }
         response = self.client.post(url, form_data)
 
         # Should redirect
         assert response.status_code == HTTP_FOUND
 
-        # Verify is_public was updated
+        # Verify all fields were updated
         self.project.refresh_from_db()
+        assert self.project.name == "Updated Project Name"
+        assert self.project.description == "Updated project description"
         assert self.project.is_public is True
 
-        # Verify other fields were NOT changed (form ignores them)
-        assert self.project.name == original_name
-        assert self.project.description == original_description
-
-    def test_owner_gets_limited_form(self):
-        """Test that owner sees the limited form (is_public only)."""
+    def test_owner_gets_form_with_disabled_core_fields(self):
+        """Test that owner sees form with core fields disabled."""
         self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:update", kwargs={"pk": self.project.pk})
         response = self.client.get(url)
 
         assert response.status_code == HTTP_OK
-        assert response.context["is_limited_form"] is True
-        # The form should only have is_public field
+        assert response.context["is_new"] is False
+        # The form should have all fields
         form = response.context["form"]
+        assert "name" in form.fields
+        assert "description" in form.fields
         assert "is_public" in form.fields
-        assert "name" not in form.fields
-        assert "description" not in form.fields
+        assert "repository_url" in form.fields
+        assert "license_type" in form.fields
+        # Core fields are present but DISABLED for non-staff
+        assert "shuttle" in form.fields
+        assert form.fields["shuttle"].disabled is True
+        assert "project_id" in form.fields
+        assert form.fields["project_id"].disabled is True
+        assert "slot_size" in form.fields
+        assert form.fields["slot_size"].disabled is True
 
     def test_staff_can_update_all_fields(self):
         """Test that staff can update all project fields."""
@@ -339,9 +346,13 @@ class TestProjectUpdateView(TestCase):
             "name": "Updated Project",
             "description": "Updated description",
             "shuttle": self.shuttle.pk,
-            "project_id": "ABCD",
+            "project_id": "UPDT",  # Different from original to test update
             "slot_size": "0p5x1",
             "is_public": True,
+            # License fields
+            "license_type": "proprietary",
+            "other_license_spdx_id": "",
+            "proprietary_terms_url": "",
         }
         response = self.client.post(url, form_data)
 
@@ -352,6 +363,7 @@ class TestProjectUpdateView(TestCase):
         self.project.refresh_from_db()
         assert self.project.name == "Updated Project"
         assert self.project.description == "Updated description"
+        assert self.project.project_id == "UPDT"  # Core field updated by staff
         assert self.project.slot_size == "0p5x1"
         assert self.project.is_public is True
 
@@ -1666,14 +1678,12 @@ class TestProjectDetailSlotVisibility:
     def test_regular_user_does_not_see_slots(self, client):
         """Regular users should not see slot assignments."""
         user = UserFactory(is_staff=False)
-        project = ProjectFactory(user=user)
-        client.force_login(user)
-
         shuttle = Shuttle.objects.create(
             name="G811", description="Test shuttle", status=Shuttle.Status.OPEN
         )
-        project.shuttle = shuttle
-        project.save()
+        # Create project with shuttle already assigned (core fields are immutable)
+        project = ProjectFactory(user=user, shuttle=shuttle)
+        client.force_login(user)
 
         slot = ShuttleSlot.objects.create(
             shuttle=shuttle,

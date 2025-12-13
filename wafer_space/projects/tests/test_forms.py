@@ -8,7 +8,6 @@ from django.utils import timezone
 
 from wafer_space.projects.forms import ProjectFileURLSubmitForm
 from wafer_space.projects.forms import ProjectForm
-from wafer_space.projects.forms import ProjectUserEditForm
 from wafer_space.projects.models import Project
 from wafer_space.projects.security import SecurityValidationError
 from wafer_space.projects.services.license_service import LicenseValidationError
@@ -759,10 +758,10 @@ class TestProjectFormLicenseValidation:
 
 
 @pytest.mark.django_db
-class TestProjectUserEditFormLicenseValidation:
-    """Tests for license field validation in ProjectUserEditForm.
+class TestProjectFormLicenseValidationEdit:
+    """Tests for license field validation in ProjectForm when editing.
 
-    Ensures regular users get the same license validation as staff users.
+    Ensures editing existing projects has same license validation as creation.
     """
 
     @pytest.fixture
@@ -787,6 +786,8 @@ class TestProjectUserEditFormLicenseValidation:
     def base_user_form_data(self):
         """Base valid form data for user edit form."""
         return {
+            "name": "Test Project",
+            "description": "A test project",
             "is_public": False,
             "repository_url": "",
             "license_type": "proprietary",
@@ -801,9 +802,7 @@ class TestProjectUserEditFormLicenseValidation:
         base_user_form_data["license_type"] = "other"
         base_user_form_data["other_license_spdx_id"] = ""
 
-        form = ProjectUserEditForm(
-            data=base_user_form_data, instance=project_with_owner
-        )
+        form = ProjectForm(data=base_user_form_data, instance=project_with_owner)
         assert not form.is_valid()
         assert "other_license_spdx_id" in form.errors
 
@@ -816,9 +815,7 @@ class TestProjectUserEditFormLicenseValidation:
         base_user_form_data["license_type"] = "other"
         base_user_form_data["other_license_spdx_id"] = "INVALID-ID"
 
-        form = ProjectUserEditForm(
-            data=base_user_form_data, instance=project_with_owner
-        )
+        form = ProjectForm(data=base_user_form_data, instance=project_with_owner)
         assert not form.is_valid()
         assert "Invalid SPDX identifier" in str(form.errors["other_license_spdx_id"])
 
@@ -831,9 +828,7 @@ class TestProjectUserEditFormLicenseValidation:
         base_user_form_data["license_type"] = "other"
         base_user_form_data["other_license_spdx_id"] = "GPL-3.0-only"
 
-        form = ProjectUserEditForm(
-            data=base_user_form_data, instance=project_with_owner
-        )
+        form = ProjectForm(data=base_user_form_data, instance=project_with_owner)
         assert form.is_valid(), form.errors
 
     @patch("wafer_space.projects.forms.URLValidator.validate_hostname")
@@ -852,9 +847,7 @@ class TestProjectUserEditFormLicenseValidation:
         base_user_form_data["license_type"] = "proprietary"
         base_user_form_data["proprietary_terms_url"] = "https://example.com/terms.txt"
 
-        form = ProjectUserEditForm(
-            data=base_user_form_data, instance=project_with_owner
-        )
+        form = ProjectForm(data=base_user_form_data, instance=project_with_owner)
         assert form.is_valid(), form.errors
 
         # Save and check cache
@@ -878,9 +871,7 @@ class TestProjectUserEditFormLicenseValidation:
         base_user_form_data["license_type"] = "proprietary"
         base_user_form_data["proprietary_terms_url"] = "https://example.com/bad.txt"
 
-        form = ProjectUserEditForm(
-            data=base_user_form_data, instance=project_with_owner
-        )
+        form = ProjectForm(data=base_user_form_data, instance=project_with_owner)
         assert not form.is_valid()
         assert "proprietary_terms_url" in form.errors
 
@@ -893,9 +884,7 @@ class TestProjectUserEditFormLicenseValidation:
         base_user_form_data["license_type"] = "proprietary"
         base_user_form_data["proprietary_terms_url"] = "ftp://example.com/terms.txt"
 
-        form = ProjectUserEditForm(
-            data=base_user_form_data, instance=project_with_owner
-        )
+        form = ProjectForm(data=base_user_form_data, instance=project_with_owner)
         assert not form.is_valid()
         assert "proprietary_terms_url" in form.errors
 
@@ -906,9 +895,7 @@ class TestProjectUserEditFormLicenseValidation:
         base_user_form_data["license_type"] = "MIT"
         base_user_form_data["other_license_spdx_id"] = "should-be-cleared"
 
-        form = ProjectUserEditForm(
-            data=base_user_form_data, instance=project_with_owner
-        )
+        form = ProjectForm(data=base_user_form_data, instance=project_with_owner)
         assert form.is_valid(), form.errors
         assert form.cleaned_data["other_license_spdx_id"] == ""
 
@@ -919,9 +906,7 @@ class TestProjectUserEditFormLicenseValidation:
         base_user_form_data["license_type"] = "MIT"
         base_user_form_data["proprietary_terms_url"] = "https://example.com/terms.txt"
 
-        form = ProjectUserEditForm(
-            data=base_user_form_data, instance=project_with_owner
-        )
+        form = ProjectForm(data=base_user_form_data, instance=project_with_owner)
         assert form.is_valid(), form.errors
         assert form.cleaned_data["proprietary_terms_url"] == ""
 
@@ -950,9 +935,7 @@ class TestProjectUserEditFormLicenseValidation:
             "https://new.example.com/terms.txt"
         )
 
-        form = ProjectUserEditForm(
-            data=base_user_form_data, instance=project_with_owner
-        )
+        form = ProjectForm(data=base_user_form_data, instance=project_with_owner)
         # Form should be invalid because fetch failed
         assert not form.is_valid()
         assert "proprietary_terms_url" in form.errors

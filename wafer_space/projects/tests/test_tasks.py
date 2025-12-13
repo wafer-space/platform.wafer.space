@@ -1263,15 +1263,15 @@ class TestDoStarting:
         # Create shuttle to enable full_id on the project
         shuttle = ShuttleFactory(name="G850")
 
+        # Create check with project that has shuttle and project_id set
+        # (core fields are immutable after creation)
         check = ManufacturabilityCheckFactory(
             status=ManufacturabilityCheck.Status.STARTING,
             docker_server_id="test-local",
             docker_image="ghcr.io/test:latest",
+            project__shuttle=shuttle,
+            project__project_id="ABCD",
         )
-        # Assign shuttle and project_id to enable full_id
-        check.project.shuttle = shuttle
-        check.project.project_id = "ABCD"
-        check.project.save()
         check.project_file.file.name = str(test_file)
         check.project_file.top_cell = "chip_top"
         check.project_file.save()
