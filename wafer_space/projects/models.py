@@ -1845,11 +1845,27 @@ class ManufacturabilityCheck(models.Model):
 
         Example output:
             <span class="badge bg-warning"><i class="bi-clock"></i> Pending</span>
+
+        Note:
+            For FINISHED status, shows "Manufacturable" (success) or
+            "Not Manufacturable" (danger) based on is_manufacturable field.
         """
-        color = self.status_color
-        icon = self.status_icon
-        label = self.status_label
-        show_spinner = self.status_show_spinner
+        # Special handling for FINISHED status - show manufacturable result
+        if self.status == self.Status.FINISHED:
+            if self.is_manufacturable:
+                color = "success"
+                icon = "bi-check-circle"
+                label = "Manufacturable"
+            else:
+                color = "danger"
+                icon = "bi-x-circle"
+                label = "Not Manufacturable"
+            show_spinner = False
+        else:
+            color = self.status_color
+            icon = self.status_icon
+            label = self.status_label
+            show_spinner = self.status_show_spinner
 
         # Build icon/spinner HTML
         if show_spinner:

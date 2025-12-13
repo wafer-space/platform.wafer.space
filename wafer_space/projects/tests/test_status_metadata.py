@@ -146,3 +146,66 @@ class TestStatusBadgeHtml:
         """Badge HTML is marked safe for template rendering."""
         html = pending_check.status_badge_html()
         assert isinstance(html, SafeString)
+
+
+class TestFinishedStatusBadge:
+    """Tests for finished status badge showing manufacturable/not manufacturable."""
+
+    @pytest.fixture
+    def manufacturable_check(self):
+        """Create a finished check that is manufacturable."""
+        return ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
+
+    @pytest.fixture
+    def not_manufacturable_check(self):
+        """Create a finished check that is not manufacturable."""
+        return ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=False,
+        )
+
+    @pytest.mark.django_db
+    def test_manufacturable_badge_shows_success_color(self, manufacturable_check):
+        """Manufacturable check shows success (green) badge."""
+        html = manufacturable_check.status_badge_html()
+        assert "bg-success" in html
+
+    @pytest.mark.django_db
+    def test_manufacturable_badge_shows_check_icon(self, manufacturable_check):
+        """Manufacturable check shows check-circle icon."""
+        html = manufacturable_check.status_badge_html()
+        assert "bi-check-circle" in html
+
+    @pytest.mark.django_db
+    def test_manufacturable_badge_shows_manufacturable_label(
+        self, manufacturable_check
+    ):
+        """Manufacturable check shows 'Manufacturable' label."""
+        html = manufacturable_check.status_badge_html()
+        assert "Manufacturable" in html
+        assert "Not Manufacturable" not in html
+
+    @pytest.mark.django_db
+    def test_not_manufacturable_badge_shows_danger_color(
+        self, not_manufacturable_check
+    ):
+        """Not manufacturable check shows danger (red) badge."""
+        html = not_manufacturable_check.status_badge_html()
+        assert "bg-danger" in html
+
+    @pytest.mark.django_db
+    def test_not_manufacturable_badge_shows_x_icon(self, not_manufacturable_check):
+        """Not manufacturable check shows x-circle icon."""
+        html = not_manufacturable_check.status_badge_html()
+        assert "bi-x-circle" in html
+
+    @pytest.mark.django_db
+    def test_not_manufacturable_badge_shows_not_manufacturable_label(
+        self, not_manufacturable_check
+    ):
+        """Not manufacturable check shows 'Not Manufacturable' label."""
+        html = not_manufacturable_check.status_badge_html()
+        assert "Not Manufacturable" in html
