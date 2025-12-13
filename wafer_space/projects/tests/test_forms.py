@@ -39,7 +39,7 @@ class TestProjectForm(TestCase):
         }
         form = ProjectForm(data=form_data)
 
-        assert form.is_valid()
+        assert form.is_valid(), f"Form errors: {form.errors}, shuttle={self.shuttle}, pk={self.shuttle.pk}"
         assert form.cleaned_data["name"] == "Test Project"
         assert form.cleaned_data["description"] == "This is a test project"
         assert form.cleaned_data["shuttle"] == self.shuttle
