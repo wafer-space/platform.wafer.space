@@ -7,26 +7,11 @@
 <p class="mb-2">
   <strong>Status:</strong>
   {# Status badge #}
-  {% if check.status == 'finished' %}
-    {# FINISHED has special display logic based on manufacturability #}
-    {% if check.is_manufacturable %}
-      {% if check.warnings %}
-        <span class="badge bg-warning text-dark">
-          <i class="bi bi-exclamation-triangle"></i> Manufacturable with Warnings
-        </span>
-      {% else %}
-        <span class="badge bg-success">
-          <i class="bi bi-check-circle"></i> Manufacturable - Clean
-        </span>
-      {% endif %}
-    {% else %}
-      <span class="badge bg-danger">
-        <i class="bi bi-x-circle"></i> Not Manufacturable
-      </span>
-    {% endif %}
-  {% else %}
-    {# All other statuses use the status_badge_html method #}
-    {{ check.status_badge_html|safe }}
+  {{ check.status_badge_html }}
+  {% if check.status == 'finished' and check.is_manufacturable and check.warnings %}
+    <span class="badge bg-warning text-dark ms-1">
+      <i class="bi bi-exclamation-triangle"></i> With Warnings
+    </span>
   {% endif %}
   {# Cancel button for in-progress checks #}
   {% if check.is_cancellable %}

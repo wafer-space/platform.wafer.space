@@ -9,21 +9,7 @@
       {# Manufacturability check status badge (most relevant) #}
       {% with check=file.latest_manufacturability_check %}
         {% if check %}
-          {% if check.status == 'finished' %}
-            {# FINISHED status has special display based on manufacturability #}
-            {% if check.is_manufacturable %}
-              <span class="badge bg-success">
-                <i class="bi bi-check-circle"></i> Manufacturable
-              </span>
-            {% else %}
-              <span class="badge bg-danger">
-                <i class="bi bi-x-circle"></i> Not Manufacturable
-              </span>
-            {% endif %}
-          {% else %}
-            {# All other statuses use the standard badge HTML #}
-            {{ check.status_badge_html }}
-          {% endif %}
+          {{ check.status_badge_html }}
         {% endif %}
       {% endwith %}
       {# Hash verification badge #}
