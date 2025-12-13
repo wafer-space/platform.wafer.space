@@ -260,11 +260,9 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.user = user
-        # Set current user on instance for model validation
-        # (Django's ModelForm validates model during is_valid())
-        if hasattr(self.instance, "_current_user"):
-            pass  # Already set
-        self.instance._current_user = user  # noqa: SLF001 (model validation)
+        # Set current user on instance early for model validation
+        # (Django's ModelForm validates model during is_valid(), before save())
+        self.instance._current_user = user  # noqa: SLF001
         self._configure_fields()
         self._set_defaults()
 
