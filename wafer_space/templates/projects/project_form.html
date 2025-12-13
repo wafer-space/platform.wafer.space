@@ -22,48 +22,55 @@
             Create New Project
           {% endif %}
         </h2>
-        {% if is_limited_form %}
-          <div class="alert alert-info" role="alert">
-            <i class="bi bi-info-circle"></i>
-            You can edit visibility settings for your project. Contact staff if you need to change other details.
-          </div>
-        {% endif %}
         <form method="post">
           {% csrf_token %}
-          {# Project Details section - fields users can edit #}
+          {# Section 1: Core Fields (Manufacturing Configuration) #}
+          <div class="card mb-3 {% if not is_new and not request.user.is_staff %}border-secondary{% elif request.user.is_staff and not is_new %}border-warning{% endif %}">
+            <div class="card-header {% if request.user.is_staff and not is_new %}bg-warning bg-opacity-25{% endif %}">
+              <h6 class="mb-0">
+                {% if request.user.is_staff and not is_new %}
+                  <i class="bi bi-shield-lock"></i>
+                {% endif %}
+                Manufacturing Configuration
+              </h6>
+            </div>
+            <div class="card-body">
+              {% if is_new %}
+                <div class="alert alert-info">
+                  <i class="bi bi-info-circle"></i>
+                  These settings <strong>cannot be changed</strong> after project creation.
+                </div>
+              {% elif request.user.is_staff %}
+                <div class="alert alert-warning">
+                  <i class="bi bi-exclamation-triangle"></i>
+                  <strong>Staff only:</strong> Changing these fields may affect manufacturing.
+                </div>
+              {% else %}
+                <div class="alert alert-secondary">
+                  <i class="bi bi-lock"></i>
+                  These settings are locked. Contact staff to modify.
+                </div>
+              {% endif %}
+              {{ form.shuttle|as_crispy_field }}
+              {{ form.project_id|as_crispy_field }}
+              {{ form.slot_size|as_crispy_field }}
+            </div>
+          </div>
+          {# Section 2: User Fields (Project Details) #}
           <div class="card mb-3">
             <div class="card-header">
               <h6 class="mb-0">Project Details</h6>
             </div>
             <div class="card-body">
-              {% if form.name %}{{ form.name|as_crispy_field }}{% endif %}
-              {% if form.description %}{{ form.description|as_crispy_field }}{% endif %}
-              {% if form.is_public %}{{ form.is_public|as_crispy_field }}{% endif %}
-              {% if form.repository_url %}{{ form.repository_url|as_crispy_field }}{% endif %}
-              {% if form.license_type %}{{ form.license_type|as_crispy_field }}{% endif %}
-              {% if form.other_license_spdx_id %}{{ form.other_license_spdx_id|as_crispy_field }}{% endif %}
-              {% if form.proprietary_terms_url %}{{ form.proprietary_terms_url|as_crispy_field }}{% endif %}
+              {{ form.name|as_crispy_field }}
+              {{ form.description|as_crispy_field }}
+              {{ form.is_public|as_crispy_field }}
+              {{ form.repository_url|as_crispy_field }}
+              {{ form.license_type|as_crispy_field }}
+              {{ form.other_license_spdx_id|as_crispy_field }}
+              {{ form.proprietary_terms_url|as_crispy_field }}
             </div>
           </div>
-          {# Staff Only section - immutable project info #}
-          {% if request.user.is_staff and form.shuttle %}
-            <div class="card mb-3 border-warning">
-              <div class="card-header bg-warning bg-opacity-25">
-                <h6 class="mb-0">
-                  <i class="bi bi-shield-lock"></i> Staff Only
-                </h6>
-              </div>
-              <div class="card-body">
-                <div class="alert alert-warning mb-3">
-                  <i class="bi bi-exclamation-triangle"></i>
-                  <strong>Warning:</strong> These fields affect manufacturing and should only be changed by staff.
-                </div>
-                {{ form.shuttle|as_crispy_field }}
-                {{ form.project_id|as_crispy_field }}
-                {{ form.slot_size|as_crispy_field }}
-              </div>
-            </div>
-          {% endif %}
           <div class="d-flex gap-2 mt-3">
             <button type="submit" class="btn btn-primary">
               {% if object %}

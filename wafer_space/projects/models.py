@@ -4,6 +4,7 @@ import urllib.parse
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 from typing import ClassVar
 
 from django.conf import settings
@@ -107,6 +108,18 @@ class Project(models.Model):
     - API requests: Use `id` (pk) as the identifier
     - User-facing displays: Use `project_id` or `full_id`
     - Manufacturing labels: Use `full_id`
+
+    Field Immutability
+    ------------------
+    Fields are organized into three groups:
+
+    - **System fields**: Managed by the system, not shown in forms
+    - **Core fields**: Set at creation, immutable after (except by staff)
+    - **User fields**: Always editable by project owner
+
+    Core field immutability is enforced in clean() following Django's
+    recommended pattern of using from_db() to track original values.
+    See: https://docs.djangoproject.com/en/5.2/ref/models/instances/
     """
 
     class Status(models.TextChoices):
@@ -119,6 +132,38 @@ class Project(models.Model):
         IN_PRODUCTION = "production", "In Production"
         COMPLETED = "completed", "Completed"
         CANCELLED = "cancelled", "Cancelled"
+
+    # Field groups for form handling and immutability validation.
+    # See class docstring "Field Immutability" section for details.
+    SYSTEM_FIELDS = frozenset(
+        {
+            "id",
+            "user",
+            "status",
+            "created_at",
+            "updated_at",
+            "submitted_at",
+            "submitted_file",
+            "proprietary_terms_cached",
+            "proprietary_terms_cached_at",
+        }
+    )
+    CORE_FIELDS = frozenset({"shuttle", "project_id", "slot_size"})
+    USER_FIELDS = frozenset(
+        {
+            "name",
+            "description",
+            "is_public",
+            "repository_url",
+            "license_type",
+            "other_license_spdx_id",
+            "proprietary_terms_url",
+        }
+    )
+
+    # Instance attributes for immutability validation (set by from_db and form.save)
+    _loaded_values: dict[str, Any]
+    _current_user: Any  # User instance passed from form for validation
 
     # See class docstring for explanation of different project identifiers
     id = models.UUIDField(
@@ -247,6 +292,71 @@ class Project(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.user.username})"
+
+    def save(self, **kwargs):
+        """Save model, ensuring validation runs first."""
+        self.full_clean()
+        super().save(**kwargs)
+
+    def clean(self):
+        """Validate model, including core field immutability.
+
+        Core fields (shuttle, project_id, slot_size) cannot be modified
+        after creation except by staff users.
+        """
+        super().clean()
+        if not self._state.adding:
+            self._validate_core_fields_immutable()
+
+    @classmethod
+    def from_db(cls, db, field_names, values):
+        """Capture original field values when loading from database.
+
+        This follows Django's recommended pattern for tracking field changes
+        to enforce immutability of CORE_FIELDS after creation.
+        See: https://docs.djangoproject.com/en/5.2/ref/models/instances/
+        """
+        instance = super().from_db(db, field_names, values)
+        instance._loaded_values = dict(  # noqa: SLF001 (Django pattern)
+            zip(field_names, values, strict=False)
+        )
+        return instance
+
+    def _validate_core_fields_immutable(self):
+        """Raise ValidationError if non-staff user modifies core fields.
+
+        Called by clean() for existing instances. Compares current values
+        against _loaded_values captured by from_db().
+        """
+        # Staff can modify anything
+        current_user = getattr(self, "_current_user", None)
+        if current_user and current_user.is_staff:
+            return
+
+        loaded = getattr(self, "_loaded_values", {})
+        if not loaded:
+            return  # No loaded values means we can't validate
+
+        changed = []
+        for field in self.CORE_FIELDS:
+            if field not in loaded:
+                continue
+            # Handle ForeignKey fields by comparing IDs
+            if field == "shuttle":
+                old_value = loaded.get("shuttle_id")
+                new_value = self.shuttle_id
+            else:
+                old_value = loaded.get(field)
+                new_value = getattr(self, field)
+            if old_value != new_value:
+                changed.append(field)
+
+        if changed:
+            msg = (
+                f"Cannot modify {', '.join(changed)} after project creation. "
+                "Contact staff for assistance."
+            )
+            raise ValidationError(msg)
 
     # Derived manufacturability properties (from latest check on submitted_file)
     @property

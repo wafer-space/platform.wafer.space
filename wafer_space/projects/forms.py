@@ -130,12 +130,20 @@ class LicenseValidationMixin:
             instance.proprietary_terms_cached_at = None
 
 
-class ProjectUserEditForm(LicenseValidationMixin, forms.ModelForm):
-    """Base form for editing project details.
+class ProjectForm(LicenseValidationMixin, forms.ModelForm):
+    """Unified form for creating and editing projects.
 
-    This form contains all user-editable fields: name, description, visibility,
-    repository URL, and license settings. ProjectStaffEditForm extends this to add
-    staff-only fields (shuttle, project_id, slot_size).
+    Adapts field availability based on:
+    - Whether this is a new project (creation) or existing (edit)
+    - Whether the user is staff
+
+    Core fields (shuttle, project_id, slot_size):
+    - Editable during creation
+    - Editable by staff on existing projects
+    - Disabled for non-staff on existing projects
+
+    User fields (name, description, etc.):
+    - Always editable by project owner
     """
 
     # Override license_type to make it not required (model has default)
@@ -145,85 +153,6 @@ class ProjectUserEditForm(LicenseValidationMixin, forms.ModelForm):
         widget=forms.Select(attrs={"class": "form-control", "id": "id_license_type"}),
         help_text="License under which this project is released",
     )
-
-    class Meta:
-        model = Project
-        fields = [
-            "name",
-            "description",
-            "is_public",
-            "repository_url",
-            "license_type",
-            "other_license_spdx_id",
-            "proprietary_terms_url",
-        ]
-        widgets = {
-            "name": forms.TextInput(
-                attrs={
-                    "class": "form-control",
-                    "placeholder": "My Chip Design Project",
-                },
-            ),
-            "description": forms.Textarea(
-                attrs={
-                    "class": "form-control",
-                    "rows": 4,
-                    "placeholder": "Description of your design project...",
-                },
-            ),
-            "is_public": forms.CheckboxInput(attrs={"class": "form-check-input"}),
-            "repository_url": forms.URLInput(
-                attrs={
-                    "class": "form-control",
-                    "placeholder": "https://github.com/username/repo",
-                },
-            ),
-            "other_license_spdx_id": forms.TextInput(
-                attrs={
-                    "class": "form-control",
-                    "placeholder": "GPL-3.0-only",
-                },
-            ),
-            "proprietary_terms_url": forms.URLInput(
-                attrs={
-                    "class": "form-control",
-                    "placeholder": "https://example.com/license-terms",
-                },
-            ),
-        }
-        help_texts = {
-            "name": "A descriptive name for your project",
-            "description": "Optional details about your design",
-            "is_public": "Make this design publicly visible on the platform",
-            "repository_url": "URL to the project's source repository",
-            "other_license_spdx_id": (
-                "SPDX identifier (e.g., GPL-3.0-only, LGPL-2.1-or-later)"
-            ),
-            "proprietary_terms_url": "URL to your proprietary license terms",
-        }
-
-    def clean(self):
-        """Validate license fields and cache proprietary terms."""
-        cleaned_data = super().clean()
-        if cleaned_data is None:
-            return cleaned_data
-        return self._validate_license_fields(cleaned_data)
-
-    def save(self, commit=True):  # noqa: FBT002
-        """Save form and update cached proprietary terms."""
-        instance = super().save(commit=False)
-        self._save_license_fields(instance)
-        if commit:
-            instance.save()
-        return instance
-
-
-class ProjectStaffEditForm(ProjectUserEditForm):
-    """Staff form for creating and editing projects.
-
-    Extends ProjectUserEditForm with staff-only fields: shuttle, project_id,
-    and slot_size. Used for project creation and staff editing.
-    """
 
     shuttle = forms.ModelChoiceField(
         queryset=Shuttle.objects.filter(
@@ -260,55 +189,120 @@ class ProjectStaffEditForm(ProjectUserEditForm):
         help_text=f"{PROJECT_ID_LENGTH}-character alphanumeric identifier (A-Z, 0-9)",
     )
 
-    class Meta(ProjectUserEditForm.Meta):
-        # Extend parent fields with staff-only fields
+    class Meta:
+        model = Project
         fields = [
-            "name",
-            "description",
+            # Core fields (immutable after creation except by staff)
             "shuttle",
             "project_id",
             "slot_size",
+            # User fields (always editable)
+            "name",
+            "description",
             "is_public",
             "repository_url",
             "license_type",
             "other_license_spdx_id",
             "proprietary_terms_url",
         ]
-        # Extend parent widgets with slot_size widget
         widgets = {
-            **ProjectUserEditForm.Meta.widgets,
+            "name": forms.TextInput(
+                attrs={
+                    "class": "form-control",
+                    "placeholder": "My Chip Design Project",
+                },
+            ),
+            "description": forms.Textarea(
+                attrs={
+                    "class": "form-control",
+                    "rows": 4,
+                    "placeholder": "Description of your design project...",
+                },
+            ),
             "slot_size": forms.Select(
                 attrs={
                     "class": "form-control",
                     "id": "id_slot_size",
                 },
             ),
+            "is_public": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+            "repository_url": forms.URLInput(
+                attrs={
+                    "class": "form-control",
+                    "placeholder": "https://github.com/username/repo",
+                },
+            ),
+            "other_license_spdx_id": forms.TextInput(
+                attrs={
+                    "class": "form-control",
+                    "placeholder": "GPL-3.0-only",
+                },
+            ),
+            "proprietary_terms_url": forms.URLInput(
+                attrs={
+                    "class": "form-control",
+                    "placeholder": "https://example.com/license-terms",
+                },
+            ),
         }
-        # Extend parent help_texts with slot_size help
         help_texts = {
-            **ProjectUserEditForm.Meta.help_texts,
+            "name": "A descriptive name for your project",
+            "description": "Optional details about your design",
             "slot_size": "Select the die slot size for your design",
+            "is_public": "Make this design publicly visible on the platform",
+            "repository_url": "URL to the project's source repository",
+            "other_license_spdx_id": (
+                "SPDX identifier (e.g., GPL-3.0-only, LGPL-2.1-or-later)"
+            ),
+            "proprietary_terms_url": "URL to your proprietary license terms",
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.user = user
+        # Set current user on instance for model validation
+        # (Django's ModelForm validates model during is_valid())
+        if hasattr(self.instance, "_current_user"):
+            pass  # Already set
+        self.instance._current_user = user  # noqa: SLF001 (model validation)
+        self._configure_fields()
+        self._set_defaults()
+
+    def _configure_fields(self):
+        """Configure field editability based on user and instance state.
+
+        Core fields are disabled for non-staff users editing existing projects.
+        """
+        is_new = self.instance._state.adding  # noqa: SLF001 (Django pattern)
+        is_staff = self.user and self.user.is_staff
+
+        for field_name in Project.CORE_FIELDS:
+            if field_name not in self.fields:
+                continue
+
+            if is_new or is_staff:
+                # Editable - keep field as-is
+                pass
+            else:
+                # Disable for non-staff editing existing project
+                self.fields[field_name].disabled = True
+
+    def _set_defaults(self):
+        """Set default values for new projects."""
+        if not self.instance._state.adding:  # noqa: SLF001 (Django pattern)
+            return
 
         # Set default shuttle to oldest open shuttle (by created_at)
-        # Use _state.adding because UUID pk is auto-generated for unsaved instances
-        is_new_instance = getattr(self.instance, "_state", None)
-        if is_new_instance and is_new_instance.adding:
-            default_shuttle = (
-                Shuttle.objects.filter(
-                    status=Shuttle.Status.OPEN,
-                )
-                .order_by("created_at")
-                .first()
-            )
-            if default_shuttle:
-                self.fields["shuttle"].initial = default_shuttle
+        default_shuttle = (
+            Shuttle.objects.filter(status=Shuttle.Status.OPEN)
+            .order_by("created_at")
+            .first()
+        )
+        if default_shuttle:
+            self.fields["shuttle"].initial = default_shuttle
 
-            # Set default license_type for new projects
-            self.fields["license_type"].initial = LicenseType.PROPRIETARY
+        # Set default license_type for new projects
+        self.fields["license_type"].initial = LicenseType.PROPRIETARY
 
         # Use full labels for slot_size dropdown (includes dimensions)
         slot_size_field = self.fields["slot_size"]
@@ -316,6 +310,13 @@ class ProjectStaffEditForm(ProjectUserEditForm):
             slot_size_field.choices = [
                 (size.value, size.full_label) for size in SlotSize
             ]
+
+    def clean(self):
+        """Validate license fields and cache proprietary terms."""
+        cleaned_data = super().clean()
+        if cleaned_data is None:
+            return cleaned_data
+        return self._validate_license_fields(cleaned_data)
 
     def clean_project_id(self):
         """Validate and normalize project_id field."""
@@ -353,6 +354,14 @@ class ProjectStaffEditForm(ProjectUserEditForm):
                 raise ValidationError(msg)
 
         return project_id
+
+    def save(self, commit=True):  # noqa: FBT002
+        """Save form and update cached proprietary terms."""
+        instance = super().save(commit=False)
+        self._save_license_fields(instance)
+        if commit:
+            instance.save()
+        return instance
 
 
 class ProjectFileURLSubmitForm(forms.Form):

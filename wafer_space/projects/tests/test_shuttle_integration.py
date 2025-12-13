@@ -1,7 +1,7 @@
 """Tests for Project shuttle integration properties and methods."""
 
 import pytest
-from django.db import IntegrityError
+from django.core.exceptions import ValidationError
 from django.test import TestCase
 
 from wafer_space.core.enums import SlotSize
@@ -108,7 +108,11 @@ class TestProjectShuttleProperties(TestCase):
         assert positions.count() == 0
 
     def test_unique_constraint_on_shuttle_and_project_id(self):
-        """Test that (shuttle, project_id) must be unique."""
+        """Test that (shuttle, project_id) must be unique.
+
+        Django's full_clean() validates uniqueness before saving, so a
+        ValidationError is raised instead of IntegrityError.
+        """
         # Create first project
         Project.objects.create(
             user=self.user,
@@ -118,7 +122,7 @@ class TestProjectShuttleProperties(TestCase):
         )
 
         # Try to create second project with same shuttle and project_id
-        with pytest.raises(IntegrityError):
+        with pytest.raises(ValidationError):
             Project.objects.create(
                 user=self.user,
                 name="Second Project",
