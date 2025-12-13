@@ -371,7 +371,7 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
 
         return project_id
 
-    def save(self, commit: bool = True) -> Project:
+    def save(self, commit: bool = True) -> Project:  # noqa: FBT001, FBT002
         """Save form and update cached proprietary terms."""
         instance = super().save(commit=False)
         self._save_license_fields(instance)
