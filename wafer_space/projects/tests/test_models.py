@@ -3022,9 +3022,14 @@ class TestProjectCoreFieldImmutability:
 
         If an existing instance doesn't have _loaded_values, it means it wasn't
         loaded via QuerySet - this is a programming error that should fail loudly.
+        This can happen with bulk_create(), raw SQL, or manual construction.
         """
-        # Create project via factory (doesn't go through from_db, no _loaded_values)
+        # Create project via factory (save() now sets _loaded_values)
         project = ProjectFactory(user=user, shuttle=shuttle)
+
+        # Manually delete _loaded_values to simulate edge case
+        # (e.g., bulk_create, raw SQL, or manual object construction)
+        del project._loaded_values  # noqa: SLF001
 
         # Manually set _current_user to non-staff
         project._current_user = user  # noqa: SLF001
