@@ -296,10 +296,10 @@ class Project(models.Model):
     def __str__(self):
         return f"{self.name} ({self.user.username})"
 
-    def save(self, **kwargs):
+    def save(self, *args, **kwargs):
         """Save model, ensuring validation runs first."""
         self.full_clean()
-        super().save(**kwargs)
+        super().save(*args, **kwargs)
 
     def clean(self):
         """Validate model, including core field immutability.

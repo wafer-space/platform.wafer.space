@@ -108,13 +108,17 @@ class LicenseValidationMixin:
         # Check if proprietary_terms_url has changed (for existing instances)
         url_changed = False
         if instance.pk:
-            try:
-                old_instance = Project.objects.get(pk=instance.pk)
-                url_changed = (
-                    old_instance.proprietary_terms_url != instance.proprietary_terms_url
+            # Use _loaded_values captured by from_db() instead of extra DB query.
+            # If _loaded_values is missing, validation should have already failed.
+            loaded = getattr(instance, "_loaded_values", None)
+            if loaded is None:
+                msg = (
+                    f"Cannot check URL change for project {instance.pk}: "
+                    "instance was not loaded via QuerySet (missing _loaded_values)."
                 )
-            except Project.DoesNotExist:
-                pass
+                raise RuntimeError(msg)
+            old_url = loaded.get("proprietary_terms_url", "")
+            url_changed = old_url != instance.proprietary_terms_url
 
         # Update cached terms if we fetched them during validation
         if self._proprietary_terms_content:
@@ -285,7 +289,7 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
 
         Core fields are disabled for non-staff users editing existing projects.
         """
-        is_new = self.instance._state.adding  # noqa: SLF001 (Django pattern)
+        is_new = self.instance.pk is None
         is_staff = self.user and self.user.is_staff
 
         for field_name in Project.CORE_FIELDS:
@@ -301,7 +305,7 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
 
     def _set_defaults(self):
         """Set default values for new projects."""
-        if not self.instance._state.adding:  # noqa: SLF001 (Django pattern)
+        if self.instance.pk is not None:
             return
 
         # Set default shuttle to oldest open shuttle (by created_at)
@@ -367,7 +371,7 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
 
         return project_id
 
-    def save(self, commit=True):  # noqa: FBT002
+    def save(self, commit: bool = True) -> Project:
         """Save form and update cached proprietary terms."""
         instance = super().save(commit=False)
         self._save_license_fields(instance)

@@ -139,6 +139,11 @@
       let validationTimeout;
 
       function validateProjectId() {
+        // Skip validation for disabled fields (editing existing project as non-staff)
+        if (projectIdField.disabled) {
+          return;
+        }
+
         clearTimeout(validationTimeout);
 
         const projectId = projectIdField.value;
