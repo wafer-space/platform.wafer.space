@@ -2007,11 +2007,15 @@ class TestProjectSlotSize(TestCase):
             == "0.5×0.5 - Quarter Slot (1.94mm × 2.535mm = 4.92mm²)"
         )
 
-    def test_slot_size_is_immutable_after_creation(self):
-        """Test that slot_size cannot be updated after creation (core field).
+    def test_slot_size_is_immutable_fail_closed(self):
+        """Test fail-closed validation when _current_user is not set.
 
-        Core fields (shuttle, project_id, slot_size) are immutable after creation
-        unless modified by staff users.
+        When _current_user is not set (e.g., background job, migration), the
+        validation defaults to blocking core field changes. This is the
+        fail-closed security behavior.
+
+        Note: For tests of the normal non-staff path with _current_user set,
+        see TestProjectCoreFieldImmutability.test_non_staff_cannot_modify_slot_size
         """
         project = Project.objects.create(
             user=self.user,
@@ -2019,7 +2023,8 @@ class TestProjectSlotSize(TestCase):
             slot_size=SlotSize.FULL,
         )
 
-        # Re-fetch from database to trigger fail-closed validation
+        # Re-fetch from database (triggers from_db, sets _loaded_values)
+        # Note: _current_user is NOT set - testing fail-closed behavior
         project = Project.objects.get(pk=project.pk)
         project.slot_size = SlotSize.QUARTER
 
@@ -2900,6 +2905,25 @@ class TestProjectCoreFieldImmutability:
         assert "slot_size" in loaded_values
         assert "shuttle_id" in loaded_values
         assert loaded_values["project_id"] == "TEST"
+
+    def test_fail_closed_blocks_modification_without_current_user(self, project):
+        """Fail-closed: no _current_user blocks core field changes.
+
+        When _current_user is not set (e.g., background job, migration),
+        validation defaults to blocking all core field changes for security.
+        This is different from the non-staff path which explicitly sets
+        _current_user to a non-staff user.
+        """
+        loaded_project = Project.objects.get(pk=project.pk)
+        # Explicitly NOT setting _current_user to test fail-closed behavior
+
+        loaded_project.project_id = "FAIL"
+
+        with pytest.raises(ValidationError) as exc_info:
+            loaded_project.full_clean()
+
+        assert "project_id" in str(exc_info.value)
+        assert "Cannot modify" in str(exc_info.value)
 
     def test_non_staff_cannot_modify_project_id(self, project, user):
         """Non-staff user cannot modify project_id after creation."""
