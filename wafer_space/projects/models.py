@@ -300,6 +300,15 @@ class Project(models.Model):
         """Save model, ensuring validation runs first."""
         self.full_clean()
         super().save(*args, **kwargs)
+        # Capture current values for subsequent validation.
+        # from_db() only runs when loading from database, but we also need
+        # _loaded_values after create (for factories) and manual save().
+        self._loaded_values = {
+            "shuttle_id": self.shuttle_id,
+            "project_id": self.project_id,
+            "slot_size": self.slot_size,
+            "proprietary_terms_url": self.proprietary_terms_url,
+        }
 
     def clean(self):
         """Validate model, including core field immutability.
