@@ -28,9 +28,7 @@
           <div class="card mb-3 {% if not is_new and not request.user.is_staff %}border-secondary{% elif request.user.is_staff and not is_new %}border-warning{% endif %}">
             <div class="card-header {% if request.user.is_staff and not is_new %}bg-warning bg-opacity-25{% endif %}">
               <h6 class="mb-0">
-                {% if request.user.is_staff and not is_new %}
-                  <i class="bi bi-shield-lock"></i>
-                {% endif %}
+                {% if request.user.is_staff and not is_new %}<i class="bi bi-shield-lock"></i>{% endif %}
                 Manufacturing Configuration
               </h6>
             </div>
