@@ -66,29 +66,28 @@ The manufacturability checking system uses a **polling-based state machine** arc
 ### State Flow
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────┐
-│                                                                         │
-│    PENDING ──► DISPATCHING ──► STARTING ──► RUNNING ──► ANALYZING      │
-│       │            │              │            │             │          │
-│       │            │              │            │             │          │
-│       │            ▼              ▼            ▼             ▼          │
-│       │         (pull         (create      (poll        (parse         │
-│       │          image)       container)   logs)        results)       │
-│       │                                                     │          │
-│       │                                                     ▼          │
-│       │                                                 FINISHED       │
-│       │                                                     │          │
-│       │      ┌──────────────────────────────────────────────┘          │
-│       │      │                                                         │
-│       │      ▼                                                         │
-│       └──► ERROR ◄─────────────────────────────────────────────────────┤
-│              │                                                         │
-│              ▼                                                         │
-│           (retry)                                                      │
+┌────────────────────────────────────────────────────────────────────────┐
 │                                                                        │
-│    CANCELLING ──► CANCELLED                                            │
-│                                                                        │
-└─────────────────────────────────────────────────────────────────────────┘
+│  PENDING ──► DISPATCHING ──► STARTING ──► RUNNING ──► ANALYZING       │
+│     │            │              │            │             │           │
+│     │            ▼              ▼            ▼             ▼           │
+│     │         (pull         (create      (poll        (parse          │
+│     │          image)       container)   logs)        results)        │
+│     │                                                     │           │
+│     │                                                     ▼           │
+│     │                                                 FINISHED        │
+│     │                                                     │           │
+│     │      ┌──────────────────────────────────────────────┘           │
+│     │      │                                                          │
+│     │      ▼                                                          │
+│     └──► ERROR ◄──────────────────────────────────────────────────────┤
+│            │                                                          │
+│            ▼                                                          │
+│         (retry)                                                       │
+│                                                                       │
+│  CANCELLING ──► CANCELLED                                             │
+│                                                                       │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Two Task Types
