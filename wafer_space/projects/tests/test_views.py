@@ -1678,14 +1678,12 @@ class TestProjectDetailSlotVisibility:
     def test_regular_user_does_not_see_slots(self, client):
         """Regular users should not see slot assignments."""
         user = UserFactory(is_staff=False)
-        project = ProjectFactory(user=user)
-        client.force_login(user)
-
         shuttle = Shuttle.objects.create(
             name="G811", description="Test shuttle", status=Shuttle.Status.OPEN
         )
-        project.shuttle = shuttle
-        project.save()
+        # Create project with shuttle already assigned (core fields are immutable)
+        project = ProjectFactory(user=user, shuttle=shuttle)
+        client.force_login(user)
 
         slot = ShuttleSlot.objects.create(
             shuttle=shuttle,

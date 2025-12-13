@@ -258,10 +258,24 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
         }
 
     def __init__(self, *args, user=None, **kwargs):
+        """Initialize form with user context for field configuration.
+
+        Args:
+            user: The user submitting the form. Required for determining
+                which fields should be editable and for model-level
+                immutability validation.
+
+        Note:
+            We set `instance._current_user` immediately after super().__init__()
+            because Django's ModelForm calls model.full_clean() during is_valid(),
+            BEFORE save() is called. The model's clean() method needs to know
+            the current user to allow staff to modify core fields while blocking
+            non-staff users. Without this early assignment, model validation
+            would fail for staff users editing core fields.
+        """
         super().__init__(*args, **kwargs)
         self.user = user
-        # Set current user on instance early for model validation
-        # (Django's ModelForm validates model during is_valid(), before save())
+        # Must set before is_valid() - see docstring above
         self.instance._current_user = user  # noqa: SLF001
         self._configure_fields()
         self._set_defaults()

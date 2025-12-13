@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import urllib.parse
 import uuid
 from dataclasses import dataclass
@@ -18,6 +19,8 @@ from simple_history.models import HistoricalRecords
 from wafer_space.core.enums import SlotSize
 from wafer_space.projects.exceptions import InvalidStateTransitionError
 from wafer_space.projects.storage import ProjectFileStorage
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -327,27 +330,63 @@ class Project(models.Model):
 
         Called by clean() for existing instances. Compares current values
         against _loaded_values captured by from_db().
+
+        Uses fail-closed approach: if we can't determine the user is staff,
+        modifications to core fields are blocked.
         """
         # Staff can modify anything
         current_user = getattr(self, "_current_user", None)
         if current_user and current_user.is_staff:
+            logger.debug(
+                "Skipping core field validation for staff user %s on project %s",
+                current_user,
+                self.pk,
+            )
             return
+
+        # Fail-closed: no user means no modifications allowed
+        if current_user is None:
+            logger.debug(
+                "Core field validation for project %s: no _current_user set "
+                "(treating as non-staff, modifications blocked)",
+                self.pk,
+            )
 
         loaded = getattr(self, "_loaded_values", {})
         if not loaded:
-            return  # No loaded values means we can't validate
+            # Fail-closed: if no loaded values, fetch from DB to compare
+            # This handles cases where instance bypassed from_db() (e.g., admin)
+            logger.debug(
+                "No _loaded_values for project %s, fetching from database "
+                "for fail-closed validation",
+                self.pk,
+            )
+            try:
+                db_instance = Project.objects.only(*self.CORE_FIELDS).get(pk=self.pk)
+                loaded = {
+                    "project_id": db_instance.project_id,
+                    "slot_size": db_instance.slot_size,
+                    "shuttle_id": db_instance.shuttle_id,
+                }
+            except Project.DoesNotExist:
+                # Instance doesn't exist in DB yet, nothing to validate
+                return
 
         changed = []
         for field in self.CORE_FIELDS:
-            if field not in loaded:
-                continue
             # Handle ForeignKey fields by comparing IDs
+            # (loaded values use field_id for FK fields)
             if field == "shuttle":
-                old_value = loaded.get("shuttle_id")
+                loaded_key = "shuttle_id"
+                old_value = loaded.get(loaded_key)
                 new_value = self.shuttle_id
             else:
-                old_value = loaded.get(field)
+                loaded_key = field
+                old_value = loaded.get(loaded_key)
                 new_value = getattr(self, field)
+
+            if loaded_key not in loaded:
+                continue
             if old_value != new_value:
                 changed.append(field)
 

@@ -4,7 +4,7 @@
 {% load crispy_forms_tags %}
 
 {% block title %}
-  {% if object %}
+  {% if not is_new %}
     Edit Project
   {% else %}
     Create Project
@@ -16,7 +16,7 @@
       <div class="col-sm-12">
         {% include "projects/_admin_warning_banner.html" %}
         <h2>
-          {% if object %}
+          {% if not is_new %}
             Edit Project
           {% else %}
             Create New Project
@@ -71,14 +71,14 @@
           </div>
           <div class="d-flex gap-2 mt-3">
             <button type="submit" class="btn btn-primary">
-              {% if object %}
+              {% if not is_new %}
                 <i class="bi bi-save"></i> Save Changes
               {% else %}
                 <i class="bi bi-plus-circle"></i> Create Project
               {% endif %}
             </button>
             <a class="btn btn-secondary"
-               href="{% if object %}{% url 'projects:detail' pk=object.pk %}{% else %}{% url 'projects:list' %}{% endif %}"
+               href="{% if not is_new %}{% url 'projects:detail' pk=object.pk %}{% else %}{% url 'projects:list' %}{% endif %}"
                role="button">
               <i class="bi bi-x-circle"></i> Cancel
             </a>
