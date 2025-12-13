@@ -19,31 +19,31 @@ Queues follow a structured naming pattern: `<protocol>:<mode>:<function>`
 
 ### Protocol (Network/System Access)
 
-| Protocol | Description | Example Use |
-|----------|-------------|-------------|
-| `none` | No external access needed | Orchestration, database-only tasks |
-| `http` | HTTP/HTTPS network access | File downloads, API calls |
-| `dock` | Docker daemon access | Container operations |
-| `mail` | Email sending capability | SMTP operations |
+| Protocol | Description                | Example Use                        |
+|----------|----------------------------|------------------------------------|
+| `none`   | No external access needed  | Orchestration, database-only tasks |
+| `http`   | HTTP/HTTPS network access  | File downloads, API calls          |
+| `dock`   | Docker daemon access       | Container operations               |
+| `mail`   | Email sending capability   | SMTP operations                    |
 
 ### Mode (Read/Write)
 
-| Mode | Description |
-|------|-------------|
-| `ro` | Read-only operations (queries, polling, monitoring) |
-| `rw` | Read-write operations (creates files, modifies state) |
+| Mode | Description                                          |
+|------|------------------------------------------------------|
+| `ro` | Read-only operations (queries, polling, monitoring)  |
+| `rw` | Read-write operations (creates files, modifies state)|
 
 ### Function (Purpose)
 
-| Function | Description |
-|----------|-------------|
-| `default` | General-purpose tasks |
-| `downloads` | File download operations |
-| `checks-orch` | Manufacturability check orchestration (periodic polling) |
-| `checks-fast` | Quick check operations (container start, status polling) |
-| `checks-slow` | Slow operations (Docker image pulls) |
-| `checks-save` | Check result persistence (file extraction, log parsing) |
-| `email` | Email sending |
+| Function       | Description                                              |
+|----------------|----------------------------------------------------------|
+| `default`      | General-purpose tasks                                    |
+| `downloads`    | File download operations                                 |
+| `checks-orch`  | Manufacturability check orchestration (periodic polling) |
+| `checks-fast`  | Quick check operations (container start, status polling) |
+| `checks-slow`  | Slow operations (Docker image pulls)                     |
+| `checks-save`  | Check result persistence (file extraction, log parsing)  |
+| `email`        | Email sending                                            |
 
 ### Queue Examples
 
@@ -66,28 +66,24 @@ The manufacturability checking system uses a **polling-based state machine** arc
 ### State Flow
 
 ```text
-┌────────────────────────────────────────────────────────────────────────┐
-│                                                                        │
-│  PENDING ──► DISPATCHING ──► STARTING ──► RUNNING ──► ANALYZING       │
-│     │            │              │            │             │           │
-│     │            ▼              ▼            ▼             ▼           │
-│     │         (pull         (create      (poll        (parse          │
-│     │          image)       container)   logs)        results)        │
-│     │                                                     │           │
-│     │                                                     ▼           │
-│     │                                                 FINISHED        │
-│     │                                                     │           │
-│     │      ┌──────────────────────────────────────────────┘           │
-│     │      │                                                          │
-│     │      ▼                                                          │
-│     └──► ERROR ◄──────────────────────────────────────────────────────┤
-│            │                                                          │
-│            ▼                                                          │
-│         (retry)                                                       │
-│                                                                       │
-│  CANCELLING ──► CANCELLED                                             │
-│                                                                       │
-└────────────────────────────────────────────────────────────────────────┘
+PENDING --> DISPATCHING --> STARTING --> RUNNING --> ANALYZING
+   |            |              |            |             |
+   |            v              v            v             v
+   |         (pull         (create      (poll        (parse
+   |          image)       container)   logs)        results)
+   |                                                     |
+   |                                                     v
+   |                                                 FINISHED
+   |                                                     |
+   |      +----------------------------------------------+
+   |      |
+   |      v
+   +---> ERROR <------ (any state can fail)
+            |
+            v
+         (retry)
+
+CANCELLING --> CANCELLED
 ```
 
 ### Two Task Types
@@ -153,25 +149,25 @@ Periodic tasks are configured in `config/settings/base.py`:
 
 ### Check Lifecycle (15-second intervals)
 
-| Task | Purpose |
-|------|---------|
-| `checks-create` | Create checks for verified downloads |
-| `checks-pending` | PENDING → DISPATCHING transition |
-| `checks-dispatching` | Queue `do_dispatching` work tasks |
-| `checks-starting` | Queue `do_starting` work tasks |
-| `checks-running` | Queue `do_running` work tasks |
-| `checks-analyzing` | Queue `do_analyzing` work tasks |
-| `checks-cancelling` | CANCELLING → CANCELLED transition |
+| Task                 | Purpose                              |
+|----------------------|--------------------------------------|
+| `checks-create`      | Create checks for verified downloads |
+| `checks-pending`     | PENDING → DISPATCHING transition     |
+| `checks-dispatching` | Queue `do_dispatching` work tasks    |
+| `checks-starting`    | Queue `do_starting` work tasks       |
+| `checks-running`     | Queue `do_running` work tasks        |
+| `checks-analyzing`   | Queue `do_analyzing` work tasks      |
+| `checks-cancelling`  | CANCELLING → CANCELLED transition    |
 
 ### Cleanup & Recovery (60-second intervals)
 
-| Task | Purpose |
-|------|---------|
-| `checks-retry` | Create retry checks for ERROR state |
-| `checks-cleanup-orphaned-docker` | Remove orphaned containers |
-| `checks-cleanup-stale-files` | Cancel checks on inactive files |
+| Task                                 | Purpose                               |
+|--------------------------------------|---------------------------------------|
+| `checks-retry`                       | Create retry checks for ERROR state   |
+| `checks-cleanup-orphaned-docker`     | Remove orphaned containers            |
+| `checks-cleanup-stale-files`         | Cancel checks on inactive files       |
 | `checks-cleanup-stale-pending-tasks` | Remove orphaned task tracking records |
-| `ensure-download-tasks-queued` | Recovery for orphaned downloads |
+| `ensure-download-tasks-queued`       | Recovery for orphaned downloads       |
 
 ---
 
@@ -218,13 +214,13 @@ def do_running(check: ManufacturabilityCheck) -> dict[str, Any]:
 
 Workers should be configured to consume specific queues based on their capabilities:
 
-| Worker Type | Queues | Requirements |
-|-------------|--------|--------------|
-| Default | `none:ro:*` | Database access only |
-| Downloads | `http:rw:downloads` | Network + filesystem |
-| Docker Fast | `dock:ro:checks-fast`, `dock:rw:checks-save` | Docker daemon |
-| Docker Slow | `dock:ro:checks-slow` | Docker daemon (image pulls) |
-| Email | `mail:ro:email` | SMTP access |
+| Worker Type | Queues                                       | Requirements              |
+|-------------|----------------------------------------------|---------------------------|
+| Default     | `none:ro:*`                                  | Database access only      |
+| Downloads   | `http:rw:downloads`                          | Network + filesystem      |
+| Docker Fast | `dock:ro:checks-fast`, `dock:rw:checks-save` | Docker daemon             |
+| Docker Slow | `dock:ro:checks-slow`                        | Docker daemon (image pulls)|
+| Email       | `mail:ro:email`                              | SMTP access               |
 
 ### Development (Procfile)
 
