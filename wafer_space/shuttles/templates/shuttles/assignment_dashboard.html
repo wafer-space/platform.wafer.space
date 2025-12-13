@@ -137,7 +137,7 @@
                 {# Sort order: Ready(0) < Failed(1) < Pending(2) - prioritizes actionable projects #}
                 <td data-sort-value="{% if project.is_manufacturable %}0{% elif project.is_manufacturable is None %}2{% else %}1{% endif %}">
                   {% with check=project.latest_manufacturability_check %}
-                    {% badge_precheck_combined check %}
+                    {% badge_check_status_and_version check %}
                   {% endwith %}
                 </td>
                 <td>

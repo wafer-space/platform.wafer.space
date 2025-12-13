@@ -1,4 +1,13 @@
-"""Template tags for precheck badge rendering."""
+"""Template tags for manufacturability check badges with version info.
+
+These tags render badges showing check status and/or container version information.
+For status-only badges without version info, use the model's status_badge_html property.
+
+Available tags:
+- badge_check_status: Status badge with small version indicator icon
+- badge_check_version: Version-only badge (shows container version used)
+- badge_check_status_and_version: Full badge with status and version details
+"""
 
 from __future__ import annotations
 
@@ -9,20 +18,24 @@ from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
+from wafer_space.projects.models import ManufacturabilityCheck
+
 if TYPE_CHECKING:
     from django.utils.safestring import SafeString
 
-    from wafer_space.projects.models import ManufacturabilityCheck
     from wafer_space.projects.models import PrecheckImageRevision
 
 register = template.Library()
 
 
 @register.simple_tag
-def badge_precheck_status(check: ManufacturabilityCheck | None) -> SafeString:
-    """Render precheck status badge with version indicator.
+def badge_check_status(check: ManufacturabilityCheck | None) -> SafeString:
+    """Render check status badge with version indicator icon.
 
-    Usage: {% badge_precheck_status check %}
+    Shows the check status (Running, Queued, Passed, Failed, etc.) with a small
+    cloud icon indicating whether the check used the latest container version.
+
+    Usage: {% badge_check_status check %}
     """
     if not check:
         return mark_safe(
@@ -45,10 +58,13 @@ def badge_precheck_status(check: ManufacturabilityCheck | None) -> SafeString:
 
 
 @register.simple_tag
-def badge_precheck_version(check: ManufacturabilityCheck | None) -> SafeString:
-    """Render precheck version-only badge.
+def badge_check_version(check: ManufacturabilityCheck | None) -> SafeString:
+    """Render version-only badge showing container version used.
 
-    Usage: {% badge_precheck_version check %}
+    Shows the precheck container version (e.g., "v1.2.3" or commit SHA) with
+    an icon indicating if it's the latest version. Links to GitHub commit if available.
+
+    Usage: {% badge_check_version check %}
     """
     if not check or not check.docker_image_digest:
         return mark_safe("")
@@ -84,10 +100,15 @@ def badge_precheck_version(check: ManufacturabilityCheck | None) -> SafeString:
 
 
 @register.simple_tag
-def badge_precheck_combined(check: ManufacturabilityCheck | None) -> SafeString:
-    """Render combined status + version badge.
+def badge_check_status_and_version(
+    check: ManufacturabilityCheck | None,
+) -> SafeString:
+    """Render combined badge with status and full version details.
 
-    Usage: {% badge_precheck_combined check %}
+    Shows check status followed by version string and indicator icon.
+    Example: "Passed | v1.2.3 ☁️"
+
+    Usage: {% badge_check_status_and_version check %}
     """
     if not check:
         return mark_safe(
@@ -124,38 +145,35 @@ def badge_precheck_combined(check: ManufacturabilityCheck | None) -> SafeString:
 
 # --- Helper functions ---
 
-# Status display mapping: status -> (icon, label, bg_class)
-_STATUS_DISPLAY_MAP: dict[str, tuple[str, str, str]] = {
-    "running": ("gear", "Running", "bg-primary"),
-    "analyzing": ("gear", "Running", "bg-primary"),
-    "pending": ("hourglass-split", "Queued", "bg-warning text-dark"),
-    "dispatching": ("hourglass-split", "Queued", "bg-warning text-dark"),
-    "starting": ("hourglass-split", "Queued", "bg-warning text-dark"),
-    "error": ("exclamation-circle", "Error", "bg-danger"),
-    "cancelling": ("slash-circle", "Cancelled", "bg-secondary"),
-    "cancelled": ("slash-circle", "Cancelled", "bg-secondary"),
-}
-
 
 def _get_status_display(
     check: ManufacturabilityCheck,
 ) -> tuple[str, str, str]:
     """Return (icon, label, bg_class) for check status.
 
-    Uses is_manufacturable for finished checks, status for others.
+    Uses model's _STATUS_METADATA for consistent status rendering.
+    For finished checks, shows pass/fail based on is_manufacturable.
     """
     # For finished checks, show pass/fail based on is_manufacturable
-    if check.status == "finished":
+    if check.status == ManufacturabilityCheck.Status.FINISHED:
         if check.is_manufacturable:
             return ("check-circle", "Passed", "bg-success")
         return ("x-circle", "Failed", "bg-danger")
 
-    # Use mapping for other statuses
-    if check.status in _STATUS_DISPLAY_MAP:
-        return _STATUS_DISPLAY_MAP[check.status]
+    # Use model's centralized status metadata
+    meta = ManufacturabilityCheck.get_status_metadata(check.status)
 
-    # Fallback for unknown status
-    return ("question", str(check.status), "bg-secondary")
+    # Extract icon name from full class (e.g., "bi-clock" -> "clock")
+    icon_class = str(meta.get("icon", ""))
+    icon = icon_class.replace("bi-", "") if icon_class else "question"
+
+    label = str(meta.get("label", check.status))
+
+    # Build bg_class from color, handling text color for light backgrounds
+    color = str(meta.get("color", "secondary"))
+    bg_class = "bg-warning text-dark" if color == "warning" else f"bg-{color}"
+
+    return (icon, label, bg_class)
 
 
 def _get_version_indicator_html(check: ManufacturabilityCheck) -> SafeString:
