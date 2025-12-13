@@ -3017,11 +3017,11 @@ class TestProjectCoreFieldImmutability:
         assert project.project_id == "NEW1"
         assert project.slot_size == SlotSize.HALF_HEIGHT
 
-    def test_validation_without_loaded_values_fetches_from_db(self, user, shuttle):
-        """Validation fetches from DB when _loaded_values is not set (fail-closed).
+    def test_validation_without_loaded_values_raises_error(self, user, shuttle):
+        """Validation raises RuntimeError when _loaded_values is missing.
 
-        Even when _loaded_values is empty (e.g., factory-created instance),
-        we fetch original values from DB to ensure core fields are protected.
+        If an existing instance doesn't have _loaded_values, it means it wasn't
+        loaded via QuerySet - this is a programming error that should fail loudly.
         """
         # Create project via factory (doesn't go through from_db, no _loaded_values)
         project = ProjectFactory(user=user, shuttle=shuttle)
@@ -3032,11 +3032,11 @@ class TestProjectCoreFieldImmutability:
         # Modify core field
         project.project_id = "MODI"
 
-        # Should raise because we fetch from DB for fail-closed validation
-        with pytest.raises(ValidationError) as exc_info:
+        # Should raise RuntimeError because _loaded_values is missing
+        with pytest.raises(RuntimeError) as exc_info:
             project.full_clean()
 
-        assert "project_id" in str(exc_info.value)
+        assert "missing _loaded_values" in str(exc_info.value)
 
     def test_multiple_core_field_changes_reported(self, project, user):
         """All changed core fields are reported in error message."""

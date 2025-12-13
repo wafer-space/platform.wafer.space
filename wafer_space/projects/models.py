@@ -354,23 +354,15 @@ class Project(models.Model):
 
         loaded = getattr(self, "_loaded_values", {})
         if not loaded:
-            # Fail-closed: if no loaded values, fetch from DB to compare
-            # This handles cases where instance bypassed from_db() (e.g., admin)
-            logger.debug(
-                "No _loaded_values for project %s, fetching from database "
-                "for fail-closed validation",
-                self.pk,
+            # This shouldn't happen for existing instances loaded via QuerySet.
+            # If it does, it's a programming error - the instance was modified
+            # without being properly loaded from the database first.
+            msg = (
+                f"Cannot validate core field immutability for project {self.pk}: "
+                "instance was not loaded via QuerySet (missing _loaded_values). "
+                "Load the instance with Project.objects.get() before modifying."
             )
-            try:
-                db_instance = Project.objects.only(*self.CORE_FIELDS).get(pk=self.pk)
-                loaded = {
-                    "project_id": db_instance.project_id,
-                    "slot_size": db_instance.slot_size,
-                    "shuttle_id": db_instance.shuttle_id,
-                }
-            except Project.DoesNotExist:
-                # Instance doesn't exist in DB yet, nothing to validate
-                return
+            raise RuntimeError(msg)
 
         changed = []
         for field in self.CORE_FIELDS:
