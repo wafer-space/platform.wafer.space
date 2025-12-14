@@ -108,7 +108,6 @@
                   <th>Project</th>
                   <th>User</th>
                   <th>File</th>
-                  <th>Result</th>
                   <th>Started</th>
                   <th>Completed</th>
                   <th>Actions</th>
@@ -138,23 +137,6 @@
                     <td>
                       {% if check.project_file %}
                         <code class="small">{{ check.project_file.processed_filename|default:check.project_file.original_filename|truncatechars:25 }}</code>
-                      {% else %}
-                        <span class="text-muted">-</span>
-                      {% endif %}
-                    </td>
-                    <td>
-                      {% if check.status == 'finished' %}
-                        {% if check.is_manufacturable %}
-                          <span class="badge bg-success">
-                            <i class="bi bi-check-circle"></i> Yes
-                          </span>
-                        {% else %}
-                          <span class="badge bg-danger">
-                            <i class="bi bi-x-circle"></i> No
-                          </span>
-                        {% endif %}
-                      {% elif check.status == 'error' %}
-                        <span class="text-danger small">{{ check.error_message|default:"Error"|truncatechars:30 }}</span>
                       {% else %}
                         <span class="text-muted">-</span>
                       {% endif %}
