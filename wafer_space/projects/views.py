@@ -824,24 +824,25 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
 
         # Build status summary with display names and colors (show all statuses)
         status_summary = []
+        status_summary_by_key = {}
         for status in ManufacturabilityCheck.Status:
             count = status_counts.get(status.value, 0)
             metadata = ManufacturabilityCheck.get_status_metadata(status.value)
-            status_summary.append(
-                {
-                    "label": status.label,
-                    "count": count,
-                    "color": metadata["color"],
-                }
-            )
-        # Add "No Check" entry
-        status_summary.append(
-            {
-                "label": "No Check",
-                "count": status_counts.get("no_check", 0),
-                "color": "secondary",
+            entry = {
+                "label": status.label,
+                "count": count,
+                "color": metadata["color"],
             }
-        )
+            status_summary.append(entry)
+            status_summary_by_key[status.value] = entry
+        # Add "No Check" entry
+        no_check_entry = {
+            "label": "No Check",
+            "count": status_counts.get("no_check", 0),
+            "color": "secondary",
+        }
+        status_summary.append(no_check_entry)
+        status_summary_by_key["no_check"] = no_check_entry
 
         # Build size breakdowns with short display labels
         # Extract short name from label (e.g., "1×1 - Full Slot..." → "1×1")
@@ -867,4 +868,5 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
             "pending_total": sum(pending_by_size.values()),
             "pending_by_size": build_size_breakdown(pending_by_size),
             "status_counts": status_summary,
+            "status_counts_by_key": status_summary_by_key,
         }
