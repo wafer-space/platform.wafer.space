@@ -575,6 +575,9 @@ class ManufacturabilityCheckAdminStatusView(
                 }
             )
 
+        # Reverse order so running checks appear first
+        active_sections.reverse()
+
         return render(
             request,
             "projects/manufacturability_check_status.html",
