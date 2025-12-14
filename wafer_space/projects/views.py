@@ -822,15 +822,26 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
                 status_counts["no_check"] += 1
                 pending_by_size[size] += 1
 
-        # Build status summary with display names
+        # Build status summary with display names and colors
         status_summary = []
         for status in ManufacturabilityCheck.Status:
             count = status_counts.get(status.value, 0)
             if count > 0:
-                status_summary.append({"label": status.label, "count": count})
+                metadata = ManufacturabilityCheck.get_status_metadata(status.value)
+                status_summary.append(
+                    {
+                        "label": status.label,
+                        "count": count,
+                        "color": metadata["color"],
+                    }
+                )
         if status_counts.get("no_check", 0) > 0:
             status_summary.append(
-                {"label": "No Check", "count": status_counts["no_check"]}
+                {
+                    "label": "No Check",
+                    "count": status_counts["no_check"],
+                    "color": "secondary",
+                }
             )
 
         # Build size breakdowns with short display labels
