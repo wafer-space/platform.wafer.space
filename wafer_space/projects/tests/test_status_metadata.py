@@ -50,6 +50,12 @@ class TestStatusMetadata:
                 f"show_spinner must be bool for status: {status_value}"
             )
 
+    def test_invalid_status_raises_key_error(self):
+        """get_status_metadata raises KeyError for invalid status."""
+        with pytest.raises(KeyError) as exc_info:
+            ManufacturabilityCheck.get_status_metadata("invalid_status")
+        assert "invalid_status" in str(exc_info.value)
+
 
 class TestStatusProperties:
     """Tests for ManufacturabilityCheck status properties."""

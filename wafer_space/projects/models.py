@@ -1802,16 +1802,14 @@ class ManufacturabilityCheck(models.Model):
 
         Returns:
             Dict with keys: color, icon, label, show_spinner
+
+        Raises:
+            KeyError: If status is not a valid ManufacturabilityCheck.Status value
         """
-        return cls._STATUS_METADATA.get(
-            status,
-            {
-                "color": "secondary",
-                "icon": "",
-                "label": status.title(),
-                "show_spinner": False,
-            },
-        )
+        if status not in cls._STATUS_METADATA:
+            msg = f"Unknown status '{status}'. Valid statuses: {list(cls._STATUS_METADATA.keys())}"
+            raise KeyError(msg)
+        return cls._STATUS_METADATA[status]
 
     @property
     def status_color(self) -> str:
