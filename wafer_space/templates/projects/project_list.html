@@ -22,6 +22,11 @@
                role="button">
               <i class="bi bi-table"></i> Admin Summary
             </a>
+            <a class="btn btn-outline-secondary ms-2"
+               href="{% url 'projects:admin_check_status' %}"
+               role="button">
+              <i class="bi bi-gear-wide-connected"></i> Check Status
+            </a>
           {% endif %}
         </div>
         {% if projects %}
