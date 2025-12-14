@@ -12,7 +12,9 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.mixins import UserPassesTestMixin
 from django.core.exceptions import ValidationError
+from django.db.models import OuterRef
 from django.db.models import Prefetch
+from django.db.models import Subquery
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.shortcuts import redirect
@@ -748,6 +750,7 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
         "name": ("name",),
         "owner": ("user__username",),
         "email": ("user__email",),
+        "status": ("latest_check_status",),
     }
     DEFAULT_SORT: ClassVar[str] = "name"
 
@@ -767,14 +770,28 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
 
     def get_queryset(self):
         """Return all projects with optimized queries and sorting."""
-        qs = Project.objects.select_related("user", "shuttle").prefetch_related(
-            Prefetch(
-                "files",
-                queryset=ProjectFile.objects.filter(is_active=True).prefetch_related(
-                    "manufacturability_checks"
-                ),
-                to_attr="active_files",
+        # Subquery to get the latest check status for each project
+        latest_check_status = (
+            ManufacturabilityCheck.objects.filter(
+                project_file__project=OuterRef("pk"),
+                project_file__is_active=True,
             )
+            .order_by("-created_at")
+            .values("status")[:1]
+        )
+
+        qs = (
+            Project.objects.select_related("user", "shuttle")
+            .prefetch_related(
+                Prefetch(
+                    "files",
+                    queryset=ProjectFile.objects.filter(
+                        is_active=True
+                    ).prefetch_related("manufacturability_checks"),
+                    to_attr="active_files",
+                )
+            )
+            .annotate(latest_check_status=Subquery(latest_check_status))
         )
 
         field, descending = self.get_sort_params()

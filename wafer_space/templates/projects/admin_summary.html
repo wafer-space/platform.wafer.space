@@ -211,7 +211,19 @@
                 {% endif %}
               </a>
             </th>
-            <th class="text-nowrap" style="width: 1%;">Status</th>
+            <th class="text-nowrap" style="width: 1%;">
+              <a href="?sort={% if current_sort == 'status' and not sort_descending %}-{% endif %}status"
+                 class="text-decoration-none text-dark">
+                Status
+                {% if current_sort == 'status' %}
+                  {% if sort_descending %}
+                    ▼
+                  {% else %}
+                    ▲
+                  {% endif %}
+                {% endif %}
+              </a>
+            </th>
           </tr>
         </thead>
         <tbody>
