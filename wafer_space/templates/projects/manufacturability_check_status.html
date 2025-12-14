@@ -31,9 +31,9 @@
     {# Active Status Sections - generated from active_sections context #}
     {% for section in active_sections %}
       <div class="card mb-4 border-{{ section.color }}">
-        <div class="card-header bg-{{ section.color }}{% if section.color == 'warning' %} text-dark{% else %} text-white{% endif %}">
+        <div class="card-header bg-{{ section.color }}{% if section.color == 'warning' or section.color == 'info' %} text-dark{% else %} text-white{% endif %}">
           <h5 class="mb-0">
-            {% if section.icon %}<i class="{{ section.icon }}"></i>{% endif %}
+            {% if section.icon %}<i class="bi {{ section.icon }}"></i>{% endif %}
             {{ section.label }} ({{ section.count }})
           </h5>
         </div>
@@ -58,7 +58,7 @@
                       {% elif check.trigger_reason == 'retry' %}
                         <span class="badge bg-warning text-dark">Retry</span>
                       {% elif check.trigger_reason == 'drc_update' %}
-                        <span class="badge bg-info">DRC Update</span>
+                        <span class="badge bg-info text-dark">DRC Update</span>
                       {% elif check.trigger_reason == 'admin_rerun' %}
                         <span class="badge bg-secondary">Admin</span>
                       {% else %}
@@ -118,7 +118,7 @@
                       {% elif check.trigger_reason == 'retry' %}
                         <span class="badge bg-warning text-dark">Retry</span>
                       {% elif check.trigger_reason == 'drc_update' %}
-                        <span class="badge bg-info">DRC Update</span>
+                        <span class="badge bg-info text-dark">DRC Update</span>
                       {% elif check.trigger_reason == 'admin_rerun' %}
                         <span class="badge bg-secondary">Admin</span>
                       {% else %}
