@@ -16,13 +16,13 @@
       </a>
     </div>
     {# Status Summary Cards #}
-    <div class="row mb-4">
+    <div class="row mb-3 g-2">
       {% for status_key, status_info in status_counts.items %}
-        <div class="col-md-2 mb-3">
+        <div class="col-auto">
           <div class="card {% if status_key == 'running' %}border-primary{% elif status_key == 'dispatching' %}border-info{% elif status_key == 'starting' %}border-info{% elif status_key == 'analyzing' %}border-primary{% elif status_key == 'pending' %}border-warning{% elif status_key == 'finished' %}border-success{% elif status_key == 'error' %}border-danger{% elif status_key == 'cancelling' %}border-warning{% elif status_key == 'cancelled' %}border-secondary{% endif %}">
-            <div class="card-body text-center">
-              <h3 class="card-title mb-0">{{ status_info.count }}</h3>
-              <p class="card-text text-muted mb-0">{{ status_info.label }}</p>
+            <div class="card-body text-center py-1 px-3">
+              <span class="fw-bold fs-5">{{ status_info.count }}</span>
+              <small class="text-muted ms-1">{{ status_info.label }}</small>
             </div>
           </div>
         </div>
