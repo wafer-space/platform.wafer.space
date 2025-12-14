@@ -575,7 +575,8 @@ class ManufacturabilityCheckAdminStatusView(
                 }
             )
 
-        # Reverse order so running checks appear first
+        # Filter out empty sections and reverse order so running checks appear first
+        active_sections = [s for s in active_sections if s["count"] > 0]
         active_sections.reverse()
 
         return render(
