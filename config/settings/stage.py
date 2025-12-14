@@ -104,7 +104,7 @@ DOCKER_SERVERS = [
     {
         "id": "checker.wafer.space@buddy",
         "url": "tcp://10.2.27.44:2375",
-        "max_concurrent": 1,
+        "max_concurrent": 3,
         "priority": 1,
     },
 ]
