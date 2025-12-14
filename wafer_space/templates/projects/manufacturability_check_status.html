@@ -69,7 +69,7 @@
                     </td>
                     <td style="text-align: right;" title="{{ check.created_at|date:'Y-m-d H:i:s' }}">{{ check.created_at|duration_since }}</td>
                     <td style="text-align: right;">{{ check.state_entered_at|duration_since }}</td>
-                    <td>{{ check.project.get_slot_size_display }}</td>
+                    <td><span class="badge bg-secondary">{{ check.project.get_slot_size_display }}</span></td>
                     <td>
                       {% if check.project.full_id %}<span class="badge bg-secondary me-1">{{ check.project.full_id }}</span>{% endif %}
                       <a href="{% url 'projects:detail' pk=check.project.pk %}">{{ check.project.name }}</a>
@@ -126,7 +126,7 @@
                     </td>
                     <td style="text-align: right;" title="{{ check.created_at|date:'Y-m-d H:i:s' }}">{{ check.created_at|duration_since }}</td>
                     <td style="text-align: right;">{{ check.state_entered_at|duration_since }}</td>
-                    <td>{{ check.project.get_slot_size_display }}</td>
+                    <td><span class="badge bg-secondary">{{ check.project.get_slot_size_display }}</span></td>
                     <td>
                       {% if check.project.full_id %}<span class="badge bg-secondary me-1">{{ check.project.full_id }}</span>{% endif %}
                       <a href="{% url 'projects:detail' pk=check.project.pk %}">{{ check.project.name|truncatechars:30 }}</a>
