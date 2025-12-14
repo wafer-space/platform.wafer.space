@@ -159,7 +159,7 @@
                 {% endif %}
               </a>
             </th>
-            <th class="text-nowrap" style="width: 1%;">
+            <th class="text-nowrap text-center" style="width: 1%;">
               <a href="?sort={% if current_sort == 'size' and not sort_descending %}-{% endif %}size"
                  class="text-decoration-none text-dark">
                 Size
@@ -218,7 +218,7 @@
           {% for project in projects %}
             <tr>
               <td class="font-monospace text-nowrap">{{ project.full_id|default:"-" }}</td>
-              <td class="text-nowrap">
+              <td class="text-nowrap text-center">
                 <span class="badge bg-secondary">{{ project.get_slot_size_display }}</span>
               </td>
               <td>

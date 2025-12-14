@@ -45,7 +45,7 @@
                   <th style="width: 90px;">Trigger</th>
                   <th style="width: 120px; text-align: right;">Created</th>
                   <th style="width: 120px; text-align: right;">Duration</th>
-                  <th style="width: 70px;">Size</th>
+                  <th style="width: 70px; text-align: center;">Size</th>
                   <th>Project</th>
                 </tr>
               </thead>
@@ -68,7 +68,7 @@
                     <td style="text-align: right"
                         title="{{ check.created_at|date:'Y-m-d H:i:s' }}">{{ check.created_at|duration_since }}</td>
                     <td style="text-align: right;">{{ check.state_entered_at|duration_since }}</td>
-                    <td>
+                    <td class="text-center">
                       <span class="badge bg-secondary">{{ check.project.get_slot_size_display }}</span>
                     </td>
                     <td>
@@ -104,7 +104,7 @@
                   <th style="width: 90px;">Trigger</th>
                   <th style="width: 120px; text-align: right;">Created</th>
                   <th style="width: 120px; text-align: right;">Duration</th>
-                  <th style="width: 70px;">Size</th>
+                  <th style="width: 70px; text-align: center;">Size</th>
                   <th>Project</th>
                   <th style="width: 120px;">Status</th>
                 </tr>
@@ -128,7 +128,7 @@
                     <td style="text-align: right"
                         title="{{ check.created_at|date:'Y-m-d H:i:s' }}">{{ check.created_at|duration_since }}</td>
                     <td style="text-align: right;">{{ check.state_entered_at|duration_since }}</td>
-                    <td>
+                    <td class="text-center">
                       <span class="badge bg-secondary">{{ check.project.get_slot_size_display }}</span>
                     </td>
                     <td>
