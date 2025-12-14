@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% load static duration_filters %}
+{% load static %}
 
 {% block title %}
   Manufacturability Check Status - Admin
@@ -45,6 +45,7 @@
               <thead>
                 <tr>
                   <th>Project</th>
+                  <th>Trigger</th>
                   <th>Created</th>
                   <th>In State</th>
                 </tr>
@@ -54,6 +55,19 @@
                   <tr>
                     <td>
                       <a href="{% url 'projects:detail' pk=check.project.pk %}">{{ check.project.name }}</a>
+                    </td>
+                    <td>
+                      {% if check.trigger_reason == 'initial' %}
+                        <span class="badge bg-primary">Initial</span>
+                      {% elif check.trigger_reason == 'retry' %}
+                        <span class="badge bg-warning text-dark">Retry</span>
+                      {% elif check.trigger_reason == 'drc_update' %}
+                        <span class="badge bg-info">DRC Update</span>
+                      {% elif check.trigger_reason == 'admin_rerun' %}
+                        <span class="badge bg-secondary">Admin</span>
+                      {% else %}
+                        <span class="badge bg-light text-dark">{{ check.get_trigger_reason_display }}</span>
+                      {% endif %}
                     </td>
                     <td title="{{ check.created_at|date:'Y-m-d H:i:s' }}">{{ check.created_at|timesince }} ago</td>
                     <td>{{ check.state_entered_at|timesince }}</td>
@@ -83,17 +97,19 @@
               <thead>
                 <tr>
                   <th>Status</th>
-                  <th>Trigger</th>
                   <th>Project</th>
-                  <th>Started</th>
-                  <th>Completed</th>
-                  <th>Duration</th>
+                  <th>Trigger</th>
+                  <th>Created</th>
+                  <th>In State</th>
                 </tr>
               </thead>
               <tbody>
                 {% for check in recent_checks %}
                   <tr>
                     <td>{{ check.status_badge_html }}</td>
+                    <td>
+                      <a href="{% url 'projects:detail' pk=check.project.pk %}">{{ check.project.name|truncatechars:30 }}</a>
+                    </td>
                     <td>
                       {% if check.trigger_reason == 'initial' %}
                         <span class="badge bg-primary">Initial</span>
@@ -107,30 +123,8 @@
                         <span class="badge bg-light text-dark">{{ check.get_trigger_reason_display }}</span>
                       {% endif %}
                     </td>
-                    <td>
-                      <a href="{% url 'projects:detail' pk=check.project.pk %}">{{ check.project.name|truncatechars:30 }}</a>
-                    </td>
-                    <td>
-                      {% if check.container_started_at %}
-                        <small>{{ check.container_started_at|date:"Y-m-d H:i" }}</small>
-                      {% else %}
-                        <span class="text-muted">-</span>
-                      {% endif %}
-                    </td>
-                    <td>
-                      {% if check.analysis_completed_at %}
-                        <small>{{ check.analysis_completed_at|date:"Y-m-d H:i" }}</small>
-                      {% else %}
-                        <span class="text-muted">-</span>
-                      {% endif %}
-                    </td>
-                    <td>
-                      {% if check.run_duration_seconds is not None %}
-                        {{ check.run_duration_seconds|duration }}
-                      {% else %}
-                        <span class="text-muted">-</span>
-                      {% endif %}
-                    </td>
+                    <td title="{{ check.created_at|date:'Y-m-d H:i:s' }}">{{ check.created_at|timesince }} ago</td>
+                    <td>{{ check.state_entered_at|timesince }}</td>
                   </tr>
                 {% endfor %}
               </tbody>
