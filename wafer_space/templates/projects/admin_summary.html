@@ -218,7 +218,9 @@
           {% for project in projects %}
             <tr>
               <td class="font-monospace text-nowrap">{{ project.full_id|default:"-" }}</td>
-              <td class="text-nowrap"><span class="badge bg-secondary">{{ project.get_slot_size_display }}</span></td>
+              <td class="text-nowrap">
+                <span class="badge bg-secondary">{{ project.get_slot_size_display }}</span>
+              </td>
               <td>
                 <a href="{% url 'projects:detail' pk=project.pk %}">{{ project.name }}</a>
               </td>

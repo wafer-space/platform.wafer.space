@@ -61,7 +61,9 @@ class TestProjectAdminSummaryView:
         assert "Test Project" in content
         assert "testowner" in content
         assert "owner@example.com" in content
-        assert "1x1" in content
+        assert (
+            "1×1" in content
+        )  # Uses × (multiplication sign) from get_slot_size_display
 
     def test_displays_all_projects(self, client):
         """Summary page shows all projects, not just user's own."""
