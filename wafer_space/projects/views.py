@@ -822,7 +822,7 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
                 status_counts["no_check"] += 1
                 pending_by_size[size] += 1
 
-        # Build status summary with display names and colors (show all statuses)
+        # Build status summary with display names, colors, and icons (show all statuses)
         status_summary = []
         status_summary_by_key = {}
         for status in ManufacturabilityCheck.Status:
@@ -832,6 +832,7 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
                 "label": status.label,
                 "count": count,
                 "color": metadata["color"],
+                "icon": metadata["icon"],
             }
             status_summary.append(entry)
             status_summary_by_key[status.value] = entry
@@ -840,6 +841,7 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
             "label": "No Check",
             "count": status_counts.get("no_check", 0),
             "color": "secondary",
+            "icon": "bi-question-circle",
         }
         status_summary.append(no_check_entry)
         status_summary_by_key["no_check"] = no_check_entry

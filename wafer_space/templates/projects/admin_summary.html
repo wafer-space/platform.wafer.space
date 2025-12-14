@@ -73,55 +73,55 @@
                 {# Row 1: No Check / Pending #}
                 <div class="row mb-1">
                   <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span>No Check</span>
+                    <span><i class="bi {{ s.no_check.icon }} me-1"></i>No Check</span>
                     <span class="badge bg-{{ s.no_check.color }}">{{ s.no_check.count }}</span>
                   </div>
                   <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span>Pending</span>
+                    <span><i class="bi {{ s.pending.icon }} me-1"></i>Pending</span>
                     <span class="badge bg-{{ s.pending.color }} {% if s.pending.color == 'warning' %}text-dark{% endif %}">{{ s.pending.count }}</span>
                   </div>
                 </div>
                 {# Row 2: Dispatching / Starting #}
                 <div class="row mb-1">
                   <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span>Dispatching</span>
+                    <span><i class="bi {{ s.dispatching.icon }} me-1"></i>Dispatching</span>
                     <span class="badge bg-{{ s.dispatching.color }}">{{ s.dispatching.count }}</span>
                   </div>
                   <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span>Starting</span>
+                    <span><i class="bi {{ s.starting.icon }} me-1"></i>Starting</span>
                     <span class="badge bg-{{ s.starting.color }}">{{ s.starting.count }}</span>
                   </div>
                 </div>
                 {# Row 3: Running / Analyzing #}
                 <div class="row mb-1">
                   <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span>Running</span>
+                    <span><i class="bi bi-play-circle me-1"></i>Running</span>
                     <span class="badge bg-{{ s.running.color }}">{{ s.running.count }}</span>
                   </div>
                   <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span>Analyzing</span>
+                    <span><i class="bi bi-search me-1"></i>Analyzing</span>
                     <span class="badge bg-{{ s.analyzing.color }}">{{ s.analyzing.count }}</span>
                   </div>
                 </div>
                 {# Row 4: Cancelling / Cancelled #}
                 <div class="row mb-1">
                   <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span>Cancelling</span>
+                    <span><i class="bi {{ s.cancelling.icon }} me-1"></i>Cancelling</span>
                     <span class="badge bg-{{ s.cancelling.color }} {% if s.cancelling.color == 'warning' %}text-dark{% endif %}">{{ s.cancelling.count }}</span>
                   </div>
                   <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span>Cancelled</span>
+                    <span><i class="bi {{ s.cancelled.icon }} me-1"></i>Cancelled</span>
                     <span class="badge bg-{{ s.cancelled.color }}">{{ s.cancelled.count }}</span>
                   </div>
                 </div>
                 {# Row 5: Error / Finished #}
                 <div class="row">
                   <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span>Error</span>
+                    <span><i class="bi {{ s.error.icon }} me-1"></i>Error</span>
                     <span class="badge bg-{{ s.error.color }}">{{ s.error.count }}</span>
                   </div>
                   <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span>Finished</span>
+                    <span><i class="bi {{ s.finished.icon }} me-1"></i>Finished</span>
                     <span class="badge bg-{{ s.finished.color }}">{{ s.finished.count }}</span>
                   </div>
                 </div>
