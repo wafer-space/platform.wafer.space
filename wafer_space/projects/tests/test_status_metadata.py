@@ -7,6 +7,42 @@ from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 
 
+class TestStatusClassMethods:
+    """Tests for Status class helper methods completeness."""
+
+    def test_all_matches_choices_length(self):
+        """Status.all() must have same length as choices."""
+        assert len(ManufacturabilityCheck.Status.all()) == len(
+            ManufacturabilityCheck.Status.choices
+        )
+
+    def test_all_contains_all_choices(self):
+        """Status.all() must contain all status values from choices."""
+        all_statuses = set(ManufacturabilityCheck.Status.all())
+        choice_values = {choice[0] for choice in ManufacturabilityCheck.Status.choices}
+        assert all_statuses == choice_values
+
+    def test_display_order_matches_choices_length(self):
+        """Status.display_order() must have same length as choices."""
+        assert len(ManufacturabilityCheck.Status.display_order()) == len(
+            ManufacturabilityCheck.Status.choices
+        )
+
+    def test_display_order_contains_all_choices(self):
+        """Status.display_order() must contain all status values from choices."""
+        display_statuses = set(ManufacturabilityCheck.Status.display_order())
+        choice_values = {choice[0] for choice in ManufacturabilityCheck.Status.choices}
+        assert display_statuses == choice_values
+
+    def test_terminal_plus_non_terminal_equals_all(self):
+        """Terminal and non-terminal statuses must cover all statuses."""
+        terminal = set(ManufacturabilityCheck.Status.terminal())
+        non_terminal = set(ManufacturabilityCheck.Status.non_terminal())
+        all_statuses = set(ManufacturabilityCheck.Status.all())
+        assert terminal | non_terminal == all_statuses
+        assert terminal & non_terminal == set()  # No overlap
+
+
 class TestStatusMetadata:
     """Tests for status metadata completeness and consistency."""
 

@@ -2550,10 +2550,10 @@ class TestManufacturabilityCheckStatusClassification:
         terminal = ManufacturabilityCheck.Status.terminal()
         assert ManufacturabilityCheck.Status.FINISHED in terminal
         assert ManufacturabilityCheck.Status.CANCELLED in terminal
+        assert ManufacturabilityCheck.Status.ERROR in terminal
         # These should NOT be in terminal:
         assert ManufacturabilityCheck.Status.PENDING not in terminal
         assert ManufacturabilityCheck.Status.RUNNING not in terminal
-        assert ManufacturabilityCheck.Status.ERROR not in terminal
 
 
 @pytest.mark.django_db

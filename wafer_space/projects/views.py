@@ -547,17 +547,8 @@ class ManufacturabilityCheckAdminStatusView(
         ).order_by("-id")[:50]
 
         # Build active sections for all non-terminal statuses
-        non_terminal_statuses = [
-            ManufacturabilityCheck.Status.RUNNING,
-            ManufacturabilityCheck.Status.ANALYZING,
-            ManufacturabilityCheck.Status.STARTING,
-            ManufacturabilityCheck.Status.DISPATCHING,
-            ManufacturabilityCheck.Status.PENDING,
-            ManufacturabilityCheck.Status.CANCELLING,
-        ]
-
         active_sections = []
-        for status in non_terminal_statuses:
+        for status in ManufacturabilityCheck.Status.non_terminal():
             # Get metadata for this status
             metadata = ManufacturabilityCheck.get_status_metadata(status)
 

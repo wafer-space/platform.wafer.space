@@ -1439,14 +1439,36 @@ class ManufacturabilityCheck(models.Model):
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"  # Waiting for capacity
+        # Running states
         DISPATCHING = "dispatching", "Dispatching"  # Image being pulled
         STARTING = "starting", "Starting"  # Container being created
         RUNNING = "running", "Running"  # Celery worker executing
         ANALYZING = "analyzing", "Analyzing"  # Logs being analyzed
-        FINISHED = "finished", "Finished"  # Analysis complete
-        ERROR = "error", "Error"  # System/processing failure
         CANCELLING = "cancelling", "Cancelling"  # Cleanup in progress
+        # Terminal states
         CANCELLED = "cancelled", "Cancelled"  # User cancelled
+        ERROR = "error", "Error"  # System/processing failure
+        FINISHED = "finished", "Finished"  # Analysis complete
+
+        @classmethod
+        def display_order(cls) -> tuple[str, ...]:
+            """Order to display states in."""
+            return (
+                cls.PENDING,
+                cls.DISPATCHING,
+                cls.STARTING,
+                cls.RUNNING,
+                cls.ANALYZING,
+                cls.CANCELLING,
+                cls.CANCELLED,
+                cls.FINISHED,
+                cls.ERROR,
+            )
+
+        @classmethod
+        def all(cls) -> list[str]:
+            """List of all the statuses."""
+            return [choice[0] for choice in cls.choices]
 
         @classmethod
         def active(cls) -> list[str]:
@@ -1466,12 +1488,22 @@ class ManufacturabilityCheck(models.Model):
         @classmethod
         def terminal(cls) -> list[str]:
             """Statuses that represent completion (success or failure)."""
-            return [cls.FINISHED, cls.CANCELLED]
+            return [cls.FINISHED, cls.CANCELLED, cls.ERROR]
 
         @classmethod
         def in_progress(cls) -> list[str]:
             """Statuses where check is in progress (not yet completed)."""
-            return [cls.PENDING, cls.DISPATCHING, cls.STARTING, cls.RUNNING]
+            return [cls.PENDING, *cls.active()]
+
+        @classmethod
+        def non_terminal(cls) -> list[str]:
+            """Statuses that are not terminal (check still in progress or pending).
+
+            Used for admin status page to show all checks that haven't completed.
+            Returns statuses in display_order, excluding terminal ones.
+            """
+            terminal_set = set(cls.terminal())
+            return [s for s in cls.display_order() if s not in terminal_set]
 
     class TriggerReason(models.TextChoices):
         INITIAL = "initial", "Initial Check"
@@ -1807,7 +1839,8 @@ class ManufacturabilityCheck(models.Model):
             KeyError: If status is not a valid ManufacturabilityCheck.Status value
         """
         if status not in cls._STATUS_METADATA:
-            msg = f"Unknown status '{status}'. Valid statuses: {list(cls._STATUS_METADATA.keys())}"
+            valid = list(cls._STATUS_METADATA.keys())
+            msg = f"Unknown status '{status}'. Valid statuses: {valid}"
             raise KeyError(msg)
         return cls._STATUS_METADATA[status]
 
