@@ -45,8 +45,8 @@
               <thead>
                 <tr>
                   <th style="width: 90px;">Trigger</th>
-                  <th style="width: 120px;">Created</th>
-                  <th style="width: 120px;">Duration</th>
+                  <th style="width: 120px; text-align: right;">Created</th>
+                  <th style="width: 120px; text-align: right;">Duration</th>
                   <th>Project</th>
                 </tr>
               </thead>
@@ -66,8 +66,8 @@
                         <span class="badge bg-light text-dark">{{ check.get_trigger_reason_display }}</span>
                       {% endif %}
                     </td>
-                    <td title="{{ check.created_at|date:'Y-m-d H:i:s' }}">{{ check.created_at|duration_since }}</td>
-                    <td>{{ check.state_entered_at|duration_since }}</td>
+                    <td style="text-align: right;" title="{{ check.created_at|date:'Y-m-d H:i:s' }}">{{ check.created_at|duration_since }}</td>
+                    <td style="text-align: right;">{{ check.state_entered_at|duration_since }}</td>
                     <td>
                       <a href="{% url 'projects:detail' pk=check.project.pk %}">{{ check.project.name }}</a>
                       <span class="text-muted">({{ check.project.user.username }})</span>
@@ -98,8 +98,8 @@
               <thead>
                 <tr>
                   <th style="width: 90px;">Trigger</th>
-                  <th style="width: 120px;">Created</th>
-                  <th style="width: 120px;">Duration</th>
+                  <th style="width: 120px; text-align: right;">Created</th>
+                  <th style="width: 120px; text-align: right;">Duration</th>
                   <th>Project</th>
                   <th style="width: 120px;">Status</th>
                 </tr>
@@ -120,8 +120,8 @@
                         <span class="badge bg-light text-dark">{{ check.get_trigger_reason_display }}</span>
                       {% endif %}
                     </td>
-                    <td title="{{ check.created_at|date:'Y-m-d H:i:s' }}">{{ check.created_at|duration_since }}</td>
-                    <td>{{ check.state_entered_at|duration_since }}</td>
+                    <td style="text-align: right;" title="{{ check.created_at|date:'Y-m-d H:i:s' }}">{{ check.created_at|duration_since }}</td>
+                    <td style="text-align: right;">{{ check.state_entered_at|duration_since }}</td>
                     <td>
                       <a href="{% url 'projects:detail' pk=check.project.pk %}">{{ check.project.name|truncatechars:30 }}</a>
                       <span class="text-muted">({{ check.project.user.username }})</span>
