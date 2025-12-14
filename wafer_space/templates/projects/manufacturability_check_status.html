@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% load static %}
+{% load static duration_filters %}
 
 {% block title %}
   Manufacturability Check Status - Admin
@@ -45,11 +45,8 @@
               <thead>
                 <tr>
                   <th>Project</th>
-                  <th>User</th>
-                  <th>File</th>
                   <th>Created</th>
                   <th>In State</th>
-                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -58,22 +55,8 @@
                     <td>
                       <a href="{% url 'projects:detail' pk=check.project.pk %}">{{ check.project.name }}</a>
                     </td>
-                    <td>{{ check.project.user.username }}</td>
-                    <td>
-                      {% if check.project_file %}
-                        <code>{{ check.project_file.processed_filename|default:check.project_file.original_filename }}</code>
-                      {% else %}
-                        <span class="text-muted">-</span>
-                      {% endif %}
-                    </td>
                     <td title="{{ check.created_at|date:'Y-m-d H:i:s' }}">{{ check.created_at|timesince }} ago</td>
                     <td>{{ check.state_entered_at|timesince }}</td>
-                    <td>
-                      <a href="{% url 'admin:projects_manufacturabilitycheck_change' check.pk %}"
-                         class="btn btn-sm btn-outline-secondary">
-                        <i class="bi bi-pencil"></i>
-                      </a>
-                    </td>
                   </tr>
                 {% endfor %}
               </tbody>
@@ -102,11 +85,9 @@
                   <th>Status</th>
                   <th>Trigger</th>
                   <th>Project</th>
-                  <th>User</th>
-                  <th>File</th>
                   <th>Started</th>
                   <th>Completed</th>
-                  <th>Actions</th>
+                  <th>Duration</th>
                 </tr>
               </thead>
               <tbody>
@@ -129,14 +110,6 @@
                     <td>
                       <a href="{% url 'projects:detail' pk=check.project.pk %}">{{ check.project.name|truncatechars:30 }}</a>
                     </td>
-                    <td>{{ check.project.user.username }}</td>
-                    <td>
-                      {% if check.project_file %}
-                        <code class="small">{{ check.project_file.processed_filename|default:check.project_file.original_filename|truncatechars:25 }}</code>
-                      {% else %}
-                        <span class="text-muted">-</span>
-                      {% endif %}
-                    </td>
                     <td>
                       {% if check.container_started_at %}
                         <small>{{ check.container_started_at|date:"Y-m-d H:i" }}</small>
@@ -152,11 +125,11 @@
                       {% endif %}
                     </td>
                     <td>
-                      <a href="{% url 'admin:projects_manufacturabilitycheck_change' check.pk %}"
-                         class="btn btn-sm btn-outline-secondary"
-                         title="View in Admin">
-                        <i class="bi bi-pencil"></i>
-                      </a>
+                      {% if check.run_duration_seconds is not None %}
+                        {{ check.run_duration_seconds|duration }}
+                      {% else %}
+                        <span class="text-muted">-</span>
+                      {% endif %}
                     </td>
                   </tr>
                 {% endfor %}
