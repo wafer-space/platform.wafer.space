@@ -2307,6 +2307,29 @@ class ManufacturabilityCheck(models.Model):
         return None
 
     @property
+    def state_entered_at(self) -> datetime | None:
+        """Timestamp when the check entered its current state.
+
+        Returns the appropriate timestamp based on current status:
+        - pending: created_at
+        - dispatching: dispatching_started_at
+        - starting: starting_started_at
+        - running: container_started_at
+        - analyzing: container_finished_at
+        - finished: analysis_completed_at
+        - error/cancelling/cancelled: created_at (fallback)
+        """
+        status_to_timestamp: dict[str, datetime | None] = {
+            self.Status.PENDING: self.created_at,
+            self.Status.DISPATCHING: self.dispatching_started_at,
+            self.Status.STARTING: self.starting_started_at,
+            self.Status.RUNNING: self.container_started_at,
+            self.Status.ANALYZING: self.container_finished_at,
+            self.Status.FINISHED: self.analysis_completed_at,
+        }
+        return status_to_timestamp.get(self.status) or self.created_at
+
+    @property
     def run_duration_seconds(self) -> float | None:
         """Time the container spent running (in seconds).
 

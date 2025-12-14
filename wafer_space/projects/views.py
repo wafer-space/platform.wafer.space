@@ -563,20 +563,21 @@ class ManufacturabilityCheckAdminStatusView(
                 .order_by("-created_at")
             )
 
-            active_sections.append(
-                {
-                    "status": status,
-                    "label": metadata["label"],
-                    "color": metadata["color"],
-                    "icon": metadata["icon"],
-                    "show_spinner": metadata["show_spinner"],
-                    "checks": checks,
-                    "count": checks.count(),
-                }
-            )
+            count = checks.count()
+            if count > 0:
+                active_sections.append(
+                    {
+                        "status": status,
+                        "label": metadata["label"],
+                        "color": metadata["color"],
+                        "icon": metadata["icon"],
+                        "show_spinner": metadata["show_spinner"],
+                        "checks": checks,
+                        "count": count,
+                    }
+                )
 
-        # Filter out empty sections and reverse order so running checks appear first
-        active_sections = [s for s in active_sections if s["count"] > 0]
+        # Reverse order so running checks appear first
         active_sections.reverse()
 
         return render(

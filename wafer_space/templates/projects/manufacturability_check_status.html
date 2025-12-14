@@ -48,7 +48,7 @@
                   <th>User</th>
                   <th>File</th>
                   <th>Created</th>
-                  <th>Waiting</th>
+                  <th>In State</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -66,8 +66,8 @@
                         <span class="text-muted">-</span>
                       {% endif %}
                     </td>
-                    <td>{{ check.created_at|date:"Y-m-d H:i:s" }}</td>
-                    <td>{{ check.created_at|timesince }}</td>
+                    <td title="{{ check.created_at|date:'Y-m-d H:i:s' }}">{{ check.created_at|timesince }} ago</td>
+                    <td>{{ check.state_entered_at|timesince }}</td>
                     <td>
                       <a href="{% url 'admin:projects_manufacturabilitycheck_change' check.pk %}"
                          class="btn btn-sm btn-outline-secondary">
