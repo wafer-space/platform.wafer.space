@@ -70,8 +70,7 @@ ANYMAIL = {
 
 DEFAULT_FROM_EMAIL = "wafer.space Platform <noreply@test-platform.wafer.space>"
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
-EMAIL_SUBJECT_PREFIX = "[wafer.space] "
-ACCOUNT_EMAIL_SUBJECT_PREFIX = EMAIL_SUBJECT_PREFIX
+# EMAIL_SUBJECT_PREFIX: uses base.py defaults
 
 # INSTALLED APPS / MIDDLEWARE
 # ------------------------------------------------------------------------------
@@ -93,33 +92,22 @@ INSTALLED_APPS += [
 
 # CELERY
 # ------------------------------------------------------------------------------
-# Download task configuration overrides (faster for staging)
-DOWNLOAD_TASK_MAX_RETRIES = 2  # Same as production
-DOWNLOAD_TASK_RETRY_BASE_DELAY_SECONDS = 30  # 30s for staging (faster feedback)
-DOWNLOAD_TASK_RETRY_BACKOFF_MULTIPLIER = 2  # 30s, 60s
-
-# Download state verification (faster for staging)
-DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS = 30.0  # Check every 30s in staging
+# CELERY_BROKER_URL: uses base.py default (PostgreSQL via SQLAlchemy)
+# CELERY_TASK_ALWAYS_EAGER: uses base.py default (False)
+# DOWNLOAD_TASK_*: uses base.py defaults (Celery retry configuration)
+# CELERY_BEAT_SCHEDULE: uses base.py defaults (all check lifecycle tasks)
 
 # Docker servers for manufacturability checks
-# Staging uses the same remote Docker servers as production with 1 concurrent each
-# Total capacity: 2 concurrent checks (1 + 1), each using 24GB memory
-# Priorities inverted vs prod to spread load across servers
+# Staging uses one remote Docker server with 3 concurrent checks
+# Total capacity: 3 concurrent checks, each using 24GB memory
 DOCKER_SERVERS = [
     {
-        "id": "checker.wafer.space@micky",
-        "url": "tcp://10.4.27.44:2375",
+        "id": "checker.wafer.space@buddy",
+        "url": "tcp://10.2.27.44:2375",
         "max_concurrent": 1,
         "priority": 1,
     },
-    {
-        "id": "checker.wafer.space@harken",
-        "url": "tcp://10.3.27.44:2375",
-        "max_concurrent": 1,
-        "priority": 2,
-    },
 ]
-# CELERY_BEAT_SCHEDULE: uses base.py defaults (all check lifecycle tasks)
 
 # LOGGING
 # ------------------------------------------------------------------------------
