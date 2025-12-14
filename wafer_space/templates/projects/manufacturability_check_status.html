@@ -33,11 +33,7 @@
       <div class="card mb-4 border-{{ section.color }}">
         <div class="card-header bg-{{ section.color }}{% if section.color == 'warning' %} text-dark{% else %} text-white{% endif %}">
           <h5 class="mb-0">
-            {% if section.show_spinner %}
-              <span class="spinner-border spinner-border-sm me-2"
-                    role="status"
-                    aria-hidden="true"></span>
-            {% elif section.icon %}
+            {% if section.icon %}
               <i class="{{ section.icon }}"></i>
             {% endif %}
             {{ section.label }} ({{ section.count }})
