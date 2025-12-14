@@ -70,13 +70,16 @@
           <div class="card-body py-2">
             {% if summary.status_counts %}
               {% with s=summary.status_counts_by_key %}
-                {# Row 1: Pending alone #}
+                {# Row 1: No Check / Pending #}
                 <div class="row mb-1">
+                  <div class="col-6 d-flex justify-content-between align-items-center">
+                    <span>No Check</span>
+                    <span class="badge bg-{{ s.no_check.color }}">{{ s.no_check.count }}</span>
+                  </div>
                   <div class="col-6 d-flex justify-content-between align-items-center">
                     <span>Pending</span>
                     <span class="badge bg-{{ s.pending.color }} {% if s.pending.color == 'warning' %}text-dark{% endif %}">{{ s.pending.count }}</span>
                   </div>
-                  <div class="col-6"></div>
                 </div>
                 {# Row 2: Dispatching / Starting #}
                 <div class="row mb-1">
@@ -112,7 +115,7 @@
                   </div>
                 </div>
                 {# Row 5: Error / Finished #}
-                <div class="row mb-1">
+                <div class="row">
                   <div class="col-6 d-flex justify-content-between align-items-center">
                     <span>Error</span>
                     <span class="badge bg-{{ s.error.color }}">{{ s.error.count }}</span>
@@ -121,14 +124,6 @@
                     <span>Finished</span>
                     <span class="badge bg-{{ s.finished.color }}">{{ s.finished.count }}</span>
                   </div>
-                </div>
-                {# Row 6: No Check alone #}
-                <div class="row">
-                  <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span>No Check</span>
-                    <span class="badge bg-{{ s.no_check.color }}">{{ s.no_check.count }}</span>
-                  </div>
-                  <div class="col-6"></div>
                 </div>
               {% endwith %}
             {% else %}
