@@ -8,9 +8,7 @@
     <div class="d-flex {% if layout == 'vertical' %}flex-column align-items-end{% endif %} gap-1 {% if layout != 'vertical' %}align-items-center{% endif %}">
       {# Manufacturability check status badge (most relevant) #}
       {% with check=file.latest_manufacturability_check %}
-        {% if check %}
-          {{ check.status_badge_html }}
-        {% endif %}
+        {% if check %}{{ check.status_badge_html }}{% endif %}
       {% endwith %}
       {# Hash verification badge #}
       {% if file.hash_verified %}
