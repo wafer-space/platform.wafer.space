@@ -1534,13 +1534,13 @@ class ManufacturabilityCheck(models.Model):
         },
         Status.RUNNING: {
             "color": "primary",
-            "icon": "",  # Spinner only
+            "icon": "bi-play-circle",
             "label": "Running",
             "show_spinner": True,
         },
         Status.ANALYZING: {
             "color": "primary",
-            "icon": "",  # Spinner only
+            "icon": "bi-search",
             "label": "Analyzing",
             "show_spinner": True,
         },
