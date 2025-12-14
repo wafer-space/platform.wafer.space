@@ -160,8 +160,7 @@
                 {% endif %}
               </a>
             </th>
-            <th>Precheck Status</th>
-            <th>Manufacturable</th>
+            <th>Status</th>
           </tr>
         </thead>
         <tbody>
@@ -176,25 +175,15 @@
               <td>{{ project.user.email }}</td>
               {% with active_file=project.active_files.0 %}
                 {% if active_file and active_file.latest_manufacturability_check %}
-                  <td>{{ active_file.latest_manufacturability_check.get_status_display }}</td>
-                  <td>
-                    {% if active_file.latest_manufacturability_check.is_manufacturable is True %}
-                      <span class="text-success">✓</span>
-                    {% elif active_file.latest_manufacturability_check.is_manufacturable is False %}
-                      <span class="text-danger">✗</span>
-                    {% else %}
-                      -
-                    {% endif %}
-                  </td>
+                  <td>{{ active_file.latest_manufacturability_check.status_badge_html }}</td>
                 {% else %}
-                  <td>-</td>
                   <td>-</td>
                 {% endif %}
               {% endwith %}
             </tr>
           {% empty %}
             <tr>
-              <td colspan="7" class="text-center text-muted">No projects found.</td>
+              <td colspan="6" class="text-center text-muted">No projects found.</td>
             </tr>
           {% endfor %}
         </tbody>
