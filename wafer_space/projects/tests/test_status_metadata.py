@@ -149,14 +149,24 @@ class TestStatusBadgeHtml:
 
 
 class TestFinishedStatusBadge:
-    """Tests for finished status badge showing manufacturable/not manufacturable."""
+    """Tests for finished status badge showing all three manufacturable states."""
 
     @pytest.fixture
-    def manufacturable_check(self):
-        """Create a finished check that is manufacturable."""
+    def manufacturable_clean_check(self):
+        """Create a finished check that is manufacturable with no warnings."""
         return ManufacturabilityCheckFactory(
             status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=True,
+            warnings=[],
+        )
+
+    @pytest.fixture
+    def manufacturable_with_warnings_check(self):
+        """Create a finished check that is manufacturable but has warnings."""
+        return ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+            warnings=["Warning 1", "Warning 2"],
         )
 
     @pytest.fixture
@@ -167,26 +177,55 @@ class TestFinishedStatusBadge:
             is_manufacturable=False,
         )
 
+    # --- Manufacturable (Clean) tests ---
+
     @pytest.mark.django_db
-    def test_manufacturable_badge_shows_success_color(self, manufacturable_check):
-        """Manufacturable check shows success (green) badge."""
-        html = manufacturable_check.status_badge_html()
+    def test_manufacturable_clean_shows_success_color(self, manufacturable_clean_check):
+        """Manufacturable clean check shows success (green) badge."""
+        html = manufacturable_clean_check.status_badge_html()
         assert "bg-success" in html
 
     @pytest.mark.django_db
-    def test_manufacturable_badge_shows_check_icon(self, manufacturable_check):
-        """Manufacturable check shows check-circle icon."""
-        html = manufacturable_check.status_badge_html()
+    def test_manufacturable_clean_shows_check_icon(self, manufacturable_clean_check):
+        """Manufacturable clean check shows check-circle icon."""
+        html = manufacturable_clean_check.status_badge_html()
         assert "bi-check-circle" in html
 
     @pytest.mark.django_db
-    def test_manufacturable_badge_shows_manufacturable_label(
-        self, manufacturable_check
-    ):
-        """Manufacturable check shows 'Manufacturable' label."""
-        html = manufacturable_check.status_badge_html()
+    def test_manufacturable_clean_shows_label(self, manufacturable_clean_check):
+        """Manufacturable clean check shows 'Manufacturable' label."""
+        html = manufacturable_clean_check.status_badge_html()
         assert "Manufacturable" in html
-        assert "Not Manufacturable" not in html
+        assert "Warnings" not in html
+
+    # --- Manufacturable (with warnings) tests ---
+
+    @pytest.mark.django_db
+    def test_manufacturable_warnings_shows_warning_color(
+        self, manufacturable_with_warnings_check
+    ):
+        """Manufacturable with warnings shows warning (yellow) badge."""
+        html = manufacturable_with_warnings_check.status_badge_html()
+        assert "bg-warning" in html
+
+    @pytest.mark.django_db
+    def test_manufacturable_warnings_shows_warning_icon(
+        self, manufacturable_with_warnings_check
+    ):
+        """Manufacturable with warnings shows exclamation-triangle icon."""
+        html = manufacturable_with_warnings_check.status_badge_html()
+        assert "bi-exclamation-triangle" in html
+
+    @pytest.mark.django_db
+    def test_manufacturable_warnings_shows_label(
+        self, manufacturable_with_warnings_check
+    ):
+        """Manufacturable with warnings shows appropriate label."""
+        html = manufacturable_with_warnings_check.status_badge_html()
+        assert "Manufacturable" in html
+        assert "Warnings" in html
+
+    # --- Not Manufacturable tests ---
 
     @pytest.mark.django_db
     def test_not_manufacturable_badge_shows_danger_color(
