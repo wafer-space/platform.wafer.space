@@ -44,6 +44,11 @@ def revisions_needs_fetching() -> dict[str, int]:
         queued += 1
         logger.info("Queued metadata fetch for new revision: %s", digest[:20])
 
+    if queued:
+        logger.info("revisions_needs_fetching: queued %d new revision(s)", queued)
+    else:
+        logger.info("revisions_needs_fetching: no new revisions found")
+
     return {"new_revisions_queued": queued}
 
 
