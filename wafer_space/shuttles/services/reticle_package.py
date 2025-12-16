@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from django.conf import settings
+from django.utils import timezone
 
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.shuttles.config import GridConfig
@@ -267,25 +268,93 @@ def write_checks_csv(path: Path, slots: list[ShuttleSlot]) -> None:
 
 def write_readme(path: Path, shuttle: Shuttle, slots: list[ShuttleSlot]) -> None:
     """Write README.md."""
-    total = len({s.project_id for s in slots if s.project})
-    mfg = sum(
-        1
-        for s in slots
-        if s.project and _is_manufacturable(s.project.output_file.output_check)
-    )
+    now = timezone.now().strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    # Build projects table
+    seen: set[Any] = set()
+    projects_rows = []
+    for slot in sorted(slots, key=lambda s: s.project_code):
+        if not slot.project or slot.project_id in seen:
+            continue
+        seen.add(slot.project_id)
+        prj = slot.project
+        check = prj.output_file.output_check
+        if check.pk and check.finished_status:
+            status = check.finished_status.value
+        else:
+            status = "no_check"
+        top = prj.output_file.top_cell
+        projects_rows.append(
+            f"| {prj.project_id} | {prj.name} | {status} | {slot.slot_size} | {top} |"
+        )
+
+    # Build ASCII grid
+    grid_lines = _build_ascii_grid(slots, shuttle)
 
     path.write_text(f"""# {shuttle.name} Reticle Package
 
-## Summary
+**Generated:** {now}
+**Host:** {settings.SITE_URL}
 
-- Total Projects: {total}
-- Manufacturable: {mfg}
-- Not Manufacturable: {total - mfg}
+## Shuttle Layout
 
-## Files
+```text
+{grid_lines}
+```
 
-- `tilemap.csv` - Grid layout
-- `manifest.csv` - Project manifest
-- `summary.csv` - Project summary
-- `checks.csv` - Check details
+Legend: [Submitted] [Check] [Version]
+  ☑ Submitted    ☐ Not submitted
+  ✔ Pass         ⚠ Warnings      ✘ Fail    ? No check
+  ★ Current      ☆ Outdated      · N/A
+
+## Projects
+
+| CODE | Name | Status | Slot | Top Cell |
+|------|------|--------|------|----------|
+{chr(10).join(projects_rows)}
 """)
+
+
+def _build_ascii_grid(slots: list[ShuttleSlot], shuttle: Shuttle) -> str:
+    """Build ASCII representation of shuttle grid."""
+    if not slots:
+        return "(empty)"
+
+    max_row = max(s.row for s in slots)
+    max_col = max(s.column for s in slots)
+
+    # Build slot lookup
+    slot_map = {(s.row, s.column): s for s in slots}
+
+    lines = []
+    # Header row
+    cols = "    " + "   ".join(chr(65 + c) for c in range(max_col + 1))
+    lines.append(cols)
+    lines.append("  " + "+---" * (max_col + 1) + "+")
+
+    for row in range(max_row + 1):
+        # Code line
+        code_parts = [f"{row + 1} "]
+        icon_parts = ["  "]
+        for col in range(max_col + 1):
+            slot = slot_map.get((row, col))
+            if slot and slot.project:
+                code_parts.append(f"|{slot.project.project_id:4}")
+                check = slot.project.output_file.output_check
+                sub = "☑" if slot.project.submitted_file else "☐"
+                if not check.pk:
+                    chk, ver = "?", "·"
+                else:
+                    chk = "✔" if _is_manufacturable(check) else "✘"
+                    ver = "★" if check.is_using_latest_precheck else "☆"
+                icon_parts.append(f"|{sub}{chk}{ver} ")
+            else:
+                code_parts.append("|    ")
+                icon_parts.append("|    ")
+        code_parts.append("|")
+        icon_parts.append("|")
+        lines.append("".join(code_parts))
+        lines.append("".join(icon_parts))
+        lines.append("  " + "+---" * (max_col + 1) + "+")
+
+    return "\n".join(lines)
