@@ -112,7 +112,7 @@ uv run pytest path/to/test.py::TestClass::test_method -v
 - ❌ **NEVER** run `make test-manual` (for human debugging only)
 
 **Browser test best practices:**
-- Use `WebDriverWait`, avoid `time.sleep()` (legacy uses exist but prefer explicit waits)
+- Use `WebDriverWait`, never `time.sleep()`
 - Screenshots auto-captured on failure to `tests/browser/screenshots/`
 - Use Page Object pattern (see `tests/browser/pages/`)
 
@@ -123,7 +123,7 @@ uv run pytest path/to/test.py::TestClass::test_method -v
 Django 5.2+ application for wafer.space silicon manufacturing.
 
 **Structure:**
-- `config/settings/` - 4 environments (dev, pytest, stage, prod) with unified multi-section structure
+- `config/settings/` - 4 environments (dev, pytest, stage, prod) with unified 15-section structure
 - `wafer_space/` - Main application code
 - `tests/` - pytest-django with factory-boy fixtures
 
@@ -191,7 +191,7 @@ except Exception:  # Too broad
 
 - Use factory-boy for test data, not fixtures
 - One assertion concept per test
-- Test locations: prefer `tests/` subdirectory pattern (`wafer_space/users/tests/test_models.py`), though some apps use single `tests.py` files
+- Test file mirrors source: `wafer_space/users/models.py` → `wafer_space/users/tests/test_models.py`
 
 ### Documentation Standards
 
@@ -256,23 +256,9 @@ ln -s "$MAIN_REPO/.env" .env
 
 ---
 
-## CELERY ARCHITECTURE
+## CELERY DEBUGGING
 
-For comprehensive Celery documentation, see:
-- [Celery Architecture](docs/celery_architecture.md) - Queue naming, state machine, decorators
-- [Celery Tasks Reference](docs/celery_tasks_reference.md) - Complete task listing
-
-### Queue Naming Convention
-
-Queues follow the pattern: `<protocol>:<mode>:<function>`
-
-- **Protocol:** `none`, `http`, `dock`, `mail` (system access required)
-- **Mode:** `ro` (read-only), `rw` (read-write)
-- **Function:** `default`, `downloads`, `checks-orch`, `checks-fast`, etc.
-
-Example: `dock:ro:checks-fast` = Docker access, read-only, fast check operations
-
-### Debugging: Worker Restart Is Not the Issue
+### 5. WORKER RESTART IS NOT THE ISSUE
 
 **The development environment auto-restarts Celery workers on code changes. Worker restart is not the problem.**
 
