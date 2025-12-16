@@ -228,7 +228,7 @@ See `Procfile` for local development worker configuration. The Procfile workers 
 
 ### Production (systemd)
 
-See `docs/systemd-services.md` for production worker configuration.
+See [systemd-services.md](systemd-services.md) for production worker configuration.
 
 ---
 
