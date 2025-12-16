@@ -21,6 +21,7 @@ from wafer_space.legal.models import TermsOfServiceAcceptance
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import ManufacturabilityCheckpoint
+from wafer_space.projects.models import PrecheckImageRevision
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectComplianceCertification
 from wafer_space.projects.models import ProjectFile
@@ -78,6 +79,9 @@ class Command(BaseCommand):
         tos = self._ensure_tos()
         self._ensure_tos_acceptance(mithro, tos)
         self._ensure_tos_acceptance(testuser, tos)
+
+        # Ensure precheck revision exists for version badge display
+        self._ensure_precheck_revision()
 
         # Create shuttle and slots
         shuttle = self._create_shuttle()
@@ -186,6 +190,35 @@ class Command(BaseCommand):
         )
         if created:
             self.stdout.write(f"  Created TOS acceptance for {user.username}")
+
+    def _ensure_precheck_revision(self) -> None:
+        """Ensure PrecheckImageRevision exists for dev data checks.
+
+        Creates a revision matching the digest used in _finished_check_fields
+        so that version badges display correctly.
+        """
+        # This must match the digest in _finished_check_fields
+        digest = "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+
+        _, created = PrecheckImageRevision.objects.get_or_create(
+            digest=digest,
+            defaults={
+                "precheck_version": "2.5.1",
+                "git_commit_sha": "abc1234567890def1234567890abcdef12345678",
+                "pdk_version": "gf180mcuD",
+                "tool_versions": {
+                    "magic": "8.3.460",
+                    "klayout": "0.28.17",
+                    "netgen": "1.5.272",
+                },
+            },
+        )
+        if created:
+            self.stdout.write(
+                self.style.SUCCESS("  Created PrecheckImageRevision for dev data")
+            )
+        else:
+            self.stdout.write("  PrecheckImageRevision already exists")
 
     def _create_shuttle(self) -> Shuttle:
         """Create the development shuttle."""
