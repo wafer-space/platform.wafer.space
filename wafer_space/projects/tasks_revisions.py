@@ -257,84 +257,130 @@ def _fetch_github_info(commit_sha: str) -> dict[str, Any]:
     """
     result: dict[str, Any] = {}
 
-    # Fetch commit info
-    commit_url = f"https://api.github.com/repos/{GITHUB_REPO}/commits/{commit_sha}"
-    try:
-        commit_resp = requests.get(commit_url, timeout=30)
-        if commit_resp.status_code == http.HTTPStatus.OK:
-            commit_data = commit_resp.json()
-            result["commit_message"] = (
-                commit_data.get("commit", {}).get("message", "").split("\n")[0]
-            )
-            commit_date_str = (
-                commit_data.get("commit", {}).get("committer", {}).get("date")
-            )
-            if commit_date_str:
-                with contextlib.suppress(ValueError):
-                    result["commit_date"] = datetime.fromisoformat(
-                        commit_date_str.replace("Z", "+00:00")
-                    )
-    except requests.RequestException:
-        logger.warning("Failed to fetch commit info for %s", commit_sha[:12])
+    # Fetch commit metadata
+    commit_info = _fetch_commit_info(commit_sha)
+    result.update(commit_info)
 
-    # Fetch flake.lock for version info
-    flake_lock_url = (
-        f"https://raw.githubusercontent.com/{GITHUB_REPO}/{commit_sha}/flake.lock"
-    )
-    try:
-        flake_resp = requests.get(flake_lock_url, timeout=30)
-        if flake_resp.status_code == http.HTTPStatus.OK:
-            flake_data = flake_resp.json()
-            tool_versions = _parse_flake_lock(flake_data)
-            if tool_versions:
-                result["tool_versions"] = tool_versions
-    except (requests.RequestException, ValueError):
-        logger.warning("Failed to fetch flake.lock for %s", commit_sha[:12])
+    # Fetch tool versions from flake files
+    tool_versions = _fetch_tool_versions(commit_sha)
+    if tool_versions:
+        result["tool_versions"] = tool_versions
 
-    # Fetch Makefile for PDK version
-    makefile_url = (
-        f"https://raw.githubusercontent.com/{GITHUB_REPO}/{commit_sha}/Makefile"
-    )
-    try:
-        makefile_resp = requests.get(makefile_url, timeout=30)
-        if makefile_resp.status_code == http.HTTPStatus.OK:
-            pdk_version = _parse_makefile_pdk_version(makefile_resp.text)
-            if pdk_version:
-                result["pdk_version"] = pdk_version
-    except requests.RequestException:
-        logger.warning("Failed to fetch Makefile for %s", commit_sha[:12])
+    # Fetch PDK version from Makefile
+    pdk_version = _fetch_pdk_version(commit_sha)
+    if pdk_version:
+        result["pdk_version"] = pdk_version
 
     return result
 
 
-def _parse_flake_lock(flake_data: dict[str, Any]) -> dict[str, str]:
-    """Parse flake.lock to extract version info.
+def _fetch_commit_info(commit_sha: str) -> dict[str, Any]:
+    """Fetch commit message and date from GitHub API."""
+    result: dict[str, Any] = {}
+    commit_url = f"https://api.github.com/repos/{GITHUB_REPO}/commits/{commit_sha}"
+
+    try:
+        resp = requests.get(commit_url, timeout=30)
+        if resp.status_code == http.HTTPStatus.OK:
+            data = resp.json()
+            result["commit_message"] = (
+                data.get("commit", {}).get("message", "").split("\n")[0]
+            )
+            date_str = data.get("commit", {}).get("committer", {}).get("date")
+            if date_str:
+                with contextlib.suppress(ValueError):
+                    result["commit_date"] = datetime.fromisoformat(
+                        date_str.replace("Z", "+00:00")
+                    )
+    except requests.RequestException:
+        logger.warning("Failed to fetch commit info for %s", commit_sha[:12])
+
+    return result
+
+
+def _fetch_tool_versions(commit_sha: str) -> dict[str, str]:
+    """Fetch tool versions from flake.lock and flake.nix."""
+    base_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{commit_sha}"
+    tool_versions: dict[str, str] = {}
+
+    try:
+        flake_lock_resp = requests.get(f"{base_url}/flake.lock", timeout=30)
+        flake_nix_resp = requests.get(f"{base_url}/flake.nix", timeout=30)
+
+        if flake_lock_resp.status_code == http.HTTPStatus.OK:
+            nix_eda_version = _get_nix_eda_version(flake_lock_resp.json())
+            if nix_eda_version:
+                tool_versions["nix-eda"] = nix_eda_version
+
+        if flake_nix_resp.status_code == http.HTTPStatus.OK:
+            overrides = _parse_flake_nix_overrides(flake_nix_resp.text)
+            tool_versions.update(overrides)
+    except (requests.RequestException, ValueError):
+        logger.warning("Failed to fetch flake files for %s", commit_sha[:12])
+
+    return tool_versions
+
+
+def _fetch_pdk_version(commit_sha: str) -> str:
+    """Fetch PDK version from Makefile."""
+    url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{commit_sha}/Makefile"
+
+    try:
+        resp = requests.get(url, timeout=30)
+        if resp.status_code == http.HTTPStatus.OK:
+            return _parse_makefile_pdk_version(resp.text)
+    except requests.RequestException:
+        logger.warning("Failed to fetch Makefile for %s", commit_sha[:12])
+
+    return ""
+
+
+def _get_nix_eda_version(flake_lock: dict[str, Any]) -> str:
+    """Extract nix-eda version from flake.lock.
 
     Args:
-        flake_data: Parsed flake.lock JSON
+        flake_lock: Parsed flake.lock JSON
 
     Returns:
-        Dict mapping tool/input names to versions
+        Version string like "5.9.0" or "5.9.0 @ abc123" if no tag
     """
-    versions: dict[str, str] = {}
-    nodes = flake_data.get("nodes", {})
+    nodes = flake_lock.get("nodes", {})
+    nix_eda = nodes.get("nix-eda", {})
+    locked = nix_eda.get("locked", {})
+    original = nix_eda.get("original", {})
 
-    for name, node in nodes.items():
-        if name == "root":
-            continue
+    ref = locked.get("ref") or original.get("ref", "")
+    rev = locked.get("rev", "")[:12]
 
-        locked = node.get("locked", {})
-        original = node.get("original", {})
+    if ref:
+        return ref
+    if rev:
+        return f"@ {rev}"
+    return ""
 
-        if locked.get("type") == "github":
-            # Use ref (tag/branch) if available, otherwise short rev
-            ref = locked.get("ref") or original.get("ref", "")
-            if ref:
-                versions[name] = ref
-            elif locked.get("rev"):
-                versions[name] = locked["rev"][:12]
 
-    return versions
+def _parse_flake_nix_overrides(flake_nix: str) -> dict[str, str]:
+    """Parse flake.nix to extract tool version overrides.
+
+    Looks for patterns like:
+        magic = prev.magic.override { version = "8.3.576"; ... }
+
+    Args:
+        flake_nix: Raw flake.nix content
+
+    Returns:
+        Dict mapping tool names to overridden versions
+    """
+    overrides: dict[str, str] = {}
+
+    # Match patterns like: toolname = prev.toolname.override { version = "X.Y.Z";
+    pattern = r'(\w+)\s*=\s*prev\.\w+\.override\s*\{[^}]*version\s*=\s*"([^"]+)"'
+    for match in re.finditer(pattern, flake_nix):
+        tool_name = match.group(1)
+        version = match.group(2)
+        overrides[tool_name] = version
+
+    return overrides
 
 
 def _parse_makefile_pdk_version(makefile_content: str) -> str:
