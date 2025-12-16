@@ -136,7 +136,7 @@
                       <a href="{% url 'projects:detail' pk=check.project.pk %}">{{ check.project.name|truncatechars:30 }}</a>
                       <span class="text-muted">({{ check.project.user.username }})</span>
                     </td>
-                    <td>{% badge_check_status check %}</td>
+                    <td>{% badge_check_status_and_version check %}</td>
                   </tr>
                 {% endfor %}
               </tbody>
