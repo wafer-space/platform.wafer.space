@@ -320,18 +320,97 @@ class Command(BaseCommand):
         # check_scenario: "single_pass", "single_fail", "in_progress", "error_retry",
         #                 "drc_update", "no_file"
         # is_submitted: True = submitted to manufacturing, False = still draft
-        projects_data = [
-            # Full size projects
-            ("RV32", "RISC-V Core", mithro, SlotSize.FULL, "single_pass", True),
-            ("GP10", "GPIO Controller", mithro, SlotSize.FULL, "drc_update", True),
-            ("UA01", "UART Serial", testuser, SlotSize.FULL, "single_pass", True),
-            ("SP01", "SPI Controller", testuser, SlotSize.FULL, "single_fail", True),
-            ("I2C1", "I2C Interface", mithro, SlotSize.FULL, "in_progress", True),
-            ("PW01", "PWM Generator", testuser, SlotSize.FULL, "no_file", False),
+        # slot_pos: (row, col) tuple for slot assignment, or None for unassigned
+        # G899 grid layout:
+        #   Row 0: FULL(0,0), FULL(0,1), HALF_WIDTH(0,2), HALF_WIDTH(0,3)
+        #   Row 1: FULL(1,0), FULL(1,1), FULL(1,2), FULL(1,3)
+        #   Row 2: HALF_HEIGHT(2,0), HALF_HEIGHT(2,1), QUARTER(2,2), QUARTER(2,3)
+        #   Row 3: FULL(3,0), FULL(3,1), FULL(3,2), FULL(3,3)
+        # Each tuple: (proj_id, name, owner, size, scenario, is_submitted, slot_pos)
+        projects_data: list[tuple] = [
+            # Full size projects - some assigned to slots
+            (
+                "RV32",
+                "RISC-V Core",
+                mithro,
+                SlotSize.FULL,
+                "single_pass",
+                True,
+                (0, 0),
+            ),
+            (
+                "GP10",
+                "GPIO Controller",
+                mithro,
+                SlotSize.FULL,
+                "drc_update",
+                True,
+                (0, 1),
+            ),
+            (
+                "UA01",
+                "UART Serial",
+                testuser,
+                SlotSize.FULL,
+                "single_pass",
+                True,
+                (1, 0),
+            ),
+            (
+                "SP01",
+                "SPI Controller",
+                testuser,
+                SlotSize.FULL,
+                "single_fail",
+                True,
+                None,
+            ),
+            (
+                "I2C1",
+                "I2C Interface",
+                mithro,
+                SlotSize.FULL,
+                "in_progress",
+                True,
+                None,
+            ),
+            (
+                "PW01",
+                "PWM Generator",
+                testuser,
+                SlotSize.FULL,
+                "no_file",
+                False,
+                None,
+            ),
             # Half width projects
-            ("AD01", "ADC Frontend", mithro, SlotSize.HALF_WIDTH, "error_retry", True),
-            ("DA01", "DAC Output", testuser, SlotSize.HALF_WIDTH, "single_pass", False),
-            ("CM01", "Comparator", mithro, SlotSize.HALF_WIDTH, "single_fail", True),
+            (
+                "AD01",
+                "ADC Frontend",
+                mithro,
+                SlotSize.HALF_WIDTH,
+                "error_retry",
+                True,
+                (0, 2),
+            ),
+            (
+                "DA01",
+                "DAC Output",
+                testuser,
+                SlotSize.HALF_WIDTH,
+                "single_pass",
+                False,
+                None,
+            ),
+            (
+                "CM01",
+                "Comparator",
+                mithro,
+                SlotSize.HALF_WIDTH,
+                "single_fail",
+                True,
+                None,
+            ),
             # Half height projects
             (
                 "CK01",
@@ -340,6 +419,7 @@ class Command(BaseCommand):
                 SlotSize.HALF_HEIGHT,
                 "single_pass",
                 True,
+                (2, 0),
             ),
             (
                 "RS01",
@@ -348,6 +428,7 @@ class Command(BaseCommand):
                 SlotSize.HALF_HEIGHT,
                 "in_progress",
                 False,
+                None,
             ),
             # Quarter size projects
             (
@@ -357,15 +438,41 @@ class Command(BaseCommand):
                 SlotSize.QUARTER,
                 "single_pass",
                 True,
+                (2, 2),
             ),
-            ("OS01", "RC Oscillator", mithro, SlotSize.QUARTER, "drc_update", True),
-            ("BF01", "Buffer Cell", testuser, SlotSize.QUARTER, "single_fail", False),
-            ("LD01", "LDO Regulator", mithro, SlotSize.QUARTER, "no_file", False),
+            (
+                "OS01",
+                "RC Oscillator",
+                mithro,
+                SlotSize.QUARTER,
+                "drc_update",
+                True,
+                None,
+            ),
+            (
+                "BF01",
+                "Buffer Cell",
+                testuser,
+                SlotSize.QUARTER,
+                "single_fail",
+                False,
+                None,
+            ),
+            (
+                "LD01",
+                "LDO Regulator",
+                mithro,
+                SlotSize.QUARTER,
+                "no_file",
+                False,
+                None,
+            ),
         ]
 
         created_count = 0
+        assigned_count = 0
         for idx, proj_data in enumerate(projects_data):
-            proj_id, name, owner, size, check_scenario, is_submitted = proj_data
+            proj_id, name, owner, size, scenario, is_submitted, slot_pos = proj_data
             # Set status and submitted_at based on is_submitted flag
             if is_submitted:
                 status = Project.Status.SUBMITTED
@@ -398,8 +505,15 @@ class Command(BaseCommand):
                 )
 
                 # Create file and checks based on scenario
-                self._create_checks_for_project(project, check_scenario)
+                self._create_checks_for_project(project, scenario)
                 created_count += 1
+
+            # Assign project to slot if specified
+            if slot_pos is not None:
+                row, col = slot_pos
+                assigned = self._assign_project_to_slot(shuttle, project, row, col)
+                if assigned:
+                    assigned_count += 1
 
         if created_count > 0:
             self.stdout.write(
@@ -407,6 +521,10 @@ class Command(BaseCommand):
             )
         else:
             self.stdout.write("  G899 test projects already exist")
+
+        if assigned_count > 0:
+            msg = f"  Assigned {assigned_count} projects to G899 slots"
+            self.stdout.write(self.style.SUCCESS(msg))
 
     def _create_g801_slots(self, shuttle: Shuttle) -> None:
         """Create G801 grid slots from the real YAML configuration.
@@ -469,11 +587,21 @@ class Command(BaseCommand):
         - QUARTER (0.5×0.5): 1 slot in row 1, col H
         """
         # G801 projects - different IDs and names than G899
-        # Match slot sizes to actual G801 grid configuration
-        # is_submitted: True = submitted to manufacturing, False = still draft
-        projects_data = [
-            # Full size projects (28 available in G801)
-            ("MP01", "MIPS Processor Core", mithro, SlotSize.FULL, "single_pass", True),
+        # G801 grid layout (5 rows × 8 cols):
+        #   Row 0: HALF_HEIGHT (cols 0-6), QUARTER (col 7)
+        #   Rows 1-4: FULL (cols 0-6), HALF_WIDTH (col 7)
+        # Each tuple: (proj_id, name, owner, size, scenario, is_submitted, slot_pos)
+        projects_data: list[tuple] = [
+            # Full size projects (28 available in G801) - some assigned
+            (
+                "MP01",
+                "MIPS Processor Core",
+                mithro,
+                SlotSize.FULL,
+                "single_pass",
+                True,
+                (1, 0),
+            ),
             (
                 "AR01",
                 "ARM Cortex-M0 Core",
@@ -481,6 +609,7 @@ class Command(BaseCommand):
                 SlotSize.FULL,
                 "single_pass",
                 True,
+                (1, 1),
             ),
             (
                 "DM01",
@@ -489,11 +618,36 @@ class Command(BaseCommand):
                 SlotSize.FULL,
                 "single_fail",
                 True,
+                None,
             ),
-            ("ET01", "Ethernet MAC", testuser, SlotSize.FULL, "drc_update", True),
-            ("CAN1", "CAN Bus Controller", mithro, SlotSize.FULL, "single_pass", False),
-            ("FPU1", "FPU Accelerator", testuser, SlotSize.FULL, "error_retry", True),
-            # Half-height projects (7 available in G801 row 1)
+            (
+                "ET01",
+                "Ethernet MAC",
+                testuser,
+                SlotSize.FULL,
+                "drc_update",
+                True,
+                (2, 0),
+            ),
+            (
+                "CAN1",
+                "CAN Bus Controller",
+                mithro,
+                SlotSize.FULL,
+                "single_pass",
+                False,
+                None,
+            ),
+            (
+                "FPU1",
+                "FPU Accelerator",
+                testuser,
+                SlotSize.FULL,
+                "error_retry",
+                True,
+                None,
+            ),
+            # Half-height projects (7 available in G801 row 0)
             (
                 "SD01",
                 "SD Card Controller",
@@ -501,6 +655,7 @@ class Command(BaseCommand):
                 SlotSize.HALF_HEIGHT,
                 "single_pass",
                 True,
+                (0, 0),
             ),
             (
                 "NV01",
@@ -509,6 +664,7 @@ class Command(BaseCommand):
                 SlotSize.HALF_HEIGHT,
                 "single_fail",
                 False,
+                None,
             ),
             (
                 "WD01",
@@ -517,11 +673,28 @@ class Command(BaseCommand):
                 SlotSize.HALF_HEIGHT,
                 "in_progress",
                 True,
+                None,
             ),
-            # Half-width projects (4 available in G801 col H)
-            ("US01", "USB 2.0 PHY", testuser, SlotSize.HALF_WIDTH, "single_pass", True),
-            ("PC01", "PCIe PHY", mithro, SlotSize.HALF_WIDTH, "drc_update", False),
-            # Quarter project (1 available in G801 row 1, col H)
+            # Half-width projects (4 available in G801 col 7)
+            (
+                "US01",
+                "USB 2.0 PHY",
+                testuser,
+                SlotSize.HALF_WIDTH,
+                "single_pass",
+                True,
+                (1, 7),
+            ),
+            (
+                "PC01",
+                "PCIe PHY",
+                mithro,
+                SlotSize.HALF_WIDTH,
+                "drc_update",
+                False,
+                None,
+            ),
+            # Quarter project (1 available in G801 row 0, col 7)
             (
                 "TM01",
                 "Temperature Sensor",
@@ -529,12 +702,14 @@ class Command(BaseCommand):
                 SlotSize.QUARTER,
                 "single_pass",
                 True,
+                (0, 7),
             ),
         ]
 
         created_count = 0
+        assigned_count = 0
         for idx, proj_data in enumerate(projects_data):
-            proj_id, name, owner, size, check_scenario, is_submitted = proj_data
+            proj_id, name, owner, size, scenario, is_submitted, slot_pos = proj_data
             # Set status and submitted_at based on is_submitted flag
             if is_submitted:
                 status = Project.Status.SUBMITTED
@@ -567,8 +742,15 @@ class Command(BaseCommand):
                 )
 
                 # Create file and checks based on scenario
-                self._create_checks_for_project(project, check_scenario)
+                self._create_checks_for_project(project, scenario)
                 created_count += 1
+
+            # Assign project to slot if specified
+            if slot_pos is not None:
+                row, col = slot_pos
+                assigned = self._assign_project_to_slot(shuttle, project, row, col)
+                if assigned:
+                    assigned_count += 1
 
         if created_count > 0:
             self.stdout.write(
@@ -576,6 +758,36 @@ class Command(BaseCommand):
             )
         else:
             self.stdout.write("  G801 test projects already exist")
+
+        if assigned_count > 0:
+            msg = f"  Assigned {assigned_count} projects to G801 slots"
+            self.stdout.write(self.style.SUCCESS(msg))
+
+    def _assign_project_to_slot(
+        self, shuttle: Shuttle, project: Project, row: int, col: int
+    ) -> bool:
+        """Assign a project to a specific slot.
+
+        Returns True if assignment was made, False if slot already occupied.
+        """
+        try:
+            slot = ShuttleSlot.objects.get(shuttle=shuttle, row=row, column=col)
+        except ShuttleSlot.DoesNotExist:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"  Slot ({row}, {col}) not found for {shuttle.name}"
+                )
+            )
+            return False
+
+        # Only assign if slot is available (not already occupied)
+        if slot.project is not None:
+            return False
+
+        slot.project = project
+        slot.status = ShuttleSlot.Status.OCCUPIED
+        slot.save(update_fields=["project", "status"])
+        return True
 
     def _create_download_attempts(
         self, project_file: ProjectFile, scenario: str
