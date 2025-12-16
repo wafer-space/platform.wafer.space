@@ -39,6 +39,7 @@ Systemd's `IPAddressAllow`/`IPAddressDeny` do not support port filtering. Port-l
 | **celery-none-ro-checks-orch**      | www-data   | `none:ro:checks-orch`  | none    | ro | Check orchestration (DB only)   |
 | **celery-none-ro-beat**             | www-data   | `none:ro:beat`         | none    | ro | Celery Beat scheduler           |
 | **celery-mail-ro-email**            | www-data   | `mail:ro:email`        | mail    | ro | Email via Mailgun               |
+| **celery-http-ro-metadata**         | www-data   | `http:ro:metadata`     | http    | ro | GHCR metadata fetch             |
 | **celery-http-rw-downloads**        | www-data   | `http:rw:downloads`    | http    | rw | File downloads                  |
 | **celery-dock-ro-checks-fast**      | celery-mfg | `dock:ro:checks-fast`  | dock    | ro | Fast Docker ops (<30s)          |
 | **celery-dock-ro-checks-slow**      | celery-mfg | `dock:ro:checks-slow`  | dock    | ro | Slow Docker ops (minutes)       |
@@ -62,6 +63,7 @@ Systemd's `IPAddressAllow`/`IPAddressDeny` do not support port filtering. Port-l
 | `none:ro:default`      | `ensure_download_tasks_queued`    | Recover lost download tasks                |
 | `mail:ro:email`        | `send_tos_update_email`           | Send TOS notification email                |
 | `mail:ro:email`        | `send_bulk_tos_notifications`     | Queue bulk TOS notifications               |
+| `http:ro:metadata`     | `do_revision_fetch`               | Fetch precheck image metadata from GHCR    |
 | `http:rw:downloads`    | `download_project_file`           | Chunked download with resume and hashing   |
 | `dock:ro:checks-fast`  | `do_starting`                     | Start Docker container                     |
 | `dock:ro:checks-fast`  | `do_running`                      | Poll running container                     |
@@ -89,24 +91,25 @@ Docker API ports: 2375 (unencrypted), 2376 (TLS)
 ## Architecture Overview
 
 ```text
-                                    +-----------------+
-                                    |    PostgreSQL   |
-                                    | (Unix Socket)   |
-                                    +-----------------+
-                                           |
-    +--------------------------------------+--------------------------------------+
-    |              |              |              |              |                 |
-+---v---+   +------v------+  +----v----+  +-----v-----+  +-----v-----+  +--------v--------+
-|Gunicorn|  |none:ro:*    |  |mail:ro: |  |http:rw:   |  |dock:ro:*  |  |dock:rw:         |
-|(Web)  |  |(checks-orch,|  |email    |  |downloads  |  |(fast,slow)|  |checks-save      |
-|       |  | default,beat)|  |         |  |           |  |           |  |                 |
-+-------+  +-------------+  +---------+  +-----+-----+  +-----+-----+  +--------+--------+
-                                               |              |                 |
-                                               v              v                 v
-                                          +--------+    +----------+       +--------+
-                                          | Media  |    | Docker   |       | Media  |
-                                          | (Write)|    | Servers  |       | (Write)|
-                                          +--------+    +----------+       +--------+
+                                       +-----------------+
+                                       |    PostgreSQL   |
+                                       | (Unix Socket)   |
+                                       +-----------------+
+                                              |
+    +-----------------------------------------+------------------------------------------+
+    |              |              |                |              |              |       |
++---v---+   +------v------+  +----v----+  +--------v--------+  +--v---+  +------v------+  +--------v--------+
+|Gunicorn|  |none:ro:*    |  |mail:ro: |  |http:ro:         |  |http: |  |dock:ro:*    |  |dock:rw:         |
+|(Web)  |  |(checks-orch,|  |email    |  |metadata         |  |rw:   |  |(fast,slow)  |  |checks-save      |
+|       |  | default,beat)|  |         |  |                 |  |down- |  |             |  |                 |
++-------+  +-------------+  +---------+  +--------+--------+  |loads |  +------+------+  +--------+--------+
+                                                  |           +--+---+         |                  |
+                                                  v              |             v                  v
+                                             +--------+          v        +----------+       +--------+
+                                             | GHCR   |     +--------+    | Docker   |       | Media  |
+                                             | (Read) |     | Media  |    | Servers  |       | (Write)|
+                                             +--------+     | (Write)|    +----------+       +--------+
+                                                            +--------+
 ```
 
 ## Common Configuration
@@ -230,6 +233,22 @@ Worker for email tasks via Mailgun API.
 
 ---
 
+### django-celery-http-ro-metadata.service
+
+Worker for fetching precheck container image metadata from GitHub Container Registry (GHCR).
+
+- **Type:** forking
+- **Queue:** `http:ro:metadata`
+- **Hostname:** http-ro-metadata@%h
+- **Network:** No restrictions (HTTPS to ghcr.io)
+- **ProtectSystem:** strict
+
+**Tasks:**
+
+- `do_revision_fetch` - Fetch image metadata (version, commit SHA, labels) from GHCR for a given digest
+
+---
+
 ### django-celery-http-rw-downloads.service
 
 Worker for downloading large files (up to 100GB) from external URLs.
@@ -322,6 +341,7 @@ sudo systemctl status django-celery-none-ro-default
 sudo systemctl status django-celery-none-ro-checks-orch
 sudo systemctl status django-celery-none-ro-beat
 sudo systemctl status django-celery-mail-ro-email
+sudo systemctl status django-celery-http-ro-metadata
 sudo systemctl status django-celery-http-rw-downloads
 sudo systemctl status django-celery-dock-ro-checks-fast
 sudo systemctl status django-celery-dock-ro-checks-slow
