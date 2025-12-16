@@ -188,3 +188,89 @@ def write_manifest_csv(projects: list[ProjectData], output: TextIO) -> None:
 
     for row in rows:
         writer.writerow(row)
+
+
+def write_summary_csv(projects: list[ProjectData], output: TextIO) -> None:
+    """Write summary CSV with project overview, sorted by CODE.
+
+    Args:
+        projects: List of ProjectData objects
+        output: File-like object to write to
+    """
+    fieldnames = [
+        "CODE",
+        "PROJECT_NAME",
+        "PROJECT_URL",
+        "SLOT",
+        "STATUS",
+        "TOP_CELL",
+        "SUBMITTED_AT",
+        "REPOSITORY_URL",
+    ]
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+
+    # Sort by CODE
+    sorted_projects = sorted(projects, key=lambda p: p.code)
+
+    for project in sorted_projects:
+        status = "Submitted" if project.is_submitted else "Assigned"
+        writer.writerow(
+            {
+                "CODE": project.code,
+                "PROJECT_NAME": project.project_name,
+                "PROJECT_URL": project.project_url,
+                "SLOT": project.slot_size,
+                "STATUS": status,
+                "TOP_CELL": project.top_cell,
+                "SUBMITTED_AT": project.submitted_at or "",
+                "REPOSITORY_URL": project.repository_url or "",
+            }
+        )
+
+
+def write_checks_csv(projects: list[ProjectData], output: TextIO) -> None:
+    """Write checks CSV with manufacturability details, sorted by CODE.
+
+    Args:
+        projects: List of ProjectData objects
+        output: File-like object to write to
+    """
+    fieldnames = [
+        "CODE",
+        "PROJECT_NAME",
+        "CHECK_STATUS",
+        "CHECK_WARNINGS",
+        "CHECK_ERRORS",
+        "CHECK_VERSION",
+        "CHECK_RUNTIME_SECONDS",
+        "CHECK_URL",
+        "INPUT_FILE_URL",
+        "INPUT_MD5",
+        "INPUT_SHA256",
+    ]
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+
+    sorted_projects = sorted(projects, key=lambda p: p.code)
+
+    for project in sorted_projects:
+        writer.writerow(
+            {
+                "CODE": project.code,
+                "PROJECT_NAME": project.project_name,
+                "CHECK_STATUS": project.check_status,
+                "CHECK_WARNINGS": str(project.check_warnings),
+                "CHECK_ERRORS": str(project.check_errors),
+                "CHECK_VERSION": project.check_version or "",
+                "CHECK_RUNTIME_SECONDS": (
+                    str(project.check_runtime_seconds)
+                    if project.check_runtime_seconds is not None
+                    else ""
+                ),
+                "CHECK_URL": project.check_url or "",
+                "INPUT_FILE_URL": project.input_file_url or "",
+                "INPUT_MD5": project.input_md5 or "",
+                "INPUT_SHA256": project.input_sha256 or "",
+            }
+        )

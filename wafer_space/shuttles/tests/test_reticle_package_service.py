@@ -9,7 +9,9 @@ from wafer_space.shuttles.services.reticle_package import SLOT_SIZE_TO_TILES
 from wafer_space.shuttles.services.reticle_package import ProjectData
 from wafer_space.shuttles.services.reticle_package import SlotData
 from wafer_space.shuttles.services.reticle_package import build_tilemap_grid
+from wafer_space.shuttles.services.reticle_package import write_checks_csv
 from wafer_space.shuttles.services.reticle_package import write_manifest_csv
+from wafer_space.shuttles.services.reticle_package import write_summary_csv
 from wafer_space.shuttles.services.reticle_package import write_tilemap_csv
 
 
@@ -204,3 +206,68 @@ class TestCSVWriters:
         assert rows[1]["CODE"] == "MOLE"
         assert rows[1]["SLOT"] == "0p5x1"
         assert rows[1]["LAYOUT"] == "MOLE/MOLE_TOP.gds"
+
+    def test_write_summary_csv(self):
+        """Write summary CSV with project overview."""
+        projects = [
+            ProjectData(
+                code="MOLE",
+                project_name="Mole Detector",
+                project_uuid="uuid1",
+                project_url="https://example.com/p/1/",
+                slot_size="1x1",
+                slot_positions=["A1"],
+                top_cell="MOLE_TOP",
+                gds_path="/path/mole.gds",
+                gds_sha256="hash1",
+                is_submitted=True,
+                check_status="manufacturable",
+                check_warnings=0,
+                check_errors=0,
+                submitted_at="2025-12-15T10:00:00Z",
+                repository_url="https://github.com/example/mole",
+            ),
+        ]
+        output = io.StringIO()
+        write_summary_csv(projects, output)
+
+        output.seek(0)
+        reader = csv.DictReader(output)
+        rows = list(reader)
+
+        assert len(rows) == 1
+        assert rows[0]["CODE"] == "MOLE"
+        assert rows[0]["PROJECT_NAME"] == "Mole Detector"
+        assert rows[0]["PROJECT_URL"] == "https://example.com/p/1/"
+
+    def test_write_checks_csv(self):
+        """Write checks CSV with manufacturability details."""
+        projects = [
+            ProjectData(
+                code="MOLE",
+                project_name="Mole Detector",
+                project_uuid="uuid1",
+                project_url="url1",
+                slot_size="1x1",
+                slot_positions=["A1"],
+                top_cell="MOLE_TOP",
+                gds_path="/path/mole.gds",
+                gds_sha256="hash1",
+                is_submitted=True,
+                check_status="manufacturable_with_warnings",
+                check_warnings=5,
+                check_errors=0,
+                check_version="v2.1.0",
+                check_runtime_seconds=120.5,
+            ),
+        ]
+        output = io.StringIO()
+        write_checks_csv(projects, output)
+
+        output.seek(0)
+        reader = csv.DictReader(output)
+        rows = list(reader)
+
+        assert len(rows) == 1
+        assert rows[0]["CHECK_STATUS"] == "manufacturable_with_warnings"
+        assert rows[0]["CHECK_WARNINGS"] == "5"
