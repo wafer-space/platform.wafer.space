@@ -216,9 +216,9 @@ class Command(BaseCommand):
         return f"sha256:{self.PRECHECK_VERSIONS[0][1] * 5}ab"
 
     # Real GHCR digest to test revision fetching from GitHub
-    # This digest exists in ghcr.io/wafer-space/gf180mcu-precheck
+    # This is the amd64 manifest digest from ghcr.io/wafer-space/gf180mcu-precheck:latest
     REAL_GHCR_DIGEST = (
-        "sha256:d1c07b42f0b5a5e7d3f8e9a6b2c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2"
+        "sha256:011b1b8e3b412e68e4e961ea713775dcdf1b7ff8e543b78e49666e1b81eb68e5"
     )
 
     def _ensure_precheck_revisions(self) -> None:
