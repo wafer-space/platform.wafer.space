@@ -63,11 +63,11 @@ class Command(BaseCommand):
         # Build finished status rows
         finished_rows = []
         for status in ManufacturabilityCheck.FinishedStatus:
-            meta = finished_metadata.get(status, {})
-            color = meta.get("color", "secondary")
-            icon = meta.get("icon", "")
-            unicode_icon = meta.get("unicode", "?")
-            label = meta.get("label", status.label)
+            finished_meta = finished_metadata.get(status, {})
+            color = finished_meta.get("color", "secondary")
+            icon = finished_meta.get("icon", "")
+            unicode_icon = finished_meta.get("unicode", "?")
+            label = finished_meta.get("label", status.label)
 
             badge = f'<span class="badge bg-{color}">'
             badge += f'<i class="bi {icon}"></i> {label}</span>'

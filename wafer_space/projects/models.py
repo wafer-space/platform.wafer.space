@@ -1529,7 +1529,7 @@ class ManufacturabilityCheck(models.Model):
         NOT_MANUFACTURABLE = "not_manufacturable", "Not Manufacturable"
 
     # Finished status presentation metadata for manufacturability results
-    _FINISHED_STATUS_METADATA: ClassVar[dict[str, dict[str, str]]] = {
+    _FINISHED_STATUS_METADATA: ClassVar[dict[FinishedStatus, dict[str, str]]] = {
         FinishedStatus.MANUFACTURABLE: {
             "color": "success",
             "icon": "bi-check-circle",
