@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 
+{% load precheck_tags %}
+
 {% block title %}
   Project Summary
 {% endblock title %}
@@ -258,7 +260,7 @@
               <td class="text-nowrap">{{ project.user.email }}</td>
               {% with active_file=project.active_files.0 %}
                 {% if active_file and active_file.latest_manufacturability_check %}
-                  <td class="text-nowrap">{{ active_file.latest_manufacturability_check.status_badge_html }}</td>
+                  <td class="text-nowrap">{% badge_check_status active_file.latest_manufacturability_check %}</td>
                 {% else %}
                   <td class="text-nowrap">-</td>
                 {% endif %}
