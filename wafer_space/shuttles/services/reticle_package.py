@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING
 from typing import TextIO
 
 if TYPE_CHECKING:
+    from wafer_space.projects.models import Project
+    from wafer_space.projects.models import ProjectFile
     from wafer_space.shuttles.config import GridConfig
     from wafer_space.shuttles.models import Shuttle
     from wafer_space.shuttles.models import ShuttleSlot
@@ -592,16 +594,15 @@ class ReticlePackageService:
 
         return slots_data, projects_data
 
-    def _collect_project_data(self, slot: ShuttleSlot) -> ProjectData | None:
-        """Collect data for a single project from a slot."""
+    def _get_project_file(self, project: Project) -> ProjectFile | None:
+        """Get the project file to use for package generation.
+
+        Returns the submitted_file if set, otherwise falls back to the latest
+        file with a passing check (when allow_pending is True).
+        """
         from wafer_space.projects.models import ManufacturabilityCheck  # noqa: PLC0415
         from wafer_space.projects.models import ProjectFile  # noqa: PLC0415
 
-        project = slot.project
-        if not project:
-            return None
-
-        # Get project file
         project_file = project.submitted_file
         if not project_file and self.allow_pending:
             # Fall back to latest with passing check
@@ -613,7 +614,18 @@ class ReticlePackageService:
                 .order_by("-uploaded_at")
                 .first()
             )
+        return project_file
 
+    def _collect_project_data(self, slot: ShuttleSlot) -> ProjectData | None:
+        """Collect data for a single project from a slot."""
+        from wafer_space.projects.models import ManufacturabilityCheck  # noqa: PLC0415
+
+        project = slot.project
+        if not project:
+            return None
+
+        # Get project file
+        project_file = self._get_project_file(project)
         if not project_file:
             if self.allow_pending:
                 self.warnings.append(
@@ -641,6 +653,14 @@ class ReticlePackageService:
                 return None
             msg = f"Project {project.project_id} has no completed check"
             raise ReticlePackageError(msg)
+
+        # Skip projects that failed manufacturability check
+        not_manufacturable = ManufacturabilityCheck.FinishedStatus.NOT_MANUFACTURABLE
+        if check.finished_status == not_manufacturable:
+            self.warnings.append(
+                f"Skipping {project.project_id}: not manufacturable (check {check.pk})"
+            )
+            return None
 
         # Validate required fields
         if not check.output_gds:

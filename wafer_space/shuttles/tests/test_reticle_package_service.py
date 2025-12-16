@@ -730,12 +730,12 @@ class TestReticlePackageServiceIntegration:
         assert "FALL" in manifest_content
         assert "FALLBACK_TOP" in manifest_content
 
-    def test_fallback_query_with_failing_check(self, tmp_path):
-        """Test fallback includes projects with failing manufacturability checks.
+    def test_fallback_query_skips_not_manufacturable(self, tmp_path):
+        """Test fallback skips projects with NOT_MANUFACTURABLE status.
 
-        The service should include projects even if is_manufacturable=False,
-        as long as the check is FINISHED and has output_gds. The finished_status
-        is recorded but not used to filter projects.
+        Projects that fail manufacturability checks (is_manufacturable=False)
+        are skipped since they typically have no output_gds and cannot be
+        included in the reticle package.
         """
         # Create grid config
         config_dir = tmp_path / "config"
@@ -762,7 +762,7 @@ class TestReticlePackageServiceIntegration:
             slot_size="1x1",
         )
 
-        # Create GDS file
+        # Create GDS file (even though it won't be used)
         gds_dir = tmp_path / "gds"
         gds_dir.mkdir()
         output_gds = gds_dir / "failing_output.gds"
@@ -803,15 +803,9 @@ class TestReticlePackageServiceIntegration:
 
         result = service.generate()
 
-        # Project should be included even with failing check
-        assert result["projects_included"] == 1
-        assert result["projects_skipped"] == 0
+        # Project should be SKIPPED due to not manufacturable
+        assert result["projects_included"] == 0
+        assert result["projects_skipped"] == 1
 
-        # Verify files were created
-        assert (output / "FAIL").exists()
-        assert (output / "FAIL" / "FAILING_TOP.gds").exists()
-
-        # Verify check status is recorded in checks.csv
-        checks_content = (output / "checks.csv").read_text()
-        assert "FAIL" in checks_content
-        assert "not_manufacturable" in checks_content
+        # Verify project directory was NOT created
+        assert not (output / "FAIL").exists()
