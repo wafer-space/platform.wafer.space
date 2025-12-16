@@ -119,7 +119,7 @@ Docker-based manufacturability checks use **remote Docker servers** over TCP (no
 2. Connect to remote Docker servers via `IPAddressAllow` restrictions
 3. Are isolated from web traffic by systemd security settings
 
-**See [DOCKER_ACCESS.md](./DOCKER_ACCESS.md) for Docker server setup.**
+**See [docs/systemd-services.md](../docs/systemd-services.md#docker-server-configuration) for Docker server IPs and configuration.**
 
 ## Architecture
 
