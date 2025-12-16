@@ -35,21 +35,33 @@
                   <span class="badge bg-success">{{ summary.latest_manufacturable_total }}</span>
                 </div>
                 <div class="small text-muted mb-1 ms-3">
-                  {% for item in summary.latest_manufacturable_by_size %}{{ item.size }}:&nbsp;{{ item.count }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
+                  {% for item in summary.latest_manufacturable_by_size %}
+                    {{ item.size }}:&nbsp;{{ item.count }}
+                    {% if not forloop.last %},{% endif %}
+                  {% empty %}—
+                  {% endfor %}
                 </div>
                 <div class="d-flex justify-content-between align-items-center">
                   <span class="text-danger small text-nowrap"><i class="bi bi-x-circle"></i>&nbsp;Non-Manufacturable</span>
                   <span class="badge bg-danger">{{ summary.latest_non_manufacturable_total }}</span>
                 </div>
                 <div class="small text-muted mb-1 ms-3">
-                  {% for item in summary.latest_non_manufacturable_by_size %}{{ item.size }}:&nbsp;{{ item.count }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
+                  {% for item in summary.latest_non_manufacturable_by_size %}
+                    {{ item.size }}:&nbsp;{{ item.count }}
+                    {% if not forloop.last %},{% endif %}
+                  {% empty %}—
+                  {% endfor %}
                 </div>
                 <div class="d-flex justify-content-between align-items-center">
                   <span class="text-secondary small text-nowrap"><i class="bi bi-hourglass"></i>&nbsp;Pending</span>
                   <span class="badge bg-secondary">{{ summary.latest_pending_total }}</span>
                 </div>
                 <div class="small text-muted ms-3">
-                  {% for item in summary.latest_pending_by_size %}{{ item.size }}:&nbsp;{{ item.count }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
+                  {% for item in summary.latest_pending_by_size %}
+                    {{ item.size }}:&nbsp;{{ item.count }}
+                    {% if not forloop.last %},{% endif %}
+                  {% empty %}—
+                  {% endfor %}
                 </div>
               </div>
               {# Older Precheck Section #}
@@ -63,21 +75,33 @@
                   <span class="badge bg-success">{{ summary.older_manufacturable_total }}</span>
                 </div>
                 <div class="small text-muted mb-1 ms-3">
-                  {% for item in summary.older_manufacturable_by_size %}{{ item.size }}:&nbsp;{{ item.count }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
+                  {% for item in summary.older_manufacturable_by_size %}
+                    {{ item.size }}:&nbsp;{{ item.count }}
+                    {% if not forloop.last %},{% endif %}
+                  {% empty %}—
+                  {% endfor %}
                 </div>
                 <div class="d-flex justify-content-between align-items-center">
                   <span class="text-danger small text-nowrap"><i class="bi bi-x-circle"></i>&nbsp;Non-Manufacturable</span>
                   <span class="badge bg-danger">{{ summary.older_non_manufacturable_total }}</span>
                 </div>
                 <div class="small text-muted mb-1 ms-3">
-                  {% for item in summary.older_non_manufacturable_by_size %}{{ item.size }}:&nbsp;{{ item.count }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
+                  {% for item in summary.older_non_manufacturable_by_size %}
+                    {{ item.size }}:&nbsp;{{ item.count }}
+                    {% if not forloop.last %},{% endif %}
+                  {% empty %}—
+                  {% endfor %}
                 </div>
                 <div class="d-flex justify-content-between align-items-center">
                   <span class="text-secondary small text-nowrap"><i class="bi bi-hourglass"></i>&nbsp;Pending</span>
                   <span class="badge bg-secondary">{{ summary.older_pending_total }}</span>
                 </div>
                 <div class="small text-muted ms-3">
-                  {% for item in summary.older_pending_by_size %}{{ item.size }}:&nbsp;{{ item.count }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
+                  {% for item in summary.older_pending_by_size %}
+                    {{ item.size }}:&nbsp;{{ item.count }}
+                    {% if not forloop.last %},{% endif %}
+                  {% empty %}—
+                  {% endfor %}
                 </div>
               </div>
             </div>
@@ -96,34 +120,74 @@
                 <table class="table table-sm table-borderless mb-0">
                   <tbody>
                     <tr>
-                      <td class="text-nowrap"><i class="bi {{ s.no_check.icon }}"></i>&nbsp;{{ s.no_check.label }}</td>
-                      <td><span class="badge bg-{{ s.no_check.color }}">{{ s.no_check.count }}</span></td>
-                      <td class="text-nowrap"><i class="bi {{ s.pending.icon }}"></i>&nbsp;{{ s.pending.label }}</td>
-                      <td><span class="badge bg-{{ s.pending.color }} {% if s.pending.color == 'warning' %}text-dark{% endif %}">{{ s.pending.count }}</span></td>
+                      <td class="text-nowrap">
+                        <i class="bi {{ s.no_check.icon }}"></i>&nbsp;{{ s.no_check.label }}
+                      </td>
+                      <td>
+                        <span class="badge bg-{{ s.no_check.color }}">{{ s.no_check.count }}</span>
+                      </td>
+                      <td class="text-nowrap">
+                        <i class="bi {{ s.pending.icon }}"></i>&nbsp;{{ s.pending.label }}
+                      </td>
+                      <td>
+                        <span class="badge bg-{{ s.pending.color }} {% if s.pending.color == 'warning' %}text-dark{% endif %}">{{ s.pending.count }}</span>
+                      </td>
                     </tr>
                     <tr>
-                      <td class="text-nowrap"><i class="bi {{ s.dispatching.icon }}"></i>&nbsp;{{ s.dispatching.label }}</td>
-                      <td><span class="badge bg-{{ s.dispatching.color }}">{{ s.dispatching.count }}</span></td>
-                      <td class="text-nowrap"><i class="bi {{ s.starting.icon }}"></i>&nbsp;{{ s.starting.label }}</td>
-                      <td><span class="badge bg-{{ s.starting.color }}">{{ s.starting.count }}</span></td>
+                      <td class="text-nowrap">
+                        <i class="bi {{ s.dispatching.icon }}"></i>&nbsp;{{ s.dispatching.label }}
+                      </td>
+                      <td>
+                        <span class="badge bg-{{ s.dispatching.color }}">{{ s.dispatching.count }}</span>
+                      </td>
+                      <td class="text-nowrap">
+                        <i class="bi {{ s.starting.icon }}"></i>&nbsp;{{ s.starting.label }}
+                      </td>
+                      <td>
+                        <span class="badge bg-{{ s.starting.color }}">{{ s.starting.count }}</span>
+                      </td>
                     </tr>
                     <tr>
-                      <td class="text-nowrap"><i class="bi {{ s.running.icon }}"></i>&nbsp;{{ s.running.label }}</td>
-                      <td><span class="badge bg-{{ s.running.color }}">{{ s.running.count }}</span></td>
-                      <td class="text-nowrap"><i class="bi {{ s.analyzing.icon }}"></i>&nbsp;{{ s.analyzing.label }}</td>
-                      <td><span class="badge bg-{{ s.analyzing.color }}">{{ s.analyzing.count }}</span></td>
+                      <td class="text-nowrap">
+                        <i class="bi {{ s.running.icon }}"></i>&nbsp;{{ s.running.label }}
+                      </td>
+                      <td>
+                        <span class="badge bg-{{ s.running.color }}">{{ s.running.count }}</span>
+                      </td>
+                      <td class="text-nowrap">
+                        <i class="bi {{ s.analyzing.icon }}"></i>&nbsp;{{ s.analyzing.label }}
+                      </td>
+                      <td>
+                        <span class="badge bg-{{ s.analyzing.color }}">{{ s.analyzing.count }}</span>
+                      </td>
                     </tr>
                     <tr>
-                      <td class="text-nowrap"><i class="bi {{ s.cancelling.icon }}"></i>&nbsp;{{ s.cancelling.label }}</td>
-                      <td><span class="badge bg-{{ s.cancelling.color }} {% if s.cancelling.color == 'warning' %}text-dark{% endif %}">{{ s.cancelling.count }}</span></td>
-                      <td class="text-nowrap"><i class="bi {{ s.cancelled.icon }}"></i>&nbsp;{{ s.cancelled.label }}</td>
-                      <td><span class="badge bg-{{ s.cancelled.color }}">{{ s.cancelled.count }}</span></td>
+                      <td class="text-nowrap">
+                        <i class="bi {{ s.cancelling.icon }}"></i>&nbsp;{{ s.cancelling.label }}
+                      </td>
+                      <td>
+                        <span class="badge bg-{{ s.cancelling.color }} {% if s.cancelling.color == 'warning' %}text-dark{% endif %}">{{ s.cancelling.count }}</span>
+                      </td>
+                      <td class="text-nowrap">
+                        <i class="bi {{ s.cancelled.icon }}"></i>&nbsp;{{ s.cancelled.label }}
+                      </td>
+                      <td>
+                        <span class="badge bg-{{ s.cancelled.color }}">{{ s.cancelled.count }}</span>
+                      </td>
                     </tr>
                     <tr>
-                      <td class="text-nowrap"><i class="bi {{ s.error.icon }}"></i>&nbsp;{{ s.error.label }}</td>
-                      <td><span class="badge bg-{{ s.error.color }}">{{ s.error.count }}</span></td>
-                      <td class="text-nowrap"><i class="bi {{ s.finished.icon }}"></i>&nbsp;{{ s.finished.label }}</td>
-                      <td><span class="badge bg-{{ s.finished.color }}">{{ s.finished.count }}</span></td>
+                      <td class="text-nowrap">
+                        <i class="bi {{ s.error.icon }}"></i>&nbsp;{{ s.error.label }}
+                      </td>
+                      <td>
+                        <span class="badge bg-{{ s.error.color }}">{{ s.error.count }}</span>
+                      </td>
+                      <td class="text-nowrap">
+                        <i class="bi {{ s.finished.icon }}"></i>&nbsp;{{ s.finished.label }}
+                      </td>
+                      <td>
+                        <span class="badge bg-{{ s.finished.color }}">{{ s.finished.count }}</span>
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -170,9 +234,7 @@
                       {% if latest_precheck_revision.github_commit_url %}
                         <a href="{{ latest_precheck_revision.github_commit_url }}"
                            target="_blank"
-                           class="font-monospace">
-                          {{ latest_precheck_revision.git_commit_sha|slice:":7" }}
-                        </a>
+                           class="font-monospace">{{ latest_precheck_revision.git_commit_sha|slice:":7" }}</a>
                       {% elif latest_precheck_revision.git_commit_sha %}
                         <span class="font-monospace">{{ latest_precheck_revision.git_commit_sha|slice:":7" }}</span>
                       {% else %}
