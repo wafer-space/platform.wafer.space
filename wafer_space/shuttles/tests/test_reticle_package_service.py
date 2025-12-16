@@ -11,6 +11,7 @@ from pathlib import Path
 from wafer_space.shuttles.services.reticle_package import SLOT_SIZE_TO_TILES
 from wafer_space.shuttles.services.reticle_package import PackageMetadata
 from wafer_space.shuttles.services.reticle_package import ProjectData
+from wafer_space.shuttles.services.reticle_package import ReticlePackageService
 from wafer_space.shuttles.services.reticle_package import SlotData
 from wafer_space.shuttles.services.reticle_package import build_tilemap_grid
 from wafer_space.shuttles.services.reticle_package import create_gds_link
@@ -413,3 +414,17 @@ class TestGdsLinkCreation:
             assert dest.read_text() == "GDS content"
             assert len(warnings) == 1
             assert "copied" in warnings[0].lower()
+
+
+class TestReticlePackageService:
+    """Tests for ReticlePackageService."""
+
+    def test_service_initialization(self, tmp_path):
+        """Service can be initialized with shuttle name."""
+        service = ReticlePackageService(
+            shuttle_name="G801",
+            output_path=tmp_path / "test",
+            allow_pending=False,
+        )
+        assert service.shuttle_name == "G801"
+        assert service.allow_pending is False

@@ -472,3 +472,43 @@ def create_gds_link(
         warnings.append(f"Copied {source} to {dest} (hardlink failed: {e})")
 
     return warnings
+
+
+class ReticlePackageError(Exception):
+    """Exception raised for reticle package generation errors."""
+
+
+class ReticlePackageService:
+    """Service for generating reticle stitcher packages."""
+
+    def __init__(
+        self,
+        shuttle_name: str,
+        output_path: Path,
+        *,
+        allow_pending: bool = False,
+    ) -> None:
+        """Initialize the service.
+
+        Args:
+            shuttle_name: Shuttle ID (e.g., "G801")
+            output_path: Directory path for output
+            allow_pending: If True, skip projects without checks
+        """
+        self.shuttle_name = shuttle_name
+        self.output_path = output_path
+        self.allow_pending = allow_pending
+        self.warnings: list[str] = []
+
+    def generate(self) -> dict[str, int]:
+        """Generate the reticle package.
+
+        Returns:
+            Dict with counts: projects_included, projects_skipped
+
+        Raises:
+            ReticlePackageError: If generation fails
+        """
+        # Implementation in next task
+        msg = "generate() not yet implemented"
+        raise NotImplementedError(msg)
