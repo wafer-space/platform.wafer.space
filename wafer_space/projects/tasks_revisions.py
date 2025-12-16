@@ -32,11 +32,10 @@ def revisions_needs_fetching() -> dict[str, int]:
     """
     known_digests = set(PrecheckImageRevision.objects.values_list("digest", flat=True))
 
-    new_digests = (
+    new_digests = set(
         ManufacturabilityCheck.objects.exclude(docker_image_digest="")
         .exclude(docker_image_digest__in=known_digests)
         .values_list("docker_image_digest", flat=True)
-        .distinct()
     )
 
     queued = 0
