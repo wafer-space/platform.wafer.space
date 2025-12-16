@@ -5,12 +5,15 @@ from __future__ import annotations
 import csv
 import io
 import json
+import tempfile
+from pathlib import Path
 
 from wafer_space.shuttles.services.reticle_package import SLOT_SIZE_TO_TILES
 from wafer_space.shuttles.services.reticle_package import PackageMetadata
 from wafer_space.shuttles.services.reticle_package import ProjectData
 from wafer_space.shuttles.services.reticle_package import SlotData
 from wafer_space.shuttles.services.reticle_package import build_tilemap_grid
+from wafer_space.shuttles.services.reticle_package import create_gds_link
 from wafer_space.shuttles.services.reticle_package import generate_project_info_json
 from wafer_space.shuttles.services.reticle_package import generate_readme
 from wafer_space.shuttles.services.reticle_package import write_checks_csv
@@ -368,3 +371,45 @@ class TestInfoJsonGenerator:
         assert data["project"]["uuid"] == "12345678-1234-1234-1234-123456789abc"
         assert data["manufacturability_check"]["warnings_count"] == expected_warnings
         assert data["slot_positions"] == ["A1", "A2", "B1", "B2"]
+
+
+class TestGdsLinkCreation:
+    """Tests for GDS file linking."""
+
+    def test_create_hardlink(self):
+        """Create hardlink to GDS file."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+
+            # Create source file
+            source = tmppath / "source.gds"
+            source.write_text("GDS content")
+
+            # Create destination
+            dest = tmppath / "output" / "MOLE" / "TOP.gds"
+
+            warnings = create_gds_link(source, dest)
+
+            assert dest.exists()
+            assert dest.read_text() == "GDS content"
+            assert len(warnings) == 0
+            # Verify it's a hardlink (same inode)
+            assert source.stat().st_ino == dest.stat().st_ino
+
+    def test_fallback_to_copy_cross_filesystem(self):
+        """Fall back to copy when hardlink fails."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+
+            source = tmppath / "source.gds"
+            source.write_text("GDS content")
+
+            dest = tmppath / "output" / "MOLE" / "TOP.gds"
+
+            # Force copy mode
+            warnings = create_gds_link(source, dest, force_copy=True)
+
+            assert dest.exists()
+            assert dest.read_text() == "GDS content"
+            assert len(warnings) == 1
+            assert "copied" in warnings[0].lower()

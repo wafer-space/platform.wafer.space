@@ -4,8 +4,14 @@ from __future__ import annotations
 
 import csv
 import json
+import os
+import shutil
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from typing import TextIO
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # Mapping from slot size to tile dimensions (width, height)
 SLOT_SIZE_TO_TILES: dict[str, tuple[int, int]] = {
@@ -430,3 +436,39 @@ def generate_project_info_json(project: ProjectData) -> str:
     }
 
     return json.dumps(data, indent=2)
+
+
+def create_gds_link(
+    source: Path,
+    dest: Path,
+    *,
+    force_copy: bool = False,
+) -> list[str]:
+    """Create a hardlink to a GDS file, falling back to copy if needed.
+
+    Args:
+        source: Path to source GDS file
+        dest: Path where link/copy should be created
+        force_copy: If True, always copy instead of hardlink
+
+    Returns:
+        List of warning messages (empty if hardlink succeeded)
+    """
+    warnings: list[str] = []
+
+    # Ensure destination directory exists
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    if force_copy:
+        shutil.copy2(source, dest)
+        warnings.append(f"Copied {source} to {dest} (forced)")
+        return warnings
+
+    try:
+        os.link(source, dest)
+    except OSError as e:
+        # Hardlink failed (likely cross-filesystem), fall back to copy
+        shutil.copy2(source, dest)
+        warnings.append(f"Copied {source} to {dest} (hardlink failed: {e})")
+
+    return warnings
