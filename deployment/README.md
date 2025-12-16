@@ -110,7 +110,7 @@ sudo systemctl status django-celery-none-ro-default
 curl https://platform.wafer.space
 ```
 
-**Done!** Your application is now running at https://platform.wafer.space
+**Done!** Your application is now running at <https://platform.wafer.space>
 
 ## Deployment Scripts Reference
 
