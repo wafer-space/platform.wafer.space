@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from django.conf import settings
+
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.shuttles.config import GridConfig
 from wafer_space.shuttles.models import Shuttle
@@ -189,7 +191,7 @@ def write_summary(path: Path, slots: list[ShuttleSlot]) -> None:
                 [
                     slot.project.project_id,
                     slot.project.name,
-                    f"/projects/{slot.project.id}/",
+                    f"{settings.SITE_URL}/projects/{slot.project.id}/",
                     slot.slot_size,
                     slot_count,
                     "yes" if slot.project.submitted_file else "no",
