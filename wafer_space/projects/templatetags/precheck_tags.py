@@ -70,7 +70,7 @@ def badge_check_version(check: ManufacturabilityCheck | None) -> SafeString:
         return format_html("")
 
     revision = check.precheck_revision
-    version_str = _get_version_string(check, revision)
+    version_str = _get_version_string(revision)
     is_latest = check.is_using_latest_precheck
     icon, icon_class = _get_version_icon(is_latest=is_latest)
 
@@ -120,7 +120,7 @@ def badge_check_status_and_version(
 
     if check.docker_image_digest:
         revision = check.precheck_revision
-        version_str = _get_version_string(check, revision)
+        version_str = _get_version_string(revision)
         is_latest = check.is_using_latest_precheck
         version_icon, version_icon_class = _get_version_icon(is_latest=is_latest)
         version_part = format_html(
@@ -199,10 +199,7 @@ def _get_version_icon(*, is_latest: bool | None) -> tuple[str, str]:
     return ("cloud", "text-white-50")
 
 
-def _get_version_string(
-    check: ManufacturabilityCheck,
-    revision: PrecheckImageRevision | None,
-) -> str:
+def _get_version_string(revision: PrecheckImageRevision | None) -> str:
     """Return version string for badge display."""
     if revision:
         if revision.precheck_version:
