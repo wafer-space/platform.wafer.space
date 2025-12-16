@@ -67,7 +67,7 @@ def badge_check_version(check: ManufacturabilityCheck | None) -> SafeString:
     Usage: {% badge_check_version check %}
     """
     if not check or not check.docker_image_digest:
-        return mark_safe("")
+        return format_html("")
 
     revision = check.precheck_revision
     version_str = _get_version_string(check, revision)
@@ -130,7 +130,7 @@ def badge_check_status_and_version(
             version_icon_class,
         )
     else:
-        version_part = mark_safe("")
+        version_part = format_html("")
 
     return format_html(
         '<a href="{}" class="badge {} text-decoration-none">'
@@ -179,7 +179,7 @@ def _get_status_display(
 def _get_version_indicator_html(check: ManufacturabilityCheck) -> SafeString:
     """Return HTML for version indicator icon."""
     if not check.docker_image_digest:
-        return mark_safe("")
+        return format_html("")
 
     is_latest = check.is_using_latest_precheck
     icon, icon_class = _get_version_icon(is_latest=is_latest)
