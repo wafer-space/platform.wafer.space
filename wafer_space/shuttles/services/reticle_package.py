@@ -82,6 +82,7 @@ def write_manifest_and_copy_gds(
                 check = pf.output_check
                 _require_manufacturable(check)
                 top_cell = pf.top_cell or _missing("top_cell")
+                out_file = f"{code}/{top_cell}.gds"
                 gds_path = Path(check.output_gds.path)
                 sha256 = check.output_gds_sha256
             except (AttributeError, ManifestError) as e:
@@ -89,20 +90,13 @@ def write_manifest_and_copy_gds(
                 continue
 
             writer.writerow(
-                [
-                    code,
-                    slot.slot_size,
-                    slot.grid_position,
-                    f"{code}/{top_cell}.gds",
-                    top_cell,
-                    sha256,
-                ]
+                [code, slot.slot_size, slot.grid_position, out_file, top_cell, sha256]
             )
 
-            project_dir = output_path / code
-            project_dir.mkdir(exist_ok=True)
+            dest = output_path / out_file
+            dest.parent.mkdir(exist_ok=True)
             try:
-                os.link(gds_path, project_dir / f"{top_cell}.gds")
+                os.link(gds_path, dest)
             except OSError as e:
                 pending.setdefault(code, []).append(f"hardlink failed: {e}")
 
