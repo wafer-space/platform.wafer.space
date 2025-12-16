@@ -140,8 +140,8 @@ class TestPrecheckImageRevisionStatistics:
         )
 
         stats = revision.get_run_duration_stats()
-        assert stats["average"] == expected_average
-        assert stats["max"] == expected_max
+        assert stats["average"] == pytest.approx(expected_average)
+        assert stats["max"] == pytest.approx(expected_max)
 
     def test_get_run_duration_stats_no_data(self):
         """get_run_duration_stats returns None when no completed checks."""
