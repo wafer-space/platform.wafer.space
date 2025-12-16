@@ -30,7 +30,12 @@ def revisions_needs_fetching() -> dict[str, int]:
     Returns:
         {"new_revisions_queued": int}
     """
-    known_digests = set(PrecheckImageRevision.objects.values_list("digest", flat=True))
+    # Only consider digests as "known" if metadata was actually fetched
+    known_digests = set(
+        PrecheckImageRevision.objects.filter(
+            metadata_fetched_at__isnull=False
+        ).values_list("digest", flat=True)
+    )
 
     new_digests = set(
         ManufacturabilityCheck.objects.exclude(docker_image_digest="")

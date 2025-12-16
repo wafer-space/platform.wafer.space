@@ -248,6 +248,7 @@ class Command(BaseCommand):
                         "klayout": "0.28.17",
                         "netgen": "1.5.272",
                     },
+                    "metadata_fetched_at": timezone.now(),
                 },
             )
             if created:
