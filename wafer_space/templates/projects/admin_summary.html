@@ -73,55 +73,55 @@
                 {# Row 1: No Check / Pending #}
                 <div class="row mb-1">
                   <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span><i class="bi {{ s.no_check.icon }} me-1"></i>No Check</span>
+                    <span><i class="bi {{ s.no_check.icon }} me-1"></i>{{ s.no_check.label }}</span>
                     <span class="badge bg-{{ s.no_check.color }}">{{ s.no_check.count }}</span>
                   </div>
                   <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span><i class="bi {{ s.pending.icon }} me-1"></i>Pending</span>
+                    <span><i class="bi {{ s.pending.icon }} me-1"></i>{{ s.pending.label }}</span>
                     <span class="badge bg-{{ s.pending.color }} {% if s.pending.color == 'warning' %}text-dark{% endif %}">{{ s.pending.count }}</span>
                   </div>
                 </div>
                 {# Row 2: Dispatching / Starting #}
                 <div class="row mb-1">
                   <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span><i class="bi {{ s.dispatching.icon }} me-1"></i>Dispatching</span>
+                    <span><i class="bi {{ s.dispatching.icon }} me-1"></i>{{ s.dispatching.label }}</span>
                     <span class="badge bg-{{ s.dispatching.color }}">{{ s.dispatching.count }}</span>
                   </div>
                   <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span><i class="bi {{ s.starting.icon }} me-1"></i>Starting</span>
+                    <span><i class="bi {{ s.starting.icon }} me-1"></i>{{ s.starting.label }}</span>
                     <span class="badge bg-{{ s.starting.color }}">{{ s.starting.count }}</span>
                   </div>
                 </div>
                 {# Row 3: Running / Analyzing #}
                 <div class="row mb-1">
                   <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span><i class="bi {{ s.running.icon }} me-1"></i>Running</span>
+                    <span><i class="bi {{ s.running.icon }} me-1"></i>{{ s.running.label }}</span>
                     <span class="badge bg-{{ s.running.color }}">{{ s.running.count }}</span>
                   </div>
                   <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span><i class="bi {{ s.analyzing.icon }} me-1"></i>Analyzing</span>
+                    <span><i class="bi {{ s.analyzing.icon }} me-1"></i>{{ s.analyzing.label }}</span>
                     <span class="badge bg-{{ s.analyzing.color }}">{{ s.analyzing.count }}</span>
                   </div>
                 </div>
                 {# Row 4: Cancelling / Cancelled #}
                 <div class="row mb-1">
                   <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span><i class="bi {{ s.cancelling.icon }} me-1"></i>Cancelling</span>
+                    <span><i class="bi {{ s.cancelling.icon }} me-1"></i>{{ s.cancelling.label }}</span>
                     <span class="badge bg-{{ s.cancelling.color }} {% if s.cancelling.color == 'warning' %}text-dark{% endif %}">{{ s.cancelling.count }}</span>
                   </div>
                   <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span><i class="bi {{ s.cancelled.icon }} me-1"></i>Cancelled</span>
+                    <span><i class="bi {{ s.cancelled.icon }} me-1"></i>{{ s.cancelled.label }}</span>
                     <span class="badge bg-{{ s.cancelled.color }}">{{ s.cancelled.count }}</span>
                   </div>
                 </div>
                 {# Row 5: Error / Finished #}
                 <div class="row">
                   <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span><i class="bi {{ s.error.icon }} me-1"></i>Error</span>
+                    <span><i class="bi {{ s.error.icon }} me-1"></i>{{ s.error.label }}</span>
                     <span class="badge bg-{{ s.error.color }}">{{ s.error.count }}</span>
                   </div>
                   <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span><i class="bi {{ s.finished.icon }} me-1"></i>Finished</span>
+                    <span><i class="bi {{ s.finished.icon }} me-1"></i>{{ s.finished.label }}</span>
                     <span class="badge bg-{{ s.finished.color }}">{{ s.finished.count }}</span>
                   </div>
                 </div>
