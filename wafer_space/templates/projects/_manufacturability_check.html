@@ -459,6 +459,21 @@
         </tr>
         <tr>
           <td>
+            <strong>Latest:</strong>
+          </td>
+          <td>
+            {% if check.is_using_latest_precheck is True %}
+              <span class="text-success"><i class="bi bi-check-circle-fill"></i> Yes</span>
+            {% elif check.is_using_latest_precheck is False %}
+              <span class="text-warning"><i class="bi bi-exclamation-triangle-fill"></i> No</span>
+              <small class="text-muted">(latest: {% get_latest_precheck_version %})</small>
+            {% else %}
+              <span class="text-muted">-</span>
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <td>
             <strong>Tools:</strong>
           </td>
           <td>

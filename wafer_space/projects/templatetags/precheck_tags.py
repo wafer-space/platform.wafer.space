@@ -6,6 +6,7 @@ Available tags:
 - badge_check_status: Status badge with small version indicator icon
 - badge_check_version: Version-only badge (shows container version used)
 - badge_check_status_and_version: Full badge with status and version details
+- get_latest_precheck_version: Returns the version string of the latest precheck
 """
 
 from __future__ import annotations
@@ -13,16 +14,17 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from django import template
-from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
 from wafer_space.projects.models import ManufacturabilityCheck
+from wafer_space.projects.models import PrecheckImageRevision
 
 if TYPE_CHECKING:
     from django.utils.safestring import SafeString
 
-    from wafer_space.projects.models import PrecheckImageRevision
+# Length to truncate digest strings for display when version is unknown
+_DIGEST_DISPLAY_LENGTH = 19
 
 register = template.Library()
 
@@ -41,14 +43,11 @@ def badge_check_status(check: ManufacturabilityCheck | None) -> SafeString:
             '<span class="badge bg-light text-muted border">No check</span>'
         )
 
-    url = reverse("admin:projects_manufacturabilitycheck_change", args=[check.pk])
     icon, label, bg_class = _get_status_display(check)
     version_indicator = _get_version_indicator_html(check)
 
     return format_html(
-        '<a href="{}" class="badge {} text-decoration-none">'
-        '<i class="bi bi-{}"></i> {}{}</a>',
-        url,
+        '<span class="badge {}"><i class="bi bi-{}"></i> {}{}</span>',
         bg_class,
         icon,
         label,
@@ -61,12 +60,12 @@ def badge_check_version(check: ManufacturabilityCheck | None) -> SafeString:
     """Render version-only badge showing container version used.
 
     Shows the precheck container version (e.g., "v1.2.3" or commit SHA) with
-    an icon indicating if it's the latest version. Links to GitHub commit if available.
+    an icon indicating if it's the latest version.
 
     Usage: {% badge_check_version check %}
     """
     if not check or not check.docker_image_digest:
-        return format_html("")
+        return format_html("{}", "")
 
     revision = check.precheck_revision
     version_str = _get_version_string(revision)
@@ -77,17 +76,6 @@ def badge_check_version(check: ManufacturabilityCheck | None) -> SafeString:
         bg_class = "bg-success-subtle text-success border-success"
     else:
         bg_class = "bg-warning-subtle text-warning-emphasis border-warning"
-
-    if revision and revision.github_commit_url:
-        return format_html(
-            '<a href="{}" class="badge {} border text-decoration-none" target="_blank">'
-            '{} <i class="bi bi-{} {}"></i></a>',
-            revision.github_commit_url,
-            bg_class,
-            version_str,
-            icon,
-            icon_class,
-        )
 
     return format_html(
         '<span class="badge {} border">{} <i class="bi bi-{} {}"></i></span>',
@@ -114,7 +102,6 @@ def badge_check_status_and_version(
             '<span class="badge bg-light text-muted border">No check</span>'
         )
 
-    url = reverse("admin:projects_manufacturabilitycheck_change", args=[check.pk])
     icon, label, bg_class = _get_status_display(check)
 
     if check.docker_image_digest:
@@ -129,12 +116,10 @@ def badge_check_status_and_version(
             version_icon_class,
         )
     else:
-        version_part = format_html("")
+        version_part = format_html("{}", "")
 
     return format_html(
-        '<a href="{}" class="badge {} text-decoration-none">'
-        '<i class="bi bi-{}"></i> {}{}</a>',
-        url,
+        '<span class="badge {}"><i class="bi bi-{}"></i> {}{}</span>',
         bg_class,
         icon,
         label,
@@ -178,7 +163,7 @@ def _get_status_display(
 def _get_version_indicator_html(check: ManufacturabilityCheck) -> SafeString:
     """Return HTML for version indicator icon."""
     if not check.docker_image_digest:
-        return format_html("")
+        return format_html("{}", "")
 
     is_latest = check.is_using_latest_precheck
     icon, icon_class = _get_version_icon(is_latest=is_latest)
@@ -206,3 +191,28 @@ def _get_version_string(revision: PrecheckImageRevision | None) -> str:
         if revision.git_commit_sha:
             return revision.git_commit_sha[:7]
     return "????"
+
+
+@register.simple_tag
+def get_latest_precheck_version() -> str:
+    """Return the version string of the latest precheck container.
+
+    Looks up the digest of the most recently used precheck image, then
+    finds its version info from PrecheckImageRevision.
+
+    Returns version string like "v1.2.3" or commit SHA, or "-" if unknown.
+
+    Usage: {% get_latest_precheck_version %}
+    """
+    latest_digest = ManufacturabilityCheck.get_latest_precheck_digest()
+    if not latest_digest:
+        return "-"
+
+    try:
+        revision = PrecheckImageRevision.objects.get(digest=latest_digest)
+        return _get_version_string(revision)
+    except PrecheckImageRevision.DoesNotExist:
+        # Digest exists but not cataloged - show truncated digest
+        if len(latest_digest) > _DIGEST_DISPLAY_LENGTH:
+            return latest_digest[:_DIGEST_DISPLAY_LENGTH]
+        return latest_digest
