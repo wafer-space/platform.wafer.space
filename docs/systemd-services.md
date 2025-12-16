@@ -91,25 +91,21 @@ Docker API ports: 2375 (unencrypted), 2376 (TLS)
 ## Architecture Overview
 
 ```text
-                                       +-----------------+
-                                       |    PostgreSQL   |
-                                       | (Unix Socket)   |
-                                       +-----------------+
-                                              |
-    +-----------------------------------------+------------------------------------------+
-    |              |              |                |              |              |       |
-+---v---+   +------v------+  +----v----+  +--------v--------+  +--v---+  +------v------+  +--------v--------+
-|Gunicorn|  |none:ro:*    |  |mail:ro: |  |http:ro:         |  |http: |  |dock:ro:*    |  |dock:rw:         |
-|(Web)  |  |(checks-orch,|  |email    |  |metadata         |  |rw:   |  |(fast,slow)  |  |checks-save      |
-|       |  | default,beat)|  |         |  |                 |  |down- |  |             |  |                 |
-+-------+  +-------------+  +---------+  +--------+--------+  |loads |  +------+------+  +--------+--------+
-                                                  |           +--+---+         |                  |
-                                                  v              |             v                  v
-                                             +--------+          v        +----------+       +--------+
-                                             | GHCR   |     +--------+    | Docker   |       | Media  |
-                                             | (Read) |     | Media  |    | Servers  |       | (Write)|
-                                             +--------+     | (Write)|    +----------+       +--------+
-                                                            +--------+
+Network:  none          mail        http          dock
+
+     +----------+   +-------+   +----------+   +------------+
+     | Gunicorn |   | email |   | metadata |   | fast, slow |
+ro   |   orch   |   +-------+   +----------+   +------------+
+     | default  |       |            |               |
+     |   beat   |       v            v               v
+     +----------+    Mailgun       GHCR        Docker Servers
+
+                               +-----------+   +-------------+
+rw                             | downloads |   | checks-save |
+                               +-----------+   +-------------+
+                                     |               |
+                                     v               v
+                                 Media(W)        Media(W)
 ```
 
 ## Common Configuration
