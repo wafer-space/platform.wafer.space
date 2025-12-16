@@ -633,3 +633,99 @@ class TestReticlePackageServiceIntegration:
         assert "# G899 Reticle Package" in readme_content
         assert "Test Project One" in readme_content
         assert "Test Project Two" in readme_content
+
+    def test_allow_pending_uses_fallback_query(self, tmp_path):
+        """Test allow_pending falls back to latest file with passing check.
+
+        This tests the fallback code path where project.submitted_file is None
+        but a ProjectFile exists with a passing ManufacturabilityCheck. The
+        service should find this file via the fallback query using uploaded_at
+        ordering.
+
+        Regression test: This would have caught the 'created_at' vs 'uploaded_at'
+        bug since ProjectFile uses 'uploaded_at', not 'created_at'.
+        """
+        # Create grid config
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        grid_config_path = config_dir / "fallback-layout.yaml"
+
+        grid_config = {
+            "shuttle": "G898",
+            "row_heights": [1.0],
+            "column_widths": [1.0],
+        }
+        with grid_config_path.open("w") as f:
+            yaml.dump(grid_config, f)
+
+        shuttle = ShuttleFactory(
+            name="G898",
+            grid_config_file=str(grid_config_path),
+        )
+
+        # Create project WITHOUT setting submitted_file
+        project = ProjectFactory(
+            name="Fallback Test Project",
+            project_id="FALL",
+            slot_size="1x1",
+        )
+
+        # Create GDS file
+        gds_dir = tmp_path / "gds"
+        gds_dir.mkdir()
+        output_gds = gds_dir / "fallback_output.gds"
+        output_gds.write_text("FAKE GDS FOR FALLBACK TEST")
+
+        # Create ProjectFile with passing check - but DON'T set submitted_file
+        project_file = ProjectFileFactory(project=project, top_cell="FALLBACK_TOP")
+        ManufacturabilityCheckFactory(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+            warnings=[],
+            errors=[],
+            output_gds=str(output_gds),
+            output_gds_sha256="fallbackhash123",
+        )
+
+        # NOTE: We intentionally do NOT set project.submitted_file here!
+        # This forces the service to use the fallback query.
+        assert project.submitted_file is None
+
+        # Create shuttle slot
+        ShuttleSlot.objects.create(
+            shuttle=shuttle,
+            project=project,
+            row=0,
+            column=0,
+            slot_size="1x1",
+            status=ShuttleSlot.Status.RESERVED,
+        )
+
+        # Generate with allow_pending=True to use fallback query
+        output = tmp_path / "G898_OUTPUT"
+        service = ReticlePackageService(
+            shuttle_name="G898",
+            output_path=output,
+            allow_pending=True,  # Required for fallback query
+        )
+
+        result = service.generate()
+
+        # Verify the project was included via fallback query
+        assert result["projects_included"] == 1
+        assert result["projects_skipped"] == 0
+
+        # Verify files were created
+        assert (output / "FALL").exists()
+        assert (output / "FALL" / "info.json").exists()
+        assert (output / "FALL" / "FALLBACK_TOP.gds").exists()
+        assert (output / "FALL" / "FALLBACK_TOP.gds").read_text() == (
+            "FAKE GDS FOR FALLBACK TEST"
+        )
+
+        # Verify manifest includes the project
+        manifest_content = (output / "manifest.csv").read_text()
+        assert "FALL" in manifest_content
+        assert "FALLBACK_TOP" in manifest_content
