@@ -84,6 +84,8 @@ def do_revision_fetch(self, digest: str) -> dict[str, Any]:
     revision.image_created_at = metadata.get("image_created_at")
     revision.git_commit_sha = metadata.get("git_commit_sha", "")
     revision.precheck_version = metadata.get("precheck_version", "")
+    revision.pdk_version = metadata.get("pdk_version", "")
+    revision.tool_versions = metadata.get("tool_versions", {})
     revision.metadata_fetched_at = timezone.now()
     revision.save()
 
@@ -98,7 +100,8 @@ def _fetch_ghcr_metadata(digest: str) -> dict[str, Any]:
         digest: SHA256 digest of the image (can be OCI index or manifest)
 
     Returns:
-        Dict with image_created_at, git_commit_sha, precheck_version
+        Dict with image_created_at, git_commit_sha, precheck_version,
+        pdk_version, tool_versions, and raw labels for debugging.
     """
     # Get anonymous token
     token_resp = requests.get(
@@ -161,8 +164,19 @@ def _fetch_ghcr_metadata(digest: str) -> dict[str, Any]:
                 created_str.replace("Z", "+00:00")
             )
 
+    # Extract tool versions from custom labels (if present)
+    # Expected format: gf180mcu-precheck.tools.{toolname} = version
+    tool_versions: dict[str, str] = {}
+    for key, value in labels.items():
+        if key.startswith("gf180mcu-precheck.tools."):
+            tool_name = key.replace("gf180mcu-precheck.tools.", "")
+            tool_versions[tool_name] = value
+
     return {
         "image_created_at": image_created_at,
         "git_commit_sha": labels.get("org.opencontainers.image.revision", ""),
         "precheck_version": labels.get("org.opencontainers.image.version", ""),
+        "pdk_version": labels.get("gf180mcu-precheck.pdk_version", ""),
+        "tool_versions": tool_versions,
+        "labels": labels,  # Raw labels for debugging
     }
