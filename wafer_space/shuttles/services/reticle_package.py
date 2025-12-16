@@ -17,6 +17,13 @@ class ReticlePackageError(Exception):
     """Error during reticle package generation."""
 
 
+class ManifestError(Exception):
+    """Error getting manifest data for a project."""
+
+    NOT_MANUFACTURABLE = "not manufacturable"
+    NO_TOP_CELL = "no top_cell"
+
+
 def generate_package(
     shuttle_name: str,
     output_path: Path,
@@ -70,45 +77,18 @@ def write_manifest_and_copy_gds(
             seen.add(slot.project_id)
 
             code = slot.project.project_id
-            pf = slot.project.output_file
-            check = pf.output_check
-
-            # Check for dummy/missing data
-            if not pf.pk:
-                pending.setdefault(code, []).append("no file")
+            try:
+                row, gds_path = _get_manifest_row(slot, code)
+            except ManifestError as e:
+                pending.setdefault(code, []).append(str(e))
                 continue
 
-            if not check.pk:
-                pending.setdefault(code, []).append("no finished check")
-                continue
-
-            if not _is_manufacturable(check):
-                pending.setdefault(code, []).append("not manufacturable")
-                continue
-
-            if not check.output_gds:
-                pending.setdefault(code, []).append("no output_gds")
-                continue
-
-            if not pf.top_cell:
-                pending.setdefault(code, []).append("no top_cell")
-                continue
-
-            writer.writerow(
-                [
-                    code,
-                    slot.slot_size,
-                    slot.grid_position,
-                    f"{code}/{pf.top_cell}.gds",
-                    pf.top_cell,
-                    check.output_gds_sha256,
-                ]
-            )
+            writer.writerow(row)
 
             project_dir = output_path / code
             project_dir.mkdir(exist_ok=True)
             try:
-                os.link(Path(check.output_gds.path), project_dir / f"{pf.top_cell}.gds")
+                os.link(gds_path, project_dir / f"{row[4]}.gds")  # row[4] is top_cell
             except OSError as e:
                 pending.setdefault(code, []).append(f"hardlink failed: {e}")
 
@@ -120,6 +100,52 @@ def get_slots(shuttle: Shuttle) -> list[ShuttleSlot]:
         .select_related("project", "project__submitted_file")
         .order_by("row", "column")
     )
+
+
+def _get_manifest_row(slot: ShuttleSlot, code: str) -> tuple[list[Any], Path]:
+    """Get manifest row data and GDS path for a slot.
+
+    Raises ManifestError if data is missing or not manufacturable.
+    Assumes slot.project is not None (caller must verify).
+    """
+    assert slot.project is not None
+    try:
+        pf = slot.project.output_file
+        check = pf.output_check
+        _require_manufacturable(check)
+        top_cell = pf.top_cell or _missing("top_cell")
+        gds_path = Path(check.output_gds.path)
+        sha256 = check.output_gds_sha256
+    except AttributeError as e:
+        msg = f"missing data: {e}"
+        raise ManifestError(msg) from e
+
+    row = [
+        code,
+        slot.slot_size,
+        slot.grid_position,
+        f"{code}/{top_cell}.gds",
+        top_cell,
+        sha256,
+    ]
+    return row, gds_path
+
+
+def _missing(field: str) -> Any:
+    """Raise ManifestError for missing field."""
+    msg = f"no {field}"
+    raise ManifestError(msg)
+
+
+def _require_manufacturable(check: ManufacturabilityCheck) -> None:
+    """Raise ManifestError if check is not manufacturable."""
+    if not check.pk or not check.finished_status:
+        raise ManifestError(ManifestError.NOT_MANUFACTURABLE)
+    if check.finished_status not in (
+        ManufacturabilityCheck.FinishedStatus.MANUFACTURABLE,
+        ManufacturabilityCheck.FinishedStatus.MANUFACTURABLE_WITH_WARNINGS,
+    ):
+        raise ManifestError(ManifestError.NOT_MANUFACTURABLE)
 
 
 def _is_manufacturable(check: ManufacturabilityCheck) -> bool:
