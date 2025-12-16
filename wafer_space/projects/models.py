@@ -1912,7 +1912,8 @@ class ManufacturabilityCheck(models.Model):
 
         # Build icon/spinner HTML using format_html for safety
         if show_spinner:
-            icon_html = format_html(
+            # Static HTML - use SafeString directly (no user input to escape)
+            icon_html = SafeString(
                 '<span class="spinner-border spinner-border-sm" '
                 'role="status" aria-hidden="true"></span>'
             )
