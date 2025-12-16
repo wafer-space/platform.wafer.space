@@ -342,7 +342,7 @@ def _get_nix_eda_version(flake_lock: dict[str, Any]) -> str:
         flake_lock: Parsed flake.lock JSON
 
     Returns:
-        Version string like "5.9.0" or "5.9.0 @ abc123" if no tag
+        Version string like "5.9.0 @ c71ab64e6a2e"
     """
     nodes = flake_lock.get("nodes", {})
     nix_eda = nodes.get("nix-eda", {})
@@ -352,6 +352,8 @@ def _get_nix_eda_version(flake_lock: dict[str, Any]) -> str:
     ref = locked.get("ref") or original.get("ref", "")
     rev = locked.get("rev", "")[:12]
 
+    if ref and rev:
+        return f"{ref} @ {rev}"
     if ref:
         return ref
     if rev:
