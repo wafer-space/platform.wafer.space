@@ -138,15 +138,6 @@
                   <a href="{% url 'projects:detail' project.pk %}">{{ project.name }}</a>
                 </td>
                 <td>{{ project.user.username|default:"—" }}</td>
-                <td class="text-center"
-                    data-sort-value="{% if project.status == 'submitted' %}1{% else %}0{% endif %}"
-                    title="{{ project.submitted_at|date:'Y-m-d H:i:s'|default:'—' }}">
-                  {% if project.status == 'submitted' %}
-                    <i class="bi bi-check-lg text-success"></i>
-                  {% else %}
-                    <i class="bi bi-x-lg text-danger"></i>
-                  {% endif %}
-                </td>
                 <td data-sort-value="{{ project.slot_size }}">
                   <span class="badge bg-secondary">{{ project.get_slot_size_display }}</span>
                 </td>
@@ -155,6 +146,15 @@
                   {% with check=project.latest_manufacturability_check %}
                     {% badge_check_status_and_version check %}
                   {% endwith %}
+                </td>
+                <td class="text-center"
+                    data-sort-value="{% if project.status == 'submitted' %}1{% else %}0{% endif %}"
+                    title="{{ project.submitted_at|date:'Y-m-d H:i:s'|default:'—' }}">
+                  {% if project.status == 'submitted' %}
+                    <i class="bi bi-check-lg text-success"></i>
+                  {% else %}
+                    <i class="bi bi-x-lg text-danger"></i>
+                  {% endif %}
                 </td>
                 <td>
                   {% if project.shuttle_slots.exists %}
