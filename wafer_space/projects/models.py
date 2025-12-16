@@ -1518,60 +1518,101 @@ class ManufacturabilityCheck(models.Model):
         ADMIN_RERUN = "admin_rerun", "Admin Requested Re-run"
         RETRY = "retry", "Retry After Error"
 
+    class FinishedStatus(models.TextChoices):
+        """Sub-status for FINISHED checks indicating manufacturability result."""
+
+        MANUFACTURABLE = "manufacturable", "Manufacturable"
+        MANUFACTURABLE_WITH_WARNINGS = (
+            "manufacturable_with_warnings",
+            "Manufacturable (Warnings)",
+        )
+        NOT_MANUFACTURABLE = "not_manufacturable", "Not Manufacturable"
+
+    # Finished status presentation metadata for manufacturability results
+    _FINISHED_STATUS_METADATA: ClassVar[dict[str, dict[str, str]]] = {
+        FinishedStatus.MANUFACTURABLE: {
+            "color": "success",
+            "icon": "bi-check-circle",
+            "ascii": "✔",
+            "label": "Manufacturable",
+        },
+        FinishedStatus.MANUFACTURABLE_WITH_WARNINGS: {
+            "color": "warning",
+            "icon": "bi-exclamation-triangle",
+            "ascii": "⚠",
+            "label": "Manufacturable (Warnings)",
+        },
+        FinishedStatus.NOT_MANUFACTURABLE: {
+            "color": "danger",
+            "icon": "bi-x-circle",
+            "ascii": "✘",
+            "label": "Not Manufacturable",
+        },
+    }
+
     # Status presentation metadata for consistent rendering across templates
     # Maps status values to their display properties
     _STATUS_METADATA: ClassVar[dict[str, dict[str, str | bool]]] = {
         Status.PENDING: {
             "color": "warning",
             "icon": "bi-clock",
+            "ascii": "⌛",
             "label": "Pending",
             "show_spinner": False,
         },
         Status.DISPATCHING: {
             "color": "info",
             "icon": "bi-send",
+            "ascii": "→",
             "label": "Dispatching",
             "show_spinner": True,
         },
         Status.STARTING: {
             "color": "info",
             "icon": "bi-box-arrow-up",
+            "ascii": "↑",
             "label": "Starting",
             "show_spinner": True,
         },
         Status.RUNNING: {
             "color": "primary",
             "icon": "bi-play-circle",
+            "ascii": "▶",
             "label": "Running",
             "show_spinner": True,
         },
         Status.ANALYZING: {
             "color": "primary",
             "icon": "bi-search",
+            "ascii": "◎",
             "label": "Analyzing",
             "show_spinner": True,
         },
         Status.FINISHED: {
             "color": "success",
             "icon": "bi-check-circle",
+            "ascii": "✔",
             "label": "Finished",
             "show_spinner": False,
         },
         Status.ERROR: {
             "color": "danger",
             "icon": "bi-exclamation-triangle",
+            "ascii": "!",
             "label": "Error",
             "show_spinner": False,
         },
         Status.CANCELLING: {
             "color": "warning",
             "icon": "bi-x-circle",
+            "ascii": "…",
             "label": "Cancelling",
             "show_spinner": True,
         },
         Status.CANCELLED: {
             "color": "secondary",
             "icon": "bi-x-circle",
+            "ascii": "✘",
             "label": "Cancelled",
             "show_spinner": False,
         },
@@ -1875,6 +1916,74 @@ class ManufacturabilityCheck(models.Model):
         meta = self.get_status_metadata(self.status)
         return bool(meta["show_spinner"])
 
+    @property
+    def status_ascii(self) -> str:
+        """Return ASCII/Unicode icon for current status (for terminal output)."""
+        meta = self.get_status_metadata(self.status)
+        return str(meta["ascii"])
+
+    def status_badge_html(self) -> SafeString:
+        """Return complete Bootstrap badge HTML for current status.
+
+        Returns:
+            SafeString containing badge HTML, safe for template rendering.
+
+        Example output:
+            <span class="badge bg-warning text-dark">
+                <i class="bi bi-clock"></i> Pending
+            </span>
+
+        Note:
+            For FINISHED status, shows one of three states:
+            - "Manufacturable" (success/green) - clean, no warnings
+            - "Manufacturable (Warnings)" (warning/yellow) - has warnings
+            - "Not Manufacturable" (danger/red) - failed checks
+        """
+        # Special handling for FINISHED status - show manufacturable result
+        fs = self.finished_status
+        if fs is not None:
+            meta = self._FINISHED_STATUS_METADATA[fs]
+            color = meta["color"]
+            icon = meta["icon"]
+            label = meta["label"]
+            show_spinner = False
+        else:
+            color = self.status_color
+            icon = self.status_icon
+            label = self.status_label
+            show_spinner = self.status_show_spinner
+
+        # Build icon/spinner HTML using format_html for safety
+        if show_spinner:
+            # Static HTML - use SafeString directly (no user input to escape)
+            icon_html = SafeString(
+                '<span class="spinner-border spinner-border-sm" '
+                'role="status" aria-hidden="true"></span>'
+            )
+        elif icon:
+            # Add 'bi' base class required by Bootstrap Icons
+            icon_html = format_html('<i class="bi {}"></i>', icon)
+        else:
+            icon_html = None
+
+        # Add text-dark class for light backgrounds (better contrast)
+        text_class = " text-dark" if color in ("warning", "info") else ""
+
+        # Combine into badge using format_html (eliminates need for noqa)
+        if icon_html:
+            return format_html(
+                '<span class="badge bg-{}{}">{} {}</span>',
+                color,
+                text_class,
+                icon_html,
+                label,
+            )
+        return format_html(
+            '<span class="badge bg-{}{}">{}</span>',
+            color,
+            text_class,
+            label,
+        )
     def can_transition_to(self, new_status: Status) -> bool:
         """Check if transition from current status to new_status is valid.
 
@@ -2333,6 +2442,29 @@ class ManufacturabilityCheck(models.Model):
                 return "Manufacturable with Warnings"
             return "Manufacturable - Clean"
         return "Not Manufacturable"
+
+    @property
+    def finished_status(self) -> FinishedStatus | None:
+        """Get the FinishedStatus enum value for completed checks.
+
+        Returns None if check is not finished or result is not yet determined.
+        """
+        if self.status != self.Status.FINISHED or self.is_manufacturable is None:
+            return None
+
+        if self.is_manufacturable:
+            if self.warnings:
+                return self.FinishedStatus.MANUFACTURABLE_WITH_WARNINGS
+            return self.FinishedStatus.MANUFACTURABLE
+        return self.FinishedStatus.NOT_MANUFACTURABLE
+
+    @property
+    def finished_status_ascii(self) -> str:
+        """Get ASCII icon for finished status (for terminal/plain-text output)."""
+        fs = self.finished_status
+        if fs is None:
+            return "?"
+        return self._FINISHED_STATUS_METADATA[fs]["ascii"]
 
     @property
     def queue_position(self) -> int | None:
