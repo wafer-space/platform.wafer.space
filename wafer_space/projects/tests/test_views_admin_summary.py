@@ -61,7 +61,9 @@ class TestProjectAdminSummaryView:
         assert "Test Project" in content
         assert "testowner" in content
         assert "owner@example.com" in content
-        assert "1x1" in content
+        assert (
+            "1×1" in content
+        )  # Uses × (multiplication sign) from get_slot_size_display
 
     def test_displays_all_projects(self, client):
         """Summary page shows all projects, not just user's own."""
@@ -151,3 +153,80 @@ class TestProjectAdminSummaryView:
         # Should have ascending indicator on name column and toggle link
         assert "▲" in content, "Sort indicator should be visible"
         assert "sort=-name" in content, "Toggle link should point to descending sort"
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckAdminStatusView:
+    """Tests for the manufacturability check status view."""
+
+    def test_active_sections_in_context(self, client):
+        """View provides active_sections list with all non-terminal statuses."""
+        staff_user = UserFactory(is_staff=True)
+        project = ProjectFactory()
+        project_file = ProjectFileFactory(project=project)
+
+        # Create checks for each non-terminal status
+        ManufacturabilityCheck.objects.create(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        ManufacturabilityCheck.objects.create(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.ANALYZING,
+        )
+        ManufacturabilityCheck.objects.create(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        ManufacturabilityCheck.objects.create(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.DISPATCHING,
+        )
+        ManufacturabilityCheck.objects.create(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.STARTING,
+        )
+        ManufacturabilityCheck.objects.create(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.CANCELLING,
+        )
+
+        client.force_login(staff_user)
+        response = client.get(reverse("projects:admin_check_status"))
+
+        assert response.status_code == HTTP_OK
+        assert "active_sections" in response.context
+
+        active_sections = response.context["active_sections"]
+        # Should have sections for each non-terminal status:
+        # RUNNING, ANALYZING, STARTING, DISPATCHING, PENDING, CANCELLING
+        expected_section_count = 6
+        assert len(active_sections) == expected_section_count
+
+        # Verify each section has required fields
+        for section in active_sections:
+            assert "status" in section
+            assert "label" in section
+            assert "color" in section
+            assert "icon" in section
+            assert "show_spinner" in section
+            assert "checks" in section
+            assert "count" in section
+
+        # Verify statuses are present
+        statuses = {section["status"] for section in active_sections}
+        expected_statuses = {
+            ManufacturabilityCheck.Status.RUNNING,
+            ManufacturabilityCheck.Status.ANALYZING,
+            ManufacturabilityCheck.Status.STARTING,
+            ManufacturabilityCheck.Status.DISPATCHING,
+            ManufacturabilityCheck.Status.PENDING,
+            ManufacturabilityCheck.Status.CANCELLING,
+        }
+        assert statuses == expected_statuses

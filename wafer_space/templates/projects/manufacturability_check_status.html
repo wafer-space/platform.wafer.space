@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% load static %}
+{% load static duration_filters %}
 
 {% block title %}
   Manufacturability Check Status - Admin
@@ -16,27 +16,25 @@
       </a>
     </div>
     {# Status Summary Cards #}
-    <div class="row mb-4">
+    <div class="row mb-3 g-2">
       {% for status_key, status_info in status_counts.items %}
-        <div class="col-md-2 mb-3">
-          <div class="card {% if status_key == 'running' %}border-primary{% elif status_key == 'dispatching' %}border-info{% elif status_key == 'starting' %}border-info{% elif status_key == 'analyzing' %}border-primary{% elif status_key == 'pending' %}border-warning{% elif status_key == 'finished' %}border-success{% elif status_key == 'error' %}border-danger{% elif status_key == 'cancelling' %}border-warning{% elif status_key == 'cancelled' %}border-secondary{% endif %}">
-            <div class="card-body text-center">
-              <h3 class="card-title mb-0">{{ status_info.count }}</h3>
-              <p class="card-text text-muted mb-0">{{ status_info.label }}</p>
+        <div class="col-auto">
+          <div class="card border-{{ status_info.color }}">
+            <div class="card-body text-center py-1 px-3">
+              <span class="fw-bold fs-5">{{ status_info.count }}</span>
+              <small class="text-muted ms-1">{{ status_info.label }}</small>
             </div>
           </div>
         </div>
       {% endfor %}
     </div>
-    {# Currently Running Checks #}
-    {% if running_checks %}
-      <div class="card mb-4 border-primary">
-        <div class="card-header bg-primary text-white">
+    {# Active Status Sections - generated from active_sections context #}
+    {% for section in active_sections %}
+      <div class="card mb-4 border-{{ section.color }}">
+        <div class="card-header bg-{{ section.color }}{% if section.color == 'warning' or section.color == 'info' %} text-dark{% else %} text-white{% endif %}">
           <h5 class="mb-0">
-            <span class="spinner-border spinner-border-sm me-2"
-                  role="status"
-                  aria-hidden="true"></span>
-            Currently Running ({{ running_checks|length }})
+            {% if section.icon %}<i class="bi {{ section.icon }}"></i>{% endif %}
+            {{ section.label }} ({{ section.count }})
           </h5>
         </div>
         <div class="card-body">
@@ -44,41 +42,39 @@
             <table class="table table-striped table-hover mb-0">
               <thead>
                 <tr>
+                  <th style="width: 90px;">Trigger</th>
+                  <th style="width: 120px; text-align: right;">Created</th>
+                  <th style="width: 120px; text-align: right;">Duration</th>
+                  <th style="width: 70px; text-align: center;">Size</th>
                   <th>Project</th>
-                  <th>User</th>
-                  <th>File</th>
-                  <th>Started</th>
-                  <th>Duration</th>
-                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {% for check in running_checks %}
+                {% for check in section.checks %}
                   <tr>
                     <td>
+                      {% if check.trigger_reason == 'initial' %}
+                        <span class="badge bg-primary">Initial</span>
+                      {% elif check.trigger_reason == 'retry' %}
+                        <span class="badge bg-warning text-dark">Retry</span>
+                      {% elif check.trigger_reason == 'drc_update' %}
+                        <span class="badge bg-info text-dark">DRC Update</span>
+                      {% elif check.trigger_reason == 'admin_rerun' %}
+                        <span class="badge bg-secondary">Admin</span>
+                      {% else %}
+                        <span class="badge bg-light text-dark">{{ check.get_trigger_reason_display }}</span>
+                      {% endif %}
+                    </td>
+                    <td style="text-align: right"
+                        title="{{ check.created_at|date:'Y-m-d H:i:s' }}">{{ check.created_at|duration_since }}</td>
+                    <td style="text-align: right;">{{ check.state_entered_at|duration_since }}</td>
+                    <td class="text-center">
+                      <span class="badge bg-secondary">{{ check.project.get_slot_size_display }}</span>
+                    </td>
+                    <td>
+                      {% if check.project.full_id %}<span class="badge bg-secondary me-1">{{ check.project.full_id }}</span>{% endif %}
                       <a href="{% url 'projects:detail' pk=check.project.pk %}">{{ check.project.name }}</a>
-                    </td>
-                    <td>{{ check.project.user.username }}</td>
-                    <td>
-                      {% if check.project_file %}
-                        <code>{{ check.project_file.processed_filename|default:check.project_file.original_filename }}</code>
-                      {% else %}
-                        <span class="text-muted">-</span>
-                      {% endif %}
-                    </td>
-                    <td>{{ check.container_started_at|date:"Y-m-d H:i:s" }}</td>
-                    <td>
-                      {% if check.container_started_at %}
-                        {{ check.container_started_at|timesince }}
-                      {% else %}
-                        <span class="text-muted">-</span>
-                      {% endif %}
-                    </td>
-                    <td>
-                      <a href="{% url 'admin:projects_manufacturabilitycheck_change' check.pk %}"
-                         class="btn btn-sm btn-outline-secondary">
-                        <i class="bi bi-pencil"></i>
-                      </a>
+                      <span class="text-muted">({{ check.project.user.username }})</span>
                     </td>
                   </tr>
                 {% endfor %}
@@ -87,62 +83,11 @@
           </div>
         </div>
       </div>
-    {% endif %}
-    {# Pending Checks #}
-    {% if pending_checks %}
-      <div class="card mb-4 border-warning">
-        <div class="card-header bg-warning">
-          <h5 class="mb-0">
-            <i class="bi bi-hourglass-split"></i> Pending ({{ pending_checks|length }})
-          </h5>
-        </div>
-        <div class="card-body">
-          <div class="table-responsive">
-            <table class="table table-striped table-hover mb-0">
-              <thead>
-                <tr>
-                  <th>Project</th>
-                  <th>User</th>
-                  <th>File</th>
-                  <th>Created</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for check in pending_checks %}
-                  <tr>
-                    <td>
-                      <a href="{% url 'projects:detail' pk=check.project.pk %}">{{ check.project.name }}</a>
-                    </td>
-                    <td>{{ check.project.user.username }}</td>
-                    <td>
-                      {% if check.project_file %}
-                        <code>{{ check.project_file.processed_filename|default:check.project_file.original_filename }}</code>
-                      {% else %}
-                        <span class="text-muted">-</span>
-                      {% endif %}
-                    </td>
-                    <td>
-                      {% if check.created_at %}
-                        {{ check.created_at|date:"Y-m-d H:i:s" }}
-                      {% else %}
-                        <span class="text-muted">-</span>
-                      {% endif %}
-                    </td>
-                    <td>
-                      <a href="{% url 'admin:projects_manufacturabilitycheck_change' check.pk %}"
-                         class="btn btn-sm btn-outline-secondary">
-                        <i class="bi bi-pencil"></i>
-                      </a>
-                    </td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        </div>
+    {% empty %}
+      <div class="alert alert-info">
+        <i class="bi bi-info-circle"></i> No checks currently in progress.
       </div>
-    {% endif %}
+    {% endfor %}
     {# Recent Checks History #}
     <div class="card">
       <div class="card-header">
@@ -156,115 +101,42 @@
             <table class="table table-striped table-hover mb-0">
               <thead>
                 <tr>
-                  <th>Status</th>
-                  <th>Trigger</th>
+                  <th style="width: 90px;">Trigger</th>
+                  <th style="width: 120px; text-align: right;">Created</th>
+                  <th style="width: 120px; text-align: right;">Duration</th>
+                  <th style="width: 70px; text-align: center;">Size</th>
                   <th>Project</th>
-                  <th>User</th>
-                  <th>File</th>
-                  <th>Result</th>
-                  <th>Started</th>
-                  <th>Completed</th>
-                  <th>Actions</th>
+                  <th style="width: 120px;">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {% for check in recent_checks %}
                   <tr>
                     <td>
-                      {% if check.status == 'pending' %}
-                        <span class="badge bg-warning text-dark">Pending</span>
-                      {% elif check.status == 'dispatching' %}
-                        <span class="badge bg-info">Dispatching</span>
-                      {% elif check.status == 'starting' %}
-                        <span class="badge bg-info">Starting</span>
-                      {% elif check.status == 'running' %}
-                        <span class="badge bg-primary">
-                          <span class="spinner-border spinner-border-sm"
-                                role="status"
-                                aria-hidden="true"></span>
-                          Running
-                        </span>
-                      {% elif check.status == 'analyzing' %}
-                        <span class="badge bg-primary">
-                          <span class="spinner-border spinner-border-sm"
-                                role="status"
-                                aria-hidden="true"></span>
-                          Analyzing
-                        </span>
-                      {% elif check.status == 'finished' %}
-                        <span class="badge bg-success">Finished</span>
-                      {% elif check.status == 'error' %}
-                        <span class="badge bg-danger">Error</span>
-                      {% elif check.status == 'cancelling' %}
-                        <span class="badge bg-warning text-dark">Cancelling</span>
-                      {% elif check.status == 'cancelled' %}
-                        <span class="badge bg-secondary">Cancelled</span>
-                      {% else %}
-                        <span class="badge bg-light text-dark">{{ check.get_status_display }}</span>
-                      {% endif %}
-                    </td>
-                    <td>
                       {% if check.trigger_reason == 'initial' %}
                         <span class="badge bg-primary">Initial</span>
                       {% elif check.trigger_reason == 'retry' %}
                         <span class="badge bg-warning text-dark">Retry</span>
                       {% elif check.trigger_reason == 'drc_update' %}
-                        <span class="badge bg-info">DRC Update</span>
+                        <span class="badge bg-info text-dark">DRC Update</span>
                       {% elif check.trigger_reason == 'admin_rerun' %}
                         <span class="badge bg-secondary">Admin</span>
                       {% else %}
                         <span class="badge bg-light text-dark">{{ check.get_trigger_reason_display }}</span>
                       {% endif %}
                     </td>
+                    <td style="text-align: right"
+                        title="{{ check.created_at|date:'Y-m-d H:i:s' }}">{{ check.created_at|duration_since }}</td>
+                    <td style="text-align: right;">{{ check.state_entered_at|duration_since }}</td>
+                    <td class="text-center">
+                      <span class="badge bg-secondary">{{ check.project.get_slot_size_display }}</span>
+                    </td>
                     <td>
+                      {% if check.project.full_id %}<span class="badge bg-secondary me-1">{{ check.project.full_id }}</span>{% endif %}
                       <a href="{% url 'projects:detail' pk=check.project.pk %}">{{ check.project.name|truncatechars:30 }}</a>
+                      <span class="text-muted">({{ check.project.user.username }})</span>
                     </td>
-                    <td>{{ check.project.user.username }}</td>
-                    <td>
-                      {% if check.project_file %}
-                        <code class="small">{{ check.project_file.processed_filename|default:check.project_file.original_filename|truncatechars:25 }}</code>
-                      {% else %}
-                        <span class="text-muted">-</span>
-                      {% endif %}
-                    </td>
-                    <td>
-                      {% if check.status == 'finished' %}
-                        {% if check.is_manufacturable %}
-                          <span class="badge bg-success">
-                            <i class="bi bi-check-circle"></i> Yes
-                          </span>
-                        {% else %}
-                          <span class="badge bg-danger">
-                            <i class="bi bi-x-circle"></i> No
-                          </span>
-                        {% endif %}
-                      {% elif check.status == 'error' %}
-                        <span class="text-danger small">{{ check.error_message|default:"Error"|truncatechars:30 }}</span>
-                      {% else %}
-                        <span class="text-muted">-</span>
-                      {% endif %}
-                    </td>
-                    <td>
-                      {% if check.container_started_at %}
-                        <small>{{ check.container_started_at|date:"Y-m-d H:i" }}</small>
-                      {% else %}
-                        <span class="text-muted">-</span>
-                      {% endif %}
-                    </td>
-                    <td>
-                      {% if check.analysis_completed_at %}
-                        <small>{{ check.analysis_completed_at|date:"Y-m-d H:i" }}</small>
-                      {% else %}
-                        <span class="text-muted">-</span>
-                      {% endif %}
-                    </td>
-                    <td>
-                      <a href="{% url 'admin:projects_manufacturabilitycheck_change' check.pk %}"
-                         class="btn btn-sm btn-outline-secondary"
-                         title="View in Admin">
-                        <i class="bi bi-pencil"></i>
-                      </a>
-                    </td>
+                    <td>{{ check.status_badge_html }}</td>
                   </tr>
                 {% endfor %}
               </tbody>

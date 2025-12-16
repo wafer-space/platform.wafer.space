@@ -14,6 +14,8 @@ from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.utils import timezone
 from django.utils.formats import date_format
+from django.utils.html import format_html
+from django.utils.safestring import SafeString
 from simple_history.models import HistoricalRecords
 
 from wafer_space.core.enums import SlotSize
@@ -1438,14 +1440,36 @@ class ManufacturabilityCheck(models.Model):
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"  # Waiting for capacity
+        # Running states
         DISPATCHING = "dispatching", "Dispatching"  # Image being pulled
         STARTING = "starting", "Starting"  # Container being created
         RUNNING = "running", "Running"  # Celery worker executing
         ANALYZING = "analyzing", "Analyzing"  # Logs being analyzed
-        FINISHED = "finished", "Finished"  # Analysis complete
-        ERROR = "error", "Error"  # System/processing failure
         CANCELLING = "cancelling", "Cancelling"  # Cleanup in progress
+        # Terminal states
         CANCELLED = "cancelled", "Cancelled"  # User cancelled
+        ERROR = "error", "Error"  # System/processing failure
+        FINISHED = "finished", "Finished"  # Analysis complete
+
+        @classmethod
+        def display_order(cls) -> tuple[str, ...]:
+            """Order to display states in."""
+            return (
+                cls.PENDING,
+                cls.DISPATCHING,
+                cls.STARTING,
+                cls.RUNNING,
+                cls.ANALYZING,
+                cls.CANCELLING,
+                cls.CANCELLED,
+                cls.FINISHED,
+                cls.ERROR,
+            )
+
+        @classmethod
+        def all(cls) -> list[str]:
+            """List of all the statuses."""
+            return [choice[0] for choice in cls.choices]
 
         @classmethod
         def active(cls) -> list[str]:
@@ -1465,18 +1489,87 @@ class ManufacturabilityCheck(models.Model):
         @classmethod
         def terminal(cls) -> list[str]:
             """Statuses that represent completion (success or failure)."""
-            return [cls.FINISHED, cls.CANCELLED]
+            return [cls.FINISHED, cls.CANCELLED, cls.ERROR]
 
         @classmethod
         def in_progress(cls) -> list[str]:
             """Statuses where check is in progress (not yet completed)."""
-            return [cls.PENDING, cls.DISPATCHING, cls.STARTING, cls.RUNNING]
+            return [cls.PENDING, *cls.active()]
+
+        @classmethod
+        def non_terminal(cls) -> list[str]:
+            """Statuses that are not terminal (check still in progress or pending).
+
+            Used for admin status page to show all checks that haven't completed.
+            Returns statuses in display_order, excluding terminal ones.
+            """
+            terminal_set = set(cls.terminal())
+            return [s for s in cls.display_order() if s not in terminal_set]
 
     class TriggerReason(models.TextChoices):
         INITIAL = "initial", "Initial Check"
         DRC_UPDATE = "drc_update", "DRC Rules Updated"
         ADMIN_RERUN = "admin_rerun", "Admin Requested Re-run"
         RETRY = "retry", "Retry After Error"
+
+    # Status presentation metadata for consistent rendering across templates
+    # Maps status values to their display properties
+    _STATUS_METADATA: ClassVar[dict[str, dict[str, str | bool]]] = {
+        Status.PENDING: {
+            "color": "warning",
+            "icon": "bi-clock",
+            "label": "Pending",
+            "show_spinner": False,
+        },
+        Status.DISPATCHING: {
+            "color": "info",
+            "icon": "bi-send",
+            "label": "Dispatching",
+            "show_spinner": True,
+        },
+        Status.STARTING: {
+            "color": "info",
+            "icon": "bi-box-arrow-up",
+            "label": "Starting",
+            "show_spinner": True,
+        },
+        Status.RUNNING: {
+            "color": "primary",
+            "icon": "bi-play-circle",
+            "label": "Running",
+            "show_spinner": True,
+        },
+        Status.ANALYZING: {
+            "color": "primary",
+            "icon": "bi-search",
+            "label": "Analyzing",
+            "show_spinner": True,
+        },
+        Status.FINISHED: {
+            "color": "success",
+            "icon": "bi-check-circle",
+            "label": "Finished",
+            "show_spinner": False,
+        },
+        Status.ERROR: {
+            "color": "danger",
+            "icon": "bi-exclamation-triangle",
+            "label": "Error",
+            "show_spinner": False,
+        },
+        Status.CANCELLING: {
+            "color": "warning",
+            "icon": "bi-x-circle",
+            "label": "Cancelling",
+            "show_spinner": True,
+        },
+        Status.CANCELLED: {
+            "color": "secondary",
+            "icon": "bi-x-circle",
+            "label": "Cancelled",
+            "show_spinner": False,
+        },
+    }
 
     # State machine: defines valid transitions
     # PENDING: waiting for capacity to dispatch
@@ -1732,6 +1825,122 @@ class ManufacturabilityCheck(models.Model):
 
     def __str__(self):
         return f"Check for {self.project.name} - {self.get_status_display()}"
+
+    @classmethod
+    def get_status_metadata(cls, status: str) -> dict[str, str | bool]:
+        """Return presentation metadata for a status value.
+
+        Args:
+            status: A status value (e.g., 'pending', 'running')
+
+        Returns:
+            Dict with keys: color, icon, label, show_spinner
+
+        Raises:
+            KeyError: If status is not a valid ManufacturabilityCheck.Status value
+        """
+        if status not in cls._STATUS_METADATA:
+            valid = list(cls._STATUS_METADATA.keys())
+            msg = f"Unknown status '{status}'. Valid statuses: {valid}"
+            raise KeyError(msg)
+        return cls._STATUS_METADATA[status]
+
+    @property
+    def status_color(self) -> str:
+        """Return Bootstrap color for current status (e.g., 'primary', 'warning')."""
+        meta = self.get_status_metadata(self.status)
+        return str(meta["color"])
+
+    @property
+    def status_icon(self) -> str:
+        """Return Bootstrap icon class for current status (e.g., 'bi-clock')."""
+        meta = self.get_status_metadata(self.status)
+        return str(meta["icon"])
+
+    @property
+    def status_label(self) -> str:
+        """Return human-readable label for current status."""
+        meta = self.get_status_metadata(self.status)
+        return str(meta["label"])
+
+    @property
+    def status_show_spinner(self) -> bool:
+        """Return True if current status should display a spinner."""
+        meta = self.get_status_metadata(self.status)
+        return bool(meta["show_spinner"])
+
+    def status_badge_html(self) -> SafeString:
+        """Return complete Bootstrap badge HTML for current status.
+
+        Returns:
+            SafeString containing badge HTML, safe for template rendering.
+
+        Example output:
+            <span class="badge bg-warning text-dark">
+                <i class="bi bi-clock"></i> Pending
+            </span>
+
+        Note:
+            For FINISHED status, shows one of three states:
+            - "Manufacturable" (success/green) - clean, no warnings
+            - "Manufacturable (Warnings)" (warning/yellow) - has warnings
+            - "Not Manufacturable" (danger/red) - failed checks
+        """
+        # Special handling for FINISHED status - show manufacturable result
+        if self.status == self.Status.FINISHED:
+            if self.is_manufacturable:
+                if self.warnings:
+                    # Manufacturable but has warnings
+                    color = "warning"
+                    icon = "bi-exclamation-triangle"
+                    label = "Manufacturable (Warnings)"
+                else:
+                    # Manufacturable and clean
+                    color = "success"
+                    icon = "bi-check-circle"
+                    label = "Manufacturable"
+            else:
+                color = "danger"
+                icon = "bi-x-circle"
+                label = "Not Manufacturable"
+            show_spinner = False
+        else:
+            color = self.status_color
+            icon = self.status_icon
+            label = self.status_label
+            show_spinner = self.status_show_spinner
+
+        # Build icon/spinner HTML using format_html for safety
+        if show_spinner:
+            # Static HTML - use SafeString directly (no user input to escape)
+            icon_html = SafeString(
+                '<span class="spinner-border spinner-border-sm" '
+                'role="status" aria-hidden="true"></span>'
+            )
+        elif icon:
+            # Add 'bi' base class required by Bootstrap Icons
+            icon_html = format_html('<i class="bi {}"></i>', icon)
+        else:
+            icon_html = None
+
+        # Add text-dark class for light backgrounds (better contrast)
+        text_class = " text-dark" if color in ("warning", "info") else ""
+
+        # Combine into badge using format_html (eliminates need for noqa)
+        if icon_html:
+            return format_html(
+                '<span class="badge bg-{}{}">{} {}</span>',
+                color,
+                text_class,
+                icon_html,
+                label,
+            )
+        return format_html(
+            '<span class="badge bg-{}{}">{}</span>',
+            color,
+            text_class,
+            label,
+        )
 
     def can_transition_to(self, new_status: Status) -> bool:
         """Check if transition from current status to new_status is valid.
@@ -2106,6 +2315,29 @@ class ManufacturabilityCheck(models.Model):
             return delta.total_seconds()
 
         return None
+
+    @property
+    def state_entered_at(self) -> datetime | None:
+        """Timestamp when the check entered its current state.
+
+        Returns the appropriate timestamp based on current status:
+        - pending: created_at
+        - dispatching: dispatching_started_at
+        - starting: starting_started_at
+        - running: container_started_at
+        - analyzing: container_finished_at
+        - finished: analysis_completed_at
+        - error/cancelling/cancelled: created_at (fallback)
+        """
+        status_to_timestamp: dict[str, datetime | None] = {
+            self.Status.PENDING: self.created_at,
+            self.Status.DISPATCHING: self.dispatching_started_at,
+            self.Status.STARTING: self.starting_started_at,
+            self.Status.RUNNING: self.container_started_at,
+            self.Status.ANALYZING: self.container_finished_at,
+            self.Status.FINISHED: self.analysis_completed_at,
+        }
+        return status_to_timestamp.get(self.status) or self.created_at
 
     @property
     def run_duration_seconds(self) -> float | None:

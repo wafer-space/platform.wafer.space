@@ -12,7 +12,9 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.mixins import UserPassesTestMixin
 from django.core.exceptions import ValidationError
+from django.db.models import OuterRef
 from django.db.models import Prefetch
+from django.db.models import Subquery
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.shortcuts import redirect
@@ -534,9 +536,11 @@ class ManufacturabilityCheckAdminStatusView(
         status_counts = {}
         for status_value, status_label in ManufacturabilityCheck.Status.choices:
             count = ManufacturabilityCheck.objects.filter(status=status_value).count()
+            metadata = ManufacturabilityCheck.get_status_metadata(status_value)
             status_counts[status_value] = {
                 "label": status_label,
                 "count": count,
+                "color": metadata["color"],
             }
 
         # Get recent checks (last 50)
@@ -546,31 +550,39 @@ class ManufacturabilityCheckAdminStatusView(
             "project_file",
         ).order_by("-id")[:50]
 
-        # Get currently running checks
-        running_checks = (
-            ManufacturabilityCheck.objects.filter(
-                status=ManufacturabilityCheck.Status.RUNNING,
-            )
-            .select_related(
-                "project",
-                "project__user",
-                "project_file",
-            )
-            .order_by("-container_started_at")
-        )
+        # Build active sections for all non-terminal statuses
+        active_sections = []
+        for status in ManufacturabilityCheck.Status.non_terminal():
+            # Get metadata for this status
+            metadata = ManufacturabilityCheck.get_status_metadata(status)
 
-        # Get pending checks
-        pending_checks = (
-            ManufacturabilityCheck.objects.filter(
-                status=ManufacturabilityCheck.Status.PENDING,
+            # Get checks for this status (ordered newest first)
+            # Evaluate to list to avoid double query (count + iteration)
+            checks = list(
+                ManufacturabilityCheck.objects.filter(status=status)
+                .select_related(
+                    "project",
+                    "project__user",
+                    "project_file",
+                )
+                .order_by("-created_at")
             )
-            .select_related(
-                "project",
-                "project__user",
-                "project_file",
-            )
-            .order_by("-id")
-        )
+
+            if checks:
+                active_sections.append(
+                    {
+                        "status": status,
+                        "label": metadata["label"],
+                        "color": metadata["color"],
+                        "icon": metadata["icon"],
+                        "show_spinner": metadata["show_spinner"],
+                        "checks": checks,
+                        "count": len(checks),
+                    }
+                )
+
+        # Reverse order so running checks appear first
+        active_sections.reverse()
 
         return render(
             request,
@@ -578,8 +590,7 @@ class ManufacturabilityCheckAdminStatusView(
             {
                 "status_counts": status_counts,
                 "recent_checks": recent_checks,
-                "running_checks": running_checks,
-                "pending_checks": pending_checks,
+                "active_sections": active_sections,
             },
         )
 
@@ -741,6 +752,7 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
         "name": ("name",),
         "owner": ("user__username",),
         "email": ("user__email",),
+        "status": ("latest_check_status",),
     }
     DEFAULT_SORT: ClassVar[str] = "name"
 
@@ -760,14 +772,28 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
 
     def get_queryset(self):
         """Return all projects with optimized queries and sorting."""
-        qs = Project.objects.select_related("user", "shuttle").prefetch_related(
-            Prefetch(
-                "files",
-                queryset=ProjectFile.objects.filter(is_active=True).prefetch_related(
-                    "manufacturability_checks"
-                ),
-                to_attr="active_files",
+        # Subquery to get the latest check status for each project
+        latest_check_status = (
+            ManufacturabilityCheck.objects.filter(
+                project_file__project=OuterRef("pk"),
+                project_file__is_active=True,
             )
+            .order_by("-created_at")
+            .values("status")[:1]
+        )
+
+        qs = (
+            Project.objects.select_related("user", "shuttle")
+            .prefetch_related(
+                Prefetch(
+                    "files",
+                    queryset=ProjectFile.objects.filter(
+                        is_active=True
+                    ).prefetch_related("manufacturability_checks"),
+                    to_attr="active_files",
+                )
+            )
+            .annotate(latest_check_status=Subquery(latest_check_status))
         )
 
         field, descending = self.get_sort_params()
@@ -815,16 +841,29 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
                 status_counts["no_check"] += 1
                 pending_by_size[size] += 1
 
-        # Build status summary with display names
+        # Build status summary with display names, colors, and icons (show all statuses)
         status_summary = []
+        status_summary_by_key = {}
         for status in ManufacturabilityCheck.Status:
             count = status_counts.get(status.value, 0)
-            if count > 0:
-                status_summary.append({"label": status.label, "count": count})
-        if status_counts.get("no_check", 0) > 0:
-            status_summary.append(
-                {"label": "No Check", "count": status_counts["no_check"]}
-            )
+            metadata = ManufacturabilityCheck.get_status_metadata(status.value)
+            entry = {
+                "label": status.label,
+                "count": count,
+                "color": metadata["color"],
+                "icon": metadata["icon"],
+            }
+            status_summary.append(entry)
+            status_summary_by_key[status.value] = entry
+        # Add "No Check" entry
+        no_check_entry = {
+            "label": "No Check",
+            "count": status_counts.get("no_check", 0),
+            "color": "secondary",
+            "icon": "bi-question-circle",
+        }
+        status_summary.append(no_check_entry)
+        status_summary_by_key["no_check"] = no_check_entry
 
         # Build size breakdowns with short display labels
         # Extract short name from label (e.g., "1×1 - Full Slot..." → "1×1")
@@ -850,4 +889,5 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
             "pending_total": sum(pending_by_size.values()),
             "pending_by_size": build_size_breakdown(pending_by_size),
             "status_counts": status_summary,
+            "status_counts_by_key": status_summary_by_key,
         }

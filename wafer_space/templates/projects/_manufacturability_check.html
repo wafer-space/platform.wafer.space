@@ -6,68 +6,8 @@
 {# === MOST IMPORTANT: Status and Result === #}
 <p class="mb-2">
   <strong>Status:</strong>
-  {# Status badge #}
-  {% if check.status == 'pending' %}
-    <span class="badge bg-secondary">
-      <i class="bi bi-clock"></i> Pending
-    </span>
-  {% elif check.status == 'dispatching' %}
-    <span class="badge bg-info">
-      <span class="spinner-border spinner-border-sm"
-            role="status"
-            aria-hidden="true"></span>
-      Pulling Docker image...
-    </span>
-  {% elif check.status == 'starting' %}
-    <span class="badge bg-info">
-      <span class="spinner-border spinner-border-sm"
-            role="status"
-            aria-hidden="true"></span>
-      Starting container...
-    </span>
-  {% elif check.status == 'running' %}
-    <span id="check-status-badge" class="badge bg-primary">
-      <span class="spinner-border spinner-border-sm"
-            role="status"
-            aria-hidden="true"></span>
-      <span id="check-status-text">Checking manufacturability...</span>
-    </span>
-  {% elif check.status == 'analyzing' %}
-    <span class="badge bg-info">
-      <span class="spinner-border spinner-border-sm"
-            role="status"
-            aria-hidden="true"></span>
-      Analyzing results...
-    </span>
-  {% elif check.status == 'finished' %}
-    {% if check.is_manufacturable %}
-      {% if check.warnings %}
-        <span class="badge bg-warning text-dark">
-          <i class="bi bi-exclamation-triangle"></i> Manufacturable with Warnings
-        </span>
-      {% else %}
-        <span class="badge bg-success">
-          <i class="bi bi-check-circle"></i> Manufacturable - Clean
-        </span>
-      {% endif %}
-    {% else %}
-      <span class="badge bg-danger">
-        <i class="bi bi-x-circle"></i> Not Manufacturable
-      </span>
-    {% endif %}
-  {% elif check.status == 'error' %}
-    <span class="badge bg-danger">
-      <i class="bi bi-exclamation-triangle"></i> Check Failed
-    </span>
-  {% elif check.status == 'cancelling' %}
-    <span class="badge bg-warning text-dark">
-      <i class="bi bi-hourglass-split"></i> Cancelling...
-    </span>
-  {% elif check.status == 'cancelled' %}
-    <span class="badge bg-secondary">
-      <i class="bi bi-x-circle"></i> Cancelled
-    </span>
-  {% endif %}
+  {# Status badge - handles all states including finished with warnings #}
+  {{ check.status_badge_html }}
   {# Cancel button for in-progress checks #}
   {% if check.is_cancellable %}
     <form method="post"

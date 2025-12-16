@@ -8,37 +8,7 @@
     <div class="d-flex {% if layout == 'vertical' %}flex-column align-items-end{% endif %} gap-1 {% if layout != 'vertical' %}align-items-center{% endif %}">
       {# Manufacturability check status badge (most relevant) #}
       {% with check=file.latest_manufacturability_check %}
-        {% if check %}
-          {% if check.status == 'finished' and check.is_manufacturable %}
-            <span class="badge bg-success">
-              <i class="bi bi-check-circle"></i> Manufacturable
-            </span>
-          {% elif check.status == 'finished' and not check.is_manufacturable %}
-            <span class="badge bg-danger">
-              <i class="bi bi-x-circle"></i> Not Manufacturable
-            </span>
-          {% elif check.status == 'error' %}
-            <span class="badge bg-danger">
-              <i class="bi bi-exclamation-triangle"></i> Check Failed
-            </span>
-          {% elif check.status in 'dispatching,starting,running,analyzing' %}
-            <span class="badge bg-primary">
-              <span class="spinner-border spinner-border-sm" role="status"></span> Checking...
-            </span>
-          {% elif check.status == 'pending' %}
-            <span class="badge bg-secondary">
-              <i class="bi bi-hourglass-split"></i> Check Pending
-            </span>
-          {% elif check.status == 'cancelling' %}
-            <span class="badge bg-warning text-dark">
-              <i class="bi bi-hourglass-split"></i> Cancelling...
-            </span>
-          {% elif check.status == 'cancelled' %}
-            <span class="badge bg-secondary">
-              <i class="bi bi-x-circle"></i> Check Cancelled
-            </span>
-          {% endif %}
-        {% endif %}
+        {% if check %}{{ check.status_badge_html }}{% endif %}
       {% endwith %}
       {# Hash verification badge #}
       {% if file.hash_verified %}

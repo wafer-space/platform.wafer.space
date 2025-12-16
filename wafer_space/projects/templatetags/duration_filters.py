@@ -6,6 +6,7 @@ from datetime import datetime
 from datetime import timedelta
 
 from django import template
+from django.utils import timezone
 
 register = template.Library()
 
@@ -61,4 +62,20 @@ def duration_between(end_time: datetime | None, start_time: datetime | None) -> 
         return "-"
 
     delta = end_time - start_time
+    return duration(delta)
+
+
+@register.filter
+def duration_since(start_time: datetime | None) -> str:
+    """Calculate and format duration from a datetime to now.
+
+    Usage:
+        {{ check.state_entered_at|duration_since }}
+
+    Returns '-' if start_time is None.
+    """
+    if start_time is None:
+        return "-"
+
+    delta = timezone.now() - start_time
     return duration(delta)

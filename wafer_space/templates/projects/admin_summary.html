@@ -67,14 +67,65 @@
           <div class="card-header">
             <strong>Precheck Status</strong>
           </div>
-          <div class="card-body">
+          <div class="card-body py-2">
             {% if summary.status_counts %}
-              {% for status in summary.status_counts %}
-                <div class="d-flex justify-content-between align-items-center mb-1">
-                  <span>{{ status.label }}</span>
-                  <span class="badge bg-primary">{{ status.count }}</span>
+              {% with s=summary.status_counts_by_key %}
+                {# Row 1: No Check / Pending #}
+                <div class="row mb-1">
+                  <div class="col-6 d-flex justify-content-between align-items-center">
+                    <span><i class="bi {{ s.no_check.icon }} me-1"></i>{{ s.no_check.label }}</span>
+                    <span class="badge bg-{{ s.no_check.color }}">{{ s.no_check.count }}</span>
+                  </div>
+                  <div class="col-6 d-flex justify-content-between align-items-center">
+                    <span><i class="bi {{ s.pending.icon }} me-1"></i>{{ s.pending.label }}</span>
+                    <span class="badge bg-{{ s.pending.color }} {% if s.pending.color == 'warning' %}text-dark{% endif %}">{{ s.pending.count }}</span>
+                  </div>
                 </div>
-              {% endfor %}
+                {# Row 2: Dispatching / Starting #}
+                <div class="row mb-1">
+                  <div class="col-6 d-flex justify-content-between align-items-center">
+                    <span><i class="bi {{ s.dispatching.icon }} me-1"></i>{{ s.dispatching.label }}</span>
+                    <span class="badge bg-{{ s.dispatching.color }}">{{ s.dispatching.count }}</span>
+                  </div>
+                  <div class="col-6 d-flex justify-content-between align-items-center">
+                    <span><i class="bi {{ s.starting.icon }} me-1"></i>{{ s.starting.label }}</span>
+                    <span class="badge bg-{{ s.starting.color }}">{{ s.starting.count }}</span>
+                  </div>
+                </div>
+                {# Row 3: Running / Analyzing #}
+                <div class="row mb-1">
+                  <div class="col-6 d-flex justify-content-between align-items-center">
+                    <span><i class="bi {{ s.running.icon }} me-1"></i>{{ s.running.label }}</span>
+                    <span class="badge bg-{{ s.running.color }}">{{ s.running.count }}</span>
+                  </div>
+                  <div class="col-6 d-flex justify-content-between align-items-center">
+                    <span><i class="bi {{ s.analyzing.icon }} me-1"></i>{{ s.analyzing.label }}</span>
+                    <span class="badge bg-{{ s.analyzing.color }}">{{ s.analyzing.count }}</span>
+                  </div>
+                </div>
+                {# Row 4: Cancelling / Cancelled #}
+                <div class="row mb-1">
+                  <div class="col-6 d-flex justify-content-between align-items-center">
+                    <span><i class="bi {{ s.cancelling.icon }} me-1"></i>{{ s.cancelling.label }}</span>
+                    <span class="badge bg-{{ s.cancelling.color }} {% if s.cancelling.color == 'warning' %}text-dark{% endif %}">{{ s.cancelling.count }}</span>
+                  </div>
+                  <div class="col-6 d-flex justify-content-between align-items-center">
+                    <span><i class="bi {{ s.cancelled.icon }} me-1"></i>{{ s.cancelled.label }}</span>
+                    <span class="badge bg-{{ s.cancelled.color }}">{{ s.cancelled.count }}</span>
+                  </div>
+                </div>
+                {# Row 5: Error / Finished #}
+                <div class="row">
+                  <div class="col-6 d-flex justify-content-between align-items-center">
+                    <span><i class="bi {{ s.error.icon }} me-1"></i>{{ s.error.label }}</span>
+                    <span class="badge bg-{{ s.error.color }}">{{ s.error.count }}</span>
+                  </div>
+                  <div class="col-6 d-flex justify-content-between align-items-center">
+                    <span><i class="bi {{ s.finished.icon }} me-1"></i>{{ s.finished.label }}</span>
+                    <span class="badge bg-{{ s.finished.color }}">{{ s.finished.count }}</span>
+                  </div>
+                </div>
+              {% endwith %}
             {% else %}
               <p class="text-muted mb-0">No precheck data</p>
             {% endif %}
@@ -95,7 +146,7 @@
       <table class="table table-striped table-hover" id="projects-table">
         <thead class="table-light sticky-top">
           <tr>
-            <th>
+            <th class="text-nowrap" style="width: 1%;">
               <a href="?sort={% if current_sort == 'full_id' and not sort_descending %}-{% endif %}full_id"
                  class="text-decoration-none text-dark">
                 Project ID
@@ -108,7 +159,7 @@
                 {% endif %}
               </a>
             </th>
-            <th>
+            <th class="text-nowrap text-center" style="width: 1%;">
               <a href="?sort={% if current_sort == 'size' and not sort_descending %}-{% endif %}size"
                  class="text-decoration-none text-dark">
                 Size
@@ -134,7 +185,7 @@
                 {% endif %}
               </a>
             </th>
-            <th>
+            <th class="text-nowrap" style="width: 1%;">
               <a href="?sort={% if current_sort == 'owner' and not sort_descending %}-{% endif %}owner"
                  class="text-decoration-none text-dark">
                 Owner
@@ -147,7 +198,7 @@
                 {% endif %}
               </a>
             </th>
-            <th>
+            <th class="text-nowrap" style="width: 1%;">
               <a href="?sort={% if current_sort == 'email' and not sort_descending %}-{% endif %}email"
                  class="text-decoration-none text-dark">
                 Email
@@ -160,41 +211,44 @@
                 {% endif %}
               </a>
             </th>
-            <th>Precheck Status</th>
-            <th>Manufacturable</th>
+            <th class="text-nowrap" style="width: 1%;">
+              <a href="?sort={% if current_sort == 'status' and not sort_descending %}-{% endif %}status"
+                 class="text-decoration-none text-dark">
+                Status
+                {% if current_sort == 'status' %}
+                  {% if sort_descending %}
+                    ▼
+                  {% else %}
+                    ▲
+                  {% endif %}
+                {% endif %}
+              </a>
+            </th>
           </tr>
         </thead>
         <tbody>
           {% for project in projects %}
             <tr>
-              <td class="font-monospace">{{ project.full_id|default:"-" }}</td>
-              <td>{{ project.slot_size }}</td>
+              <td class="font-monospace text-nowrap">{{ project.full_id|default:"-" }}</td>
+              <td class="text-nowrap text-center">
+                <span class="badge bg-secondary">{{ project.get_slot_size_display }}</span>
+              </td>
               <td>
                 <a href="{% url 'projects:detail' pk=project.pk %}">{{ project.name }}</a>
               </td>
-              <td>{{ project.user.username }}</td>
-              <td>{{ project.user.email }}</td>
+              <td class="text-nowrap">{{ project.user.username }}</td>
+              <td class="text-nowrap">{{ project.user.email }}</td>
               {% with active_file=project.active_files.0 %}
                 {% if active_file and active_file.latest_manufacturability_check %}
-                  <td>{{ active_file.latest_manufacturability_check.get_status_display }}</td>
-                  <td>
-                    {% if active_file.latest_manufacturability_check.is_manufacturable is True %}
-                      <span class="text-success">✓</span>
-                    {% elif active_file.latest_manufacturability_check.is_manufacturable is False %}
-                      <span class="text-danger">✗</span>
-                    {% else %}
-                      -
-                    {% endif %}
-                  </td>
+                  <td class="text-nowrap">{{ active_file.latest_manufacturability_check.status_badge_html }}</td>
                 {% else %}
-                  <td>-</td>
-                  <td>-</td>
+                  <td class="text-nowrap">-</td>
                 {% endif %}
               {% endwith %}
             </tr>
           {% empty %}
             <tr>
-              <td colspan="7" class="text-center text-muted">No projects found.</td>
+              <td colspan="6" class="text-center text-muted">No projects found.</td>
             </tr>
           {% endfor %}
         </tbody>
