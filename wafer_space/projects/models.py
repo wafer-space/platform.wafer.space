@@ -404,11 +404,20 @@ class Project(models.Model):
 
     # Derived manufacturability properties (from latest check on submitted_file)
     @property
-    def is_manufacturable(self) -> bool | None:
-        """Derived from latest completed check on submitted file."""
+    def latest_manufacturability_check(self) -> "ManufacturabilityCheck | None":
+        """Get the latest manufacturability check for this project's submitted file.
+
+        Returns the most recent check on the submitted_file, or None if no
+        submitted file or no checks exist.
+        """
         if not self.submitted_file:
             return None
-        check = self.submitted_file.latest_manufacturability_check
+        return self.submitted_file.latest_manufacturability_check
+
+    @property
+    def is_manufacturable(self) -> bool | None:
+        """Derived from latest completed check on submitted file."""
+        check = self.latest_manufacturability_check
         if not check or check.status != ManufacturabilityCheck.Status.FINISHED:
             return None
         return check.is_manufacturable
@@ -416,9 +425,7 @@ class Project(models.Model):
     @property
     def manufacturability_errors(self) -> list[str]:
         """Derived from latest completed check."""
-        if not self.submitted_file:
-            return []
-        check = self.submitted_file.latest_manufacturability_check
+        check = self.latest_manufacturability_check
         if not check or check.status != ManufacturabilityCheck.Status.FINISHED:
             return []
         return check.errors
@@ -426,9 +433,7 @@ class Project(models.Model):
     @property
     def check_completed_at(self) -> datetime | None:
         """Derived from latest completed check."""
-        if not self.submitted_file:
-            return None
-        check = self.submitted_file.latest_manufacturability_check
+        check = self.latest_manufacturability_check
         if not check or check.status != ManufacturabilityCheck.Status.FINISHED:
             return None
         return check.analysis_completed_at
