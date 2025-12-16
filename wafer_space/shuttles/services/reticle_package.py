@@ -315,9 +315,9 @@ def _build_ascii_grid(slots: list[ShuttleSlot], shuttle: Shuttle) -> str:
 
     lines = []
     # Header row
-    cols = "    " + "   ".join(chr(65 + c) for c in range(max_col + 1))
+    cols = "     " + "    ".join(chr(65 + c) for c in range(max_col + 1))
     lines.append(cols)
-    lines.append("  " + "+---" * (max_col + 1) + "+")
+    lines.append("  " + "+----" * (max_col + 1) + "+")
 
     for row in range(max_row + 1):
         # Code line
@@ -342,6 +342,6 @@ def _build_ascii_grid(slots: list[ShuttleSlot], shuttle: Shuttle) -> str:
         icon_parts.append("|")
         lines.append("".join(code_parts))
         lines.append("".join(icon_parts))
-        lines.append("  " + "+---" * (max_col + 1) + "+")
+        lines.append("  " + "+----" * (max_col + 1) + "+")
 
     return "\n".join(lines)
