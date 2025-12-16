@@ -187,12 +187,16 @@ def _get_version_indicator_html(check: ManufacturabilityCheck) -> SafeString:
 
 
 def _get_version_icon(*, is_latest: bool | None) -> tuple[str, str]:
-    """Return (icon_name, css_class) for version status."""
+    """Return (icon_name, css_class) for version status.
+
+    Uses white text to contrast with colored badge backgrounds.
+    Icon shape indicates status: check=latest, arrow-up=outdated.
+    """
     if is_latest is True:
-        return ("cloud-check-fill", "text-success")
+        return ("cloud-check-fill", "text-white")
     if is_latest is False:
-        return ("cloud-arrow-up-fill", "text-warning")
-    return ("cloud", "text-muted")
+        return ("cloud-arrow-up-fill", "text-white-50")
+    return ("cloud", "text-white-50")
 
 
 def _get_version_string(
