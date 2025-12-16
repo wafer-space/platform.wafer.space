@@ -80,8 +80,8 @@ class Command(BaseCommand):
         self._ensure_tos_acceptance(mithro, tos)
         self._ensure_tos_acceptance(testuser, tos)
 
-        # Ensure precheck revision exists for version badge display
-        self._ensure_precheck_revision()
+        # Ensure precheck revisions exist for version badge display
+        self._ensure_precheck_revisions()
 
         # Create shuttle and slots
         shuttle = self._create_shuttle()
@@ -191,34 +191,60 @@ class Command(BaseCommand):
         if created:
             self.stdout.write(f"  Created TOS acceptance for {user.username}")
 
-    def _ensure_precheck_revision(self) -> None:
-        """Ensure PrecheckImageRevision exists for dev data checks.
+    # Precheck version data - real versions from wafer-space/gf180mcu-precheck
+    # Each tuple: (version, digest_suffix, git_sha_prefix, pdk_version)
+    PRECHECK_VERSIONS: list[tuple[str, str, str, str]] = [
+        ("1.5.3", "a1b2c3d4e5f6", "abc123def456", "1.6.5"),  # Latest
+        ("1.5.2", "b2c3d4e5f6a1", "bcd234ef5678", "1.6.4"),
+        ("1.5.1", "c3d4e5f6a1b2", "cde345f67890", "1.6.4"),
+        ("1.5.0", "d4e5f6a1b2c3", "def456789abc", "1.6.3"),
+        ("1.4.5", "e5f6a1b2c3d4", "ef567890abcd", "1.6.3"),
+    ]
 
-        Creates a revision matching the digest used in _finished_check_fields
-        so that version badges display correctly.
+    def _get_precheck_digest(self, version: str) -> str:
+        """Get the digest for a precheck version."""
+        for v, suffix, _, _ in self.PRECHECK_VERSIONS:
+            if v == version:
+                return f"sha256:{suffix * 5}ab"
+        # Default to latest
+        return f"sha256:{self.PRECHECK_VERSIONS[0][1] * 5}ab"
+
+    def _ensure_precheck_revisions(self) -> None:
+        """Create PrecheckImageRevision records for dev data.
+
+        Creates multiple revisions with real version numbers from
+        wafer-space/gf180mcu-precheck to test version badge display.
         """
-        # This must match the digest in _finished_check_fields
-        digest = "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+        created_count = 0
+        for version, digest_suffix, git_sha, pdk_version in self.PRECHECK_VERSIONS:
+            # Build a 64-char hex digest by repeating the suffix
+            digest = f"sha256:{digest_suffix * 5}ab"
+            git_commit = f"{git_sha}{git_sha}{git_sha}12345678"[:40]
 
-        _, created = PrecheckImageRevision.objects.get_or_create(
-            digest=digest,
-            defaults={
-                "precheck_version": "2.5.1",
-                "git_commit_sha": "abc1234567890def1234567890abcdef12345678",
-                "pdk_version": "gf180mcuD",
-                "tool_versions": {
-                    "magic": "8.3.460",
-                    "klayout": "0.28.17",
-                    "netgen": "1.5.272",
+            _, created = PrecheckImageRevision.objects.get_or_create(
+                digest=digest,
+                defaults={
+                    "precheck_version": version,
+                    "git_commit_sha": git_commit,
+                    "pdk_version": pdk_version,
+                    "tool_versions": {
+                        "magic": "8.3.460",
+                        "klayout": "0.28.17",
+                        "netgen": "1.5.272",
+                    },
                 },
-            },
-        )
-        if created:
+            )
+            if created:
+                created_count += 1
+
+        if created_count > 0:
             self.stdout.write(
-                self.style.SUCCESS("  Created PrecheckImageRevision for dev data")
+                self.style.SUCCESS(
+                    f"  Created {created_count} PrecheckImageRevision records"
+                )
             )
         else:
-            self.stdout.write("  PrecheckImageRevision already exists")
+            self.stdout.write("  PrecheckImageRevision records already exist")
 
     def _create_shuttle(self) -> Shuttle:
         """Create the development shuttle."""
@@ -576,24 +602,42 @@ class Command(BaseCommand):
             )
 
     def _finished_check_fields(
-        self, completed_at: Any, project_id: str = "XX01"
+        self,
+        completed_at: Any,
+        project_id: str = "XX01",
+        precheck_version: str = "1.5.3",
     ) -> dict:
-        """Return common fields for a finished check."""
+        """Return common fields for a finished check.
+
+        Args:
+            completed_at: When the check completed
+            project_id: Project ID for output file paths
+            precheck_version: Precheck version to use (default: latest 1.5.3)
+        """
         # Create output files on disk
         self._create_output_files(project_id)
+
+        # Get version info from PRECHECK_VERSIONS
+        pdk_version = "1.6.5"
+        for v, _, _, pdk in self.PRECHECK_VERSIONS:
+            if v == precheck_version:
+                pdk_version = pdk
+                break
+
+        digest = self._get_precheck_digest(precheck_version)
 
         return {
             "docker_server_id": "docker-server-1",
             "docker_container_id": "abc123def456789012345678901234567890abcd",
             "docker_exit_code": 0,
-            "docker_image": "ghcr.io/wafer-space/gf180mcu-precheck:latest",
-            "docker_image_digest": "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
-            "precheck_version": "v2.5.1",
+            "docker_image": f"ghcr.io/wafer-space/gf180mcu-precheck:{precheck_version}",
+            "docker_image_digest": digest,
+            "precheck_version": precheck_version,
             "tool_versions": {
                 "magic": "8.3.460",
                 "klayout": "0.28.17",
                 "netgen": "1.5.272",
-                "pdk": "gf180mcuD",
+                "pdk": pdk_version,
             },
             "dispatching_started_at": completed_at - timedelta(minutes=12),
             "starting_started_at": completed_at - timedelta(minutes=11),
@@ -639,6 +683,7 @@ class Command(BaseCommand):
     ) -> None:
         """Create ManufacturabilityChecks based on scenario."""
         if scenario == "single_pass":
+            # Recent check with latest version
             completed = now - timedelta(hours=2)
             check = ManufacturabilityCheck.objects.create(
                 project=project,
@@ -649,11 +694,14 @@ class Command(BaseCommand):
                 errors=[],
                 warnings=["Minor: Consider adding ESD protection"],
                 analysis_completed_at=completed,
-                **self._finished_check_fields(completed, project.project_id),
+                **self._finished_check_fields(
+                    completed, project.project_id, precheck_version="1.5.3"
+                ),
             )
             self._create_checkpoints(check)
 
         elif scenario == "single_fail":
+            # Failed check with older version
             completed = now - timedelta(hours=1)
             check = ManufacturabilityCheck.objects.create(
                 project=project,
@@ -667,7 +715,9 @@ class Command(BaseCommand):
                 ],
                 warnings=[],
                 analysis_completed_at=completed,
-                **self._finished_check_fields(completed, project.project_id),
+                **self._finished_check_fields(
+                    completed, project.project_id, precheck_version="1.5.1"
+                ),
             )
             self._create_checkpoints(check)
 
@@ -723,7 +773,7 @@ class Command(BaseCommand):
             created_at=error_time - timedelta(minutes=10)
         )
 
-        # Retry succeeded
+        # Retry succeeded with version 1.5.2
         completed = now - timedelta(hours=2)
         retry_check = ManufacturabilityCheck.objects.create(
             project=project,
@@ -735,15 +785,17 @@ class Command(BaseCommand):
             errors=[],
             warnings=[],
             analysis_completed_at=completed,
-            **self._finished_check_fields(completed, project.project_id),
+            **self._finished_check_fields(
+                completed, project.project_id, precheck_version="1.5.2"
+            ),
         )
         self._create_checkpoints(retry_check)
 
     def _create_drc_update_checks(
         self, project: Project, project_file: ProjectFile, now: Any
     ) -> None:
-        """Create DRC update multi-check scenario."""
-        # First check - passed initially
+        """Create DRC update multi-check scenario showing version progression."""
+        # First check - passed with old version 1.4.5
         completed1 = now - timedelta(days=7)
         first_check = ManufacturabilityCheck.objects.create(
             project=project,
@@ -754,14 +806,16 @@ class Command(BaseCommand):
             errors=[],
             warnings=[],
             analysis_completed_at=completed1,
-            **self._finished_check_fields(completed1, project.project_id),
+            **self._finished_check_fields(
+                completed1, project.project_id, precheck_version="1.4.5"
+            ),
         )
         ManufacturabilityCheck.objects.filter(pk=first_check.pk).update(
             created_at=completed1 - timedelta(minutes=15)
         )
         self._create_checkpoints(first_check)
 
-        # Second check - DRC rules updated, now fails
+        # Second check - DRC rules updated in 1.5.0, now fails
         completed2 = now - timedelta(days=3)
         second_check = ManufacturabilityCheck.objects.create(
             project=project,
@@ -772,14 +826,16 @@ class Command(BaseCommand):
             errors=["New DRC rule violation: Minimum poly width"],
             warnings=[],
             analysis_completed_at=completed2,
-            **self._finished_check_fields(completed2, project.project_id),
+            **self._finished_check_fields(
+                completed2, project.project_id, precheck_version="1.5.0"
+            ),
         )
         ManufacturabilityCheck.objects.filter(pk=second_check.pk).update(
             created_at=completed2 - timedelta(minutes=15)
         )
         self._create_checkpoints(second_check)
 
-        # Third check - admin re-run after design fix
+        # Third check - admin re-run with latest version 1.5.3
         completed3 = now - timedelta(hours=12)
         third_check = ManufacturabilityCheck.objects.create(
             project=project,
@@ -790,6 +846,8 @@ class Command(BaseCommand):
             errors=[],
             warnings=[],
             analysis_completed_at=completed3,
-            **self._finished_check_fields(completed3, project.project_id),
+            **self._finished_check_fields(
+                completed3, project.project_id, precheck_version="1.5.3"
+            ),
         )
         self._create_checkpoints(third_check)
