@@ -9,7 +9,13 @@ import tempfile
 from pathlib import Path
 
 import pytest
+import yaml
 
+from wafer_space.projects.models import ManufacturabilityCheck
+from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
+from wafer_space.projects.tests.factories import ProjectFactory
+from wafer_space.projects.tests.factories import ProjectFileFactory
+from wafer_space.shuttles.models import ShuttleSlot
 from wafer_space.shuttles.services.reticle_package import SLOT_SIZE_TO_TILES
 from wafer_space.shuttles.services.reticle_package import PackageMetadata
 from wafer_space.shuttles.services.reticle_package import ProjectData
@@ -24,6 +30,7 @@ from wafer_space.shuttles.services.reticle_package import write_checks_csv
 from wafer_space.shuttles.services.reticle_package import write_manifest_csv
 from wafer_space.shuttles.services.reticle_package import write_summary_csv
 from wafer_space.shuttles.services.reticle_package import write_tilemap_csv
+from wafer_space.shuttles.tests.factories import ShuttleFactory
 
 
 class TestProjectData:
@@ -459,3 +466,170 @@ class TestReticlePackageServiceIntegration:
 
         with pytest.raises(ReticlePackageError, match="not found"):
             service.generate()
+
+    def test_full_package_generation(self, tmp_path):  # noqa: PLR0915
+        """Generate complete package with all files using factory-created data.
+
+        This is a comprehensive integration test that validates the entire package
+        generation workflow. Test complexity is intentional and necessary.
+        """
+        # Create a temporary grid config file
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        grid_config_path = config_dir / "TEST-layout.yaml"
+
+        grid_config = {
+            "shuttle": "G899",
+            "row_heights": [1.0, 1.0],  # 2 rows, both full height
+            "column_widths": [1.0, 1.0],  # 2 columns, both full width
+        }
+        with grid_config_path.open("w") as f:
+            yaml.dump(grid_config, f)
+
+        # Create shuttle with grid config
+        shuttle = ShuttleFactory(
+            name="G899",
+            grid_config_file=str(grid_config_path),
+        )
+
+        # Create first project with completed check
+        gds_dir = tmp_path / "gds"
+        gds_dir.mkdir()
+
+        project1 = ProjectFactory(
+            name="Test Project One",
+            project_id="TST1",
+            slot_size="1x1",
+        )
+        project_file1 = ProjectFileFactory(project=project1, top_cell="TOP_CELL_1")
+        output_gds1 = gds_dir / "output1.gds"
+        output_gds1.write_text("FAKE GDS CONTENT 1")
+
+        ManufacturabilityCheckFactory(
+            project=project1,
+            project_file=project_file1,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+            warnings=[],
+            errors=[],
+            output_gds=str(output_gds1),
+            output_gds_sha256="abc123hash1",
+        )
+        project1.submitted_file = project_file1
+        project1.save()
+
+        # Create second project with warnings
+        project2 = ProjectFactory(
+            name="Test Project Two",
+            project_id="TST2",
+            slot_size="1x1",
+        )
+        project_file2 = ProjectFileFactory(project=project2, top_cell="TOP_CELL_2")
+        output_gds2 = gds_dir / "output2.gds"
+        output_gds2.write_text("FAKE GDS CONTENT 2")
+
+        # Has warnings = MANUFACTURABLE_WITH_WARNINGS
+        ManufacturabilityCheckFactory(
+            project=project2,
+            project_file=project_file2,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+            warnings=["Warning 1", "Warning 2"],
+            errors=[],
+            output_gds=str(output_gds2),
+            output_gds_sha256="def456hash2",
+        )
+        project2.submitted_file = project_file2
+        project2.save()
+
+        # Create shuttle slots (2x2 grid: 2 with projects, 2 empty)
+        ShuttleSlot.objects.create(
+            shuttle=shuttle,
+            project=project1,
+            row=0,
+            column=0,
+            slot_size="1x1",
+            status=ShuttleSlot.Status.RESERVED,
+        )
+        ShuttleSlot.objects.create(
+            shuttle=shuttle,
+            project=project2,
+            row=0,
+            column=1,
+            slot_size="1x1",
+            status=ShuttleSlot.Status.RESERVED,
+        )
+        ShuttleSlot.objects.create(
+            shuttle=shuttle,
+            project=None,
+            row=1,
+            column=0,
+            slot_size="1x1",
+            status=ShuttleSlot.Status.AVAILABLE,
+        )
+        ShuttleSlot.objects.create(
+            shuttle=shuttle,
+            project=None,
+            row=1,
+            column=1,
+            slot_size="1x1",
+            status=ShuttleSlot.Status.AVAILABLE,
+        )
+
+        # Generate the package
+        output = tmp_path / "G899_OUTPUT"
+        service = ReticlePackageService(
+            shuttle_name="G899",
+            output_path=output,
+            allow_pending=False,
+        )
+
+        result = service.generate()
+
+        # Verify result counts (2 projects created above)
+        expected_projects = 2
+        assert result["projects_included"] == expected_projects
+        assert result["projects_skipped"] == 0
+
+        # Verify all expected files exist
+        assert (output / "README.md").exists()
+        assert (output / "tilemap.csv").exists()
+        assert (output / "manifest.csv").exists()
+        assert (output / "summary.csv").exists()
+        assert (output / "checks.csv").exists()
+
+        # Verify project directories and files
+        assert (output / "TST1").exists()
+        assert (output / "TST1" / "info.json").exists()
+        assert (output / "TST1" / "TOP_CELL_1.gds").exists()
+
+        assert (output / "TST2").exists()
+        assert (output / "TST2" / "info.json").exists()
+        assert (output / "TST2" / "TOP_CELL_2.gds").exists()
+
+        # Verify GDS files have correct content
+        assert (output / "TST1" / "TOP_CELL_1.gds").read_text() == "FAKE GDS CONTENT 1"
+        assert (output / "TST2" / "TOP_CELL_2.gds").read_text() == "FAKE GDS CONTENT 2"
+
+        # Verify tilemap.csv has correct grid (2x2 slots = 4x4 tiles)
+        tilemap_content = (output / "tilemap.csv").read_text()
+        lines = tilemap_content.strip().split("\n")
+        expected_tile_rows = 4  # 2 slot rows * 2 tiles per row
+        assert len(lines) == expected_tile_rows
+
+        # First row should have TST1 and TST2
+        assert "TST1" in lines[0]
+        assert "TST2" in lines[0]
+
+        # Verify manifest.csv
+        manifest_content = (output / "manifest.csv").read_text()
+        assert "TST1" in manifest_content
+        assert "TST2" in manifest_content
+        assert "TOP_CELL_1" in manifest_content
+        assert "TOP_CELL_2" in manifest_content
+
+        # Verify README.md
+        readme_content = (output / "README.md").read_text()
+        assert "# G899 Reticle Package" in readme_content
+        assert "Test Project One" in readme_content
+        assert "Test Project Two" in readme_content
