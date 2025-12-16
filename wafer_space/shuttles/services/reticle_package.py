@@ -610,7 +610,7 @@ class ReticlePackageService:
                     project=project,
                     manufacturability_checks__status=ManufacturabilityCheck.Status.FINISHED,
                 )
-                .order_by("-created_at")
+                .order_by("-uploaded_at")
                 .first()
             )
 
