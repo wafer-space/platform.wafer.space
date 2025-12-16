@@ -129,9 +129,8 @@ Installs and restarts systemd services for the application.
 - Shows service status
 
 **Services managed:**
-- `django-gunicorn.service` - Web application server
-- `django-celery.service` - Background task worker
-- `django-celery-beat.service` - Scheduled task scheduler
+
+See [../systemd/](../systemd/) for the full list of 9 Celery workers plus Gunicorn, and [docs/systemd-services.md](../../docs/systemd-services.md) for complete configuration details.
 
 **Note:** Run this after database setup and permissions are configured. The script will automatically restart services after updating service files.
 
@@ -191,9 +190,8 @@ sudo ./reset-logs.sh --help         # Show help
 - Backup archives: `/var/backups/platform.wafer.space/logs/`
 
 **Services with journal logs:**
-- `django-gunicorn.service` - Web application server
-- `django-celery.service` - Background task worker
-- `django-celery-beat.service` - Scheduled task scheduler
+
+All `django-gunicorn` and `django-celery-*` services. See [docs/systemd-services.md](../../docs/systemd-services.md) for the complete list.
 
 **Manual systemd journal commands:**
 ```bash
@@ -250,27 +248,22 @@ Loads environment variables from `.env` file (used by other scripts).
 
 ## Service Management
 
-The platform runs three systemd services:
-
-1. **django-gunicorn.service** - Web application server
-2. **django-celery.service** - Background task worker
-3. **django-celery-beat.service** - Scheduled task scheduler
+The platform runs 9 Celery workers plus Gunicorn. See [docs/systemd-services.md](../../docs/systemd-services.md) for complete details.
 
 ### Manual Service Commands
 
 ```bash
 # Check status
-sudo systemctl status django-gunicorn.service
-sudo systemctl status django-celery.service
-sudo systemctl status django-celery-beat.service
+sudo systemctl status django-gunicorn
+sudo systemctl status django-celery-none-ro-default
+sudo systemctl status 'django-celery-*.service'
 
 # View logs
-sudo journalctl -u django-gunicorn.service -f
-sudo journalctl -u django-celery.service -f
-sudo journalctl -u django-celery-beat.service -f
+sudo journalctl -u django-gunicorn -f
+sudo journalctl -u django-celery-none-ro-checks-orch -f
 
-# Restart individual service
-sudo systemctl restart django-gunicorn.service
+# Restart all Celery workers
+sudo systemctl restart 'django-celery-*.service'
 ```
 
 ## Logs
@@ -301,7 +294,7 @@ This provides a consistent interface with other development commands.
 ## Troubleshooting
 
 ### Services won't start
-1. Check logs: `sudo journalctl -u django-gunicorn.service -n 50`
+1. Check logs: `sudo journalctl -u django-gunicorn -n 50`
 2. Verify permissions: `sudo ./04-setup-permissions.sh`
 3. Check database: `sudo -u postgres psql -l`
 4. Verify .env file: `sudo -u django cat /home/django/platform.wafer.space/.env`
