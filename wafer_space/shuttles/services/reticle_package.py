@@ -644,7 +644,13 @@ class ReticlePackageService:
 
         # Validate required fields
         if not check.output_gds:
-            msg = f"Project {project.project_id} check missing output_gds"
+            msg = (
+                f"Project {project.project_id} check missing output_gds. "
+                f"Check ID: {check.pk}, status: {check.status}, "
+                f"finished_status: {check.finished_status}, "
+                f"is_manufacturable: {check.is_manufacturable}, "
+                f"created_at: {check.created_at}"
+            )
             raise ReticlePackageError(msg)
 
         if not project_file.top_cell:
