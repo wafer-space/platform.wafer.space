@@ -25,8 +25,14 @@ echo "$(date): Starting service restart..." | tee -a "$LOG_FILE" 2>/dev/null || 
 # Define all services
 SERVICES=(
     "django-gunicorn.service"
-    "django-celery.service"
-    "django-celery-beat.service"
+    "django-celery-none-ro-default.service"
+    "django-celery-none-ro-checks-orch.service"
+    "django-celery-none-ro-beat.service"
+    "django-celery-mail-ro-email.service"
+    "django-celery-http-rw-downloads.service"
+    "django-celery-dock-ro-checks-fast.service"
+    "django-celery-dock-ro-checks-slow.service"
+    "django-celery-dock-rw-checks-save.service"
 )
 
 # Stop all services first (in reverse order)
