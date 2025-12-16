@@ -170,9 +170,10 @@ def write_summary(path: Path, slots: list[ShuttleSlot]) -> None:
                 "PROJECT_NAME",
                 "PROJECT_URL",
                 "SLOT_SIZE",
-                "SLOT_COUNT",
-                "SUBMITTED",
-                "CHECK_STATUS",
+                "STATUS",
+                "TOP_CELL",
+                "SUBMITTED_AT",
+                "REPOSITORY_URL",
             ]
         )
 
@@ -180,22 +181,19 @@ def write_summary(path: Path, slots: list[ShuttleSlot]) -> None:
             if not slot.project or slot.project_id in seen:
                 continue
             seen.add(slot.project_id)
-
-            check = slot.project.output_file.output_check
-            slot_count = sum(1 for s in slots if s.project_id == slot.project_id)
-            status = ""
-            if check.pk and check.finished_status:
-                status = check.finished_status.value
+            prj = slot.project
+            prj_file = prj.output_file
 
             writer.writerow(
                 [
-                    slot.project.project_id,
-                    slot.project.name,
-                    f"{settings.SITE_URL}/projects/{slot.project.id}/",
+                    prj.project_id,
+                    prj.name,
+                    f"{settings.SITE_URL}/projects/{prj.id}/",
                     slot.slot_size,
-                    slot_count,
-                    "yes" if slot.project.submitted_file else "no",
-                    status,
+                    prj.status,
+                    prj_file.top_cell,
+                    prj.submitted_at.isoformat() if prj.submitted_at else "",
+                    prj.repository_url or "",
                 ]
             )
 
