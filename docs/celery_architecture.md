@@ -9,7 +9,7 @@ wafer.space uses Celery for asynchronous task processing with:
 - **Result Backend:** Django database (`django-db`)
 - **Scheduler:** Celery Beat for periodic tasks
 
-> **Note:** Redis and RabbitMQ are banned. See `CLAUDE.md` for details.
+> **Note:** Redis and RabbitMQ are banned. See [CLAUDE.md](../CLAUDE.md) for details.
 
 ---
 
