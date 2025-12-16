@@ -7,6 +7,7 @@ from pathlib import Path
 from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
 
+from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.services.reticle_package import ReticlePackageError
 from wafer_space.shuttles.services.reticle_package import generate_package
 
@@ -34,6 +35,9 @@ class Command(BaseCommand):
                 output_path,
                 allow_pending=options["allow_pending"],
             )
+        except Shuttle.DoesNotExist as e:
+            msg = f"Shuttle not found: {options['shuttle_name']}"
+            raise CommandError(msg) from e
         except ReticlePackageError as e:
             raise CommandError(str(e)) from e
 
