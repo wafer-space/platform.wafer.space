@@ -1,7 +1,6 @@
 """Template tags for manufacturability check badges with version info.
 
 These tags render badges showing check status and/or container version information.
-For status-only badges without version info, use the model's status_badge_html property.
 
 Available tags:
 - badge_check_status: Status badge with small version indicator icon
