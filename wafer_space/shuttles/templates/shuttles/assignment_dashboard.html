@@ -143,7 +143,7 @@
                   <span class="badge bg-secondary">{{ project.get_slot_size_display }}</span>
                 </td>
                 <td class="text-center"
-                    data-sort-value="{% if project.status == 'submitted' %}1{% else %}0{% endif %}"
+                    data-sort-value="{{ project.submitted_at|date:'Y-m-d H:i:s'|default:'' }}"
                     title="{{ project.submitted_at|date:'Y-m-d H:i:s'|default:'—' }}">
                   {% if project.status == 'submitted' %}
                     <i class="bi bi-check-lg text-success"></i>
