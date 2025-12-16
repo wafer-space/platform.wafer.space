@@ -557,7 +557,8 @@ class ManufacturabilityCheckAdminStatusView(
             metadata = ManufacturabilityCheck.get_status_metadata(status)
 
             # Get checks for this status (ordered newest first)
-            checks = (
+            # Evaluate to list to avoid double query (count + iteration)
+            checks = list(
                 ManufacturabilityCheck.objects.filter(status=status)
                 .select_related(
                     "project",
@@ -567,8 +568,7 @@ class ManufacturabilityCheckAdminStatusView(
                 .order_by("-created_at")
             )
 
-            count = checks.count()
-            if count > 0:
+            if checks:
                 active_sections.append(
                     {
                         "status": status,
@@ -577,7 +577,7 @@ class ManufacturabilityCheckAdminStatusView(
                         "icon": metadata["icon"],
                         "show_spinner": metadata["show_spinner"],
                         "checks": checks,
-                        "count": count,
+                        "count": len(checks),
                     }
                 )
 
