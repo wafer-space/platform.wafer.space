@@ -237,7 +237,7 @@ class Command(BaseCommand):
             digest = f"sha256:{digest_suffix * 5}ab"
             git_commit = f"{git_sha}{git_sha}{git_sha}12345678"[:40]
 
-            _, created = PrecheckImageRevision.objects.get_or_create(
+            _, created = PrecheckImageRevision.objects.update_or_create(
                 digest=digest,
                 defaults={
                     "precheck_version": version,
