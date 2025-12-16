@@ -118,93 +118,22 @@ See [scripts/README.md](./scripts/README.md) for detailed documentation of all s
 
 ## Environment Configuration
 
-The `.env` file is automatically created by the database setup script (`03-setup-database.sh`) from the `.env.prod.template`. It includes all necessary configuration variables with helpful comments.
+The `.env` file is automatically created by the database setup script (`03-setup-database.sh`) from `.env.prod.template`. All secrets are populated automatically from the secrets repository (`/home/django/.secrets/`).
 
-**Automatically configured:**
-- `DATABASE_URL` - Generated with secure random password
-- `DJANGO_SECRET_KEY` - Generated with 50-character random key
-- All secrets populated from `/home/django/.secrets/` by the setup script:
-  - `MAILGUN_API_KEY` - from `mailgun` file
-  - `GITHUB_CLIENT_SECRET` - from `github-oauth` file
-  - `GITLAB_CLIENT_SECRET` - from `gitlab-oauth` file
-  - `GOOGLE_CLIENT_SECRET` - from `google-auth.json` file
-  - `DISCORD_CLIENT_SECRET` - from `discord-oauth` file
-  - `LINKEDIN_CLIENT_SECRET` - from `linkedin-oauth` file
+**See [docs/settings.md](../docs/settings.md) for complete environment configuration details, including all settings across dev/pytest/stage/prod environments.**
 
-**No manual secret configuration needed** - all secrets are automatically populated from the secrets repository during setup.
-
-Edit the file as the django user:
-
-```bash
-sudo -u django nano /home/django/platform.wafer.space/.env
-```
-
-### Configuration Variables
-
-The template includes all required variables with comments. All values are automatically configured during setup.
-
-**Already configured automatically:**
-- `DATABASE_URL` - Set by database setup script with generated password
-- `DJANGO_SECRET_KEY` - Auto-generated 50-character secure random key
-- `MAILGUN_API_KEY` - Populated from secrets repository (`mailgun` file)
-- OAuth Client Secrets - All populated from secrets repository:
-  - `GITHUB_CLIENT_SECRET` - from `github-oauth` file
-  - `GITLAB_CLIENT_SECRET` - from `gitlab-oauth` file
-  - `GOOGLE_CLIENT_SECRET` - from `google-auth.json` file
-  - `DISCORD_CLIENT_SECRET` - from `discord-oauth` file
-  - `LINKEDIN_CLIENT_SECRET` - from `linkedin-oauth` file
-- OAuth Client IDs - Pre-configured in settings:
-  - `GITHUB_CLIENT_ID` - Pre-configured for wafer-space organization
-  - `GITLAB_CLIENT_ID` - Pre-configured for wafer-space group
-  - `GOOGLE_CLIENT_ID` - Pre-configured for wafer-space project
-  - `DISCORD_CLIENT_ID` - Pre-configured for wafer-space organization
-  - `LINKEDIN_CLIENT_ID` - Pre-configured for wafer-space organization
-- `DJANGO_SETTINGS_MODULE` - Set to `config.settings.prod`
-- `DJANGO_ALLOWED_HOSTS` - Set to `platform.wafer.space`
-- Security settings - All HTTPS/HSTS settings configured
-
-**Note:** To update secrets (e.g., rotating API keys), update the secrets in the secrets repository, then run `deployment/scripts/03a-update-env-secrets.sh` and restart services.
-
-### Template File
-
-The template file `.env.prod.template` in the repository root contains all configuration variables with helpful comments explaining each one. The database setup script copies this to `.env` and adds the DATABASE_URL automatically.
+To update secrets after rotation, run `deployment/scripts/03a-update-env-secrets.sh` and restart services.
 
 ## Systemd Services
 
-The deployment includes 9 Celery workers plus Gunicorn, using queue naming convention `{network}:{filesystem}:{purpose}`.
+The deployment includes Gunicorn plus 9 Celery workers using queue naming convention `{network}:{filesystem}:{purpose}`.
 
-**See [docs/systemd-services.md](../docs/systemd-services.md) for complete worker configuration, queue mapping, and security details.**
+**See [docs/systemd-services.md](../docs/systemd-services.md) for complete worker configuration, queue mapping, service management commands, and security details.**
 
-### Service Overview
-
-| Service | User | Purpose |
-|---------|------|---------|
-| `django-gunicorn` | www-data | Web application (WSGI) |
-| `django-celery-none-ro-default` | www-data | Maintenance tasks |
-| `django-celery-none-ro-checks-orch` | www-data | Check orchestration |
-| `django-celery-none-ro-beat` | www-data | Celery Beat scheduler |
-| `django-celery-mail-ro-email` | www-data | Email via Mailgun |
-| `django-celery-http-rw-downloads` | www-data | File downloads |
-| `django-celery-dock-ro-checks-fast` | celery-mfg | Fast Docker ops |
-| `django-celery-dock-ro-checks-slow` | celery-mfg | Slow Docker ops |
-| `django-celery-dock-rw-checks-save` | celery-mfg | Save check results |
-
-### Service Management
+Install services with:
 
 ```bash
-# Install all services
 cd deployment/systemd && sudo ./install.sh
-
-# Check status of all services
-sudo systemctl status django-gunicorn
-sudo systemctl status django-celery-none-ro-default
-sudo systemctl status django-celery-none-ro-checks-orch
-
-# View logs
-sudo journalctl -u django-celery-none-ro-checks-orch -f
-
-# Restart all Celery workers
-sudo systemctl restart 'django-celery-*.service'
 ```
 
 ## Nginx Configuration
@@ -215,48 +144,12 @@ See [nginx/README.md](./nginx/README.md) for Nginx configuration details.
 
 The deployment implements multiple layers of security:
 
-### 1. Privilege Separation
-- Code owned by `django` user (deployment only)
-- Services run as `www-data` user (cannot modify code)
-- Compromised service cannot modify application code
+- **Privilege Separation**: Code owned by `django` user, services run as `www-data`
+- **File Permissions**: Application `750/640`, `.env` file `640`
+- **Network Security**: UFW firewall (ports 22, 80, 443), Let's Encrypt SSL, HSTS
+- **Database Security**: PostgreSQL on localhost via Unix socket
 
-### 2. File Permissions
-- Application: `750/640` (owner rwx/rw, group rx/r, others none)
-- `.env` file: `640` (secrets protected)
-- Media directory: `755` (www-data can write uploads)
-
-### 3. Systemd Hardening
-- `NoNewPrivileges`: Prevents privilege escalation
-- `PrivateDevices`: No access to devices
-- `ProtectSystem=strict`: Read-only filesystem except specified paths
-- `ProtectHome=true`: No access to home directories
-- `ReadWritePaths`: Limited to logs, media, and runtime directories
-
-### 4. Network Security
-- UFW firewall: Only ports 22, 80, 443 open
-- SSL/TLS: Let's Encrypt with automatic renewal
-- HTTPS enforced with HSTS (31536000 seconds / 1 year)
-- Security headers prevent XSS, clickjacking, MIME sniffing
-
-### 5. Database Security
-- PostgreSQL listens only on localhost
-- Secure password (32-character random)
-- Connection via Unix socket (better than TCP for local connections)
-
-## Firewall Configuration
-
-```bash
-# UFW should be configured during setup, but verify:
-sudo ufw status
-
-# Should show:
-# Status: active
-# To                         Action      From
-# --                         ------      ----
-# 22/tcp                     ALLOW       Anywhere
-# 80/tcp                     ALLOW       Anywhere
-# 443/tcp                    ALLOW       Anywhere
-```
+**See [docs/systemd-services.md](../docs/systemd-services.md) for systemd hardening details (NoNewPrivileges, ProtectSystem, etc.).**
 
 ## Operations
 
@@ -269,9 +162,7 @@ See [scripts/README.md](./scripts/README.md) for:
 
 ## Additional Resources
 
-- [docs/systemd-services.md](../docs/systemd-services.md) - Complete Celery worker configuration
-- [scripts/](./scripts/) - Setup and maintenance scripts
-- [systemd/](./systemd/) - Systemd service files
-- [nginx/](./nginx/) - Nginx configuration
+- [docs/settings.md](../docs/settings.md) - Complete settings catalog for all environments
+- [docs/systemd-services.md](../docs/systemd-services.md) - Celery worker configuration and security
+- [docs/oauth_secret_rotation.md](../docs/oauth_secret_rotation.md) - Secret rotation procedures
 - [docs/developer_onboarding.md](../docs/developer_onboarding.md) - Development environment setup
-- [CLAUDE.md](../CLAUDE.md) - Development guidelines
