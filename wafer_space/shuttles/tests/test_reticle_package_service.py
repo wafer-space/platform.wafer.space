@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import csv
+import io
+
 from wafer_space.shuttles.services.reticle_package import SLOT_SIZE_TO_TILES
 from wafer_space.shuttles.services.reticle_package import ProjectData
 from wafer_space.shuttles.services.reticle_package import SlotData
 from wafer_space.shuttles.services.reticle_package import build_tilemap_grid
+from wafer_space.shuttles.services.reticle_package import write_manifest_csv
+from wafer_space.shuttles.services.reticle_package import write_tilemap_csv
 
 
 class TestProjectData:
@@ -127,3 +132,75 @@ class TestBuildTilemapGrid:
         assert len(grid[0]) == expected_tile_cols
         assert grid[0][0] == "A001"
         assert grid[0][1] == "B002"
+
+
+class TestCSVWriters:
+    """Tests for CSV generation functions."""
+
+    def test_write_tilemap_csv(self):
+        """Write tilemap grid to CSV format."""
+        grid = [
+            ["MOLE", "MOLE", "KIAN"],
+            ["MOLE", "MOLE", "KIAN"],
+            ["", "", "CAFE"],
+        ]
+        output = io.StringIO()
+        write_tilemap_csv(grid, output)
+
+        output.seek(0)
+        content = output.read()
+        lines = [line.rstrip() for line in content.strip().split("\n")]
+
+        expected_line_count = 3
+        assert len(lines) == expected_line_count
+        assert lines[0] == "MOLE,MOLE,KIAN"
+        assert lines[2] == ",,CAFE"
+
+    def test_write_manifest_csv(self):
+        """Write manifest CSV with headers."""
+        projects = [
+            ProjectData(
+                code="CAFE",
+                project_name="Cafe Chip",
+                project_uuid="uuid1",
+                project_url="url1",
+                slot_size="1x1",
+                slot_positions=["C1"],
+                top_cell="CAFE_TOP",
+                gds_path="/path/cafe.gds",
+                gds_sha256="hash1",
+                is_submitted=True,
+                check_status="manufacturable",
+                check_warnings=0,
+                check_errors=0,
+            ),
+            ProjectData(
+                code="MOLE",
+                project_name="Mole Detector",
+                project_uuid="uuid2",
+                project_url="url2",
+                slot_size="0p5x1",
+                slot_positions=["A1", "A2"],
+                top_cell="MOLE_TOP",
+                gds_path="/path/mole.gds",
+                gds_sha256="hash2",
+                is_submitted=True,
+                check_status="manufacturable_with_warnings",
+                check_warnings=3,
+                check_errors=0,
+            ),
+        ]
+        output = io.StringIO()
+        write_manifest_csv(projects, output)
+
+        output.seek(0)
+        reader = csv.DictReader(output)
+        rows = list(reader)
+
+        # Should be sorted by CODE, MOLE has 2 slots so 2 rows
+        expected_row_count = 3  # CAFE x1 + MOLE x2
+        assert len(rows) == expected_row_count
+        assert rows[0]["CODE"] == "CAFE"
+        assert rows[1]["CODE"] == "MOLE"
+        assert rows[1]["SLOT"] == "0p5x1"
+        assert rows[1]["LAYOUT"] == "MOLE/MOLE_TOP.gds"

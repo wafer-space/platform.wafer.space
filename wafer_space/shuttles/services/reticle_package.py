@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
+from typing import TextIO
 
 # Mapping from slot size to tile dimensions (width, height)
 SLOT_SIZE_TO_TILES: dict[str, tuple[int, int]] = {
@@ -137,3 +139,52 @@ def build_tilemap_grid(
                 grid[start_row + dr][start_col + dc] = slot.project_code
 
     return grid
+
+
+def write_tilemap_csv(grid: list[list[str]], output: TextIO) -> None:
+    """Write tilemap grid to CSV format (no headers).
+
+    Args:
+        grid: 2D list of project codes
+        output: File-like object to write to
+    """
+    writer = csv.writer(output)
+    for row in grid:
+        writer.writerow(row)
+
+
+def write_manifest_csv(projects: list[ProjectData], output: TextIO) -> None:
+    """Write manifest CSV with headers, sorted by CODE.
+
+    One row per slot assignment (projects in multiple slots get multiple rows).
+
+    Args:
+        projects: List of ProjectData objects
+        output: File-like object to write to
+    """
+    fieldnames = ["CODE", "PROJECT", "SLOT", "TOP", "HASH_SHA256", "LAYOUT"]
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+
+    # Build rows: one per project-slot combination, sorted by CODE
+    rows = []
+    for project in projects:
+        rows.extend(
+            [
+                {
+                    "CODE": project.code,
+                    "PROJECT": project.project_name,
+                    "SLOT": project.slot_size,
+                    "TOP": project.top_cell,
+                    "HASH_SHA256": project.gds_sha256,
+                    "LAYOUT": project.layout_path,
+                }
+                for _position in project.slot_positions
+            ]
+        )
+
+    # Sort by CODE
+    rows.sort(key=lambda r: r["CODE"])
+
+    for row in rows:
+        writer.writerow(row)
