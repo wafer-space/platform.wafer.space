@@ -107,6 +107,13 @@
                 Owner <span class="sort-indicator"></span>
               </th>
               <th data-sortable="true"
+                  data-sort-type="date"
+                  class="sortable text-center"
+                  style="cursor: pointer; width: 1%;"
+                  title="Submitted to Manufacturing">
+                <i class="bi bi-send"></i> <span class="sort-indicator"></span>
+              </th>
+              <th data-sortable="true"
                   data-sort-type="size"
                   class="sortable"
                   style="cursor: pointer">
@@ -131,6 +138,15 @@
                   <a href="{% url 'projects:detail' project.pk %}">{{ project.name }}</a>
                 </td>
                 <td>{{ project.user.username|default:"—" }}</td>
+                <td class="text-center"
+                    data-sort-value="{% if project.status == 'submitted' %}1{% else %}0{% endif %}"
+                    title="{{ project.submitted_at|date:'Y-m-d H:i:s'|default:'—' }}">
+                  {% if project.status == 'submitted' %}
+                    <i class="bi bi-check-lg text-success"></i>
+                  {% else %}
+                    <i class="bi bi-x-lg text-danger"></i>
+                  {% endif %}
+                </td>
                 <td data-sort-value="{{ project.slot_size }}">
                   <span class="badge bg-secondary">{{ project.get_slot_size_display }}</span>
                 </td>

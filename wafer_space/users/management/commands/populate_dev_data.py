@@ -342,7 +342,9 @@ class Command(BaseCommand):
         ]
 
         created_count = 0
-        for proj_id, name, owner, size, check_scenario in projects_data:
+        for idx, (proj_id, name, owner, size, check_scenario) in enumerate(
+            projects_data
+        ):
             project, created = Project.objects.get_or_create(
                 project_id=proj_id,
                 shuttle=shuttle,
@@ -352,6 +354,7 @@ class Command(BaseCommand):
                     "description": f"Test project: {name}",
                     "slot_size": size,
                     "status": Project.Status.SUBMITTED,
+                    "submitted_at": timezone.now() - timedelta(days=idx + 1),
                 },
             )
 
@@ -458,7 +461,9 @@ class Command(BaseCommand):
         ]
 
         created_count = 0
-        for proj_id, name, owner, size, check_scenario in projects_data:
+        for idx, (proj_id, name, owner, size, check_scenario) in enumerate(
+            projects_data
+        ):
             project, created = Project.objects.get_or_create(
                 project_id=proj_id,
                 shuttle=shuttle,
@@ -468,6 +473,7 @@ class Command(BaseCommand):
                     "description": f"G801 project: {name}",
                     "slot_size": size,
                     "status": Project.Status.SUBMITTED,
+                    "submitted_at": timezone.now() - timedelta(days=idx + 1),
                 },
             )
 
@@ -810,7 +816,7 @@ class Command(BaseCommand):
         """Create ManufacturabilityChecks based on scenario."""
         if scenario == "single_pass":
             # Recent check with latest version
-            completed = now - timedelta(hours=2)
+            completed = now - timedelta(minutes=30)
             check = ManufacturabilityCheck.objects.create(
                 project=project,
                 project_file=project_file,
@@ -828,7 +834,7 @@ class Command(BaseCommand):
 
         elif scenario == "single_fail":
             # Failed check with older version
-            completed = now - timedelta(hours=1)
+            completed = now - timedelta(hours=4)
             check = ManufacturabilityCheck.objects.create(
                 project=project,
                 project_file=project_file,
