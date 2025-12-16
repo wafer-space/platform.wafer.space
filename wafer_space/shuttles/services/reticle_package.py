@@ -69,7 +69,7 @@ def write_manifest_and_copy_gds(
     seen: set[Any] = set()
     with (output_path / "manifest.csv").open("w") as f:
         writer = csv.writer(f)
-        writer.writerow(["CODE", "SLOT", "POSITION", "LAYOUT", "TOP_CELL", "SHA256"])
+        writer.writerow(["CODE", "PROJECT", "SLOT_SIZE", "TOP", "SHA256", "LAYOUT"])
 
         for slot in slots:
             if not slot.project or slot.project_id in seen:
@@ -77,6 +77,7 @@ def write_manifest_and_copy_gds(
             seen.add(slot.project_id)
 
             code = slot.project.project_id
+            project_name = slot.project.name
             try:
                 pf = slot.project.output_file
                 check = pf.output_check
@@ -90,7 +91,7 @@ def write_manifest_and_copy_gds(
                 continue
 
             writer.writerow(
-                [code, slot.slot_size, slot.grid_position, out_file, top_cell, sha256]
+                [code, project_name, slot.slot_size, top_cell, sha256, out_file]
             )
 
             dest = output_path / out_file
