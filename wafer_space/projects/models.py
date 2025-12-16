@@ -14,7 +14,8 @@ from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.utils import timezone
 from django.utils.formats import date_format
-from django.utils.safestring import mark_safe
+from django.utils.html import format_html
+from django.utils.safestring import SafeString
 from simple_history.models import HistoricalRecords
 
 from wafer_space.core.enums import SlotSize
@@ -1868,14 +1869,16 @@ class ManufacturabilityCheck(models.Model):
         meta = self.get_status_metadata(self.status)
         return bool(meta["show_spinner"])
 
-    def status_badge_html(self) -> str:
+    def status_badge_html(self) -> SafeString:
         """Return complete Bootstrap badge HTML for current status.
 
         Returns:
             SafeString containing badge HTML, safe for template rendering.
 
         Example output:
-            <span class="badge bg-warning"><i class="bi-clock"></i> Pending</span>
+            <span class="badge bg-warning text-dark">
+                <i class="bi bi-clock"></i> Pending
+            </span>
 
         Note:
             For FINISHED status, shows one of three states:
@@ -1907,30 +1910,36 @@ class ManufacturabilityCheck(models.Model):
             label = self.status_label
             show_spinner = self.status_show_spinner
 
-        # Build icon/spinner HTML
+        # Build icon/spinner HTML using format_html for safety
         if show_spinner:
-            icon_html = (
+            icon_html = format_html(
                 '<span class="spinner-border spinner-border-sm" '
                 'role="status" aria-hidden="true"></span>'
             )
         elif icon:
-            icon_html = f'<i class="{icon}"></i>'
+            # Add 'bi' base class required by Bootstrap Icons
+            icon_html = format_html('<i class="bi {}"></i>', icon)
         else:
-            icon_html = ""
+            icon_html = None
 
-        # Add text-dark class for warning background (better contrast)
-        text_class = " text-dark" if color == "warning" else ""
+        # Add text-dark class for light backgrounds (better contrast)
+        text_class = " text-dark" if color in ("warning", "info") else ""
 
-        # Combine into badge
+        # Combine into badge using format_html (eliminates need for noqa)
         if icon_html:
-            badge_html = (
-                f'<span class="badge bg-{color}{text_class}">{icon_html} {label}</span>'
+            return format_html(
+                '<span class="badge bg-{}{}">{} {}</span>',
+                color,
+                text_class,
+                icon_html,
+                label,
             )
-        else:
-            badge_html = f'<span class="badge bg-{color}{text_class}">{label}</span>'
-
-        # Safe: color/icon/label come from _STATUS_METADATA dict (model-controlled)
-        return mark_safe(badge_html)  # noqa: S308
+        return format_html(
+            '<span class="badge bg-{}{}">{}</span>',
+            color,
+            text_class,
+            label,
+        )
 
     def can_transition_to(self, new_status: Status) -> bool:
         """Check if transition from current status to new_status is valid.

@@ -536,9 +536,11 @@ class ManufacturabilityCheckAdminStatusView(
         status_counts = {}
         for status_value, status_label in ManufacturabilityCheck.Status.choices:
             count = ManufacturabilityCheck.objects.filter(status=status_value).count()
+            metadata = ManufacturabilityCheck.get_status_metadata(status_value)
             status_counts[status_value] = {
                 "label": status_label,
                 "count": count,
+                "color": metadata["color"],
             }
 
         # Get recent checks (last 50)
