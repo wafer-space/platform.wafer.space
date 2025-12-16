@@ -20,13 +20,6 @@ class ReticlePackageError(Exception):
     """Error during reticle package generation."""
 
 
-class ManifestError(Exception):
-    """Error getting manifest data for a project."""
-
-    NOT_MANUFACTURABLE = "not manufacturable"
-    NO_TOP_CELL = "no top_cell"
-
-
 def generate_package(
     shuttle_name: str,
     output_path: Path,
@@ -114,12 +107,6 @@ def get_slots(shuttle: Shuttle) -> list[ShuttleSlot]:
         .select_related("project", "project__submitted_file")
         .order_by("row", "column")
     )
-
-
-def _missing(field: str) -> Any:
-    """Raise ManifestError for missing field."""
-    msg = f"no {field}"
-    raise ManifestError(msg)
 
 
 def _is_manufacturable(check: ManufacturabilityCheck) -> bool:
