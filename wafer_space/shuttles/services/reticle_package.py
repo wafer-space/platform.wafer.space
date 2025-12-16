@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import json
 from dataclasses import dataclass
 from typing import TextIO
 
@@ -389,3 +390,43 @@ def _generate_projects_table(projects: list[ProjectData]) -> list[str]:
 
     lines.append("")
     return lines
+
+
+def generate_project_info_json(project: ProjectData) -> str:
+    """Generate info.json content for a single project.
+
+    Args:
+        project: ProjectData object
+
+    Returns:
+        JSON string with project details
+    """
+    data = {
+        "code": project.code,
+        "project": {
+            "uuid": project.project_uuid,
+            "name": project.project_name,
+            "url": project.project_url,
+            "slot_size": project.slot_size,
+            "status": "SUBMITTED" if project.is_submitted else "ASSIGNED",
+            "submitted_at": project.submitted_at,
+            "repository_url": project.repository_url,
+        },
+        "project_file": {
+            "top_cell": project.top_cell,
+            "source_url": project.input_file_url,
+            "sha256": project.input_sha256,
+        },
+        "manufacturability_check": {
+            "status": "COMPLETED" if project.check_status != "no_check" else "NONE",
+            "result": project.check_status,
+            "warnings_count": project.check_warnings,
+            "errors_count": project.check_errors,
+            "version": project.check_version,
+            "runtime_seconds": project.check_runtime_seconds,
+            "output_gds_sha256": project.gds_sha256,
+        },
+        "slot_positions": project.slot_positions,
+    }
+
+    return json.dumps(data, indent=2)

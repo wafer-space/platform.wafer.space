@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 
 from wafer_space.shuttles.services.reticle_package import SLOT_SIZE_TO_TILES
 from wafer_space.shuttles.services.reticle_package import PackageMetadata
 from wafer_space.shuttles.services.reticle_package import ProjectData
 from wafer_space.shuttles.services.reticle_package import SlotData
 from wafer_space.shuttles.services.reticle_package import build_tilemap_grid
+from wafer_space.shuttles.services.reticle_package import generate_project_info_json
 from wafer_space.shuttles.services.reticle_package import generate_readme
 from wafer_space.shuttles.services.reticle_package import write_checks_csv
 from wafer_space.shuttles.services.reticle_package import write_manifest_csv
@@ -332,3 +334,37 @@ class TestReadmeGenerator:
 
         assert "| MOLE |" in readme
         assert "Mole Detector" in readme
+
+
+class TestInfoJsonGenerator:
+    """Tests for info.json generation."""
+
+    def test_generate_project_info_json(self):
+        """Generate info.json for a project."""
+        expected_warnings = 2
+        project = ProjectData(
+            code="MOLE",
+            project_name="Mole Detector",
+            project_uuid="12345678-1234-1234-1234-123456789abc",
+            project_url="https://example.com/projects/123/",
+            slot_size="1x1",
+            slot_positions=["A1", "A2", "B1", "B2"],
+            top_cell="MOLE_TOP",
+            gds_path="/path/to/output.gds",
+            gds_sha256="abc123def456",
+            is_submitted=True,
+            check_status="manufacturable",
+            check_warnings=expected_warnings,
+            check_errors=0,
+            check_version="v2.1.0",
+            check_runtime_seconds=127.5,
+        )
+
+        info_json = generate_project_info_json(project)
+        data = json.loads(info_json)
+
+        assert data["code"] == "MOLE"
+        assert data["project"]["name"] == "Mole Detector"
+        assert data["project"]["uuid"] == "12345678-1234-1234-1234-123456789abc"
+        assert data["manufacturability_check"]["warnings_count"] == expected_warnings
+        assert data["slot_positions"] == ["A1", "A2", "B1", "B2"]
