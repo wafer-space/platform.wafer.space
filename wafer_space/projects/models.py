@@ -1533,19 +1533,19 @@ class ManufacturabilityCheck(models.Model):
         FinishedStatus.MANUFACTURABLE: {
             "color": "success",
             "icon": "bi-check-circle",
-            "ascii": "✔",
+            "unicode": "✔",
             "label": "Manufacturable",
         },
         FinishedStatus.MANUFACTURABLE_WITH_WARNINGS: {
             "color": "warning",
             "icon": "bi-exclamation-triangle",
-            "ascii": "⚠",
+            "unicode": "⚠",
             "label": "Manufacturable (Warnings)",
         },
         FinishedStatus.NOT_MANUFACTURABLE: {
             "color": "danger",
             "icon": "bi-x-circle",
-            "ascii": "✘",
+            "unicode": "✘",
             "label": "Not Manufacturable",
         },
     }
@@ -1556,63 +1556,63 @@ class ManufacturabilityCheck(models.Model):
         Status.PENDING: {
             "color": "warning",
             "icon": "bi-clock",
-            "ascii": "⌛",
+            "unicode": "⌛",
             "label": "Pending",
             "show_spinner": False,
         },
         Status.DISPATCHING: {
             "color": "info",
             "icon": "bi-send",
-            "ascii": "→",
+            "unicode": "→",
             "label": "Dispatching",
             "show_spinner": True,
         },
         Status.STARTING: {
             "color": "info",
             "icon": "bi-box-arrow-up",
-            "ascii": "↑",
+            "unicode": "↑",
             "label": "Starting",
             "show_spinner": True,
         },
         Status.RUNNING: {
             "color": "primary",
             "icon": "bi-play-circle",
-            "ascii": "▶",
+            "unicode": "▶",
             "label": "Running",
             "show_spinner": True,
         },
         Status.ANALYZING: {
             "color": "primary",
             "icon": "bi-search",
-            "ascii": "◎",
+            "unicode": "◎",
             "label": "Analyzing",
             "show_spinner": True,
         },
         Status.FINISHED: {
             "color": "success",
             "icon": "bi-check-circle",
-            "ascii": "✔",
+            "unicode": "✔",
             "label": "Finished",
             "show_spinner": False,
         },
         Status.ERROR: {
             "color": "danger",
             "icon": "bi-exclamation-triangle",
-            "ascii": "!",
+            "unicode": "!",
             "label": "Error",
             "show_spinner": False,
         },
         Status.CANCELLING: {
             "color": "warning",
             "icon": "bi-x-circle",
-            "ascii": "…",
+            "unicode": "…",
             "label": "Cancelling",
             "show_spinner": True,
         },
         Status.CANCELLED: {
             "color": "secondary",
             "icon": "bi-x-circle",
-            "ascii": "✘",
+            "unicode": "✘",
             "label": "Cancelled",
             "show_spinner": False,
         },
@@ -1881,7 +1881,7 @@ class ManufacturabilityCheck(models.Model):
             status: A status value (e.g., 'pending', 'running')
 
         Returns:
-            Dict with keys: color, icon, label, show_spinner
+            Dict with keys: color, icon, unicode, label, show_spinner
 
         Raises:
             KeyError: If status is not a valid ManufacturabilityCheck.Status value
@@ -1891,6 +1891,45 @@ class ManufacturabilityCheck(models.Model):
             msg = f"Unknown status '{status}'. Valid statuses: {valid}"
             raise KeyError(msg)
         return cls._STATUS_METADATA[status]
+
+    @classmethod
+    def get_all_status_metadata(cls) -> dict[str, dict[str, str | bool]]:
+        """Return all status metadata for iteration.
+
+        Returns:
+            Dict mapping status values to their metadata dicts.
+        """
+        return dict(cls._STATUS_METADATA)
+
+    @classmethod
+    def get_finished_status_metadata(
+        cls, finished_status: FinishedStatus
+    ) -> dict[str, str]:
+        """Return presentation metadata for a finished status value.
+
+        Args:
+            finished_status: A FinishedStatus enum value
+
+        Returns:
+            Dict with keys: color, icon, unicode, label
+
+        Raises:
+            KeyError: If finished_status is not valid
+        """
+        if finished_status not in cls._FINISHED_STATUS_METADATA:
+            valid = list(cls._FINISHED_STATUS_METADATA.keys())
+            msg = f"Unknown finished status '{finished_status}'. Valid: {valid}"
+            raise KeyError(msg)
+        return cls._FINISHED_STATUS_METADATA[finished_status]
+
+    @classmethod
+    def get_all_finished_status_metadata(cls) -> dict[FinishedStatus, dict[str, str]]:
+        """Return all finished status metadata for iteration.
+
+        Returns:
+            Dict mapping FinishedStatus values to their metadata dicts.
+        """
+        return dict(cls._FINISHED_STATUS_METADATA)
 
     @property
     def status_color(self) -> str:
@@ -1917,10 +1956,10 @@ class ManufacturabilityCheck(models.Model):
         return bool(meta["show_spinner"])
 
     @property
-    def status_ascii(self) -> str:
+    def status_unicode(self) -> str:
         """Return ASCII/Unicode icon for current status (for terminal output)."""
         meta = self.get_status_metadata(self.status)
-        return str(meta["ascii"])
+        return str(meta["unicode"])
 
     def status_badge_html(self) -> SafeString:
         """Return complete Bootstrap badge HTML for current status.
@@ -2459,12 +2498,12 @@ class ManufacturabilityCheck(models.Model):
         return self.FinishedStatus.NOT_MANUFACTURABLE
 
     @property
-    def finished_status_ascii(self) -> str:
+    def finished_status_unicode(self) -> str:
         """Get ASCII icon for finished status (for terminal/plain-text output)."""
         fs = self.finished_status
         if fs is None:
             return "?"
-        return self._FINISHED_STATUS_METADATA[fs]["ascii"]
+        return self._FINISHED_STATUS_METADATA[fs]["unicode"]
 
     @property
     def queue_position(self) -> int | None:
