@@ -1,134 +1,636 @@
-# Deployment Scripts
+# Production Deployment Guide
 
-This directory contains automated deployment scripts for **both** platform.wafer.space (production) and test-platform.wafer.space (staging).
+This guide covers deploying platform.wafer.space to a production server running Debian 12 (Bookworm) or Debian Trixie (testing).
 
-## 🔄 Environment Auto-Detection
+## Overview
 
-**All deployment scripts automatically detect which environment they're running in based on the server hostname.**
+**Automated Deployment:** This project includes complete deployment automation in the `deployment/` directory. The scripts handle setup, configuration, and security hardening automatically.
 
-- **Hostname contains "test-platform"** → Staging environment (`config.settings.stage`)
-- **Hostname contains "platform"** → Production environment (`config.settings.prod`)
+### Technology Stack
 
-The scripts use **identical names** for everything (application directory, database, logs, etc.) on both servers. Only 5 environment-specific values differ:
+- **Server OS**: Debian 12 (Bookworm) or Debian Trixie (testing)
+- **Python**: 3.13.7 (managed by uv)
+- **Web Server**: Nginx (reverse proxy)
+- **Application Server**: Gunicorn (WSGI)
+- **Database**: PostgreSQL 17+
+- **Task Queue**: Celery (with PostgreSQL broker)
+- **SSL/TLS**: Let's Encrypt (via certbot)
+- **Process Management**: systemd
+- **Security**: Privilege separation (django user owns code, www-data runs services)
 
-1. Django settings module (`config.settings.stage` vs `config.settings.prod`)
-2. Secrets repository (`test-platform.wafer.space-secrets` vs `platform.wafer.space-secrets`)
-3. Environment template (`.env.stage.template` vs `.env.prod.template`)
-4. SSL domain (`test-platform.wafer.space` vs `platform.wafer.space`)
-5. Nginx server_name directive
+### Prerequisites
 
-**No manual configuration needed** - just run the same scripts on both servers.
+- Fresh Debian 12 or Debian Trixie server with root access
+- Domain name pointing to server IP (platform.wafer.space)
+- Ports 22 (SSH), 80 (HTTP), and 443 (HTTPS) accessible
 
-## 📖 Full Documentation
+### Server Requirements
 
-**See [docs/production_deployment.md](../docs/production_deployment.md) for complete deployment guide.**
+- **RAM**: 2GB minimum (4GB recommended)
+- **Disk**: 20GB minimum
+- **CPU**: 2 cores minimum
 
-The full documentation includes:
-- Step-by-step deployment instructions
-- Detailed script explanations
-- Environment configuration guide
-- Security features
-- Troubleshooting
-- Maintenance operations
+## Quick Start
 
-## Directory Structure
-
-```
-deployment/
-├── scripts/          # Setup and maintenance scripts
-│   ├── detect-environment.sh      # Auto-detect staging vs production
-│   ├── 01-setup-users.sh
-│   ├── 02-install-dependencies.sh
-│   ├── 02a-setup-secrets.sh
-│   ├── 03-setup-database.sh
-│   ├── 03a-update-env-secrets.sh
-│   ├── 04-setup-permissions.sh
-│   ├── 05-setup-ssl.sh
-│   ├── 05a-expand-ssl-cert.sh
-│   ├── backup.sh
-│   └── update.sh
-├── systemd/          # Systemd service files (same on both servers)
-│   ├── django-gunicorn.service
-│   ├── django-celery-none-ro-default.service
-│   ├── django-celery-none-ro-checks-orch.service
-│   ├── django-celery-none-ro-beat.service
-│   ├── django-celery-mail-ro-email.service
-│   ├── django-celery-http-rw-downloads.service
-│   ├── django-celery-dock-ro-checks-fast.service
-│   ├── django-celery-dock-ro-checks-slow.service
-│   ├── django-celery-dock-rw-checks-save.service
-│   └── install.sh
-├── nginx/            # Nginx configuration (auto-selected by environment)
-│   ├── platform.wafer.space.conf        # Production config
-│   ├── test-platform.wafer.space.conf   # Staging config
-│   └── install.sh
-└── README.md         # This file
-```
-
-## Quick Reference
-
-### Setup Scripts (run in order)
-
-1. **`01-setup-users.sh`** - Create django user and application directories
-2. **`02-install-dependencies.sh`** - Install system packages (PostgreSQL, Nginx, etc.)
-3. **`02a-setup-secrets.sh`** - Clone secrets repository from GitHub
-4. **`03-setup-database.sh`** - Setup PostgreSQL database and auto-generate .env file
-5. **`04-setup-permissions.sh`** - Set proper file permissions (privilege separation)
-6. **`05-setup-ssl.sh`** - Obtain Let's Encrypt SSL certificate
-
-### Maintenance Scripts
-
-- **`backup.sh`** - Backup PostgreSQL database (cron: `0 2 * * *`)
-- **`update.sh`** - Update application code and restart services
-- **`03a-update-env-secrets.sh`** - Update .env file with latest secrets (run after secrets change)
-
-### Installing Services
+For a fresh Debian server, run these commands in order:
 
 ```bash
-# Install systemd services
-cd systemd && sudo ./install.sh
+# 1. Initial system setup
+sudo apt update && sudo apt upgrade -y
+sudo hostnamectl set-hostname platform.wafer.space
+sudo timedatectl set-timezone UTC
 
-# Install nginx configuration
-cd nginx && sudo ./install.sh
+# 2. Clone repository
+cd /tmp
+git clone https://github.com/wafer-space/platform.wafer.space.git
+cd platform.wafer.space/deployment
+
+# 3. Run initial setup scripts
+sudo ./scripts/01-setup-users.sh
+sudo ./scripts/02-install-dependencies.sh
+
+# 4. Setup SSH key for django user (to access secrets repository)
+sudo -u django ssh-keygen -t ed25519 -C "django@platform.wafer.space"
+sudo cat /home/django/.ssh/id_ed25519.pub
+# Add this public key as a deploy key to:
+# https://github.com/mithro/platform.wafer.space-secrets/settings/keys
+
+# 5. Setup application as django user
+sudo -u django -i
+cd /home/django
+git clone https://github.com/wafer-space/platform.wafer.space.git platform.wafer.space
+cd platform.wafer.space
+
+# Install uv and create Python environment
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.cargo/env
+make venv
+
+# Configure environment settings
+echo 'export DJANGO_SETTINGS_MODULE=config.settings.prod' >> ~/.bashrc
+source ~/.bashrc
+exit
+
+# 6. Clone secrets repository
+cd /tmp/platform.wafer.space/deployment
+sudo ./scripts/02a-setup-secrets.sh
+
+# 7. Setup database (creates .env with DATABASE_URL, DJANGO_SECRET_KEY, and OAuth secrets)
+sudo ./scripts/03-setup-database.sh
+
+# 8. Verify .env file (optional - all secrets are automatically configured)
+# DATABASE_URL, DJANGO_SECRET_KEY, and all API secrets are already configured
+# sudo -u django nano /home/django/platform.wafer.space/.env
+
+# 9. Run Django setup (as django user)
+sudo -u django -i
+cd /home/django/platform.wafer.space
+export DJANGO_SETTINGS_MODULE=config.settings.prod
+make migrate
+make createsuperuser
+make collectstatic
+exit
+
+# 10. Set permissions and install services (back as root)
+cd /home/django/platform.wafer.space/deployment
+sudo ./scripts/04-setup-permissions.sh
+
+cd systemd
+sudo ./install.sh
+
+cd ../nginx
+sudo ./install.sh
+
+cd ../scripts
+sudo ./05-setup-ssl.sh
+
+# 11. Start services
+sudo systemctl start django-gunicorn.service
+sudo systemctl start django-celery.service
+
+# 12. Verify deployment
+sudo systemctl status django-gunicorn.service
+sudo systemctl status django-celery.service
+curl https://platform.wafer.space
 ```
 
-## Celery Worker Architecture
+**Done!** Your application is now running at https://platform.wafer.space
 
-The platform uses **9 separate Celery workers** following a queue naming convention: `{network}:{filesystem}:{purpose}`.
+## Deployment Scripts Reference
 
-**See [docs/systemd-services.md](../docs/systemd-services.md) for complete queue naming, task mapping, and security configuration.**
+### 01-setup-users.sh
 
-### Worker Overview
+Creates system users with privilege separation for security:
 
-| Service | User | Queue | Purpose |
-|---------|------|-------|---------|
-| `django-celery-none-ro-default` | www-data | `none:ro:default` | Maintenance tasks |
-| `django-celery-none-ro-checks-orch` | www-data | `none:ro:checks-orch` | Check orchestration |
-| `django-celery-none-ro-beat` | www-data | N/A | Celery Beat scheduler |
-| `django-celery-mail-ro-email` | www-data | `mail:ro:email` | Email via Mailgun |
-| `django-celery-http-rw-downloads` | www-data | `http:rw:downloads` | File downloads |
-| `django-celery-dock-ro-checks-fast` | celery-mfg | `dock:ro:checks-fast` | Fast Docker ops |
-| `django-celery-dock-ro-checks-slow` | celery-mfg | `dock:ro:checks-slow` | Slow Docker ops |
-| `django-celery-dock-rw-checks-save` | celery-mfg | `dock:rw:checks-save` | Save check results |
+- **django user**: Owns application code, deploys updates (no service execution)
+- **www-data user**: Runs services (read-only access to code)
 
-### Manufacturability Checking
+Creates directories:
+- `/var/log/platform.wafer.space` (logs, owned by www-data)
+- `/run/platform.wafer.space` (Unix sockets, owned by www-data)
 
-Docker-based manufacturability checks use **remote Docker servers** over TCP (not local sockets). The `dock:*` workers:
+### 02-install-dependencies.sh
 
-1. Run as `celery-mfg` user (not `www-data`)
-2. Connect to remote Docker servers via `IPAddressAllow` restrictions
-3. Are isolated from web traffic by systemd security settings
+Installs all system packages required for the application:
 
-**See [docs/systemd-services.md](../docs/systemd-services.md#docker-server-configuration) for Docker server IPs and configuration.**
+- Build tools (gcc, make, etc.)
+- Python development headers
+- PostgreSQL client libraries
+- Nginx web server
+- Certbot (Let's Encrypt)
+- UFW firewall
+- Image processing libraries (for Pillow)
 
-## Architecture
+### 02a-setup-secrets.sh
 
-- **Privilege Separation**: `django` user owns code, `www-data` runs web services, `celery-mfg` runs Docker workers
-- **Security**: File permissions 750/640, systemd hardening (IPAddressDeny, ProtectSystem), HTTPS enforced
-- **Stack**: Django 5.2+ → Gunicorn → Nginx, PostgreSQL 17+, Celery (9 workers with queue isolation)
-- **Docker**: Remote Docker servers over TCP, restricted to `celery-mfg` user with IP filtering
+Clones the secrets repository:
 
-**Detailed documentation:**
+1. Clones `git@github.com:mithro/platform.wafer.space-secrets.git` to `/home/django/.secrets`
+2. Sets restrictive permissions (700 on directory)
 
-- [docs/systemd-services.md](../docs/systemd-services.md) - Complete worker configuration, queue naming, task mapping
-- [docs/production_deployment.md](../docs/production_deployment.md) - Step-by-step deployment guide
+**Prerequisites**: The django user must have SSH keys configured and added as a deploy key to the secrets repository.
+
+**Security**: Secrets are stored in a separate private repository. The setup script reads secrets from this repository and populates the `.env` file with static values.
+
+### 03-setup-database.sh
+
+Sets up PostgreSQL database and creates `.env` file automatically:
+
+1. Verifies application directory exists (fails if not found)
+2. Generates secure 32-character random password for database
+3. Creates `platform_wafer_space` database
+4. Creates `platform_wafer_space` user with generated password
+5. Configures PostgreSQL user settings (encoding, timezone, etc.)
+6. Creates `.env` from `.env.prod.template` (if .env doesn't exist)
+7. Adds/updates `DATABASE_URL` in `.env` file with generated password
+8. Generates 50-character Django secret key
+9. Calls `03a-update-env-secrets.sh` to populate API secrets
+10. Sets proper file permissions (640, owner django:django)
+
+**Non-interactive**: Runs completely automatically with no prompts.
+
+**Note**: This script creates the initial `.env` file and sets up the database. To update secrets without touching the database, use `03a-update-env-secrets.sh` instead.
+
+### 03a-update-env-secrets.sh
+
+Updates the `.env` file with the latest secrets from the secrets repository:
+
+1. Verifies `.env` file exists (fails if not found)
+2. Verifies secrets directory exists (fails if not found)
+3. Reads all secrets from `/home/django/.secrets/`
+4. Updates corresponding values in `.env` file
+5. Sets proper file permissions (640, owner django:django)
+
+**Use this script when**: Secrets in the repository have changed and you need to update the production `.env` file without recreating the database.
+
+**After running**: Restart services to load the new secrets:
+```bash
+sudo systemctl restart django-gunicorn.service
+sudo systemctl restart django-celery.service
+sudo systemctl restart django-celery-beat.service
+```
+
+### 04-setup-permissions.sh
+
+Implements privilege separation security model:
+
+- Sets ownership: `django:www-data` on all application files
+- Directories: `750` (owner rwx, group rx, others none)
+- Files: `640` (owner rw, group r, others none)
+- Special: `/wafer_space/media/` owned by `www-data:www-data` with `755` (needs write access)
+
+This prevents a compromised service from modifying application code.
+
+### 05-setup-ssl.sh
+
+Automates SSL certificate setup:
+
+1. Verifies nginx configuration is valid
+2. Starts nginx if not running
+3. Obtains Let's Encrypt certificate for `platform.wafer.space`
+4. Uncomments HTTPS server block in nginx config
+5. Reloads nginx with SSL enabled
+
+**Auto-renewal**: Certbot installs a systemd timer for automatic certificate renewal.
+
+## Environment Configuration
+
+The `.env` file is automatically created by the database setup script (`03-setup-database.sh`) from the `.env.prod.template`. It includes all necessary configuration variables with helpful comments.
+
+**Automatically configured:**
+- `DATABASE_URL` - Generated with secure random password
+- `DJANGO_SECRET_KEY` - Generated with 50-character random key
+- All secrets populated from `/home/django/.secrets/` by the setup script:
+  - `MAILGUN_API_KEY` - from `mailgun` file
+  - `GITHUB_CLIENT_SECRET` - from `github-oauth` file
+  - `GITLAB_CLIENT_SECRET` - from `gitlab-oauth` file
+  - `GOOGLE_CLIENT_SECRET` - from `google-auth.json` file
+  - `DISCORD_CLIENT_SECRET` - from `discord-oauth` file
+  - `LINKEDIN_CLIENT_SECRET` - from `linkedin-oauth` file
+
+**No manual secret configuration needed** - all secrets are automatically populated from the secrets repository during setup.
+
+Edit the file as the django user:
+
+```bash
+sudo -u django nano /home/django/platform.wafer.space/.env
+```
+
+### Configuration Variables
+
+The template includes all required variables with comments. All values are automatically configured during setup.
+
+**Already configured automatically:**
+- `DATABASE_URL` - Set by database setup script with generated password
+- `DJANGO_SECRET_KEY` - Auto-generated 50-character secure random key
+- `MAILGUN_API_KEY` - Populated from secrets repository (`mailgun` file)
+- OAuth Client Secrets - All populated from secrets repository:
+  - `GITHUB_CLIENT_SECRET` - from `github-oauth` file
+  - `GITLAB_CLIENT_SECRET` - from `gitlab-oauth` file
+  - `GOOGLE_CLIENT_SECRET` - from `google-auth.json` file
+  - `DISCORD_CLIENT_SECRET` - from `discord-oauth` file
+  - `LINKEDIN_CLIENT_SECRET` - from `linkedin-oauth` file
+- OAuth Client IDs - Pre-configured in settings:
+  - `GITHUB_CLIENT_ID` - Pre-configured for wafer-space organization
+  - `GITLAB_CLIENT_ID` - Pre-configured for wafer-space group
+  - `GOOGLE_CLIENT_ID` - Pre-configured for wafer-space project
+  - `DISCORD_CLIENT_ID` - Pre-configured for wafer-space organization
+  - `LINKEDIN_CLIENT_ID` - Pre-configured for wafer-space organization
+- `DJANGO_SETTINGS_MODULE` - Set to `config.settings.prod`
+- `DJANGO_ALLOWED_HOSTS` - Set to `platform.wafer.space`
+- Security settings - All HTTPS/HSTS settings configured
+
+**Note:** To update secrets (e.g., rotating API keys), update the secrets in the secrets repository, then run `deployment/scripts/03a-update-env-secrets.sh` and restart services.
+
+### Template File
+
+The template file `.env.prod.template` in the repository root contains all configuration variables with helpful comments explaining each one. The database setup script copies this to `.env` and adds the DATABASE_URL automatically.
+
+## Systemd Services
+
+The deployment includes three systemd services:
+
+### django-gunicorn.service
+
+Runs Gunicorn WSGI server:
+- User: `www-data`
+- Socket: `/run/platform.wafer.space/gunicorn.sock`
+- Workers: 4 (adjust based on CPU cores: 2-4 × CPU cores)
+- Timeout: 120 seconds
+- Security: `NoNewPrivileges`, `PrivateDevices`, `ProtectSystem=strict`
+
+### django-celery.service
+
+Runs Celery worker for background tasks:
+- User: `www-data`
+- Queues: `manufacturability`, `referrals`
+- Concurrency: 4 workers
+- Security: Same hardening as Gunicorn
+
+### django-celery-beat.service (Optional)
+
+Runs Celery Beat scheduler for periodic tasks:
+- Only needed if you have scheduled tasks
+- Not started by default
+
+### Service Management
+
+```bash
+# Start services
+sudo systemctl start django-gunicorn.service
+sudo systemctl start django-celery.service
+
+# Enable services (auto-start on boot)
+sudo systemctl enable django-gunicorn.service
+sudo systemctl enable django-celery.service
+
+# Check status
+sudo systemctl status django-gunicorn.service
+sudo systemctl status django-celery.service
+
+# View logs
+sudo journalctl -u django-gunicorn.service -f
+sudo journalctl -u django-celery.service -f
+```
+
+## Nginx Configuration
+
+Nginx serves as a reverse proxy to Gunicorn:
+
+### HTTP Server (Port 80)
+- Serves Let's Encrypt challenge files from `/var/www/certbot`
+- Redirects all other traffic to HTTPS
+
+### HTTPS Server (Port 443)
+- TLS 1.2 and 1.3 only
+- Strong cipher suites (Mozilla Intermediate profile)
+- HTTP/2 enabled
+- Security headers (HSTS, X-Frame-Options, CSP, etc.)
+- Proxies to Gunicorn Unix socket
+- Serves media files directly from `/home/django/platform.wafer.space/wafer_space/media/`
+
+### Configuration Files
+
+- `/etc/nginx/sites-available/platform.wafer.space` - Main config
+- `/etc/nginx/sites-enabled/platform.wafer.space` - Symlink to enable
+- Logs: `/var/log/nginx/platform.wafer.space-{access,error}.log`
+
+## Security Features
+
+The deployment implements multiple layers of security:
+
+### 1. Privilege Separation
+- Code owned by `django` user (deployment only)
+- Services run as `www-data` user (cannot modify code)
+- Compromised service cannot modify application code
+
+### 2. File Permissions
+- Application: `750/640` (owner rwx/rw, group rx/r, others none)
+- `.env` file: `640` (secrets protected)
+- Media directory: `755` (www-data can write uploads)
+
+### 3. Systemd Hardening
+- `NoNewPrivileges`: Prevents privilege escalation
+- `PrivateDevices`: No access to devices
+- `ProtectSystem=strict`: Read-only filesystem except specified paths
+- `ProtectHome=true`: No access to home directories
+- `ReadWritePaths`: Limited to logs, media, and runtime directories
+
+### 4. Network Security
+- UFW firewall: Only ports 22, 80, 443 open
+- SSL/TLS: Let's Encrypt with automatic renewal
+- HTTPS enforced with HSTS (31536000 seconds / 1 year)
+- Security headers prevent XSS, clickjacking, MIME sniffing
+
+### 5. Database Security
+- PostgreSQL listens only on localhost
+- Secure password (32-character random)
+- Connection via Unix socket (better than TCP for local connections)
+
+## Firewall Configuration
+
+```bash
+# UFW should be configured during setup, but verify:
+sudo ufw status
+
+# Should show:
+# Status: active
+# To                         Action      From
+# --                         ------      ----
+# 22/tcp                     ALLOW       Anywhere
+# 80/tcp                     ALLOW       Anywhere
+# 443/tcp                    ALLOW       Anywhere
+```
+
+## Maintenance Operations
+
+### Updates and Deployments
+
+Use the automated update script:
+
+```bash
+# As django user
+sudo -u django /home/django/platform.wafer.space/deployment/scripts/update.sh
+```
+
+The update script:
+1. Pulls latest code from git
+2. Updates Python dependencies (`make venv`)
+3. Runs database migrations (`make migrate`)
+4. Collects static files (`make collectstatic`)
+5. Resets file permissions
+6. Restarts Gunicorn and Celery services
+
+### Updating Secrets
+
+When secrets change in the secrets repository (e.g., rotating API keys), update the production `.env` file:
+
+```bash
+# Pull latest secrets from repository
+cd /home/django/platform.wafer.space/deployment
+sudo ./scripts/02a-setup-secrets.sh
+
+# Update .env file with new secrets
+sudo ./scripts/03a-update-env-secrets.sh
+
+# Restart services to load new secrets
+sudo systemctl restart django-gunicorn.service
+sudo systemctl restart django-celery.service
+sudo systemctl restart django-celery-beat.service
+```
+
+This updates only the secrets in `.env` without touching the database or other configuration.
+
+### Database Backups
+
+Use the automated backup script:
+
+```bash
+# Manual backup
+sudo -u django /home/django/platform.wafer.space/deployment/scripts/backup.sh
+
+# Automated daily backups (add to crontab)
+sudo -u django crontab -e
+# Add:
+0 2 * * * /home/django/platform.wafer.space/deployment/scripts/backup.sh
+```
+
+Backups are stored in `/home/django/backups/` and kept for 30 days.
+
+### Log Rotation
+
+Logs are automatically rotated by systemd journal. Application logs in `/var/log/platform.wafer.space/` are rotated by the system.
+
+### SSL Certificate Renewal
+
+Certbot automatically renews certificates via systemd timer:
+
+```bash
+# Check renewal timer status
+sudo systemctl status certbot.timer
+
+# Manual renewal test
+sudo certbot renew --dry-run
+```
+
+## Monitoring
+
+### Service Health
+
+```bash
+# Check all services
+sudo systemctl status django-gunicorn.service django-celery.service nginx postgresql
+
+# Check resource usage
+htop
+
+# Check disk space
+df -h
+
+# Check memory usage
+free -h
+```
+
+### Application Logs
+
+```bash
+# Gunicorn logs
+sudo journalctl -u django-gunicorn.service -f
+
+# Celery logs
+sudo journalctl -u django-celery.service -f
+
+# Nginx access logs
+sudo tail -f /var/log/nginx/platform.wafer.space-access.log
+
+# Nginx error logs
+sudo tail -f /var/log/nginx/platform.wafer.space-error.log
+
+# Application logs (if configured)
+sudo tail -f /var/log/platform.wafer.space/*.log
+```
+
+## Troubleshooting
+
+### Service Won't Start
+
+```bash
+# Check service status and logs
+sudo systemctl status django-gunicorn.service
+sudo journalctl -u django-gunicorn.service -n 50
+
+# Common issues:
+# - Check DATABASE_URL in .env
+# - Check file permissions (should be django:www-data)
+# - Check Gunicorn socket exists
+# - Run: make venv (update dependencies)
+```
+
+### 502 Bad Gateway
+
+```bash
+# Gunicorn not running or socket issues
+sudo systemctl restart django-gunicorn.service
+sudo systemctl reload nginx
+
+# Check socket exists
+ls -la /run/platform.wafer.space/gunicorn.sock
+```
+
+### Static Files Not Loading
+
+```bash
+# Recollect static files
+sudo -u django -i
+cd /home/django/platform.wafer.space
+export DJANGO_SETTINGS_MODULE=config.settings.prod
+make collectstatic
+exit
+
+# Check nginx config
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+### Database Connection Issues
+
+```bash
+# Check PostgreSQL is running
+sudo systemctl status postgresql
+
+# Check DATABASE_URL in .env
+sudo -u django cat /home/django/platform.wafer.space/.env | grep DATABASE_URL
+
+# Test connection
+sudo -u django -i
+cd /home/django/platform.wafer.space
+export DJANGO_SETTINGS_MODULE=config.settings.prod
+make shell
+# In shell: from django.db import connection; connection.ensure_connection()
+```
+
+### Database Operations (Drop/Reset)
+
+**IMPORTANT**: You must stop all services before performing database operations like dropping or recreating the database. Active connections will prevent these operations.
+
+```bash
+# Stop all services first
+sudo systemctl stop django-gunicorn.service
+sudo systemctl stop django-celery.service
+sudo systemctl stop django-celery-beat.service
+
+# Now you can perform database operations
+sudo -u postgres psql -c "DROP DATABASE platform_wafer_space;"
+sudo -u postgres psql -c "DROP USER platform_wafer_space;"
+
+# Recreate database
+cd /home/django/platform.wafer.space/deployment
+sudo ./scripts/03-setup-database.sh
+
+# Restart services
+sudo systemctl start django-gunicorn.service
+sudo systemctl start django-celery.service
+sudo systemctl start django-celery-beat.service
+```
+
+### SSL Certificate Issues
+
+```bash
+# Check certificate
+sudo certbot certificates
+
+# Test renewal
+sudo certbot renew --dry-run
+
+# Force renewal
+sudo certbot renew --force-renewal
+
+# Check nginx SSL config
+sudo nginx -t
+```
+
+## Performance Tuning
+
+### Gunicorn Workers
+
+Adjust worker count in `/etc/systemd/system/django-gunicorn.service`:
+
+```
+Rule of thumb: (2-4) × CPU_CORES
+2 CPU cores = 4-8 workers
+4 CPU cores = 8-16 workers
+```
+
+### Celery Concurrency
+
+Adjust concurrency in `/etc/systemd/system/django-celery.service`:
+
+```
+Default: 4 workers
+High load: increase to 8-16 workers
+```
+
+### PostgreSQL
+
+For production workload, tune PostgreSQL in `/etc/postgresql/17/main/postgresql.conf`:
+
+```
+shared_buffers = 256MB (25% of RAM)
+effective_cache_size = 1GB (50-75% of RAM)
+maintenance_work_mem = 128MB
+work_mem = 16MB
+```
+
+After changes:
+```bash
+sudo systemctl restart postgresql
+```
+
+## Additional Resources
+
+- [deployment/README.md](../deployment/README.md) - Automated scripts documentation
+- [deployment/scripts/](../deployment/scripts/) - Setup scripts
+- [deployment/systemd/](../deployment/systemd/) - Service files
+- [deployment/nginx/](../deployment/nginx/) - Nginx configuration
+- [Developer Onboarding](developer_onboarding.md) - Development environment setup
+- [CLAUDE.md](../CLAUDE.md) - Development guidelines
