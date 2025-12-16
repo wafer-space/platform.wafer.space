@@ -78,17 +78,31 @@ def write_manifest_and_copy_gds(
 
             code = slot.project.project_id
             try:
-                row, gds_path = _get_manifest_row(slot, code)
-            except ManifestError as e:
+                pf = slot.project.output_file
+                check = pf.output_check
+                _require_manufacturable(check)
+                top_cell = pf.top_cell or _missing("top_cell")
+                gds_path = Path(check.output_gds.path)
+                sha256 = check.output_gds_sha256
+            except (AttributeError, ManifestError) as e:
                 pending.setdefault(code, []).append(str(e))
                 continue
 
-            writer.writerow(row)
+            writer.writerow(
+                [
+                    code,
+                    slot.slot_size,
+                    slot.grid_position,
+                    f"{code}/{top_cell}.gds",
+                    top_cell,
+                    sha256,
+                ]
+            )
 
             project_dir = output_path / code
             project_dir.mkdir(exist_ok=True)
             try:
-                os.link(gds_path, project_dir / f"{row[4]}.gds")  # row[4] is top_cell
+                os.link(gds_path, project_dir / f"{top_cell}.gds")
             except OSError as e:
                 pending.setdefault(code, []).append(f"hardlink failed: {e}")
 
@@ -100,35 +114,6 @@ def get_slots(shuttle: Shuttle) -> list[ShuttleSlot]:
         .select_related("project", "project__submitted_file")
         .order_by("row", "column")
     )
-
-
-def _get_manifest_row(slot: ShuttleSlot, code: str) -> tuple[list[Any], Path]:
-    """Get manifest row data and GDS path for a slot.
-
-    Raises ManifestError if data is missing or not manufacturable.
-    Assumes slot.project is not None (caller must verify).
-    """
-    assert slot.project is not None
-    try:
-        pf = slot.project.output_file
-        check = pf.output_check
-        _require_manufacturable(check)
-        top_cell = pf.top_cell or _missing("top_cell")
-        gds_path = Path(check.output_gds.path)
-        sha256 = check.output_gds_sha256
-    except AttributeError as e:
-        msg = f"missing data: {e}"
-        raise ManifestError(msg) from e
-
-    row = [
-        code,
-        slot.slot_size,
-        slot.grid_position,
-        f"{code}/{top_cell}.gds",
-        top_cell,
-        sha256,
-    ]
-    return row, gds_path
 
 
 def _missing(field: str) -> Any:
