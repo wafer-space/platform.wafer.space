@@ -2,6 +2,7 @@
 
 from .base import *  # noqa: F403
 from .base import BASE_DIR
+from .base import CELERY_BEAT_SCHEDULE
 from .base import INSTALLED_APPS
 from .base import MIDDLEWARE
 from .base import SOCIALACCOUNT_PROVIDERS
@@ -93,7 +94,8 @@ DOCKER_SERVERS = [
     },
 ]
 
-# CELERY_BEAT_SCHEDULE: uses base.py defaults (all tasks are fast-running now)
+# CELERY_BEAT_SCHEDULE: faster revision fetching for dev
+CELERY_BEAT_SCHEDULE["revisions-needs-fetching"]["schedule"] = 30.0  # Every 30 seconds
 
 # LOGGING
 # ------------------------------------------------------------------------------
