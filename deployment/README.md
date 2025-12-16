@@ -49,9 +49,14 @@ deployment/
 │   └── update.sh
 ├── systemd/          # Systemd service files (same on both servers)
 │   ├── django-gunicorn.service
-│   ├── django-celery.service
-│   ├── django-celery-manufacturability.service
-│   ├── django-celery-beat.service
+│   ├── django-celery-none-ro-default.service
+│   ├── django-celery-none-ro-checks-orch.service
+│   ├── django-celery-none-ro-beat.service
+│   ├── django-celery-mail-ro-email.service
+│   ├── django-celery-http-rw-downloads.service
+│   ├── django-celery-dock-ro-checks-fast.service
+│   ├── django-celery-dock-ro-checks-slow.service
+│   ├── django-celery-dock-rw-checks-save.service
 │   └── install.sh
 ├── nginx/            # Nginx configuration (auto-selected by environment)
 │   ├── platform.wafer.space.conf        # Production config
@@ -87,32 +92,43 @@ cd systemd && sudo ./install.sh
 cd nginx && sudo ./install.sh
 ```
 
-## Manufacturability Checking Setup
+## Celery Worker Architecture
 
-The platform includes automated manufacturability checking using Docker containers. **This requires a separate Celery worker with Docker access.**
+The platform uses **9 separate Celery workers** following a queue naming convention: `{network}:{filesystem}:{purpose}`.
 
-### Required Steps
+**See [docs/systemd-services.md](../docs/systemd-services.md) for complete queue naming, task mapping, and security configuration.**
 
-1. **Create dedicated user** (`celery-mfg`) for the manufacturability worker
-2. **Install Docker Engine** on the production server
-3. **Grant Docker access** to the `celery-mfg` user
-4. **Pull the precheck image**: `docker pull ghcr.io/wafer-space/gf180mcu-precheck:latest`
-5. **Install the manufacturability service**: `django-celery-manufacturability.service`
+### Worker Overview
 
-**See [DOCKER_ACCESS.md](./DOCKER_ACCESS.md) for complete step-by-step guide.**
+| Service | User | Queue | Purpose |
+|---------|------|-------|---------|
+| `django-celery-none-ro-default` | www-data | `none:ro:default` | Maintenance tasks |
+| `django-celery-none-ro-checks-orch` | www-data | `none:ro:checks-orch` | Check orchestration |
+| `django-celery-none-ro-beat` | www-data | N/A | Celery Beat scheduler |
+| `django-celery-mail-ro-email` | www-data | `mail:ro:email` | Email via Mailgun |
+| `django-celery-http-rw-downloads` | www-data | `http:rw:downloads` | File downloads |
+| `django-celery-dock-ro-checks-fast` | celery-mfg | `dock:ro:checks-fast` | Fast Docker ops |
+| `django-celery-dock-ro-checks-slow` | celery-mfg | `dock:ro:checks-slow` | Slow Docker ops |
+| `django-celery-dock-rw-checks-save` | celery-mfg | `dock:rw:checks-save` | Save check results |
 
-### Architecture
+### Manufacturability Checking
 
-The system uses **two separate Celery workers** for security:
+Docker-based manufacturability checks use **remote Docker servers** over TCP (not local sockets). The `dock:*` workers:
 
-- **`django-celery.service`** (as `www-data`): Handles general background tasks (referrals queue)
-- **`django-celery-manufacturability.service`** (as `celery-mfg`): Handles manufacturability checks with Docker access
+1. Run as `celery-mfg` user (not `www-data`)
+2. Connect to remote Docker servers via `IPAddressAllow` restrictions
+3. Are isolated from web traffic by systemd security settings
 
-This separation ensures that Docker access (which is root-equivalent) is isolated from the web server user.
+**See [DOCKER_ACCESS.md](./DOCKER_ACCESS.md) for Docker server setup.**
 
 ## Architecture
 
-- **Privilege Separation**: `django` user owns code, `www-data` runs web services, `celery-mfg` runs manufacturability worker
-- **Security**: File permissions 750/640, systemd hardening, HTTPS enforced, Docker access isolated to dedicated user
-- **Stack**: Django 5.2+ → Gunicorn → Nginx, PostgreSQL 17+, Celery workers (2 separate services)
-- **Manufacturability**: Docker containers for isolated precheck validation (runs as `celery-mfg` with Docker access)
+- **Privilege Separation**: `django` user owns code, `www-data` runs web services, `celery-mfg` runs Docker workers
+- **Security**: File permissions 750/640, systemd hardening (IPAddressDeny, ProtectSystem), HTTPS enforced
+- **Stack**: Django 5.2+ → Gunicorn → Nginx, PostgreSQL 17+, Celery (9 workers with queue isolation)
+- **Docker**: Remote Docker servers over TCP, restricted to `celery-mfg` user with IP filtering
+
+**Detailed documentation:**
+
+- [docs/systemd-services.md](../docs/systemd-services.md) - Complete worker configuration, queue naming, task mapping
+- [docs/production_deployment.md](../docs/production_deployment.md) - Step-by-step deployment guide
