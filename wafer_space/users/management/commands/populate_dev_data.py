@@ -25,6 +25,7 @@ from wafer_space.projects.models import PrecheckImageRevision
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectComplianceCertification
 from wafer_space.projects.models import ProjectFile
+from wafer_space.shuttles.config import GridConfig
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.models import ShuttleSlot
 
@@ -83,29 +84,34 @@ class Command(BaseCommand):
         # Ensure precheck revisions exist for version badge display
         self._ensure_precheck_revisions()
 
-        # Create shuttle and slots
-        shuttle = self._create_shuttle()
-        self._create_slots(shuttle)
+        # Create G899 shuttle (development test shuttle) and slots
+        g899 = self._create_shuttle("G899", "Development shuttle for testing")
+        self._create_g899_slots(g899)
+        self._create_g899_projects(g899, mithro, testuser)
 
-        # Create test projects
-        self._create_projects(shuttle, mithro, testuser)
+        # Create G801 shuttle (initial shuttle run) and slots
+        g801 = self._create_shuttle("G801", "Initial shuttle run for wafer.space")
+        self._create_g801_slots(g801)
+        self._create_g801_projects(g801, mithro, testuser)
 
         self.stdout.write(self.style.SUCCESS("\nDevelopment data populated!"))
         self.stdout.write("  Users: mithro (staff/superuser), testuser")
-        self.stdout.write(f"  Shuttle: {shuttle.name} (4×4 grid = 16 slots)")
-        self.stdout.write("  Projects: 15 test projects with various states")
+        self.stdout.write(f"  Shuttle G899: {g899.name} (4×4 grid = 16 slots)")
+        self.stdout.write(f"  Shuttle G801: {g801.name} (5×8 grid = 40 slots)")
+        self.stdout.write("  Projects: 15 (G899) + 12 (G801) test projects")
 
     def _reset_data(self) -> None:
         """Delete existing development data."""
         self.stdout.write(self.style.WARNING("Resetting dev data..."))
 
-        # Delete test projects on G899 shuttle (cascade handles compliance certs)
-        Project.objects.filter(shuttle__name="G899").delete()
+        # Delete test projects on G899 and G801 shuttles
+        # (cascade handles compliance certs)
+        Project.objects.filter(shuttle__name__in=["G899", "G801"]).delete()
 
-        # Delete test shuttle (cascade handles slots)
-        Shuttle.objects.filter(name="G899").delete()
+        # Delete test shuttles (cascade handles slots)
+        Shuttle.objects.filter(name__in=["G899", "G801"]).delete()
 
-        self.stdout.write("  Deleted test projects and shuttle G899")
+        self.stdout.write("  Deleted test projects and shuttles G899, G801")
 
     def _create_user(
         self,
@@ -246,25 +252,25 @@ class Command(BaseCommand):
         else:
             self.stdout.write("  PrecheckImageRevision records already exist")
 
-    def _create_shuttle(self) -> Shuttle:
-        """Create the development shuttle."""
+    def _create_shuttle(self, name: str, description: str) -> Shuttle:
+        """Create a shuttle with given name and description."""
         shuttle, created = Shuttle.objects.get_or_create(
-            name="G899",
+            name=name,
             defaults={
-                "description": "Development shuttle for testing",
+                "description": description,
                 "status": Shuttle.Status.OPEN,
             },
         )
         if created:
-            self.stdout.write(self.style.SUCCESS("  Created shuttle: G899"))
+            self.stdout.write(self.style.SUCCESS(f"  Created shuttle: {name}"))
         else:
-            self.stdout.write("  Shuttle G899 already exists")
+            self.stdout.write(f"  Shuttle {name} already exists")
         return shuttle
 
-    def _create_slots(self, shuttle: Shuttle) -> None:
-        """Create a 4×4 grid of slots."""
+    def _create_g899_slots(self, shuttle: Shuttle) -> None:
+        """Create a 4×4 grid of slots for G899 development shuttle."""
         if shuttle.slots.exists():
-            self.stdout.write("  Slots already exist for shuttle")
+            self.stdout.write(f"  Slots already exist for {shuttle.name}")
             return
 
         # Create 4×4 grid with varying slot sizes
@@ -294,10 +300,14 @@ class Command(BaseCommand):
                     status=ShuttleSlot.Status.AVAILABLE,
                 )
 
-        self.stdout.write(self.style.SUCCESS("  Created 16 shuttle slots (4×4 grid)"))
+        self.stdout.write(
+            self.style.SUCCESS(f"  Created 16 slots (4×4 grid) for {shuttle.name}")
+        )
 
-    def _create_projects(self, shuttle: Shuttle, mithro: Any, testuser: Any) -> None:
-        """Create test projects with various states and manufacturability checks.
+    def _create_g899_projects(
+        self, shuttle: Shuttle, mithro: Any, testuser: Any
+    ) -> None:
+        """Create test projects for G899 with various states and checks.
 
         Creates projects demonstrating various multi-check scenarios:
         - Single FINISHED check (manufacturable/not manufacturable)
@@ -361,10 +371,126 @@ class Command(BaseCommand):
 
         if created_count > 0:
             self.stdout.write(
-                self.style.SUCCESS(f"  Created {created_count} test projects")
+                self.style.SUCCESS(f"  Created {created_count} G899 test projects")
             )
         else:
-            self.stdout.write("  Test projects already exist")
+            self.stdout.write("  G899 test projects already exist")
+
+    def _create_g801_slots(self, shuttle: Shuttle) -> None:
+        """Create G801 grid slots from the real YAML configuration.
+
+        Uses shuttles/G801-layout.yaml which defines:
+        - 5 rows x 8 columns = 40 slots
+        - Row 1: half-height, Rows 2-5: full-height
+        - Columns A-G: full-width, Column H: half-width
+        """
+        if shuttle.slots.exists():
+            self.stdout.write(f"  Slots already exist for {shuttle.name}")
+            return
+
+        # Load the real G801 grid configuration
+        config_path = Path("shuttles/G801-layout.yaml")
+        if not config_path.exists():
+            self.stdout.write(
+                self.style.WARNING(
+                    f"  G801 config not found at {config_path}, skipping slots"
+                )
+            )
+            return
+
+        config = GridConfig.from_file(config_path)
+
+        # Create slots from configuration
+        slot_count = 0
+        for row_idx, row_height in enumerate(config.row_heights):
+            for col_idx, col_width in enumerate(config.column_widths):
+                slot_size = GridConfig.calculate_slot_size(row_height, col_width)
+                ShuttleSlot.objects.create(
+                    shuttle=shuttle,
+                    row=row_idx,
+                    column=col_idx,
+                    slot_size=slot_size,
+                    status=ShuttleSlot.Status.AVAILABLE,
+                )
+                slot_count += 1
+
+        # Update shuttle config path
+        shuttle.grid_config_file = str(config_path)
+        shuttle.save(update_fields=["grid_config_file"])
+
+        grid_desc = f"{config.num_rows}×{config.num_columns}"
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"  Created {slot_count} slots ({grid_desc} grid) for {shuttle.name}"
+            )
+        )
+
+    def _create_g801_projects(
+        self, shuttle: Shuttle, mithro: Any, testuser: Any
+    ) -> None:
+        """Create test projects for G801 initial shuttle run.
+
+        Creates projects matching the G801 grid slot sizes:
+        - FULL (1×1): 28 slots in rows 2-5, cols A-G
+        - HALF_HEIGHT (1×0.5): 7 slots in row 1, cols A-G
+        - HALF_WIDTH (0.5×1): 4 slots in rows 2-5, col H
+        - QUARTER (0.5×0.5): 1 slot in row 1, col H
+        """
+        # G801 projects - different IDs and names than G899
+        # Match slot sizes to actual G801 grid configuration
+        projects_data = [
+            # Full size projects (28 available in G801)
+            ("MP01", "MIPS Processor Core", mithro, SlotSize.FULL, "single_pass"),
+            ("AR01", "ARM Cortex-M0 Core", testuser, SlotSize.FULL, "single_pass"),
+            ("DM01", "DDR Memory Controller", mithro, SlotSize.FULL, "single_fail"),
+            ("ET01", "Ethernet MAC", testuser, SlotSize.FULL, "drc_update"),
+            ("CAN1", "CAN Bus Controller", mithro, SlotSize.FULL, "single_pass"),
+            ("FPU1", "FPU Accelerator", testuser, SlotSize.FULL, "error_retry"),
+            # Half-height projects (7 available in G801 row 1)
+            ("SD01", "SD Card Controller", mithro, SlotSize.HALF_HEIGHT, "single_pass"),
+            ("NV01", "NVMe Controller", testuser, SlotSize.HALF_HEIGHT, "single_fail"),
+            ("WD01", "Watchdog Timer", mithro, SlotSize.HALF_HEIGHT, "in_progress"),
+            # Half-width projects (4 available in G801 col H)
+            ("US01", "USB 2.0 PHY", testuser, SlotSize.HALF_WIDTH, "single_pass"),
+            ("PC01", "PCIe PHY", mithro, SlotSize.HALF_WIDTH, "drc_update"),
+            # Quarter project (1 available in G801 row 1, col H)
+            ("TM01", "Temperature Sensor", testuser, SlotSize.QUARTER, "single_pass"),
+        ]
+
+        created_count = 0
+        for proj_id, name, owner, size, check_scenario in projects_data:
+            project, created = Project.objects.get_or_create(
+                project_id=proj_id,
+                shuttle=shuttle,
+                defaults={
+                    "user": owner,
+                    "name": name,
+                    "description": f"G801 project: {name}",
+                    "slot_size": size,
+                    "status": Project.Status.SUBMITTED,
+                },
+            )
+
+            if created:
+                # Create compliance certification
+                ProjectComplianceCertification.objects.create(
+                    project=project,
+                    export_control_compliant=True,
+                    not_restricted_entity=True,
+                    end_use_statement="G801 shuttle run",
+                    certified_by=owner,
+                )
+
+                # Create file and checks based on scenario
+                self._create_checks_for_project(project, check_scenario)
+                created_count += 1
+
+        if created_count > 0:
+            self.stdout.write(
+                self.style.SUCCESS(f"  Created {created_count} G801 test projects")
+            )
+        else:
+            self.stdout.write("  G801 test projects already exist")
 
     def _create_download_attempts(
         self, project_file: ProjectFile, scenario: str
