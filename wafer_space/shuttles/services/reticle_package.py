@@ -80,7 +80,7 @@ def write_manifest_and_copy_gds(
             try:
                 prj_file = slot.project.output_file
 
-                src_file = Path(prj_file.output_check.output_gds.path)
+                src_file = Path(prj_file.output_check.output_gds.path).resolve()
                 dst_file = f"{code}/{prj_file.top_cell}.gds"
 
                 writer.writerow(
