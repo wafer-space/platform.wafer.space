@@ -1712,6 +1712,65 @@ def _resolve_check_versions(
     return dict(revision.tool_versions)
 
 
+def _extract_container_outputs(
+    check: ManufacturabilityCheck,
+    container: "docker.models.containers.Container",
+    logger: logging.Logger,
+) -> list[str]:
+    """Extract all outputs from container, continuing even if some fail.
+
+    Each extraction is independent - if one fails, others still run.
+    This ensures we collect as much data as possible even on errors.
+
+    Args:
+        check: The manufacturability check.
+        container: Docker container to extract from.
+        logger: Logger for messages.
+
+    Returns:
+        List of extraction error messages (empty if all succeeded).
+    """
+    extraction_errors: list[str] = []
+
+    # 1. Save processing logs to log_file
+    log_size = len(check.processing_logs) if check.processing_logs else 0
+    logger.info("[do_analyzing] Step 1/5: Saving logs (%d bytes)...", log_size)
+    try:
+        _save_log_file(check, logger)
+    except Exception as e:
+        error_msg = f"Failed to save log file: {e}"
+        logger.exception("[do_analyzing] %s", error_msg)
+        extraction_errors.append(error_msg)
+
+    # 2-4. Extract outputs from container
+    # Each extraction is independent - continue even if one fails
+    logger.info("[do_analyzing] Steps 2-4: Extracting container outputs...")
+
+    try:
+        _save_runs_archive(check, container, logger)
+    except Exception as e:
+        error_msg = f"Failed to save runs archive: {e}"
+        logger.exception("[do_analyzing] %s", error_msg)
+        extraction_errors.append(error_msg)
+
+    try:
+        _save_output_gds(check, container, logger)
+    except Exception as e:
+        error_msg = f"Failed to save output GDS: {e}"
+        logger.exception("[do_analyzing] %s", error_msg)
+        extraction_errors.append(error_msg)
+
+    logger.info("[do_analyzing] Skipping layer export (disabled)")
+
+    if extraction_errors:
+        logger.warning(
+            "[do_analyzing] %d extraction error(s), continuing analysis",
+            len(extraction_errors),
+        )
+
+    return extraction_errors
+
+
 def _finalize_analyzing(
     check: ManufacturabilityCheck,
     failure_type: str,
@@ -1843,18 +1902,9 @@ def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
         container.status,
     )
 
+    # Extract outputs - each extraction is independent to collect as much as possible
     try:
-        # 1. Save processing logs to log_file
-        log_size = len(check.processing_logs) if check.processing_logs else 0
-        logger.info("[do_analyzing] Step 1/5: Saving logs (%d bytes)...", log_size)
-        _save_log_file(check, logger)
-
-        # 2-4. Extract outputs from container
-        logger.info("[do_analyzing] Steps 2-4: Extracting container outputs...")
-        _save_runs_archive(check, container, logger)
-        _save_output_gds(check, container, logger)
-        logger.info("[do_analyzing] Skipping layer export (disabled)")
-
+        _extract_container_outputs(check, container, logger)
     finally:
         _cleanup_temp_dir(check)
 
