@@ -9,6 +9,7 @@ from typing import Any
 from typing import ClassVar
 
 from django.conf import settings
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
@@ -2542,8 +2543,6 @@ Your GDS file should have:
         Returns the docker_image_digest from the check with the most recent
         container_started_at timestamp. Cached for 60 seconds.
         """
-        from django.core.cache import cache  # noqa: PLC0415
-
         cache_key = "precheck_latest_digest"
         cached = cache.get(cache_key)
         if cached is not None:
