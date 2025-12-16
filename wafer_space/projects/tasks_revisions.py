@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import http
 import logging
 from datetime import datetime
 from typing import Any
@@ -94,7 +95,7 @@ def _fetch_ghcr_metadata(digest: str) -> dict[str, Any]:
     """Fetch metadata from GHCR API.
 
     Args:
-        digest: SHA256 digest of the image
+        digest: SHA256 digest of the image (can be OCI index or manifest)
 
     Returns:
         Dict with image_created_at, git_commit_sha, precheck_version
@@ -107,16 +108,35 @@ def _fetch_ghcr_metadata(digest: str) -> dict[str, Any]:
     token_resp.raise_for_status()
     token = token_resp.json()["token"]
 
-    headers = {
+    base_url = "https://ghcr.io/v2/wafer-space/gf180mcu-precheck"
+
+    # First try as OCI index (multi-arch image)
+    index_headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.oci.image.index.v1+json",
+    }
+    manifest_url = f"{base_url}/manifests/{digest}"
+    index_resp = requests.get(manifest_url, headers=index_headers, timeout=30)
+
+    manifest_digest = digest
+    if index_resp.status_code == http.HTTPStatus.OK:
+        index_data = index_resp.json()
+        # If it's an index, find the amd64 manifest
+        if "manifests" in index_data:
+            for m in index_data["manifests"]:
+                platform = m.get("platform", {})
+                if platform.get("architecture") == "amd64":
+                    manifest_digest = m["digest"]
+                    break
+
+    # Get the actual manifest
+    manifest_headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.oci.image.manifest.v1+json",
     }
-
-    # Get manifest
-    manifest_url = (
-        f"https://ghcr.io/v2/wafer-space/gf180mcu-precheck/manifests/{digest}"
+    manifest_resp = requests.get(
+        f"{base_url}/manifests/{manifest_digest}", headers=manifest_headers, timeout=30
     )
-    manifest_resp = requests.get(manifest_url, headers=headers, timeout=30)
     manifest_resp.raise_for_status()
     manifest = manifest_resp.json()
 
@@ -125,8 +145,8 @@ def _fetch_ghcr_metadata(digest: str) -> dict[str, Any]:
     if not config_digest:
         return {}
 
-    blob_url = f"https://ghcr.io/v2/wafer-space/gf180mcu-precheck/blobs/{config_digest}"
-    blob_resp = requests.get(blob_url, headers=headers, timeout=30)
+    blob_url = f"{base_url}/blobs/{config_digest}"
+    blob_resp = requests.get(blob_url, headers=manifest_headers, timeout=30)
     blob_resp.raise_for_status()
     config = blob_resp.json()
 

@@ -216,9 +216,10 @@ class Command(BaseCommand):
         return f"sha256:{self.PRECHECK_VERSIONS[0][1] * 5}ab"
 
     # Real GHCR digest to test revision fetching from GitHub
-    # This is the amd64 manifest digest from ghcr.io/wafer-space/gf180mcu-precheck:latest
+    # This is the OCI index digest from ghcr.io/wafer-space/gf180mcu-precheck:latest
+    # (Docker returns the index digest, not the platform-specific manifest digest)
     REAL_GHCR_DIGEST = (
-        "sha256:011b1b8e3b412e68e4e961ea713775dcdf1b7ff8e543b78e49666e1b81eb68e5"
+        "sha256:4548ca1351d21cdd7e628e7f21d9567803d704784816e4fa69adcbd77073996f"
     )
 
     def _ensure_precheck_revisions(self) -> None:
