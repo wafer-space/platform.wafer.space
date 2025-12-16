@@ -4,6 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# Mapping from slot size to tile dimensions (width, height)
+SLOT_SIZE_TO_TILES: dict[str, tuple[int, int]] = {
+    "1x1": (2, 2),
+    "0p5x1": (1, 2),
+    "1x0p5": (2, 1),
+    "0p5x0p5": (1, 1),
+}
+
 
 @dataclass
 class ProjectData:
@@ -36,3 +44,33 @@ class ProjectData:
     def layout_path(self) -> str:
         """Return relative path for GDS file in package."""
         return f"{self.code}/{self.top_cell}.gds"
+
+
+@dataclass
+class SlotData:
+    """Data for a shuttle slot (may or may not have a project)."""
+
+    row: int
+    column: int
+    slot_size: str
+    project_code: str | None
+
+    @property
+    def is_empty(self) -> bool:
+        """Return True if slot has no assigned project."""
+        return self.project_code is None
+
+    @property
+    def tile_dimensions(self) -> tuple[int, int]:
+        """Return (width, height) in tiles."""
+        return SLOT_SIZE_TO_TILES.get(self.slot_size, (2, 2))
+
+    @property
+    def tile_width(self) -> int:
+        """Return width in tiles."""
+        return self.tile_dimensions[0]
+
+    @property
+    def tile_height(self) -> int:
+        """Return height in tiles."""
+        return self.tile_dimensions[1]
