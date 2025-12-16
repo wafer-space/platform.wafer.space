@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% load static %}
+{% load precheck_tags %}
 
 {% block title %}
   {{ shuttle.name }} Assignment
@@ -112,6 +113,14 @@
                 Size <span class="sort-indicator"></span>
               </th>
               <th data-sortable="true"
+                  data-sort-type="date"
+                  class="sortable text-center"
+                  style="cursor: pointer;
+                         width: 1%"
+                  title="Submitted to Manufacturing">
+                <i class="bi bi-send"></i> <span class="sort-indicator"></span>
+              </th>
+              <th data-sortable="true"
                   data-sort-type="status"
                   class="sortable"
                   style="cursor: pointer">
@@ -133,15 +142,20 @@
                 <td data-sort-value="{{ project.slot_size }}">
                   <span class="badge bg-secondary">{{ project.get_slot_size_display }}</span>
                 </td>
+                <td class="text-center"
+                    data-sort-value="{{ project.submitted_at|date:'Y-m-d H:i:s'|default:'' }}"
+                    title="{{ project.submitted_at|date:'Y-m-d H:i:s'|default:'—' }}">
+                  {% if project.status == 'submitted' %}
+                    <i class="bi bi-check-lg text-success"></i>
+                  {% else %}
+                    <i class="bi bi-x-lg text-danger"></i>
+                  {% endif %}
+                </td>
                 {# Sort order: Ready(0) < Failed(1) < Pending(2) - prioritizes actionable projects #}
                 <td data-sort-value="{% if project.is_manufacturable %}0{% elif project.is_manufacturable is None %}2{% else %}1{% endif %}">
-                  {% if project.is_manufacturable %}
-                    <span class="badge bg-success">Ready</span>
-                  {% elif project.is_manufacturable is None %}
-                    <span class="badge bg-warning">Pending</span>
-                  {% else %}
-                    <span class="badge bg-danger">Failed</span>
-                  {% endif %}
+                  {% with check=project.latest_manufacturability_check %}
+                    {% badge_check_status_and_version check %}
+                  {% endwith %}
                 </td>
                 <td>
                   {% if project.shuttle_slots.exists %}

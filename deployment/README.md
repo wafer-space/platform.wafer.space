@@ -126,7 +126,7 @@ To update secrets after rotation, run `deployment/scripts/03a-update-env-secrets
 
 ## Systemd Services
 
-The deployment includes Gunicorn plus 8 Celery services (7 workers + Beat scheduler) using queue naming convention `{network}:{filesystem}:{purpose}`.
+The deployment includes Gunicorn plus 9 Celery services (8 workers + Beat scheduler) using queue naming convention `{network}:{filesystem}:{purpose}`.
 
 **See [docs/systemd-services.md](../docs/systemd-services.md) for complete worker configuration, queue mapping, service management commands, and security details.**
 

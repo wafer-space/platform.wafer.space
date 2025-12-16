@@ -21,9 +21,11 @@ from wafer_space.legal.models import TermsOfServiceAcceptance
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import ManufacturabilityCheckpoint
+from wafer_space.projects.models import PrecheckImageRevision
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectComplianceCertification
 from wafer_space.projects.models import ProjectFile
+from wafer_space.shuttles.config import GridConfig
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.models import ShuttleSlot
 
@@ -79,29 +81,37 @@ class Command(BaseCommand):
         self._ensure_tos_acceptance(mithro, tos)
         self._ensure_tos_acceptance(testuser, tos)
 
-        # Create shuttle and slots
-        shuttle = self._create_shuttle()
-        self._create_slots(shuttle)
+        # Ensure precheck revisions exist for version badge display
+        self._ensure_precheck_revisions()
 
-        # Create test projects
-        self._create_projects(shuttle, mithro, testuser)
+        # Create G899 shuttle (development test shuttle) and slots
+        g899 = self._create_shuttle("G899", "Development shuttle for testing")
+        self._create_g899_slots(g899)
+        self._create_g899_projects(g899, mithro, testuser)
+
+        # Create G801 shuttle (initial shuttle run) and slots
+        g801 = self._create_shuttle("G801", "Initial shuttle run for wafer.space")
+        self._create_g801_slots(g801)
+        self._create_g801_projects(g801, mithro, testuser)
 
         self.stdout.write(self.style.SUCCESS("\nDevelopment data populated!"))
         self.stdout.write("  Users: mithro (staff/superuser), testuser")
-        self.stdout.write(f"  Shuttle: {shuttle.name} (4×4 grid = 16 slots)")
-        self.stdout.write("  Projects: 15 test projects with various states")
+        self.stdout.write(f"  Shuttle G899: {g899.name} (4×4 grid = 16 slots)")
+        self.stdout.write(f"  Shuttle G801: {g801.name} (5×8 grid = 40 slots)")
+        self.stdout.write("  Projects: 15 (G899) + 12 (G801) test projects")
 
     def _reset_data(self) -> None:
         """Delete existing development data."""
         self.stdout.write(self.style.WARNING("Resetting dev data..."))
 
-        # Delete test projects on G899 shuttle (cascade handles compliance certs)
-        Project.objects.filter(shuttle__name="G899").delete()
+        # Delete test projects on G899 and G801 shuttles
+        # (cascade handles compliance certs)
+        Project.objects.filter(shuttle__name__in=["G899", "G801"]).delete()
 
-        # Delete test shuttle (cascade handles slots)
-        Shuttle.objects.filter(name="G899").delete()
+        # Delete test shuttles (cascade handles slots)
+        Shuttle.objects.filter(name__in=["G899", "G801"]).delete()
 
-        self.stdout.write("  Deleted test projects and shuttle G899")
+        self.stdout.write("  Deleted test projects and shuttles G899, G801")
 
     def _create_user(
         self,
@@ -187,25 +197,91 @@ class Command(BaseCommand):
         if created:
             self.stdout.write(f"  Created TOS acceptance for {user.username}")
 
-    def _create_shuttle(self) -> Shuttle:
-        """Create the development shuttle."""
+    # Precheck version data - real versions from wafer-space/gf180mcu-precheck
+    # Each tuple: (version, digest_suffix, git_sha_prefix, pdk_version)
+    PRECHECK_VERSIONS: list[tuple[str, str, str, str]] = [
+        ("1.5.3", "a1b2c3d4e5f6", "abc123def456", "1.6.5"),  # Latest
+        ("1.5.2", "b2c3d4e5f6a1", "bcd234ef5678", "1.6.4"),
+        ("1.5.1", "c3d4e5f6a1b2", "cde345f67890", "1.6.4"),
+        ("1.5.0", "d4e5f6a1b2c3", "def456789abc", "1.6.3"),
+        ("1.4.5", "e5f6a1b2c3d4", "ef567890abcd", "1.6.3"),
+    ]
+
+    def _get_precheck_digest(self, version: str) -> str:
+        """Get the digest for a precheck version."""
+        for v, suffix, _, _ in self.PRECHECK_VERSIONS:
+            if v == version:
+                return f"sha256:{suffix * 5}ab"
+        # Default to latest
+        return f"sha256:{self.PRECHECK_VERSIONS[0][1] * 5}ab"
+
+    # Real GHCR digest to test revision fetching from GitHub
+    # This is the OCI index digest from ghcr.io/wafer-space/gf180mcu-precheck:latest
+    # (Docker returns the index digest, not the platform-specific manifest digest)
+    REAL_GHCR_DIGEST = (
+        "sha256:4548ca1351d21cdd7e628e7f21d9567803d704784816e4fa69adcbd77073996f"
+    )
+
+    def _ensure_precheck_revisions(self) -> None:
+        """Create PrecheckImageRevision records for dev data.
+
+        Creates multiple revisions with real version numbers from
+        wafer-space/gf180mcu-precheck to test version badge display.
+
+        Note: Does NOT create a revision for REAL_GHCR_DIGEST so that
+        revisions_needs_fetching will discover it and fetch from GitHub.
+        """
+        created_count = 0
+        for version, digest_suffix, git_sha, pdk_version in self.PRECHECK_VERSIONS:
+            # Build a 64-char hex digest by repeating the suffix
+            digest = f"sha256:{digest_suffix * 5}ab"
+            git_commit = f"{git_sha}{git_sha}{git_sha}12345678"[:40]
+
+            _, created = PrecheckImageRevision.objects.update_or_create(
+                digest=digest,
+                defaults={
+                    "precheck_version": version,
+                    "git_commit_sha": git_commit,
+                    "pdk_version": pdk_version,
+                    "tool_versions": {
+                        "magic": "8.3.460",
+                        "klayout": "0.28.17",
+                        "netgen": "1.5.272",
+                    },
+                    "metadata_fetched_at": timezone.now(),
+                },
+            )
+            if created:
+                created_count += 1
+
+        if created_count > 0:
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"  Created {created_count} PrecheckImageRevision records"
+                )
+            )
+        else:
+            self.stdout.write("  PrecheckImageRevision records already exist")
+
+    def _create_shuttle(self, name: str, description: str) -> Shuttle:
+        """Create a shuttle with given name and description."""
         shuttle, created = Shuttle.objects.get_or_create(
-            name="G899",
+            name=name,
             defaults={
-                "description": "Development shuttle for testing",
+                "description": description,
                 "status": Shuttle.Status.OPEN,
             },
         )
         if created:
-            self.stdout.write(self.style.SUCCESS("  Created shuttle: G899"))
+            self.stdout.write(self.style.SUCCESS(f"  Created shuttle: {name}"))
         else:
-            self.stdout.write("  Shuttle G899 already exists")
+            self.stdout.write(f"  Shuttle {name} already exists")
         return shuttle
 
-    def _create_slots(self, shuttle: Shuttle) -> None:
-        """Create a 4×4 grid of slots."""
+    def _create_g899_slots(self, shuttle: Shuttle) -> None:
+        """Create a 4×4 grid of slots for G899 development shuttle."""
         if shuttle.slots.exists():
-            self.stdout.write("  Slots already exist for shuttle")
+            self.stdout.write(f"  Slots already exist for {shuttle.name}")
             return
 
         # Create 4×4 grid with varying slot sizes
@@ -235,10 +311,14 @@ class Command(BaseCommand):
                     status=ShuttleSlot.Status.AVAILABLE,
                 )
 
-        self.stdout.write(self.style.SUCCESS("  Created 16 shuttle slots (4×4 grid)"))
+        self.stdout.write(
+            self.style.SUCCESS(f"  Created 16 slots (4×4 grid) for {shuttle.name}")
+        )
 
-    def _create_projects(self, shuttle: Shuttle, mithro: Any, testuser: Any) -> None:
-        """Create test projects with various states and manufacturability checks.
+    def _create_g899_projects(
+        self, shuttle: Shuttle, mithro: Any, testuser: Any
+    ) -> None:
+        """Create test projects for G899 with various states and checks.
 
         Creates projects demonstrating various multi-check scenarios:
         - Single FINISHED check (manufacturable/not manufacturable)
@@ -250,30 +330,178 @@ class Command(BaseCommand):
         # Project definitions with check scenarios
         # check_scenario: "single_pass", "single_fail", "in_progress", "error_retry",
         #                 "drc_update", "no_file"
-        projects_data = [
-            # Full size projects
-            ("RV32", "RISC-V Core", mithro, SlotSize.FULL, "single_pass"),
-            ("GP10", "GPIO Controller", mithro, SlotSize.FULL, "drc_update"),
-            ("UA01", "UART Serial", testuser, SlotSize.FULL, "single_pass"),
-            ("SP01", "SPI Controller", testuser, SlotSize.FULL, "single_fail"),
-            ("I2C1", "I2C Interface", mithro, SlotSize.FULL, "in_progress"),
-            ("PW01", "PWM Generator", testuser, SlotSize.FULL, "no_file"),
+        # is_submitted: True = submitted to manufacturing, False = still draft
+        # slot_pos: (row, col) tuple for slot assignment, or None for unassigned
+        # G899 grid layout:
+        #   Row 0: FULL(0,0), FULL(0,1), HALF_WIDTH(0,2), HALF_WIDTH(0,3)
+        #   Row 1: FULL(1,0), FULL(1,1), FULL(1,2), FULL(1,3)
+        #   Row 2: HALF_HEIGHT(2,0), HALF_HEIGHT(2,1), QUARTER(2,2), QUARTER(2,3)
+        #   Row 3: FULL(3,0), FULL(3,1), FULL(3,2), FULL(3,3)
+        # Each tuple: (proj_id, name, owner, size, scenario, is_submitted, slot_pos)
+        projects_data: list[tuple] = [
+            # Full size projects - some assigned to slots
+            (
+                "RV32",
+                "RISC-V Core",
+                mithro,
+                SlotSize.FULL,
+                "single_pass",
+                True,
+                (0, 0),
+            ),
+            (
+                "GP10",
+                "GPIO Controller",
+                mithro,
+                SlotSize.FULL,
+                "drc_update",
+                True,
+                (0, 1),
+            ),
+            (
+                "UA01",
+                "UART Serial",
+                testuser,
+                SlotSize.FULL,
+                "single_pass",
+                True,
+                (1, 0),
+            ),
+            (
+                "SP01",
+                "SPI Controller",
+                testuser,
+                SlotSize.FULL,
+                "single_fail",
+                True,
+                None,
+            ),
+            (
+                "I2C1",
+                "I2C Interface",
+                mithro,
+                SlotSize.FULL,
+                "in_progress",
+                True,
+                None,
+            ),
+            (
+                "PW01",
+                "PWM Generator",
+                testuser,
+                SlotSize.FULL,
+                "no_file",
+                False,
+                None,
+            ),
             # Half width projects
-            ("AD01", "ADC Frontend", mithro, SlotSize.HALF_WIDTH, "error_retry"),
-            ("DA01", "DAC Output", testuser, SlotSize.HALF_WIDTH, "single_pass"),
-            ("CM01", "Comparator", mithro, SlotSize.HALF_WIDTH, "single_fail"),
+            (
+                "AD01",
+                "ADC Frontend",
+                mithro,
+                SlotSize.HALF_WIDTH,
+                "error_retry",
+                True,
+                (0, 2),
+            ),
+            (
+                "DA01",
+                "DAC Output",
+                testuser,
+                SlotSize.HALF_WIDTH,
+                "single_pass",
+                False,
+                None,
+            ),
+            (
+                "CM01",
+                "Comparator",
+                mithro,
+                SlotSize.HALF_WIDTH,
+                "single_fail",
+                True,
+                None,
+            ),
             # Half height projects
-            ("CK01", "Clock Generator", testuser, SlotSize.HALF_HEIGHT, "single_pass"),
-            ("RS01", "Reset Controller", mithro, SlotSize.HALF_HEIGHT, "in_progress"),
+            (
+                "CK01",
+                "Clock Generator",
+                testuser,
+                SlotSize.HALF_HEIGHT,
+                "single_pass",
+                True,
+                (2, 0),
+            ),
+            (
+                "RS01",
+                "Reset Controller",
+                mithro,
+                SlotSize.HALF_HEIGHT,
+                "in_progress",
+                False,
+                None,
+            ),
             # Quarter size projects
-            ("RF01", "Voltage Reference", testuser, SlotSize.QUARTER, "single_pass"),
-            ("OS01", "RC Oscillator", mithro, SlotSize.QUARTER, "drc_update"),
-            ("BF01", "Buffer Cell", testuser, SlotSize.QUARTER, "single_fail"),
-            ("LD01", "LDO Regulator", mithro, SlotSize.QUARTER, "no_file"),
+            (
+                "RF01",
+                "Voltage Reference",
+                testuser,
+                SlotSize.QUARTER,
+                "single_pass",
+                True,
+                (2, 2),
+            ),
+            (
+                "OS01",
+                "RC Oscillator",
+                mithro,
+                SlotSize.QUARTER,
+                "drc_update",
+                True,
+                None,
+            ),
+            (
+                "BF01",
+                "Buffer Cell",
+                testuser,
+                SlotSize.QUARTER,
+                "single_fail",
+                False,
+                None,
+            ),
+            (
+                "LD01",
+                "LDO Regulator",
+                mithro,
+                SlotSize.QUARTER,
+                "no_file",
+                False,
+                None,
+            ),
+            # Project with real GHCR digest to test revision fetching
+            (
+                "FT01",
+                "Fetch Test Design",
+                mithro,
+                SlotSize.QUARTER,
+                "real_digest",
+                True,
+                None,
+            ),
         ]
 
         created_count = 0
-        for proj_id, name, owner, size, check_scenario in projects_data:
+        assigned_count = 0
+        for idx, proj_data in enumerate(projects_data):
+            proj_id, name, owner, size, scenario, is_submitted, slot_pos = proj_data
+            # Set status and submitted_at based on is_submitted flag
+            if is_submitted:
+                status = Project.Status.SUBMITTED
+                submitted_at = timezone.now() - timedelta(days=idx + 1)
+            else:
+                status = Project.Status.DRAFT
+                submitted_at = None
+
             project, created = Project.objects.get_or_create(
                 project_id=proj_id,
                 shuttle=shuttle,
@@ -282,7 +510,8 @@ class Command(BaseCommand):
                     "name": name,
                     "description": f"Test project: {name}",
                     "slot_size": size,
-                    "status": Project.Status.SUBMITTED,
+                    "status": status,
+                    "submitted_at": submitted_at,
                 },
             )
 
@@ -297,15 +526,289 @@ class Command(BaseCommand):
                 )
 
                 # Create file and checks based on scenario
-                self._create_checks_for_project(project, check_scenario)
+                self._create_checks_for_project(project, scenario)
                 created_count += 1
+
+            # Assign project to slot if specified
+            if slot_pos is not None:
+                row, col = slot_pos
+                assigned = self._assign_project_to_slot(shuttle, project, row, col)
+                if assigned:
+                    assigned_count += 1
 
         if created_count > 0:
             self.stdout.write(
-                self.style.SUCCESS(f"  Created {created_count} test projects")
+                self.style.SUCCESS(f"  Created {created_count} G899 test projects")
             )
         else:
-            self.stdout.write("  Test projects already exist")
+            self.stdout.write("  G899 test projects already exist")
+
+        if assigned_count > 0:
+            msg = f"  Assigned {assigned_count} projects to G899 slots"
+            self.stdout.write(self.style.SUCCESS(msg))
+
+    def _create_g801_slots(self, shuttle: Shuttle) -> None:
+        """Create G801 grid slots from the real YAML configuration.
+
+        Uses shuttles/G801-layout.yaml which defines:
+        - 5 rows x 8 columns = 40 slots
+        - Row 1: half-height, Rows 2-5: full-height
+        - Columns A-G: full-width, Column H: half-width
+        """
+        if shuttle.slots.exists():
+            self.stdout.write(f"  Slots already exist for {shuttle.name}")
+            return
+
+        # Load the real G801 grid configuration
+        config_path = Path("shuttles/G801-layout.yaml")
+        if not config_path.exists():
+            self.stdout.write(
+                self.style.WARNING(
+                    f"  G801 config not found at {config_path}, skipping slots"
+                )
+            )
+            return
+
+        config = GridConfig.from_file(config_path)
+
+        # Create slots from configuration
+        slot_count = 0
+        for row_idx, row_height in enumerate(config.row_heights):
+            for col_idx, col_width in enumerate(config.column_widths):
+                slot_size = GridConfig.calculate_slot_size(row_height, col_width)
+                ShuttleSlot.objects.create(
+                    shuttle=shuttle,
+                    row=row_idx,
+                    column=col_idx,
+                    slot_size=slot_size,
+                    status=ShuttleSlot.Status.AVAILABLE,
+                )
+                slot_count += 1
+
+        # Update shuttle config path
+        shuttle.grid_config_file = str(config_path)
+        shuttle.save(update_fields=["grid_config_file"])
+
+        grid_desc = f"{config.num_rows}×{config.num_columns}"
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"  Created {slot_count} slots ({grid_desc} grid) for {shuttle.name}"
+            )
+        )
+
+    def _create_g801_projects(
+        self, shuttle: Shuttle, mithro: Any, testuser: Any
+    ) -> None:
+        """Create test projects for G801 initial shuttle run.
+
+        Creates projects matching the G801 grid slot sizes:
+        - FULL (1×1): 28 slots in rows 2-5, cols A-G
+        - HALF_HEIGHT (1×0.5): 7 slots in row 1, cols A-G
+        - HALF_WIDTH (0.5×1): 4 slots in rows 2-5, col H
+        - QUARTER (0.5×0.5): 1 slot in row 1, col H
+        """
+        # G801 projects - different IDs and names than G899
+        # G801 grid layout (5 rows × 8 cols):
+        #   Row 0: HALF_HEIGHT (cols 0-6), QUARTER (col 7)
+        #   Rows 1-4: FULL (cols 0-6), HALF_WIDTH (col 7)
+        # Each tuple: (proj_id, name, owner, size, scenario, is_submitted, slot_pos)
+        projects_data: list[tuple] = [
+            # Full size projects (28 available in G801) - some assigned
+            (
+                "MP01",
+                "MIPS Processor Core",
+                mithro,
+                SlotSize.FULL,
+                "single_pass",
+                True,
+                (1, 0),
+            ),
+            (
+                "AR01",
+                "ARM Cortex-M0 Core",
+                testuser,
+                SlotSize.FULL,
+                "single_pass",
+                True,
+                (1, 1),
+            ),
+            (
+                "DM01",
+                "DDR Memory Controller",
+                mithro,
+                SlotSize.FULL,
+                "single_fail",
+                True,
+                None,
+            ),
+            (
+                "ET01",
+                "Ethernet MAC",
+                testuser,
+                SlotSize.FULL,
+                "drc_update",
+                True,
+                (2, 0),
+            ),
+            (
+                "CAN1",
+                "CAN Bus Controller",
+                mithro,
+                SlotSize.FULL,
+                "single_pass",
+                False,
+                None,
+            ),
+            (
+                "FPU1",
+                "FPU Accelerator",
+                testuser,
+                SlotSize.FULL,
+                "error_retry",
+                True,
+                None,
+            ),
+            # Half-height projects (7 available in G801 row 0)
+            (
+                "SD01",
+                "SD Card Controller",
+                mithro,
+                SlotSize.HALF_HEIGHT,
+                "single_pass",
+                True,
+                (0, 0),
+            ),
+            (
+                "NV01",
+                "NVMe Controller",
+                testuser,
+                SlotSize.HALF_HEIGHT,
+                "single_fail",
+                False,
+                None,
+            ),
+            (
+                "WD01",
+                "Watchdog Timer",
+                mithro,
+                SlotSize.HALF_HEIGHT,
+                "in_progress",
+                True,
+                None,
+            ),
+            # Half-width projects (4 available in G801 col 7)
+            (
+                "US01",
+                "USB 2.0 PHY",
+                testuser,
+                SlotSize.HALF_WIDTH,
+                "single_pass",
+                True,
+                (1, 7),
+            ),
+            (
+                "PC01",
+                "PCIe PHY",
+                mithro,
+                SlotSize.HALF_WIDTH,
+                "drc_update",
+                False,
+                None,
+            ),
+            # Quarter project (1 available in G801 row 0, col 7)
+            (
+                "TM01",
+                "Temperature Sensor",
+                testuser,
+                SlotSize.QUARTER,
+                "single_pass",
+                True,
+                (0, 7),
+            ),
+        ]
+
+        created_count = 0
+        assigned_count = 0
+        for idx, proj_data in enumerate(projects_data):
+            proj_id, name, owner, size, scenario, is_submitted, slot_pos = proj_data
+            # Set status and submitted_at based on is_submitted flag
+            if is_submitted:
+                status = Project.Status.SUBMITTED
+                submitted_at = timezone.now() - timedelta(days=idx + 1)
+            else:
+                status = Project.Status.DRAFT
+                submitted_at = None
+
+            project, created = Project.objects.get_or_create(
+                project_id=proj_id,
+                shuttle=shuttle,
+                defaults={
+                    "user": owner,
+                    "name": name,
+                    "description": f"G801 project: {name}",
+                    "slot_size": size,
+                    "status": status,
+                    "submitted_at": submitted_at,
+                },
+            )
+
+            if created:
+                # Create compliance certification
+                ProjectComplianceCertification.objects.create(
+                    project=project,
+                    export_control_compliant=True,
+                    not_restricted_entity=True,
+                    end_use_statement="G801 shuttle run",
+                    certified_by=owner,
+                )
+
+                # Create file and checks based on scenario
+                self._create_checks_for_project(project, scenario)
+                created_count += 1
+
+            # Assign project to slot if specified
+            if slot_pos is not None:
+                row, col = slot_pos
+                assigned = self._assign_project_to_slot(shuttle, project, row, col)
+                if assigned:
+                    assigned_count += 1
+
+        if created_count > 0:
+            self.stdout.write(
+                self.style.SUCCESS(f"  Created {created_count} G801 test projects")
+            )
+        else:
+            self.stdout.write("  G801 test projects already exist")
+
+        if assigned_count > 0:
+            msg = f"  Assigned {assigned_count} projects to G801 slots"
+            self.stdout.write(self.style.SUCCESS(msg))
+
+    def _assign_project_to_slot(
+        self, shuttle: Shuttle, project: Project, row: int, col: int
+    ) -> bool:
+        """Assign a project to a specific slot.
+
+        Returns True if assignment was made, False if slot already occupied.
+        """
+        try:
+            slot = ShuttleSlot.objects.get(shuttle=shuttle, row=row, column=col)
+        except ShuttleSlot.DoesNotExist:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"  Slot ({row}, {col}) not found for {shuttle.name}"
+                )
+            )
+            return False
+
+        # Only assign if slot is available (not already occupied)
+        if slot.project is not None:
+            return False
+
+        slot.project = project
+        slot.status = ShuttleSlot.Status.OCCUPIED
+        slot.save(update_fields=["project", "status"])
+        return True
 
     def _create_download_attempts(
         self, project_file: ProjectFile, scenario: str
@@ -543,24 +1046,42 @@ class Command(BaseCommand):
             )
 
     def _finished_check_fields(
-        self, completed_at: Any, project_id: str = "XX01"
+        self,
+        completed_at: Any,
+        project_id: str = "XX01",
+        precheck_version: str = "1.5.3",
     ) -> dict:
-        """Return common fields for a finished check."""
+        """Return common fields for a finished check.
+
+        Args:
+            completed_at: When the check completed
+            project_id: Project ID for output file paths
+            precheck_version: Precheck version to use (default: latest 1.5.3)
+        """
         # Create output files on disk
         self._create_output_files(project_id)
+
+        # Get version info from PRECHECK_VERSIONS
+        pdk_version = "1.6.5"
+        for v, _, _, pdk in self.PRECHECK_VERSIONS:
+            if v == precheck_version:
+                pdk_version = pdk
+                break
+
+        digest = self._get_precheck_digest(precheck_version)
 
         return {
             "docker_server_id": "docker-server-1",
             "docker_container_id": "abc123def456789012345678901234567890abcd",
             "docker_exit_code": 0,
-            "docker_image": "ghcr.io/wafer-space/gf180mcu-precheck:latest",
-            "docker_image_digest": "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
-            "precheck_version": "v2.5.1",
+            "docker_image": f"ghcr.io/wafer-space/gf180mcu-precheck:{precheck_version}",
+            "docker_image_digest": digest,
+            "precheck_version": precheck_version,
             "tool_versions": {
                 "magic": "8.3.460",
                 "klayout": "0.28.17",
                 "netgen": "1.5.272",
-                "pdk": "gf180mcuD",
+                "pdk": pdk_version,
             },
             "dispatching_started_at": completed_at - timedelta(minutes=12),
             "starting_started_at": completed_at - timedelta(minutes=11),
@@ -606,7 +1127,8 @@ class Command(BaseCommand):
     ) -> None:
         """Create ManufacturabilityChecks based on scenario."""
         if scenario == "single_pass":
-            completed = now - timedelta(hours=2)
+            # Recent check with latest version
+            completed = now - timedelta(minutes=30)
             check = ManufacturabilityCheck.objects.create(
                 project=project,
                 project_file=project_file,
@@ -616,12 +1138,15 @@ class Command(BaseCommand):
                 errors=[],
                 warnings=["Minor: Consider adding ESD protection"],
                 analysis_completed_at=completed,
-                **self._finished_check_fields(completed, project.project_id),
+                **self._finished_check_fields(
+                    completed, project.project_id, precheck_version="1.5.3"
+                ),
             )
             self._create_checkpoints(check)
 
         elif scenario == "single_fail":
-            completed = now - timedelta(hours=1)
+            # Failed check with older version
+            completed = now - timedelta(hours=4)
             check = ManufacturabilityCheck.objects.create(
                 project=project,
                 project_file=project_file,
@@ -634,7 +1159,9 @@ class Command(BaseCommand):
                 ],
                 warnings=[],
                 analysis_completed_at=completed,
-                **self._finished_check_fields(completed, project.project_id),
+                **self._finished_check_fields(
+                    completed, project.project_id, precheck_version="1.5.1"
+                ),
             )
             self._create_checkpoints(check)
 
@@ -660,6 +1187,10 @@ class Command(BaseCommand):
 
         elif scenario == "drc_update":
             self._create_drc_update_checks(project, project_file, now)
+
+        elif scenario == "real_digest":
+            # Check with real GHCR digest to test revision fetching
+            self._create_real_digest_check(project, project_file, now)
 
     def _create_error_retry_checks(
         self, project: Project, project_file: ProjectFile, now: Any
@@ -690,7 +1221,7 @@ class Command(BaseCommand):
             created_at=error_time - timedelta(minutes=10)
         )
 
-        # Retry succeeded
+        # Retry succeeded with version 1.5.2
         completed = now - timedelta(hours=2)
         retry_check = ManufacturabilityCheck.objects.create(
             project=project,
@@ -702,15 +1233,17 @@ class Command(BaseCommand):
             errors=[],
             warnings=[],
             analysis_completed_at=completed,
-            **self._finished_check_fields(completed, project.project_id),
+            **self._finished_check_fields(
+                completed, project.project_id, precheck_version="1.5.2"
+            ),
         )
         self._create_checkpoints(retry_check)
 
     def _create_drc_update_checks(
         self, project: Project, project_file: ProjectFile, now: Any
     ) -> None:
-        """Create DRC update multi-check scenario."""
-        # First check - passed initially
+        """Create DRC update multi-check scenario showing version progression."""
+        # First check - passed with old version 1.4.5
         completed1 = now - timedelta(days=7)
         first_check = ManufacturabilityCheck.objects.create(
             project=project,
@@ -721,14 +1254,16 @@ class Command(BaseCommand):
             errors=[],
             warnings=[],
             analysis_completed_at=completed1,
-            **self._finished_check_fields(completed1, project.project_id),
+            **self._finished_check_fields(
+                completed1, project.project_id, precheck_version="1.4.5"
+            ),
         )
         ManufacturabilityCheck.objects.filter(pk=first_check.pk).update(
             created_at=completed1 - timedelta(minutes=15)
         )
         self._create_checkpoints(first_check)
 
-        # Second check - DRC rules updated, now fails
+        # Second check - DRC rules updated in 1.5.0, now fails
         completed2 = now - timedelta(days=3)
         second_check = ManufacturabilityCheck.objects.create(
             project=project,
@@ -739,14 +1274,16 @@ class Command(BaseCommand):
             errors=["New DRC rule violation: Minimum poly width"],
             warnings=[],
             analysis_completed_at=completed2,
-            **self._finished_check_fields(completed2, project.project_id),
+            **self._finished_check_fields(
+                completed2, project.project_id, precheck_version="1.5.0"
+            ),
         )
         ManufacturabilityCheck.objects.filter(pk=second_check.pk).update(
             created_at=completed2 - timedelta(minutes=15)
         )
         self._create_checkpoints(second_check)
 
-        # Third check - admin re-run after design fix
+        # Third check - admin re-run with latest version 1.5.3
         completed3 = now - timedelta(hours=12)
         third_check = ManufacturabilityCheck.objects.create(
             project=project,
@@ -757,6 +1294,40 @@ class Command(BaseCommand):
             errors=[],
             warnings=[],
             analysis_completed_at=completed3,
-            **self._finished_check_fields(completed3, project.project_id),
+            **self._finished_check_fields(
+                completed3, project.project_id, precheck_version="1.5.3"
+            ),
         )
         self._create_checkpoints(third_check)
+
+    def _create_real_digest_check(
+        self, project: Project, project_file: ProjectFile, now: Any
+    ) -> None:
+        """Create a check with a real GHCR digest to test revision fetching.
+
+        Uses REAL_GHCR_DIGEST which is NOT pre-populated in PrecheckImageRevision,
+        so revisions_needs_fetching will discover it and queue a fetch task.
+        """
+        completed = now - timedelta(hours=1)
+
+        # Get base fields but override the digest with the real one
+        fields = self._finished_check_fields(
+            completed, project.project_id, precheck_version="1.5.3"
+        )
+        # Override with real digest that needs fetching
+        fields["docker_image_digest"] = self.REAL_GHCR_DIGEST
+        # Clear version info since it will be fetched
+        fields["precheck_version"] = ""
+
+        check = ManufacturabilityCheck.objects.create(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            trigger_reason=ManufacturabilityCheck.TriggerReason.INITIAL,
+            is_manufacturable=True,
+            errors=[],
+            warnings=["Test check for revision fetching"],
+            analysis_completed_at=completed,
+            **fields,
+        )
+        self._create_checkpoints(check)

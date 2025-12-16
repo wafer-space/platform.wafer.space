@@ -37,6 +37,7 @@ from .mixins import ProjectOwnerOrStaffMixin
 from .models import PROJECT_ID_LENGTH
 from .models import DownloadAttempt
 from .models import ManufacturabilityCheck
+from .models import PrecheckImageRevision
 from .models import Project
 from .models import ProjectFile
 from .security import SecurityValidationError
@@ -809,18 +810,41 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
         context["current_sort"] = field
         context["sort_descending"] = descending
 
+        # Get latest precheck info (based on most recently started check)
+        latest_digest = ManufacturabilityCheck.get_latest_precheck_digest()
+        context["latest_precheck_digest"] = latest_digest
+
+        # Get the PrecheckImageRevision for the latest digest (for version info)
+        latest_revision = None
+        if latest_digest:
+            latest_revision = PrecheckImageRevision.objects.filter(
+                digest=latest_digest
+            ).first()
+        context["latest_precheck_revision"] = latest_revision
+
         # Compute summary statistics from the projects list
         projects = context["projects"]
-        context["summary"] = self._compute_summary_stats(projects)
+        context["summary"] = self._compute_summary_stats(projects, latest_digest)
+
         return context
 
-    def _compute_summary_stats(self, projects):
-        """Compute summary statistics for the projects list."""
+    def _compute_summary_stats(self, projects, latest_digest: str | None):
+        """Compute summary statistics for the projects list.
+
+        Breaks down manufacturability by precheck version (latest vs older).
+        """
         # Initialize counters
         status_counts: Counter[str] = Counter()
-        manufacturable_by_size: Counter[str] = Counter()
-        non_manufacturable_by_size: Counter[str] = Counter()
-        pending_by_size: Counter[str] = Counter()  # No result yet
+
+        # Counters for latest precheck version
+        latest_manufacturable_by_size: Counter[str] = Counter()
+        latest_non_manufacturable_by_size: Counter[str] = Counter()
+        latest_pending_by_size: Counter[str] = Counter()
+
+        # Counters for older precheck versions
+        older_manufacturable_by_size: Counter[str] = Counter()
+        older_non_manufacturable_by_size: Counter[str] = Counter()
+        older_pending_by_size: Counter[str] = Counter()
 
         for project in projects:
             size = project.slot_size
@@ -829,17 +853,33 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
 
             if check:
                 status_counts[check.status] += 1
+
+                # Determine if using latest precheck
+                is_latest = (
+                    latest_digest
+                    and check.docker_image_digest
+                    and check.docker_image_digest == latest_digest
+                )
+
                 if check.is_manufacturable is True:
-                    manufacturable_by_size[size] += 1
+                    if is_latest:
+                        latest_manufacturable_by_size[size] += 1
+                    else:
+                        older_manufacturable_by_size[size] += 1
                 elif check.is_manufacturable is False:
-                    non_manufacturable_by_size[size] += 1
+                    if is_latest:
+                        latest_non_manufacturable_by_size[size] += 1
+                    else:
+                        older_non_manufacturable_by_size[size] += 1
+                # Has check but no result yet (in progress)
+                elif is_latest:
+                    latest_pending_by_size[size] += 1
                 else:
-                    # Has check but no result yet
-                    pending_by_size[size] += 1
+                    older_pending_by_size[size] += 1
             else:
                 # No check at all
                 status_counts["no_check"] += 1
-                pending_by_size[size] += 1
+                older_pending_by_size[size] += 1
 
         # Build status summary with display names, colors, and icons (show all statuses)
         status_summary = []
@@ -880,14 +920,33 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
 
         return {
             "total": len(projects),
-            "manufacturable_total": sum(manufacturable_by_size.values()),
-            "manufacturable_by_size": build_size_breakdown(manufacturable_by_size),
-            "non_manufacturable_total": sum(non_manufacturable_by_size.values()),
-            "non_manufacturable_by_size": build_size_breakdown(
-                non_manufacturable_by_size
+            # Latest precheck version stats
+            "latest_manufacturable_total": sum(latest_manufacturable_by_size.values()),
+            "latest_manufacturable_by_size": build_size_breakdown(
+                latest_manufacturable_by_size
             ),
-            "pending_total": sum(pending_by_size.values()),
-            "pending_by_size": build_size_breakdown(pending_by_size),
+            "latest_non_manufacturable_total": sum(
+                latest_non_manufacturable_by_size.values()
+            ),
+            "latest_non_manufacturable_by_size": build_size_breakdown(
+                latest_non_manufacturable_by_size
+            ),
+            "latest_pending_total": sum(latest_pending_by_size.values()),
+            "latest_pending_by_size": build_size_breakdown(latest_pending_by_size),
+            # Older precheck version stats
+            "older_manufacturable_total": sum(older_manufacturable_by_size.values()),
+            "older_manufacturable_by_size": build_size_breakdown(
+                older_manufacturable_by_size
+            ),
+            "older_non_manufacturable_total": sum(
+                older_non_manufacturable_by_size.values()
+            ),
+            "older_non_manufacturable_by_size": build_size_breakdown(
+                older_non_manufacturable_by_size
+            ),
+            "older_pending_total": sum(older_pending_by_size.values()),
+            "older_pending_by_size": build_size_breakdown(older_pending_by_size),
+            # Status summary
             "status_counts": status_summary,
             "status_counts_by_key": status_summary_by_key,
         }

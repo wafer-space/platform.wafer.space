@@ -517,6 +517,11 @@ CELERY_BEAT_SCHEDULE = {
         "task": "wafer_space.projects.tasks_checks.checks_cleanup_stale_pending_tasks",
         "schedule": 60.0,
     },
+    # Precheck revision tracking
+    "revisions-needs-fetching": {
+        "task": "wafer_space.projects.tasks_revisions.revisions_needs_fetching",
+        "schedule": 300.0,  # Every 5 minutes
+    },
 }
 
 # File Download and Processing Configuration

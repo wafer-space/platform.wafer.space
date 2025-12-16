@@ -1,0 +1,56 @@
+[Unit]
+Description=platform.wafer.space Celery Worker (http:ro:metadata)
+After=network.target postgresql.service django-gunicorn.service
+Requires=postgresql.service
+
+[Service]
+Type=forking
+User=www-data
+Group=www-data
+WorkingDirectory=/home/django/platform.wafer.space
+# DJANGO_SETTINGS_MODULE is set in .env file (auto-detected: stage or prod)
+EnvironmentFile=/home/django/platform.wafer.space/.env
+
+# Isolated runtime and log directories (created automatically)
+# Sets $RUNTIME_DIRECTORY and $LOGS_DIRECTORY environment variables
+RuntimeDirectory=platform.wafer.space-celery-http-ro-metadata
+RuntimeDirectoryMode=0750
+LogsDirectory=platform.wafer.space-celery-http-ro-metadata
+LogsDirectoryMode=0750
+
+PIDFile=/run/platform.wafer.space-celery-http-ro-metadata/worker.pid
+
+ExecStart=/home/django/platform.wafer.space/.venv/bin/celery \
+    -A config \
+    worker \
+    --loglevel=info \
+    --logfile=${LOGS_DIRECTORY}/worker.log \
+    --pidfile=${RUNTIME_DIRECTORY}/worker.pid \
+    --detach \
+    --queues=http:ro:metadata \
+    --hostname=http-ro-metadata@%h
+
+ExecStop=/bin/kill -s TERM $MAINPID
+ExecReload=/bin/kill -s HUP $MAINPID
+
+# Startup timeout - give celery time to write PID file
+TimeoutStartSec=30s
+
+# Security hardening
+# Queue: http:ro:metadata - metadata fetch from GHCR (do_revision_fetch)
+# Network: http - HTTP/HTTPS traffic to ghcr.io only
+# Filesystem: ro - read-only access to application
+# Intended ports: 443 (HTTPS to ghcr.io)
+# RuntimeDirectory and LogsDirectory are auto-excluded from ProtectSystem
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadOnlyPaths=/home/django/platform.wafer.space
+
+# Restart policy
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target

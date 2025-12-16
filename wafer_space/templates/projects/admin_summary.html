@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 
+{% load precheck_tags %}
+
 {% block title %}
   Project Summary
 {% endblock title %}
@@ -10,124 +12,257 @@
     <!-- Summary Statistics -->
     <div class="row mb-4">
       <!-- Manufacturability Summary -->
-      <div class="col-md-4">
+      <div class="col-md-6">
         <div class="card">
           <div class="card-header">
             <strong>Manufacturability</strong>
           </div>
-          <div class="card-body">
-            <div class="d-flex justify-content-between align-items-center mb-1">
-              <span class="text-success fw-bold">
-                <i class="bi bi-check-circle"></i> Manufacturable
-              </span>
-              <span class="badge bg-success">{{ summary.manufacturable_total }}</span>
-            </div>
-            {% if summary.manufacturable_by_size %}
-              <div class="small text-muted mb-2 ms-3">
-                {% for item in summary.manufacturable_by_size %}
-                  {{ item.size }}: {{ item.count }}
-                  {% if not forloop.last %},{% endif %}
-                {% endfor %}
+          <div class="card-body py-2">
+            <div class="row">
+              {# Latest Precheck Section #}
+              <div class="col-6 border-end">
+                <div class="d-flex align-items-center mb-1">
+                  <i class="bi bi-cloud-check-fill text-success me-1"></i>
+                  <strong class="small">Latest Precheck</strong>
+                  {% if latest_precheck_revision.precheck_version %}
+                    <span class="badge bg-success-subtle text-success-emphasis ms-auto">
+                      v{{ latest_precheck_revision.precheck_version }}
+                    </span>
+                  {% endif %}
+                </div>
+                <div class="d-flex justify-content-between align-items-center">
+                  <span class="text-success small text-nowrap"><i class="bi bi-check-circle"></i>&nbsp;Manufacturable</span>
+                  <span class="badge bg-success">{{ summary.latest_manufacturable_total }}</span>
+                </div>
+                <div class="small text-muted mb-1 ms-3">
+                  {% for item in summary.latest_manufacturable_by_size %}
+                    {{ item.size }}:&nbsp;{{ item.count }}
+                    {% if not forloop.last %},{% endif %}
+                  {% empty %}—
+                  {% endfor %}
+                </div>
+                <div class="d-flex justify-content-between align-items-center">
+                  <span class="text-danger small text-nowrap"><i class="bi bi-x-circle"></i>&nbsp;Non-Manufacturable</span>
+                  <span class="badge bg-danger">{{ summary.latest_non_manufacturable_total }}</span>
+                </div>
+                <div class="small text-muted mb-1 ms-3">
+                  {% for item in summary.latest_non_manufacturable_by_size %}
+                    {{ item.size }}:&nbsp;{{ item.count }}
+                    {% if not forloop.last %},{% endif %}
+                  {% empty %}—
+                  {% endfor %}
+                </div>
+                <div class="d-flex justify-content-between align-items-center">
+                  <span class="text-secondary small text-nowrap"><i class="bi bi-hourglass"></i>&nbsp;Pending</span>
+                  <span class="badge bg-secondary">{{ summary.latest_pending_total }}</span>
+                </div>
+                <div class="small text-muted ms-3">
+                  {% for item in summary.latest_pending_by_size %}
+                    {{ item.size }}:&nbsp;{{ item.count }}
+                    {% if not forloop.last %},{% endif %}
+                  {% empty %}—
+                  {% endfor %}
+                </div>
               </div>
-            {% endif %}
-            <div class="d-flex justify-content-between align-items-center mb-1">
-              <span class="text-danger fw-bold">
-                <i class="bi bi-x-circle"></i> Non-Manufacturable
-              </span>
-              <span class="badge bg-danger">{{ summary.non_manufacturable_total }}</span>
-            </div>
-            {% if summary.non_manufacturable_by_size %}
-              <div class="small text-muted mb-2 ms-3">
-                {% for item in summary.non_manufacturable_by_size %}
-                  {{ item.size }}: {{ item.count }}
-                  {% if not forloop.last %},{% endif %}
-                {% endfor %}
+              {# Older Precheck Section #}
+              <div class="col-6">
+                <div class="d-flex align-items-center mb-1">
+                  <i class="bi bi-cloud-arrow-up-fill text-warning me-1"></i>
+                  <strong class="small text-nowrap">Older Precheck</strong>
+                </div>
+                <div class="d-flex justify-content-between align-items-center">
+                  <span class="text-success small text-nowrap"><i class="bi bi-check-circle"></i>&nbsp;Manufacturable</span>
+                  <span class="badge bg-success">{{ summary.older_manufacturable_total }}</span>
+                </div>
+                <div class="small text-muted mb-1 ms-3">
+                  {% for item in summary.older_manufacturable_by_size %}
+                    {{ item.size }}:&nbsp;{{ item.count }}
+                    {% if not forloop.last %},{% endif %}
+                  {% empty %}—
+                  {% endfor %}
+                </div>
+                <div class="d-flex justify-content-between align-items-center">
+                  <span class="text-danger small text-nowrap"><i class="bi bi-x-circle"></i>&nbsp;Non-Manufacturable</span>
+                  <span class="badge bg-danger">{{ summary.older_non_manufacturable_total }}</span>
+                </div>
+                <div class="small text-muted mb-1 ms-3">
+                  {% for item in summary.older_non_manufacturable_by_size %}
+                    {{ item.size }}:&nbsp;{{ item.count }}
+                    {% if not forloop.last %},{% endif %}
+                  {% empty %}—
+                  {% endfor %}
+                </div>
+                <div class="d-flex justify-content-between align-items-center">
+                  <span class="text-secondary small text-nowrap"><i class="bi bi-hourglass"></i>&nbsp;Pending</span>
+                  <span class="badge bg-secondary">{{ summary.older_pending_total }}</span>
+                </div>
+                <div class="small text-muted ms-3">
+                  {% for item in summary.older_pending_by_size %}
+                    {{ item.size }}:&nbsp;{{ item.count }}
+                    {% if not forloop.last %},{% endif %}
+                  {% empty %}—
+                  {% endfor %}
+                </div>
               </div>
-            {% endif %}
-            <div class="d-flex justify-content-between align-items-center mb-1">
-              <span class="text-secondary fw-bold">
-                <i class="bi bi-hourglass"></i> Pending/Unknown
-              </span>
-              <span class="badge bg-secondary">{{ summary.pending_total }}</span>
             </div>
-            {% if summary.pending_by_size %}
-              <div class="small text-muted mb-0 ms-3">
-                {% for item in summary.pending_by_size %}
-                  {{ item.size }}: {{ item.count }}
-                  {% if not forloop.last %},{% endif %}
-                {% endfor %}
-              </div>
-            {% endif %}
           </div>
         </div>
       </div>
-      <!-- Precheck Status Summary -->
-      <div class="col-md-4">
-        <div class="card">
-          <div class="card-header">
-            <strong>Precheck Status</strong>
+      <!-- Manufacturability Check Status Summary -->
+      <div class="col-md-auto">
+        <div class="card h-100">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <strong>Manufacturability Check Status</strong>
+            <a href="{% url 'projects:admin_check_status' %}"
+               class="btn btn-sm btn-outline-primary ms-2">
+              <i class="bi bi-box-arrow-up-right"></i>
+            </a>
           </div>
           <div class="card-body py-2">
             {% if summary.status_counts %}
               {% with s=summary.status_counts_by_key %}
-                {# Row 1: No Check / Pending #}
-                <div class="row mb-1">
-                  <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span><i class="bi {{ s.no_check.icon }} me-1"></i>{{ s.no_check.label }}</span>
-                    <span class="badge bg-{{ s.no_check.color }}">{{ s.no_check.count }}</span>
-                  </div>
-                  <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span><i class="bi {{ s.pending.icon }} me-1"></i>{{ s.pending.label }}</span>
-                    <span class="badge bg-{{ s.pending.color }} {% if s.pending.color == 'warning' %}text-dark{% endif %}">{{ s.pending.count }}</span>
-                  </div>
-                </div>
-                {# Row 2: Dispatching / Starting #}
-                <div class="row mb-1">
-                  <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span><i class="bi {{ s.dispatching.icon }} me-1"></i>{{ s.dispatching.label }}</span>
-                    <span class="badge bg-{{ s.dispatching.color }}">{{ s.dispatching.count }}</span>
-                  </div>
-                  <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span><i class="bi {{ s.starting.icon }} me-1"></i>{{ s.starting.label }}</span>
-                    <span class="badge bg-{{ s.starting.color }}">{{ s.starting.count }}</span>
-                  </div>
-                </div>
-                {# Row 3: Running / Analyzing #}
-                <div class="row mb-1">
-                  <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span><i class="bi {{ s.running.icon }} me-1"></i>{{ s.running.label }}</span>
-                    <span class="badge bg-{{ s.running.color }}">{{ s.running.count }}</span>
-                  </div>
-                  <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span><i class="bi {{ s.analyzing.icon }} me-1"></i>{{ s.analyzing.label }}</span>
-                    <span class="badge bg-{{ s.analyzing.color }}">{{ s.analyzing.count }}</span>
-                  </div>
-                </div>
-                {# Row 4: Cancelling / Cancelled #}
-                <div class="row mb-1">
-                  <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span><i class="bi {{ s.cancelling.icon }} me-1"></i>{{ s.cancelling.label }}</span>
-                    <span class="badge bg-{{ s.cancelling.color }} {% if s.cancelling.color == 'warning' %}text-dark{% endif %}">{{ s.cancelling.count }}</span>
-                  </div>
-                  <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span><i class="bi {{ s.cancelled.icon }} me-1"></i>{{ s.cancelled.label }}</span>
-                    <span class="badge bg-{{ s.cancelled.color }}">{{ s.cancelled.count }}</span>
-                  </div>
-                </div>
-                {# Row 5: Error / Finished #}
-                <div class="row">
-                  <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span><i class="bi {{ s.error.icon }} me-1"></i>{{ s.error.label }}</span>
-                    <span class="badge bg-{{ s.error.color }}">{{ s.error.count }}</span>
-                  </div>
-                  <div class="col-6 d-flex justify-content-between align-items-center">
-                    <span><i class="bi {{ s.finished.icon }} me-1"></i>{{ s.finished.label }}</span>
-                    <span class="badge bg-{{ s.finished.color }}">{{ s.finished.count }}</span>
-                  </div>
-                </div>
+                <table class="table table-sm table-borderless mb-0">
+                  <tbody>
+                    <tr>
+                      <td class="text-nowrap">
+                        <i class="bi {{ s.no_check.icon }}"></i>&nbsp;{{ s.no_check.label }}
+                      </td>
+                      <td>
+                        <span class="badge bg-{{ s.no_check.color }}">{{ s.no_check.count }}</span>
+                      </td>
+                      <td class="text-nowrap">
+                        <i class="bi {{ s.pending.icon }}"></i>&nbsp;{{ s.pending.label }}
+                      </td>
+                      <td>
+                        <span class="badge bg-{{ s.pending.color }} {% if s.pending.color == 'warning' %}text-dark{% endif %}">{{ s.pending.count }}</span>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="text-nowrap">
+                        <i class="bi {{ s.dispatching.icon }}"></i>&nbsp;{{ s.dispatching.label }}
+                      </td>
+                      <td>
+                        <span class="badge bg-{{ s.dispatching.color }}">{{ s.dispatching.count }}</span>
+                      </td>
+                      <td class="text-nowrap">
+                        <i class="bi {{ s.starting.icon }}"></i>&nbsp;{{ s.starting.label }}
+                      </td>
+                      <td>
+                        <span class="badge bg-{{ s.starting.color }}">{{ s.starting.count }}</span>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="text-nowrap">
+                        <i class="bi {{ s.running.icon }}"></i>&nbsp;{{ s.running.label }}
+                      </td>
+                      <td>
+                        <span class="badge bg-{{ s.running.color }}">{{ s.running.count }}</span>
+                      </td>
+                      <td class="text-nowrap">
+                        <i class="bi {{ s.analyzing.icon }}"></i>&nbsp;{{ s.analyzing.label }}
+                      </td>
+                      <td>
+                        <span class="badge bg-{{ s.analyzing.color }}">{{ s.analyzing.count }}</span>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="text-nowrap">
+                        <i class="bi {{ s.cancelling.icon }}"></i>&nbsp;{{ s.cancelling.label }}
+                      </td>
+                      <td>
+                        <span class="badge bg-{{ s.cancelling.color }} {% if s.cancelling.color == 'warning' %}text-dark{% endif %}">{{ s.cancelling.count }}</span>
+                      </td>
+                      <td class="text-nowrap">
+                        <i class="bi {{ s.cancelled.icon }}"></i>&nbsp;{{ s.cancelled.label }}
+                      </td>
+                      <td>
+                        <span class="badge bg-{{ s.cancelled.color }}">{{ s.cancelled.count }}</span>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="text-nowrap">
+                        <i class="bi {{ s.error.icon }}"></i>&nbsp;{{ s.error.label }}
+                      </td>
+                      <td>
+                        <span class="badge bg-{{ s.error.color }}">{{ s.error.count }}</span>
+                      </td>
+                      <td class="text-nowrap">
+                        <i class="bi {{ s.finished.icon }}"></i>&nbsp;{{ s.finished.label }}
+                      </td>
+                      <td>
+                        <span class="badge bg-{{ s.finished.color }}">{{ s.finished.count }}</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               {% endwith %}
             {% else %}
               <p class="text-muted mb-0">No precheck data</p>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      <!-- Precheck Version Summary -->
+      <div class="col-md-auto">
+        <div class="card h-100">
+          <div class="card-header">
+            <strong>Current Precheck</strong>
+          </div>
+          <div class="card-body py-2">
+            {% if latest_precheck_revision %}
+              <table class="table table-sm table-borderless mb-0 small">
+                <tbody>
+                  <tr>
+                    <td class="text-muted" style="width: 40%;">Version</td>
+                    <td class="fw-bold">
+                      {% if latest_precheck_revision.precheck_version %}
+                        v{{ latest_precheck_revision.precheck_version }}
+                      {% else %}
+                        <span class="text-muted">Unknown</span>
+                      {% endif %}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="text-muted">PDK</td>
+                    <td>
+                      {% if latest_precheck_revision.pdk_version %}
+                        {{ latest_precheck_revision.pdk_version }}
+                      {% else %}
+                        <span class="text-muted">—</span>
+                      {% endif %}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="text-muted">Commit</td>
+                    <td>
+                      {% if latest_precheck_revision.github_commit_url %}
+                        <a href="{{ latest_precheck_revision.github_commit_url }}"
+                           target="_blank"
+                           class="font-monospace">{{ latest_precheck_revision.git_commit_sha|slice:":7" }}</a>
+                      {% elif latest_precheck_revision.git_commit_sha %}
+                        <span class="font-monospace">{{ latest_precheck_revision.git_commit_sha|slice:":7" }}</span>
+                      {% else %}
+                        <span class="text-muted">—</span>
+                      {% endif %}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="text-muted">First&nbsp;Seen</td>
+                    <td>{{ latest_precheck_revision.first_seen_at|date:"j M Y" }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            {% elif latest_precheck_digest %}
+              {# Have digest but no revision metadata yet #}
+              <div class="small">
+                <span class="text-muted">Digest:</span>
+                <code title="{{ latest_precheck_digest }}">{{ latest_precheck_digest|truncatechars:20 }}</code>
+                <p class="text-muted mb-0 mt-1">
+                  <i class="bi bi-info-circle"></i> Version metadata not yet fetched
+                </p>
+              </div>
+            {% else %}
+              <p class="text-muted mb-0 small">No precheck versions tracked</p>
             {% endif %}
           </div>
         </div>
@@ -240,7 +375,7 @@
               <td class="text-nowrap">{{ project.user.email }}</td>
               {% with active_file=project.active_files.0 %}
                 {% if active_file and active_file.latest_manufacturability_check %}
-                  <td class="text-nowrap">{{ active_file.latest_manufacturability_check.status_badge_html }}</td>
+                  <td class="text-nowrap">{% badge_check_status_and_version active_file.latest_manufacturability_check %}</td>
                 {% else %}
                   <td class="text-nowrap">-</td>
                 {% endif %}

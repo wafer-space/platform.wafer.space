@@ -9,13 +9,12 @@ from typing import Any
 from typing import ClassVar
 
 from django.conf import settings
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.utils import timezone
 from django.utils.formats import date_format
-from django.utils.html import format_html
-from django.utils.safestring import SafeString
 from simple_history.models import HistoricalRecords
 
 from wafer_space.core.enums import SlotSize
@@ -23,6 +22,8 @@ from wafer_space.projects.exceptions import InvalidStateTransitionError
 from wafer_space.projects.storage import ProjectFileStorage
 
 logger = logging.getLogger(__name__)
+
+PRECHECK_GITHUB_REPO = "wafer-space/gf180mcu-precheck"
 
 
 @dataclass
@@ -402,11 +403,20 @@ class Project(models.Model):
 
     # Derived manufacturability properties (from latest check on submitted_file)
     @property
-    def is_manufacturable(self) -> bool | None:
-        """Derived from latest completed check on submitted file."""
+    def latest_manufacturability_check(self) -> "ManufacturabilityCheck | None":
+        """Get the latest manufacturability check for this project's submitted file.
+
+        Returns the most recent check on the submitted_file, or None if no
+        submitted file or no checks exist.
+        """
         if not self.submitted_file:
             return None
-        check = self.submitted_file.latest_manufacturability_check
+        return self.submitted_file.latest_manufacturability_check
+
+    @property
+    def is_manufacturable(self) -> bool | None:
+        """Derived from latest completed check on submitted file."""
+        check = self.latest_manufacturability_check
         if not check or check.status != ManufacturabilityCheck.Status.FINISHED:
             return None
         return check.is_manufacturable
@@ -414,9 +424,7 @@ class Project(models.Model):
     @property
     def manufacturability_errors(self) -> list[str]:
         """Derived from latest completed check."""
-        if not self.submitted_file:
-            return []
-        check = self.submitted_file.latest_manufacturability_check
+        check = self.latest_manufacturability_check
         if not check or check.status != ManufacturabilityCheck.Status.FINISHED:
             return []
         return check.errors
@@ -424,9 +432,7 @@ class Project(models.Model):
     @property
     def check_completed_at(self) -> datetime | None:
         """Derived from latest completed check."""
-        if not self.submitted_file:
-            return None
-        check = self.submitted_file.latest_manufacturability_check
+        check = self.latest_manufacturability_check
         if not check or check.status != ManufacturabilityCheck.Status.FINISHED:
             return None
         return check.analysis_completed_at
@@ -1869,79 +1875,6 @@ class ManufacturabilityCheck(models.Model):
         meta = self.get_status_metadata(self.status)
         return bool(meta["show_spinner"])
 
-    def status_badge_html(self) -> SafeString:
-        """Return complete Bootstrap badge HTML for current status.
-
-        Returns:
-            SafeString containing badge HTML, safe for template rendering.
-
-        Example output:
-            <span class="badge bg-warning text-dark">
-                <i class="bi bi-clock"></i> Pending
-            </span>
-
-        Note:
-            For FINISHED status, shows one of three states:
-            - "Manufacturable" (success/green) - clean, no warnings
-            - "Manufacturable (Warnings)" (warning/yellow) - has warnings
-            - "Not Manufacturable" (danger/red) - failed checks
-        """
-        # Special handling for FINISHED status - show manufacturable result
-        if self.status == self.Status.FINISHED:
-            if self.is_manufacturable:
-                if self.warnings:
-                    # Manufacturable but has warnings
-                    color = "warning"
-                    icon = "bi-exclamation-triangle"
-                    label = "Manufacturable (Warnings)"
-                else:
-                    # Manufacturable and clean
-                    color = "success"
-                    icon = "bi-check-circle"
-                    label = "Manufacturable"
-            else:
-                color = "danger"
-                icon = "bi-x-circle"
-                label = "Not Manufacturable"
-            show_spinner = False
-        else:
-            color = self.status_color
-            icon = self.status_icon
-            label = self.status_label
-            show_spinner = self.status_show_spinner
-
-        # Build icon/spinner HTML using format_html for safety
-        if show_spinner:
-            # Static HTML - use SafeString directly (no user input to escape)
-            icon_html = SafeString(
-                '<span class="spinner-border spinner-border-sm" '
-                'role="status" aria-hidden="true"></span>'
-            )
-        elif icon:
-            # Add 'bi' base class required by Bootstrap Icons
-            icon_html = format_html('<i class="bi {}"></i>', icon)
-        else:
-            icon_html = None
-
-        # Add text-dark class for light backgrounds (better contrast)
-        text_class = " text-dark" if color in ("warning", "info") else ""
-
-        # Combine into badge using format_html (eliminates need for noqa)
-        if icon_html:
-            return format_html(
-                '<span class="badge bg-{}{}">{} {}</span>',
-                color,
-                text_class,
-                icon_html,
-                label,
-            )
-        return format_html(
-            '<span class="badge bg-{}{}">{}</span>',
-            color,
-            text_class,
-            label,
-        )
-
     def can_transition_to(self, new_status: Status) -> bool:
         """Check if transition from current status to new_status is valid.
 
@@ -2528,6 +2461,53 @@ Your GDS file should have:
 
         return f"https://github.com/wafer-space/gf180mcu-precheck/issues/new?{params}"
 
+    @classmethod
+    def get_latest_precheck_digest(cls) -> str | None:
+        """Get the digest of the most recently used precheck image.
+
+        Returns the docker_image_digest from the check with the most recent
+        container_started_at timestamp. Cached for 60 seconds.
+        """
+        cache_key = "precheck_latest_digest"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached or None
+
+        digest = (
+            cls.objects.exclude(docker_image_digest="")
+            .order_by("-container_started_at")
+            .values_list("docker_image_digest", flat=True)
+            .first()
+        )
+
+        cache.set(cache_key, digest or "", 60)  # 1 minute TTL
+        return digest
+
+    @property
+    def is_using_latest_precheck(self) -> bool | None:
+        """Whether this check used the latest precheck image version.
+
+        Returns:
+            True - used latest version
+            False - used outdated version
+            None - cannot determine (no digest or no latest known)
+        """
+        if not self.docker_image_digest:
+            return None
+        latest = self.get_latest_precheck_digest()
+        if latest is None:
+            return None
+        return self.docker_image_digest == latest
+
+    @property
+    def precheck_revision(self) -> "PrecheckImageRevision | None":
+        """Get the PrecheckImageRevision for this check, if cataloged."""
+        if not self.docker_image_digest:
+            return None
+        return PrecheckImageRevision.objects.filter(
+            digest=self.docker_image_digest
+        ).first()
+
 
 class ManufacturabilityCheckTask(models.Model):
     """Tracks pending/running Celery tasks for manufacturability checks.
@@ -2772,3 +2752,152 @@ class ProjectComplianceCertification(models.Model):
 
     def __str__(self):
         return f"Compliance Certification for {self.project.name}"
+
+
+class PrecheckImageRevision(models.Model):
+    """
+    Catalog of known precheck Docker image versions.
+
+    Populated asynchronously when new digests are discovered from completed
+    ManufacturabilityChecks. Linked by digest string match, NOT foreign key.
+    """
+
+    # Primary identifier - the immutable digest
+    digest = models.CharField(
+        max_length=100,
+        unique=True,
+        help_text="SHA256 digest (e.g., sha256:abc123...)",
+    )
+
+    # When we first saw this digest used in a check
+    first_seen_at = models.DateTimeField(auto_now_add=True)
+
+    # Metadata fetched from GHCR/GitHub
+    image_created_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the image was pushed to GHCR",
+    )
+    git_commit_sha = models.CharField(
+        max_length=40,
+        blank=True,
+        help_text="Git commit from image labels",
+    )
+
+    # Version information
+    precheck_version = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="Precheck tool version (e.g., 1.5.2)",
+    )
+    pdk_version = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="PDK version (if available)",
+    )
+    tool_versions = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Tool versions dict (e.g., {magic: '8.3.x', klayout: '0.28.x'})",
+    )
+
+    # Git commit info
+    commit_message = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="First line of git commit message",
+    )
+    commit_date = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the git commit was made",
+    )
+
+    # Tracking
+    metadata_fetched_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When GHCR metadata was last fetched",
+    )
+
+    class Meta:
+        ordering = ["-first_seen_at"]
+        indexes = [
+            models.Index(fields=["digest"]),
+            models.Index(fields=["-first_seen_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.short_digest} (seen {self.first_seen_at.date()})"
+
+    # --- URL helpers ---
+
+    @property
+    def github_commit_url(self) -> str | None:
+        """URL to the specific commit, or None if unknown."""
+        if not self.git_commit_sha:
+            return None
+        return f"https://github.com/{PRECHECK_GITHUB_REPO}/commit/{self.git_commit_sha}"
+
+    @property
+    def ghcr_package_url(self) -> str:
+        """URL to the package on GitHub Container Registry."""
+        return f"https://github.com/{PRECHECK_GITHUB_REPO}/pkgs/container/gf180mcu-precheck"
+
+    @property
+    def short_digest(self) -> str:
+        """Truncated digest for display."""
+        assert self.digest
+        assert self.digest.startswith("sha256:")
+        return f"sha256:{self.digest[7:19]}..."
+
+    # --- Statistics helpers ---
+
+    def _get_checks_queryset(self) -> models.QuerySet["ManufacturabilityCheck"]:
+        """Get all ManufacturabilityChecks that used this revision."""
+        return ManufacturabilityCheck.objects.filter(docker_image_digest=self.digest)
+
+    @property
+    def checks_count(self) -> int:
+        """Total number of checks that used this revision."""
+        return self._get_checks_queryset().count()
+
+    @property
+    def checks_passed_count(self) -> int:
+        """Number of checks that passed with this revision."""
+        return self._get_checks_queryset().filter(is_manufacturable=True).count()
+
+    @property
+    def checks_failed_count(self) -> int:
+        """Number of checks that failed with this revision."""
+        return self._get_checks_queryset().filter(is_manufacturable=False).count()
+
+    def get_run_duration_stats(self) -> dict[str, float | None]:
+        """Get average and max run duration for checks using this revision.
+
+        Returns:
+            {"average": float|None, "max": float|None} in seconds
+        """
+        completed = self._get_checks_queryset().filter(
+            status=ManufacturabilityCheck.Status.FINISHED,
+            container_started_at__isnull=False,
+            container_finished_at__isnull=False,
+        )
+
+        stats = completed.aggregate(
+            avg_duration=models.Avg(
+                models.F("container_finished_at") - models.F("container_started_at")
+            ),
+            max_duration=models.Max(
+                models.F("container_finished_at") - models.F("container_started_at")
+            ),
+        )
+
+        return {
+            "average": (
+                stats["avg_duration"].total_seconds() if stats["avg_duration"] else None
+            ),
+            "max": (
+                stats["max_duration"].total_seconds() if stats["max_duration"] else None
+            ),
+        }

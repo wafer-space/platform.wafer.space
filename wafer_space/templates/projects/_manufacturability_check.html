@@ -1,4 +1,5 @@
 {% load duration_filters %}
+{% load precheck_tags %}
 
 {# Reusable manufacturability check display partial #}
 {# Parameters: #}
@@ -7,7 +8,7 @@
 <p class="mb-2">
   <strong>Status:</strong>
   {# Status badge - handles all states including finished with warnings #}
-  {{ check.status_badge_html }}
+  {% badge_check_status_and_version check %}
   {# Cancel button for in-progress checks #}
   {% if check.is_cancellable %}
     <form method="post"
@@ -429,6 +430,12 @@
             {% endif %}
           </td>
         </tr>
+        <tr>
+          <td>
+            <strong>Version:</strong>
+          </td>
+          <td>{% badge_check_status_and_version check %}</td>
+        </tr>
       </tbody>
     </table>
   </div>
@@ -445,6 +452,21 @@
           <td>
             {% if check.precheck_version %}
               {{ check.precheck_version }}
+            {% else %}
+              <span class="text-muted">-</span>
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <strong>Latest:</strong>
+          </td>
+          <td>
+            {% if check.is_using_latest_precheck is True %}
+              <span class="text-success"><i class="bi bi-check-circle-fill"></i> Yes</span>
+            {% elif check.is_using_latest_precheck is False %}
+              <span class="text-warning"><i class="bi bi-exclamation-triangle-fill"></i> No</span>
+              <small class="text-muted">(latest: {% get_latest_precheck_version %})</small>
             {% else %}
               <span class="text-muted">-</span>
             {% endif %}

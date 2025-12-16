@@ -1,4 +1,4 @@
-{% load static %}
+{% load static precheck_tags %}
 
 {# Reusable file display partial - used for both submitted and in-progress files #}
 {# Parameters: #}
@@ -159,7 +159,7 @@
               <span class="badge bg-secondary ms-1">Admin Re-run</span>
             {% endif %}
           </strong>
-          {{ check.status_badge_html }}
+          {% badge_check_status_and_version check %}
         </div>
       </div>
       <div class="card-body">{% include "projects/_manufacturability_check.html" with check=check %}</div>
@@ -195,7 +195,7 @@
                           <span class="badge bg-secondary ms-1">Admin Re-run</span>
                         {% endif %}
                       </strong>
-                      {{ hist_check.status_badge_html }}
+                      {% badge_check_status_and_version hist_check %}
                     </div>
                   </summary>
                   <div class="card-body py-2">{% include "projects/_manufacturability_check.html" with check=hist_check %}</div>
