@@ -8,9 +8,12 @@ import json
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from wafer_space.shuttles.services.reticle_package import SLOT_SIZE_TO_TILES
 from wafer_space.shuttles.services.reticle_package import PackageMetadata
 from wafer_space.shuttles.services.reticle_package import ProjectData
+from wafer_space.shuttles.services.reticle_package import ReticlePackageError
 from wafer_space.shuttles.services.reticle_package import ReticlePackageService
 from wafer_space.shuttles.services.reticle_package import SlotData
 from wafer_space.shuttles.services.reticle_package import build_tilemap_grid
@@ -428,3 +431,31 @@ class TestReticlePackageService:
         )
         assert service.shuttle_name == "G801"
         assert service.allow_pending is False
+
+
+@pytest.mark.django_db
+class TestReticlePackageServiceIntegration:
+    """Integration tests for ReticlePackageService."""
+
+    def test_generate_fails_if_output_exists(self, tmp_path):
+        """Service fails if output directory already exists."""
+        output = tmp_path / "G801"
+        output.mkdir()
+
+        service = ReticlePackageService(
+            shuttle_name="G801",
+            output_path=output,
+        )
+
+        with pytest.raises(ReticlePackageError, match="already exists"):
+            service.generate()
+
+    def test_generate_fails_if_shuttle_not_found(self, tmp_path):
+        """Service fails if shuttle doesn't exist."""
+        service = ReticlePackageService(
+            shuttle_name="XXXX",
+            output_path=tmp_path / "output",
+        )
+
+        with pytest.raises(ReticlePackageError, match="not found"):
+            service.generate()

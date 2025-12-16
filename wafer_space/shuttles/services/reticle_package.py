@@ -6,12 +6,19 @@ import csv
 import json
 import os
 import shutil
+import socket
+import subprocess
 from dataclasses import dataclass
+from datetime import UTC
+from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 from typing import TextIO
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from wafer_space.shuttles.config import GridConfig
+    from wafer_space.shuttles.models import Shuttle
+    from wafer_space.shuttles.models import ShuttleSlot
 
 # Mapping from slot size to tile dimensions (width, height)
 SLOT_SIZE_TO_TILES: dict[str, tuple[int, int]] = {
@@ -509,6 +516,263 @@ class ReticlePackageService:
         Raises:
             ReticlePackageError: If generation fails
         """
-        # Implementation in next task
-        msg = "generate() not yet implemented"
-        raise NotImplementedError(msg)
+        # Import here to avoid circular imports
+        from wafer_space.shuttles.config import GridConfig  # noqa: PLC0415
+        from wafer_space.shuttles.models import Shuttle  # noqa: PLC0415
+
+        # Validate output directory
+        if self.output_path.exists():
+            msg = f"Output directory already exists: {self.output_path}"
+            raise ReticlePackageError(msg)
+
+        # Load shuttle
+        try:
+            shuttle = Shuttle.objects.get(name=self.shuttle_name)
+        except Shuttle.DoesNotExist as e:
+            msg = f"Shuttle not found: {self.shuttle_name}"
+            raise ReticlePackageError(msg) from e
+
+        # Load grid config
+        grid_config = GridConfig.from_file(Path(shuttle.grid_config_file))
+
+        # Collect slot and project data
+        slots_data, projects_data = self._collect_data(shuttle, grid_config)
+
+        # Create output directory
+        self.output_path.mkdir(parents=True)
+
+        # Generate outputs
+        self._write_tilemap(slots_data, grid_config)
+        self._write_manifest(projects_data)
+        self._write_summary(projects_data)
+        self._write_checks(projects_data)
+        self._write_readme(shuttle, projects_data, slots_data, grid_config)
+        self._write_project_files(projects_data)
+
+        return {
+            "projects_included": len(projects_data),
+            "projects_skipped": len(self.warnings),
+        }
+
+    def _collect_data(
+        self,
+        shuttle: Shuttle,
+        grid_config: GridConfig,
+    ) -> tuple[list[SlotData], list[ProjectData]]:
+        """Collect slot and project data from database."""
+        from wafer_space.shuttles.models import ShuttleSlot  # noqa: PLC0415
+
+        slots = (
+            ShuttleSlot.objects.filter(shuttle=shuttle)
+            .select_related(
+                "project",
+                "project__submitted_file",
+            )
+            .order_by("row", "column")
+        )
+
+        slots_data: list[SlotData] = []
+        projects_data: list[ProjectData] = []
+        seen_projects: set[str] = set()
+
+        for slot in slots:
+            slot_data = SlotData(
+                row=slot.row,
+                column=slot.column,
+                slot_size=slot.slot_size,
+                project_code=slot.project.project_id if slot.project else None,
+            )
+            slots_data.append(slot_data)
+
+            if slot.project and slot.project.project_id not in seen_projects:
+                project_data = self._collect_project_data(slot)
+                if project_data:
+                    projects_data.append(project_data)
+                    seen_projects.add(slot.project.project_id)
+
+        return slots_data, projects_data
+
+    def _collect_project_data(self, slot: ShuttleSlot) -> ProjectData | None:
+        """Collect data for a single project from a slot."""
+        from wafer_space.projects.models import ManufacturabilityCheck  # noqa: PLC0415
+        from wafer_space.projects.models import ProjectFile  # noqa: PLC0415
+
+        project = slot.project
+        if not project:
+            return None
+
+        # Get project file
+        project_file = project.submitted_file
+        if not project_file and self.allow_pending:
+            # Fall back to latest with passing check
+            project_file = (
+                ProjectFile.objects.filter(
+                    project=project,
+                    manufacturability_checks__status=ManufacturabilityCheck.Status.FINISHED,
+                )
+                .order_by("-created_at")
+                .first()
+            )
+
+        if not project_file:
+            if self.allow_pending:
+                self.warnings.append(
+                    f"Skipping {project.project_id}: no project file with check"
+                )
+                return None
+            msg = f"Project {project.project_id} has no submitted file"
+            raise ReticlePackageError(msg)
+
+        # Get manufacturability check
+        check = (
+            ManufacturabilityCheck.objects.filter(
+                project_file=project_file,
+                status=ManufacturabilityCheck.Status.FINISHED,
+            )
+            .order_by("-created_at")
+            .first()
+        )
+
+        if not check:
+            if self.allow_pending:
+                self.warnings.append(
+                    f"Skipping {project.project_id}: no completed check"
+                )
+                return None
+            msg = f"Project {project.project_id} has no completed check"
+            raise ReticlePackageError(msg)
+
+        # Validate required fields
+        if not check.output_gds:
+            msg = f"Project {project.project_id} check missing output_gds"
+            raise ReticlePackageError(msg)
+
+        if not project_file.top_cell:
+            msg = f"Project {project.project_id} missing top_cell"
+            raise ReticlePackageError(msg)
+
+        # Get all slot positions for this project
+        from wafer_space.shuttles.models import ShuttleSlot  # noqa: PLC0415
+
+        project_slots = ShuttleSlot.objects.filter(
+            shuttle=slot.shuttle,
+            project=project,
+        )
+        slot_positions = [s.grid_position for s in project_slots]
+
+        # Determine check status
+        check_status = "no_check"
+        if check.finished_status:
+            check_status = check.finished_status.value
+
+        return ProjectData(
+            code=project.project_id,
+            project_name=project.name,
+            project_uuid=str(project.id),
+            project_url=f"/projects/{project.id}/",  # Simplified URL
+            slot_size=slot.slot_size,
+            slot_positions=slot_positions,
+            top_cell=project_file.top_cell,
+            gds_path=check.output_gds.path,
+            gds_sha256=check.output_gds_sha256 or "",
+            is_submitted=project.submitted_file is not None,
+            check_status=check_status,
+            check_warnings=len(check.warnings) if check.warnings else 0,
+            check_errors=len(check.errors) if check.errors else 0,
+            submitted_at=(
+                project.submitted_at.isoformat() if project.submitted_at else None
+            ),
+            repository_url=project.repository_url or None,
+            check_version=None,  # TODO: Add version tracking
+            check_runtime_seconds=(
+                check.total_runtime_seconds
+                if hasattr(check, "total_runtime_seconds")
+                else None
+            ),
+            check_url=f"/admin/projects/manufacturabilitycheck/{check.pk}/change/",
+            input_file_url=project_file.source_url or None,
+            input_md5=project_file.hash_md5 or None,
+            input_sha256=project_file.hash_sha256 or None,
+        )
+
+    def _write_tilemap(
+        self,
+        slots: list[SlotData],
+        grid_config: GridConfig,
+    ) -> None:
+        """Write tilemap.csv."""
+        grid = build_tilemap_grid(
+            slots,
+            num_rows=grid_config.num_rows,
+            num_columns=grid_config.num_columns,
+        )
+        with (self.output_path / "tilemap.csv").open("w") as f:
+            write_tilemap_csv(grid, f)
+
+    def _write_manifest(self, projects: list[ProjectData]) -> None:
+        """Write manifest.csv."""
+        with (self.output_path / "manifest.csv").open("w") as f:
+            write_manifest_csv(projects, f)
+
+    def _write_summary(self, projects: list[ProjectData]) -> None:
+        """Write summary.csv."""
+        with (self.output_path / "summary.csv").open("w") as f:
+            write_summary_csv(projects, f)
+
+    def _write_checks(self, projects: list[ProjectData]) -> None:
+        """Write checks.csv."""
+        with (self.output_path / "checks.csv").open("w") as f:
+            write_checks_csv(projects, f)
+
+    def _write_readme(
+        self,
+        shuttle: Shuttle,
+        projects: list[ProjectData],
+        slots: list[SlotData],
+        grid_config: GridConfig,
+    ) -> None:
+        """Write README.md."""
+        # Get metadata
+        generated_at = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+        hostname = socket.gethostname()
+        try:
+            git_revision = subprocess.check_output(
+                ["git", "describe", "--always", "--dirty"],  # noqa: S607
+                text=True,
+            ).strip()
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            git_revision = "unknown"
+
+        metadata = PackageMetadata(
+            shuttle_name=shuttle.name,
+            generated_at=generated_at,
+            hostname=hostname,
+            git_revision=git_revision,
+            precheck_version="unknown",  # TODO: Get from settings
+        )
+
+        readme = generate_readme(
+            metadata=metadata,
+            projects=projects,
+            slots=slots,
+        )
+
+        with (self.output_path / "README.md").open("w") as f:
+            f.write(readme)
+
+    def _write_project_files(self, projects: list[ProjectData]) -> None:
+        """Write info.json and create GDS links for each project."""
+        for project in projects:
+            project_dir = self.output_path / project.code
+            project_dir.mkdir(exist_ok=True)
+
+            # Write info.json
+            info_json = generate_project_info_json(project)
+            with (project_dir / "info.json").open("w") as f:
+                f.write(info_json)
+
+            # Create GDS link
+            source = Path(project.gds_path)
+            dest = project_dir / f"{project.top_cell}.gds"
+            link_warnings = create_gds_link(source, dest)
+            self.warnings.extend(link_warnings)
