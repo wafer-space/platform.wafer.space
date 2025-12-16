@@ -2801,6 +2801,18 @@ class PrecheckImageRevision(models.Model):
         help_text="Tool versions dict (e.g., {magic: '8.3.x', klayout: '0.28.x'})",
     )
 
+    # Git commit info
+    commit_message = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="First line of git commit message",
+    )
+    commit_date = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the git commit was made",
+    )
+
     # Tracking
     metadata_fetched_at = models.DateTimeField(
         null=True,

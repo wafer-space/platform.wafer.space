@@ -90,6 +90,8 @@ def do_revision_fetch(self, digest: str) -> dict[str, Any]:
     revision.precheck_version = metadata.get("precheck_version", "")
     revision.pdk_version = metadata.get("pdk_version", "")
     revision.tool_versions = metadata.get("tool_versions", {})
+    revision.commit_message = metadata.get("commit_message", "")
+    revision.commit_date = metadata.get("commit_date")
     revision.metadata_fetched_at = timezone.now()
     revision.save()
 
