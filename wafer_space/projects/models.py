@@ -438,6 +438,20 @@ class Project(models.Model):
         return check.analysis_completed_at
 
     @property
+    def output_file(self) -> "ProjectFile":
+        """Return file for manufacturing output (submitted or latest).
+
+        Returns a dummy ProjectFile if no files exist.
+        """
+        if self.submitted_file:
+            return self.submitted_file
+        latest = self.files.order_by("-uploaded_at").first()
+        if latest:
+            return latest
+        # Return unsaved dummy for consistent interface
+        return ProjectFile(project=self, top_cell="")
+
+    @property
     def full_id(self) -> str:
         """Return full 8-character manufacturing ID (shuttle code + project ID).
 
@@ -1098,6 +1112,26 @@ class ProjectFile(models.Model):
         Ordered by -created_at (newest first).
         """
         return self.manufacturability_checks.order_by("-created_at").first()
+
+    @property
+    def output_check(self) -> "ManufacturabilityCheck":
+        """Return latest finished check, or dummy if none exists.
+
+        Always returns a ManufacturabilityCheck for consistent interface.
+        Check if pk is set to determine if it's a real check.
+        """
+        if self.pk:  # Real file, not dummy
+            check = (
+                self.manufacturability_checks.filter(
+                    status=ManufacturabilityCheck.Status.FINISHED
+                )
+                .order_by("-created_at")
+                .first()
+            )
+            if check:
+                return check
+        # Return unsaved dummy for consistent interface
+        return ManufacturabilityCheck(project=self.project, project_file=self)
 
 
 class FileProcessingError(models.Model):
