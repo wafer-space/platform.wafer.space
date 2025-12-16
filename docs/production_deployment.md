@@ -268,49 +268,32 @@ The template file `.env.prod.template` in the repository root contains all confi
 
 ## Systemd Services
 
-The deployment includes three systemd services:
+The deployment includes multiple systemd services implementing a security-focused architecture with network isolation and filesystem access controls.
 
-### django-gunicorn.service
+**See [Systemd Services Configuration](systemd-services.md) for complete documentation**, including:
 
-Runs Gunicorn WSGI server:
-- User: `www-data`
-- Socket: `/run/platform.wafer.space/gunicorn.sock`
-- Workers: 4 (adjust based on CPU cores: 2-4 × CPU cores)
-- Timeout: 120 seconds
-- Security: `NoNewPrivileges`, `PrivateDevices`, `ProtectSystem=strict`
+- Queue naming convention (`{network}:{fs}:{purpose}`)
+- Security hardening settings per service
+- Task-to-queue mapping
+- User and group configuration
+- Installation and monitoring commands
 
-### django-celery.service
-
-Runs Celery worker for background tasks:
-- User: `www-data`
-- Queues: `manufacturability`, `referrals`
-- Concurrency: 4 workers
-- Security: Same hardening as Gunicorn
-
-### django-celery-beat.service (Optional)
-
-Runs Celery Beat scheduler for periodic tasks:
-- Only needed if you have scheduled tasks
-- Not started by default
-
-### Service Management
+### Quick Reference
 
 ```bash
-# Start services
-sudo systemctl start django-gunicorn.service
-sudo systemctl start django-celery.service
+# Install all services
+cd deployment/systemd && sudo ./install.sh
 
-# Enable services (auto-start on boot)
-sudo systemctl enable django-gunicorn.service
-sudo systemctl enable django-celery.service
+# Start core services
+sudo systemctl start django-gunicorn
+sudo systemctl start django-celery-none-ro-beat
+sudo systemctl start django-celery-none-ro-default
 
 # Check status
-sudo systemctl status django-gunicorn.service
-sudo systemctl status django-celery.service
+sudo systemctl status django-gunicorn django-celery-*
 
 # View logs
-sudo journalctl -u django-gunicorn.service -f
-sudo journalctl -u django-celery.service -f
+sudo journalctl -u django-gunicorn -f
 ```
 
 ## Nginx Configuration
