@@ -83,18 +83,18 @@ CAFE,CAFE,,
 
 For the reticle stitcher tool.
 
-**Columns:** `CODE,PROJECT,SLOT,TOP,HASH_SHA256,LAYOUT`
+**Columns:** `CODE,PROJECT,SLOT_SIZE,TOP,SHA256,LAYOUT`
 
 | Column | Description |
 |--------|-------------|
 | CODE | 4-char project_id (e.g., "MOLE") |
 | PROJECT | Project name |
-| SLOT | Slot size: `1x1`, `0p5x1`, `1x0p5`, or `0p5x0p5` |
+| SLOT_SIZE | Slot size: `1x1`, `0p5x1`, `1x0p5`, or `0p5x0p5` |
 | TOP | Top cell name from `project_file.top_cell` |
-| HASH_SHA256 | SHA256 hash from `manufacturability_check.output_gds_sha256` |
+| SHA256 | SHA256 hash from `manufacturability_check.output_gds_sha256` |
 | LAYOUT | Relative path: `{CODE}/{top_cell}.gds` |
 
-**Note:** If a project is assigned to multiple slots, there will be multiple rows with the same CODE but different SLOT values, all pointing to the same LAYOUT file.
+**Note:** Each project appears once, even if assigned to multiple slots.
 
 ### summary.csv
 
