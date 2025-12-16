@@ -1552,6 +1552,16 @@ class ManufacturabilityCheck(models.Model):
         ADMIN_RERUN = "admin_rerun", "Admin Requested Re-run"
         RETRY = "retry", "Retry After Error"
 
+    class FinishedStatus(models.TextChoices):
+        """Sub-status for FINISHED checks indicating manufacturability result."""
+
+        MANUFACTURABLE = "manufacturable", "Manufacturable"
+        MANUFACTURABLE_WITH_WARNINGS = (
+            "manufacturable_with_warnings",
+            "Manufacturable (Warnings)",
+        )
+        NOT_MANUFACTURABLE = "not_manufacturable", "Not Manufacturable"
+
     # Status presentation metadata for consistent rendering across templates
     # Maps status values to their display properties
     _STATUS_METADATA: ClassVar[dict[str, dict[str, str | bool]]] = {
@@ -2367,6 +2377,21 @@ class ManufacturabilityCheck(models.Model):
                 return "Manufacturable with Warnings"
             return "Manufacturable - Clean"
         return "Not Manufacturable"
+
+    @property
+    def finished_status(self) -> FinishedStatus | None:
+        """Return FinishedStatus enum value for completed checks.
+
+        Returns None if check is not in FINISHED state.
+        """
+        if self.status != self.Status.FINISHED or self.is_manufacturable is None:
+            return None
+
+        if self.is_manufacturable:
+            if self.warnings:
+                return self.FinishedStatus.MANUFACTURABLE_WITH_WARNINGS
+            return self.FinishedStatus.MANUFACTURABLE
+        return self.FinishedStatus.NOT_MANUFACTURABLE
 
     @property
     def queue_position(self) -> int | None:
