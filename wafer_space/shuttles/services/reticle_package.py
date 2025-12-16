@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from typing import TextIO
 
 if TYPE_CHECKING:
+    from wafer_space.projects.models import ManufacturabilityCheck
     from wafer_space.projects.models import Project
     from wafer_space.projects.models import ProjectFile
     from wafer_space.shuttles.config import GridConfig
@@ -616,26 +617,18 @@ class ReticlePackageService:
             )
         return project_file
 
-    def _collect_project_data(self, slot: ShuttleSlot) -> ProjectData | None:
-        """Collect data for a single project from a slot."""
+    def _get_manufacturable_check(
+        self,
+        project: "Project",
+        project_file: "ProjectFile",
+    ) -> "ManufacturabilityCheck | None":
+        """Get the manufacturable check for a project file.
+
+        Returns the check if it exists and is manufacturable, otherwise handles
+        skip/error based on allow_pending flag.
+        """
         from wafer_space.projects.models import ManufacturabilityCheck  # noqa: PLC0415
 
-        project = slot.project
-        if not project:
-            return None
-
-        # Get project file
-        project_file = self._get_project_file(project)
-        if not project_file:
-            if self.allow_pending:
-                self.warnings.append(
-                    f"Skipping {project.project_id}: no project file with check"
-                )
-                return None
-            msg = f"Project {project.project_id} has no submitted file"
-            raise ReticlePackageError(msg)
-
-        # Get manufacturability check
         check = (
             ManufacturabilityCheck.objects.filter(
                 project_file=project_file,
@@ -657,9 +650,40 @@ class ReticlePackageService:
         # Skip projects that failed manufacturability check
         not_manufacturable = ManufacturabilityCheck.FinishedStatus.NOT_MANUFACTURABLE
         if check.finished_status == not_manufacturable:
-            self.warnings.append(
-                f"Skipping {project.project_id}: not manufacturable (check {check.pk})"
+            if self.allow_pending:
+                self.warnings.append(
+                    f"Skipping {project.project_id}: not manufacturable "
+                    f"(check {check.pk})"
+                )
+                return None
+            msg = (
+                f"Project {project.project_id} is not manufacturable "
+                f"(check {check.pk})"
             )
+            raise ReticlePackageError(msg)
+
+        return check
+
+    def _collect_project_data(self, slot: ShuttleSlot) -> ProjectData | None:
+        """Collect data for a single project from a slot."""
+        project = slot.project
+        if not project:
+            return None
+
+        # Get project file
+        project_file = self._get_project_file(project)
+        if not project_file:
+            if self.allow_pending:
+                self.warnings.append(
+                    f"Skipping {project.project_id}: no project file with check"
+                )
+                return None
+            msg = f"Project {project.project_id} has no submitted file"
+            raise ReticlePackageError(msg)
+
+        # Get manufacturability check
+        check = self._get_manufacturable_check(project, project_file)
+        if not check:
             return None
 
         # Validate required fields

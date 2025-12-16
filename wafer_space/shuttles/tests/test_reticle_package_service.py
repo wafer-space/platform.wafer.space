@@ -809,3 +809,65 @@ class TestReticlePackageServiceIntegration:
 
         # Verify project directory was NOT created
         assert not (output / "FAIL").exists()
+
+    def test_not_manufacturable_raises_without_allow_pending(self, tmp_path):
+        """Test NOT_MANUFACTURABLE raises error when allow_pending=False."""
+        # Create grid config
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        grid_config_path = config_dir / "error-layout.yaml"
+
+        grid_config = {
+            "shuttle": "G895",
+            "row_heights": [1.0],
+            "column_widths": [1.0],
+        }
+        with grid_config_path.open("w") as f:
+            yaml.dump(grid_config, f)
+
+        shuttle = ShuttleFactory(
+            name="G895",
+            grid_config_file=str(grid_config_path),
+        )
+
+        project = ProjectFactory(
+            name="Not Manufacturable Project",
+            project_id="NMAN",
+            slot_size="1x1",
+        )
+
+        gds_dir = tmp_path / "gds"
+        gds_dir.mkdir()
+        output_gds = gds_dir / "nman_output.gds"
+        output_gds.write_text("FAKE GDS")
+
+        project_file = ProjectFileFactory(project=project, top_cell="NMAN_TOP")
+        ManufacturabilityCheckFactory(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=False,
+            output_gds=str(output_gds),
+            output_gds_sha256="nmanhash",
+        )
+        project.submitted_file = project_file
+        project.save()
+
+        ShuttleSlot.objects.create(
+            shuttle=shuttle,
+            project=project,
+            row=0,
+            column=0,
+            slot_size="1x1",
+            status=ShuttleSlot.Status.RESERVED,
+        )
+
+        output = tmp_path / "G895_OUTPUT"
+        service = ReticlePackageService(
+            shuttle_name="G895",
+            output_path=output,
+            allow_pending=False,  # Should raise error
+        )
+
+        with pytest.raises(ReticlePackageError, match="not manufacturable"):
+            service.generate()
