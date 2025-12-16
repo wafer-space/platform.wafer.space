@@ -206,10 +206,16 @@ def write_checks_csv(path: Path, slots: list[ShuttleSlot]) -> None:
         writer.writerow(
             [
                 "CODE",
+                "PROJECT_NAME",
                 "CHECK_STATUS",
                 "CHECK_WARNINGS",
                 "CHECK_ERRORS",
-                "OUTPUT_SHA256",
+                "CHECK_VERSION",
+                "CHECK_RUNTIME_SECONDS",
+                "CHECK_URL",
+                "INPUT_FILE_URL",
+                "INPUT_MD5",
+                "INPUT_SHA256",
             ]
         )
 
@@ -217,20 +223,46 @@ def write_checks_csv(path: Path, slots: list[ShuttleSlot]) -> None:
             if not slot.project or slot.project_id in seen:
                 continue
             seen.add(slot.project_id)
+            prj = slot.project
+            prj_file = prj.output_file
+            check = prj_file.output_check
 
-            check = slot.project.output_file.output_check
-            if not check.pk:
-                writer.writerow([slot.project.project_id, "", 0, 0, ""])
+            # Build row values
+            base_url = settings.SITE_URL
+            if check.pk:
+                status = check.finished_status.value if check.finished_status else ""
+                warns = len(check.warnings) if check.warnings else 0
+                errs = len(check.errors) if check.errors else 0
+                version = check.precheck_version
+                runtime = ""
+                if check.container_started_at and check.container_finished_at:
+                    delta = check.container_finished_at - check.container_started_at
+                    runtime = f"{delta.total_seconds():.1f}"
+                check_url = f"{base_url}/projects/{prj.id}/checks/{check.pk}/"
             else:
-                writer.writerow(
-                    [
-                        slot.project.project_id,
-                        check.finished_status.value if check.finished_status else "",
-                        len(check.warnings) if check.warnings else 0,
-                        len(check.errors) if check.errors else 0,
-                        check.output_gds_sha256 or "",
-                    ]
-                )
+                status, warns, errs, version, runtime, check_url = "", 0, 0, "", "", ""
+
+            if prj_file.pk:
+                file_url = f"{base_url}/projects/{prj.id}/files/{prj_file.pk}/"
+                md5, sha256 = prj_file.hash_md5, prj_file.hash_sha256
+            else:
+                file_url, md5, sha256 = "", "", ""
+
+            writer.writerow(
+                [
+                    prj.project_id,
+                    prj.name,
+                    status,
+                    warns,
+                    errs,
+                    version,
+                    runtime,
+                    check_url,
+                    file_url,
+                    md5,
+                    sha256,
+                ]
+            )
 
 
 def write_readme(path: Path, shuttle: Shuttle, slots: list[ShuttleSlot]) -> None:
