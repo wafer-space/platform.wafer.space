@@ -66,38 +66,40 @@ def write_manifest_and_copy_gds(
     pending: dict[str, list[str]],
 ) -> None:
     """Write manifest.csv and copy GDS files for manufacturable projects."""
-    seen: set[Any] = set()
     with (output_path / "manifest.csv").open("w") as f:
         writer = csv.writer(f)
         writer.writerow(["CODE", "PROJECT", "SLOT_SIZE", "TOP", "SHA256", "LAYOUT"])
 
-        for slot in slots:
-            if not slot.project or slot.project_id in seen:
+        seen: set[str] = {"????"}
+        for slot in sorted(slots, key=lambda s: s.project_code):
+            code = slot.project_code
+            if code in seen:
                 continue
-            seen.add(slot.project_id)
-
-            code = slot.project.project_id
-            project_name = slot.project.name
+            seen.add(code)
+            assert slot.project is not None  # "????" already in seen
             try:
-                pf = slot.project.output_file
-                check = pf.output_check
-                _require_manufacturable(check)
-                top_cell = pf.top_cell or _missing("top_cell")
-                out_file = f"{code}/{top_cell}.gds"
-                gds_path = Path(check.output_gds.path)
-                sha256 = check.output_gds_sha256
-            except (AttributeError, ManifestError) as e:
-                pending.setdefault(code, []).append(str(e))
-                continue
+                prj_file = slot.project.output_file
 
-            writer.writerow(
-                [code, project_name, slot.slot_size, top_cell, sha256, out_file]
-            )
+                src_file = Path(prj_file.output_check.output_gds.path)
+                dst_file = f"{code}/{prj_file.top_cell}.gds"
 
-            dest = output_path / out_file
-            dest.parent.mkdir(exist_ok=True)
-            try:
-                os.link(gds_path, dest)
+                writer.writerow(
+                    [
+                        code,
+                        slot.project.name,
+                        slot.slot_size,
+                        prj_file.top_cell,
+                        prj_file.output_check.output_gds_sha256,
+                        dst_file,
+                    ]
+                )
+
+                dst_path = output_path / dst_file
+                dst_path.parent.mkdir(exist_ok=True)
+
+                os.link(src_file, dst_path)
+            except ValueError as e:
+                pending.setdefault(code, []).append(f"missing value: {e}")
             except OSError as e:
                 pending.setdefault(code, []).append(f"hardlink failed: {e}")
 
@@ -115,17 +117,6 @@ def _missing(field: str) -> Any:
     """Raise ManifestError for missing field."""
     msg = f"no {field}"
     raise ManifestError(msg)
-
-
-def _require_manufacturable(check: ManufacturabilityCheck) -> None:
-    """Raise ManifestError if check is not manufacturable."""
-    if not check.pk or not check.finished_status:
-        raise ManifestError(ManifestError.NOT_MANUFACTURABLE)
-    if check.finished_status not in (
-        ManufacturabilityCheck.FinishedStatus.MANUFACTURABLE,
-        ManufacturabilityCheck.FinishedStatus.MANUFACTURABLE_WITH_WARNINGS,
-    ):
-        raise ManifestError(ManifestError.NOT_MANUFACTURABLE)
 
 
 def _is_manufacturable(check: ManufacturabilityCheck) -> bool:

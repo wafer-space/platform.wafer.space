@@ -183,7 +183,7 @@ class TestGeneratePackage:
         assert "FAIL" in (output / "summary.csv").read_text()
         assert "FAIL" in (output / "checks.csv").read_text()
 
-        assert any("not manufacturable" in w for w in warnings)
+        assert any("missing value" in w for w in warnings)
 
     def test_not_manufacturable_raises_without_allow_pending(self, tmp_path):
         """NOT_MANUFACTURABLE raises error without allow_pending."""
@@ -205,5 +205,5 @@ class TestGeneratePackage:
         )
 
         output = tmp_path / "output"
-        with pytest.raises(ReticlePackageError, match="not manufacturable"):
+        with pytest.raises(ReticlePackageError, match="missing value"):
             generate_package("G895", output, allow_pending=False)

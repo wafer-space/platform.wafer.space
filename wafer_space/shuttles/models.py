@@ -336,6 +336,11 @@ class ShuttleSlot(models.Model):
             column_letter = self.column_to_letters(self.column)
         return f"{column_letter}{self.row + 1}"
 
+    @property
+    def project_code(self) -> str:
+        """Return project code or placeholder if no project assigned."""
+        return self.project.project_id if self.project else "????"
+
     @staticmethod
     def column_to_letters(column: int) -> str:
         """Convert column index to letters for columns > 25 (AA, AB, etc.)."""
