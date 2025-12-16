@@ -176,8 +176,14 @@ echo "Resetting systemd journal logs for django services..."
 # Define services to clear journal logs for
 SERVICES=(
     "django-gunicorn.service"
-    "django-celery.service"
-    "django-celery-beat.service"
+    "django-celery-none-ro-default.service"
+    "django-celery-none-ro-checks-orch.service"
+    "django-celery-none-ro-beat.service"
+    "django-celery-mail-ro-email.service"
+    "django-celery-http-rw-downloads.service"
+    "django-celery-dock-ro-checks-fast.service"
+    "django-celery-dock-ro-checks-slow.service"
+    "django-celery-dock-rw-checks-save.service"
 )
 
 # Show current journal sizes

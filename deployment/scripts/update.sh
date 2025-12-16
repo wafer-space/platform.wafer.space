@@ -40,6 +40,6 @@ sudo "$APP_DIR/deployment/scripts/04-setup-permissions.sh"
 
 # Restart services
 sudo systemctl restart django-gunicorn.service
-sudo systemctl restart django-celery.service
+sudo systemctl restart 'django-celery-*.service'
 
 echo "$(date): Update completed successfully" | tee -a "$LOG_FILE"

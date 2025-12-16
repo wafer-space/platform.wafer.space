@@ -186,13 +186,11 @@ sudo grep -E "(GITHUB|GITLAB|GOOGLE|DISCORD|LINKEDIN)_CLIENT_SECRET" /home/djang
 ```bash
 # Restart all Django services to load new secrets
 sudo systemctl restart django-gunicorn.service
-sudo systemctl restart django-celery.service
-sudo systemctl restart django-celery-beat.service
+sudo systemctl restart 'django-celery-*.service'
 
 # Check service status
 sudo systemctl status django-gunicorn.service
-sudo systemctl status django-celery.service
-sudo systemctl status django-celery-beat.service
+sudo systemctl status 'django-celery-*.service'
 ```
 
 ### 6. Verification Testing
@@ -261,7 +259,7 @@ mv linkedin-oauth.new linkedin-oauth
 sudo /home/django/platform.wafer.space/deployment/scripts/03a-update-env-secrets.sh
 
 # Restart services again
-sudo systemctl restart django-gunicorn.service django-celery.service django-celery-beat.service
+sudo systemctl restart django-gunicorn.service 'django-celery-*.service'
 ```
 
 #### Remove Old Secrets from OAuth Providers
@@ -312,7 +310,7 @@ cp backups/linkedin-oauth.$BACKUP_DATE linkedin-oauth
 sudo /home/django/platform.wafer.space/deployment/scripts/03a-update-env-secrets.sh
 
 # Restart services
-sudo systemctl restart django-gunicorn.service django-celery.service django-celery-beat.service
+sudo systemctl restart django-gunicorn.service 'django-celery-*.service'
 
 # Verify rollback
 # Test OAuth login flows again

@@ -129,9 +129,8 @@ Installs and restarts systemd services for the application.
 - Shows service status
 
 **Services managed:**
-- `django-gunicorn.service` - Web application server
-- `django-celery.service` - Background task worker
-- `django-celery-beat.service` - Scheduled task scheduler
+
+See [../systemd/](../systemd/) for the full list of 8 Celery services (7 workers + Beat scheduler) plus Gunicorn, and [docs/systemd-services.md](../../docs/systemd-services.md) for complete configuration details.
 
 **Note:** Run this after database setup and permissions are configured. The script will automatically restart services after updating service files.
 
@@ -191,9 +190,8 @@ sudo ./reset-logs.sh --help         # Show help
 - Backup archives: `/var/backups/platform.wafer.space/logs/`
 
 **Services with journal logs:**
-- `django-gunicorn.service` - Web application server
-- `django-celery.service` - Background task worker
-- `django-celery-beat.service` - Scheduled task scheduler
+
+All `django-gunicorn` and `django-celery-*` services. See [docs/systemd-services.md](../../docs/systemd-services.md) for the complete list.
 
 **Manual systemd journal commands:**
 ```bash
@@ -250,27 +248,22 @@ Loads environment variables from `.env` file (used by other scripts).
 
 ## Service Management
 
-The platform runs three systemd services:
-
-1. **django-gunicorn.service** - Web application server
-2. **django-celery.service** - Background task worker
-3. **django-celery-beat.service** - Scheduled task scheduler
+The platform runs 8 Celery services (7 workers + Beat scheduler) plus Gunicorn. See [docs/systemd-services.md](../../docs/systemd-services.md) for complete details.
 
 ### Manual Service Commands
 
 ```bash
 # Check status
-sudo systemctl status django-gunicorn.service
-sudo systemctl status django-celery.service
-sudo systemctl status django-celery-beat.service
+sudo systemctl status django-gunicorn
+sudo systemctl status django-celery-none-ro-default
+sudo systemctl status 'django-celery-*.service'
 
 # View logs
-sudo journalctl -u django-gunicorn.service -f
-sudo journalctl -u django-celery.service -f
-sudo journalctl -u django-celery-beat.service -f
+sudo journalctl -u django-gunicorn -f
+sudo journalctl -u django-celery-none-ro-checks-orch -f
 
-# Restart individual service
-sudo systemctl restart django-gunicorn.service
+# Restart all Celery workers
+sudo systemctl restart 'django-celery-*.service'
 ```
 
 ## Logs
@@ -298,24 +291,190 @@ This provides a consistent interface with other development commands.
 - Database passwords are randomly generated and stored securely
 - Secrets repository (if used) should be a private git repository
 
+## Monitoring
+
+### Service Health
+
+```bash
+# Check all services
+sudo systemctl status django-gunicorn django-celery-none-ro-default nginx postgresql
+
+# Check all Celery workers
+sudo systemctl status 'django-celery-*.service'
+
+# Check resource usage
+htop
+
+# Check disk space
+df -h
+
+# Check memory usage
+free -h
+```
+
+### Application Logs
+
+```bash
+# Gunicorn logs
+sudo journalctl -u django-gunicorn -f
+
+# Celery worker logs (pick specific worker)
+sudo journalctl -u django-celery-none-ro-checks-orch -f
+
+# All Celery logs
+sudo journalctl -u 'django-celery-*' -f
+
+# Nginx access logs
+sudo tail -f /var/log/nginx/platform.wafer.space-access.log
+
+# Nginx error logs
+sudo tail -f /var/log/nginx/platform.wafer.space-error.log
+```
+
 ## Troubleshooting
 
 ### Services won't start
-1. Check logs: `sudo journalctl -u django-gunicorn.service -n 50`
-2. Verify permissions: `sudo ./04-setup-permissions.sh`
-3. Check database: `sudo -u postgres psql -l`
-4. Verify .env file: `sudo -u django cat /home/django/platform.wafer.space/.env`
+
+```bash
+# Check service status and logs
+sudo systemctl status django-gunicorn
+sudo journalctl -u django-gunicorn -n 50
+
+# Common issues:
+# - Check DATABASE_URL in .env
+# - Check file permissions (should be django:www-data)
+# - Check Gunicorn socket exists
+# - Run: make venv (update dependencies)
+```
+
+### 502 Bad Gateway
+
+```bash
+# Gunicorn not running or socket issues
+sudo systemctl restart django-gunicorn
+sudo systemctl reload nginx
+
+# Check socket exists
+ls -la /run/platform.wafer.space/gunicorn.sock
+```
+
+### Static Files Not Loading
+
+```bash
+# Recollect static files
+sudo -u django -i
+cd /home/django/platform.wafer.space
+export DJANGO_SETTINGS_MODULE=config.settings.prod
+make collectstatic
+exit
+
+# Check nginx config
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+### Database Connection Issues
+
+```bash
+# Check PostgreSQL is running
+sudo systemctl status postgresql
+
+# Check DATABASE_URL in .env
+sudo -u django cat /home/django/platform.wafer.space/.env | grep DATABASE_URL
+
+# Test connection
+sudo -u django -i
+cd /home/django/platform.wafer.space
+export DJANGO_SETTINGS_MODULE=config.settings.prod
+make shell
+# In shell: from django.db import connection; connection.ensure_connection()
+```
+
+### Database Operations (Drop/Reset)
+
+**IMPORTANT**: You must stop all services before performing database operations like dropping or recreating the database. Active connections will prevent these operations.
+
+```bash
+# Stop all services first
+sudo systemctl stop django-gunicorn
+sudo systemctl stop 'django-celery-*.service'
+
+# Now you can perform database operations
+sudo -u postgres psql -c "DROP DATABASE platform_wafer_space;"
+sudo -u postgres psql -c "DROP USER platform_wafer_space;"
+
+# Recreate database
+cd /home/django/platform.wafer.space/deployment
+sudo ./scripts/03-setup-database.sh
+
+# Restart services
+sudo systemctl start django-gunicorn
+sudo systemctl start 'django-celery-*.service'
+```
+
+### SSL Certificate Issues
+
+```bash
+# Check certificate
+sudo certbot certificates
+
+# Test renewal
+sudo certbot renew --dry-run
+
+# Force renewal
+sudo certbot renew --force-renewal
+
+# Check nginx SSL config
+sudo nginx -t
+```
 
 ### Update fails
+
 1. Check git status: `cd /home/django/platform.wafer.space && git status`
 2. Verify dependencies: `make venv`
 3. Check migrations: `make migrate`
 4. Review update log: `sudo tail -f /var/log/platform.wafer.space/update.log`
 
 ### Permission errors
+
 1. Run: `sudo ./04-setup-permissions.sh`
 2. Verify django user: `id django`
 3. Check file ownership: `ls -la /home/django/platform.wafer.space/`
+
+## Performance Tuning
+
+### Gunicorn Workers
+
+Adjust worker count in `/etc/systemd/system/django-gunicorn.service`:
+
+```text
+Rule of thumb: (2-4) × CPU_CORES
+2 CPU cores = 4-8 workers
+4 CPU cores = 8-16 workers
+```
+
+### Celery Concurrency
+
+Adjust concurrency in individual worker service files (e.g., `/etc/systemd/system/django-celery-none-ro-default.service`).
+
+See [docs/systemd-services.md](../../docs/systemd-services.md) for worker-specific tuning recommendations.
+
+### PostgreSQL
+
+For production workload, tune PostgreSQL in `/etc/postgresql/17/main/postgresql.conf`:
+
+```text
+shared_buffers = 256MB (25% of RAM)
+effective_cache_size = 1GB (50-75% of RAM)
+maintenance_work_mem = 128MB
+work_mem = 16MB
+```
+
+After changes:
+
+```bash
+sudo systemctl restart postgresql
+```
 
 ## Development vs Production
 

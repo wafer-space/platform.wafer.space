@@ -1,118 +1,168 @@
-# Deployment Scripts
+# Production Deployment Guide
 
-This directory contains automated deployment scripts for **both** platform.wafer.space (production) and test-platform.wafer.space (staging).
+This guide covers deploying platform.wafer.space to a production server running Debian 12 (Bookworm) or Debian Trixie (testing).
 
-## 🔄 Environment Auto-Detection
+## Overview
 
-**All deployment scripts automatically detect which environment they're running in based on the server hostname.**
+**Automated Deployment:** This project includes complete deployment automation in the `deployment/` directory. The scripts handle setup, configuration, and security hardening automatically.
 
-- **Hostname contains "test-platform"** → Staging environment (`config.settings.stage`)
-- **Hostname contains "platform"** → Production environment (`config.settings.prod`)
+### Technology Stack
 
-The scripts use **identical names** for everything (application directory, database, logs, etc.) on both servers. Only 5 environment-specific values differ:
+- **Server OS**: Debian 12 (Bookworm) or Debian Trixie (testing)
+- **Python**: 3.13.7 (managed by uv)
+- **Web Server**: Nginx (reverse proxy)
+- **Application Server**: Gunicorn (WSGI)
+- **Database**: PostgreSQL 17+
+- **Task Queue**: Celery (with PostgreSQL broker)
+- **SSL/TLS**: Let's Encrypt (via certbot)
+- **Process Management**: systemd
+- **Security**: Privilege separation (django user owns code, www-data runs services)
 
-1. Django settings module (`config.settings.stage` vs `config.settings.prod`)
-2. Secrets repository (`test-platform.wafer.space-secrets` vs `platform.wafer.space-secrets`)
-3. Environment template (`.env.stage.template` vs `.env.prod.template`)
-4. SSL domain (`test-platform.wafer.space` vs `platform.wafer.space`)
-5. Nginx server_name directive
+### Prerequisites
 
-**No manual configuration needed** - just run the same scripts on both servers.
+- Fresh Debian 12 or Debian Trixie server with root access
+- Domain name pointing to server IP (platform.wafer.space)
+- Ports 22 (SSH), 80 (HTTP), and 443 (HTTPS) accessible
 
-## 📖 Full Documentation
+### Server Requirements
 
-**See [docs/production_deployment.md](../docs/production_deployment.md) for complete deployment guide.**
+- **RAM**: 2GB minimum (4GB recommended)
+- **Disk**: 20GB minimum
+- **CPU**: 2 cores minimum
 
-The full documentation includes:
-- Step-by-step deployment instructions
-- Detailed script explanations
-- Environment configuration guide
-- Security features
-- Troubleshooting
-- Maintenance operations
+## Quick Start
 
-## Directory Structure
-
-```
-deployment/
-├── scripts/          # Setup and maintenance scripts
-│   ├── detect-environment.sh      # Auto-detect staging vs production
-│   ├── 01-setup-users.sh
-│   ├── 02-install-dependencies.sh
-│   ├── 02a-setup-secrets.sh
-│   ├── 03-setup-database.sh
-│   ├── 03a-update-env-secrets.sh
-│   ├── 04-setup-permissions.sh
-│   ├── 05-setup-ssl.sh
-│   ├── 05a-expand-ssl-cert.sh
-│   ├── backup.sh
-│   └── update.sh
-├── systemd/          # Systemd service files (same on both servers)
-│   ├── django-gunicorn.service
-│   ├── django-celery.service
-│   ├── django-celery-manufacturability.service
-│   ├── django-celery-beat.service
-│   └── install.sh
-├── nginx/            # Nginx configuration (auto-selected by environment)
-│   ├── platform.wafer.space.conf        # Production config
-│   ├── test-platform.wafer.space.conf   # Staging config
-│   └── install.sh
-└── README.md         # This file
-```
-
-## Quick Reference
-
-### Setup Scripts (run in order)
-
-1. **`01-setup-users.sh`** - Create django user and application directories
-2. **`02-install-dependencies.sh`** - Install system packages (PostgreSQL, Nginx, etc.)
-3. **`02a-setup-secrets.sh`** - Clone secrets repository from GitHub
-4. **`03-setup-database.sh`** - Setup PostgreSQL database and auto-generate .env file
-5. **`04-setup-permissions.sh`** - Set proper file permissions (privilege separation)
-6. **`05-setup-ssl.sh`** - Obtain Let's Encrypt SSL certificate
-
-### Maintenance Scripts
-
-- **`backup.sh`** - Backup PostgreSQL database (cron: `0 2 * * *`)
-- **`update.sh`** - Update application code and restart services
-- **`03a-update-env-secrets.sh`** - Update .env file with latest secrets (run after secrets change)
-
-### Installing Services
+For a fresh Debian server, run these commands in order:
 
 ```bash
-# Install systemd services
-cd systemd && sudo ./install.sh
+# 1. Initial system setup
+sudo apt update && sudo apt upgrade -y
+sudo hostnamectl set-hostname platform.wafer.space
+sudo timedatectl set-timezone UTC
 
-# Install nginx configuration
-cd nginx && sudo ./install.sh
+# 2. Clone repository
+cd /tmp
+git clone https://github.com/wafer-space/platform.wafer.space.git
+cd platform.wafer.space/deployment
+
+# 3. Run initial setup scripts
+sudo ./scripts/01-setup-users.sh
+sudo ./scripts/02-install-dependencies.sh
+
+# 4. Setup SSH key for django user (to access secrets repository)
+sudo -u django ssh-keygen -t ed25519 -C "django@platform.wafer.space"
+sudo cat /home/django/.ssh/id_ed25519.pub
+# Add this public key as a deploy key to:
+# https://github.com/mithro/platform.wafer.space-secrets/settings/keys
+
+# 5. Setup application as django user
+sudo -u django -i
+cd /home/django
+git clone https://github.com/wafer-space/platform.wafer.space.git platform.wafer.space
+cd platform.wafer.space
+
+# Install uv and create Python environment
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.cargo/env
+make venv
+
+# Configure environment settings
+echo 'export DJANGO_SETTINGS_MODULE=config.settings.prod' >> ~/.bashrc
+source ~/.bashrc
+exit
+
+# 6. Clone secrets repository
+cd /tmp/platform.wafer.space/deployment
+sudo ./scripts/02a-setup-secrets.sh
+
+# 7. Setup database (creates .env with DATABASE_URL, DJANGO_SECRET_KEY, and OAuth secrets)
+sudo ./scripts/03-setup-database.sh
+
+# 8. Verify .env file (optional - all secrets are automatically configured)
+# DATABASE_URL, DJANGO_SECRET_KEY, and all API secrets are already configured
+# sudo -u django nano /home/django/platform.wafer.space/.env
+
+# 9. Run Django setup (as django user)
+sudo -u django -i
+cd /home/django/platform.wafer.space
+export DJANGO_SETTINGS_MODULE=config.settings.prod
+make migrate
+make createsuperuser
+make collectstatic
+exit
+
+# 10. Set permissions and install services (back as root)
+cd /home/django/platform.wafer.space/deployment
+sudo ./scripts/04-setup-permissions.sh
+
+cd systemd
+sudo ./install.sh
+
+cd ../nginx
+sudo ./install.sh
+
+cd ../scripts
+sudo ./05-setup-ssl.sh
+
+# 11. Verify deployment
+sudo systemctl status django-gunicorn
+sudo systemctl status django-celery-none-ro-default
+curl https://platform.wafer.space
 ```
 
-## Manufacturability Checking Setup
+**Done!** Your application is now running at <https://platform.wafer.space>
 
-The platform includes automated manufacturability checking using Docker containers. **This requires a separate Celery worker with Docker access.**
+## Deployment Scripts Reference
 
-### Required Steps
+See [scripts/README.md](./scripts/README.md) for detailed documentation of all setup and operational scripts.
 
-1. **Create dedicated user** (`celery-mfg`) for the manufacturability worker
-2. **Install Docker Engine** on the production server
-3. **Grant Docker access** to the `celery-mfg` user
-4. **Pull the precheck image**: `docker pull ghcr.io/wafer-space/gf180mcu-precheck:latest`
-5. **Install the manufacturability service**: `django-celery-manufacturability.service`
+## Environment Configuration
 
-**See [DOCKER_ACCESS.md](./DOCKER_ACCESS.md) for complete step-by-step guide.**
+The `.env` file is automatically created by the database setup script (`03-setup-database.sh`) from `.env.prod.template`. All secrets are populated automatically from the secrets repository (`/home/django/.secrets/`).
 
-### Architecture
+**See [docs/settings.md](../docs/settings.md) for complete environment configuration details, including all settings across dev/pytest/stage/prod environments.**
 
-The system uses **two separate Celery workers** for security:
+To update secrets after rotation, run `deployment/scripts/03a-update-env-secrets.sh` and restart services.
 
-- **`django-celery.service`** (as `www-data`): Handles general background tasks (referrals queue)
-- **`django-celery-manufacturability.service`** (as `celery-mfg`): Handles manufacturability checks with Docker access
+## Systemd Services
 
-This separation ensures that Docker access (which is root-equivalent) is isolated from the web server user.
+The deployment includes Gunicorn plus 8 Celery services (7 workers + Beat scheduler) using queue naming convention `{network}:{filesystem}:{purpose}`.
 
-## Architecture
+**See [docs/systemd-services.md](../docs/systemd-services.md) for complete worker configuration, queue mapping, service management commands, and security details.**
 
-- **Privilege Separation**: `django` user owns code, `www-data` runs web services, `celery-mfg` runs manufacturability worker
-- **Security**: File permissions 750/640, systemd hardening, HTTPS enforced, Docker access isolated to dedicated user
-- **Stack**: Django 5.2+ → Gunicorn → Nginx, PostgreSQL 17+, Celery workers (2 separate services)
-- **Manufacturability**: Docker containers for isolated precheck validation (runs as `celery-mfg` with Docker access)
+Install services with:
+
+```bash
+cd deployment/systemd && sudo ./install.sh
+```
+
+## Nginx Configuration
+
+See [nginx/README.md](./nginx/README.md) for Nginx configuration details.
+
+## Security Features
+
+The deployment implements multiple layers of security:
+
+- **Privilege Separation**: Code owned by `django` user, services run as `www-data`
+- **File Permissions**: Application `750/640`, `.env` file `640`
+- **Network Security**: UFW firewall (ports 22, 80, 443), Let's Encrypt SSL, HSTS
+- **Database Security**: PostgreSQL on localhost via Unix socket
+
+**See [docs/systemd-services.md](../docs/systemd-services.md) for systemd hardening details (NoNewPrivileges, ProtectSystem, etc.).**
+
+## Operations
+
+See [scripts/README.md](./scripts/README.md) for:
+
+- **Maintenance** - Updates, secrets rotation, backups, log management
+- **Monitoring** - Service health checks, viewing logs
+- **Troubleshooting** - Common issues and solutions
+- **Performance Tuning** - Gunicorn, Celery, and PostgreSQL optimization
+
+## Additional Resources
+
+- [docs/settings.md](../docs/settings.md) - Complete settings catalog for all environments
+- [docs/systemd-services.md](../docs/systemd-services.md) - Celery worker configuration and security
+- [docs/oauth_secret_rotation.md](../docs/oauth_secret_rotation.md) - Secret rotation procedures
+- [docs/developer_onboarding.md](../docs/developer_onboarding.md) - Development environment setup
