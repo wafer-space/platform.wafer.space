@@ -104,13 +104,9 @@ sudo ./install.sh
 cd ../scripts
 sudo ./05-setup-ssl.sh
 
-# 11. Start services
-sudo systemctl start django-gunicorn.service
-sudo systemctl start django-celery.service
-
-# 12. Verify deployment
-sudo systemctl status django-gunicorn.service
-sudo systemctl status django-celery.service
+# 11. Verify deployment
+sudo systemctl status django-gunicorn
+sudo systemctl status django-celery-none-ro-default
 curl https://platform.wafer.space
 ```
 
@@ -185,9 +181,8 @@ Updates the `.env` file with the latest secrets from the secrets repository:
 
 **After running**: Restart services to load the new secrets:
 ```bash
-sudo systemctl restart django-gunicorn.service
-sudo systemctl restart django-celery.service
-sudo systemctl restart django-celery-beat.service
+sudo systemctl restart django-gunicorn
+sudo systemctl restart 'django-celery-*.service'
 ```
 
 ### 04-setup-permissions.sh
@@ -268,49 +263,40 @@ The template file `.env.prod.template` in the repository root contains all confi
 
 ## Systemd Services
 
-The deployment includes three systemd services:
+The deployment includes 9 Celery workers plus Gunicorn, using queue naming convention `{network}:{filesystem}:{purpose}`.
 
-### django-gunicorn.service
+**See [docs/systemd-services.md](../docs/systemd-services.md) for complete worker configuration, queue mapping, and security details.**
 
-Runs Gunicorn WSGI server:
-- User: `www-data`
-- Socket: `/run/platform.wafer.space/gunicorn.sock`
-- Workers: 4 (adjust based on CPU cores: 2-4 × CPU cores)
-- Timeout: 120 seconds
-- Security: `NoNewPrivileges`, `PrivateDevices`, `ProtectSystem=strict`
+### Service Overview
 
-### django-celery.service
-
-Runs Celery worker for background tasks:
-- User: `www-data`
-- Queues: `manufacturability`, `referrals`
-- Concurrency: 4 workers
-- Security: Same hardening as Gunicorn
-
-### django-celery-beat.service (Optional)
-
-Runs Celery Beat scheduler for periodic tasks:
-- Only needed if you have scheduled tasks
-- Not started by default
+| Service | User | Purpose |
+|---------|------|---------|
+| `django-gunicorn` | www-data | Web application (WSGI) |
+| `django-celery-none-ro-default` | www-data | Maintenance tasks |
+| `django-celery-none-ro-checks-orch` | www-data | Check orchestration |
+| `django-celery-none-ro-beat` | www-data | Celery Beat scheduler |
+| `django-celery-mail-ro-email` | www-data | Email via Mailgun |
+| `django-celery-http-rw-downloads` | www-data | File downloads |
+| `django-celery-dock-ro-checks-fast` | celery-mfg | Fast Docker ops |
+| `django-celery-dock-ro-checks-slow` | celery-mfg | Slow Docker ops |
+| `django-celery-dock-rw-checks-save` | celery-mfg | Save check results |
 
 ### Service Management
 
 ```bash
-# Start services
-sudo systemctl start django-gunicorn.service
-sudo systemctl start django-celery.service
+# Install all services
+cd deployment/systemd && sudo ./install.sh
 
-# Enable services (auto-start on boot)
-sudo systemctl enable django-gunicorn.service
-sudo systemctl enable django-celery.service
-
-# Check status
-sudo systemctl status django-gunicorn.service
-sudo systemctl status django-celery.service
+# Check status of all services
+sudo systemctl status django-gunicorn
+sudo systemctl status django-celery-none-ro-default
+sudo systemctl status django-celery-none-ro-checks-orch
 
 # View logs
-sudo journalctl -u django-gunicorn.service -f
-sudo journalctl -u django-celery.service -f
+sudo journalctl -u django-celery-none-ro-checks-orch -f
+
+# Restart all Celery workers
+sudo systemctl restart 'django-celery-*.service'
 ```
 
 ## Nginx Configuration
@@ -414,9 +400,8 @@ sudo ./scripts/02a-setup-secrets.sh
 sudo ./scripts/03a-update-env-secrets.sh
 
 # Restart services to load new secrets
-sudo systemctl restart django-gunicorn.service
-sudo systemctl restart django-celery.service
-sudo systemctl restart django-celery-beat.service
+sudo systemctl restart django-gunicorn
+sudo systemctl restart 'django-celery-*.service'
 ```
 
 This updates only the secrets in `.env` without touching the database or other configuration.
@@ -459,7 +444,10 @@ sudo certbot renew --dry-run
 
 ```bash
 # Check all services
-sudo systemctl status django-gunicorn.service django-celery.service nginx postgresql
+sudo systemctl status django-gunicorn django-celery-none-ro-default nginx postgresql
+
+# Check all Celery workers
+sudo systemctl status 'django-celery-*.service'
 
 # Check resource usage
 htop
@@ -475,19 +463,19 @@ free -h
 
 ```bash
 # Gunicorn logs
-sudo journalctl -u django-gunicorn.service -f
+sudo journalctl -u django-gunicorn -f
 
-# Celery logs
-sudo journalctl -u django-celery.service -f
+# Celery worker logs (pick specific worker)
+sudo journalctl -u django-celery-none-ro-checks-orch -f
+
+# All Celery logs
+sudo journalctl -u 'django-celery-*' -f
 
 # Nginx access logs
 sudo tail -f /var/log/nginx/platform.wafer.space-access.log
 
 # Nginx error logs
 sudo tail -f /var/log/nginx/platform.wafer.space-error.log
-
-# Application logs (if configured)
-sudo tail -f /var/log/platform.wafer.space/*.log
 ```
 
 ## Troubleshooting
@@ -496,8 +484,8 @@ sudo tail -f /var/log/platform.wafer.space/*.log
 
 ```bash
 # Check service status and logs
-sudo systemctl status django-gunicorn.service
-sudo journalctl -u django-gunicorn.service -n 50
+sudo systemctl status django-gunicorn
+sudo journalctl -u django-gunicorn -n 50
 
 # Common issues:
 # - Check DATABASE_URL in .env
@@ -510,7 +498,7 @@ sudo journalctl -u django-gunicorn.service -n 50
 
 ```bash
 # Gunicorn not running or socket issues
-sudo systemctl restart django-gunicorn.service
+sudo systemctl restart django-gunicorn
 sudo systemctl reload nginx
 
 # Check socket exists
@@ -555,9 +543,8 @@ make shell
 
 ```bash
 # Stop all services first
-sudo systemctl stop django-gunicorn.service
-sudo systemctl stop django-celery.service
-sudo systemctl stop django-celery-beat.service
+sudo systemctl stop django-gunicorn
+sudo systemctl stop 'django-celery-*.service'
 
 # Now you can perform database operations
 sudo -u postgres psql -c "DROP DATABASE platform_wafer_space;"
@@ -568,9 +555,8 @@ cd /home/django/platform.wafer.space/deployment
 sudo ./scripts/03-setup-database.sh
 
 # Restart services
-sudo systemctl start django-gunicorn.service
-sudo systemctl start django-celery.service
-sudo systemctl start django-celery-beat.service
+sudo systemctl start django-gunicorn
+sudo systemctl start 'django-celery-*.service'
 ```
 
 ### SSL Certificate Issues
@@ -603,12 +589,9 @@ Rule of thumb: (2-4) × CPU_CORES
 
 ### Celery Concurrency
 
-Adjust concurrency in `/etc/systemd/system/django-celery.service`:
+Adjust concurrency in individual worker service files (e.g., `/etc/systemd/system/django-celery-none-ro-default.service`).
 
-```
-Default: 4 workers
-High load: increase to 8-16 workers
-```
+See [docs/systemd-services.md](../docs/systemd-services.md) for worker-specific tuning recommendations.
 
 ### PostgreSQL
 
@@ -628,9 +611,9 @@ sudo systemctl restart postgresql
 
 ## Additional Resources
 
-- [deployment/README.md](../deployment/README.md) - Automated scripts documentation
-- [deployment/scripts/](../deployment/scripts/) - Setup scripts
-- [deployment/systemd/](../deployment/systemd/) - Service files
-- [deployment/nginx/](../deployment/nginx/) - Nginx configuration
-- [Developer Onboarding](developer_onboarding.md) - Development environment setup
+- [docs/systemd-services.md](../docs/systemd-services.md) - Complete Celery worker configuration
+- [scripts/](./scripts/) - Setup and maintenance scripts
+- [systemd/](./systemd/) - Systemd service files
+- [nginx/](./nginx/) - Nginx configuration
+- [docs/developer_onboarding.md](../docs/developer_onboarding.md) - Development environment setup
 - [CLAUDE.md](../CLAUDE.md) - Development guidelines
