@@ -74,3 +74,66 @@ class SlotData:
     def tile_height(self) -> int:
         """Return height in tiles."""
         return self.tile_dimensions[1]
+
+
+def build_tilemap_grid(
+    slots: list[SlotData],
+    num_rows: int,
+    num_columns: int,
+) -> list[list[str]]:
+    """Build a 2D tilemap grid from slot data.
+
+    Args:
+        slots: List of SlotData objects (must be sorted by row, column)
+        num_rows: Number of slot rows
+        num_columns: Number of slot columns
+
+    Returns:
+        2D list of project codes (empty string for unoccupied tiles)
+    """
+    # Calculate tile grid dimensions
+    # We need to sum up the tile heights/widths based on slot sizes
+    # For simplicity, assume uniform slot sizes per row/column
+    # and calculate based on the slots provided
+
+    # First pass: determine tile dimensions from slot layout
+    row_heights: dict[int, int] = {}
+    col_widths: dict[int, int] = {}
+
+    for slot in slots:
+        tile_w, tile_h = slot.tile_dimensions
+        row_heights[slot.row] = max(row_heights.get(slot.row, 0), tile_h)
+        col_widths[slot.column] = max(col_widths.get(slot.column, 0), tile_w)
+
+    # Calculate cumulative positions
+    row_offsets = {}
+    current = 0
+    for r in range(num_rows):
+        row_offsets[r] = current
+        current += row_heights.get(r, 2)
+    tile_rows = current
+
+    col_offsets = {}
+    current = 0
+    for c in range(num_columns):
+        col_offsets[c] = current
+        current += col_widths.get(c, 2)
+    tile_cols = current
+
+    # Initialize grid with empty strings
+    grid: list[list[str]] = [["" for _ in range(tile_cols)] for _ in range(tile_rows)]
+
+    # Fill in project codes
+    for slot in slots:
+        if slot.project_code is None:
+            continue
+
+        tile_w, tile_h = slot.tile_dimensions
+        start_row = row_offsets[slot.row]
+        start_col = col_offsets[slot.column]
+
+        for dr in range(tile_h):
+            for dc in range(tile_w):
+                grid[start_row + dr][start_col + dc] = slot.project_code
+
+    return grid
