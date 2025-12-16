@@ -319,32 +319,61 @@ class Command(BaseCommand):
         # Project definitions with check scenarios
         # check_scenario: "single_pass", "single_fail", "in_progress", "error_retry",
         #                 "drc_update", "no_file"
+        # is_submitted: True = submitted to manufacturing, False = still draft
         projects_data = [
             # Full size projects
-            ("RV32", "RISC-V Core", mithro, SlotSize.FULL, "single_pass"),
-            ("GP10", "GPIO Controller", mithro, SlotSize.FULL, "drc_update"),
-            ("UA01", "UART Serial", testuser, SlotSize.FULL, "single_pass"),
-            ("SP01", "SPI Controller", testuser, SlotSize.FULL, "single_fail"),
-            ("I2C1", "I2C Interface", mithro, SlotSize.FULL, "in_progress"),
-            ("PW01", "PWM Generator", testuser, SlotSize.FULL, "no_file"),
+            ("RV32", "RISC-V Core", mithro, SlotSize.FULL, "single_pass", True),
+            ("GP10", "GPIO Controller", mithro, SlotSize.FULL, "drc_update", True),
+            ("UA01", "UART Serial", testuser, SlotSize.FULL, "single_pass", True),
+            ("SP01", "SPI Controller", testuser, SlotSize.FULL, "single_fail", True),
+            ("I2C1", "I2C Interface", mithro, SlotSize.FULL, "in_progress", True),
+            ("PW01", "PWM Generator", testuser, SlotSize.FULL, "no_file", False),
             # Half width projects
-            ("AD01", "ADC Frontend", mithro, SlotSize.HALF_WIDTH, "error_retry"),
-            ("DA01", "DAC Output", testuser, SlotSize.HALF_WIDTH, "single_pass"),
-            ("CM01", "Comparator", mithro, SlotSize.HALF_WIDTH, "single_fail"),
+            ("AD01", "ADC Frontend", mithro, SlotSize.HALF_WIDTH, "error_retry", True),
+            ("DA01", "DAC Output", testuser, SlotSize.HALF_WIDTH, "single_pass", False),
+            ("CM01", "Comparator", mithro, SlotSize.HALF_WIDTH, "single_fail", True),
             # Half height projects
-            ("CK01", "Clock Generator", testuser, SlotSize.HALF_HEIGHT, "single_pass"),
-            ("RS01", "Reset Controller", mithro, SlotSize.HALF_HEIGHT, "in_progress"),
+            (
+                "CK01",
+                "Clock Generator",
+                testuser,
+                SlotSize.HALF_HEIGHT,
+                "single_pass",
+                True,
+            ),
+            (
+                "RS01",
+                "Reset Controller",
+                mithro,
+                SlotSize.HALF_HEIGHT,
+                "in_progress",
+                False,
+            ),
             # Quarter size projects
-            ("RF01", "Voltage Reference", testuser, SlotSize.QUARTER, "single_pass"),
-            ("OS01", "RC Oscillator", mithro, SlotSize.QUARTER, "drc_update"),
-            ("BF01", "Buffer Cell", testuser, SlotSize.QUARTER, "single_fail"),
-            ("LD01", "LDO Regulator", mithro, SlotSize.QUARTER, "no_file"),
+            (
+                "RF01",
+                "Voltage Reference",
+                testuser,
+                SlotSize.QUARTER,
+                "single_pass",
+                True,
+            ),
+            ("OS01", "RC Oscillator", mithro, SlotSize.QUARTER, "drc_update", True),
+            ("BF01", "Buffer Cell", testuser, SlotSize.QUARTER, "single_fail", False),
+            ("LD01", "LDO Regulator", mithro, SlotSize.QUARTER, "no_file", False),
         ]
 
         created_count = 0
-        for idx, (proj_id, name, owner, size, check_scenario) in enumerate(
-            projects_data
-        ):
+        for idx, proj_data in enumerate(projects_data):
+            proj_id, name, owner, size, check_scenario, is_submitted = proj_data
+            # Set status and submitted_at based on is_submitted flag
+            if is_submitted:
+                status = Project.Status.SUBMITTED
+                submitted_at = timezone.now() - timedelta(days=idx + 1)
+            else:
+                status = Project.Status.DRAFT
+                submitted_at = None
+
             project, created = Project.objects.get_or_create(
                 project_id=proj_id,
                 shuttle=shuttle,
@@ -353,8 +382,8 @@ class Command(BaseCommand):
                     "name": name,
                     "description": f"Test project: {name}",
                     "slot_size": size,
-                    "status": Project.Status.SUBMITTED,
-                    "submitted_at": timezone.now() - timedelta(days=idx + 1),
+                    "status": status,
+                    "submitted_at": submitted_at,
                 },
             )
 
@@ -441,29 +470,79 @@ class Command(BaseCommand):
         """
         # G801 projects - different IDs and names than G899
         # Match slot sizes to actual G801 grid configuration
+        # is_submitted: True = submitted to manufacturing, False = still draft
         projects_data = [
             # Full size projects (28 available in G801)
-            ("MP01", "MIPS Processor Core", mithro, SlotSize.FULL, "single_pass"),
-            ("AR01", "ARM Cortex-M0 Core", testuser, SlotSize.FULL, "single_pass"),
-            ("DM01", "DDR Memory Controller", mithro, SlotSize.FULL, "single_fail"),
-            ("ET01", "Ethernet MAC", testuser, SlotSize.FULL, "drc_update"),
-            ("CAN1", "CAN Bus Controller", mithro, SlotSize.FULL, "single_pass"),
-            ("FPU1", "FPU Accelerator", testuser, SlotSize.FULL, "error_retry"),
+            ("MP01", "MIPS Processor Core", mithro, SlotSize.FULL, "single_pass", True),
+            (
+                "AR01",
+                "ARM Cortex-M0 Core",
+                testuser,
+                SlotSize.FULL,
+                "single_pass",
+                True,
+            ),
+            (
+                "DM01",
+                "DDR Memory Controller",
+                mithro,
+                SlotSize.FULL,
+                "single_fail",
+                True,
+            ),
+            ("ET01", "Ethernet MAC", testuser, SlotSize.FULL, "drc_update", True),
+            ("CAN1", "CAN Bus Controller", mithro, SlotSize.FULL, "single_pass", False),
+            ("FPU1", "FPU Accelerator", testuser, SlotSize.FULL, "error_retry", True),
             # Half-height projects (7 available in G801 row 1)
-            ("SD01", "SD Card Controller", mithro, SlotSize.HALF_HEIGHT, "single_pass"),
-            ("NV01", "NVMe Controller", testuser, SlotSize.HALF_HEIGHT, "single_fail"),
-            ("WD01", "Watchdog Timer", mithro, SlotSize.HALF_HEIGHT, "in_progress"),
+            (
+                "SD01",
+                "SD Card Controller",
+                mithro,
+                SlotSize.HALF_HEIGHT,
+                "single_pass",
+                True,
+            ),
+            (
+                "NV01",
+                "NVMe Controller",
+                testuser,
+                SlotSize.HALF_HEIGHT,
+                "single_fail",
+                False,
+            ),
+            (
+                "WD01",
+                "Watchdog Timer",
+                mithro,
+                SlotSize.HALF_HEIGHT,
+                "in_progress",
+                True,
+            ),
             # Half-width projects (4 available in G801 col H)
-            ("US01", "USB 2.0 PHY", testuser, SlotSize.HALF_WIDTH, "single_pass"),
-            ("PC01", "PCIe PHY", mithro, SlotSize.HALF_WIDTH, "drc_update"),
+            ("US01", "USB 2.0 PHY", testuser, SlotSize.HALF_WIDTH, "single_pass", True),
+            ("PC01", "PCIe PHY", mithro, SlotSize.HALF_WIDTH, "drc_update", False),
             # Quarter project (1 available in G801 row 1, col H)
-            ("TM01", "Temperature Sensor", testuser, SlotSize.QUARTER, "single_pass"),
+            (
+                "TM01",
+                "Temperature Sensor",
+                testuser,
+                SlotSize.QUARTER,
+                "single_pass",
+                True,
+            ),
         ]
 
         created_count = 0
-        for idx, (proj_id, name, owner, size, check_scenario) in enumerate(
-            projects_data
-        ):
+        for idx, proj_data in enumerate(projects_data):
+            proj_id, name, owner, size, check_scenario, is_submitted = proj_data
+            # Set status and submitted_at based on is_submitted flag
+            if is_submitted:
+                status = Project.Status.SUBMITTED
+                submitted_at = timezone.now() - timedelta(days=idx + 1)
+            else:
+                status = Project.Status.DRAFT
+                submitted_at = None
+
             project, created = Project.objects.get_or_create(
                 project_id=proj_id,
                 shuttle=shuttle,
@@ -472,8 +551,8 @@ class Command(BaseCommand):
                     "name": name,
                     "description": f"G801 project: {name}",
                     "slot_size": size,
-                    "status": Project.Status.SUBMITTED,
-                    "submitted_at": timezone.now() - timedelta(days=idx + 1),
+                    "status": status,
+                    "submitted_at": submitted_at,
                 },
             )
 
