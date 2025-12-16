@@ -6,9 +6,11 @@ import csv
 import io
 
 from wafer_space.shuttles.services.reticle_package import SLOT_SIZE_TO_TILES
+from wafer_space.shuttles.services.reticle_package import PackageMetadata
 from wafer_space.shuttles.services.reticle_package import ProjectData
 from wafer_space.shuttles.services.reticle_package import SlotData
 from wafer_space.shuttles.services.reticle_package import build_tilemap_grid
+from wafer_space.shuttles.services.reticle_package import generate_readme
 from wafer_space.shuttles.services.reticle_package import write_checks_csv
 from wafer_space.shuttles.services.reticle_package import write_manifest_csv
 from wafer_space.shuttles.services.reticle_package import write_summary_csv
@@ -271,3 +273,62 @@ class TestCSVWriters:
         assert len(rows) == 1
         assert rows[0]["CHECK_STATUS"] == "manufacturable_with_warnings"
         assert rows[0]["CHECK_WARNINGS"] == "5"
+
+
+class TestReadmeGenerator:
+    """Tests for README.md generation."""
+
+    def test_generate_readme_header(self):
+        """README includes header with metadata."""
+        metadata = PackageMetadata(
+            shuttle_name="G801",
+            generated_at="2025-12-16 14:32:05 UTC",
+            hostname="platform.wafer.space",
+            git_revision="v1.2.3-45-gabcdef1",
+            precheck_version="gf180mcu-precheck v2.1.0",
+        )
+        readme = generate_readme(
+            metadata=metadata,
+            projects=[],
+            slots=[],
+        )
+
+        assert "# G801 Reticle Package" in readme
+        assert "2025-12-16 14:32:05 UTC" in readme
+        assert "platform.wafer.space" in readme
+        assert "v1.2.3-45-gabcdef1" in readme
+
+    def test_generate_readme_with_projects(self):
+        """README includes project table."""
+        metadata = PackageMetadata(
+            shuttle_name="G801",
+            generated_at="2025-12-16",
+            hostname="test",
+            git_revision="test",
+            precheck_version="v1.0",
+        )
+        projects = [
+            ProjectData(
+                code="MOLE",
+                project_name="Mole Detector",
+                project_uuid="uuid1",
+                project_url="url1",
+                slot_size="1x1",
+                slot_positions=["A1"],
+                top_cell="MOLE_TOP",
+                gds_path="/path/mole.gds",
+                gds_sha256="hash1",
+                is_submitted=True,
+                check_status="manufacturable",
+                check_warnings=0,
+                check_errors=0,
+            ),
+        ]
+        readme = generate_readme(
+            metadata=metadata,
+            projects=projects,
+            slots=[],
+        )
+
+        assert "| MOLE |" in readme
+        assert "Mole Detector" in readme

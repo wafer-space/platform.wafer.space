@@ -78,6 +78,17 @@ class SlotData:
         return self.tile_dimensions[1]
 
 
+@dataclass
+class PackageMetadata:
+    """Metadata for the reticle package."""
+
+    shuttle_name: str
+    generated_at: str
+    hostname: str
+    git_revision: str
+    precheck_version: str
+
+
 def build_tilemap_grid(
     slots: list[SlotData],
     num_rows: int,
@@ -274,3 +285,107 @@ def write_checks_csv(projects: list[ProjectData], output: TextIO) -> None:
                 "INPUT_SHA256": project.input_sha256 or "",
             }
         )
+
+
+def generate_readme(
+    metadata: PackageMetadata,
+    projects: list[ProjectData],
+    slots: list[SlotData],
+) -> str:
+    """Generate README.md content for the reticle package.
+
+    Args:
+        metadata: Package metadata (shuttle name, timestamps, etc.)
+        projects: List of ProjectData objects
+        slots: List of SlotData objects for grid layout
+
+    Returns:
+        README.md content as string
+    """
+    lines = [
+        f"# {metadata.shuttle_name} Reticle Package",
+        "",
+        f"**Generated:** {metadata.generated_at}",
+        f"**Host:** {metadata.hostname}",
+        f"**Code Revision:** {metadata.git_revision}",
+        "",
+    ]
+
+    # Shuttle summary section
+    lines.extend(_generate_summary_section(projects, metadata.precheck_version))
+
+    # Grid layout section (simplified for now)
+    lines.extend(_generate_grid_section(slots))
+
+    # Projects table
+    lines.extend(_generate_projects_table(projects))
+
+    return "\n".join(lines)
+
+
+def _generate_summary_section(
+    projects: list[ProjectData],
+    precheck_version: str,
+) -> list[str]:
+    """Generate shuttle summary section."""
+    # Count statistics
+    total = len(projects)
+    submitted = sum(1 for p in projects if p.is_submitted)
+    passing = sum(1 for p in projects if p.check_status == "manufacturable")
+    warnings_count = sum(
+        1 for p in projects if p.check_status == "manufacturable_with_warnings"
+    )
+
+    return [
+        "## Shuttle Summary",
+        "",
+        f"- **Total projects:** {total}",
+        f"- **Submitted:** {submitted}",
+        f"- **Passing (clean):** {passing}",
+        f"- **Passing (warnings):** {warnings_count}",
+        f"- **Precheck version:** {precheck_version}",
+        "",
+    ]
+
+
+def _generate_grid_section(slots: list[SlotData]) -> list[str]:
+    """Generate ASCII grid layout section."""
+    # Simplified grid - full implementation in later task
+    if not slots:
+        return ["## Shuttle Layout", "", "(No slots)", ""]
+
+    return [
+        "## Shuttle Layout",
+        "",
+        "See tilemap.csv for detailed layout.",
+        "",
+    ]
+
+
+def _generate_projects_table(projects: list[ProjectData]) -> list[str]:
+    """Generate projects table section."""
+    if not projects:
+        return ["## Projects", "", "(No projects)", ""]
+
+    lines = [
+        "## Projects",
+        "",
+        "| CODE | Name | Status | Slot | Top Cell |",
+        "|------|------|--------|------|----------|",
+    ]
+
+    sorted_projects = sorted(projects, key=lambda p: p.code)
+    for p in sorted_projects:
+        status = "Submitted" if p.is_submitted else "Assigned"
+        if p.check_status == "manufacturable":
+            status = "Passing"
+        elif p.check_status == "manufacturable_with_warnings":
+            status = "Warnings"
+        elif p.check_status == "not_manufacturable":
+            status = "Failed"
+        lines.append(
+            f"| {p.code} | {p.project_name} | {status} | {p.slot_size} | {p.top_cell} |"
+        )
+
+    lines.append("")
+    return lines
