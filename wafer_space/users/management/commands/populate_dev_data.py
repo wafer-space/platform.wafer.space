@@ -215,11 +215,20 @@ class Command(BaseCommand):
         # Default to latest
         return f"sha256:{self.PRECHECK_VERSIONS[0][1] * 5}ab"
 
+    # Real GHCR digest to test revision fetching from GitHub
+    # This digest exists in ghcr.io/wafer-space/gf180mcu-precheck
+    REAL_GHCR_DIGEST = (
+        "sha256:d1c07b42f0b5a5e7d3f8e9a6b2c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2"
+    )
+
     def _ensure_precheck_revisions(self) -> None:
         """Create PrecheckImageRevision records for dev data.
 
         Creates multiple revisions with real version numbers from
         wafer-space/gf180mcu-precheck to test version badge display.
+
+        Note: Does NOT create a revision for REAL_GHCR_DIGEST so that
+        revisions_needs_fetching will discover it and fetch from GitHub.
         """
         created_count = 0
         for version, digest_suffix, git_sha, pdk_version in self.PRECHECK_VERSIONS:
@@ -465,6 +474,16 @@ class Command(BaseCommand):
                 SlotSize.QUARTER,
                 "no_file",
                 False,
+                None,
+            ),
+            # Project with real GHCR digest to test revision fetching
+            (
+                "FT01",
+                "Fetch Test Design",
+                mithro,
+                SlotSize.QUARTER,
+                "real_digest",
+                True,
                 None,
             ),
         ]
@@ -1167,6 +1186,10 @@ class Command(BaseCommand):
         elif scenario == "drc_update":
             self._create_drc_update_checks(project, project_file, now)
 
+        elif scenario == "real_digest":
+            # Check with real GHCR digest to test revision fetching
+            self._create_real_digest_check(project, project_file, now)
+
     def _create_error_retry_checks(
         self, project: Project, project_file: ProjectFile, now: Any
     ) -> None:
@@ -1274,3 +1297,35 @@ class Command(BaseCommand):
             ),
         )
         self._create_checkpoints(third_check)
+
+    def _create_real_digest_check(
+        self, project: Project, project_file: ProjectFile, now: Any
+    ) -> None:
+        """Create a check with a real GHCR digest to test revision fetching.
+
+        Uses REAL_GHCR_DIGEST which is NOT pre-populated in PrecheckImageRevision,
+        so revisions_needs_fetching will discover it and queue a fetch task.
+        """
+        completed = now - timedelta(hours=1)
+
+        # Get base fields but override the digest with the real one
+        fields = self._finished_check_fields(
+            completed, project.project_id, precheck_version="1.5.3"
+        )
+        # Override with real digest that needs fetching
+        fields["docker_image_digest"] = self.REAL_GHCR_DIGEST
+        # Clear version info since it will be fetched
+        fields["precheck_version"] = ""
+
+        check = ManufacturabilityCheck.objects.create(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            trigger_reason=ManufacturabilityCheck.TriggerReason.INITIAL,
+            is_manufacturable=True,
+            errors=[],
+            warnings=["Test check for revision fetching"],
+            analysis_completed_at=completed,
+            **fields,
+        )
+        self._create_checkpoints(check)
