@@ -130,7 +130,7 @@ Installs and restarts systemd services for the application.
 
 **Services managed:**
 
-See [../systemd/](../systemd/) for the full list of 9 Celery workers plus Gunicorn, and [docs/systemd-services.md](../../docs/systemd-services.md) for complete configuration details.
+See [../systemd/](../systemd/) for the full list of 8 Celery services (7 workers + Beat scheduler) plus Gunicorn, and [docs/systemd-services.md](../../docs/systemd-services.md) for complete configuration details.
 
 **Note:** Run this after database setup and permissions are configured. The script will automatically restart services after updating service files.
 
@@ -248,7 +248,7 @@ Loads environment variables from `.env` file (used by other scripts).
 
 ## Service Management
 
-The platform runs 9 Celery workers plus Gunicorn. See [docs/systemd-services.md](../../docs/systemd-services.md) for complete details.
+The platform runs 8 Celery services (7 workers + Beat scheduler) plus Gunicorn. See [docs/systemd-services.md](../../docs/systemd-services.md) for complete details.
 
 ### Manual Service Commands
 
