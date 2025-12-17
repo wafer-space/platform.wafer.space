@@ -2916,7 +2916,7 @@ class PrecheckImageRevision(models.Model):
     def version_display(self) -> str:
         """Human-readable version string for display."""
         if self.precheck_version:
-            return self.precheck_version
+            return f"v{self.precheck_version}"
         if self.git_commit_sha:
             return self.git_commit_sha[:7]
         return self.short_digest

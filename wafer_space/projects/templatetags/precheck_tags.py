@@ -23,9 +23,6 @@ from wafer_space.projects.models import PrecheckImageRevision
 if TYPE_CHECKING:
     from django.utils.safestring import SafeString
 
-# Length to truncate digest strings for display when version is unknown
-_DIGEST_DISPLAY_LENGTH = 19
-
 register = template.Library()
 
 
@@ -64,12 +61,7 @@ def badge_check_version(check: ManufacturabilityCheck | None) -> SafeString:
 
     Usage: {% badge_check_version check %}
     """
-    if not check or not check.docker_image_digest:
-        return format_html("{}", "")
-
-    revision = check.precheck_revision
-    version_str = _get_version_string(revision)
-    is_latest = check.is_using_latest_precheck
+    version_str, is_latest = PrecheckImageRevision.format_version_display(check)
     icon, icon_class = _get_version_icon(is_latest=is_latest)
 
     if is_latest:
@@ -104,10 +96,8 @@ def badge_check_status_and_version(
 
     icon, label, bg_class = _get_status_display(check)
 
-    if check.docker_image_digest:
-        revision = check.precheck_revision
-        version_str = _get_version_string(revision)
-        is_latest = check.is_using_latest_precheck
+    version_str, is_latest = PrecheckImageRevision.format_version_display(check)
+    if version_str != "-":
         version_icon, version_icon_class = _get_version_icon(is_latest=is_latest)
         version_part = format_html(
             ' | {} <i class="bi bi-{} {}"></i>',
@@ -162,10 +152,10 @@ def _get_status_display(
 
 def _get_version_indicator_html(check: ManufacturabilityCheck) -> SafeString:
     """Return HTML for version indicator icon."""
-    if not check.docker_image_digest:
+    _, is_latest = PrecheckImageRevision.format_version_display(check)
+    if is_latest is None:
         return format_html("{}", "")
 
-    is_latest = check.is_using_latest_precheck
     icon, icon_class = _get_version_icon(is_latest=is_latest)
     return format_html(' <i class="bi bi-{} {}"></i>', icon, icon_class)
 
@@ -183,16 +173,6 @@ def _get_version_icon(*, is_latest: bool | None) -> tuple[str, str]:
     return ("cloud", "text-white-50")
 
 
-def _get_version_string(revision: PrecheckImageRevision | None) -> str:
-    """Return version string for badge display."""
-    if revision:
-        if revision.precheck_version:
-            return f"v{revision.precheck_version}"
-        if revision.git_commit_sha:
-            return revision.git_commit_sha[:7]
-    return "????"
-
-
 @register.simple_tag
 def get_latest_precheck_version() -> str:
     """Return the version string of the latest precheck container.
@@ -204,15 +184,7 @@ def get_latest_precheck_version() -> str:
 
     Usage: {% get_latest_precheck_version %}
     """
-    latest_digest = ManufacturabilityCheck.get_latest_precheck_digest()
-    if not latest_digest:
-        return "-"
-
-    try:
-        revision = PrecheckImageRevision.objects.get(digest=latest_digest)
-        return _get_version_string(revision)
-    except PrecheckImageRevision.DoesNotExist:
-        # Digest exists but not cataloged - show truncated digest
-        if len(latest_digest) > _DIGEST_DISPLAY_LENGTH:
-            return latest_digest[:_DIGEST_DISPLAY_LENGTH]
-        return latest_digest
+    version_str, _ = PrecheckImageRevision.format_version_display(
+        ManufacturabilityCheck.get_latest_precheck_digest()
+    )
+    return version_str
