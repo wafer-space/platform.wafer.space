@@ -121,6 +121,12 @@ def _fetch_ghcr_metadata(digest: str) -> dict[str, Any]:
     labels = _fetch_container_labels(digest)
     result = _parse_container_labels(labels)
 
+    # If precheck_version is not semver-like (e.g., "main"), try to resolve from tags
+    if not _is_semver_tag(result["precheck_version"]):
+        resolved_version = _resolve_version_from_tags(digest)
+        if resolved_version:
+            result["precheck_version"] = resolved_version
+
     # Fetch additional info from GitHub
     git_commit_sha = result["git_commit_sha"]
     if git_commit_sha:
@@ -212,6 +218,80 @@ def _resolve_manifest_digest(base_url: str, token: str, digest: str) -> str:
                     return m["digest"]
 
     return digest
+
+
+def _is_semver_tag(tag: str) -> bool:
+    """Check if tag matches semver pattern [0-9]*.[0-9].*.
+
+    Args:
+        tag: Tag string to check
+
+    Returns:
+        True if tag looks like a version number (e.g., "1.5.2", "1.5.2-2-gf5c1b34")
+    """
+    # Must match pattern: starts with digit(s), then dot, then digit(s)
+    # Examples: "1.5.2", "1.5.2-2-gf5c1b34", "v1.0.0"
+    return bool(re.match(r"^v?\d+\.\d+", tag))
+
+
+def _resolve_version_from_tags(digest: str) -> str:
+    """Resolve a version string by querying GHCR tags for this digest.
+
+    When container labels have unhelpful version like "main", this queries
+    GHCR to find all tags pointing to the digest and returns a semver-style
+    tag if one exists. Branch names like "main-f5c1b34" are ignored.
+
+    Args:
+        digest: SHA256 digest of the OCI index
+
+    Returns:
+        Semver-style version string, or empty string if none found.
+    """
+    try:
+        # Get anonymous token
+        token_resp = requests.get(
+            "https://ghcr.io/token?scope=repository:wafer-space/gf180mcu-precheck:pull",
+            timeout=30,
+        )
+        token_resp.raise_for_status()
+        token = token_resp.json()["token"]
+
+        base_url = "https://ghcr.io/v2/wafer-space/gf180mcu-precheck"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.oci.image.index.v1+json",
+        }
+
+        # Get all tags
+        tags_resp = requests.get(f"{base_url}/tags/list", headers=headers, timeout=30)
+        tags_resp.raise_for_status()
+        tags = tags_resp.json().get("tags", [])
+
+        # Find semver-style tags that point to this digest
+        matching_tags: list[str] = []
+        for tag in tags:
+            # Only consider semver-style tags (e.g., "1.5.2", "1.5.2-2-gf5c1b34")
+            if not _is_semver_tag(tag):
+                continue
+
+            resp = requests.head(
+                f"{base_url}/manifests/{tag}", headers=headers, timeout=10
+            )
+            if resp.status_code == http.HTTPStatus.OK:
+                tag_digest = resp.headers.get("Docker-Content-Digest")
+                if tag_digest == digest:
+                    matching_tags.append(tag)
+
+        if not matching_tags:
+            return ""
+
+        # Sort alphabetically and return first (will prefer shorter/earlier versions)
+        matching_tags.sort()
+        return matching_tags[0]
+
+    except (requests.RequestException, KeyError):
+        logger.warning("Failed to resolve version from tags for %s", digest[:20])
+        return ""
 
 
 def _parse_container_labels(labels: dict[str, str]) -> dict[str, Any]:
