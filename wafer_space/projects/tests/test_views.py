@@ -1,13 +1,16 @@
 """Tests for project views."""
 
+from datetime import timedelta
 from unittest.mock import Mock
 from unittest.mock import patch
 
 import pytest
 from django.contrib.messages import get_messages
+from django.core.cache import cache
 from django.test import Client
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from wafer_space.core.enums import SlotSize
 from wafer_space.projects.models import DownloadAttempt
@@ -17,6 +20,7 @@ from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.security import SecurityValidationError
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.projects.tests.factories import ProjectFactory
+from wafer_space.projects.tests.factories import ProjectFileFactory
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.models import ShuttleSlot
 from wafer_space.users.models import User
@@ -1856,3 +1860,149 @@ class TestProjectDeleteViewStaff(TestCase):
 
         # Verify project is actually deleted
         assert not Project.objects.filter(pk=project_pk).exists()
+
+
+@pytest.mark.django_db
+class TestCheckDrcUpdateRequeue:
+    """Tests for check_drc_update_requeue view."""
+
+    def setup_method(self):
+        """Set up test data."""
+        cache.clear()
+        self.user = UserFactory()
+        self.project = ProjectFactory(user=self.user)
+        self.project_file = ProjectFileFactory(project=self.project, is_active=True)
+
+    def test_requeue_success(self, client):
+        """Successful requeue redirects with success message."""
+        # Create finished check with outdated digest
+        check = ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            docker_image_digest=(
+                "sha256:old123456789012345678901234567890123456789012345678901234567"
+            ),
+            container_started_at=timezone.now() - timedelta(hours=2),
+        )
+        # Establish latest digest
+        ManufacturabilityCheckFactory(
+            docker_image_digest=(
+                "sha256:new456789012345678901234567890123456789012345678901234567890"
+            ),
+            container_started_at=timezone.now(),
+        )
+        cache.clear()
+
+        client.force_login(self.user)
+        response = client.post(
+            reverse("projects:check_drc_update_requeue", args=[check.id])
+        )
+
+        assert response.status_code == 302
+        assert response.url == reverse("projects:detail", args=[self.project.id])
+
+        # Verify new check was created
+        new_check = ManufacturabilityCheck.objects.filter(
+            parent_check=check,
+            trigger_reason=ManufacturabilityCheck.TriggerReason.DRC_UPDATE,
+        ).first()
+        assert new_check is not None
+
+    def test_requeue_permission_denied_other_user(self, client):
+        """Non-owner non-staff cannot requeue."""
+        check = ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            docker_image_digest=(
+                "sha256:old123456789012345678901234567890123456789012345678901234567"
+            ),
+        )
+        other_user = UserFactory()
+
+        client.force_login(other_user)
+        response = client.post(
+            reverse("projects:check_drc_update_requeue", args=[check.id])
+        )
+
+        assert response.status_code == 403
+
+    def test_requeue_allowed_for_staff(self, client):
+        """Staff can requeue any project's check."""
+        check = ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            docker_image_digest=(
+                "sha256:old123456789012345678901234567890123456789012345678901234567"
+            ),
+            container_started_at=timezone.now() - timedelta(hours=2),
+        )
+        ManufacturabilityCheckFactory(
+            docker_image_digest=(
+                "sha256:new456789012345678901234567890123456789012345678901234567890"
+            ),
+            container_started_at=timezone.now(),
+        )
+        cache.clear()
+        staff_user = UserFactory(is_staff=True)
+
+        client.force_login(staff_user)
+        response = client.post(
+            reverse("projects:check_drc_update_requeue", args=[check.id])
+        )
+
+        assert response.status_code == 302
+
+    def test_requeue_invalid_check_shows_error(self, client):
+        """Requeue of already-latest check shows error message."""
+        check = ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            docker_image_digest=(
+                "sha256:latest123456789012345678901234567890123456789012345678901234"
+            ),
+            container_started_at=timezone.now(),
+        )
+        cache.clear()
+
+        client.force_login(self.user)
+        response = client.post(
+            reverse("projects:check_drc_update_requeue", args=[check.id]),
+            follow=True,
+        )
+
+        assert response.status_code == 200
+        messages = list(response.context["messages"])
+        assert len(messages) == 1
+        assert "already using latest" in str(messages[0])
+
+    def test_requeue_requires_login(self, client):
+        """Unauthenticated users are redirected to login."""
+        check = ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=self.project_file,
+        )
+
+        response = client.post(
+            reverse("projects:check_drc_update_requeue", args=[check.id])
+        )
+
+        assert response.status_code == 302
+        assert "/accounts/login/" in response.url
+
+    def test_requeue_requires_post(self, client):
+        """GET requests are not allowed."""
+        check = ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=self.project_file,
+        )
+
+        client.force_login(self.user)
+        response = client.get(
+            reverse("projects:check_drc_update_requeue", args=[check.id])
+        )
+
+        assert response.status_code == 405  # Method Not Allowed
