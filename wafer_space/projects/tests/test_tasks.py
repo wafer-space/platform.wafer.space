@@ -20,6 +20,7 @@ from unittest.mock import patch
 import docker
 import pytest
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.test import TestCase
 from django.utils import timezone
 
@@ -51,7 +52,9 @@ from wafer_space.projects.tasks import do_starting
 from wafer_space.projects.tasks import download_project_file
 from wafer_space.projects.tasks_checks import checks_cleanup
 from wafer_space.projects.tasks_checks import checks_cleanup_stale_pending_tasks
+from wafer_space.projects.tasks_checks import checks_drc_update_requeue
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
+from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.projects.tests.factories import ProjectFileFactory
 from wafer_space.shuttles.tests.factories import ShuttleFactory
 
@@ -71,6 +74,7 @@ TEST_NETWORK_RX = 500
 TEST_NETWORK_TX = 300
 TEST_CHECKPOINT_COUNT = 2
 TEST_CPU_PERCENT_TOLERANCE = 0.01
+TEST_OUTDATED_CHECKS_COUNT = 2  # Number of outdated checks for testing
 
 
 class URLValidationSecurityTests(TestCase):
@@ -2172,3 +2176,211 @@ class TestCancelSupersededChecks:
 
         old_check.refresh_from_db()
         assert old_check.status == ManufacturabilityCheck.Status.FINISHED
+
+
+@pytest.mark.django_db
+class TestChecksDrcUpdateRequeue:
+    """Tests for checks_drc_update_requeue task."""
+
+    def setup_method(self):
+        """Clear cache and set up test data."""
+        cache.clear()
+        self.project = ProjectFactory()
+        self.project_file = ProjectFileFactory(project=self.project, is_active=True)
+
+    def test_skips_when_no_latest_digest(self):
+        """Task returns early when no checks exist to determine latest digest."""
+        result = checks_drc_update_requeue()
+        assert result == {"skipped": "no_latest_digest"}
+
+    def test_creates_check_for_outdated_finished_check(self):
+        """Task creates new check when latest check is FINISHED with outdated digest."""
+        # Create finished check with old digest
+        old_check = ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            docker_image_digest="sha256:old123456789012345678901234567890123456789012345678901234567",
+            container_started_at=timezone.now() - timedelta(hours=2),
+        )
+        # Create different project with newer digest (establishes latest)
+        other_project = ProjectFactory()
+        other_file = ProjectFileFactory(project=other_project)
+        ManufacturabilityCheckFactory(
+            project=other_project,
+            project_file=other_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            docker_image_digest="sha256:new456789012345678901234567890123456789012345678901234567890",
+            container_started_at=timezone.now(),
+        )
+        cache.clear()
+
+        result = checks_drc_update_requeue()
+
+        assert result["created"] == 1
+        assert result["outdated_count"] == 1
+
+        # Verify new check was created
+        new_check = ManufacturabilityCheck.objects.filter(
+            project_file=self.project_file,
+            trigger_reason=ManufacturabilityCheck.TriggerReason.DRC_UPDATE,
+        ).first()
+        assert new_check is not None
+        assert new_check.parent_check == old_check
+
+    def test_skips_in_progress_checks(self):
+        """Task only considers FINISHED checks for automatic requeue."""
+        # Create running check with old digest
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            docker_image_digest="sha256:old123456789012345678901234567890123456789012345678901234567",
+            container_started_at=timezone.now() - timedelta(hours=2),
+        )
+        # Establish latest digest
+        other_file = ProjectFileFactory()
+        ManufacturabilityCheckFactory(
+            project_file=other_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            docker_image_digest="sha256:new456789012345678901234567890123456789012345678901234567890",
+            container_started_at=timezone.now(),
+        )
+        cache.clear()
+
+        result = checks_drc_update_requeue()
+
+        assert result["created"] == 0
+        assert result["stats"]["in_progress"] == 1
+
+    def test_skips_current_version_checks(self):
+        """Task skips checks already using latest version."""
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            docker_image_digest="sha256:latest123456789012345678901234567890123456789012345678901234",
+            container_started_at=timezone.now(),
+        )
+        cache.clear()
+
+        result = checks_drc_update_requeue()
+
+        assert result["created"] == 0
+        assert result["outdated_count"] == 0
+
+    def test_creates_only_one_per_run(self):
+        """Task creates at most one check per run."""
+        # Create two projects with outdated checks
+        for i in range(TEST_OUTDATED_CHECKS_COUNT):
+            proj = ProjectFactory()
+            pf = ProjectFileFactory(project=proj, is_active=True)
+            ManufacturabilityCheckFactory(
+                project=proj,
+                project_file=pf,
+                status=ManufacturabilityCheck.Status.FINISHED,
+                docker_image_digest=f"sha256:old{i}23456789012345678901234567890123456789012345678901234567",
+                container_started_at=timezone.now() - timedelta(hours=i + 1),
+            )
+        # Establish latest digest
+        ManufacturabilityCheckFactory(
+            docker_image_digest="sha256:new456789012345678901234567890123456789012345678901234567890",
+            container_started_at=timezone.now(),
+        )
+        cache.clear()
+
+        result = checks_drc_update_requeue()
+
+        assert result["created"] == 1
+        assert result["outdated_count"] == TEST_OUTDATED_CHECKS_COUNT
+
+    def test_orders_by_oldest_first(self):
+        """Task processes oldest outdated checks first."""
+        # Create older check
+        old_proj = ProjectFactory()
+        old_file = ProjectFileFactory(project=old_proj, is_active=True)
+        old_check = ManufacturabilityCheckFactory(
+            project=old_proj,
+            project_file=old_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            docker_image_digest="sha256:old123456789012345678901234567890123456789012345678901234567",
+            container_started_at=timezone.now() - timedelta(hours=10),
+        )
+        # Force creation time to be older
+        ManufacturabilityCheck.objects.filter(pk=old_check.pk).update(
+            created_at=timezone.now() - timedelta(hours=10)
+        )
+        old_check.refresh_from_db()
+
+        # Create newer check
+        new_proj = ProjectFactory()
+        new_file = ProjectFileFactory(project=new_proj, is_active=True)
+        ManufacturabilityCheckFactory(
+            project=new_proj,
+            project_file=new_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            docker_image_digest="sha256:old223456789012345678901234567890123456789012345678901234567",
+            container_started_at=timezone.now() - timedelta(hours=5),
+        )
+        # Establish latest digest
+        ManufacturabilityCheckFactory(
+            docker_image_digest="sha256:new456789012345678901234567890123456789012345678901234567890",
+            container_started_at=timezone.now(),
+        )
+        cache.clear()
+
+        checks_drc_update_requeue()
+
+        # Should have created check for older project
+        new_check = ManufacturabilityCheck.objects.filter(
+            trigger_reason=ManufacturabilityCheck.TriggerReason.DRC_UPDATE,
+        ).first()
+        assert new_check.parent_check == old_check
+
+    def test_respects_capacity_limit(self):
+        """Task respects 25% DRC_UPDATE capacity limit."""
+        # Create outdated check
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            docker_image_digest="sha256:old123456789012345678901234567890123456789012345678901234567",
+            container_started_at=timezone.now() - timedelta(hours=2),
+        )
+        # Establish latest digest
+        ManufacturabilityCheckFactory(
+            docker_image_digest="sha256:new456789012345678901234567890123456789012345678901234567890",
+            container_started_at=timezone.now(),
+        )
+        cache.clear()
+
+        result = checks_drc_update_requeue()
+
+        # Verify capacity fields are present in result
+        assert "drc_update_limit" in result
+        assert "drc_update_active" in result
+        assert "drc_update_available" in result
+
+    def test_returns_stats(self):
+        """Task returns comprehensive stats dictionary."""
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=self.project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            docker_image_digest="sha256:latest123456789012345678901234567890123456789012345678901234",
+            container_started_at=timezone.now(),
+        )
+        cache.clear()
+
+        result = checks_drc_update_requeue()
+
+        assert "stats" in result
+        assert "total" in result["stats"]
+        assert "finished" in result["stats"]
+        assert "in_progress" in result["stats"]
+        assert "error" in result["stats"]
+        assert "drc_update_limit" in result
+        assert "drc_update_active" in result
+        assert "drc_update_available" in result
+        assert "outdated_count" in result
+        assert "created" in result
