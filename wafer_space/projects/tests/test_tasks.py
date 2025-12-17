@@ -75,6 +75,7 @@ TEST_NETWORK_TX = 300
 TEST_CHECKPOINT_COUNT = 2
 TEST_CPU_PERCENT_TOLERANCE = 0.01
 TEST_OUTDATED_CHECKS_COUNT = 2  # Number of outdated checks for testing
+TEST_PROJECT_COUNT_WITH_REFERENCE = 2  # self.project + reference project
 
 
 class URLValidationSecurityTests(TestCase):
@@ -2385,3 +2386,88 @@ class TestChecksDrcUpdateRequeue:
         assert "drc_update_available" in result
         assert "outdated_count" in result
         assert "created" in result
+
+    def test_only_considers_latest_project_file_per_project(self):
+        """Task only looks at the latest project_file per project, not all files.
+
+        If a project has multiple files, only the latest file's latest check
+        is considered. Outdated checks on older files are ignored.
+        """
+        # Use setup's project_file as older file with outdated check
+        old_file = self.project_file
+        old_file.is_active = False
+        old_file.save()
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=old_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            docker_image_digest="sha256:old123456789012345678901234567890123456789012345678901234567",
+            container_started_at=timezone.now() - timedelta(hours=2),
+        )
+
+        # Create newer project_file (higher ID) with current version check
+        new_file = ProjectFileFactory(project=self.project, is_active=True)
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=new_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            docker_image_digest="sha256:new456789012345678901234567890123456789012345678901234567890",
+            container_started_at=timezone.now(),
+        )
+        cache.clear()
+
+        result = checks_drc_update_requeue()
+
+        # Should NOT requeue because the latest file's check is current
+        assert result["created"] == 0
+        assert result["outdated_count"] == 0
+        # Should only see 1 project (the latest file's check), not 2
+        assert result["stats"]["total"] == 1
+
+    def test_one_check_per_project_not_per_file(self):
+        """Task returns exactly one check per project, not per project_file.
+
+        Even if a project has multiple files each with checks, only the
+        latest check on the latest file is considered.
+        """
+        # Deactivate setup's project_file so we can create multiple
+        self.project_file.is_active = False
+        self.project_file.save()
+
+        # Create 3 files - "latest" is determined by ID, not is_active
+        files = [
+            ProjectFileFactory(project=self.project, is_active=False),
+            ProjectFileFactory(project=self.project, is_active=True),  # Not latest
+            ProjectFileFactory(project=self.project, is_active=False),  # Latest
+        ]
+
+        # Add checks to each file (with older digests)
+        for i, pf in enumerate(files):
+            for j in range(2):
+                ManufacturabilityCheckFactory(
+                    project=self.project,
+                    project_file=pf,
+                    status=ManufacturabilityCheck.Status.FINISHED,
+                    docker_image_digest=f"sha256:old{i}{j}3456789012345678901234567890123456789012345678901234567",
+                    container_started_at=timezone.now() - timedelta(hours=10 - i - j),
+                )
+
+        # Establish latest digest via different project
+        other_project = ProjectFactory()
+        other_file = ProjectFileFactory(project=other_project)
+        ManufacturabilityCheckFactory(
+            project=other_project,
+            project_file=other_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            docker_image_digest="sha256:latest123456789012345678901234567890123456789012345678901234",
+            container_started_at=timezone.now(),
+        )
+        cache.clear()
+
+        result = checks_drc_update_requeue()
+
+        # Should see exactly 2 projects total (self.project + other_project)
+        # NOT 3 files * 2 checks = 6, and NOT 1 + 3 = 4
+        assert result["stats"]["total"] == TEST_PROJECT_COUNT_WITH_REFERENCE
+        # Only self.project's latest file's latest check is outdated
+        assert result["outdated_count"] == 1

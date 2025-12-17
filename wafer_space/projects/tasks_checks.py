@@ -24,8 +24,9 @@ from django.core.files import File
 from django.core.files.base import ContentFile
 from django.db import IntegrityError
 from django.db.models import Exists
-from django.db.models import Max
+from django.db.models import F
 from django.db.models import OuterRef
+from django.db.models import Subquery
 from django.utils import timezone
 
 from .check_operations import create_retry_check
@@ -696,9 +697,10 @@ def checks_retry() -> dict:
 def checks_drc_update_requeue() -> dict:
     """Create DRC_UPDATE checks for projects with outdated precheck versions.
 
-    Finds projects where the latest check is FINISHED but used an outdated
-    docker image digest, and creates new pending checks. Rate-limited to 25%
-    of total capacity for DRC_UPDATE checks.
+    For each project, finds the latest project_file, then checks if its latest
+    manufacturability check is FINISHED but used an outdated docker image digest.
+    If so, creates a new pending check. Rate-limited to 25% of total capacity
+    for DRC_UPDATE checks.
 
     Only creates one check per run to spread load over time.
     """
@@ -706,18 +708,30 @@ def checks_drc_update_requeue() -> dict:
     if not latest_digest:
         return {"skipped": "no_latest_digest"}
 
-    # Get latest check per project_file (using subquery with Max annotation)
-    # This works with both PostgreSQL and SQLite
-    latest_check_ids = (
-        ManufacturabilityCheck.objects.filter(project_file__project__isnull=False)
-        .values("project_file_id")
-        .annotate(latest_id=Max("id"))
-        .values_list("latest_id", flat=True)
+    # Single query: Get the latest check on the latest file for each project
+    # Using correlated subqueries to find checks that are BOTH:
+    # 1. On the latest project_file for their project
+    # 2. The latest check on that file
+    latest_file_subquery = (
+        ProjectFile.objects.filter(project_id=OuterRef("project_file__project_id"))
+        .order_by("-id")
+        .values("id")[:1]
+    )
+    latest_check_subquery = (
+        ManufacturabilityCheck.objects.filter(
+            project_file_id=OuterRef("project_file_id")
+        )
+        .order_by("-id")
+        .values("id")[:1]
     )
     latest_checks = list(
-        ManufacturabilityCheck.objects.filter(id__in=latest_check_ids).select_related(
-            "project_file", "project_file__project"
+        ManufacturabilityCheck.objects.filter(
+            project_file__project__isnull=False,
+            project_file_id=Subquery(latest_file_subquery),
         )
+        .annotate(latest_check_id=Subquery(latest_check_subquery))
+        .filter(id=F("latest_check_id"))
+        .select_related("project_file", "project_file__project")
     )
 
     # Collect stats and find outdated FINISHED checks
