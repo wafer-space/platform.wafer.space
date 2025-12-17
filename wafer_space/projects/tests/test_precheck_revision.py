@@ -197,6 +197,26 @@ class TestManufacturabilityCheckLatestDigest:
         """get_latest_precheck_digest returns None when no checks exist."""
         assert ManufacturabilityCheck.get_latest_precheck_digest() is None
 
+    def test_get_latest_precheck_digest_ignores_null_started_at(self):
+        """get_latest_precheck_digest ignores checks with NULL container_started_at.
+
+        Regression test for issue #241: PostgreSQL sorts NULL values first in DESC
+        order, so checks that never started were incorrectly returned as "latest".
+        """
+        now = timezone.now()
+        # Valid check with timestamp
+        ManufacturabilityCheckFactory(
+            docker_image_digest="sha256:valid",
+            container_started_at=now - timedelta(hours=1),
+        )
+        # Check with NULL container_started_at (should be ignored)
+        ManufacturabilityCheckFactory(
+            docker_image_digest="sha256:null_started",
+            container_started_at=None,
+        )
+
+        assert ManufacturabilityCheck.get_latest_precheck_digest() == "sha256:valid"
+
     def test_is_using_latest_precheck_true(self):
         """is_using_latest_precheck returns True when using latest."""
         check = ManufacturabilityCheckFactory(

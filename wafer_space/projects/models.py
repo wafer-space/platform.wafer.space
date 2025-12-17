@@ -2525,7 +2525,8 @@ Your GDS file should have:
         """Get the digest of the most recently used precheck image.
 
         Returns the docker_image_digest from the check with the most recent
-        container_started_at timestamp. Cached for 60 seconds.
+        container_started_at timestamp. Excludes checks that never started
+        (NULL container_started_at). Cached for 60 seconds.
         """
         cache_key = "precheck_latest_digest"
         cached = cache.get(cache_key)
@@ -2534,6 +2535,7 @@ Your GDS file should have:
 
         digest = (
             cls.objects.exclude(docker_image_digest="")
+            .exclude(container_started_at__isnull=True)
             .order_by("-container_started_at")
             .values_list("docker_image_digest", flat=True)
             .first()
