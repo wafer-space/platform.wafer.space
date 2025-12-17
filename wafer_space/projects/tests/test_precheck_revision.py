@@ -293,3 +293,102 @@ class TestPrecheckImageRevisionVersionDisplay:
             git_commit_sha="",
         )
         assert revision.version_display == "sha256:xyz789abc123..."
+
+
+@pytest.mark.django_db
+class TestFormatVersionDisplay:
+    """Tests for PrecheckImageRevision.format_version_display()."""
+
+    def setup_method(self):
+        """Clear cache before each test."""
+        cache.clear()
+
+    def test_format_version_display_with_none_returns_dash(self):
+        """format_version_display(None) returns ('-', None)."""
+        version_str, is_latest = PrecheckImageRevision.format_version_display(None)
+        assert version_str == "-"
+        assert is_latest is None
+
+    def test_format_version_display_with_check_returns_version_and_is_latest(self):
+        """format_version_display(check) returns version string and is_latest flag."""
+        revision = PrecheckImageRevision.objects.create(
+            digest="sha256:latest123456789012345678901234567890123456789012345678901234",
+            precheck_version="2.0.0",
+        )
+        check = ManufacturabilityCheckFactory(
+            docker_image_digest=revision.digest,
+            container_started_at=timezone.now(),
+        )
+        version_str, is_latest = PrecheckImageRevision.format_version_display(check)
+        assert version_str == "2.0.0"
+        assert is_latest is True
+
+    def test_format_version_display_with_outdated_check(self):
+        """format_version_display returns is_latest=False for outdated check."""
+        # Create older check
+        old_revision = PrecheckImageRevision.objects.create(
+            digest="sha256:old123456789012345678901234567890123456789012345678901234567",
+            precheck_version="1.0.0",
+        )
+        old_check = ManufacturabilityCheckFactory(
+            docker_image_digest=old_revision.digest,
+            container_started_at=timezone.now() - timedelta(hours=2),
+        )
+        # Create newer check (makes old one outdated)
+        ManufacturabilityCheckFactory(
+            docker_image_digest="sha256:new456789012345678901234567890123456789012345678901234567890",
+            container_started_at=timezone.now(),
+        )
+        cache.clear()  # Clear cached latest digest
+
+        version_str, is_latest = PrecheckImageRevision.format_version_display(old_check)
+        assert version_str == "1.0.0"
+        assert is_latest is False
+
+    def test_format_version_display_with_digest_string(self):
+        """format_version_display works with raw digest string."""
+        revision = PrecheckImageRevision.objects.create(
+            digest="sha256:str123456789012345678901234567890123456789012345678901234567",
+            precheck_version="1.2.3",
+        )
+        # Make this the latest
+        ManufacturabilityCheckFactory(
+            docker_image_digest=revision.digest,
+            container_started_at=timezone.now(),
+        )
+        cache.clear()
+
+        version_str, is_latest = PrecheckImageRevision.format_version_display(
+            revision.digest
+        )
+        assert version_str == "1.2.3"
+        assert is_latest is True
+
+    def test_format_version_display_fallback_to_short_digest(self):
+        """format_version_display falls back to short digest when no revision."""
+        digest = "sha256:unknown789012345678901234567890123456789012345678901234567890"
+        version_str, is_latest = PrecheckImageRevision.format_version_display(digest)
+        assert version_str == "sha256:unknown78901..."
+        assert is_latest is None  # Can't determine without a latest check
+
+    def test_format_version_display_caches_result(self):
+        """format_version_display caches the display string."""
+        revision = PrecheckImageRevision.objects.create(
+            digest="sha256:cache12345678901234567890123456789012345678901234567890123456",
+            precheck_version="3.0.0",
+        )
+        # First call
+        version_str1, _ = PrecheckImageRevision.format_version_display(revision.digest)
+        assert version_str1 == "3.0.0"
+
+        # Delete revision - cached value should still be returned
+        revision.delete()
+        version_str2, _ = PrecheckImageRevision.format_version_display(revision.digest)
+        assert version_str2 == "3.0.0"
+
+    def test_format_version_display_with_empty_digest_check(self):
+        """format_version_display returns dash for check without digest."""
+        check = ManufacturabilityCheckFactory(docker_image_digest="")
+        version_str, is_latest = PrecheckImageRevision.format_version_display(check)
+        assert version_str == "-"
+        assert is_latest is None

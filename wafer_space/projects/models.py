@@ -2921,6 +2921,45 @@ class PrecheckImageRevision(models.Model):
             return self.git_commit_sha[:7]
         return self.short_digest
 
+    @classmethod
+    def format_version_display(
+        cls, check_or_digest: "ManufacturabilityCheck | str | None"
+    ) -> tuple[str, bool | None]:
+        """Format version display string and is_latest flag for a check or digest.
+
+        Args:
+            check_or_digest: A ManufacturabilityCheck, digest string, or None.
+
+        Returns:
+            Tuple of (display_string, is_latest_flag).
+            display_string is always a valid string for display.
+            is_latest_flag is True/False/None (None if cannot determine).
+        """
+        if check_or_digest is None:
+            return ("-", None)
+
+        if isinstance(check_or_digest, str):
+            digest = check_or_digest
+            latest = ManufacturabilityCheck.get_latest_precheck_digest()
+            is_latest = (digest == latest) if digest and latest else None
+        else:
+            digest = check_or_digest.docker_image_digest
+            is_latest = check_or_digest.is_using_latest_precheck
+
+        if not digest:
+            return ("-", None)
+
+        cache_key = f"precheck_display:{digest}"
+        cached = cache.get(cache_key)
+        if cached:
+            return (cached, is_latest)
+
+        revision = cls.objects.filter(digest=digest).first()
+        display = revision.version_display if revision else f"sha256:{digest[7:19]}..."
+
+        cache.set(cache_key, display, 60)
+        return (display, is_latest)
+
     # --- Statistics helpers ---
 
     def _get_checks_queryset(self) -> models.QuerySet["ManufacturabilityCheck"]:
