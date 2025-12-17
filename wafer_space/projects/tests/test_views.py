@@ -1899,7 +1899,7 @@ class TestCheckDrcUpdateRequeue:
             reverse("projects:check_drc_update_requeue", args=[check.id])
         )
 
-        assert response.status_code == 302
+        assert response.status_code == HTTP_FOUND
         assert response.url == reverse("projects:detail", args=[self.project.id])
 
         # Verify new check was created
@@ -1926,7 +1926,7 @@ class TestCheckDrcUpdateRequeue:
             reverse("projects:check_drc_update_requeue", args=[check.id])
         )
 
-        assert response.status_code == 403
+        assert response.status_code == HTTP_FORBIDDEN
 
     def test_requeue_allowed_for_staff(self, client):
         """Staff can requeue any project's check."""
@@ -1953,7 +1953,7 @@ class TestCheckDrcUpdateRequeue:
             reverse("projects:check_drc_update_requeue", args=[check.id])
         )
 
-        assert response.status_code == 302
+        assert response.status_code == HTTP_FOUND
 
     def test_requeue_invalid_check_shows_error(self, client):
         """Requeue of already-latest check shows error message."""
@@ -1974,7 +1974,7 @@ class TestCheckDrcUpdateRequeue:
             follow=True,
         )
 
-        assert response.status_code == 200
+        assert response.status_code == HTTP_OK
         messages = list(response.context["messages"])
         assert len(messages) == 1
         assert "already using latest" in str(messages[0])
@@ -1990,7 +1990,7 @@ class TestCheckDrcUpdateRequeue:
             reverse("projects:check_drc_update_requeue", args=[check.id])
         )
 
-        assert response.status_code == 302
+        assert response.status_code == HTTP_FOUND
         assert "/accounts/login/" in response.url
 
     def test_requeue_requires_post(self, client):
@@ -2005,4 +2005,4 @@ class TestCheckDrcUpdateRequeue:
             reverse("projects:check_drc_update_requeue", args=[check.id])
         )
 
-        assert response.status_code == 405  # Method Not Allowed
+        assert response.status_code == HTTP_METHOD_NOT_ALLOWED

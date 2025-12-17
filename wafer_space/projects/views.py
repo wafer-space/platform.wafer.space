@@ -9,8 +9,10 @@ from typing import ClassVar
 from typing import cast
 
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.mixins import UserPassesTestMixin
+from django.core.exceptions import PermissionDenied
 from django.core.exceptions import ValidationError
 from django.db.models import OuterRef
 from django.db.models import Prefetch
@@ -20,6 +22,7 @@ from django.shortcuts import get_object_or_404
 from django.shortcuts import redirect
 from django.shortcuts import render
 from django.urls import reverse_lazy
+from django.views.decorators.http import require_POST
 from django.views.generic import CreateView
 from django.views.generic import DeleteView
 from django.views.generic import DetailView
@@ -950,3 +953,22 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
             "status_counts": status_summary,
             "status_counts_by_key": status_summary_by_key,
         }
+
+
+@login_required
+@require_POST
+def check_drc_update_requeue(request, check_id):
+    """Manually trigger a DRC_UPDATE check for outdated precheck version."""
+    check = get_object_or_404(ManufacturabilityCheck, pk=check_id)
+
+    # Permission: must own the project or be staff
+    if check.project.user != request.user and not request.user.is_staff:
+        raise PermissionDenied
+
+    try:
+        check.create_check_drc_update()
+        messages.success(request, "Check queued with latest precheck version.")
+    except ValueError as e:
+        messages.error(request, str(e))
+
+    return redirect("projects:detail", pk=check.project.pk)

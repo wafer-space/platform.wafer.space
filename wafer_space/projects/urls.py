@@ -46,6 +46,11 @@ urlpatterns = [
         views.ManufacturabilityCheckCancelView.as_view(),
         name="cancel_check",
     ),
+    path(
+        "check/<int:check_id>/requeue-drc-update/",
+        views.check_drc_update_requeue,
+        name="check_drc_update_requeue",
+    ),
     # AJAX endpoints for project form validation
     path(
         "check-project-id/",
