@@ -1,6 +1,9 @@
 """Tests for project models."""
 
+from datetime import timedelta
+
 import pytest
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
@@ -3082,3 +3085,99 @@ class TestProjectCoreFieldImmutability:
         error_message = str(exc_info.value)
         assert "project_id" in error_message
         assert "slot_size" in error_message
+
+
+@pytest.mark.django_db
+class TestCreateCheckDrcUpdate:
+    """Tests for ManufacturabilityCheck.create_check_drc_update()."""
+
+    def setup_method(self):
+        """Clear cache before each test."""
+        cache.clear()
+
+    def test_create_check_drc_update_success(self):
+        """create_check_drc_update creates new check with correct attributes."""
+        # Create a finished check with outdated digest
+        old_check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.FINISHED,
+            docker_image_digest="sha256:old123456789012345678901234567890123456789012345678901234567",
+            container_started_at=timezone.now() - timedelta(hours=2),
+        )
+        # Create newer check to make old one outdated
+        ManufacturabilityCheckFactory(
+            docker_image_digest="sha256:new456789012345678901234567890123456789012345678901234567890",
+            container_started_at=timezone.now(),
+        )
+        cache.clear()
+
+        new_check = old_check.create_check_drc_update()
+
+        assert new_check.project == old_check.project
+        assert new_check.project_file == old_check.project_file
+        assert (
+            new_check.trigger_reason == ManufacturabilityCheck.TriggerReason.DRC_UPDATE
+        )
+        assert new_check.parent_check == old_check
+        assert new_check.status == ManufacturabilityCheck.Status.PENDING
+
+    def test_create_check_drc_update_fails_not_latest_check(self):
+        """create_check_drc_update raises ValueError if not latest check."""
+        project_file = ProjectFileFactory()
+        old_check = ManufacturabilityCheckFactory(
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            docker_image_digest="sha256:old123456789012345678901234567890123456789012345678901234567",
+        )
+        # Create newer check for same file
+        ManufacturabilityCheckFactory(
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            docker_image_digest="sha256:new456789012345678901234567890123456789012345678901234567890",
+        )
+
+        with pytest.raises(ValueError, match="latest check"):
+            old_check.create_check_drc_update()
+
+    def test_create_check_drc_update_fails_no_digest(self):
+        """create_check_drc_update raises ValueError if no digest."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.PENDING,
+            docker_image_digest="",
+        )
+
+        with pytest.raises(ValueError, match="does not have a version"):
+            check.create_check_drc_update()
+
+    def test_create_check_drc_update_fails_already_latest(self):
+        """create_check_drc_update raises ValueError if already using latest."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.FINISHED,
+            docker_image_digest="sha256:latest123456789012345678901234567890123456789012345678901234",
+            container_started_at=timezone.now(),
+        )
+        cache.clear()
+
+        with pytest.raises(ValueError, match="already using latest"):
+            check.create_check_drc_update()
+
+    def test_create_check_drc_update_works_for_running_check(self):
+        """create_check_drc_update works for in-progress checks with outdated digest."""
+        # Create running check with outdated digest
+        running_check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING,
+            docker_image_digest="sha256:old123456789012345678901234567890123456789012345678901234567",
+            container_started_at=timezone.now() - timedelta(hours=1),
+        )
+        # Create newer check to make running one outdated
+        ManufacturabilityCheckFactory(
+            docker_image_digest="sha256:new456789012345678901234567890123456789012345678901234567890",
+            container_started_at=timezone.now(),
+        )
+        cache.clear()
+
+        new_check = running_check.create_check_drc_update()
+
+        assert new_check.parent_check == running_check
+        assert (
+            new_check.trigger_reason == ManufacturabilityCheck.TriggerReason.DRC_UPDATE
+        )
