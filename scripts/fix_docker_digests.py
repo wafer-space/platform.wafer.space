@@ -148,6 +148,44 @@ def _reset_nonsemver_revisions(*, dry_run: bool) -> int:
     return len(revisions_to_reset)
 
 
+def _delete_orphaned_revisions(*, dry_run: bool) -> int:
+    """Delete PrecheckImageRevision records with no associated ManufacturabilityCheck.
+
+    These are orphaned records that were created for digests that no longer
+    exist in any ManufacturabilityCheck record.
+
+    Returns:
+        Number of records deleted (or would be deleted in dry run).
+    """
+    logger.info("")
+    logger.info("=" * 60)
+    logger.info("PART 3: Deleting orphaned PrecheckImageRevision records")
+    logger.info("=" * 60)
+
+    # Find revisions with no associated ManufacturabilityCheck
+    orphans = []
+    for revision in PrecheckImageRevision.objects.all():
+        check_count = ManufacturabilityCheck.objects.filter(
+            docker_image_digest=revision.digest
+        ).count()
+        if check_count == 0:
+            orphans.append(revision)
+            logger.info("  Found orphan: %s...", revision.digest[:50])
+
+    if orphans:
+        count = len(orphans)
+        logger.info("Found %d orphaned PrecheckImageRevision record(s)", count)
+        if not dry_run:
+            deleted = PrecheckImageRevision.objects.filter(
+                pk__in=[r.pk for r in orphans]
+            ).delete()
+            logger.info("Deleted %d orphaned record(s)", deleted[0])
+    else:
+        logger.info("No orphaned PrecheckImageRevision records found")
+
+    return len(orphans)
+
+
 def run(*args: str) -> None:
     """Run the digest fix script."""
     dry_run = "apply" not in args
@@ -165,12 +203,14 @@ def run(*args: str) -> None:
     with transaction.atomic():
         digests_fixed = _fix_digest_corrections(dry_run=dry_run)
         revisions_reset = _reset_nonsemver_revisions(dry_run=dry_run)
+        orphans_deleted = _delete_orphaned_revisions(dry_run=dry_run)
 
         logger.info("")
         logger.info("=" * 60)
         logger.info("SUMMARY:")
         logger.info("  ManufacturabilityCheck digests to fix: %d", digests_fixed)
         logger.info("  PrecheckImageRevision to reset: %d", revisions_reset)
+        logger.info("  Orphaned PrecheckImageRevision to delete: %d", orphans_deleted)
         logger.info("=" * 60)
 
         if dry_run:
