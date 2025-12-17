@@ -289,7 +289,7 @@ def _resolve_version_from_tags(digest: str) -> str:
         matching_tags.sort()
         return matching_tags[0]
 
-    except requests.RequestException:
+    except (requests.RequestException, KeyError):
         logger.warning("Failed to resolve version from tags for %s", digest[:20])
         return ""
 
