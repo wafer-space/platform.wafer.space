@@ -70,6 +70,8 @@ def _is_semver_tag(tag: str) -> bool:
 def _fix_digest_corrections(*, dry_run: bool) -> int:
     """Fix ManufacturabilityCheck records with wrong digests.
 
+    Also deletes any PrecheckImageRevision objects for the wrong digests.
+
     Returns:
         Number of records updated (or would be updated in dry run).
     """
@@ -79,6 +81,7 @@ def _fix_digest_corrections(*, dry_run: bool) -> int:
         logger.info("Processing: %s...", wrong_digest[:40])
         logger.info("  Correct:  %s...", correct_digest[:40])
 
+        # Fix ManufacturabilityCheck records
         affected_checks = ManufacturabilityCheck.objects.filter(
             docker_image_digest=wrong_digest
         )
@@ -92,6 +95,15 @@ def _fix_digest_corrections(*, dry_run: bool) -> int:
             total_updated += check_count
         else:
             logger.info("  No ManufacturabilityCheck records found")
+
+        # Delete any PrecheckImageRevision for the wrong digest
+        wrong_revisions = PrecheckImageRevision.objects.filter(digest=wrong_digest)
+        rev_count = wrong_revisions.count()
+        if rev_count > 0:
+            logger.info("  Found %d PrecheckImageRevision for wrong digest", rev_count)
+            if not dry_run:
+                wrong_revisions.delete()
+                logger.info("  Deleted %d PrecheckImageRevision(s)", rev_count)
 
     return total_updated
 
