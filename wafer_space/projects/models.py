@@ -2912,6 +2912,15 @@ class PrecheckImageRevision(models.Model):
         assert self.digest.startswith("sha256:")
         return f"sha256:{self.digest[7:19]}..."
 
+    @property
+    def version_display(self) -> str:
+        """Human-readable version string for display."""
+        if self.precheck_version:
+            return self.precheck_version
+        if self.git_commit_sha:
+            return self.git_commit_sha[:7]
+        return self.short_digest
+
     # --- Statistics helpers ---
 
     def _get_checks_queryset(self) -> models.QuerySet["ManufacturabilityCheck"]:

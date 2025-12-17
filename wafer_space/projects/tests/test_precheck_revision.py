@@ -261,3 +261,35 @@ class TestManufacturabilityCheckLatestDigest:
         check = ManufacturabilityCheckFactory(docker_image_digest="sha256:uncataloged")
 
         assert check.precheck_revision is None
+
+
+@pytest.mark.django_db
+class TestPrecheckImageRevisionVersionDisplay:
+    """Tests for PrecheckImageRevision.version_display property."""
+
+    def test_version_display_returns_precheck_version_when_available(self):
+        """version_display prefers precheck_version."""
+        revision = PrecheckImageRevision.objects.create(
+            digest="sha256:abc123def456789012345678901234567890123456789012345678901234",
+            precheck_version="1.5.2",
+            git_commit_sha="abc1234567890",
+        )
+        assert revision.version_display == "1.5.2"
+
+    def test_version_display_falls_back_to_git_commit_sha(self):
+        """version_display uses git_commit_sha[:7] if no precheck_version."""
+        revision = PrecheckImageRevision.objects.create(
+            digest="sha256:def456abc789012345678901234567890123456789012345678901234567",
+            precheck_version="",
+            git_commit_sha="abc1234567890",
+        )
+        assert revision.version_display == "abc1234"
+
+    def test_version_display_falls_back_to_short_digest(self):
+        """version_display uses short_digest if no version info."""
+        revision = PrecheckImageRevision.objects.create(
+            digest="sha256:xyz789abc123456789012345678901234567890123456789012345678901",
+            precheck_version="",
+            git_commit_sha="",
+        )
+        assert revision.version_display == "sha256:xyz789abc123..."
