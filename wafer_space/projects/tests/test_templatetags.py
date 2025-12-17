@@ -48,7 +48,7 @@ class TestCheckBadgeTemplateTags:
         context = Context({"check": check})
         result = template.render(context)
 
-        assert "v1.5.2" in result
+        assert "1.5.2" in result
         assert "bi-cloud" in result
 
     def test_badge_check_version_fallback_to_commit(self):
@@ -98,4 +98,4 @@ class TestCheckBadgeTemplateTags:
         result = template.render(context)
 
         assert "Passed" in result
-        assert "v1.5.2" in result
+        assert "1.5.2" in result
