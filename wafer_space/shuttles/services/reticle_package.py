@@ -10,6 +10,7 @@ from typing import Any
 from django.conf import settings
 from django.utils import timezone
 
+from wafer_space.core.enums import SlotSize
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.shuttles.config import GridConfig
 from wafer_space.shuttles.models import Shuttle
@@ -119,14 +120,23 @@ def _is_manufacturable(check: ManufacturabilityCheck) -> bool:
     )
 
 
+def _slot_tile_dims(slot_size: str) -> tuple[int, int]:
+    """Return (tile_height, tile_width) for a slot size."""
+    if slot_size == SlotSize.FULL:
+        return (2, 2)
+    if slot_size == SlotSize.HALF_WIDTH:
+        return (2, 1)  # Full height, half width
+    if slot_size == SlotSize.HALF_HEIGHT:
+        return (1, 2)  # Half height, full width
+    return (1, 1)  # QUARTER
+
+
 def write_tilemap(
     path: Path, slots: list[ShuttleSlot], grid_config: GridConfig
 ) -> None:
     """Write tilemap.csv."""
-    tile_h, tile_w = 2, 2
     grid = [
-        [""] * (grid_config.num_columns * tile_w)
-        for _ in range(grid_config.num_rows * tile_h)
+        [""] * (grid_config.num_columns * 2) for _ in range(grid_config.num_rows * 2)
     ]
 
     for slot in slots:
@@ -135,11 +145,10 @@ def write_tilemap(
         check = slot.project.output_file.output_check
         if not _is_manufacturable(check):
             continue
+        tile_h, tile_w = _slot_tile_dims(slot.slot_size)
         for r in range(tile_h):
             for c in range(tile_w):
-                grid[slot.row * tile_h + r][slot.column * tile_w + c] = (
-                    slot.project.project_id
-                )
+                grid[slot.row * 2 + r][slot.column * 2 + c] = slot.project.project_id
 
     with path.open("w") as f:
         writer = csv.writer(f)
