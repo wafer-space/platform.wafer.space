@@ -452,6 +452,29 @@ class Project(models.Model):
         return ProjectFile(project=self, top_cell="")
 
     @property
+    def latest_file(self) -> "ProjectFile | None":
+        """Return the most recently created project file by ID.
+
+        This is the file with the highest ID, which represents the most
+        recently uploaded file regardless of is_active or submitted status.
+        Returns None if no files exist.
+        """
+        return self.files.order_by("-id").first()
+
+    @property
+    def latest_file_manufacturability_check(self) -> "ManufacturabilityCheck | None":
+        """Get the latest manufacturability check for the most recent file.
+
+        Returns the most recent check on the latest_file (by ID), or None if
+        no files or no checks exist. This may differ from
+        latest_manufacturability_check which uses the submitted_file.
+        """
+        latest = self.latest_file
+        if not latest:
+            return None
+        return latest.latest_manufacturability_check
+
+    @property
     def full_id(self) -> str:
         """Return full 8-character manufacturing ID (shuttle code + project ID).
 

@@ -113,6 +113,13 @@
                 Size <span class="sort-indicator"></span>
               </th>
               <th data-sortable="true"
+                  data-sort-type="status"
+                  class="sortable"
+                  style="cursor: pointer"
+                  title="Latest file manufacturability check status">
+                Latest <span class="sort-indicator"></span>
+              </th>
+              <th data-sortable="true"
                   data-sort-type="date"
                   class="sortable text-center"
                   style="cursor: pointer;
@@ -123,7 +130,8 @@
               <th data-sortable="true"
                   data-sort-type="status"
                   class="sortable"
-                  style="cursor: pointer">
+                  style="cursor: pointer"
+                  title="Submitted file manufacturability check status">
                 Status <span class="sort-indicator"></span>
               </th>
               <th>Slots</th>
@@ -142,6 +150,12 @@
                 <td data-sort-value="{{ project.slot_size }}">
                   <span class="badge bg-secondary">{{ project.get_slot_size_display }}</span>
                 </td>
+                {# Latest file check - may differ from submitted file #}
+                {% with latest_check=project.latest_file_manufacturability_check %}
+                  <td data-sort-value="{% if latest_check.is_manufacturable %}0{% elif latest_check.is_manufacturable is None %}2{% else %}1{% endif %}">
+                    {% badge_check_status_and_version latest_check %}
+                  </td>
+                {% endwith %}
                 <td class="text-center"
                     data-sort-value="{{ project.submitted_at|date:'Y-m-d H:i:s'|default:'' }}"
                     title="{{ project.submitted_at|date:'Y-m-d H:i:s'|default:'—' }}">
@@ -151,7 +165,7 @@
                     <i class="bi bi-x-lg text-danger"></i>
                   {% endif %}
                 </td>
-                {# Sort order: Ready(0) < Failed(1) < Pending(2) - prioritizes actionable projects #}
+                {# Submitted file check - Sort order: Ready(0) < Failed(1) < Pending(2) #}
                 <td data-sort-value="{% if project.is_manufacturable %}0{% elif project.is_manufacturable is None %}2{% else %}1{% endif %}">
                   {% with check=project.latest_manufacturability_check %}
                     {% badge_check_status_and_version check %}
