@@ -59,6 +59,7 @@ Systemd's `IPAddressAllow`/`IPAddressDeny` do not support port filtering. Port-l
 | `none:ro:checks-orch`  | `checks_retry`                    | Retry ERROR checks within limit            |
 | `none:ro:checks-orch`  | `checks_cleanup_stale_files`      | Cleanup stale files                        |
 | `none:ro:checks-orch`  | `checks_cleanup_stale_pending_tasks` | Cleanup stale pending tasks             |
+| `none:ro:checks-orch`  | `checks_drc_update_requeue`       | Create DRC_UPDATE checks for outdated versions |
 | `none:ro:default`      | `cleanup_old_task_results`        | Remove old Celery TaskResult records       |
 | `none:ro:default`      | `ensure_download_tasks_queued`    | Recover lost download tasks                |
 | `mail:ro:email`        | `send_tos_update_email`           | Send TOS notification email                |
@@ -193,6 +194,7 @@ Orchestration worker for manufacturability check state machine. All tasks are DB
 - `checks_retry` - Retry ERROR checks within limit
 - `checks_cleanup_stale_files` - Cleanup stale files
 - `checks_cleanup_stale_pending_tasks` - Cleanup stale pending tasks
+- `checks_drc_update_requeue` - Create DRC_UPDATE checks for outdated versions
 
 ---
 

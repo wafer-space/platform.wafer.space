@@ -49,6 +49,7 @@ These tasks run periodically via Celery Beat to poll for checks needing action.
 | `checks_retry`                       | `none:ro:checks-orch` | 60s      | Create retry checks for ERROR state   |
 | `checks_cleanup_stale_files`         | `none:ro:checks-orch` | 60s      | Cancel checks on inactive files       |
 | `checks_cleanup_stale_pending_tasks` | `none:ro:checks-orch` | 60s      | Remove orphaned task tracking records |
+| `checks_drc_update_requeue`          | `none:ro:checks-orch` | 60s      | Create DRC_UPDATE checks for outdated versions |
 | `checks_cleanup`                     | `none:ro:checks-orch` | -        | Combined cleanup operations           |
 
 ### Work Tasks

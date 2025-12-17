@@ -167,6 +167,7 @@ Periodic tasks are configured in `config/settings/base.py`:
 | `checks-cleanup-orphaned-docker`     | Remove orphaned containers            |
 | `checks-cleanup-stale-files`         | Cancel checks on inactive files       |
 | `checks-cleanup-stale-pending-tasks` | Remove orphaned task tracking records |
+| `checks-drc-update-requeue`          | Create DRC_UPDATE checks for outdated precheck versions |
 | `ensure-download-tasks-queued`       | Recovery for orphaned downloads       |
 
 ---
