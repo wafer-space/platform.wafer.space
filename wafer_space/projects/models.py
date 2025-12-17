@@ -438,6 +438,20 @@ class Project(models.Model):
         return check.analysis_completed_at
 
     @property
+    def output_file(self) -> "ProjectFile":
+        """Return file for manufacturing output (submitted or latest).
+
+        Returns a dummy ProjectFile if no files exist.
+        """
+        if self.submitted_file:
+            return self.submitted_file
+        latest = self.files.order_by("-uploaded_at").first()
+        if latest:
+            return latest
+        # Return unsaved dummy for consistent interface
+        return ProjectFile(project=self, top_cell="")
+
+    @property
     def full_id(self) -> str:
         """Return full 8-character manufacturing ID (shuttle code + project ID).
 
@@ -1099,6 +1113,26 @@ class ProjectFile(models.Model):
         """
         return self.manufacturability_checks.order_by("-created_at").first()
 
+    @property
+    def output_check(self) -> "ManufacturabilityCheck":
+        """Return latest finished check, or dummy if none exists.
+
+        Always returns a ManufacturabilityCheck for consistent interface.
+        Check if pk is set to determine if it's a real check.
+        """
+        if self.pk:  # Real file, not dummy
+            check = (
+                self.manufacturability_checks.filter(
+                    status=ManufacturabilityCheck.Status.FINISHED
+                )
+                .order_by("-created_at")
+                .first()
+            )
+            if check:
+                return check
+        # Return unsaved dummy for consistent interface
+        return ManufacturabilityCheck(project=self.project, project_file=self)
+
 
 class FileProcessingError(models.Model):
     """Log of errors that occurred during file processing.
@@ -1517,6 +1551,16 @@ class ManufacturabilityCheck(models.Model):
         DRC_UPDATE = "drc_update", "DRC Rules Updated"
         ADMIN_RERUN = "admin_rerun", "Admin Requested Re-run"
         RETRY = "retry", "Retry After Error"
+
+    class FinishedStatus(models.TextChoices):
+        """Sub-status for FINISHED checks indicating manufacturability result."""
+
+        MANUFACTURABLE = "manufacturable", "Manufacturable"
+        MANUFACTURABLE_WITH_WARNINGS = (
+            "manufacturable_with_warnings",
+            "Manufacturable (Warnings)",
+        )
+        NOT_MANUFACTURABLE = "not_manufacturable", "Not Manufacturable"
 
     # Status presentation metadata for consistent rendering across templates
     # Maps status values to their display properties
@@ -2333,6 +2377,21 @@ class ManufacturabilityCheck(models.Model):
                 return "Manufacturable with Warnings"
             return "Manufacturable - Clean"
         return "Not Manufacturable"
+
+    @property
+    def finished_status(self) -> FinishedStatus | None:
+        """Return FinishedStatus enum value for completed checks.
+
+        Returns None if check is not in FINISHED state.
+        """
+        if self.status != self.Status.FINISHED or self.is_manufacturable is None:
+            return None
+
+        if self.is_manufacturable:
+            if self.warnings:
+                return self.FinishedStatus.MANUFACTURABLE_WITH_WARNINGS
+            return self.FinishedStatus.MANUFACTURABLE
+        return self.FinishedStatus.NOT_MANUFACTURABLE
 
     @property
     def queue_position(self) -> int | None:
