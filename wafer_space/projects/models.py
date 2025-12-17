@@ -2266,6 +2266,41 @@ class ManufacturabilityCheck(models.Model):
             check = check.parent_check
         return check
 
+    def create_check_drc_update(self) -> "ManufacturabilityCheck":
+        """Create a new pending check to re-run with latest precheck version.
+
+        If this check is still in progress, it will be automatically cancelled
+        by the existing superseded check cleanup logic.
+
+        Returns:
+            The newly created ManufacturabilityCheck.
+
+        Raises:
+            ValueError: If this check is not eligible for DRC update.
+        """
+        # Must be the latest check for this project file
+        latest = self.project_file.latest_manufacturability_check
+        if latest != self:
+            msg = "Can only create DRC update from the latest check for a file"
+            raise ValueError(msg)
+
+        # Must have a known version
+        if not self.docker_image_digest:
+            msg = "Check does not have a version yet"
+            raise ValueError(msg)
+
+        # Must have outdated digest
+        if self.is_using_latest_precheck is not False:
+            msg = "Check is already using latest precheck version"
+            raise ValueError(msg)
+
+        return ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            trigger_reason=self.TriggerReason.DRC_UPDATE,
+            parent_check=self,
+        )
+
     @property
     def queue_wait_seconds(self) -> float | None:
         """Time spent waiting in queue before running (in seconds).
