@@ -121,8 +121,8 @@ def _fetch_ghcr_metadata(digest: str) -> dict[str, Any]:
     labels = _fetch_container_labels(digest)
     result = _parse_container_labels(labels)
 
-    # If precheck_version is unhelpful (e.g., "main"), try to resolve from GHCR tags
-    if result["precheck_version"] in ("", "main", "latest"):
+    # If precheck_version is not semver-like (e.g., "main"), try to resolve from tags
+    if not _is_semver_tag(result["precheck_version"]):
         resolved_version = _resolve_version_from_tags(digest)
         if resolved_version:
             result["precheck_version"] = resolved_version
@@ -220,18 +220,32 @@ def _resolve_manifest_digest(base_url: str, token: str, digest: str) -> str:
     return digest
 
 
+def _is_semver_tag(tag: str) -> bool:
+    """Check if tag matches semver pattern [0-9]*.[0-9].*.
+
+    Args:
+        tag: Tag string to check
+
+    Returns:
+        True if tag looks like a version number (e.g., "1.5.2", "1.5.2-2-gf5c1b34")
+    """
+    # Must match pattern: starts with digit(s), then dot, then digit(s)
+    # Examples: "1.5.2", "1.5.2-2-gf5c1b34", "v1.0.0"
+    return bool(re.match(r"^v?\d+\.\d+", tag))
+
+
 def _resolve_version_from_tags(digest: str) -> str:
-    """Resolve a better version string by querying GHCR tags for this digest.
+    """Resolve a version string by querying GHCR tags for this digest.
 
     When container labels have unhelpful version like "main", this queries
-    GHCR to find all tags pointing to the digest and returns the most
-    version-like tag (preferring semver patterns over branch names).
+    GHCR to find all tags pointing to the digest and returns a semver-style
+    tag if one exists. Branch names like "main-f5c1b34" are ignored.
 
     Args:
         digest: SHA256 digest of the OCI index
 
     Returns:
-        Best version string found, or empty string if none found.
+        Semver-style version string, or empty string if none found.
     """
     try:
         # Get anonymous token
@@ -253,9 +267,13 @@ def _resolve_version_from_tags(digest: str) -> str:
         tags_resp.raise_for_status()
         tags = tags_resp.json().get("tags", [])
 
-        # Find tags that point to this digest
+        # Find semver-style tags that point to this digest
         matching_tags: list[str] = []
         for tag in tags:
+            # Only consider semver-style tags (e.g., "1.5.2", "1.5.2-2-gf5c1b34")
+            if not _is_semver_tag(tag):
+                continue
+
             resp = requests.head(
                 f"{base_url}/manifests/{tag}", headers=headers, timeout=10
             )
@@ -267,15 +285,8 @@ def _resolve_version_from_tags(digest: str) -> str:
         if not matching_tags:
             return ""
 
-        # Pick the best tag: prefer semver-like (digits) over branch names
-        # Sort by: has digit first, then not a branch name, then alphabetically
-        def tag_score(tag: str) -> tuple[int, int, str]:
-            has_digit = any(c.isdigit() for c in tag)
-            is_branch = tag in ("main", "latest", "master")
-            # Lower score = better: (0=has digit, 1=no digit), (0=not branch, 1=branch)
-            return (0 if has_digit else 1, 1 if is_branch else 0, tag)
-
-        matching_tags.sort(key=tag_score)
+        # Sort alphabetically and return first (will prefer shorter/earlier versions)
+        matching_tags.sort()
         return matching_tags[0]
 
     except requests.RequestException:

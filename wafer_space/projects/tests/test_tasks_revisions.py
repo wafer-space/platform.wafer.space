@@ -10,6 +10,7 @@ import requests
 from django.utils import timezone
 
 from wafer_space.projects.models import PrecheckImageRevision
+from wafer_space.projects.tasks_revisions import _is_semver_tag
 from wafer_space.projects.tasks_revisions import _resolve_version_from_tags
 from wafer_space.projects.tasks_revisions import revisions_needs_fetching
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
@@ -80,6 +81,40 @@ class TestRevisionsNeedsFetching:
         mock_fetch.assert_not_called()
 
 
+class TestIsSemverTag:
+    """Tests for _is_semver_tag helper function."""
+
+    def test_matches_simple_semver(self):
+        """Matches basic semver like 1.5.2."""
+        assert _is_semver_tag("1.5.2") is True
+        assert _is_semver_tag("0.0.1") is True
+        assert _is_semver_tag("10.20.30") is True
+
+    def test_matches_semver_with_suffix(self):
+        """Matches semver with git-describe suffix like 1.5.2-2-gf5c1b34."""
+        assert _is_semver_tag("1.5.2-2-gf5c1b34") is True
+        assert _is_semver_tag("1.0.0-alpha") is True
+        assert _is_semver_tag("2.0.0-rc.1") is True
+
+    def test_matches_v_prefix(self):
+        """Matches semver with v prefix like v1.0.0."""
+        assert _is_semver_tag("v1.0.0") is True
+        assert _is_semver_tag("v0.1.0-beta") is True
+
+    def test_rejects_branch_names(self):
+        """Rejects branch-style names."""
+        assert _is_semver_tag("main") is False
+        assert _is_semver_tag("main-f5c1b34") is False
+        assert _is_semver_tag("latest") is False
+        assert _is_semver_tag("master") is False
+        assert _is_semver_tag("develop") is False
+
+    def test_rejects_commit_hashes(self):
+        """Rejects bare commit hashes."""
+        assert _is_semver_tag("f5c1b34") is False
+        assert _is_semver_tag("abc123def") is False
+
+
 class TestResolveVersionFromTags:
     """Tests for _resolve_version_from_tags helper function."""
 
@@ -108,8 +143,8 @@ class TestResolveVersionFromTags:
 
     @patch("wafer_space.projects.tasks_revisions.requests.head")
     @patch("wafer_space.projects.tasks_revisions.requests.get")
-    def test_returns_semver_tag_over_branch(self, mock_get, mock_head):
-        """Prefers semver-like tags (with digits) over branch names."""
+    def test_returns_semver_tag_ignores_branch_names(self, mock_get, mock_head):
+        """Returns semver tag, ignoring branch-style names entirely."""
         target_digest = "sha256:abc123"
         tags = ["main", "main-f5c1b34", "1.5.2-2-gf5c1b34", "latest"]
         digest_map = dict.fromkeys(tags, target_digest)
@@ -120,7 +155,6 @@ class TestResolveVersionFromTags:
         def head_side_effect(url, **kwargs):
             resp = MagicMock()
             resp.status_code = 200
-            # Extract tag from URL
             tag = url.split("/manifests/")[-1]
             resp.headers = {"Docker-Content-Digest": digest_map.get(tag, "other")}
             return resp
@@ -129,12 +163,37 @@ class TestResolveVersionFromTags:
 
         result = _resolve_version_from_tags(target_digest)
 
-        # Should prefer 1.5.2-2-gf5c1b34 (has digits, not a branch name)
+        # Should return 1.5.2-2-gf5c1b34 (only semver tag)
         assert result == "1.5.2-2-gf5c1b34"
 
     @patch("wafer_space.projects.tasks_revisions.requests.head")
     @patch("wafer_space.projects.tasks_revisions.requests.get")
-    def test_returns_empty_when_no_matching_tags(self, mock_get, mock_head):
+    def test_returns_empty_when_only_branch_tags(self, mock_get, mock_head):
+        """Returns empty string when only branch-style tags match."""
+        target_digest = "sha256:abc123"
+        tags = ["main", "main-f5c1b34", "latest"]
+        digest_map = dict.fromkeys(tags, target_digest)
+
+        mock_responses, _ = self._mock_ghcr_responses(tags, digest_map)
+        mock_get.side_effect = mock_responses
+
+        def head_side_effect(url, **kwargs):
+            resp = MagicMock()
+            resp.status_code = 200
+            tag = url.split("/manifests/")[-1]
+            resp.headers = {"Docker-Content-Digest": digest_map.get(tag, "other")}
+            return resp
+
+        mock_head.side_effect = head_side_effect
+
+        result = _resolve_version_from_tags(target_digest)
+
+        # No semver tags match, so return empty
+        assert result == ""
+
+    @patch("wafer_space.projects.tasks_revisions.requests.head")
+    @patch("wafer_space.projects.tasks_revisions.requests.get")
+    def test_returns_empty_when_no_matching_digest(self, mock_get, mock_head):
         """Returns empty string when no tags match the digest."""
         target_digest = "sha256:notfound"
         tags = ["main", "1.5.2"]
@@ -165,10 +224,10 @@ class TestResolveVersionFromTags:
 
     @patch("wafer_space.projects.tasks_revisions.requests.head")
     @patch("wafer_space.projects.tasks_revisions.requests.get")
-    def test_prefers_digits_over_no_digits(self, mock_get, mock_head):
-        """Tags with digits are preferred over tags without."""
+    def test_returns_first_sorted_semver(self, mock_get, mock_head):
+        """Returns first semver tag when sorted alphabetically."""
         target_digest = "sha256:abc123"
-        tags = ["release", "v1.0.0", "stable"]
+        tags = ["2.0.0", "1.5.2", "1.5.2-2-gf5c1b34"]
         digest_map = dict.fromkeys(tags, target_digest)
 
         mock_responses, _ = self._mock_ghcr_responses(tags, digest_map)
@@ -185,5 +244,5 @@ class TestResolveVersionFromTags:
 
         result = _resolve_version_from_tags(target_digest)
 
-        # v1.0.0 has digits, others don't
-        assert result == "v1.0.0"
+        # Should return 1.5.2 (first alphabetically)
+        assert result == "1.5.2"
