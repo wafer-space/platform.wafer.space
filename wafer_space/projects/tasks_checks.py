@@ -746,11 +746,11 @@ def checks_drc_update_requeue() -> dict:
     # Sort by oldest first (by created_at)
     outdated_checks.sort(key=lambda c: c.created_at)
 
-    # Calculate DRC_UPDATE capacity limit (25% of total)
+    # Calculate DRC_UPDATE capacity limit (25% of total, minimum 1)
     total_capacity = sum(
         int(server["max_concurrent"]) for server in settings.DOCKER_SERVERS
     )
-    drc_update_limit = int(total_capacity * 0.25)
+    drc_update_limit = max(1, int(total_capacity * 0.25))
 
     # Count active DRC_UPDATE checks
     active_drc_updates = ManufacturabilityCheck.objects.filter(
