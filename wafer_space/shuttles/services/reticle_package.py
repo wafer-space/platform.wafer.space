@@ -10,7 +10,6 @@ from typing import Any
 from django.conf import settings
 from django.utils import timezone
 
-from wafer_space.core.enums import SlotSize
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.shuttles.config import GridConfig
 from wafer_space.shuttles.models import Shuttle
@@ -120,24 +119,22 @@ def _is_manufacturable(check: ManufacturabilityCheck) -> bool:
     )
 
 
-def _slot_tile_dims(slot_size: str) -> tuple[int, int]:
-    """Return (tile_height, tile_width) for a slot size."""
-    if slot_size == SlotSize.FULL:
-        return (2, 2)
-    if slot_size == SlotSize.HALF_WIDTH:
-        return (2, 1)  # Full height, half width
-    if slot_size == SlotSize.HALF_HEIGHT:
-        return (1, 2)  # Half height, full width
-    return (1, 1)  # QUARTER
-
-
 def write_tilemap(
     path: Path, slots: list[ShuttleSlot], grid_config: GridConfig
 ) -> None:
     """Write tilemap.csv."""
-    grid = [
-        [""] * (grid_config.num_columns * 2) for _ in range(grid_config.num_rows * 2)
-    ]
+    # Build cumulative tile offsets from row heights and column widths
+    # Each height/width of 1.0 = 2 tiles, 0.5 = 1 tile
+    row_starts = [0]
+    for h in grid_config.row_heights:
+        row_starts.append(row_starts[-1] + int(h * 2))
+    col_starts = [0]
+    for w in grid_config.column_widths:
+        col_starts.append(col_starts[-1] + int(w * 2))
+
+    total_tile_rows = row_starts[-1]
+    total_tile_cols = col_starts[-1]
+    grid = [[""] * total_tile_cols for _ in range(total_tile_rows)]
 
     for slot in slots:
         if not slot.project:
@@ -145,10 +142,13 @@ def write_tilemap(
         check = slot.project.output_file.output_check
         if not _is_manufacturable(check):
             continue
-        tile_h, tile_w = _slot_tile_dims(slot.slot_size)
+        tile_row = row_starts[slot.row]
+        tile_col = col_starts[slot.column]
+        tile_h = row_starts[slot.row + 1] - tile_row
+        tile_w = col_starts[slot.column + 1] - tile_col
         for r in range(tile_h):
             for c in range(tile_w):
-                grid[slot.row * 2 + r][slot.column * 2 + c] = slot.project.project_id
+                grid[tile_row + r][tile_col + c] = slot.project.project_id
 
     with path.open("w") as f:
         writer = csv.writer(f)
