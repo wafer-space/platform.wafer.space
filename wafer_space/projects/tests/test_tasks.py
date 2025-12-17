@@ -2335,6 +2335,7 @@ class TestChecksDrcUpdateRequeue:
         new_check = ManufacturabilityCheck.objects.filter(
             trigger_reason=ManufacturabilityCheck.TriggerReason.DRC_UPDATE,
         ).first()
+        assert new_check is not None
         assert new_check.parent_check == old_check
 
     def test_respects_capacity_limit(self):
