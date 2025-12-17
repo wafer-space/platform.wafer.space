@@ -2266,6 +2266,41 @@ class ManufacturabilityCheck(models.Model):
             check = check.parent_check
         return check
 
+    def create_check_drc_update(self) -> "ManufacturabilityCheck":
+        """Create a new pending check to re-run with latest precheck version.
+
+        If this check is still in progress, it will be automatically cancelled
+        by the existing superseded check cleanup logic.
+
+        Returns:
+            The newly created ManufacturabilityCheck.
+
+        Raises:
+            ValueError: If this check is not eligible for DRC update.
+        """
+        # Must be the latest check for this project file
+        latest = self.project_file.latest_manufacturability_check
+        if latest != self:
+            msg = "Can only create DRC update from the latest check for a file"
+            raise ValueError(msg)
+
+        # Must have a known version
+        if not self.docker_image_digest:
+            msg = "Check does not have a version yet"
+            raise ValueError(msg)
+
+        # Must have outdated digest
+        if self.is_using_latest_precheck is not False:
+            msg = "Check is already using latest precheck version"
+            raise ValueError(msg)
+
+        return ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            trigger_reason=self.TriggerReason.DRC_UPDATE,
+            parent_check=self,
+        )
+
     @property
     def queue_wait_seconds(self) -> float | None:
         """Time spent waiting in queue before running (in seconds).
@@ -2911,6 +2946,54 @@ class PrecheckImageRevision(models.Model):
         assert self.digest
         assert self.digest.startswith("sha256:")
         return f"sha256:{self.digest[7:19]}..."
+
+    @property
+    def version_display(self) -> str:
+        """Human-readable version string for display."""
+        if self.precheck_version:
+            return self.precheck_version
+        if self.git_commit_sha:
+            return self.git_commit_sha[:7]
+        return self.short_digest
+
+    @classmethod
+    def format_version_display(
+        cls, check_or_digest: "ManufacturabilityCheck | str | None"
+    ) -> tuple[str, bool | None]:
+        """Format version display string and is_latest flag for a check or digest.
+
+        Args:
+            check_or_digest: A ManufacturabilityCheck, digest string, or None.
+
+        Returns:
+            Tuple of (display_string, is_latest_flag).
+            display_string is always a valid string for display.
+            is_latest_flag is True/False/None (None if cannot determine).
+        """
+        if check_or_digest is None:
+            return ("-", None)
+
+        if isinstance(check_or_digest, str):
+            digest = check_or_digest
+            latest = ManufacturabilityCheck.get_latest_precheck_digest()
+            is_latest = (digest == latest) if digest and latest else None
+        else:
+            digest = check_or_digest.docker_image_digest
+            is_latest = check_or_digest.is_using_latest_precheck
+
+        if not digest:
+            return ("-", None)
+
+        cache_key = f"precheck_display:{digest}"
+        cached = cache.get(cache_key)
+        if cached:
+            return (cached, is_latest)
+
+        revision = cls.objects.filter(digest=digest).first()
+        display = revision.version_display if revision else f"sha256:{digest[7:19]}..."
+
+        cache.set(cache_key, display, 60)
+        return (display, is_latest)
 
     # --- Statistics helpers ---
 

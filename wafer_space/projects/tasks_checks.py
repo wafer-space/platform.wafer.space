@@ -6,6 +6,7 @@ import logging
 import shutil
 import tarfile
 import time
+from collections import defaultdict
 from datetime import timedelta
 from functools import wraps
 from pathlib import Path
@@ -23,7 +24,9 @@ from django.core.files import File
 from django.core.files.base import ContentFile
 from django.db import IntegrityError
 from django.db.models import Exists
+from django.db.models import F
 from django.db.models import OuterRef
+from django.db.models import Subquery
 from django.utils import timezone
 
 from .check_operations import create_retry_check
@@ -43,6 +46,7 @@ from .hashing import MultiHasher
 from .models import ManufacturabilityCheck
 from .models import ManufacturabilityCheckpoint
 from .models import ManufacturabilityCheckTask
+from .models import PrecheckImageRevision
 from .models import ProjectFile
 from .precheck_parser import PrecheckLogParser
 from .precheck_parser import classify_failure
@@ -192,6 +196,7 @@ __all__ = [
     "checks_cleanup_stale_pending_tasks",
     "checks_create",
     "checks_dispatching",
+    "checks_drc_update_requeue",
     "checks_pending",
     "checks_retry",
     "checks_running",
@@ -686,6 +691,107 @@ def checks_retry() -> dict:
             exhausted += 1
 
     return {"retried": retried, "exhausted": exhausted}
+
+
+@checks_task()
+def checks_drc_update_requeue() -> dict:
+    """Create DRC_UPDATE checks for projects with outdated precheck versions.
+
+    For each project, finds the latest project_file, then checks if its latest
+    manufacturability check is FINISHED but used an outdated docker image digest.
+    If so, creates a new pending check. Rate-limited to 25% of total capacity
+    for DRC_UPDATE checks.
+
+    Only creates one check per run to spread load over time.
+    """
+    latest_digest = ManufacturabilityCheck.get_latest_precheck_digest()
+    if not latest_digest:
+        return {"skipped": "no_latest_digest"}
+
+    # Single query: Get the latest check on the latest file for each project
+    # Using correlated subqueries to find checks that are BOTH:
+    # 1. On the latest project_file for their project
+    # 2. The latest check on that file
+    latest_file_subquery = (
+        ProjectFile.objects.filter(project_id=OuterRef("project_file__project_id"))
+        .order_by("-id")
+        .values("id")[:1]
+    )
+    latest_check_subquery = (
+        ManufacturabilityCheck.objects.filter(
+            project_file_id=OuterRef("project_file_id")
+        )
+        .order_by("-id")
+        .values("id")[:1]
+    )
+    latest_checks = list(
+        ManufacturabilityCheck.objects.filter(
+            project_file__project__isnull=False,
+            project_file_id=Subquery(latest_file_subquery),
+        )
+        .annotate(latest_check_id=Subquery(latest_check_subquery))
+        .filter(id=F("latest_check_id"))
+        .select_related("project_file", "project_file__project")
+    )
+
+    # Collect stats and find outdated FINISHED checks
+    stats: dict = {
+        "total": 0,
+        "finished": defaultdict(int),
+        "in_progress": 0,
+        "error": 0,
+    }
+    outdated_checks = []
+
+    for check in latest_checks:
+        stats["total"] += 1
+
+        if check.status in ManufacturabilityCheck.Status.in_progress():
+            stats["in_progress"] += 1
+        elif check.status == ManufacturabilityCheck.Status.ERROR:
+            stats["error"] += 1
+        elif check.status == ManufacturabilityCheck.Status.FINISHED:
+            version_key, _ = PrecheckImageRevision.format_version_display(check)
+            stats["finished"][version_key] += 1
+
+            if check.docker_image_digest and check.docker_image_digest != latest_digest:
+                outdated_checks.append(check)
+
+    # Sort by oldest first (by created_at)
+    outdated_checks.sort(key=lambda c: c.created_at)
+
+    # Calculate DRC_UPDATE capacity limit (25% of total, minimum 1)
+    total_capacity = sum(
+        int(server["max_concurrent"]) for server in settings.DOCKER_SERVERS
+    )
+    drc_update_limit = max(1, int(total_capacity * 0.25))
+
+    # Count active DRC_UPDATE checks
+    active_drc_updates = ManufacturabilityCheck.objects.filter(
+        status__in=ManufacturabilityCheck.Status.in_progress(),
+        trigger_reason=ManufacturabilityCheck.TriggerReason.DRC_UPDATE,
+    ).count()
+
+    drc_update_available = max(0, drc_update_limit - active_drc_updates)
+
+    # Create one check if capacity available
+    created = 0
+    if drc_update_available > 0 and outdated_checks:
+        check = outdated_checks[0]
+        check.create_check_drc_update()
+        created = 1
+
+    # Convert defaultdict to regular dict for JSON serialization
+    stats["finished"] = dict(stats["finished"])
+
+    return {
+        "stats": stats,
+        "drc_update_limit": drc_update_limit,
+        "drc_update_active": active_drc_updates,
+        "drc_update_available": drc_update_available,
+        "outdated_count": len(outdated_checks),
+        "created": created,
+    }
 
 
 @checks_task()

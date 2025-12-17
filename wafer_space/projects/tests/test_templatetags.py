@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from django.core.cache import cache
 from django.template import Context
 from django.template import Template
 
@@ -36,6 +37,7 @@ class TestCheckBadgeTemplateTags:
 
     def test_badge_check_version_renders(self):
         """badge_check_version renders version string."""
+        cache.clear()
         revision = PrecheckImageRevision.objects.create(
             digest="sha256:abc123def456789012345678901234567890123456789012345678901234",
             precheck_version="1.5.2",
@@ -46,11 +48,12 @@ class TestCheckBadgeTemplateTags:
         context = Context({"check": check})
         result = template.render(context)
 
-        assert "v1.5.2" in result
+        assert "1.5.2" in result
         assert "bi-cloud" in result
 
     def test_badge_check_version_fallback_to_commit(self):
         """badge_check_version falls back to git commit when no version."""
+        cache.clear()
         revision = PrecheckImageRevision.objects.create(
             digest="sha256:abc123def456789012345678901234567890123456789012345678901234",
             git_commit_sha="a261f14ae7f90a0f74c6db18f28eeafce9b6e803",
@@ -64,7 +67,7 @@ class TestCheckBadgeTemplateTags:
         assert "a261f14" in result
 
     def test_badge_check_version_fallback_to_unknown(self):
-        """badge_check_version shows ???? when no version info."""
+        """badge_check_version shows truncated digest when no version info."""
         check = ManufacturabilityCheckFactory(
             docker_image_digest="sha256:uncataloged123456789012345678901234567890123456789012"
         )
@@ -73,10 +76,11 @@ class TestCheckBadgeTemplateTags:
         context = Context({"check": check})
         result = template.render(context)
 
-        assert "????" in result
+        assert "sha256:uncataloged1..." in result
 
     def test_badge_check_status_and_version_renders(self):
         """badge_check_status_and_version renders status and version."""
+        cache.clear()
         revision = PrecheckImageRevision.objects.create(
             digest="sha256:abc123def456789012345678901234567890123456789012345678901234",
             precheck_version="1.5.2",
@@ -94,4 +98,4 @@ class TestCheckBadgeTemplateTags:
         result = template.render(context)
 
         assert "Passed" in result
-        assert "v1.5.2" in result
+        assert "1.5.2" in result

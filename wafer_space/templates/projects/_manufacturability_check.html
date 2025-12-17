@@ -21,6 +21,19 @@
       </button>
     </form>
   {% endif %}
+  {# Requeue button for outdated precheck version #}
+  {% if check.is_using_latest_precheck is False %}
+    <form method="post"
+          action="{% url 'projects:check_drc_update_requeue' check_id=check.pk %}"
+          class="d-inline ms-2">
+      {% csrf_token %}
+      <button type="submit"
+              class="btn btn-sm btn-outline-warning"
+              title="Re-run check with latest precheck version">
+        <i class="bi bi-arrow-repeat"></i> Recheck with Latest
+      </button>
+    </form>
+  {% endif %}
 </p>
 {# Result - THE key outcome #}
 <p class="mb-2">

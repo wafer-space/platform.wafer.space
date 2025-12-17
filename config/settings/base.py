@@ -517,6 +517,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "wafer_space.projects.tasks_checks.checks_cleanup_stale_pending_tasks",
         "schedule": 60.0,
     },
+    "checks-drc-update-requeue": {
+        "task": "wafer_space.projects.tasks_checks.checks_drc_update_requeue",
+        "schedule": 60.0,
+    },
     # Precheck revision tracking
     "revisions-needs-fetching": {
         "task": "wafer_space.projects.tasks_revisions.revisions_needs_fetching",
