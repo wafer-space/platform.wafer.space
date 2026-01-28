@@ -8,6 +8,12 @@ from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import PrecheckImageRevision
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectAccessLog
+from wafer_space.projects.models import DownloadAttempt
+from wafer_space.projects.models import FileProcessingError
+from wafer_space.projects.models import ProjectFileChunk
+from wafer_space.projects.models import ManufacturabilityCheckTask
+from wafer_space.projects.models import ManufacturabilityCheckpoint
+
 
 
 @admin.register(Project)
@@ -261,20 +267,8 @@ class PrecheckImageRevisionAdmin(admin.ModelAdmin):
 # Import compliance admin to register it
 from .admin_compliance import ProjectComplianceCertificationAdmin  # noqa: E402, F401
 
-'''
---------------------------------------------------------------
-admin models for FileProcessingError, DownloadAttempt, ProjectFileChunk, ManufacturabilityCheckTask, ManufacturabilityCheckpoint
- issue #248
- --------------------------------------------------------------
- '''
-from wafer_space.projects.models import (
-    DownloadAttempt,
-    FileProcessingError,
-    ProjectFileChunk,
-    ManufacturabilityCheckTask,
-    ManufacturabilityCheckpoint
-)
-from wafer_space.contrib.admin_mixins import StaffReadOnlyAdminMixin
+
+# Admin registrations for download/manufacturability audit models (issue #248)
 
 @admin.register(DownloadAttempt)
 class DownloadAttemptAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
@@ -319,7 +313,7 @@ class DownloadAttemptAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
 
     ordering = ("-started_at",)
 
-    def download_progress_display(self, obj):
+    def download_progress_display(self, obj: DownloadAttempt) -> str:
         return f"{obj.download_progress}%"
 
     download_progress_display.short_description = "Progress"
@@ -354,7 +348,7 @@ class FileProcessingErrorAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
 
     ordering = ("-occurred_at",)
 
-    def error_message_preview(self, obj):
+    def error_message_preview(self, obj: FileProcessingError) -> str:
         return obj.error_message[:75]
 
     error_message_preview.short_description = "Error Message"
