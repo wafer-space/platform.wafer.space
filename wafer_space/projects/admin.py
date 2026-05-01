@@ -4,16 +4,15 @@ from django.contrib import admin
 from simple_history.admin import SimpleHistoryAdmin
 
 from wafer_space.contrib.admin_mixins import StaffReadOnlyAdminMixin
+from wafer_space.projects.models import DownloadAttempt
+from wafer_space.projects.models import FileProcessingError
 from wafer_space.projects.models import ManufacturabilityCheck
+from wafer_space.projects.models import ManufacturabilityCheckpoint
+from wafer_space.projects.models import ManufacturabilityCheckTask
 from wafer_space.projects.models import PrecheckImageRevision
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectAccessLog
-from wafer_space.projects.models import DownloadAttempt
-from wafer_space.projects.models import FileProcessingError
 from wafer_space.projects.models import ProjectFileChunk
-from wafer_space.projects.models import ManufacturabilityCheckTask
-from wafer_space.projects.models import ManufacturabilityCheckpoint
-
 
 
 @admin.register(Project)
@@ -267,8 +266,8 @@ class PrecheckImageRevisionAdmin(admin.ModelAdmin):
 # Import compliance admin to register it
 from .admin_compliance import ProjectComplianceCertificationAdmin  # noqa: E402, F401
 
-
 # Admin registrations for download/manufacturability audit models (issue #248)
+
 
 @admin.register(DownloadAttempt)
 class DownloadAttemptAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
@@ -313,10 +312,10 @@ class DownloadAttemptAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
 
     ordering = ("-started_at",)
 
+    @admin.display(description="Progress")
     def download_progress_display(self, obj: DownloadAttempt) -> str:
         return f"{obj.download_progress}%"
 
-    download_progress_display.short_description = "Progress"
 
 @admin.register(FileProcessingError)
 class FileProcessingErrorAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
@@ -348,10 +347,10 @@ class FileProcessingErrorAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
 
     ordering = ("-occurred_at",)
 
+    @admin.display(description="Error Message")
     def error_message_preview(self, obj: FileProcessingError) -> str:
         return obj.error_message[:75]
 
-    error_message_preview.short_description = "Error Message"
 
 @admin.register(ProjectFileChunk)
 class ProjectFileChunkAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
@@ -363,13 +362,9 @@ class ProjectFileChunkAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
         "timestamp",
     )
 
-    list_filter = (
-        "timestamp",
-    )
+    list_filter = ("timestamp",)
 
-    search_fields = (
-        "download_attempt__project_file__original_filename",
-    )
+    search_fields = ("download_attempt__project_file__original_filename",)
 
     readonly_fields = (
         "download_attempt",
@@ -379,6 +374,7 @@ class ProjectFileChunkAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
     )
 
     ordering = ("download_attempt", "chunk_number")
+
 
 @admin.register(ManufacturabilityCheckTask)
 class ManufacturabilityCheckTaskAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
@@ -395,9 +391,7 @@ class ManufacturabilityCheckTaskAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin)
         "queued_at",
     )
 
-    search_fields = (
-        "task_id",
-    )
+    search_fields = ("task_id",)
 
     readonly_fields = (
         "manufacturability_check",
@@ -407,6 +401,7 @@ class ManufacturabilityCheckTaskAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin)
     )
 
     ordering = ("-queued_at",)
+
 
 @admin.register(ManufacturabilityCheckpoint)
 class ManufacturabilityCheckpointAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
@@ -425,9 +420,7 @@ class ManufacturabilityCheckpointAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin
         "container_state",
     )
 
-    search_fields = (
-        "manufacturability_check__id",
-    )
+    search_fields = ("manufacturability_check__id",)
 
     readonly_fields = (
         "manufacturability_check",
