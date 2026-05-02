@@ -4,10 +4,15 @@ from django.contrib import admin
 from simple_history.admin import SimpleHistoryAdmin
 
 from wafer_space.contrib.admin_mixins import StaffReadOnlyAdminMixin
+from wafer_space.projects.models import DownloadAttempt
+from wafer_space.projects.models import FileProcessingError
 from wafer_space.projects.models import ManufacturabilityCheck
+from wafer_space.projects.models import ManufacturabilityCheckpoint
+from wafer_space.projects.models import ManufacturabilityCheckTask
 from wafer_space.projects.models import PrecheckImageRevision
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectAccessLog
+from wafer_space.projects.models import ProjectFileChunk
 
 
 @admin.register(Project)
@@ -260,3 +265,182 @@ class PrecheckImageRevisionAdmin(admin.ModelAdmin):
 
 # Import compliance admin to register it
 from .admin_compliance import ProjectComplianceCertificationAdmin  # noqa: E402, F401
+
+# Admin registrations for download/manufacturability audit models (issue #248)
+
+
+@admin.register(DownloadAttempt)
+class DownloadAttemptAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
+    list_display = (
+        "id",
+        "project_file",
+        "attempt_number",
+        "status",
+        "bytes_downloaded",
+        "download_progress_display",
+        "started_at",
+        "completed_at",
+        "last_activity",
+    )
+
+    list_filter = (
+        "status",
+        "started_at",
+        "completed_at",
+    )
+
+    search_fields = (
+        "project_file__original_filename",
+        "worker_hostname",
+    )
+
+    readonly_fields = (
+        "project_file",
+        "attempt_number",
+        "status",
+        "started_at",
+        "completed_at",
+        "download_started_at",
+        "download_completed_at",
+        "download_duration_seconds",
+        "bytes_downloaded",
+        "worker_pid",
+        "worker_hostname",
+        "task_started_at",
+        "last_activity",
+    )
+
+    ordering = ("-started_at",)
+
+    @admin.display(description="Progress")
+    def download_progress_display(self, obj: DownloadAttempt) -> str:
+        return f"{obj.download_progress}%"
+
+
+@admin.register(FileProcessingError)
+class FileProcessingErrorAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
+    list_display = (
+        "id",
+        "download_attempt",
+        "error_type",
+        "error_message_preview",
+        "occurred_at",
+    )
+
+    list_filter = (
+        "error_type",
+        "occurred_at",
+    )
+
+    search_fields = (
+        "error_message",
+        "download_attempt__project_file__original_filename",
+    )
+
+    readonly_fields = (
+        "download_attempt",
+        "error_type",
+        "error_message",
+        "error_detail",
+        "occurred_at",
+    )
+
+    ordering = ("-occurred_at",)
+
+    @admin.display(description="Error Message")
+    def error_message_preview(self, obj: FileProcessingError) -> str:
+        return obj.error_message[:75]
+
+
+@admin.register(ProjectFileChunk)
+class ProjectFileChunkAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
+    list_display = (
+        "id",
+        "download_attempt",
+        "chunk_number",
+        "bytes_downloaded",
+        "timestamp",
+    )
+
+    list_filter = ("timestamp",)
+
+    search_fields = ("download_attempt__project_file__original_filename",)
+
+    readonly_fields = (
+        "download_attempt",
+        "chunk_number",
+        "bytes_downloaded",
+        "timestamp",
+    )
+
+    ordering = ("download_attempt", "chunk_number")
+
+
+@admin.register(ManufacturabilityCheckTask)
+class ManufacturabilityCheckTaskAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
+    list_display = (
+        "id",
+        "manufacturability_check",
+        "task_name",
+        "task_id",
+        "queued_at",
+    )
+
+    list_filter = (
+        "task_name",
+        "queued_at",
+    )
+
+    search_fields = ("task_id",)
+
+    readonly_fields = (
+        "manufacturability_check",
+        "task_name",
+        "task_id",
+        "queued_at",
+    )
+
+    ordering = ("-queued_at",)
+
+
+@admin.register(ManufacturabilityCheckpoint)
+class ManufacturabilityCheckpointAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
+    list_display = (
+        "id",
+        "manufacturability_check",
+        "checkpoint_number",
+        "elapsed_seconds",
+        "cpu_percent_formatted",
+        "memory_usage_formatted",
+        "timestamp",
+    )
+
+    list_filter = (
+        "timestamp",
+        "container_state",
+    )
+
+    search_fields = ("manufacturability_check__id",)
+
+    readonly_fields = (
+        "manufacturability_check",
+        "checkpoint_number",
+        "elapsed_seconds",
+        "timestamp",
+        "cpu_percent",
+        "cpu_total_usage",
+        "cpu_system_usage",
+        "cpu_online_cpus",
+        "memory_usage_bytes",
+        "memory_limit_bytes",
+        "memory_percent",
+        "memory_cache_bytes",
+        "block_read_bytes",
+        "block_write_bytes",
+        "network_rx_bytes",
+        "network_tx_bytes",
+        "container_state",
+        "raw_stats_json",
+    )
+
+    ordering = ("manufacturability_check", "checkpoint_number")
