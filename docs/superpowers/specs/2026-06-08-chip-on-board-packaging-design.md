@@ -51,26 +51,35 @@ parallel.
 ### 1. Data model (one migration)
 
 - `Project.chip_on_board: BooleanField(default=False)` — editable; excluded from
-  `CORE_FIELDS`. Mirrors `WS_COB`.
-- `ManufacturabilityCheck.chip_on_board: BooleanField(default=False)` — a
-  **snapshot** of the value the check actually ran with. Parallels the existing
-  slot/DRC-version context recorded on checks; makes a finished result
-  unambiguous and lets us detect when a toggle has made the latest result stale.
+  `CORE_FIELDS`. Mirrors the precheck's `WS_COB`.
+
+No new field on `ManufacturabilityCheck`. The precheck command reads
+`chip_on_board` **live from `check.project`** (see §2), matching how
+`--slot`/`--id` already read `check.project.slot_size`/`full_id`
+(`tasks_checks.py:1057-1058`). Because toggling CoB cancels any in-flight check
+and queues a new one (§3), a running check's project value is stable, so a live
+read always reflects what the check was queued with — no snapshot is needed. (A
+per-check snapshot could be added later if historical CoB labelling of finished
+checks becomes necessary; out of scope here.)
 
 ### 2. Precheck command wiring
 
-In `tasks_checks.py` `do_starting`, where the command list is built, append
-`"--cob"` iff the check's `chip_on_board` is True. `store_true` → no value. The
-snapshot is read from the `ManufacturabilityCheck` so the command matches what
-the check records.
+In `tasks_checks.py` `do_starting`, where the command list is built (the same
+place `--slot`/`--id` are appended from `check.project.slot_size`/`full_id`),
+append `"--cob"` iff `check.project.chip_on_board` is True. `store_true` → no
+value.
 
 ### 3. Re-check on toggle (service layer)
 
 Queuing a task must not happen in `models.py` (layering rule: models never
 import tasks). A service method owns this:
 
-- `ProjectService.set_chip_on_board(project, *, value, user)` (or equivalent in
-  the existing project service package).
+- A new `ProjectService.set_chip_on_board(project, *, value, user)` in
+  `wafer_space/projects/services/project_service.py`. (The existing
+  `ProjectFileService` in `services/file_service.py` owns the file-replacement
+  variant of this cancel+re-check logic; the shared cancel step —
+  `check.is_cancellable` → `check.mark_cancelling(...)` guarded by
+  `InvalidStateTransitionError` — should be reused rather than duplicated.)
 - On an actual change of value:
   - If the active file has a **cancellable** check, `check.mark_cancelling(
     reason="Chip-on-Board option changed")` (mirrors
@@ -96,8 +105,9 @@ Add `COB_CHANGE = "cob_change", "Chip-on-Board Option Changed"` to
 
 1. User checks "Request CoB" on create/edit → view → `set_chip_on_board`.
 2. Service persists `Project.chip_on_board`, cancels any in-flight check, and
-   queues a manufacturability check (`COB_CHANGE`) snapshotting `chip_on_board`.
-3. `do_starting` builds the precheck command with `--cob` from the snapshot.
+   queues a manufacturability check (`COB_CHANGE`).
+3. `do_starting` builds the precheck command with `--cob` read live from
+   `check.project.chip_on_board`.
 4. The precheck runs the extra CoB checks; results flow through the existing
    pipeline; the project detail page shows the CoB badge + manufacturability
    result.
@@ -113,12 +123,12 @@ Add `COB_CHANGE = "cob_change", "Chip-on-Board Option Changed"` to
 ## Testing (TDD)
 
 - **Model:** `chip_on_board` defaults False; editable (not blocked by
-  `CORE_FIELDS` immutability); snapshot field on `ManufacturabilityCheck`.
+  `CORE_FIELDS` immutability).
 - **Service:** toggling CoB on a project with a running/finished check cancels
-  the check and queues a new `COB_CHANGE` check with the correct snapshot;
-  toggling on a DRAFT only persists.
-- **Command builder:** `--cob` appended iff the check's `chip_on_board` is True;
-  absent otherwise; placed alongside `--slot`/`--id`.
+  the check and queues a new `COB_CHANGE` check; toggling on a DRAFT only
+  persists; no re-check when the submitted value is unchanged.
+- **Command builder:** `--cob` appended iff `check.project.chip_on_board` is
+  True; absent otherwise; placed alongside `--slot`/`--id`.
 - **View/form:** the checkbox renders on create + edit; POSTing it sets the flag
   and invokes the service.
 
