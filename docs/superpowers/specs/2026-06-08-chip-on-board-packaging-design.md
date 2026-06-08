@@ -56,12 +56,12 @@ parallel.
 No new field on `ManufacturabilityCheck`. The precheck command reads
 `chip_on_board` **live from `check.project`** (see §2), matching how
 `--slot`/`--id` already read `check.project.slot_size`/`full_id`
-(`tasks_checks.py:1057-1058`). Because toggling CoB creates a new check that
-supersedes any in-flight one (§3), a running check's project value is stable, so
-a live read always reflects what the check was queued with — no snapshot is
-needed. (A
-per-check snapshot could be added later if historical CoB labelling of finished
-checks becomes necessary; out of scope here.)
+(`tasks_checks.py:1057-1058`). Because toggling CoB cancels any in-flight check
+and creates a fresh one (§3), at most one non-cancelled check is ever active for
+a file, so a live read of `chip_on_board` reflects what that check was created
+with — no snapshot is needed. (A per-check snapshot could be added later if
+historical CoB labelling of finished checks becomes necessary; out of scope
+here.)
 
 ### 2. Precheck command wiring
 
@@ -77,19 +77,27 @@ file-replacement cancel path:
 
 - Add a model method `ManufacturabilityCheck.create_check_cob_change()`,
   parallel to the existing `create_check_drc_update()` (`models.py:2269`). It
-  validates that `self` is the latest check for its `project_file`, then creates
-  a **new PENDING** `ManufacturabilityCheck` with
+  validates that `self` is the latest check for its `project_file`; if
+  `self.is_cancellable` (the latest check is still in progress) it calls
+  `self.mark_cancelling(reason="Chip-on-Board option changed")`; then it creates
+  and returns a **new PENDING** `ManufacturabilityCheck` with
   `trigger_reason=TriggerReason.COB_CHANGE` and `parent_check=self` (chaining via
-  `parent_check`/`root_check`, like DRC updates and retries). It is a plain ORM
-  create — no task import and no manual cancellation. (Unlike
-  `create_check_drc_update`, there are no docker-digest/version guards; the
-  trigger is the user toggling, and it is valid whether the latest check is
-  finished or still in progress.)
-- The new pending check is dispatched by the normal check-queue processor. Any
-  still-in-progress older check is auto-cancelled by the existing
-  `_cancel_superseded_checks()` logic (`tasks_checks.py:1922`), which cancels an
-  in-progress check once a newer check exists for the same file — exactly what
-  DRC updates rely on.
+  `parent_check`/`root_check`, like DRC updates and retries). This is pure
+  model/ORM logic — no task import. (`mark_cancelling` is a state transition; the
+  scheduled `checks_cancelling` task performs the container teardown, exactly as
+  the file-replacement path relies on it. Unlike `create_check_drc_update` there
+  are no docker-digest/version guards — the trigger is the user toggling.)
+- **Why the explicit cancel:** DRC updates only ever re-check a *finished* check
+  (`checks_drc_update_requeue` skips in-progress ones), so they never needed to
+  cancel a running check. A CoB toggle can happen while a check is RUNNING, so
+  `create_check_cob_change()` cancels it directly. We deliberately do **not**
+  rely on `_cancel_superseded_checks()` (`tasks_checks.py:1922`): though it would
+  cancel an in-progress check that has a newer sibling, it runs only inside
+  `checks_cleanup()`, which is **not** in `CELERY_BEAT_SCHEDULE` and therefore
+  never executes.
+- The new PENDING check is dispatched by the scheduled `checks_pending` task
+  (15s); the cancelled in-progress check, if any, is torn down by the scheduled
+  `checks_cancelling` task (15s). Both are existing, scheduled pollers.
 - The toggle itself lives in the project edit view's form handling: persist the
   changed `Project.chip_on_board`; if the active file has a latest check, call
   `latest_check.create_check_cob_change()`. If the project has no check yet
@@ -116,8 +124,9 @@ service is required.
 1. User checks "Request CoB" on create/edit → project edit view.
 2. View persists `Project.chip_on_board`; if the active file has a latest check,
    calls `create_check_cob_change()` → a new PENDING `COB_CHANGE` check.
-3. The check-queue processor dispatches the pending check; any in-progress older
-   check is auto-cancelled by `_cancel_superseded_checks()`.
+3. `create_check_cob_change()` has already marked any in-progress check as
+   CANCELLING; the scheduled `checks_cancelling` task tears it down and
+   `checks_pending` dispatches the new PENDING check.
 4. `do_starting` builds the precheck command with `--cob` read live from
    `check.project.chip_on_board`.
 5. The precheck runs the extra CoB checks; results flow through the existing
@@ -131,9 +140,11 @@ service is required.
 - `create_check_cob_change()` raises if called on a non-latest check (mirrors
   `create_check_drc_update`'s latest-check guard); the view only calls it on the
   active file's latest check.
-- Superseding an in-progress check is handled by the existing
-  `_cancel_superseded_checks()` cleanup (guarded by `InvalidStateTransitionError`),
-  not by new code.
+- An in-progress latest check is cancelled explicitly inside
+  `create_check_cob_change()` via `mark_cancelling` (gated on `is_cancellable`,
+  which also avoids `InvalidStateTransitionError`); teardown is done by the
+  scheduled `checks_cancelling` task. The unscheduled
+  `_cancel_superseded_checks()` is deliberately not relied upon.
 - The precheck `ValueError`/failure paths are unchanged; CoB failures are
   ordinary manufacturability errors.
 
@@ -142,7 +153,9 @@ service is required.
 - **Model:** `chip_on_board` defaults False; editable (not blocked by
   `CORE_FIELDS` immutability). `create_check_cob_change()` creates a PENDING
   check with `trigger_reason=COB_CHANGE` and `parent_check` set to the source
-  check; raises when called on a non-latest check.
+  check; when the source check is in progress it is marked CANCELLING; when the
+  source check is already finished no cancel occurs; raises when called on a
+  non-latest check.
 - **Toggle (view):** changing CoB on a project with a latest check creates
   exactly one new pending `COB_CHANGE` check; toggling on a DRAFT only persists;
   submitting the form with the value unchanged creates no new check.
