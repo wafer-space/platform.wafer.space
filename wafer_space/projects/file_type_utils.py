@@ -21,6 +21,17 @@ def detect_file_type_from_data(data: bytes) -> tuple[str, str]:
     Raises:
         ValueError: If file type is not a valid GDS/OASIS file
     """
+    # Detect zip by its leading signature before falling back to libmagic.
+    # libmagic identifies a zip via the End-Of-Central-Directory record at the
+    # *end* of the archive, which ``magic.from_buffer`` cannot seek to (and
+    # which is absent when only the first chunk of a large upload is passed).
+    # Recent libmagic (file 5.46) therefore reports a real zip as
+    # ``application/octet-stream`` in buffer mode, silently mislabelling
+    # ``.zip`` uploads as raw ``.gds``. The leading signature is unambiguous.
+    zip_signatures = (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")
+    if data[:4] in zip_signatures:
+        return "application/zip", ".gds.zip"
+
     # Detect MIME type from data
     mime_detector = magic.Magic(mime=True)
     mime_type = mime_detector.from_buffer(data)
