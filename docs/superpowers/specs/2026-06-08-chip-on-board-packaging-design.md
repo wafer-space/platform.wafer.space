@@ -174,3 +174,9 @@ service is required.
 ## Follow-ups
 
 - Update issue #259 to reference the real `--cob` flag.
+- When implementing, correct the misleading `create_check_drc_update` docstring
+  (`models.py:2272-2273`), which claims in-progress checks are "automatically
+  cancelled by the existing superseded check cleanup logic" — that cleanup
+  (`checks_cleanup` / `_cancel_superseded_checks`) is not scheduled. It is
+  harmless for DRC (which only re-checks FINISHED checks), but the comment must
+  not be copied into `create_check_cob_change`.
