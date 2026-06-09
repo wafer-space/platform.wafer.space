@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import io
+import zipfile
 from unittest.mock import Mock
 from unittest.mock import patch
 
@@ -574,6 +576,22 @@ class TestDetectFileType(TestCase):
         assert mime_type in ["application/zip", "application/x-zip-compressed"]
         assert extension == ".gds.zip"
 
+    def test_detect_real_zip_file(self):
+        """A real zip archive is detected as zip, not silently treated as GDS.
+
+        Regression test for the libmagic buffer-mode discrepancy: libmagic
+        identifies a normal zip via the End-Of-Central-Directory record at the
+        end of the file, which ``magic.from_buffer`` cannot seek to. A genuine
+        zip (local-file-header signature ``PK\\x03\\x04``) must still map to
+        ``.gds.zip`` rather than falling through to ``octet-stream`` -> ``.gds``.
+        """
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("design.gds", b"fake gds payload" * 64)
+        mime_type, extension = detect_file_type_from_data(buf.getvalue())
+        assert mime_type in ["application/zip", "application/x-zip-compressed"]
+        assert extension == ".gds.zip"
+
     def test_detect_bzip2_file(self):
         """Test detection of bzip2 compressed file."""
         # Bzip2 magic bytes
@@ -590,13 +608,28 @@ class TestDetectFileType(TestCase):
         assert mime_type == "application/x-xz"
         assert extension == ".gds.xz"
 
-    def test_detect_binary_file_as_gds(self):
-        """Test detection of generic binary file (assumed to be GDS)."""
-        # Generic binary data
-        binary_data = b"\x00\x01\x02\x03" + b"\x00" * 100
-        mime_type, extension = detect_file_type_from_data(binary_data)
-        assert mime_type == "application/octet-stream"
+    def test_detect_gds_file(self):
+        """A GDSII file is detected by its HEADER record signature."""
+        # GDSII files begin with a HEADER record: length=0x0006, record
+        # type=0x00 (HEADER), data type=0x02 (2-byte int), then the version.
+        gds_data = b"\x00\x06\x00\x02\x00\x05" + b"\x00" * 100
+        mime_type, extension = detect_file_type_from_data(gds_data)
+        assert mime_type == "application/x-gds"
         assert extension == ".gds"
+
+    def test_detect_oasis_file(self):
+        """An OASIS file is detected by its magic string, not mislabelled .gds."""
+        oasis_data = b"%SEMI-OASIS\r\n" + b"\x00" * 100
+        mime_type, extension = detect_file_type_from_data(oasis_data)
+        assert mime_type == "application/x-oasis"
+        assert extension == ".oas"
+
+    def test_reject_unknown_binary(self):
+        """Generic binary is rejected, not assumed to be GDS."""
+        # Generic binary data that is neither GDS, OASIS, nor a known archive.
+        binary_data = b"\x00\x01\x02\x03" + b"\x00" * 100
+        with pytest.raises(ValueError, match="Unsupported file type"):
+            detect_file_type_from_data(binary_data)
 
     def test_reject_text_file(self):
         """Test that text files are rejected."""
