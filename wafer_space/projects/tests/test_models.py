@@ -3311,8 +3311,13 @@ class TestCrowdSupplyOrderId:
         # Should not raise.
         validate_crowd_supply_order_id(value)
 
-    @pytest.mark.parametrize("value", ["abc", "3273 73", "#327373", "32.73", "-1"])
+    @pytest.mark.parametrize(
+        "value",
+        ["abc", "3273 73", "#327373", "32.73", "-1", "٣٢٧"],
+    )
     def test_validator_rejects_non_digits(self, value):
+        # The final case is Arabic-Indic digits: str.isdigit() alone accepts
+        # them, so the validator must also require ASCII.
         with pytest.raises(ValidationError):
             validate_crowd_supply_order_id(value)
 
