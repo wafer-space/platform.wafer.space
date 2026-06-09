@@ -560,6 +560,37 @@ class TestProjectUpdateView(TestCase):
         self.project.refresh_from_db()
         assert self.project.chip_on_board is True
 
+    def test_order_id_field_rendered_on_edit_form(self):
+        """The Crowd Supply order field is present and rendered on the form."""
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:update", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        assert "crowd_supply_order_id" in response.context["form"].fields
+        # The input must actually appear in the rendered HTML, not just the form.
+        assert "id_crowd_supply_order_id" in response.content.decode()
+
+    def test_owner_can_set_order_id_via_update(self):
+        """Posting an order id through the update view persists it."""
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:update", kwargs={"pk": self.project.pk})
+        form_data = {
+            "name": "Test Project",
+            "description": "Test project",
+            "is_public": False,
+            "repository_url": "",
+            "crowd_supply_order_id": "327373",
+            "license_type": "proprietary",
+            "other_license_spdx_id": "",
+            "proprietary_terms_url": "",
+        }
+        response = self.client.post(url, form_data)
+
+        assert response.status_code == HTTP_FOUND
+        self.project.refresh_from_db()
+        assert self.project.crowd_supply_order_id == "327373"
+
 
 @pytest.mark.django_db
 class TestProjectDeleteView(TestCase):
