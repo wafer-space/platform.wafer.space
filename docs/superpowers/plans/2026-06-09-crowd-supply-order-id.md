@@ -60,7 +60,13 @@ class TestCrowdSupplyOrderId:
     @pytest.mark.django_db
     def test_blank_order_id_is_valid(self):
         # Field is optional: blank must pass full_clean (validators skipped on blank).
+        # NOTE: reload via objects.get() first. Project.clean() runs
+        # _validate_core_fields_immutable() on saved instances, which requires
+        # _loaded_values (only populated by from_db()); a bare factory instance
+        # would raise RuntimeError otherwise. This mirrors the existing pattern
+        # used elsewhere in test_models.py.
         project = ProjectFactory()
+        project = Project.objects.get(pk=project.pk)
         project.crowd_supply_order_id = ""
         project.full_clean()  # must not raise
 
@@ -316,7 +322,7 @@ Insert immediately after the closing `{% endif %}` of the Repository block:
 - [ ] **Step 2: Lint the template**
 
 Run: `uv run djlint wafer_space/templates/projects/project_detail.html --lint`
-Expected: no new errors. (If `make lint` includes djlint, prefer `make lint-fix && make lint`.)
+Expected: no new errors. (`make lint` runs ruff only, not djlint, so call djlint directly here.)
 
 - [ ] **Step 3: Commit**
 
