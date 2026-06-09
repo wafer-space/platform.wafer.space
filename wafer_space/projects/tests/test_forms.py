@@ -28,6 +28,17 @@ class TestProjectForm(TestCase):
             name="G800", description="Test Shuttle", status=Shuttle.Status.OPEN
         )
 
+    def _base_form_data(self, **overrides):
+        """Build minimal valid ProjectForm data, with optional field overrides."""
+        data = {
+            "name": "Test Project",
+            "shuttle": self.shuttle.pk,
+            "project_id": "TEST",
+            "slot_size": "1x1",
+        }
+        data.update(overrides)
+        return data
+
     def test_form_valid_with_all_fields(self):
         """Test form is valid with name, description, and slot_size."""
         form_data = {
@@ -101,27 +112,20 @@ class TestProjectForm(TestCase):
         form = ProjectForm(user=user, instance=project)
         assert form.fields["chip_on_board"].disabled is False
 
-    def _base_form_data(self, **overrides):
-        data = {
-            "name": "Test Project",
-            "shuttle": self.shuttle.pk,
-            "project_id": "TEST",
-            "slot_size": "1x1",
-        }
-        data.update(overrides)
-        return data
-
     def test_order_id_optional(self):
+        """Crowd Supply order number is optional and cleans to empty string."""
         form = ProjectForm(data=self._base_form_data())
         assert form.is_valid(), form.errors
         assert form.cleaned_data["crowd_supply_order_id"] == ""
 
     def test_order_id_accepts_digits(self):
+        """A plain numeric order number is accepted unchanged."""
         form = ProjectForm(data=self._base_form_data(crowd_supply_order_id="327373"))
         assert form.is_valid(), form.errors
         assert form.cleaned_data["crowd_supply_order_id"] == "327373"
 
     def test_order_id_strips_hash_and_whitespace(self):
+        """A pasted '  #327373 ' is normalised to '327373'."""
         form = ProjectForm(
             data=self._base_form_data(crowd_supply_order_id="  #327373 ")
         )
@@ -129,6 +133,7 @@ class TestProjectForm(TestCase):
         assert form.cleaned_data["crowd_supply_order_id"] == "327373"
 
     def test_order_id_rejects_non_numeric(self):
+        """Non-numeric order numbers are rejected via the model validator."""
         form = ProjectForm(data=self._base_form_data(crowd_supply_order_id="abc123"))
         assert not form.is_valid()
         assert "crowd_supply_order_id" in form.errors
