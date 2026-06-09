@@ -25,6 +25,8 @@
 | `wafer_space/projects/forms.py` | Field in `ProjectForm.Meta`, widget, help text, `clean_crowd_supply_order_id` | Modify |
 | `wafer_space/projects/admin.py` | `list_display` + `search_fields` entries | Modify |
 | `wafer_space/templates/projects/project_detail.html` | Conditional linked detail row | Modify |
+| `wafer_space/templates/projects/project_form.html` | Render the field on the create/edit form (crispy renders fields explicitly — adding to `Meta.fields` is NOT enough) | Modify |
+| `wafer_space/projects/tests/test_views.py` | Detail-page render tests + edit-form render/round-trip tests | Modify |
 | `wafer_space/projects/tests/test_models.py` | Validator + property + round-trip tests | Modify |
 | `wafer_space/projects/tests/test_forms.py` | Form normalisation / validation tests | Modify |
 
@@ -354,6 +356,19 @@ In `uv run python manage.py shell`, create a project with `crowd_supply_order_id
 Use superpowers:finishing-a-development-branch to decide how to integrate (PR onto `fix/zip-mime-detection` / `main`, or merge), and to clean up the worktree.
 
 ---
+
+## Correction (found in final whole-feature review)
+
+The original plan added the field to `ProjectForm.Meta.fields` but did NOT list
+`wafer_space/templates/projects/project_form.html` as a file to modify. That
+template renders each field explicitly via `{{ form.<name>|as_crispy_field }}`
+(no generic loop), so the field stayed invisible on the create/edit page despite
+being fully wired into the form class — the owner had no way to enter it. Fixed
+by rendering `{{ form.crowd_supply_order_id|as_crispy_field }}` after
+`repository_url`, plus an edit-form render test and a POST round-trip test in
+`TestProjectUpdateView` (the previously-untested form↔template seam). Lesson:
+for explicitly-rendered templates, "add to `Meta.fields`" is necessary but not
+sufficient — always render the field and assert it appears in the HTML.
 
 ## Notes / decisions captured
 
