@@ -191,10 +191,10 @@ def queued_check_task(
 __all__ = [
     "checks_analyzing",
     "checks_cancelling",
-    "checks_cleanup",
     "checks_cleanup_orphaned_docker",
     "checks_cleanup_stale_files",
     "checks_cleanup_stale_pending_tasks",
+    "checks_cleanup_superseded",
     "checks_create",
     "checks_dispatching",
     "checks_drc_update_requeue",
@@ -1948,11 +1948,21 @@ def checks_cleanup_stale_files() -> dict:
     return {"cancelled": cancelled}
 
 
-def _cancel_superseded_checks() -> int:
+@checks_task()
+def checks_cleanup_superseded() -> dict:
     """Cancel in-progress checks that have been superseded by newer checks.
 
+    A check is "superseded" when a newer check exists for the same project
+    file while the older one is still in progress. This happens via the manual
+    DRC-update requeue view (``check_drc_update_requeue``), which can create a
+    fresh check for a file whose latest check is still running. The older,
+    now-redundant in-progress check is marked for cancellation here.
+
+    The scheduled ``checks_drc_update_requeue`` beat task does not produce this
+    situation, because it only requeues FINISHED checks.
+
     Returns:
-        Number of checks marked for cancellation.
+        Dict with 'cancelled' count of checks marked for cancellation.
     """
     logger = logging.getLogger(__name__)
 
@@ -1976,40 +1986,10 @@ def _cancel_superseded_checks() -> int:
                 check.id,
             )
             cancelled += 1
-        except Exception:
+        except InvalidStateTransitionError:
             logger.exception("Failed to cancel superseded check %s", check.id)
 
-    return cancelled
-
-
-@checks_task()
-def checks_cleanup() -> dict:
-    """Cleanup task that performs all periodic cleanup operations.
-
-    This task combines multiple cleanup operations:
-    - Cancel checks superseded by newer checks
-    - Cancel checks on inactive project files
-    - Remove orphaned pending task records
-
-    Returns:
-        Dict with counts of cleanup operations performed.
-    """
-    # Cancel superseded checks
-    superseded_cancelled = _cancel_superseded_checks()
-
-    # Cancel checks on stale files
-    stale_files_result = checks_cleanup_stale_files()
-    stale_files_cancelled = stale_files_result.get("cancelled", 0)
-
-    # Clean up orphaned pending tasks
-    pending_tasks_result = checks_cleanup_stale_pending_tasks()
-    pending_tasks_deleted = pending_tasks_result.get("deleted", 0)
-
-    return {
-        "superseded_cancelled": superseded_cancelled,
-        "stale_files_cancelled": stale_files_cancelled,
-        "pending_tasks_deleted": pending_tasks_deleted,
-    }
+    return {"cancelled": cancelled}
 
 
 @checks_task()

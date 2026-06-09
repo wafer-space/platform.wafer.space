@@ -56,8 +56,8 @@ from wafer_space.projects.tasks import do_running
 from wafer_space.projects.tasks import do_starting
 from wafer_space.projects.tasks import download_project_file
 from wafer_space.projects.tasks_checks import _save_output_gds
-from wafer_space.projects.tasks_checks import checks_cleanup
 from wafer_space.projects.tasks_checks import checks_cleanup_stale_pending_tasks
+from wafer_space.projects.tasks_checks import checks_cleanup_superseded
 from wafer_space.projects.tasks_checks import checks_drc_update_requeue
 from wafer_space.projects.tasks_download import _apply_post_download_processing
 from wafer_space.projects.tasks_download import _initialize_hash_calculators
@@ -2625,7 +2625,7 @@ class TestCancelSupersededChecks:
             status=ManufacturabilityCheck.Status.PENDING,
         )
 
-        checks_cleanup()
+        checks_cleanup_superseded()
 
         old_check.refresh_from_db()
         assert old_check.status == ManufacturabilityCheck.Status.CANCELLING
@@ -2640,7 +2640,7 @@ class TestCancelSupersededChecks:
             status=ManufacturabilityCheck.Status.RUNNING,
         )
 
-        checks_cleanup()
+        checks_cleanup_superseded()
 
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.RUNNING
@@ -2660,7 +2660,7 @@ class TestCancelSupersededChecks:
             status=ManufacturabilityCheck.Status.PENDING,
         )
 
-        checks_cleanup()
+        checks_cleanup_superseded()
 
         old_check.refresh_from_db()
         assert old_check.status == ManufacturabilityCheck.Status.FINISHED
