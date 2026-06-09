@@ -61,6 +61,13 @@ def validate_project_id(value: str) -> None:
         raise ValidationError(msg)
 
 
+def validate_crowd_supply_order_id(value: str) -> None:
+    """Validate a Crowd Supply order number is all digits (e.g. "327373")."""
+    if not value.isdigit():
+        msg = "Crowd Supply order number must contain only digits (e.g. 327373)."
+        raise ValidationError(msg)
+
+
 class LicenseType(models.TextChoices):
     """License types for projects.
 
@@ -166,6 +173,7 @@ class Project(models.Model):
             "license_type",
             "other_license_spdx_id",
             "proprietary_terms_url",
+            "crowd_supply_order_id",
         }
     )
 
@@ -260,6 +268,14 @@ class Project(models.Model):
         blank=True,
         max_length=500,
         help_text="URL to the project's source repository",
+    )
+
+    crowd_supply_order_id = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        validators=[validate_crowd_supply_order_id],
+        help_text="Crowd Supply order number, e.g. 327373 (optional).",
     )
 
     # License tracking (Issue #193)
@@ -472,6 +488,13 @@ class Project(models.Model):
         if self.shuttle and self.project_id:
             return f"{self.shuttle.name}{self.project_id}"
         return ""
+
+    @property
+    def crowd_supply_order_url(self) -> str:
+        """Crowd Supply order page URL, or '' when no order id is set."""
+        if not self.crowd_supply_order_id:
+            return ""
+        return f"https://www.crowdsupply.com/account/order/{self.crowd_supply_order_id}"
 
     @property
     def shuttle_positions(self) -> models.QuerySet:

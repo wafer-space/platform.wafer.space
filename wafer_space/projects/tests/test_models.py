@@ -16,6 +16,7 @@ from wafer_space.projects.models import LicenseType
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
+from wafer_space.projects.models import validate_crowd_supply_order_id
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.projects.tests.factories import ProjectFileFactory
@@ -3300,3 +3301,49 @@ class TestProjectChipOnBoard:
         """chip_on_board is in USER_FIELDS and not in CORE_FIELDS."""
         assert "chip_on_board" in Project.USER_FIELDS
         assert "chip_on_board" not in Project.CORE_FIELDS
+
+
+class TestCrowdSupplyOrderId:
+    """Crowd Supply order number validation and URL property."""
+
+    @pytest.mark.parametrize("value", ["327373", "0", "00123"])
+    def test_validator_accepts_digit_strings(self, value):
+        # Should not raise.
+        validate_crowd_supply_order_id(value)
+
+    @pytest.mark.parametrize("value", ["abc", "3273 73", "#327373", "32.73", "-1"])
+    def test_validator_rejects_non_digits(self, value):
+        with pytest.raises(ValidationError):
+            validate_crowd_supply_order_id(value)
+
+    @pytest.mark.django_db
+    def test_blank_order_id_is_valid(self):
+        # Field is optional: blank must pass full_clean (validators skipped on blank).
+        # NOTE: reload via objects.get() first. Project.clean() runs
+        # _validate_core_fields_immutable() on saved instances, which requires
+        # _loaded_values (only populated by from_db()); a bare factory instance
+        # would raise RuntimeError otherwise. This mirrors the existing pattern
+        # used elsewhere in test_models.py.
+        project = ProjectFactory()
+        loaded_project = Project.objects.get(pk=project.pk)
+        loaded_project.crowd_supply_order_id = ""
+        loaded_project.full_clean()  # must not raise
+
+    @pytest.mark.django_db
+    def test_url_property_returns_account_order_url(self):
+        project = ProjectFactory(crowd_supply_order_id="327373")
+        assert (
+            project.crowd_supply_order_url
+            == "https://www.crowdsupply.com/account/order/327373"
+        )
+
+    @pytest.mark.django_db
+    def test_url_property_empty_when_unset(self):
+        project = ProjectFactory(crowd_supply_order_id="")
+        assert project.crowd_supply_order_url == ""
+
+    @pytest.mark.django_db
+    def test_order_id_round_trips(self):
+        project = ProjectFactory(crowd_supply_order_id="314421")
+        project.refresh_from_db()
+        assert project.crowd_supply_order_id == "314421"
