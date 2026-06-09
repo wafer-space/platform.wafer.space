@@ -207,6 +207,7 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
             "is_public",
             "chip_on_board",
             "repository_url",
+            "crowd_supply_order_id",
             "license_type",
             "other_license_spdx_id",
             "proprietary_terms_url",
@@ -239,6 +240,13 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
                     "placeholder": "https://github.com/username/repo",
                 },
             ),
+            "crowd_supply_order_id": forms.TextInput(
+                attrs={
+                    "class": "form-control",
+                    "placeholder": "327373",
+                    "inputmode": "numeric",
+                },
+            ),
             "other_license_spdx_id": forms.TextInput(
                 attrs={
                     "class": "form-control",
@@ -259,6 +267,9 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
             "is_public": "Make this design publicly visible on the platform",
             # chip_on_board: help_text inherited from the model field
             "repository_url": "URL to the project's source repository",
+            "crowd_supply_order_id": (
+                "Crowd Supply order number, e.g. 327373 (optional)."
+            ),
             "other_license_spdx_id": (
                 "SPDX identifier (e.g., GPL-3.0-only, LGPL-2.1-or-later)"
             ),
@@ -351,6 +362,11 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
         if cleaned_data is None:
             return cleaned_data
         return self._validate_license_fields(cleaned_data)
+
+    def clean_crowd_supply_order_id(self) -> str:
+        """Strip whitespace and a leading '#' so a pasted '#327373' is accepted."""
+        value = self.cleaned_data.get("crowd_supply_order_id", "")
+        return value.strip().lstrip("#").strip()
 
     def clean_project_id(self):
         """Validate and normalize project_id field."""
