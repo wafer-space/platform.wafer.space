@@ -139,6 +139,30 @@ class TestProjectDetailView(TestCase):
         # Should return 403 Forbidden
         assert response.status_code == HTTP_FORBIDDEN
 
+    def test_crowd_supply_order_shown_when_set(self):
+        """Test that the Crowd Supply order number and link render when set."""
+        self.project.crowd_supply_order_id = "12345"
+        self.project.save()
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+        assert "Crowd Supply order:" in content
+        assert "12345" in content
+        assert self.project.crowd_supply_order_url in content
+
+    def test_crowd_supply_order_absent_when_blank(self):
+        """Test that no Crowd Supply order row renders when unset."""
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        assert "Crowd Supply order:" not in response.content.decode()
+
     def test_includes_active_file_in_context(self):
         """Test that active file is included in context."""
         # Create active file
