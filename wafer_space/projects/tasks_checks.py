@@ -1972,10 +1972,16 @@ def checks_cleanup_superseded() -> dict:
         created_at__gt=OuterRef("created_at"),
     )
 
-    # Find all superseded in-progress checks
-    superseded = ManufacturabilityCheck.objects.filter(
-        status__in=ManufacturabilityCheck.Status.in_progress(),
-    ).filter(Exists(newer_exists))
+    # Find all superseded in-progress checks. Checks already in CANCELLING
+    # are excluded: CANCELLING -> CANCELLING is not a valid transition, and
+    # the checks_cancelling task completes them.
+    superseded = (
+        ManufacturabilityCheck.objects.filter(
+            status__in=ManufacturabilityCheck.Status.in_progress(),
+        )
+        .exclude(status=ManufacturabilityCheck.Status.CANCELLING)
+        .filter(Exists(newer_exists))
+    )
 
     cancelled = 0
     for check in superseded:

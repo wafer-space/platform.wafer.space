@@ -2608,7 +2608,7 @@ class TestChecksCleanupStalePendingTasks:
 
 
 class TestCancelSupersededChecks:
-    """Tests for cancel_superseded_checks functionality."""
+    """Tests for the checks_cleanup_superseded task."""
 
     @pytest.mark.django_db
     def test_cancels_older_in_progress_check_when_newer_exists(self) -> None:
@@ -2664,6 +2664,31 @@ class TestCancelSupersededChecks:
 
         old_check.refresh_from_db()
         assert old_check.status == ManufacturabilityCheck.Status.FINISHED
+
+    @pytest.mark.django_db
+    def test_skips_checks_already_cancelling_without_error_logs(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Checks already in CANCELLING are skipped, not re-cancelled with errors."""
+        project_file = ProjectFileFactory()
+        old_check = ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.CANCELLING,
+        )
+        ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+
+        with caplog.at_level(logging.ERROR, logger="wafer_space.projects.tasks_checks"):
+            result = checks_cleanup_superseded()
+
+        assert result == {"cancelled": 0}
+        assert not caplog.records
+        old_check.refresh_from_db()
+        assert old_check.status == ManufacturabilityCheck.Status.CANCELLING
 
 
 @pytest.mark.django_db
