@@ -250,12 +250,20 @@ class ProjectUpdateView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, UpdateView
         return context
 
     def form_valid(self, form):
-        """Show success message."""
+        """Save, then re-run the manufacturability check if CoB changed."""
+        cob_changed = "chip_on_board" in form.changed_data
+        response = super().form_valid(form)
+
+        if cob_changed:
+            latest_check = self.object.latest_manufacturability_check
+            if latest_check is not None:
+                latest_check.create_check_cob_change()
+
         messages.success(
             self.request,
             f"Project '{form.instance.name}' updated successfully!",
         )
-        return super().form_valid(form)
+        return response
 
     def get_success_url(self):
         """Redirect to project detail page."""
