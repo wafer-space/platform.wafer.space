@@ -1081,6 +1081,8 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
         "--id",
         full_id,
     ]
+    if check.project.chip_on_board:
+        command.append("--cob")
     command_str = " ".join(command)
     logger.info("[do_starting] Container command: %s", command_str)
 
