@@ -82,7 +82,7 @@ class TestProjectForm(TestCase):
         assert "name" in form.errors
 
     def test_chip_on_board_field_present_and_optional(self):
-        """chip_on_board is on the form, optional, and defaults to False."""
+        """chip_on_board is on the form and optional."""
         form = ProjectForm()
         assert "chip_on_board" in form.fields
         assert form.fields["chip_on_board"].required is False
