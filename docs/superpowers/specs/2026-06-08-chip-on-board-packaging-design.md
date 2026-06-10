@@ -1,8 +1,16 @@
 # Chip-on-Board (CoB) Packaging Support — Design
 
-- **Date:** 2026-06-08
+- **Date:** 2026-06-08 (revised 2026-06-10 for
+  [#261](https://github.com/wafer-space/platform.wafer.space/issues/261) /
+  [PR #262](https://github.com/wafer-space/platform.wafer.space/pull/262))
 - **Issue:** [#259](https://github.com/wafer-space/platform.wafer.space/issues/259)
 - **Status:** Approved design, pending spec review
+- **Assumes:** PR #262 (fixes #261) lands before implementation. It replaces
+  the never-scheduled `checks_cleanup()` / `_cancel_superseded_checks()` with a
+  scheduled `checks_cleanup_superseded` beat task (60s) and fixes the
+  `create_check_drc_update` docstring. This spec is written against that
+  post-#262 state. The design also works without #262 — it never *relies* on
+  the superseded-cleanup task — only the backstop notes below would not apply.
 
 ## Summary
 
@@ -87,14 +95,24 @@ file-replacement cancel path:
   scheduled `checks_cancelling` task performs the container teardown, exactly as
   the file-replacement path relies on it. Unlike `create_check_drc_update` there
   are no docker-digest/version guards — the trigger is the user toggling.)
-- **Why the explicit cancel:** DRC updates only ever re-check a *finished* check
-  (`checks_drc_update_requeue` skips in-progress ones), so they never needed to
-  cancel a running check. A CoB toggle can happen while a check is RUNNING, so
-  `create_check_cob_change()` cancels it directly. We deliberately do **not**
-  rely on `_cancel_superseded_checks()` (`tasks_checks.py:1922`): though it would
-  cancel an in-progress check that has a newer sibling, it runs only inside
-  `checks_cleanup()`, which is **not** in `CELERY_BEAT_SCHEDULE` and therefore
-  never executes.
+- **Why the explicit cancel:** the scheduled DRC-update requeue only re-checks
+  *finished* checks (`checks_drc_update_requeue` skips in-progress ones), but a
+  CoB toggle can happen while a check is RUNNING, so
+  `create_check_cob_change()` cancels it directly. Post-#262 the scheduled
+  `checks_cleanup_superseded` task (60s) would *eventually* cancel a superseded
+  in-progress check, but we still cancel explicitly because:
+  1. **Immediacy/correctness** — relying on the 60s backstop leaves a window in
+     which the superseded check keeps running and could even FINISH, recording
+     a result computed with the *old* CoB setting. That would break §1's
+     live-read invariant ("at most one non-cancelled check is ever active").
+     Explicit cancel closes the window at toggle time.
+  2. **Audit precision** — `mark_cancelling(reason="Chip-on-Board option
+     changed")` records why, instead of the generic superseded-cleanup reason.
+  3. **Determinism** — the method's behaviour is self-contained and testable
+     without depending on beat timing.
+
+  `checks_cleanup_superseded` remains a defence-in-depth backstop (it would
+  mop up if the explicit cancel were ever skipped), not the mechanism.
 - The new PENDING check is dispatched by the scheduled `checks_pending` task
   (15s); the cancelled in-progress check, if any, is torn down by the scheduled
   `checks_cancelling` task (15s). Both are existing, scheduled pollers.
@@ -143,8 +161,9 @@ service is required.
 - An in-progress latest check is cancelled explicitly inside
   `create_check_cob_change()` via `mark_cancelling` (gated on `is_cancellable`,
   which also avoids `InvalidStateTransitionError`); teardown is done by the
-  scheduled `checks_cancelling` task. The unscheduled
-  `_cancel_superseded_checks()` is deliberately not relied upon.
+  scheduled `checks_cancelling` task. The scheduled `checks_cleanup_superseded`
+  task (post-#262, 60s) is a defence-in-depth backstop only — the explicit
+  cancel is the primary mechanism (see §3 for why).
 - The precheck `ValueError`/failure paths are unchanged; CoB failures are
   ordinary manufacturability errors.
 
@@ -174,9 +193,10 @@ service is required.
 ## Follow-ups
 
 - Update issue #259 to reference the real `--cob` flag.
-- When implementing, correct the misleading `create_check_drc_update` docstring
-  (`models.py:2272-2273`), which claims in-progress checks are "automatically
-  cancelled by the existing superseded check cleanup logic" — that cleanup
-  (`checks_cleanup` / `_cancel_superseded_checks`) is not scheduled. It is
-  harmless for DRC (which only re-checks FINISHED checks), but the comment must
-  not be copied into `create_check_cob_change`.
+- Before implementation: rebase this branch onto `main` once PR #262 merges —
+  #262 touches `tasks_checks.py` and the `create_check_drc_update` area of
+  `models.py`, both adjacent to this feature's edit sites. (#262 also fixes the
+  previously misleading `create_check_drc_update` docstring, so no docstring
+  follow-up remains here; `create_check_cob_change`'s own docstring should
+  state that it cancels in-progress checks *itself*, unlike
+  `create_check_drc_update` which defers to `checks_cleanup_superseded`.)
