@@ -205,6 +205,7 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
             "name",
             "description",
             "is_public",
+            "chip_on_board",
             "repository_url",
             "license_type",
             "other_license_spdx_id",
@@ -231,6 +232,7 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
                 },
             ),
             "is_public": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+            "chip_on_board": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "repository_url": forms.URLInput(
                 attrs={
                     "class": "form-control",
@@ -255,6 +257,10 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
             "description": "Optional details about your design",
             "slot_size": "Select the die slot size for your design",
             "is_public": "Make this design publicly visible on the platform",
+            "chip_on_board": (
+                "Run extra Chip-on-Board (CoB) compatibility checks during the"
+                " manufacturability precheck"
+            ),
             "repository_url": "URL to the project's source repository",
             "other_license_spdx_id": (
                 "SPDX identifier (e.g., GPL-3.0-only, LGPL-2.1-or-later)"

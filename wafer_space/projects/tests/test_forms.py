@@ -81,6 +81,26 @@ class TestProjectForm(TestCase):
         assert not form.is_valid()
         assert "name" in form.errors
 
+    def test_chip_on_board_field_present_and_optional(self):
+        """chip_on_board is on the form, optional, and defaults to False."""
+        form = ProjectForm()
+        assert "chip_on_board" in form.fields
+        assert form.fields["chip_on_board"].required is False
+
+    def test_chip_on_board_editable_for_non_staff_on_existing_project(self):
+        """chip_on_board is a user field — never disabled on edit."""
+        user = User.objects.create_user(
+            username="formuser", email="form@example.com", password=TEST_PASSWORD
+        )
+        project = Project.objects.create(
+            user=user,
+            name="Form Project",
+            shuttle=self.shuttle,
+            project_id="FRMP",
+        )
+        form = ProjectForm(user=user, instance=project)
+        assert form.fields["chip_on_board"].disabled is False
+
     def test_form_saves_correctly(self):
         """Test form saves project correctly."""
         user = User.objects.create_user(
