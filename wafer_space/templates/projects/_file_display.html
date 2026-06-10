@@ -157,6 +157,8 @@
               <span class="badge bg-info ms-1">DRC Update</span>
             {% elif check.trigger_reason == 'admin_rerun' %}
               <span class="badge bg-secondary ms-1">Admin Re-run</span>
+            {% elif check.trigger_reason == 'cob_change' %}
+              <span class="badge bg-dark ms-1">CoB Change</span>
             {% endif %}
           </strong>
           {% badge_check_status_and_version check %}
@@ -193,6 +195,8 @@
                           <span class="badge bg-info ms-1">DRC Update</span>
                         {% elif hist_check.trigger_reason == 'admin_rerun' %}
                           <span class="badge bg-secondary ms-1">Admin Re-run</span>
+                        {% elif hist_check.trigger_reason == 'cob_change' %}
+                          <span class="badge bg-dark ms-1">CoB Change</span>
                         {% endif %}
                       </strong>
                       {% badge_check_status_and_version hist_check %}

@@ -180,6 +180,47 @@ class TestProjectDetailView(TestCase):
         assert response.context["project"] == self.project
         assert response.context["viewing_as_admin"] is True
 
+    def test_detail_shows_cob_badge_when_requested(self):
+        """Detail page shows the CoB badge when chip_on_board is set."""
+        self.project.chip_on_board = True
+        self.project.save()
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        assert "Chip-on-Board" in response.content.decode()
+
+    def test_detail_shows_standard_packaging_when_not_requested(self):
+        """Detail page shows standard packaging when chip_on_board is unset."""
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        assert "Chip-on-Board" not in response.content.decode()
+
+    def test_detail_shows_cob_change_badge_in_check_history(self):
+        """Detail page shows CoB Change badge for COB_CHANGE trigger in history."""
+        project_file = ProjectFileFactory(project=self.project)
+        self.project.submitted_file = project_file
+        self.project.save()
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            trigger_reason=ManufacturabilityCheck.TriggerReason.COB_CHANGE,
+        )
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        assert "CoB Change" in response.content.decode()
+
 
 @pytest.mark.django_db
 class TestProjectCreateView(TestCase):

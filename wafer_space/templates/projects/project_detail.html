@@ -126,6 +126,14 @@
                 <span class="badge bg-secondary"><i class="bi bi-lock"></i> Private</span>
               {% endif %}
             </p>
+            <p class="mb-2">
+              <strong>Packaging:</strong>
+              {% if project.chip_on_board %}
+                <span class="badge bg-info"><i class="bi bi-cpu"></i> Chip-on-Board (CoB)</span>
+              {% else %}
+                <span class="badge bg-secondary">Standard</span>
+              {% endif %}
+            </p>
             {% if project.repository_url %}
               <p class="mb-2">
                 <strong>Repository:</strong>
