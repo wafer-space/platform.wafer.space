@@ -160,6 +160,7 @@ class Project(models.Model):
             "name",
             "description",
             "is_public",
+            "chip_on_board",
             "repository_url",
             "license_type",
             "other_license_spdx_id",
@@ -241,6 +242,16 @@ class Project(models.Model):
     is_public = models.BooleanField(
         default=False,
         help_text="Whether this design should be publicly visible on the platform",
+    )
+
+    # Chip-on-Board packaging (Issue #259)
+    chip_on_board = models.BooleanField(
+        default=False,
+        verbose_name="Request Chip-on-Board (CoB) packaging",
+        help_text=(
+            "Run extra Chip-on-Board (CoB) compatibility checks during the "
+            "manufacturability precheck."
+        ),
     )
 
     # Repository URL (Issue #137)

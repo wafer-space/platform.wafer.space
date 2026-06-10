@@ -3181,3 +3181,29 @@ class TestCreateCheckDrcUpdate:
         assert (
             new_check.trigger_reason == ManufacturabilityCheck.TriggerReason.DRC_UPDATE
         )
+
+
+@pytest.mark.django_db
+class TestProjectChipOnBoard:
+    """Tests for the Project.chip_on_board flag."""
+
+    def test_defaults_to_false(self):
+        """chip_on_board defaults to False."""
+        project = ProjectFactory()
+        assert project.chip_on_board is False
+
+    def test_is_editable_after_creation(self):
+        """chip_on_board is a user field, not blocked by core-field immutability."""
+        project = ProjectFactory()
+        project.chip_on_board = True
+        project.full_clean()  # core-field immutability is enforced in clean()
+        project.save()
+        # Fetch fresh from the DB: refresh_from_db() would leave the stale
+        # in-memory attribute in place pre-implementation, hiding the RED.
+        reloaded = Project.objects.get(pk=project.pk)
+        assert reloaded.chip_on_board is True
+
+    def test_is_a_user_field(self):
+        """chip_on_board is in USER_FIELDS and not in CORE_FIELDS."""
+        assert "chip_on_board" in Project.USER_FIELDS
+        assert "chip_on_board" not in Project.CORE_FIELDS
