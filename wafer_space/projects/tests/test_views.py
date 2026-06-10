@@ -26,6 +26,7 @@ from wafer_space.shuttles.models import ShuttleSlot
 from wafer_space.users.models import User
 from wafer_space.users.tests.factories import UserFactory
 
+from .constants import EXPECTED_CHECKS_AFTER_COB_TOGGLE
 from .constants import EXPECTED_USER_PROJECTS
 from .constants import FIVE_MB
 from .constants import HTTP_FORBIDDEN
@@ -380,11 +381,11 @@ class TestProjectUpdateView(TestCase):
         # Should return 403 Forbidden
         assert response.status_code == HTTP_FORBIDDEN
 
-    def _cob_form_data(self, *, chip_on_board: bool) -> dict:
+    def _cob_form_data(self, *, chip_on_board: bool) -> dict[str, str]:
         """Valid update-form payload toggling only chip_on_board."""
         data = {
-            "name": "Test Project",
-            "description": "Test project",
+            "name": self.project.name,
+            "description": self.project.description,
             "repository_url": "",
             "license_type": "proprietary",
             "other_license_spdx_id": "",
@@ -394,7 +395,9 @@ class TestProjectUpdateView(TestCase):
             data["chip_on_board"] = "on"
         return data
 
-    def _make_submitted_check(self, status):
+    def _make_submitted_check(
+        self, status: ManufacturabilityCheck.Status
+    ) -> ManufacturabilityCheck:
         """Attach a submitted file with a check to self.project."""
         project_file = ProjectFileFactory(project=self.project)
         self.project.submitted_file = project_file
@@ -419,7 +422,7 @@ class TestProjectUpdateView(TestCase):
         checks = ManufacturabilityCheck.objects.filter(
             project_file=check.project_file
         ).order_by("created_at")
-        assert checks.count() == len([check, "new"])  # exactly one new check
+        assert checks.count() == EXPECTED_CHECKS_AFTER_COB_TOGGLE
         new_check = checks.last()
         assert new_check is not None
         assert (
