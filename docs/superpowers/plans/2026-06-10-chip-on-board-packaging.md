@@ -589,10 +589,12 @@ git commit -m "feat: re-run manufacturability check when CoB toggled (#259)"
 
 ---
 
-### Task 7: CoB badge on the project detail page
+### Task 7: CoB badges (project detail + trigger-reason chains)
 
 **Files:**
 - Modify: `wafer_space/templates/projects/project_detail.html` (after the Visibility block, ~line 128)
+- Modify: `wafer_space/templates/projects/_file_display.html` (trigger-reason badge chains at ~lines 154-160 and ~188-196 — these have NO `else`, so a COB_CHANGE check currently renders no badge)
+- Modify: `wafer_space/templates/projects/manufacturability_check_status.html` (chains at ~lines 56-66 and ~116-126 — these fall back to a generic light badge)
 - Test: `wafer_space/projects/tests/test_views.py` (detail-view test class)
 
 - [ ] **Step 1: Write the failing tests**
@@ -643,17 +645,44 @@ In `project_detail.html`, after the Visibility `</p>` (line ~128), matching the 
             </p>
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **Step 4: Add `cob_change` to the trigger-reason badge chains**
 
-Run: `uv run pytest wafer_space/projects/tests/test_views.py -v -k "cob_badge or standard_packaging"`
-Expected: 2 PASSED. (`make lint` runs djlint over templates — fix any template lint it reports.)
+A COB_CHANGE check must get a styled badge everywhere sibling trigger reasons
+do (`bg-dark` is unused in these chains). Add to all four if/elif chains:
 
-- [ ] **Step 5: Pre-commit gate + commit**
+In `_file_display.html` — chain at ~154-160 (after the `admin_rerun` elif) and
+chain at ~188-196 (same position; this second chain uses `hist_check`):
+
+```html
+            {% elif check.trigger_reason == 'cob_change' %}
+              <span class="badge bg-dark ms-1">CoB Change</span>
+```
+
+In `manufacturability_check_status.html` — both chains (~56-66 and ~116-126),
+before the `{% else %}` fallback:
+
+```html
+                      {% elif check.trigger_reason == 'cob_change' %}
+                        <span class="badge bg-dark">CoB Change</span>
+```
+
+Then extend the detail-page test class with a check-history badge test
+(create the check via `_make_submitted_check`-style setup or factories with
+`trigger_reason=ManufacturabilityCheck.TriggerReason.COB_CHANGE` on the
+project's submitted file, GET the detail page, assert "CoB Change" in the
+content). Write this test FIRST and watch it fail, like the others.
+
+- [ ] **Step 5: Run tests to verify they pass**
+
+Run: `uv run pytest wafer_space/projects/tests/test_views.py -v -k "cob"`
+Expected: all new tests PASS. (`make lint` runs djlint over templates — fix any template lint it reports.)
+
+- [ ] **Step 6: Pre-commit gate + commit**
 
 ```bash
 make lint-fix && make lint && make type-check && make test
-git add wafer_space/templates/projects/project_detail.html wafer_space/projects/tests/test_views.py
-git commit -m "feat: show CoB packaging badge on project detail (#259)"
+git add wafer_space/templates/projects/project_detail.html wafer_space/templates/projects/_file_display.html wafer_space/templates/projects/manufacturability_check_status.html wafer_space/projects/tests/test_views.py
+git commit -m "feat: show CoB packaging badges (#259)"
 ```
 
 ---
