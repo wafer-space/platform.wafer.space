@@ -3195,6 +3195,66 @@ class TestCreateCheckDrcUpdate:
 
 
 @pytest.mark.django_db
+class TestCreateCheckCobChange:
+    """Tests for ManufacturabilityCheck.create_check_cob_change()."""
+
+    def test_creates_pending_cob_change_check(self):
+        """Creates a PENDING check with COB_CHANGE reason chained to the source."""
+        old_check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+
+        new_check = old_check.create_check_cob_change()
+
+        assert new_check.project == old_check.project
+        assert new_check.project_file == old_check.project_file
+        assert (
+            new_check.trigger_reason == ManufacturabilityCheck.TriggerReason.COB_CHANGE
+        )
+        assert new_check.parent_check == old_check
+        assert new_check.status == ManufacturabilityCheck.Status.PENDING
+
+    def test_finished_source_check_is_not_cancelled(self):
+        """A FINISHED source check keeps its status (nothing to cancel)."""
+        old_check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+
+        old_check.create_check_cob_change()
+
+        old_check.refresh_from_db()
+        assert old_check.status == ManufacturabilityCheck.Status.FINISHED
+
+    def test_in_progress_source_check_is_marked_cancelling(self):
+        """A RUNNING source check is explicitly marked CANCELLING."""
+        running_check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+
+        new_check = running_check.create_check_cob_change()
+
+        running_check.refresh_from_db()
+        assert running_check.status == ManufacturabilityCheck.Status.CANCELLING
+        assert "Chip-on-Board option changed" in running_check.processing_logs
+        assert new_check.status == ManufacturabilityCheck.Status.PENDING
+
+    def test_raises_when_not_latest_check(self):
+        """Refuses to run on a check that is not the file's latest."""
+        project_file = ProjectFileFactory()
+        old_check = ManufacturabilityCheckFactory(
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+        ManufacturabilityCheckFactory(
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+
+        with pytest.raises(ValueError, match="latest check"):
+            old_check.create_check_cob_change()
+
+
+@pytest.mark.django_db
 class TestProjectChipOnBoard:
     """Tests for the Project.chip_on_board flag."""
 

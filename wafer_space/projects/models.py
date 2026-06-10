@@ -2313,6 +2313,35 @@ class ManufacturabilityCheck(models.Model):
             parent_check=self,
         )
 
+    def create_check_cob_change(self) -> "ManufacturabilityCheck":
+        """Create a new pending check after the project's CoB option changed.
+
+        Unlike ``create_check_drc_update`` — which leaves an in-progress check
+        to the scheduled superseded-check cleanup — this cancels an in-progress
+        check itself, so the superseded check can never FINISH with a result
+        computed from the old CoB setting.
+
+        Returns:
+            The newly created ManufacturabilityCheck.
+
+        Raises:
+            ValueError: If this check is not the latest check for its file.
+        """
+        latest = self.project_file.latest_manufacturability_check
+        if latest != self:
+            msg = "Can only create CoB change check from the latest check for a file"
+            raise ValueError(msg)
+
+        if self.is_cancellable:
+            self.mark_cancelling(reason="Chip-on-Board option changed")
+
+        return ManufacturabilityCheck.objects.create(
+            project=self.project,
+            project_file=self.project_file,
+            trigger_reason=self.TriggerReason.COB_CHANGE,
+            parent_check=self,
+        )
+
     @property
     def queue_wait_seconds(self) -> float | None:
         """Time spent waiting in queue before running (in seconds).
