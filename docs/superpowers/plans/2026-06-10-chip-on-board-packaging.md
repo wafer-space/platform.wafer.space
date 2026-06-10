@@ -62,8 +62,10 @@ class TestProjectChipOnBoard:
         project.chip_on_board = True
         project.full_clean()  # core-field immutability is enforced in clean()
         project.save()
-        project.refresh_from_db()
-        assert project.chip_on_board is True
+        # Fetch fresh from the DB: refresh_from_db() would leave the stale
+        # in-memory attribute in place pre-implementation, hiding the RED.
+        reloaded = Project.objects.get(pk=project.pk)
+        assert reloaded.chip_on_board is True
 
     def test_is_a_user_field(self):
         """chip_on_board is in USER_FIELDS and not in CORE_FIELDS."""
@@ -74,7 +76,8 @@ class TestProjectChipOnBoard:
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest wafer_space/projects/tests/test_models.py::TestProjectChipOnBoard -v`
-Expected: 3 FAILED — `AttributeError` / `AssertionError` (no `chip_on_board` attribute).
+Expected: 3 FAILED — `AttributeError` (no `chip_on_board` attribute on the fresh
+instances) / `AssertionError` (not in `USER_FIELDS`).
 
 - [ ] **Step 3: Add the field and USER_FIELDS entry**
 
@@ -169,7 +172,7 @@ git commit -m "feat: add COB_CHANGE manufacturability trigger reason (#259)"
 ### Task 3: `ManufacturabilityCheck.create_check_cob_change()`
 
 **Files:**
-- Modify: `wafer_space/projects/models.py` (add method directly after `create_check_drc_update`, which ends ~line 2341)
+- Modify: `wafer_space/projects/models.py` (add method directly after `create_check_drc_update`, which ends ~line 2302, just before `queue_wait_seconds`)
 - Test: `wafer_space/projects/tests/test_models.py` (add after `TestCreateCheckDrcUpdate`, ~line 3091, and reuse its imports: `ManufacturabilityCheckFactory`, `ProjectFileFactory`, `pytest`)
 
 - [ ] **Step 1: Write the failing tests**
@@ -374,27 +377,42 @@ git commit -m "feat: pass --cob to precheck when chip_on_board is set (#259)"
 
 - [ ] **Step 1: Write the failing tests**
 
-Add to `TestProjectForm` in `test_forms.py` (match the class's existing style for constructing the form):
+Add to `TestProjectForm` in `test_forms.py`. Note: its `setUp` only creates
+`self.shuttle` — there is no `self.user` or `self.project`, so the second test
+creates its own (all needed imports — `User`, `Project`, `TEST_PASSWORD` —
+already exist at the top of the file):
 
 ```python
     def test_chip_on_board_field_present_and_optional(self):
         """chip_on_board is on the form, optional, and defaults to False."""
-        form = ProjectForm(user=self.user)
+        form = ProjectForm()
         assert "chip_on_board" in form.fields
         assert form.fields["chip_on_board"].required is False
 
     def test_chip_on_board_editable_for_non_staff_on_existing_project(self):
         """chip_on_board is a user field — never disabled on edit."""
-        form = ProjectForm(user=self.user, instance=self.project)
+        user = User.objects.create_user(
+            username="formuser", email="form@example.com", password=TEST_PASSWORD
+        )
+        project = Project.objects.create(
+            user=user,
+            name="Form Project",
+            shuttle=self.shuttle,
+            project_id="FRMP",
+        )
+        form = ProjectForm(user=user, instance=project)
         assert form.fields["chip_on_board"].disabled is False
 ```
 
-(If `TestProjectForm.setUp` lacks a `self.project`, create one the same way neighbouring tests do.)
+(`ProjectForm()` without `user` is fine — the signature is
+`__init__(*args, user=None, **kwargs)`, and the class's first test constructs
+it the same way.)
 
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest wafer_space/projects/tests/test_forms.py::TestProjectForm -v -k chip_on_board`
-Expected: 2 FAILED — `KeyError: 'chip_on_board'`.
+Expected: 2 FAILED — `AssertionError` (field not in `form.fields`) /
+`KeyError: 'chip_on_board'`.
 
 - [ ] **Step 3: Implement the form changes**
 
