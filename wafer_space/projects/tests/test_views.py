@@ -190,7 +190,7 @@ class TestProjectDetailView(TestCase):
         response = self.client.get(url)
 
         assert response.status_code == HTTP_OK
-        assert "Chip-on-Board" in response.content.decode()
+        assert "Chip-on-Board (CoB)" in response.content.decode()
 
     def test_detail_shows_standard_packaging_when_not_requested(self):
         """Detail page shows standard packaging when chip_on_board is unset."""
@@ -200,7 +200,10 @@ class TestProjectDetailView(TestCase):
         response = self.client.get(url)
 
         assert response.status_code == HTTP_OK
-        assert "Chip-on-Board" not in response.content.decode()
+        content = response.content.decode()
+        assert "Chip-on-Board" not in content
+        assert "Packaging:" in content
+        assert "Standard" in content
 
     def test_detail_shows_cob_change_badge_in_check_history(self):
         """Detail page shows CoB Change badge for COB_CHANGE trigger in history."""
