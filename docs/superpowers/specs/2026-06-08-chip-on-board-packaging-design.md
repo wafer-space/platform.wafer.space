@@ -91,10 +91,12 @@ file-replacement cancel path:
   and returns a **new PENDING** `ManufacturabilityCheck` with
   `trigger_reason=TriggerReason.COB_CHANGE` and `parent_check=self` (chaining via
   `parent_check`/`root_check`, like DRC updates and retries). This is pure
-  model/ORM logic — no task import. (`mark_cancelling` is a state transition; the
-  scheduled `checks_cancelling` task performs the container teardown, exactly as
-  the file-replacement path relies on it. Unlike `create_check_drc_update` there
-  are no docker-digest/version guards — the trigger is the user toggling.)
+  model/ORM logic — no task import. (`mark_cancelling` is a state transition;
+  the scheduled `checks_cancelling` task (15s) then completes
+  CANCELLING→CANCELLED, and `checks_cleanup_orphaned_docker` (60s) removes the
+  container once the check is CANCELLED — the same machinery the
+  file-replacement path relies on. Unlike `create_check_drc_update` there are
+  no docker-digest/version guards — the trigger is the user toggling.)
 - **Why the explicit cancel:** the scheduled DRC-update requeue only re-checks
   *finished* checks (`checks_drc_update_requeue` skips in-progress ones), but a
   CoB toggle can happen while a check is RUNNING, so
@@ -102,10 +104,11 @@ file-replacement cancel path:
   `checks_cleanup_superseded` task (60s) would *eventually* cancel a superseded
   in-progress check, but we still cancel explicitly because:
   1. **Immediacy/correctness** — relying on the 60s backstop leaves a window in
-     which the superseded check keeps running and could even FINISH, recording
-     a result computed with the *old* CoB setting. That would break §1's
-     live-read invariant ("at most one non-cancelled check is ever active").
-     Explicit cancel closes the window at toggle time.
+     which the superseded check keeps running and could even FINISH
+     (ANALYZING→FINISHED is a legal transition, whereas CANCELLING permits only
+     →CANCELLED), recording a result computed with the *old* CoB setting that
+     §1's live read would then mislabel with the new value. Explicit cancel
+     closes that window at toggle time — a stale FINISH becomes impossible.
   2. **Audit precision** — `mark_cancelling(reason="Chip-on-Board option
      changed")` records why, instead of the generic superseded-cleanup reason.
   3. **Determinism** — the method's behaviour is self-contained and testable
@@ -114,8 +117,9 @@ file-replacement cancel path:
   `checks_cleanup_superseded` remains a defence-in-depth backstop (it would
   mop up if the explicit cancel were ever skipped), not the mechanism.
 - The new PENDING check is dispatched by the scheduled `checks_pending` task
-  (15s); the cancelled in-progress check, if any, is torn down by the scheduled
-  `checks_cancelling` task (15s). Both are existing, scheduled pollers.
+  (15s); the cancelled in-progress check, if any, is marked CANCELLED by the
+  scheduled `checks_cancelling` task (15s), and its container is removed by
+  `checks_cleanup_orphaned_docker` (60s). All are existing, scheduled pollers.
 - The toggle itself lives in the project edit view's form handling: persist the
   changed `Project.chip_on_board`; if the active file has a latest check, call
   `latest_check.create_check_cob_change()`. If the project has no check yet
@@ -143,7 +147,8 @@ service is required.
 2. View persists `Project.chip_on_board`; if the active file has a latest check,
    calls `create_check_cob_change()` → a new PENDING `COB_CHANGE` check.
 3. `create_check_cob_change()` has already marked any in-progress check as
-   CANCELLING; the scheduled `checks_cancelling` task tears it down and
+   CANCELLING; the scheduled `checks_cancelling` task marks it CANCELLED
+   (container removal follows via `checks_cleanup_orphaned_docker`) and
    `checks_pending` dispatches the new PENDING check.
 4. `do_starting` builds the precheck command with `--cob` read live from
    `check.project.chip_on_board`.
@@ -160,10 +165,12 @@ service is required.
   active file's latest check.
 - An in-progress latest check is cancelled explicitly inside
   `create_check_cob_change()` via `mark_cancelling` (gated on `is_cancellable`,
-  which also avoids `InvalidStateTransitionError`); teardown is done by the
-  scheduled `checks_cancelling` task. The scheduled `checks_cleanup_superseded`
-  task (post-#262, 60s) is a defence-in-depth backstop only — the explicit
-  cancel is the primary mechanism (see §3 for why).
+  which also avoids `InvalidStateTransitionError`); the scheduled
+  `checks_cancelling` task completes the transition to CANCELLED, and
+  `checks_cleanup_orphaned_docker` removes the container. The scheduled
+  `checks_cleanup_superseded` task (post-#262, 60s) is a defence-in-depth
+  backstop only — the explicit cancel is the primary mechanism (see §3 for
+  why).
 - The precheck `ValueError`/failure paths are unchanged; CoB failures are
   ordinary manufacturability errors.
 
@@ -181,7 +188,8 @@ service is required.
 - **Command builder:** `--cob` appended iff `check.project.chip_on_board` is
   True; absent otherwise; placed alongside `--slot`/`--id`.
 - **View/form:** the checkbox renders on create + edit; POSTing it sets the flag
-  and (when changed) creates the re-check.
+  and (when changed) creates the re-check; the project detail page shows the
+  CoB badge when the flag is set (and not when unset).
 
 ## Out of scope
 
