@@ -2850,6 +2850,17 @@ class TestManufacturabilityCheckTriggerReason:
 
 
 @pytest.mark.django_db
+class TestCobChangeTriggerReason:
+    """Tests for the COB_CHANGE trigger reason."""
+
+    def test_cob_change_choice_exists(self):
+        """COB_CHANGE is a valid TriggerReason."""
+        reason = ManufacturabilityCheck.TriggerReason.COB_CHANGE
+        assert reason.value == "cob_change"
+        assert reason.label == "Chip-on-Board Option Changed"
+
+
+@pytest.mark.django_db
 class TestProjectCoreFieldImmutability:
     """Tests for Project core field immutability validation.
 

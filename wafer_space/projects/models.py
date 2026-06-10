@@ -1562,6 +1562,7 @@ class ManufacturabilityCheck(models.Model):
         DRC_UPDATE = "drc_update", "DRC Rules Updated"
         ADMIN_RERUN = "admin_rerun", "Admin Requested Re-run"
         RETRY = "retry", "Retry After Error"
+        COB_CHANGE = "cob_change", "Chip-on-Board Option Changed"
 
     class FinishedStatus(models.TextChoices):
         """Sub-status for FINISHED checks indicating manufacturability result."""
