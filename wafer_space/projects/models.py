@@ -1374,6 +1374,35 @@ class DownloadAttempt(models.Model):
             speed_bytes_per_sec /= bytes_per_unit
         return f"{speed_bytes_per_sec:.1f} TB/s"
 
+    def get_badge(self) -> BadgeInfo:
+        """Return badge representing current download attempt status.
+
+        Returns:
+            BadgeInfo with appropriate type, text, and icon.
+        """
+        status_badges: dict[str, BadgeInfo] = {
+            self.Status.PENDING.value: BadgeInfo(
+                text="Pending",
+                badge_type=BadgeType.NEUTRAL,
+                icon="bi-clock",
+            ),
+            self.Status.DOWNLOADING.value: BadgeInfo(
+                text="Downloading",
+                badge_type=BadgeType.PROCESSING,
+            ),
+            self.Status.COMPLETED.value: BadgeInfo(
+                text="Completed",
+                badge_type=BadgeType.SUCCESS,
+                icon="bi-check-circle",
+            ),
+            self.Status.FAILED.value: BadgeInfo(
+                text="Failed",
+                badge_type=BadgeType.DANGER,
+                icon="bi-exclamation-triangle",
+            ),
+        }
+        return status_badges[self.status]
+
 
 class ProjectFileChunk(models.Model):
     """Track individual chunk downloads for performance analysis and resume capability.

@@ -6,6 +6,8 @@
 {#   - show_checkpoints: (optional, default=True) Show download checkpoints #}
 {#   - show_errors: (optional, default=True) Show errors #}
 {#   - show_technical_details: (optional, default=False) Show technical error details #}
+{% load badges %}
+
 <div class="card mb-2 {% if is_latest %}border-primary{% endif %}">
   <details {% if start_open %}open{% endif %}>
     <summary class="card-header py-2 {% if is_latest %}bg-primary bg-opacity-10{% endif %}"
@@ -16,20 +18,7 @@
           Attempt #{{ attempt.attempt_number }}
           {% if is_latest %}<span class="badge bg-primary ms-1">Latest</span>{% endif %}
         </strong>
-        <span class="badge {% if attempt.status == 'completed' %}bg-success{% elif attempt.status == 'failed' %}bg-danger{% elif attempt.status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
-          {% if attempt.status == 'completed' %}
-            <i class="bi bi-check-circle"></i>
-          {% elif attempt.status == 'failed' %}
-            <i class="bi bi-exclamation-triangle"></i>
-          {% elif attempt.status == 'downloading' %}
-            <span class="spinner-border spinner-border-sm"
-                  role="status"
-                  aria-hidden="true"></span>
-          {% else %}
-            <i class="bi bi-clock"></i>
-          {% endif %}
-          {{ attempt.get_status_display }}
-        </span>
+        {% render_badge attempt.get_badge %}
       </div>
     </summary>
     <div class="card-body py-2">

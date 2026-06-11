@@ -5,10 +5,10 @@ from __future__ import annotations
 import pytest
 
 from wafer_space.core.badges import BadgeType
+from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import Project
+from wafer_space.projects.models import ProjectFile
 from wafer_space.users.models import User
-
-from .constants import TEST_PASSWORD
 
 
 class TestProjectStatusBadge:
@@ -17,10 +17,10 @@ class TestProjectStatusBadge:
     @pytest.fixture(autouse=True)
     def setup(self, db):
         """Set up test fixtures."""
+        # No password needed - these tests never authenticate
         self.user = User.objects.create_user(
             username="testuser_project",
             email="project@example.com",
-            password=TEST_PASSWORD,
         )
 
     def test_draft_returns_neutral_badge(self) -> None:
@@ -121,3 +121,75 @@ class TestProjectStatusBadge:
 
         assert badge.badge_type == BadgeType.NEUTRAL
         assert badge.text == "Cancelled"
+
+
+class TestDownloadAttemptBadge:
+    """Tests for DownloadAttempt.get_badge() method."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, db):
+        """Set up test fixtures."""
+        # No password needed - these tests never authenticate
+        self.user = User.objects.create_user(
+            username="testuser_attempt",
+            email="attempt@example.com",
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project Attempt",
+            description="Test project",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/test.gds",
+            source_url="https://example.com/test.gds",
+            original_filename="test.gds",
+        )
+
+    def test_pending_returns_neutral_badge(self) -> None:
+        attempt = DownloadAttempt.objects.create(
+            project_file=self.project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.PENDING,
+        )
+        badge = attempt.get_badge()
+
+        assert badge.badge_type == BadgeType.NEUTRAL
+        assert badge.text == "Pending"
+        assert badge.icon == "bi-clock"
+
+    def test_downloading_returns_processing_badge(self) -> None:
+        attempt = DownloadAttempt.objects.create(
+            project_file=self.project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
+        )
+        badge = attempt.get_badge()
+
+        assert badge.badge_type == BadgeType.PROCESSING
+        assert badge.text == "Downloading"
+        assert badge.icon is None  # Processing badges use spinner, not icon
+
+    def test_completed_returns_success_badge(self) -> None:
+        attempt = DownloadAttempt.objects.create(
+            project_file=self.project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
+        )
+        badge = attempt.get_badge()
+
+        assert badge.badge_type == BadgeType.SUCCESS
+        assert badge.text == "Completed"
+        assert badge.icon == "bi-check-circle"
+
+    def test_failed_returns_danger_badge(self) -> None:
+        attempt = DownloadAttempt.objects.create(
+            project_file=self.project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.FAILED,
+        )
+        badge = attempt.get_badge()
+
+        assert badge.badge_type == BadgeType.DANGER
+        assert badge.text == "Failed"
+        assert badge.icon == "bi-exclamation-triangle"
