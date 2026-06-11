@@ -17,6 +17,8 @@ from django.utils import timezone
 from django.utils.formats import date_format
 from simple_history.models import HistoricalRecords
 
+from wafer_space.core.badges import BadgeInfo
+from wafer_space.core.badges import BadgeType
 from wafer_space.core.enums import SlotSize
 from wafer_space.projects.exceptions import InvalidStateTransitionError
 from wafer_space.projects.storage import ProjectFileStorage
@@ -496,6 +498,59 @@ class Project(models.Model):
     def is_other_license(self) -> bool:
         """Check if project uses 'other' (custom SPDX) license."""
         return self.license_type == LicenseType.OTHER
+
+    def get_status_badge(self) -> BadgeInfo:
+        """Return badge representing current project status.
+
+        Returns:
+            BadgeInfo with appropriate type, text, and icon.
+        """
+        status_badges: dict[str, BadgeInfo] = {
+            self.Status.DRAFT.value: BadgeInfo(
+                text="Draft",
+                badge_type=BadgeType.NEUTRAL,
+                icon="bi-pencil",
+            ),
+            self.Status.SUBMITTED.value: BadgeInfo(
+                text="Submitted",
+                badge_type=BadgeType.INFO,
+                icon="bi-send",
+            ),
+            self.Status.CHECKING.value: BadgeInfo(
+                text="Checking",
+                badge_type=BadgeType.PROCESSING,
+            ),
+            self.Status.MANUFACTURABLE.value: BadgeInfo(
+                text="Manufacturable",
+                badge_type=BadgeType.SUCCESS,
+                icon="bi-check-circle",
+            ),
+            self.Status.NOT_MANUFACTURABLE.value: BadgeInfo(
+                text="Not Manufacturable",
+                badge_type=BadgeType.DANGER,
+                icon="bi-x-circle",
+            ),
+            self.Status.ASSIGNED_TO_SHUTTLE.value: BadgeInfo(
+                text="Assigned to Shuttle",
+                badge_type=BadgeType.INFO,
+                icon="bi-truck",
+            ),
+            self.Status.IN_PRODUCTION.value: BadgeInfo(
+                text="In Production",
+                badge_type=BadgeType.PROCESSING,
+            ),
+            self.Status.COMPLETED.value: BadgeInfo(
+                text="Completed",
+                badge_type=BadgeType.SUCCESS,
+                icon="bi-check-circle-fill",
+            ),
+            self.Status.CANCELLED.value: BadgeInfo(
+                text="Cancelled",
+                badge_type=BadgeType.NEUTRAL,
+                icon="bi-x-circle",
+            ),
+        }
+        return status_badges[self.status]
 
     def can_submit(self) -> tuple[bool, str]:
         """Check if project can be submitted.
