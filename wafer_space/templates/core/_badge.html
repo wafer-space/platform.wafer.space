@@ -1,0 +1,11 @@
+{# Reusable badge component - renders a single BadgeInfo #}
+{# Used by {% render_badge badge %} template tag #}
+<span class="badge {{ css_class }}">
+  {% if is_processing %}
+    <span class="spinner-border spinner-border-sm me-1"
+          role="status"
+          aria-hidden="true"></span>
+  {% endif %}
+  {% if icon and not is_processing %}<i class="{{ icon }} me-1" aria-hidden="true"></i>{% endif %}
+  {{ text }}
+</span>
