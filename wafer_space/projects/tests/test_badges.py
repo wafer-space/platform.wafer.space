@@ -548,3 +548,47 @@ class TestProjectFileGetBadges:
         expected_badges = 2
         assert len(badges) == expected_badges
         assert badges[1].badge_type == BadgeType.DANGER
+
+
+class TestProjectGetBadges:
+    """Tests for Project.get_badges() method."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, db):
+        """Set up test fixtures."""
+        # No password needed - these tests never authenticate
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+
+    def test_project_with_active_file_delegates_to_file(self) -> None:
+        file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/test.gds",
+            source_url="https://example.com/test.gds",
+            original_filename="test.gds",
+            is_active=True,
+        )
+        DownloadAttempt.objects.create(
+            project_file=file,
+            attempt_number=1,
+            status="completed",
+        )
+
+        badges = self.project.get_badges()
+
+        # Should have at least the download badge from the file
+        assert len(badges) >= 1
+        assert badges[0].badge_type == BadgeType.SUCCESS
+
+    def test_project_without_active_file_returns_empty(self) -> None:
+        # Create a project with no files
+        badges = self.project.get_badges()
+
+        assert badges == []

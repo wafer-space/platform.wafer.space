@@ -552,6 +552,21 @@ class Project(models.Model):
         }
         return status_badges[self.status]
 
+    def get_badges(self) -> list[BadgeInfo]:
+        """Return download/hash pipeline badges for this project's active file.
+
+        Project badges delegate to the active file since that represents
+        the current state of the project.
+
+        Returns:
+            List of BadgeInfo from active file, or empty list.
+        """
+        try:
+            active_file = self.files.get(is_active=True)
+        except ProjectFile.DoesNotExist:
+            return []
+        return active_file.get_badges()
+
     def can_submit(self) -> tuple[bool, str]:
         """Check if project can be submitted.
 
