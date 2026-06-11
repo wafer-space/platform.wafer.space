@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% load crispy_forms_tags %}
+{% load crispy_forms_tags badges %}
 
 {% block title %}
   Export Compliance Certification - {{ project.name }}
@@ -132,7 +132,7 @@
               </dd>
               <dt class="col-sm-5">Status:</dt>
               <dd class="col-sm-7">
-                <span class="badge bg-success">{{ project.get_status_display }}</span>
+                {% render_badge project.get_status_badge %}
               </dd>
               <dt class="col-sm-5">Owner:</dt>
               <dd class="col-sm-7">
