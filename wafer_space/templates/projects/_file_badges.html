@@ -1,55 +1,25 @@
-{% load precheck_tags %}
+{% load badges precheck_tags %}
 
 {# Reusable file status badges partial #}
 {# Parameters: #}
 {#   - file: ProjectFile instance #}
 {#   - layout: "vertical" (stacked) or "horizontal" (inline), default "horizontal" #}
-{#   - show_download_status: (optional, default=True) Show download status badge #}
-{% with latest_attempt=file.latest_attempt %}
-  {% with status=latest_attempt.status|default:"pending" %}
-    <div class="d-flex {% if layout == 'vertical' %}flex-column align-items-end{% endif %} gap-1 {% if layout != 'vertical' %}align-items-center{% endif %}">
-      {# Manufacturability check status badge (most relevant) #}
-      {% with check=file.latest_manufacturability_check %}
-        {% if check %}
-          {% badge_check_status_and_version check %}
-        {% endif %}
-      {% endwith %}
-      {# Hash verification badge #}
-      {% if file.hash_verified %}
-        <span class="badge bg-success">
-          <i class="bi bi-shield-check"></i> Hash Verified
-        </span>
-      {% elif status == 'completed' and file.has_hash_mismatch %}
-        <span class="badge bg-danger">
-          <i class="bi bi-shield-x"></i> Hash Mismatch
-        </span>
-      {% elif status == 'completed' and file.has_expected_hash and not file.hash_verified %}
-        <span class="badge bg-warning text-dark">
-          <i class="bi bi-shield-exclamation"></i> Hash Not Verified
-        </span>
-      {% endif %}
-      {# Download status badge #}
-      {% if show_download_status != False %}
-        <span class="badge {% if status == 'completed' and file.has_hash_mismatch %}bg-danger{% elif status == 'completed' %}bg-success{% elif status == 'failed' %}bg-danger{% elif status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
-          {% if status == 'completed' and file.has_hash_mismatch %}
-            <i class="bi bi-exclamation-triangle"></i> Hash Mismatch
-          {% elif status == 'completed' %}
-            <i class="bi bi-check-circle"></i> Downloaded
-          {% elif status == 'failed' %}
-            <i class="bi bi-exclamation-triangle"></i> Download Failed
-          {% elif status == 'downloading' %}
-            <span class="spinner-border spinner-border-sm" role="status"></span> Downloading
-          {% else %}
-            <i class="bi bi-clock"></i> Pending
-          {% endif %}
-        </span>
-      {% endif %}
-      {# Active file indicator #}
-      {% if file.is_active and show_active %}
-        <span class="badge bg-info">
-          <i class="bi bi-star-fill"></i> Active
-        </span>
-      {% endif %}
-    </div>
+{#   - show_active: (optional, default=False) Show active file indicator #}
+<div class="d-flex {% if layout == 'vertical' %}flex-column align-items-end{% endif %} gap-1 {% if layout != 'vertical' %}align-items-center{% endif %}">
+  {# Manufacturability check status badge (most relevant) #}
+  {% with check=file.latest_manufacturability_check %}
+    {% if check %}
+      {% badge_check_status_and_version check %}
+    {% endif %}
   {% endwith %}
-{% endwith %}
+  {# Download / hash pipeline badges #}
+  {% for badge in file.get_badges %}
+    {% render_badge badge %}
+  {% endfor %}
+  {# Active file indicator #}
+  {% if file.is_active and show_active %}
+    <span class="badge bg-info">
+      <i class="bi bi-star-fill" aria-hidden="true"></i> Active
+    </span>
+  {% endif %}
+</div>

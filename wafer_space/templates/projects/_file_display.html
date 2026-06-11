@@ -1,4 +1,4 @@
-{% load static precheck_tags %}
+{% load static badges precheck_tags %}
 
 {# Reusable file display partial - used for both submitted and in-progress files #}
 {# Parameters: #}
@@ -90,49 +90,19 @@
           {% if file.hash_md5 %}
             <p class="mb-1">
               <strong>MD5:</strong> <code>{{ file.hash_md5 }}</code>
-              {% if file.expected_hash_md5 %}
-                {% if file.hash_md5|lower == file.expected_hash_md5|lower %}
-                  <span class="badge bg-success">
-                    <i class="bi bi-check-circle"></i> Verified
-                  </span>
-                {% else %}
-                  <span class="badge bg-danger">
-                    <i class="bi bi-x-circle"></i> Mismatch
-                  </span>
-                {% endif %}
-              {% endif %}
+              {% render_inline_hash_badge file 'md5' %}
             </p>
           {% endif %}
           {% if file.hash_sha1 %}
             <p class="mb-1">
               <strong>SHA1:</strong> <code>{{ file.hash_sha1 }}</code>
-              {% if file.expected_hash_sha1 %}
-                {% if file.hash_sha1|lower == file.expected_hash_sha1|lower %}
-                  <span class="badge bg-success">
-                    <i class="bi bi-check-circle"></i> Verified
-                  </span>
-                {% else %}
-                  <span class="badge bg-danger">
-                    <i class="bi bi-x-circle"></i> Mismatch
-                  </span>
-                {% endif %}
-              {% endif %}
+              {% render_inline_hash_badge file 'sha1' %}
             </p>
           {% endif %}
           {% if file.hash_sha256 %}
             <p class="mb-1">
               <strong>SHA256:</strong> <code>{{ file.hash_sha256 }}</code>
-              {% if file.expected_hash_sha256 %}
-                {% if file.hash_sha256|lower == file.expected_hash_sha256|lower %}
-                  <span class="badge bg-success">
-                    <i class="bi bi-check-circle"></i> Verified
-                  </span>
-                {% else %}
-                  <span class="badge bg-danger">
-                    <i class="bi bi-x-circle"></i> Mismatch
-                  </span>
-                {% endif %}
-              {% endif %}
+              {% render_inline_hash_badge file 'sha256' %}
             </p>
           {% endif %}
         {% endif %}
