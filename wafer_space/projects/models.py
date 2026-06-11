@@ -1159,6 +1159,124 @@ class ProjectFile(models.Model):
             or self.expected_hash_sha256
         )
 
+    def get_download_badge(self) -> BadgeInfo:
+        """Return badge for current download status."""
+        if self.download_status == self.DownloadStatus.PENDING:
+            return BadgeInfo(
+                text="Download Pending",
+                badge_type=BadgeType.NEUTRAL,
+                icon="bi-clock",
+            )
+        if self.download_status == self.DownloadStatus.QUEUED:
+            return BadgeInfo(
+                text="Queued",
+                badge_type=BadgeType.NEUTRAL,
+                icon="bi-hourglass-split",
+            )
+        if self.download_status == self.DownloadStatus.DOWNLOADING:
+            return BadgeInfo(
+                text="Downloading",
+                badge_type=BadgeType.PROCESSING,
+            )
+        if self.download_status == self.DownloadStatus.COMPLETED:
+            return BadgeInfo(
+                text="Downloaded",
+                badge_type=BadgeType.SUCCESS,
+                icon="bi-check-circle",
+            )
+        # FAILED
+        return BadgeInfo(
+            text="Download Failed",
+            badge_type=BadgeType.DANGER,
+            icon="bi-exclamation-triangle",
+        )
+
+    def get_hash_badge(self) -> BadgeInfo | None:
+        """Return badge for hash verification status.
+
+        Returns:
+            BadgeInfo if hash verification applicable, None otherwise.
+        """
+        if not self.has_expected_hash:
+            return None
+
+        if self.hash_verified:
+            return BadgeInfo(
+                text="Hash Verified",
+                badge_type=BadgeType.SUCCESS,
+                icon="bi-shield-check",
+            )
+        if self.has_hash_mismatch:
+            return BadgeInfo(
+                text="Hash Mismatch",
+                badge_type=BadgeType.DANGER,
+                icon="bi-shield-x",
+            )
+        # Has expected hash but not yet verified
+        return BadgeInfo(
+            text="Hash Unverified",
+            badge_type=BadgeType.WARNING,
+            icon="bi-shield-exclamation",
+        )
+
+    def get_inline_hash_badge(self, hash_type: str) -> BadgeInfo | None:
+        """Return inline badge for a specific hash verification.
+
+        Used in templates to show Verified/Mismatch next to each hash value.
+
+        Args:
+            hash_type: One of 'md5', 'sha1', 'sha256'
+
+        Returns:
+            BadgeInfo if expected hash exists, None otherwise.
+        """
+        hash_field = f"hash_{hash_type}"
+        expected_field = f"expected_hash_{hash_type}"
+
+        actual = getattr(self, hash_field, None)
+        expected = getattr(self, expected_field, None)
+
+        if not expected:
+            return None
+
+        if actual and actual.lower() == expected.lower():
+            return BadgeInfo(
+                text="Verified",
+                badge_type=BadgeType.SUCCESS,
+                icon="bi-check-circle",
+            )
+        return BadgeInfo(
+            text="Mismatch",
+            badge_type=BadgeType.DANGER,
+            icon="bi-x-circle",
+        )
+
+    def get_badges(self) -> list[BadgeInfo]:
+        """Return download/hash pipeline badges for this file.
+
+        Badges represent stages: Download -> Hash. Failure at any stage
+        stops the pipeline. The manufacturability check that follows the
+        pipeline is rendered separately via the precheck_tags template tags,
+        which add container version indicators (see docs/design/badge-system.md).
+
+        Returns:
+            List of BadgeInfo objects in pipeline order.
+        """
+        badges: list[BadgeInfo] = []
+
+        # Stage 1: Download (always shown)
+        badges.append(self.get_download_badge())
+        if self.download_status == self.DownloadStatus.FAILED:
+            return badges  # Pipeline stops
+
+        # Stage 2: Hash verification (only if download completed)
+        if self.download_status == self.DownloadStatus.COMPLETED:
+            hash_badge = self.get_hash_badge()
+            if hash_badge:
+                badges.append(hash_badge)
+
+        return badges
+
     @property
     def latest_manufacturability_check(self) -> "ManufacturabilityCheck | None":
         """Get the most recent manufacturability check.

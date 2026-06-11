@@ -193,3 +193,358 @@ class TestDownloadAttemptBadge:
         assert badge.badge_type == BadgeType.DANGER
         assert badge.text == "Failed"
         assert badge.icon == "bi-exclamation-triangle"
+
+
+class TestProjectFileDownloadBadge:
+    """Tests for ProjectFile.get_download_badge() method."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, db):
+        """Set up test fixtures."""
+        # No password needed - these tests never authenticate
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+
+    def test_pending_returns_neutral_badge(self) -> None:
+        file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/test.gds",
+            source_url="https://example.com/test.gds",
+            original_filename="test.gds",
+        )
+        # No download attempts = PENDING status
+        badge = file.get_download_badge()
+
+        assert badge.badge_type == BadgeType.NEUTRAL
+        assert "Pending" in badge.text
+
+    def test_queued_returns_neutral_badge(self) -> None:
+        file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/test.gds",
+            source_url="https://example.com/test.gds",
+            original_filename="test.gds",
+            download_task_id="task-123",
+        )
+        # No download attempts but has task_id = QUEUED status
+        badge = file.get_download_badge()
+
+        assert badge.badge_type == BadgeType.NEUTRAL
+
+    def test_downloading_returns_processing_badge(self) -> None:
+        file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/test.gds",
+            source_url="https://example.com/test.gds",
+            original_filename="test.gds",
+        )
+        DownloadAttempt.objects.create(
+            project_file=file,
+            attempt_number=1,
+            status="downloading",
+        )
+        badge = file.get_download_badge()
+
+        assert badge.badge_type == BadgeType.PROCESSING
+
+    def test_completed_returns_success_badge(self) -> None:
+        file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/test.gds",
+            source_url="https://example.com/test.gds",
+            original_filename="test.gds",
+        )
+        DownloadAttempt.objects.create(
+            project_file=file,
+            attempt_number=1,
+            status="completed",
+        )
+        badge = file.get_download_badge()
+
+        assert badge.badge_type == BadgeType.SUCCESS
+        assert badge.icon == "bi-check-circle"
+
+    def test_failed_returns_danger_badge(self) -> None:
+        file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/test.gds",
+            source_url="https://example.com/test.gds",
+            original_filename="test.gds",
+        )
+        DownloadAttempt.objects.create(
+            project_file=file,
+            attempt_number=1,
+            status="failed",
+        )
+        badge = file.get_download_badge()
+
+        assert badge.badge_type == BadgeType.DANGER
+
+
+class TestProjectFileHashBadge:
+    """Tests for ProjectFile.get_hash_badge() method."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, db):
+        """Set up test fixtures."""
+        # No password needed - these tests never authenticate
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+
+    def test_verified_returns_success_badge(self) -> None:
+        file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/test.gds",
+            source_url="https://example.com/test.gds",
+            original_filename="test.gds",
+            expected_hash_md5="abc123",
+            hash_md5="abc123",
+            hash_verified=True,
+        )
+        DownloadAttempt.objects.create(
+            project_file=file,
+            attempt_number=1,
+            status="completed",
+        )
+        badge = file.get_hash_badge()
+
+        assert badge is not None
+        assert badge.badge_type == BadgeType.SUCCESS
+        assert badge.icon == "bi-shield-check"
+
+    def test_mismatch_returns_danger_badge(self) -> None:
+        file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/test.gds",
+            source_url="https://example.com/test.gds",
+            original_filename="test.gds",
+            expected_hash_md5="abc123",
+            hash_md5="def456",
+        )
+        DownloadAttempt.objects.create(
+            project_file=file,
+            attempt_number=1,
+            status="completed",
+        )
+        badge = file.get_hash_badge()
+
+        assert badge is not None
+        assert badge.badge_type == BadgeType.DANGER
+        assert badge.icon == "bi-shield-x"
+
+    def test_no_expected_hash_returns_none(self) -> None:
+        file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/test.gds",
+            source_url="https://example.com/test.gds",
+            original_filename="test.gds",
+            hash_md5="abc123",
+        )
+        DownloadAttempt.objects.create(
+            project_file=file,
+            attempt_number=1,
+            status="completed",
+        )
+        badge = file.get_hash_badge()
+
+        assert badge is None
+
+
+class TestProjectFileInlineHashBadge:
+    """Tests for ProjectFile.get_inline_hash_badge() method."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, db):
+        """Set up test fixtures."""
+        # No password needed - these tests never authenticate
+        self.user = User.objects.create_user(
+            username="testuser_inline_hash",
+            email="inline_hash@example.com",
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project Inline Hash",
+            description="Test project",
+        )
+
+    def test_md5_verified_returns_success_badge(self) -> None:
+        file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/test.gds",
+            source_url="https://example.com/test.gds",
+            original_filename="test.gds",
+            hash_md5="abc123def456",
+            expected_hash_md5="ABC123DEF456",  # Case insensitive match
+        )
+        badge = file.get_inline_hash_badge("md5")
+
+        assert badge is not None
+        assert badge.badge_type == BadgeType.SUCCESS
+        assert badge.text == "Verified"
+        assert badge.icon == "bi-check-circle"
+
+    def test_md5_mismatch_returns_danger_badge(self) -> None:
+        file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/test.gds",
+            source_url="https://example.com/test.gds",
+            original_filename="test.gds",
+            hash_md5="abc123",
+            expected_hash_md5="different",
+        )
+        badge = file.get_inline_hash_badge("md5")
+
+        assert badge is not None
+        assert badge.badge_type == BadgeType.DANGER
+        assert badge.text == "Mismatch"
+        assert badge.icon == "bi-x-circle"
+
+    def test_sha1_verified_returns_success_badge(self) -> None:
+        file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/test.gds",
+            source_url="https://example.com/test.gds",
+            original_filename="test.gds",
+            hash_sha1="abc123",
+            expected_hash_sha1="abc123",
+        )
+        badge = file.get_inline_hash_badge("sha1")
+
+        assert badge is not None
+        assert badge.badge_type == BadgeType.SUCCESS
+
+    def test_sha256_mismatch_returns_danger_badge(self) -> None:
+        file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/test.gds",
+            source_url="https://example.com/test.gds",
+            original_filename="test.gds",
+            hash_sha256="abc123",
+            expected_hash_sha256="xyz789",
+        )
+        badge = file.get_inline_hash_badge("sha256")
+
+        assert badge is not None
+        assert badge.badge_type == BadgeType.DANGER
+
+    def test_no_expected_hash_returns_none(self) -> None:
+        file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/test.gds",
+            source_url="https://example.com/test.gds",
+            original_filename="test.gds",
+            hash_md5="abc123",
+            # No expected_hash_md5 set
+        )
+        badge = file.get_inline_hash_badge("md5")
+
+        assert badge is None
+
+    def test_no_actual_hash_returns_mismatch(self) -> None:
+        file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/test.gds",
+            source_url="https://example.com/test.gds",
+            original_filename="test.gds",
+            expected_hash_md5="abc123",
+            # No hash_md5 set (download not complete)
+        )
+        badge = file.get_inline_hash_badge("md5")
+
+        assert badge is not None
+        assert badge.badge_type == BadgeType.DANGER
+        assert badge.text == "Mismatch"
+
+
+class TestProjectFileGetBadges:
+    """Tests for ProjectFile.get_badges() pipeline method."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, db):
+        """Set up test fixtures."""
+        # No password needed - these tests never authenticate
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test project",
+        )
+
+    def test_failed_download_stops_pipeline(self) -> None:
+        file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/test.gds",
+            source_url="https://example.com/test.gds",
+            original_filename="test.gds",
+        )
+        DownloadAttempt.objects.create(
+            project_file=file,
+            attempt_number=1,
+            status="failed",
+        )
+        badges = file.get_badges()
+
+        # Only the download badge - the hash stage never runs
+        assert len(badges) == 1
+        assert badges[0].badge_type == BadgeType.DANGER
+
+    def test_completed_download_includes_hash_badge(self) -> None:
+        file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/test.gds",
+            source_url="https://example.com/test.gds",
+            original_filename="test.gds",
+            expected_hash_md5="abc123",
+            hash_md5="abc123",
+            hash_verified=True,
+        )
+        DownloadAttempt.objects.create(
+            project_file=file,
+            attempt_number=1,
+            status="completed",
+        )
+        badges = file.get_badges()
+
+        # Download + Hash badges
+        expected_badges = 2
+        assert len(badges) == expected_badges
+        badge_types = [b.badge_type for b in badges]
+        assert BadgeType.SUCCESS in badge_types
+
+    def test_hash_mismatch_included_in_pipeline(self) -> None:
+        file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/test.gds",
+            source_url="https://example.com/test.gds",
+            original_filename="test.gds",
+            expected_hash_md5="abc123",
+            hash_md5="def456",
+        )
+        DownloadAttempt.objects.create(
+            project_file=file,
+            attempt_number=1,
+            status="completed",
+        )
+        badges = file.get_badges()
+
+        # Download + Hash mismatch badges
+        expected_badges = 2
+        assert len(badges) == expected_badges
+        assert badges[1].badge_type == BadgeType.DANGER
