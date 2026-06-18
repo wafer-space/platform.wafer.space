@@ -511,6 +511,31 @@ class TestProjectUpdateView(TestCase):
             == 1
         )
 
+    def test_cob_recheck_failure_does_not_500_or_lose_edit(self):
+        """A ValueError from the re-check must not 500 or revert the saved edit.
+
+        Under ATOMIC_REQUESTS the whole request shares one transaction, so an
+        exception raised by create_check_cob_change *after* the project has been
+        saved would otherwise roll the request back into a 500 and discard the
+        user's valid CoB change. The view must swallow the recoverable error and
+        still redirect with the edit persisted.
+        """
+        self._make_submitted_check(ManufacturabilityCheck.Status.FINISHED)
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:update", kwargs={"pk": self.project.pk})
+
+        self.client.raise_request_exception = False
+        with patch.object(
+            ManufacturabilityCheck,
+            "create_check_cob_change",
+            side_effect=ValueError("source check is no longer the latest"),
+        ):
+            response = self.client.post(url, self._cob_form_data(chip_on_board=True))
+
+        assert response.status_code == HTTP_FOUND
+        self.project.refresh_from_db()
+        assert self.project.chip_on_board is True
+
 
 @pytest.mark.django_db
 class TestProjectDeleteView(TestCase):
