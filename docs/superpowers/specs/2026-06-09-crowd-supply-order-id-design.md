@@ -55,8 +55,13 @@ New module-level validator beside `validate_project_id`:
 
 ```python
 def validate_crowd_supply_order_id(value: str) -> None:
-    """Validate a Crowd Supply order id is all digits (e.g. "327373")."""
-    if not value.isdigit():
+    """Validate a Crowd Supply order number is ASCII digits (e.g. "327373").
+
+    Uses an explicit ASCII check rather than ``str.isdigit()`` alone, which
+    also accepts non-ASCII digit characters (e.g. Arabic-Indic digits or
+    superscripts) that would otherwise be interpolated into the order URL.
+    """
+    if not (value.isascii() and value.isdigit()):
         msg = "Crowd Supply order number must contain only digits (e.g. 327373)."
         raise ValidationError(msg)
 ```
