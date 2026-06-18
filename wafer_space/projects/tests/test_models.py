@@ -3253,6 +3253,28 @@ class TestCreateCheckCobChange:
         with pytest.raises(ValueError, match="latest check"):
             old_check.create_check_cob_change()
 
+    def test_concurrent_finish_is_not_clobbered_by_stale_cancel(self):
+        """A concurrent FINISH must not be overwritten from a stale source check.
+
+        Reproduces the TOCTOU race: the source check is held in memory while
+        RUNNING, but another worker transitions it to FINISHED in the database
+        before the CoB re-check runs. The re-check must observe the committed
+        FINISHED status via a locked re-read and leave it untouched, rather than
+        clobbering it back to CANCELLING from the stale in-memory RUNNING value.
+        """
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        # Concurrent worker finishes the check; the in-memory object is unaware.
+        ManufacturabilityCheck.objects.filter(pk=check.pk).update(
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+
+        check.create_check_cob_change()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
+
 
 @pytest.mark.django_db
 class TestProjectChipOnBoard:

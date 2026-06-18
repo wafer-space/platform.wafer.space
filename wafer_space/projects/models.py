@@ -13,6 +13,7 @@ from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
+from django.db import transaction
 from django.utils import timezone
 from django.utils.formats import date_format
 from simple_history.models import HistoricalRecords
@@ -2321,26 +2322,40 @@ class ManufacturabilityCheck(models.Model):
         check itself, so the superseded check can never FINISH with a result
         computed from the old CoB setting.
 
+        Concurrency: the source row is locked with ``select_for_update`` and
+        re-read inside a transaction before any decision, so two simultaneous
+        toggles cannot both create a COB_CHANGE check, and a check that finished
+        in another worker between page load and submit is observed as FINISHED
+        (and left alone) rather than clobbered back to CANCELLING from a stale
+        in-memory status.
+
         Returns:
             The newly created ManufacturabilityCheck.
 
         Raises:
             ValueError: If this check is not the latest check for its file.
         """
-        latest = self.project_file.latest_manufacturability_check
-        if latest != self:
-            msg = "Can only create CoB change check from the latest check for a file"
-            raise ValueError(msg)
+        with transaction.atomic():
+            locked_self = ManufacturabilityCheck.objects.select_for_update().get(
+                pk=self.pk
+            )
 
-        if self.is_cancellable:
-            self.mark_cancelling(reason="Chip-on-Board option changed")
+            latest = locked_self.project_file.latest_manufacturability_check
+            if latest != locked_self:
+                msg = (
+                    "Can only create CoB change check from the latest check for a file"
+                )
+                raise ValueError(msg)
 
-        return ManufacturabilityCheck.objects.create(
-            project=self.project,
-            project_file=self.project_file,
-            trigger_reason=self.TriggerReason.COB_CHANGE,
-            parent_check=self,
-        )
+            if locked_self.is_cancellable:
+                locked_self.mark_cancelling(reason="Chip-on-Board option changed")
+
+            return ManufacturabilityCheck.objects.create(
+                project=locked_self.project,
+                project_file=locked_self.project_file,
+                trigger_reason=self.TriggerReason.COB_CHANGE,
+                parent_check=locked_self,
+            )
 
     @property
     def queue_wait_seconds(self) -> float | None:
