@@ -192,8 +192,8 @@ class TestProjectDetailView(TestCase):
         assert response.status_code == HTTP_OK
         assert "Chip-on-Board (CoB)" in response.content.decode()
 
-    def test_detail_shows_standard_packaging_when_not_requested(self):
-        """Detail page shows standard packaging when chip_on_board is unset."""
+    def test_detail_shows_bare_die_packaging_when_not_requested(self):
+        """Detail page labels non-CoB packaging as 'Bare Die'."""
         self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:detail", kwargs={"pk": self.project.pk})
 
@@ -203,7 +203,7 @@ class TestProjectDetailView(TestCase):
         content = response.content.decode()
         assert "Chip-on-Board" not in content
         assert "Packaging:" in content
-        assert "Standard" in content
+        assert "Bare Die" in content
 
     def test_detail_shows_cob_change_badge_in_check_history(self):
         """Detail page shows CoB Change badge for COB_CHANGE trigger in history."""
