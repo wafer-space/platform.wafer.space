@@ -5,15 +5,15 @@ from .base import DATABASES
 from .base import INSTALLED_APPS
 from .base import SOCIALACCOUNT_PROVIDERS
 from .base import env
+from .base import required_host_list
 
 # CORE DJANGO SETTINGS
 # ------------------------------------------------------------------------------
 SECRET_KEY = env("DJANGO_SECRET_KEY")
-ALLOWED_HOSTS = [
-    "platform.wafer.space",
-    "platform-wafer-space.buddy.mithis.com",
-    "platform-wafer-space.doc.mithis.com",
-]
+# Comma-separated list provided by the deployment (see .env / ansible).
+# required_host_list fails fast if the value is missing or empty, so we never
+# silently boot with an unusable allowlist and serve HTTP 400s (issue #267).
+ALLOWED_HOSTS = required_host_list("DJANGO_ALLOWED_HOSTS")
 SITE_URL = "https://platform.wafer.space"
 
 # DATABASES

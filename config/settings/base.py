@@ -4,6 +4,7 @@
 from pathlib import Path
 
 import environ
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent.parent
 # wafer_space/
@@ -14,6 +15,22 @@ READ_DOT_ENV_FILE = env.bool("DJANGO_READ_DOT_ENV_FILE", default=True)
 if READ_DOT_ENV_FILE and (BASE_DIR / ".env").exists():
     # OS environment variables take precedence over variables from .env
     env.read_env(str(BASE_DIR / ".env"))
+
+
+def required_host_list(var: str) -> list[str]:
+    """Return a non-empty host allowlist from a comma-separated env variable.
+
+    Fails fast (``ImproperlyConfigured``) when the variable is unset, empty, or
+    contains only blanks/commas. Without this, ``env.list`` returns ``[]`` for
+    an empty value and the app would boot with an unusable ``ALLOWED_HOSTS``,
+    rejecting every request at runtime with ``DisallowedHost`` (issue #267).
+    """
+    hosts = [host.strip() for host in env.list(var) if host.strip()]
+    if not hosts:
+        msg = f"{var} must be set to a non-empty, comma-separated list of hosts."
+        raise ImproperlyConfigured(msg)
+    return hosts
+
 
 # GENERAL
 # ------------------------------------------------------------------------------

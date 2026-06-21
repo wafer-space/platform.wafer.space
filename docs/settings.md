@@ -81,7 +81,7 @@ export DJANGO_SETTINGS_MODULE=config.settings.prod
 |---------|-----|--------|-------|------|-------|
 | `DEBUG` | `True` | Inherits base (`None`) | `False` | `False` | Set to None in base, dev/stage/prod override explicitly |
 | `SECRET_KEY` | **Required from env** | **Required from env** | **Required from env** | **Required from env** | Different keys per environment |
-| `ALLOWED_HOSTS` | `["localhost", "0.0.0.0", "127.0.0.1", "platform.wafer.space", "test-platform.wafer.space"]` | `["testserver"]` | `["test-platform.wafer.space", "buddy.test-platform.wafer.space", "doc.test-platform.wafer.space"]` | `["platform.wafer.space"]` | Dev includes prod domains for local testing |
+| `ALLOWED_HOSTS` | `["localhost", "0.0.0.0", "127.0.0.1", "platform.wafer.space", "test-platform.wafer.space"]` | `["testserver"]` | **Required from env** (`DJANGO_ALLOWED_HOSTS`) | **Required from env** (`DJANGO_ALLOWED_HOSTS`) | dev/pytest hardcoded; stage/prod read comma-separated `DJANGO_ALLOWED_HOSTS` and fail fast if unset |
 | `SITE_URL` | Inherits base (`http://localhost:8081`) | Inherits base (`http://localhost:8081`) | `https://test-platform.wafer.space` | `https://platform.wafer.space` | Dev uses HTTP for simplicity, deployed envs use HTTPS |
 | `TIME_ZONE` | `UTC` | `UTC` | `UTC` | `UTC` | Universal |
 | `USE_I18N` | `True` | `True` | `True` | `True` | Universal |
@@ -406,7 +406,7 @@ These MUST be environment-specific (set to None in base.py):
 - `EMAIL_BACKEND` - Set to None in base, must be explicitly set in each environment
 - OAuth client IDs and secrets - All set to None in base, must be set in each environment
 - `SECRET_KEY` - Different per environment for security
-- `ALLOWED_HOSTS` - Environment-specific domains
+- `ALLOWED_HOSTS` - Environment-specific domains (dev/pytest hardcoded; stage/prod required from `DJANGO_ALLOWED_HOSTS`)
 - `DATABASES` (SQLite vs PostgreSQL)
 - Security settings (cookies, HSTS, SSL redirect)
 - Email credentials (ANYMAIL configuration)
