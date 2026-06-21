@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('projects', '0055_add_commit_info_to_precheck_revision'),
+        ('projects', '0057_alter_manufacturabilitycheck_trigger_reason'),
     ]
 
     operations = [
