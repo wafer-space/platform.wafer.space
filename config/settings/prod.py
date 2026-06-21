@@ -9,11 +9,10 @@ from .base import env
 # CORE DJANGO SETTINGS
 # ------------------------------------------------------------------------------
 SECRET_KEY = env("DJANGO_SECRET_KEY")
-ALLOWED_HOSTS = [
-    "platform.wafer.space",
-    "platform-wafer-space.buddy.mithis.com",
-    "platform-wafer-space.doc.mithis.com",
-]
+# Comma-separated list provided by the deployment (see .env / ansible). No
+# default: a missing value raises ImproperlyConfigured so we fail fast rather
+# than silently serving HTTP 400 for unlisted hosts (issue #267).
+ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS")
 SITE_URL = "https://platform.wafer.space"
 
 # DATABASES
