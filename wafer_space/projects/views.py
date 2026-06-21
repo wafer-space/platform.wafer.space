@@ -250,12 +250,34 @@ class ProjectUpdateView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, UpdateView
         return context
 
     def form_valid(self, form):
-        """Show success message."""
+        """Save, then re-run the manufacturability check if CoB changed."""
+        cob_changed = "chip_on_board" in form.changed_data
+        response = super().form_valid(form)
+
+        if cob_changed:
+            latest_check = self.object.latest_manufacturability_check
+            if latest_check is not None:
+                try:
+                    latest_check.create_check_cob_change()
+                except ValueError:
+                    # The source check stopped being its file's latest between
+                    # page load and submit (e.g. a concurrent re-check). The CoB
+                    # change is already saved and valid, and the newer check will
+                    # pick up the new flag on its own, so log and carry on rather
+                    # than 500 the whole (already-committed) request.
+                    logger.warning(
+                        "CoB re-check skipped for project %s: source check %s is "
+                        "no longer the latest for its file.",
+                        self.object.pk,
+                        latest_check.pk,
+                        exc_info=True,
+                    )
+
         messages.success(
             self.request,
             f"Project '{form.instance.name}' updated successfully!",
         )
-        return super().form_valid(form)
+        return response
 
     def get_success_url(self):
         """Redirect to project detail page."""

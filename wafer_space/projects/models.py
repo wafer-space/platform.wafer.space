@@ -13,6 +13,7 @@ from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
+from django.db import transaction
 from django.utils import timezone
 from django.utils.formats import date_format
 from simple_history.models import HistoricalRecords
@@ -160,6 +161,7 @@ class Project(models.Model):
             "name",
             "description",
             "is_public",
+            "chip_on_board",
             "repository_url",
             "license_type",
             "other_license_spdx_id",
@@ -241,6 +243,16 @@ class Project(models.Model):
     is_public = models.BooleanField(
         default=False,
         help_text="Whether this design should be publicly visible on the platform",
+    )
+
+    # Chip-on-Board packaging (Issue #259)
+    chip_on_board = models.BooleanField(
+        default=False,
+        verbose_name="Request Chip-on-Board (CoB) packaging",
+        help_text=(
+            "Run extra Chip-on-Board (CoB) compatibility checks during the "
+            "manufacturability precheck."
+        ),
     )
 
     # Repository URL (Issue #137)
@@ -1551,6 +1563,7 @@ class ManufacturabilityCheck(models.Model):
         DRC_UPDATE = "drc_update", "DRC Rules Updated"
         ADMIN_RERUN = "admin_rerun", "Admin Requested Re-run"
         RETRY = "retry", "Retry After Error"
+        COB_CHANGE = "cob_change", "Chip-on-Board Option Changed"
 
     class FinishedStatus(models.TextChoices):
         """Sub-status for FINISHED checks indicating manufacturability result."""
@@ -2300,6 +2313,49 @@ class ManufacturabilityCheck(models.Model):
             trigger_reason=self.TriggerReason.DRC_UPDATE,
             parent_check=self,
         )
+
+    def create_check_cob_change(self) -> "ManufacturabilityCheck":
+        """Create a new pending check after the project's CoB option changed.
+
+        Unlike ``create_check_drc_update`` — which leaves an in-progress check
+        to the scheduled superseded-check cleanup — this cancels an in-progress
+        check itself, so the superseded check can never FINISH with a result
+        computed from the old CoB setting.
+
+        Concurrency: the source row is locked with ``select_for_update`` and
+        re-read inside a transaction before any decision, so two simultaneous
+        toggles cannot both create a COB_CHANGE check, and a check that finished
+        in another worker between page load and submit is observed as FINISHED
+        (and left alone) rather than clobbered back to CANCELLING from a stale
+        in-memory status.
+
+        Returns:
+            The newly created ManufacturabilityCheck.
+
+        Raises:
+            ValueError: If this check is not the latest check for its file.
+        """
+        with transaction.atomic():
+            locked_self = ManufacturabilityCheck.objects.select_for_update().get(
+                pk=self.pk
+            )
+
+            latest = locked_self.project_file.latest_manufacturability_check
+            if latest != locked_self:
+                msg = (
+                    "Can only create CoB change check from the latest check for a file"
+                )
+                raise ValueError(msg)
+
+            if locked_self.is_cancellable:
+                locked_self.mark_cancelling(reason="Chip-on-Board option changed")
+
+            return ManufacturabilityCheck.objects.create(
+                project=locked_self.project,
+                project_file=locked_self.project_file,
+                trigger_reason=self.TriggerReason.COB_CHANGE,
+                parent_check=locked_self,
+            )
 
     @property
     def queue_wait_seconds(self) -> float | None:

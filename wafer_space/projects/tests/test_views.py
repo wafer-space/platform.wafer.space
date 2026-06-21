@@ -26,6 +26,7 @@ from wafer_space.shuttles.models import ShuttleSlot
 from wafer_space.users.models import User
 from wafer_space.users.tests.factories import UserFactory
 
+from .constants import EXPECTED_CHECKS_AFTER_COB_TOGGLE
 from .constants import EXPECTED_USER_PROJECTS
 from .constants import FIVE_MB
 from .constants import HTTP_FORBIDDEN
@@ -178,6 +179,50 @@ class TestProjectDetailView(TestCase):
         assert response.status_code == HTTP_OK
         assert response.context["project"] == self.project
         assert response.context["viewing_as_admin"] is True
+
+    def test_detail_shows_cob_badge_when_requested(self):
+        """Detail page shows the CoB badge when chip_on_board is set."""
+        self.project.chip_on_board = True
+        self.project.save()
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        assert "Chip-on-Board (CoB)" in response.content.decode()
+
+    def test_detail_shows_bare_die_packaging_when_not_requested(self):
+        """Detail page labels non-CoB packaging as 'Bare Die'."""
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+        assert "Chip-on-Board" not in content
+        assert "Packaging:" in content
+        assert "Bare Die" in content
+
+    def test_detail_shows_cob_change_badge_in_check_history(self):
+        """Detail page shows CoB Change badge for COB_CHANGE trigger in history."""
+        project_file = ProjectFileFactory(project=self.project)
+        self.project.submitted_file = project_file
+        self.project.save()
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            trigger_reason=ManufacturabilityCheck.TriggerReason.COB_CHANGE,
+        )
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        assert "CoB Change" in response.content.decode()
 
 
 @pytest.mark.django_db
@@ -379,6 +424,117 @@ class TestProjectUpdateView(TestCase):
 
         # Should return 403 Forbidden
         assert response.status_code == HTTP_FORBIDDEN
+
+    def _cob_form_data(self, *, chip_on_board: bool) -> dict[str, str]:
+        """Valid update-form payload toggling only chip_on_board."""
+        data = {
+            "name": self.project.name,
+            "description": self.project.description,
+            "repository_url": "",
+            "license_type": "proprietary",
+            "other_license_spdx_id": "",
+            "proprietary_terms_url": "",
+        }
+        if chip_on_board:
+            data["chip_on_board"] = "on"
+        return data
+
+    def _make_submitted_check(
+        self, status: ManufacturabilityCheck.Status
+    ) -> ManufacturabilityCheck:
+        """Attach a submitted file with a check to self.project."""
+        project_file = ProjectFileFactory(project=self.project)
+        self.project.submitted_file = project_file
+        self.project.save()
+        return ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=project_file,
+            status=status,
+        )
+
+    def test_toggling_cob_creates_cob_change_check(self):
+        """Enabling CoB on a project with a check creates one COB_CHANGE check."""
+        check = self._make_submitted_check(ManufacturabilityCheck.Status.FINISHED)
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:update", kwargs={"pk": self.project.pk})
+
+        response = self.client.post(url, self._cob_form_data(chip_on_board=True))
+
+        assert response.status_code == HTTP_FOUND
+        self.project.refresh_from_db()
+        assert self.project.chip_on_board is True
+        checks = ManufacturabilityCheck.objects.filter(
+            project_file=check.project_file
+        ).order_by("created_at")
+        assert checks.count() == EXPECTED_CHECKS_AFTER_COB_TOGGLE
+        new_check = checks.last()
+        assert new_check is not None
+        assert (
+            new_check.trigger_reason == ManufacturabilityCheck.TriggerReason.COB_CHANGE
+        )
+        assert new_check.parent_check == check
+
+    def test_toggling_cob_cancels_in_progress_check(self):
+        """Enabling CoB while a check is RUNNING marks it CANCELLING."""
+        check = self._make_submitted_check(ManufacturabilityCheck.Status.RUNNING)
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:update", kwargs={"pk": self.project.pk})
+
+        self.client.post(url, self._cob_form_data(chip_on_board=True))
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.CANCELLING
+
+    def test_toggling_cob_on_draft_only_persists(self):
+        """No submitted file/check: the flag is saved, no check is created."""
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:update", kwargs={"pk": self.project.pk})
+
+        self.client.post(url, self._cob_form_data(chip_on_board=True))
+
+        self.project.refresh_from_db()
+        assert self.project.chip_on_board is True
+        assert ManufacturabilityCheck.objects.filter(project=self.project).count() == 0
+
+    def test_unchanged_cob_creates_no_check(self):
+        """Submitting the form with CoB unchanged creates no new check."""
+        check = self._make_submitted_check(ManufacturabilityCheck.Status.FINISHED)
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:update", kwargs={"pk": self.project.pk})
+
+        self.client.post(url, self._cob_form_data(chip_on_board=False))
+
+        assert (
+            ManufacturabilityCheck.objects.filter(
+                project_file=check.project_file
+            ).count()
+            == 1
+        )
+
+    def test_cob_recheck_failure_does_not_500_or_lose_edit(self):
+        """A ValueError from the re-check must not 500 or revert the saved edit.
+
+        Under ATOMIC_REQUESTS the whole request shares one transaction, so an
+        exception raised by create_check_cob_change *after* the project has been
+        saved would otherwise roll the request back into a 500 and discard the
+        user's valid CoB change. The view must swallow the recoverable error and
+        still redirect with the edit persisted.
+        """
+        self._make_submitted_check(ManufacturabilityCheck.Status.FINISHED)
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:update", kwargs={"pk": self.project.pk})
+
+        self.client.raise_request_exception = False
+        with patch.object(
+            ManufacturabilityCheck,
+            "create_check_cob_change",
+            side_effect=ValueError("source check is no longer the latest"),
+        ):
+            response = self.client.post(url, self._cob_form_data(chip_on_board=True))
+
+        assert response.status_code == HTTP_FOUND
+        self.project.refresh_from_db()
+        assert self.project.chip_on_board is True
 
 
 @pytest.mark.django_db

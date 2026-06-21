@@ -27,6 +27,7 @@ DEFAULT_PAGE_SIZE = 2
 # Test counts
 EXPECTED_IP_RANGE_COUNT = 8
 EXPECTED_USER_PROJECTS = 2  # Number of projects created for test user
+EXPECTED_CHECKS_AFTER_COB_TOGGLE = 2  # original check + COB_CHANGE re-check
 
 # Worker tracking test values
 TEST_WORKER_PID = 12345

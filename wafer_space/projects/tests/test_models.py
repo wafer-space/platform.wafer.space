@@ -2850,6 +2850,17 @@ class TestManufacturabilityCheckTriggerReason:
 
 
 @pytest.mark.django_db
+class TestCobChangeTriggerReason:
+    """Tests for the COB_CHANGE trigger reason."""
+
+    def test_cob_change_choice_exists(self):
+        """COB_CHANGE is a valid TriggerReason."""
+        reason = ManufacturabilityCheck.TriggerReason.COB_CHANGE
+        assert reason.value == "cob_change"
+        assert reason.label == "Chip-on-Board Option Changed"
+
+
+@pytest.mark.django_db
 class TestProjectCoreFieldImmutability:
     """Tests for Project core field immutability validation.
 
@@ -3181,3 +3192,111 @@ class TestCreateCheckDrcUpdate:
         assert (
             new_check.trigger_reason == ManufacturabilityCheck.TriggerReason.DRC_UPDATE
         )
+
+
+@pytest.mark.django_db
+class TestCreateCheckCobChange:
+    """Tests for ManufacturabilityCheck.create_check_cob_change()."""
+
+    def test_creates_pending_cob_change_check(self):
+        """Creates a PENDING check with COB_CHANGE reason chained to the source."""
+        old_check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+
+        new_check = old_check.create_check_cob_change()
+
+        assert new_check.project == old_check.project
+        assert new_check.project_file == old_check.project_file
+        assert (
+            new_check.trigger_reason == ManufacturabilityCheck.TriggerReason.COB_CHANGE
+        )
+        assert new_check.parent_check == old_check
+        assert new_check.status == ManufacturabilityCheck.Status.PENDING
+
+    def test_finished_source_check_is_not_cancelled(self):
+        """A FINISHED source check keeps its status (nothing to cancel)."""
+        old_check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+
+        old_check.create_check_cob_change()
+
+        old_check.refresh_from_db()
+        assert old_check.status == ManufacturabilityCheck.Status.FINISHED
+
+    def test_in_progress_source_check_is_marked_cancelling(self):
+        """A RUNNING source check is explicitly marked CANCELLING."""
+        running_check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+
+        new_check = running_check.create_check_cob_change()
+
+        running_check.refresh_from_db()
+        assert running_check.status == ManufacturabilityCheck.Status.CANCELLING
+        assert "Chip-on-Board option changed" in running_check.processing_logs
+        assert new_check.status == ManufacturabilityCheck.Status.PENDING
+
+    def test_raises_when_not_latest_check(self):
+        """Refuses to run on a check that is not the file's latest."""
+        project_file = ProjectFileFactory()
+        old_check = ManufacturabilityCheckFactory(
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+        ManufacturabilityCheckFactory(
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+
+        with pytest.raises(ValueError, match="latest check"):
+            old_check.create_check_cob_change()
+
+    def test_concurrent_finish_is_not_clobbered_by_stale_cancel(self):
+        """A concurrent FINISH must not be overwritten from a stale source check.
+
+        Reproduces the TOCTOU race: the source check is held in memory while
+        RUNNING, but another worker transitions it to FINISHED in the database
+        before the CoB re-check runs. The re-check must observe the committed
+        FINISHED status via a locked re-read and leave it untouched, rather than
+        clobbering it back to CANCELLING from the stale in-memory RUNNING value.
+        """
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        # Concurrent worker finishes the check; the in-memory object is unaware.
+        ManufacturabilityCheck.objects.filter(pk=check.pk).update(
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+
+        check.create_check_cob_change()
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
+
+
+@pytest.mark.django_db
+class TestProjectChipOnBoard:
+    """Tests for the Project.chip_on_board flag."""
+
+    def test_defaults_to_false(self):
+        """chip_on_board defaults to False."""
+        project = ProjectFactory()
+        assert project.chip_on_board is False
+
+    def test_is_editable_after_creation(self):
+        """chip_on_board is a user field, not blocked by core-field immutability."""
+        project = ProjectFactory()
+        project.chip_on_board = True
+        project.full_clean()  # core-field immutability is enforced in clean()
+        project.save()
+        # Fetch fresh from the DB: refresh_from_db() would leave the stale
+        # in-memory attribute in place pre-implementation, hiding the RED.
+        reloaded = Project.objects.get(pk=project.pk)
+        assert reloaded.chip_on_board is True
+
+    def test_is_a_user_field(self):
+        """chip_on_board is in USER_FIELDS and not in CORE_FIELDS."""
+        assert "chip_on_board" in Project.USER_FIELDS
+        assert "chip_on_board" not in Project.CORE_FIELDS
