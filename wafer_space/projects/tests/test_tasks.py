@@ -9,6 +9,7 @@ Security-Critical Tests:
 import hashlib
 import io
 import logging
+import tarfile
 import zipfile
 from datetime import timedelta
 from pathlib import Path
@@ -50,6 +51,7 @@ from wafer_space.projects.tasks import do_dispatching
 from wafer_space.projects.tasks import do_running
 from wafer_space.projects.tasks import do_starting
 from wafer_space.projects.tasks import download_project_file
+from wafer_space.projects.tasks_checks import _save_output_gds
 from wafer_space.projects.tasks_checks import checks_cleanup
 from wafer_space.projects.tasks_checks import checks_cleanup_stale_pending_tasks
 from wafer_space.projects.tasks_checks import checks_drc_update_requeue
@@ -1321,14 +1323,14 @@ class TestDoStarting:
         assert "volumes" not in create_call.kwargs
 
         # Verify command includes precheck.py with --slot and --id flags,
-        # and runs with --threads 1 --workers max (#271)
+        # outputs OAS (#272), and uses --threads 1 --workers max (#271)
         assert create_call.kwargs["command"] == [
             "python3",
             "precheck.py",
             "--input",
             "/input/design.gds",
             "--output",
-            "/output/design.gds",
+            "/output/design.oas",
             "--top",
             "chip_top",
             "--slot",
@@ -1354,7 +1356,7 @@ class TestDoStarting:
         # Verify command is stored correctly
         expected_cmd = (
             "python3 precheck.py --input /input/design.gds "
-            "--output /output/design.gds --top chip_top --slot 1x1 "
+            "--output /output/design.oas --top chip_top --slot 1x1 "
             "--id G850ABCD --threads 1 --workers max"
         )
         assert check.docker_command == expected_cmd
@@ -1426,7 +1428,7 @@ class TestDoStarting:
             "--input",
             "/input/design.gds",
             "--output",
-            "/output/design.gds",
+            "/output/design.oas",
             "--top",
             "chip_top",
             "--slot",
@@ -2040,6 +2042,43 @@ Precheck successfully completed."""
         assert result["outputs_saved"]["runs_archive"] is False
         assert result["outputs_saved"]["output_gds"] is False
         assert result["outputs_saved"]["docker_layer_export"] is False
+
+    @pytest.mark.django_db
+    def test_save_output_extracts_oas_layout(self) -> None:
+        """Output layout is extracted from /output/design.oas and saved as .oas.
+
+        Issue #272: precheck now writes the processed layout as OASIS (.oas)
+        instead of GDS to save disk space.
+        """
+        oas_content = b"fake-oasis-layout-bytes"
+
+        # Build the tar archive that container.get_archive() would return,
+        # containing the OAS layout produced by precheck.
+        tar_buffer = io.BytesIO()
+        with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
+            info = tarfile.TarInfo(name="design.oas")
+            info.size = len(oas_content)
+            tar.addfile(info, io.BytesIO(oas_content))
+        tar_bytes = tar_buffer.getvalue()
+
+        mock_container = MagicMock()
+        mock_container.get_archive.return_value = (iter([tar_bytes]), {})
+
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            docker_server_id="test-local",
+        )
+
+        _save_output_gds(check, mock_container, logging.getLogger("test"))
+
+        # Layout is requested from the OAS path inside the container
+        mock_container.get_archive.assert_called_once_with("/output/design.oas")
+
+        check.refresh_from_db()
+        assert check.output_gds.name.endswith(".oas")
+        with check.output_gds.open("rb") as f:
+            assert f.read() == oas_content
+        assert check.output_gds_sha256 == hashlib.sha256(oas_content).hexdigest()
 
     @pytest.mark.django_db
     def test_errors_when_container_not_found(self) -> None:

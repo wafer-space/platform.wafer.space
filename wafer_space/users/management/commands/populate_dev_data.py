@@ -1024,7 +1024,7 @@ class Command(BaseCommand):
         check_dir.mkdir(parents=True, exist_ok=True)
 
         # Create empty placeholder files
-        for filename in ["precheck.log", "runs.tar.gz", "output.gds", "layer.tar.gz"]:
+        for filename in ["precheck.log", "runs.tar.gz", "output.oas", "layer.tar.gz"]:
             (check_dir / filename).touch()
 
     def _create_checkpoints(self, check: ManufacturabilityCheck) -> None:
@@ -1102,7 +1102,7 @@ class Command(BaseCommand):
             # Output files created by _create_output_files method
             "log_file": f"projects/{project_id}/checks/precheck.log",
             "runs_archive": f"projects/{project_id}/checks/runs.tar.gz",
-            "output_gds": f"projects/{project_id}/checks/output.gds",
+            "output_gds": f"projects/{project_id}/checks/output.oas",
             "docker_layer_export": f"projects/{project_id}/checks/layer.tar.gz",
             "log_file_sha256": (
                 "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
