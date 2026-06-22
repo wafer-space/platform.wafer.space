@@ -1320,7 +1320,8 @@ class TestDoStarting:
         create_call = mock_client.containers.create.call_args
         assert "volumes" not in create_call.kwargs
 
-        # Verify command includes precheck.py with --slot and --id flags
+        # Verify command includes precheck.py with --slot and --id flags,
+        # and runs with --threads 1 --workers max (#271)
         assert create_call.kwargs["command"] == [
             "python3",
             "precheck.py",
@@ -1334,6 +1335,10 @@ class TestDoStarting:
             "1x1",
             "--id",
             "G850ABCD",
+            "--threads",
+            "1",
+            "--workers",
+            "max",
         ]
 
         # Verify put_archive was called twice:
@@ -1349,7 +1354,8 @@ class TestDoStarting:
         # Verify command is stored correctly
         expected_cmd = (
             "python3 precheck.py --input /input/design.gds "
-            "--output /output/design.gds --top chip_top --slot 1x1 --id G850ABCD"
+            "--output /output/design.gds --top chip_top --slot 1x1 "
+            "--id G850ABCD --threads 1 --workers max"
         )
         assert check.docker_command == expected_cmd
 
@@ -1427,6 +1433,10 @@ class TestDoStarting:
             "1x1",
             "--id",
             "G850ABCD",
+            "--threads",
+            "1",
+            "--workers",
+            "max",
         ]
 
     @pytest.mark.django_db
