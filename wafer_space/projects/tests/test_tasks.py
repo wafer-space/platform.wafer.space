@@ -1323,7 +1323,8 @@ class TestDoStarting:
         assert "volumes" not in create_call.kwargs
 
         # Verify command includes precheck.py with --slot and --id flags,
-        # and outputs OAS instead of GDS (#272)
+        # outputs OAS instead of GDS (#272), and runs with
+        # --threads 1 --workers max (#271)
         assert create_call.kwargs["command"] == [
             "python3",
             "precheck.py",
@@ -1337,6 +1338,10 @@ class TestDoStarting:
             "1x1",
             "--id",
             "G850ABCD",
+            "--threads",
+            "1",
+            "--workers",
+            "max",
         ]
 
         # Verify put_archive was called twice:
@@ -1352,7 +1357,8 @@ class TestDoStarting:
         # Verify command is stored correctly
         expected_cmd = (
             "python3 precheck.py --input /input/design.gds "
-            "--output /output/design.oas --top chip_top --slot 1x1 --id G850ABCD"
+            "--output /output/design.oas --top chip_top --slot 1x1 "
+            "--id G850ABCD --threads 1 --workers max"
         )
         assert check.docker_command == expected_cmd
 
@@ -1430,6 +1436,10 @@ class TestDoStarting:
             "1x1",
             "--id",
             "G850ABCD",
+            "--threads",
+            "1",
+            "--workers",
+            "max",
         ]
 
     @pytest.mark.django_db

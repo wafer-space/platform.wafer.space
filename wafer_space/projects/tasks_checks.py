@@ -1081,6 +1081,13 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
         slot_size,
         "--id",
         full_id,
+        # Split the DRC deck across parallel workers for speed (#271).
+        # The default (--threads max --workers 1) uses the least RAM but is
+        # the slowest; --threads 1 --workers max is considerably faster.
+        "--threads",
+        "1",
+        "--workers",
+        "max",
     ]
     if check.project.chip_on_board:
         command.append("--cob")
