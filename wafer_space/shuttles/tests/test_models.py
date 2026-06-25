@@ -176,3 +176,27 @@ class TestSlotReserveAlwaysPossible:
 
         assert warning is not None
         assert "size mismatch" in warning.lower()
+
+
+@pytest.mark.django_db
+class TestShuttleStatusDrcRecheckExcluded:
+    """Tests for Shuttle.Status.drc_recheck_excluded()."""
+
+    def test_returns_terminal_and_in_fab_states(self):
+        """Excluded set is exactly production, completed, cancelled."""
+        assert Shuttle.Status.drc_recheck_excluded() == [
+            Shuttle.Status.IN_PRODUCTION,
+            Shuttle.Status.COMPLETED,
+            Shuttle.Status.CANCELLED,
+        ]
+
+    def test_pre_fab_states_are_not_excluded(self):
+        """Pre-fab states remain eligible for automatic re-runs."""
+        excluded = set(Shuttle.Status.drc_recheck_excluded())
+        for status in (
+            Shuttle.Status.PLANNING,
+            Shuttle.Status.OPEN,
+            Shuttle.Status.FULL,
+            Shuttle.Status.LOCKED,
+        ):
+            assert status not in excluded
