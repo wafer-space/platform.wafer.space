@@ -70,6 +70,18 @@ class Shuttle(models.Model):
         COMPLETED = "completed", "Completed"
         CANCELLED = "cancelled", "Cancelled"
 
+        @classmethod
+        def drc_recheck_excluded(cls) -> list[str]:
+            """Shuttle statuses excluded from AUTOMATIC DRC re-runs.
+
+            Designs in these states are in fabrication, already manufactured,
+            or abandoned, so re-running DRC after a precheck-version bump
+            serves no purpose. This gates only the automatic requeue task
+            (checks_drc_update_requeue); the manual "Recheck with Latest"
+            action is never blocked by shuttle status. See issue #270.
+            """
+            return [cls.IN_PRODUCTION, cls.COMPLETED, cls.CANCELLED]
+
     name = models.CharField(
         max_length=SHUTTLE_ID_LENGTH,
         unique=True,
