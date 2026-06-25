@@ -29,6 +29,8 @@ from django.db.models import OuterRef
 from django.db.models import Subquery
 from django.utils import timezone
 
+from wafer_space.shuttles.models import Shuttle
+
 from .check_operations import create_retry_check
 from .docker_utils import create_directory_tar
 from .docker_utils import create_tar_archive
@@ -729,6 +731,11 @@ def checks_drc_update_requeue() -> dict:
         ManufacturabilityCheck.objects.filter(
             project_file__project__isnull=False,
             project_file_id=Subquery(latest_file_subquery),
+        )
+        .exclude(
+            project_file__project__shuttle__status__in=(
+                Shuttle.Status.drc_recheck_excluded()
+            )
         )
         .annotate(latest_check_id=Subquery(latest_check_subquery))
         .filter(id=F("latest_check_id"))
