@@ -32,6 +32,7 @@ Three follow-up changes to the shipped CrowdSupply order-number feature:
 | Where the shuttle URL lives | **`Shuttle` model field** (user-selected over code-config dict and YAML layout files) |
 | Link target for the order ID | `project.shuttle.crowd_supply_url` |
 | Shuttle without a URL | Order ID renders as **plain text, no link** |
+| Project without a shuttle | Same plain-text rendering (`Project.shuttle` is nullable; `{% if project.shuttle.crowd_supply_url %}` resolves falsy) |
 | Row visibility | Unchanged — only shown when an order ID is set |
 | Python identifiers | Unchanged (`crowd_supply_order_id` stays snake_case; the naming rule governs prose, not symbols) |
 
@@ -68,7 +69,10 @@ crowd_supply_url = models.URLField(
   - forward: `Shuttle.objects.filter(name="G801").update(crowd_supply_url=...)`
     for each of G801/G802/G803 — a safe no-op for names not present in a
     given database (G803 may not exist everywhere yet);
-  - reverse: blank the URL on those three names.
+  - reverse: blank the URL on those three names;
+  - dependencies include `projects/0041_populate_shuttle_and_project_ids`
+    (which seeds G801) so the data step runs after G801 exists on fresh
+    databases, making seeding deterministic.
 - `ShuttleAdmin`: add `crowd_supply_url` to the existing fieldsets so staff
   can set URLs for future shuttles without code changes.
 - `populate_dev_data`: set the G801 URL so dev environments exercise the
@@ -103,20 +107,24 @@ otherwise.
 
 ## Testing (TDD)
 
-- **Shuttle model** (`shuttles/tests/test_models.py` or nearest existing
-  module): new field defaults to blank; migration test asserting the data
-  step sets all three URLs (create G801–G803 rows, run forward function,
-  assert values). Shuttle factories/tests pass explicit `name=` to avoid the
-  known G801 auto-sequence collision.
+- **Shuttle model** (create `shuttles/tests/test_models.py`, mirroring the
+  source layout): new field defaults to blank; migration test asserting the
+  data step sets all three URLs (create G801–G803 rows, run forward
+  function, assert values). Shuttle factories/tests pass explicit `name=` to
+  avoid the known G801 auto-sequence collision.
 - **Views** (`projects/tests/test_views.py`):
   - detail page renders the order ID as a link to the shuttle URL when set;
   - detail page renders the order ID as plain text when the shuttle URL is
     blank;
+  - detail page renders the order ID as plain text when the project has no
+    shuttle at all (`shuttle` is nullable);
   - edit form contains the label "CrowdSupply Order ID".
 - **Removal**: delete the `crowd_supply_order_url` property tests.
-- **Sweep**: `grep -ri "crowd supply"` over `wafer_space/` and
-  `docs/superpowers/` returns nothing (identifiers like
-  `crowd_supply_order_id` don't match the spaced form).
+- **Sweep**: `grep -ri "crowd supply" wafer_space/` returns nothing, and the
+  two 2026-06-09 docs are checked individually (identifiers like
+  `crowd_supply_order_id` don't match the spaced form). This spec is
+  excluded from the sweep — its Problem section intentionally quotes the
+  banned spellings.
 - Full gate per project policy: `make lint-fix && make lint &&
   make type-check && make test`, djlint on touched templates.
 
