@@ -1,4 +1,4 @@
-# Crowd Supply order number on Project — Design
+# CrowdSupply order number on Project — Design
 
 **Date:** 2026-06-09
 **Branch:** `feature/crowd-supply-order-id` (based on PR #260, `fix/zip-mime-detection`)
@@ -7,11 +7,11 @@
 ## Problem
 
 A project on the platform may correspond to a hardware purchase made through
-[Crowd Supply](https://www.crowdsupply.com/). Today there is no way to record
-which Crowd Supply order a project relates to, so staff and owners cannot link a
+[CrowdSupply](https://www.crowdsupply.com/). Today there is no way to record
+which CrowdSupply order a project relates to, so staff and owners cannot link a
 manufactured design back to its order.
 
-We want project owners to be able to associate a Crowd Supply **order number**
+We want project owners to be able to associate a CrowdSupply **order number**
 with their project.
 
 ## Requirements (from brainstorming)
@@ -27,7 +27,7 @@ with their project.
 Explicitly **out of scope** (YAGNI):
 
 - No uniqueness constraint across projects.
-- No verification/lookup against Crowd Supply's API.
+- No verification/lookup against CrowdSupply's API.
 - No "verified" flag or staff-approval workflow.
 - No backfill/data migration (field is optional, defaults to empty).
 
@@ -35,7 +35,7 @@ Explicitly **out of scope** (YAGNI):
 
 Store the order ID as a **`CharField`**, not an integer. Order IDs are opaque
 identifiers, not quantities: we never do arithmetic on them, leading characters
-could matter, and a string column survives any future format change Crowd Supply
+could matter, and a string column survives any future format change CrowdSupply
 makes. This mirrors how the existing `project_id` identifier is stored.
 
 This follows the established pattern in the codebase for optional,
@@ -55,14 +55,14 @@ New module-level validator beside `validate_project_id`:
 
 ```python
 def validate_crowd_supply_order_id(value: str) -> None:
-    """Validate a Crowd Supply order number is ASCII digits (e.g. "327373").
+    """Validate a CrowdSupply order number is ASCII digits (e.g. "327373").
 
     Uses an explicit ASCII check rather than ``str.isdigit()`` alone, which
     also accepts non-ASCII digit characters (e.g. Arabic-Indic digits or
     superscripts) that would otherwise be interpolated into the order URL.
     """
     if not (value.isascii() and value.isdigit()):
-        msg = "Crowd Supply order number must contain only digits (e.g. 327373)."
+        msg = "CrowdSupply order number must contain only digits (e.g. 327373)."
         raise ValidationError(msg)
 ```
 
@@ -74,7 +74,7 @@ crowd_supply_order_id = models.CharField(
     blank=True,
     default="",
     validators=[validate_crowd_supply_order_id],
-    help_text="Crowd Supply order number, e.g. 327373 (optional).",
+    help_text="CrowdSupply order number, e.g. 327373 (optional).",
 )
 ```
 
@@ -89,7 +89,7 @@ New computed property (mirroring `full_id`):
 ```python
 @property
 def crowd_supply_order_url(self) -> str:
-    """Crowd Supply order page URL, or '' when no order id is set."""
+    """CrowdSupply order page URL, or '' when no order id is set."""
     if not self.crowd_supply_order_id:
         return ""
     return f"https://www.crowdsupply.com/account/order/{self.crowd_supply_order_id}"
@@ -128,7 +128,7 @@ add a conditional row:
 ```html
 {% if project.crowd_supply_order_id %}
   <p>
-    <strong>Crowd Supply order:</strong>
+    <strong>CrowdSupply order:</strong>
     <a href="{{ project.crowd_supply_order_url }}" target="_blank" rel="noopener">
       {{ project.crowd_supply_order_id }}
     </a>

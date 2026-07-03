@@ -1,8 +1,8 @@
-# Crowd Supply Order Number Implementation Plan
+# CrowdSupply Order Number Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Let a project owner associate an optional Crowd Supply order number (e.g. `327373`) with their project, shown on the edit form, detail page, and Django admin.
+**Goal:** Let a project owner associate an optional CrowdSupply order number (e.g. `327373`) with their project, shown on the edit form, detail page, and Django admin.
 
 **Architecture:** Add a digits-only `CharField` (`crowd_supply_order_id`) to the `Project` model in the always-editable `USER_FIELDS` group, plus a computed `crowd_supply_order_url` property. Surface it through the existing `ProjectForm`, `ProjectAdmin`, and `project_detail.html` patterns already used by `repository_url`. No uniqueness, no external verification.
 
@@ -47,7 +47,7 @@ from wafer_space.projects.models import validate_crowd_supply_order_id
 
 
 class TestCrowdSupplyOrderId:
-    """Crowd Supply order number validation and URL property."""
+    """CrowdSupply order number validation and URL property."""
 
     @pytest.mark.parametrize("value", ["327373", "0", "00123"])
     def test_validator_accepts_digit_strings(self, value):
@@ -103,14 +103,14 @@ In `models.py`, after `validate_project_id` (ends ~line 60):
 
 ```python
 def validate_crowd_supply_order_id(value: str) -> None:
-    """Validate a Crowd Supply order number is ASCII digits (e.g. "327373").
+    """Validate a CrowdSupply order number is ASCII digits (e.g. "327373").
 
     Uses an explicit ASCII check rather than ``str.isdigit()`` alone, which
     also accepts non-ASCII digit characters (e.g. Arabic-Indic digits or
     superscripts) that would otherwise be interpolated into the order URL.
     """
     if not (value.isascii() and value.isdigit()):
-        msg = "Crowd Supply order number must contain only digits (e.g. 327373)."
+        msg = "CrowdSupply order number must contain only digits (e.g. 327373)."
         raise ValidationError(msg)
 ```
 
@@ -126,7 +126,7 @@ crowd_supply_order_id = models.CharField(
     blank=True,
     default="",
     validators=[validate_crowd_supply_order_id],
-    help_text="Crowd Supply order number, e.g. 327373 (optional).",
+    help_text="CrowdSupply order number, e.g. 327373 (optional).",
 )
 ```
 
@@ -137,7 +137,7 @@ Near the other `@property` methods on `Project`:
 ```python
 @property
 def crowd_supply_order_url(self) -> str:
-    """Crowd Supply order page URL, or '' when no order id is set."""
+    """CrowdSupply order page URL, or '' when no order id is set."""
     if not self.crowd_supply_order_id:
         return ""
     return f"https://www.crowdsupply.com/account/order/{self.crowd_supply_order_id}"
@@ -254,7 +254,7 @@ Expected: FAIL — field not in form / no normalisation.
 - Add to `Meta.help_texts`:
 
 ```python
-"crowd_supply_order_id": "Crowd Supply order number, e.g. 327373 (optional).",
+"crowd_supply_order_id": "CrowdSupply order number, e.g. 327373 (optional).",
 ```
 
 - [ ] **Step 4: Add the normalising clean method**
@@ -318,7 +318,7 @@ Insert immediately after the closing `{% endif %}` of the Repository block:
 ```html
 {% if project.crowd_supply_order_id %}
   <p class="mb-2">
-    <strong>Crowd Supply order:</strong>
+    <strong>CrowdSupply order:</strong>
     <a href="{{ project.crowd_supply_order_url }}" target="_blank" rel="noopener">
       <i class="bi bi-box-arrow-up-right"></i> {{ project.crowd_supply_order_id }}
     </a>
@@ -335,7 +335,7 @@ Expected: no new errors. (`make lint` runs ruff only, not djlint, so call djlint
 
 ```bash
 git add wafer_space/templates/projects/project_detail.html
-git commit -m "feat: show Crowd Supply order link on project detail page"
+git commit -m "feat: show CrowdSupply order link on project detail page"
 ```
 
 ---
