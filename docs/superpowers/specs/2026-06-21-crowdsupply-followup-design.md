@@ -144,3 +144,26 @@ otherwise.
 | `wafer_space/projects/tests/test_views.py` | link/plain/label tests |
 | `wafer_space/shuttles/tests/*` | field + data-migration tests |
 | `docs/superpowers/*.md` | naming sweep |
+
+---
+
+## Revision (2026-07-03): detail-row rendering superseded by user feedback
+
+After the original design shipped to PR #263, Tim revised the detail-page
+rendering:
+
+1. The "CrowdSupply Order ID:" row is **always shown**, even when the order
+   ID is blank (a muted "Not set" placeholder renders in that case). The
+   original "only shown when set" visibility rule above is superseded.
+2. The **label** ("CrowdSupply Order ID:") is what links to the shuttle's
+   CrowdSupply campaign page (plain text when the shuttle has no URL or the
+   project has no shuttle).
+3. The **order ID value** links to the buyer's order page
+   `https://www.crowdsupply.com/account/order/<id>` — the
+   `crowd_supply_order_url` property removed by this design was restored,
+   along with its tests.
+
+Implemented in commit `5fd750d` with a five-case view-test matrix
+(label-linked + ID-linked / ID-linked only with blank shuttle URL / ID-linked
+only with no shuttle / "Not set" with no shuttle / "Not set" with linked
+label).
