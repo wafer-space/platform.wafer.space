@@ -245,7 +245,7 @@
 
       // Retarget the CrowdSupply label link when the selected shuttle changes.
       // The shuttle-campaign-urls json_script maps shuttle pk -> campaign URL.
-      const shuttleField = document.getElementById('id_shuttle');
+      // Note: shuttleField is already declared by the project-id logic above.
       const campaignLink = document.getElementById('crowd-supply-campaign-link');
       const campaignUrlsEl = document.getElementById('shuttle-campaign-urls');
       if (shuttleField && campaignLink && campaignUrlsEl) {
