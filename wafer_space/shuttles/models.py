@@ -92,6 +92,13 @@ class Shuttle(models.Model):
         help_text="Path to YAML grid configuration (e.g., shuttles/G801-layout.yaml)",
     )
 
+    crowd_supply_url = models.URLField(
+        blank=True,
+        default="",
+        verbose_name="CrowdSupply URL",
+        help_text="CrowdSupply campaign page for this shuttle run (optional).",
+    )
+
     # Important dates
     created_at = models.DateTimeField(auto_now_add=True)
     submission_deadline = models.DateTimeField(
