@@ -19,7 +19,7 @@ def set_crowd_supply_urls(apps, schema_editor):
 def unset_crowd_supply_urls(apps, schema_editor):
     """Blank the seeded URLs on reverse migration."""
     shuttle_model = apps.get_model("shuttles", "Shuttle")
-    shuttle_model.objects.filter(name__in=CROWD_SUPPLY_URLS).update(
+    shuttle_model.objects.filter(name__in=list(CROWD_SUPPLY_URLS)).update(
         crowd_supply_url=""
     )
 
@@ -39,5 +39,7 @@ class Migration(migrations.Migration):
             name='crowd_supply_url',
             field=models.URLField(blank=True, default='', help_text='CrowdSupply campaign page for this shuttle run (optional).', verbose_name='CrowdSupply URL'),
         ),
-        migrations.RunPython(set_crowd_supply_urls, unset_crowd_supply_urls),
+        migrations.RunPython(
+            set_crowd_supply_urls, unset_crowd_supply_urls, elidable=True
+        ),
     ]

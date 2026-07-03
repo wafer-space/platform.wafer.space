@@ -517,3 +517,21 @@ git push origin feature/crowd-supply-order-id
 ```
 
 Watch CI (`gh run watch`) until green.
+
+---
+
+## Corrections (added during execution)
+
+- **Task 1 test deviation (approved):** the planned `test_migration_seeded_g801_url`
+  (assert the migration-seeded G801 row carries the URL) is ordering-fragile:
+  `live_server` browser tests flush the database mid-suite, deleting
+  migration-seeded rows, so the assertion fails under full `make test`
+  ordering. It was replaced by `test_migration_runs_after_g801_seed`
+  (asserts migration 0008 declares the `projects/0041` dependency) plus a
+  `get_or_create`-based data-step test. An isolated `--create-db` run of the
+  original test proved in-chain seeding works on fresh databases.
+  **Lesson:** never rely on migration-seeded rows existing in ordinary tests.
+- **Review-queued cosmetic fixes** (applied in the same commit as this note):
+  `list(CROWD_SUPPLY_URLS)` + `elidable=True` in migration 0008, dev-data
+  docstring/drift-guard comment, `HTTP_OK` guards + fifth matrix case in the
+  detail-view tests (commit 87b7776).

@@ -90,6 +90,7 @@ class Command(BaseCommand):
         self._create_g899_projects(g899, mithro, testuser)
 
         # Create G801 shuttle (initial shuttle run) and slots
+        # Keep in sync with CROWD_SUPPLY_URLS in shuttles migration 0008.
         g801 = self._create_shuttle(
             "G801",
             "Initial shuttle run for wafer.space",
@@ -270,7 +271,9 @@ class Command(BaseCommand):
     def _create_shuttle(
         self, name: str, description: str, *, crowd_supply_url: str = ""
     ) -> Shuttle:
-        """Create a shuttle with given name and description."""
+        """Create a shuttle with given name, description, and optional
+        CrowdSupply URL.
+        """
         shuttle, created = Shuttle.objects.get_or_create(
             name=name,
             defaults={
