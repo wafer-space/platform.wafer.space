@@ -419,7 +419,10 @@ Replace `test_crowd_supply_order_shown_when_set` and update `test_crowd_supply_o
         assert "CrowdSupply Order ID:" not in response.content.decode()
 ```
 
-In `TestProjectUpdateView.test_order_id_field_rendered_on_edit_form` (~line 563), add a label assertion:
+In `TestProjectUpdateView.test_order_id_field_rendered_on_edit_form` (~line 563), add a label assertion, and update its docstring to
+`"""The CrowdSupply order field is present and rendered on the form."""`
+(the old docstring is the only "Crowd Supply" occurrence in `wafer_space/`
+not otherwise covered — Task 5's sweep fails if it survives):
 
 ```python
         assert "CrowdSupply Order ID" in response.content.decode()
