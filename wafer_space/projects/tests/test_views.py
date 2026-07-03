@@ -139,8 +139,8 @@ class TestProjectDetailView(TestCase):
         # Should return 403 Forbidden
         assert response.status_code == HTTP_FORBIDDEN
 
-    def test_order_id_links_to_shuttle_crowdsupply_page(self):
-        """Order ID renders as a link to the shuttle's CrowdSupply page."""
+    def test_label_links_to_campaign_and_id_links_to_order_page(self):
+        """Label links to the shuttle campaign page; ID links to the order page."""
         shuttle = Shuttle.objects.create(
             name="G851",
             description="Linked run",
@@ -160,11 +160,11 @@ class TestProjectDetailView(TestCase):
         assert response.status_code == HTTP_OK
         content = response.content.decode()
         assert "CrowdSupply Order ID:" in content
-        assert "327373" in content
         assert shuttle.crowd_supply_url in content
+        assert "https://www.crowdsupply.com/account/order/327373" in content
 
-    def test_order_id_plain_text_when_shuttle_has_no_url(self):
-        """Order ID renders without a link when the shuttle URL is blank."""
+    def test_order_id_links_to_order_page_when_shuttle_has_no_url(self):
+        """The ID still links to the order page when the shuttle URL is blank."""
         shuttle = Shuttle.objects.create(name="G852", description="Unlinked run")
         project = Project.objects.create(
             user=self.user,
@@ -180,11 +180,12 @@ class TestProjectDetailView(TestCase):
         assert response.status_code == HTTP_OK
         content = response.content.decode()
         assert "CrowdSupply Order ID:" in content
-        assert "327373" in content
-        assert "crowdsupply.com" not in content
+        assert "https://www.crowdsupply.com/account/order/327373" in content
+        # No campaign link: the label renders as plain text.
+        assert "https://www.crowdsupply.com/wafer-space/" not in content
 
-    def test_order_id_plain_text_when_project_has_no_shuttle(self):
-        """Order ID renders without a link when the project has no shuttle."""
+    def test_order_id_links_to_order_page_when_project_has_no_shuttle(self):
+        """The ID still links to the order page when the project has no shuttle."""
         self.project.crowd_supply_order_id = "327373"
         self.project.save()
 
@@ -195,20 +196,23 @@ class TestProjectDetailView(TestCase):
         assert response.status_code == HTTP_OK
         content = response.content.decode()
         assert "CrowdSupply Order ID:" in content
-        assert "327373" in content
-        assert "crowdsupply.com" not in content
+        assert "https://www.crowdsupply.com/account/order/327373" in content
+        assert "https://www.crowdsupply.com/wafer-space/" not in content
 
-    def test_crowd_supply_order_absent_when_blank(self):
-        """No CrowdSupply row renders when the order ID is unset."""
+    def test_row_always_shown_with_not_set_when_blank(self):
+        """The row renders with 'Not set' when the order ID is blank."""
         self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:detail", kwargs={"pk": self.project.pk})
         response = self.client.get(url)
 
         assert response.status_code == HTTP_OK
-        assert "CrowdSupply Order ID:" not in response.content.decode()
+        content = response.content.decode()
+        assert "CrowdSupply Order ID:" in content
+        assert "Not set" in content
+        assert "https://www.crowdsupply.com/account/order/" not in content
 
-    def test_no_row_when_blank_even_with_shuttle_url(self):
-        """No CrowdSupply row renders for a blank ID even when the shuttle has a URL."""
+    def test_blank_id_shows_not_set_with_campaign_linked_label(self):
+        """A blank ID shows 'Not set' while the label still links to the campaign."""
         shuttle = Shuttle.objects.create(
             name="G853",
             description="Linked run without order",
@@ -225,7 +229,11 @@ class TestProjectDetailView(TestCase):
         response = self.client.get(url)
 
         assert response.status_code == HTTP_OK
-        assert "CrowdSupply Order ID:" not in response.content.decode()
+        content = response.content.decode()
+        assert "CrowdSupply Order ID:" in content
+        assert shuttle.crowd_supply_url in content
+        assert "Not set" in content
+        assert "https://www.crowdsupply.com/account/order/" not in content
 
     def test_includes_active_file_in_context(self):
         """Test that active file is included in context."""
