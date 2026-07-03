@@ -268,7 +268,7 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
             # chip_on_board: help_text inherited from the model field
             "repository_url": "URL to the project's source repository",
             "crowd_supply_order_id": (
-                "Crowd Supply order number, e.g. 327373 (optional)."
+                "CrowdSupply order number, e.g. 327373 (optional)."
             ),
             "other_license_spdx_id": (
                 "SPDX identifier (e.g., GPL-3.0-only, LGPL-2.1-or-later)"

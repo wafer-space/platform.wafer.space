@@ -14,11 +14,11 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='historicalproject',
             name='crowd_supply_order_id',
-            field=models.CharField(blank=True, default='', help_text='Crowd Supply order number, e.g. 327373 (optional).', max_length=20, validators=[wafer_space.projects.models.validate_crowd_supply_order_id]),
+            field=models.CharField(blank=True, default='', help_text='CrowdSupply order number, e.g. 327373 (optional).', max_length=20, validators=[wafer_space.projects.models.validate_crowd_supply_order_id], verbose_name='CrowdSupply Order ID'),
         ),
         migrations.AddField(
             model_name='project',
             name='crowd_supply_order_id',
-            field=models.CharField(blank=True, default='', help_text='Crowd Supply order number, e.g. 327373 (optional).', max_length=20, validators=[wafer_space.projects.models.validate_crowd_supply_order_id]),
+            field=models.CharField(blank=True, default='', help_text='CrowdSupply order number, e.g. 327373 (optional).', max_length=20, validators=[wafer_space.projects.models.validate_crowd_supply_order_id], verbose_name='CrowdSupply Order ID'),
         ),
     ]

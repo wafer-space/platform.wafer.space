@@ -62,14 +62,14 @@ def validate_project_id(value: str) -> None:
 
 
 def validate_crowd_supply_order_id(value: str) -> None:
-    """Validate a Crowd Supply order number is ASCII digits (e.g. "327373").
+    """Validate a CrowdSupply order number is ASCII digits (e.g. "327373").
 
     Uses an explicit ASCII check rather than ``str.isdigit()`` alone, which
     also accepts non-ASCII digit characters (e.g. Arabic-Indic digits or
-    superscripts) that would otherwise be interpolated into the order URL.
+    superscripts) that are not valid in a CrowdSupply order number.
     """
     if not (value.isascii() and value.isdigit()):
-        msg = "Crowd Supply order number must contain only digits (e.g. 327373)."
+        msg = "CrowdSupply order number must contain only digits (e.g. 327373)."
         raise ValidationError(msg)
 
 
@@ -280,7 +280,8 @@ class Project(models.Model):
         blank=True,
         default="",
         validators=[validate_crowd_supply_order_id],
-        help_text="Crowd Supply order number, e.g. 327373 (optional).",
+        verbose_name="CrowdSupply Order ID",
+        help_text="CrowdSupply order number, e.g. 327373 (optional).",
     )
 
     # License tracking (Issue #193)
@@ -493,13 +494,6 @@ class Project(models.Model):
         if self.shuttle and self.project_id:
             return f"{self.shuttle.name}{self.project_id}"
         return ""
-
-    @property
-    def crowd_supply_order_url(self) -> str:
-        """Crowd Supply order page URL, or '' when no order id is set."""
-        if not self.crowd_supply_order_id:
-            return ""
-        return f"https://www.crowdsupply.com/account/order/{self.crowd_supply_order_id}"
 
     @property
     def shuttle_positions(self) -> models.QuerySet:

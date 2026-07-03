@@ -3304,7 +3304,7 @@ class TestProjectChipOnBoard:
 
 
 class TestCrowdSupplyOrderId:
-    """Crowd Supply order number validation and URL property."""
+    """CrowdSupply order number validation."""
 
     @pytest.mark.parametrize("value", ["327373", "0", "00123"])
     def test_validator_accepts_digit_strings(self, value):
@@ -3333,19 +3333,6 @@ class TestCrowdSupplyOrderId:
         loaded_project = Project.objects.get(pk=project.pk)
         loaded_project.crowd_supply_order_id = ""
         loaded_project.full_clean()  # must not raise
-
-    @pytest.mark.django_db
-    def test_url_property_returns_account_order_url(self):
-        project = ProjectFactory(crowd_supply_order_id="327373")
-        assert (
-            project.crowd_supply_order_url
-            == "https://www.crowdsupply.com/account/order/327373"
-        )
-
-    @pytest.mark.django_db
-    def test_url_property_empty_when_unset(self):
-        project = ProjectFactory(crowd_supply_order_id="")
-        assert project.crowd_supply_order_url == ""
 
     @pytest.mark.django_db
     def test_order_id_round_trips(self):

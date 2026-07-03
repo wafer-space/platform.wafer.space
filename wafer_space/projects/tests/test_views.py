@@ -139,29 +139,70 @@ class TestProjectDetailView(TestCase):
         # Should return 403 Forbidden
         assert response.status_code == HTTP_FORBIDDEN
 
-    def test_crowd_supply_order_shown_when_set(self):
-        """Test that the Crowd Supply order number and link render when set."""
-        self.project.crowd_supply_order_id = "12345"
+    def test_order_id_links_to_shuttle_crowdsupply_page(self):
+        """Order ID renders as a link to the shuttle's CrowdSupply page."""
+        shuttle = Shuttle.objects.create(
+            name="G851",
+            description="Linked run",
+            crowd_supply_url="https://www.crowdsupply.com/wafer-space/gf180mcu-run-1/",
+        )
+        project = Project.objects.create(
+            user=self.user,
+            name="Linked Project",
+            shuttle=shuttle,
+            crowd_supply_order_id="327373",
+        )
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:detail", kwargs={"pk": project.pk})
+        response = self.client.get(url)
+
+        content = response.content.decode()
+        assert "CrowdSupply Order ID:" in content
+        assert "327373" in content
+        assert shuttle.crowd_supply_url in content
+
+    def test_order_id_plain_text_when_shuttle_has_no_url(self):
+        """Order ID renders without a link when the shuttle URL is blank."""
+        shuttle = Shuttle.objects.create(name="G852", description="Unlinked run")
+        project = Project.objects.create(
+            user=self.user,
+            name="Unlinked Project",
+            shuttle=shuttle,
+            crowd_supply_order_id="327373",
+        )
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:detail", kwargs={"pk": project.pk})
+        response = self.client.get(url)
+
+        content = response.content.decode()
+        assert "CrowdSupply Order ID:" in content
+        assert "327373" in content
+        assert "crowdsupply.com" not in content
+
+    def test_order_id_plain_text_when_project_has_no_shuttle(self):
+        """Order ID renders without a link when the project has no shuttle."""
+        self.project.crowd_supply_order_id = "327373"
         self.project.save()
 
         self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:detail", kwargs={"pk": self.project.pk})
         response = self.client.get(url)
 
-        assert response.status_code == HTTP_OK
         content = response.content.decode()
-        assert "Crowd Supply order:" in content
-        assert "12345" in content
-        assert self.project.crowd_supply_order_url in content
+        assert "CrowdSupply Order ID:" in content
+        assert "327373" in content
+        assert "crowdsupply.com" not in content
 
     def test_crowd_supply_order_absent_when_blank(self):
-        """Test that no Crowd Supply order row renders when unset."""
+        """No CrowdSupply row renders when the order ID is unset."""
         self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:detail", kwargs={"pk": self.project.pk})
         response = self.client.get(url)
 
         assert response.status_code == HTTP_OK
-        assert "Crowd Supply order:" not in response.content.decode()
+        assert "CrowdSupply Order ID:" not in response.content.decode()
 
     def test_includes_active_file_in_context(self):
         """Test that active file is included in context."""
@@ -561,7 +602,7 @@ class TestProjectUpdateView(TestCase):
         assert self.project.chip_on_board is True
 
     def test_order_id_field_rendered_on_edit_form(self):
-        """The Crowd Supply order field is present and rendered on the form."""
+        """The CrowdSupply order field is present and rendered on the form."""
         self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:update", kwargs={"pk": self.project.pk})
         response = self.client.get(url)
@@ -570,6 +611,7 @@ class TestProjectUpdateView(TestCase):
         assert "crowd_supply_order_id" in response.context["form"].fields
         # The input must actually appear in the rendered HTML, not just the form.
         assert "id_crowd_supply_order_id" in response.content.decode()
+        assert "CrowdSupply Order ID" in response.content.decode()
 
     def test_owner_can_set_order_id_via_update(self):
         """Posting an order id through the update view persists it."""

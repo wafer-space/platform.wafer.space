@@ -113,7 +113,7 @@ class TestProjectForm(TestCase):
         assert form.fields["chip_on_board"].disabled is False
 
     def test_order_id_optional(self):
-        """Crowd Supply order number is optional and cleans to empty string."""
+        """CrowdSupply order number is optional and cleans to empty string."""
         form = ProjectForm(data=self._base_form_data())
         assert form.is_valid(), form.errors
         assert form.cleaned_data["crowd_supply_order_id"] == ""
