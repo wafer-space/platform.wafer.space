@@ -167,3 +167,9 @@ Implemented in commit `5fd750d` with a five-case view-test matrix
 (label-linked + ID-linked / ID-linked only with blank shuttle URL / ID-linked
 only with no shuttle / "Not set" with no shuttle / "Not set" with linked
 label).
+
+Additional revision (same date): the "CrowdSupply Order ID" label on the
+project **edit form** also links to the shuttle's campaign page (new window,
+`rel="noopener"`, no underline), via `format_html` in
+`ProjectForm._link_crowd_supply_label()` — plain label on the create form or
+when the shuttle has no URL. All CrowdSupply links open in a new window.

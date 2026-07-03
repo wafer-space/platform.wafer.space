@@ -644,6 +644,34 @@ class TestProjectUpdateView(TestCase):
         assert "id_crowd_supply_order_id" in response.content.decode()
         assert "CrowdSupply Order ID" in response.content.decode()
 
+    def test_order_id_label_links_to_campaign_on_edit_form(self):
+        """The CrowdSupply label on the edit form links to the campaign page."""
+        self.shuttle.crowd_supply_url = (
+            "https://www.crowdsupply.com/wafer-space/gf180mcu-run-1/"
+        )
+        self.shuttle.save()
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:update", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+        assert f'href="{self.shuttle.crowd_supply_url}"' in content
+        # The label itself is the anchor text, opening in a new window.
+        assert 'class="text-decoration-none">CrowdSupply Order ID</a>' in content
+
+    def test_order_id_label_plain_when_shuttle_has_no_url(self):
+        """The label stays plain text when the shuttle has no campaign URL."""
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:update", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+        assert "CrowdSupply Order ID" in content
+        assert "https://www.crowdsupply.com/wafer-space/" not in content
+
     def test_owner_can_set_order_id_via_update(self):
         """Posting an order id through the update view persists it."""
         self.client.login(username="testuser", password=TEST_PASSWORD)

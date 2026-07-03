@@ -5,6 +5,7 @@ from __future__ import annotations
 from django import forms
 from django.core.exceptions import ValidationError
 from django.utils import timezone
+from django.utils.html import format_html
 
 from wafer_space.core.enums import SlotSize
 from wafer_space.shuttles.models import Shuttle
@@ -306,7 +307,27 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
             ).order_by("name")
 
         self._configure_fields()
+        self._link_crowd_supply_label()
         self._set_defaults()
+
+    def _link_crowd_supply_label(self):
+        """Turn the CrowdSupply label into a shuttle campaign-page link.
+
+        Only applies when the form instance already has a shuttle with a
+        campaign URL (i.e. editing an existing project); the create form
+        keeps the plain verbose_name label.
+        """
+        if not self.instance.shuttle_id:
+            return
+        campaign_url = self.instance.shuttle.crowd_supply_url
+        if not campaign_url:
+            return
+        self.fields["crowd_supply_order_id"].label = format_html(
+            '<a href="{}" target="_blank" rel="noopener" '
+            'class="text-decoration-none">{}</a>',
+            campaign_url,
+            "CrowdSupply Order ID",
+        )
 
     def _configure_fields(self):
         """Configure field editability based on user and instance state.
