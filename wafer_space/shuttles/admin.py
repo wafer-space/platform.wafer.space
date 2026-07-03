@@ -25,7 +25,7 @@ class ShuttleAdmin(admin.ModelAdmin):
     search_fields = ("name", "description", "technology_node", "foundry")
     readonly_fields = ("created_at",)
     fieldsets = (
-        (None, {"fields": ("name", "description", "status")}),
+        (None, {"fields": ("name", "description", "status", "crowd_supply_url")}),
         (
             "Grid Configuration",
             {

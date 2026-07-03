@@ -90,7 +90,12 @@ class Command(BaseCommand):
         self._create_g899_projects(g899, mithro, testuser)
 
         # Create G801 shuttle (initial shuttle run) and slots
-        g801 = self._create_shuttle("G801", "Initial shuttle run for wafer.space")
+        # Keep in sync with CROWD_SUPPLY_URLS in shuttles migration 0008.
+        g801 = self._create_shuttle(
+            "G801",
+            "Initial shuttle run for wafer.space",
+            crowd_supply_url="https://www.crowdsupply.com/wafer-space/gf180mcu-run-1/",
+        )
         self._create_g801_slots(g801)
         self._create_g801_projects(g801, mithro, testuser)
 
@@ -263,13 +268,18 @@ class Command(BaseCommand):
         else:
             self.stdout.write("  PrecheckImageRevision records already exist")
 
-    def _create_shuttle(self, name: str, description: str) -> Shuttle:
-        """Create a shuttle with given name and description."""
+    def _create_shuttle(
+        self, name: str, description: str, *, crowd_supply_url: str = ""
+    ) -> Shuttle:
+        """Create a shuttle with given name, description, and optional
+        CrowdSupply URL.
+        """
         shuttle, created = Shuttle.objects.get_or_create(
             name=name,
             defaults={
                 "description": description,
                 "status": Shuttle.Status.OPEN,
+                "crowd_supply_url": crowd_supply_url,
             },
         )
         if created:

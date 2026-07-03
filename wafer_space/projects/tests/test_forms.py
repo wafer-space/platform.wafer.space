@@ -28,6 +28,17 @@ class TestProjectForm(TestCase):
             name="G800", description="Test Shuttle", status=Shuttle.Status.OPEN
         )
 
+    def _base_form_data(self, **overrides):
+        """Build minimal valid ProjectForm data, with optional field overrides."""
+        data = {
+            "name": "Test Project",
+            "shuttle": self.shuttle.pk,
+            "project_id": "TEST",
+            "slot_size": "1x1",
+        }
+        data.update(overrides)
+        return data
+
     def test_form_valid_with_all_fields(self):
         """Test form is valid with name, description, and slot_size."""
         form_data = {
@@ -100,6 +111,71 @@ class TestProjectForm(TestCase):
         )
         form = ProjectForm(user=user, instance=project)
         assert form.fields["chip_on_board"].disabled is False
+
+    def test_order_id_optional(self):
+        """CrowdSupply order number is optional and cleans to empty string."""
+        form = ProjectForm(data=self._base_form_data())
+        assert form.is_valid(), form.errors
+        assert form.cleaned_data["crowd_supply_order_id"] == ""
+
+    def test_order_id_accepts_digits(self):
+        """A plain numeric order number is accepted unchanged."""
+        form = ProjectForm(data=self._base_form_data(crowd_supply_order_id="327373"))
+        assert form.is_valid(), form.errors
+        assert form.cleaned_data["crowd_supply_order_id"] == "327373"
+
+    def test_order_id_strips_hash_and_whitespace(self):
+        """A pasted '  #327373 ' is normalised to '327373'."""
+        form = ProjectForm(
+            data=self._base_form_data(crowd_supply_order_id="  #327373 ")
+        )
+        assert form.is_valid(), form.errors
+        assert form.cleaned_data["crowd_supply_order_id"] == "327373"
+
+    def test_order_id_rejects_non_numeric(self):
+        """Non-numeric order numbers are rejected via the model validator."""
+        form = ProjectForm(data=self._base_form_data(crowd_supply_order_id="abc123"))
+        assert not form.is_valid()
+        assert "crowd_supply_order_id" in form.errors
+
+    def test_crowd_supply_label_links_to_selected_shuttle(self):
+        """The label href follows the shuttle selected in the form data."""
+        linked = Shuttle.objects.create(
+            name="G860",
+            description="Linked run",
+            status=Shuttle.Status.OPEN,
+            crowd_supply_url="https://www.crowdsupply.com/wafer-space/gf180mcu-run-1/",
+        )
+        form = ProjectForm(data=self._base_form_data(shuttle=linked.pk))
+
+        label = str(form.fields["crowd_supply_order_id"].label)
+        assert 'id="crowd-supply-campaign-link"' in label
+        assert f'href="{linked.crowd_supply_url}"' in label
+
+    def test_crowd_supply_label_anchor_has_no_href_without_campaign_url(self):
+        """The label anchor renders without an href when the shuttle has no URL."""
+        form = ProjectForm(data=self._base_form_data())
+
+        label = str(form.fields["crowd_supply_order_id"].label)
+        assert 'id="crowd-supply-campaign-link"' in label
+        assert "href" not in label
+
+    def test_campaign_url_map_lists_only_linked_shuttles(self):
+        """The pk->URL map for the label-sync JS omits URL-less shuttles."""
+        linked = Shuttle.objects.create(
+            name="G861",
+            description="Linked run",
+            status=Shuttle.Status.OPEN,
+            crowd_supply_url="https://www.crowdsupply.com/wafer-space/gf180mcu-run-2/",
+        )
+        form = ProjectForm(data=self._base_form_data())
+
+        urls = form.shuttle_campaign_urls
+        assert urls[str(linked.pk)] == linked.crowd_supply_url
+        # The URL-less G800 is omitted. (Membership is checked per shuttle:
+        # other shuttles, e.g. the migration-seeded G801, may legitimately
+        # appear in the map when present.)
+        assert str(self.shuttle.pk) not in urls
 
     def test_form_saves_correctly(self):
         """Test form saves project correctly."""

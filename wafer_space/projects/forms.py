@@ -5,6 +5,7 @@ from __future__ import annotations
 from django import forms
 from django.core.exceptions import ValidationError
 from django.utils import timezone
+from django.utils.html import format_html
 
 from wafer_space.core.enums import SlotSize
 from wafer_space.shuttles.models import Shuttle
@@ -207,6 +208,7 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
             "is_public",
             "chip_on_board",
             "repository_url",
+            "crowd_supply_order_id",
             "license_type",
             "other_license_spdx_id",
             "proprietary_terms_url",
@@ -239,6 +241,13 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
                     "placeholder": "https://github.com/username/repo",
                 },
             ),
+            "crowd_supply_order_id": forms.TextInput(
+                attrs={
+                    "class": "form-control",
+                    "placeholder": "327373",
+                    "inputmode": "numeric",
+                },
+            ),
             "other_license_spdx_id": forms.TextInput(
                 attrs={
                     "class": "form-control",
@@ -259,6 +268,9 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
             "is_public": "Make this design publicly visible on the platform",
             # chip_on_board: help_text inherited from the model field
             "repository_url": "URL to the project's source repository",
+            "crowd_supply_order_id": (
+                "CrowdSupply order number, e.g. 327373 (optional)."
+            ),
             "other_license_spdx_id": (
                 "SPDX identifier (e.g., GPL-3.0-only, LGPL-2.1-or-later)"
             ),
@@ -296,6 +308,70 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
 
         self._configure_fields()
         self._set_defaults()
+        self._link_crowd_supply_label()
+
+    @property
+    def shuttle_campaign_urls(self) -> dict[str, str]:
+        """Map of shuttle pk -> CrowdSupply campaign URL, for the label-sync JS.
+
+        Rendered into the page via ``json_script`` so the CrowdSupply label
+        link can retarget when the selected shuttle changes. Only shuttles
+        with a campaign URL are included.
+        """
+        shuttle_field = self.fields["shuttle"]
+        if not isinstance(shuttle_field, forms.ModelChoiceField):
+            return {}
+        queryset = shuttle_field.queryset
+        if queryset is None:
+            return {}
+        return {
+            str(pk): url
+            for pk, url in queryset.exclude(crowd_supply_url="").values_list(
+                "pk", "crowd_supply_url"
+            )
+        }
+
+    def _selected_shuttle(self) -> Shuttle | None:
+        """Return the shuttle currently selected on the form, if any.
+
+        Uses the bound field value so it covers all render states: posted
+        data, the edit form's instance value, and the create form's default
+        initial (set by _set_defaults, which must run first).
+        """
+        value = self["shuttle"].value()
+        if isinstance(value, Shuttle):
+            return value
+        if not value:
+            return None
+        try:
+            return Shuttle.objects.filter(pk=value).first()
+        except (TypeError, ValueError):
+            # Malformed posted value; the field's own validation reports it.
+            return None
+
+    def _link_crowd_supply_label(self):
+        """Render the CrowdSupply label as a campaign-page link.
+
+        The anchor always renders (with a stable id) so the form's
+        JavaScript can retarget it when the selected shuttle changes; the
+        href is pre-filled server-side from the selected shuttle when known.
+        """
+        shuttle = self._selected_shuttle()
+        campaign_url = shuttle.crowd_supply_url if shuttle else ""
+        if campaign_url:
+            label = format_html(
+                '<a id="crowd-supply-campaign-link" href="{}" target="_blank" '
+                'rel="noopener" class="text-decoration-none">{}</a>',
+                campaign_url,
+                "CrowdSupply Order ID",
+            )
+        else:
+            label = format_html(
+                '<a id="crowd-supply-campaign-link" target="_blank" '
+                'rel="noopener" class="text-decoration-none">{}</a>',
+                "CrowdSupply Order ID",
+            )
+        self.fields["crowd_supply_order_id"].label = label
 
     def _configure_fields(self):
         """Configure field editability based on user and instance state.
@@ -351,6 +427,11 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
         if cleaned_data is None:
             return cleaned_data
         return self._validate_license_fields(cleaned_data)
+
+    def clean_crowd_supply_order_id(self) -> str:
+        """Strip whitespace and a leading '#' so a pasted '#327373' is accepted."""
+        value = self.cleaned_data.get("crowd_supply_order_id", "")
+        return value.strip().lstrip("#").strip()
 
     def clean_project_id(self):
         """Validate and normalize project_id field."""

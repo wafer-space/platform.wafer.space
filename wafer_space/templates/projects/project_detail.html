@@ -142,6 +142,27 @@
                 </a>
               </p>
             {% endif %}
+            <p class="mb-2">
+              <strong>
+                {% if project.shuttle.crowd_supply_url %}
+                  <a href="{{ project.shuttle.crowd_supply_url }}"
+                     target="_blank"
+                     rel="noopener"
+                     class="text-decoration-none">CrowdSupply Order ID:</a>
+                {% else %}
+                  CrowdSupply Order ID:
+                {% endif %}
+              </strong>
+              {% if project.crowd_supply_order_id %}
+                <a href="{{ project.crowd_supply_order_url }}"
+                   target="_blank"
+                   rel="noopener">
+                  <i class="bi bi-box-arrow-up-right"></i> {{ project.crowd_supply_order_id }}
+                </a>
+              {% else %}
+                <span class="text-muted">Not set</span>
+              {% endif %}
+            </p>
             <p class="mb-0">
               <strong>License:</strong>
               {% if project.is_proprietary_license %}

@@ -139,6 +139,102 @@ class TestProjectDetailView(TestCase):
         # Should return 403 Forbidden
         assert response.status_code == HTTP_FORBIDDEN
 
+    def test_label_links_to_campaign_and_id_links_to_order_page(self):
+        """Label links to the shuttle campaign page; ID links to the order page."""
+        shuttle = Shuttle.objects.create(
+            name="G851",
+            description="Linked run",
+            crowd_supply_url="https://www.crowdsupply.com/wafer-space/gf180mcu-run-1/",
+        )
+        project = Project.objects.create(
+            user=self.user,
+            name="Linked Project",
+            shuttle=shuttle,
+            crowd_supply_order_id="327373",
+        )
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:detail", kwargs={"pk": project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+        assert "CrowdSupply Order ID:" in content
+        assert shuttle.crowd_supply_url in content
+        assert "https://www.crowdsupply.com/account/order/327373" in content
+
+    def test_order_id_links_to_order_page_when_shuttle_has_no_url(self):
+        """The ID still links to the order page when the shuttle URL is blank."""
+        shuttle = Shuttle.objects.create(name="G852", description="Unlinked run")
+        project = Project.objects.create(
+            user=self.user,
+            name="Unlinked Project",
+            shuttle=shuttle,
+            crowd_supply_order_id="327373",
+        )
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:detail", kwargs={"pk": project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+        assert "CrowdSupply Order ID:" in content
+        assert "https://www.crowdsupply.com/account/order/327373" in content
+        # No campaign link: the label renders as plain text.
+        assert "https://www.crowdsupply.com/wafer-space/" not in content
+
+    def test_order_id_links_to_order_page_when_project_has_no_shuttle(self):
+        """The ID still links to the order page when the project has no shuttle."""
+        self.project.crowd_supply_order_id = "327373"
+        self.project.save()
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+        assert "CrowdSupply Order ID:" in content
+        assert "https://www.crowdsupply.com/account/order/327373" in content
+        assert "https://www.crowdsupply.com/wafer-space/" not in content
+
+    def test_row_always_shown_with_not_set_when_blank(self):
+        """The row renders with 'Not set' when the order ID is blank."""
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+        assert "CrowdSupply Order ID:" in content
+        assert "Not set" in content
+        assert "https://www.crowdsupply.com/account/order/" not in content
+
+    def test_blank_id_shows_not_set_with_campaign_linked_label(self):
+        """A blank ID shows 'Not set' while the label still links to the campaign."""
+        shuttle = Shuttle.objects.create(
+            name="G853",
+            description="Linked run without order",
+            crowd_supply_url="https://www.crowdsupply.com/wafer-space/gf180mcu-run-1/",
+        )
+        project = Project.objects.create(
+            user=self.user,
+            name="No Order Project",
+            shuttle=shuttle,
+        )
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:detail", kwargs={"pk": project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+        assert "CrowdSupply Order ID:" in content
+        assert shuttle.crowd_supply_url in content
+        assert "Not set" in content
+        assert "https://www.crowdsupply.com/account/order/" not in content
+
     def test_includes_active_file_in_context(self):
         """Test that active file is included in context."""
         # Create active file
@@ -257,6 +353,29 @@ class TestProjectCreateView(TestCase):
 
         assert response.status_code == HTTP_OK
         assert "form" in response.context
+
+    def test_create_form_has_campaign_link_anchor_and_url_map(self):
+        """The create form renders the label anchor and the pk->URL json map.
+
+        The label href itself is filled client-side from the
+        shuttle-campaign-urls json_script, so only the anchor and the map
+        entry are asserted here (the default shuttle selection is
+        environment-dependent).
+        """
+        self.shuttle.crowd_supply_url = (
+            "https://www.crowdsupply.com/wafer-space/gf180mcu-run-1/"
+        )
+        self.shuttle.save()
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:create")
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+        assert 'id="crowd-supply-campaign-link"' in content
+        assert 'id="shuttle-campaign-urls"' in content
+        assert self.shuttle.crowd_supply_url in content
 
     def test_creates_project(self):
         """Test that POST creates a project."""
@@ -535,6 +654,70 @@ class TestProjectUpdateView(TestCase):
         assert response.status_code == HTTP_FOUND
         self.project.refresh_from_db()
         assert self.project.chip_on_board is True
+
+    def test_order_id_field_rendered_on_edit_form(self):
+        """The CrowdSupply order field is present and rendered on the form."""
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:update", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        assert "crowd_supply_order_id" in response.context["form"].fields
+        # The input must actually appear in the rendered HTML, not just the form.
+        assert "id_crowd_supply_order_id" in response.content.decode()
+        assert "CrowdSupply Order ID" in response.content.decode()
+
+    def test_order_id_label_links_to_campaign_on_edit_form(self):
+        """The CrowdSupply label on the edit form links to the campaign page."""
+        self.shuttle.crowd_supply_url = (
+            "https://www.crowdsupply.com/wafer-space/gf180mcu-run-1/"
+        )
+        self.shuttle.save()
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:update", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+        assert 'id="crowd-supply-campaign-link"' in content
+        assert f'href="{self.shuttle.crowd_supply_url}"' in content
+        # The label itself is the anchor text, opening in a new window.
+        assert 'class="text-decoration-none">CrowdSupply Order ID</a>' in content
+
+    def test_order_id_label_has_no_href_when_shuttle_has_no_url(self):
+        """The label anchor has no href when the shuttle has no campaign URL."""
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:update", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+        assert "CrowdSupply Order ID" in content
+        # The no-href anchor variant renders (its id is directly followed by
+        # target=, not href=). Other shuttles' options on the page may carry
+        # campaign URLs, so no page-global negative assertion is possible.
+        assert '<a id="crowd-supply-campaign-link" target="_blank"' in content
+
+    def test_owner_can_set_order_id_via_update(self):
+        """Posting an order id through the update view persists it."""
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:update", kwargs={"pk": self.project.pk})
+        form_data = {
+            "name": "Test Project",
+            "description": "Test project",
+            "is_public": False,
+            "repository_url": "",
+            "crowd_supply_order_id": "327373",
+            "license_type": "proprietary",
+            "other_license_spdx_id": "",
+            "proprietary_terms_url": "",
+        }
+        response = self.client.post(url, form_data)
+
+        assert response.status_code == HTTP_FOUND
+        self.project.refresh_from_db()
+        assert self.project.crowd_supply_order_id == "327373"
 
 
 @pytest.mark.django_db
