@@ -138,6 +138,45 @@ class TestProjectForm(TestCase):
         assert not form.is_valid()
         assert "crowd_supply_order_id" in form.errors
 
+    def test_crowd_supply_label_links_to_selected_shuttle(self):
+        """The label href follows the shuttle selected in the form data."""
+        linked = Shuttle.objects.create(
+            name="G860",
+            description="Linked run",
+            status=Shuttle.Status.OPEN,
+            crowd_supply_url="https://www.crowdsupply.com/wafer-space/gf180mcu-run-1/",
+        )
+        form = ProjectForm(data=self._base_form_data(shuttle=linked.pk))
+
+        label = str(form.fields["crowd_supply_order_id"].label)
+        assert 'id="crowd-supply-campaign-link"' in label
+        assert f'href="{linked.crowd_supply_url}"' in label
+
+    def test_crowd_supply_label_anchor_has_no_href_without_campaign_url(self):
+        """The label anchor renders without an href when the shuttle has no URL."""
+        form = ProjectForm(data=self._base_form_data())
+
+        label = str(form.fields["crowd_supply_order_id"].label)
+        assert 'id="crowd-supply-campaign-link"' in label
+        assert "href" not in label
+
+    def test_campaign_url_map_lists_only_linked_shuttles(self):
+        """The pk->URL map for the label-sync JS omits URL-less shuttles."""
+        linked = Shuttle.objects.create(
+            name="G861",
+            description="Linked run",
+            status=Shuttle.Status.OPEN,
+            crowd_supply_url="https://www.crowdsupply.com/wafer-space/gf180mcu-run-2/",
+        )
+        form = ProjectForm(data=self._base_form_data())
+
+        urls = form.shuttle_campaign_urls
+        assert urls[str(linked.pk)] == linked.crowd_supply_url
+        # The URL-less G800 is omitted. (Membership is checked per shuttle:
+        # other shuttles, e.g. the migration-seeded G801, may legitimately
+        # appear in the map when present.)
+        assert str(self.shuttle.pk) not in urls
+
     def test_form_saves_correctly(self):
         """Test form saves project correctly."""
         user = User.objects.create_user(

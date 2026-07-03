@@ -354,6 +354,29 @@ class TestProjectCreateView(TestCase):
         assert response.status_code == HTTP_OK
         assert "form" in response.context
 
+    def test_create_form_has_campaign_link_anchor_and_url_map(self):
+        """The create form renders the label anchor and the pk->URL json map.
+
+        The label href itself is filled client-side from the
+        shuttle-campaign-urls json_script, so only the anchor and the map
+        entry are asserted here (the default shuttle selection is
+        environment-dependent).
+        """
+        self.shuttle.crowd_supply_url = (
+            "https://www.crowdsupply.com/wafer-space/gf180mcu-run-1/"
+        )
+        self.shuttle.save()
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:create")
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+        assert 'id="crowd-supply-campaign-link"' in content
+        assert 'id="shuttle-campaign-urls"' in content
+        assert self.shuttle.crowd_supply_url in content
+
     def test_creates_project(self):
         """Test that POST creates a project."""
         self.client.login(username="testuser", password=TEST_PASSWORD)
@@ -657,12 +680,13 @@ class TestProjectUpdateView(TestCase):
 
         assert response.status_code == HTTP_OK
         content = response.content.decode()
+        assert 'id="crowd-supply-campaign-link"' in content
         assert f'href="{self.shuttle.crowd_supply_url}"' in content
         # The label itself is the anchor text, opening in a new window.
         assert 'class="text-decoration-none">CrowdSupply Order ID</a>' in content
 
-    def test_order_id_label_plain_when_shuttle_has_no_url(self):
-        """The label stays plain text when the shuttle has no campaign URL."""
+    def test_order_id_label_has_no_href_when_shuttle_has_no_url(self):
+        """The label anchor has no href when the shuttle has no campaign URL."""
         self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:update", kwargs={"pk": self.project.pk})
         response = self.client.get(url)
@@ -670,7 +694,10 @@ class TestProjectUpdateView(TestCase):
         assert response.status_code == HTTP_OK
         content = response.content.decode()
         assert "CrowdSupply Order ID" in content
-        assert "https://www.crowdsupply.com/wafer-space/" not in content
+        # The no-href anchor variant renders (its id is directly followed by
+        # target=, not href=). Other shuttles' options on the page may carry
+        # campaign URLs, so no page-global negative assertion is possible.
+        assert '<a id="crowd-supply-campaign-link" target="_blank"' in content
 
     def test_owner_can_set_order_id_via_update(self):
         """Posting an order id through the update view persists it."""

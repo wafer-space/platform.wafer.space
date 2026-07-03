@@ -307,27 +307,71 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
             ).order_by("name")
 
         self._configure_fields()
-        self._link_crowd_supply_label()
         self._set_defaults()
+        self._link_crowd_supply_label()
+
+    @property
+    def shuttle_campaign_urls(self) -> dict[str, str]:
+        """Map of shuttle pk -> CrowdSupply campaign URL, for the label-sync JS.
+
+        Rendered into the page via ``json_script`` so the CrowdSupply label
+        link can retarget when the selected shuttle changes. Only shuttles
+        with a campaign URL are included.
+        """
+        shuttle_field = self.fields["shuttle"]
+        if not isinstance(shuttle_field, forms.ModelChoiceField):
+            return {}
+        queryset = shuttle_field.queryset
+        if queryset is None:
+            return {}
+        return {
+            str(pk): url
+            for pk, url in queryset.exclude(crowd_supply_url="").values_list(
+                "pk", "crowd_supply_url"
+            )
+        }
+
+    def _selected_shuttle(self) -> Shuttle | None:
+        """Return the shuttle currently selected on the form, if any.
+
+        Uses the bound field value so it covers all render states: posted
+        data, the edit form's instance value, and the create form's default
+        initial (set by _set_defaults, which must run first).
+        """
+        value = self["shuttle"].value()
+        if isinstance(value, Shuttle):
+            return value
+        if not value:
+            return None
+        try:
+            return Shuttle.objects.filter(pk=value).first()
+        except (TypeError, ValueError):
+            # Malformed posted value; the field's own validation reports it.
+            return None
 
     def _link_crowd_supply_label(self):
-        """Turn the CrowdSupply label into a shuttle campaign-page link.
+        """Render the CrowdSupply label as a campaign-page link.
 
-        Only applies when the form instance already has a shuttle with a
-        campaign URL (i.e. editing an existing project); the create form
-        keeps the plain verbose_name label.
+        The anchor always renders (with a stable id) so the form's
+        JavaScript can retarget it when the selected shuttle changes; the
+        href is pre-filled server-side from the selected shuttle when known.
         """
-        if not self.instance.shuttle_id:
-            return
-        campaign_url = self.instance.shuttle.crowd_supply_url
-        if not campaign_url:
-            return
-        self.fields["crowd_supply_order_id"].label = format_html(
-            '<a href="{}" target="_blank" rel="noopener" '
-            'class="text-decoration-none">{}</a>',
-            campaign_url,
-            "CrowdSupply Order ID",
-        )
+        shuttle = self._selected_shuttle()
+        campaign_url = shuttle.crowd_supply_url if shuttle else ""
+        if campaign_url:
+            label = format_html(
+                '<a id="crowd-supply-campaign-link" href="{}" target="_blank" '
+                'rel="noopener" class="text-decoration-none">{}</a>',
+                campaign_url,
+                "CrowdSupply Order ID",
+            )
+        else:
+            label = format_html(
+                '<a id="crowd-supply-campaign-link" target="_blank" '
+                'rel="noopener" class="text-decoration-none">{}</a>',
+                "CrowdSupply Order ID",
+            )
+        self.fields["crowd_supply_order_id"].label = label
 
     def _configure_fields(self):
         """Configure field editability based on user and instance state.

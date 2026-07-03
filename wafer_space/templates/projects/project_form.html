@@ -91,6 +91,7 @@
   </div>
 {% endblock content %}
 {% block inline_javascript %}
+  {{ form.shuttle_campaign_urls|json_script:"shuttle-campaign-urls" }}
   <script>
     document.addEventListener('DOMContentLoaded', function() {
       // Initialize Bootstrap popovers for help text
@@ -240,6 +241,25 @@
       // Initial validation if editing existing project
       if (projectIdField.value) {
         validateProjectId();
+      }
+
+      // Retarget the CrowdSupply label link when the selected shuttle changes.
+      // The shuttle-campaign-urls json_script maps shuttle pk -> campaign URL.
+      const shuttleField = document.getElementById('id_shuttle');
+      const campaignLink = document.getElementById('crowd-supply-campaign-link');
+      const campaignUrlsEl = document.getElementById('shuttle-campaign-urls');
+      if (shuttleField && campaignLink && campaignUrlsEl) {
+        const campaignUrls = JSON.parse(campaignUrlsEl.textContent);
+        const syncCampaignLink = function() {
+          const url = campaignUrls[shuttleField.value];
+          if (url) {
+            campaignLink.setAttribute('href', url);
+          } else {
+            campaignLink.removeAttribute('href');
+          }
+        };
+        shuttleField.addEventListener('change', syncCampaignLink);
+        syncCampaignLink();
       }
     });
   </script>

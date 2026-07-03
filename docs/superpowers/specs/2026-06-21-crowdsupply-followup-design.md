@@ -173,3 +173,13 @@ project **edit form** also links to the shuttle's campaign page (new window,
 `rel="noopener"`, no underline), via `format_html` in
 `ProjectForm._link_crowd_supply_label()` — plain label on the create form or
 when the shuttle has no URL. All CrowdSupply links open in a new window.
+
+Further revision (same date): the campaign-page label link also appears on
+the **create form**, and it retargets client-side as the shuttle selection
+changes. The label anchor always renders with a stable id
+(`crowd-supply-campaign-link`, no href when the selected shuttle has no
+URL); `ProjectForm.shuttle_campaign_urls` exposes a pk→URL map rendered via
+`json_script`, and inline JS in `project_form.html` syncs the href on
+shuttle change. (A `Select.create_option` widget override was rejected:
+django-stubs requires the full 7-argument signature, which ruff PLR0913
+forbids — the json_script map avoids the conflict without suppressions.)
