@@ -157,6 +157,7 @@ class TestProjectDetailView(TestCase):
         url = reverse("projects:detail", kwargs={"pk": project.pk})
         response = self.client.get(url)
 
+        assert response.status_code == HTTP_OK
         content = response.content.decode()
         assert "CrowdSupply Order ID:" in content
         assert "327373" in content
@@ -176,6 +177,7 @@ class TestProjectDetailView(TestCase):
         url = reverse("projects:detail", kwargs={"pk": project.pk})
         response = self.client.get(url)
 
+        assert response.status_code == HTTP_OK
         content = response.content.decode()
         assert "CrowdSupply Order ID:" in content
         assert "327373" in content
@@ -190,6 +192,7 @@ class TestProjectDetailView(TestCase):
         url = reverse("projects:detail", kwargs={"pk": self.project.pk})
         response = self.client.get(url)
 
+        assert response.status_code == HTTP_OK
         content = response.content.decode()
         assert "CrowdSupply Order ID:" in content
         assert "327373" in content
@@ -199,6 +202,26 @@ class TestProjectDetailView(TestCase):
         """No CrowdSupply row renders when the order ID is unset."""
         self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        assert "CrowdSupply Order ID:" not in response.content.decode()
+
+    def test_no_row_when_blank_even_with_shuttle_url(self):
+        """No CrowdSupply row renders for a blank ID even when the shuttle has a URL."""
+        shuttle = Shuttle.objects.create(
+            name="G853",
+            description="Linked run without order",
+            crowd_supply_url="https://www.crowdsupply.com/wafer-space/gf180mcu-run-1/",
+        )
+        project = Project.objects.create(
+            user=self.user,
+            name="No Order Project",
+            shuttle=shuttle,
+        )
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:detail", kwargs={"pk": project.pk})
         response = self.client.get(url)
 
         assert response.status_code == HTTP_OK
