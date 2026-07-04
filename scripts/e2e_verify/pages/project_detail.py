@@ -195,9 +195,11 @@ class ProjectDetailPage(BasePage):
     # ========================================
 
     def click_cancel_precheck(self) -> None:
-        """Click the cancel button for the manufacturability check."""
-        # Accept the confirmation dialog before clicking.
-        self.page.on("dialog", lambda dialog: dialog.accept())
+        """Click the cancel button for the manufacturability check.
+
+        The confirmation dialog is auto-accepted by a handler registered once
+        on the page (see run_full_flow), so we don't add one per click here.
+        """
         self.page.get_by_role("button", name="Cancel").first.click()
 
     def has_cancellable_check(self) -> bool:

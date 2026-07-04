@@ -91,6 +91,9 @@ def run_full_flow(  # noqa: PLR0915
             browser = p.chromium.launch(headless=headless)
             context = browser.new_context(viewport={"width": 1920, "height": 1080})
             page = context.new_page()
+            # Auto-accept confirmation dialogs (e.g. cancel-check confirms).
+            # Registered once here so it doesn't accumulate per cancel click.
+            page.on("dialog", lambda dialog: dialog.accept())
 
             # ========================================
             # Step 1: Login
