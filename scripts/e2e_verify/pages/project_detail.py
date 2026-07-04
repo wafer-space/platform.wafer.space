@@ -20,11 +20,14 @@ Badge labels (from the templates / model status metadata):
 
 from __future__ import annotations
 
+import contextlib
 import re
 import time
 from datetime import UTC
 from datetime import datetime
 from typing import TYPE_CHECKING
+
+from playwright.sync_api import Error as PlaywrightError
 
 from .base import BasePage
 
@@ -45,6 +48,9 @@ _CHECK_STATUS = re.compile(
 
 class ProjectDetailPage(BasePage):
     """Page Object for project detail page with status monitoring."""
+
+    # How often to print an elapsed/expected progress line during long waits.
+    PROGRESS_INTERVAL_S = 30
 
     # Default timeouts (milliseconds)
     DOWNLOAD_TIMEOUT = 5 * 60 * 1000  # 5 minutes
@@ -162,15 +168,86 @@ class ProjectDetailPage(BasePage):
             poll_ms=10_000,
         )
 
-    def wait_for_precheck_complete(self, timeout_ms: int | None = None) -> None:
-        """Wait for the precheck to finish (badge shows "Passed" or "Failed")."""
+    def wait_for_precheck_complete(
+        self, timeout_ms: int | None = None, *, expected_s: int | None = None
+    ) -> None:
+        """Wait for the precheck to finish, streaming new log lines as they appear.
+
+        The detail page's own JS streams logs into #processing-logs every 5s
+        and reloads the page when the check status changes, so we stay on the
+        page, print each newly-appended log line, and return once the badge
+        shows "Passed" or "Failed". A fallback manual reload guards against a
+        stalled page; page reloads race with our DOM reads, so those are caught.
+
+        ``expected_s`` (from the precheck CI, if known) is shown in the periodic
+        progress line as an ETA reference.
+        """
         timeout = timeout_ms or self.PRECHECK_COMPLETE_TIMEOUT
-        self._wait_for_badge(
-            re.compile(r"Passed|(?<!Download )Failed"),
-            timeout,
-            label="precheck to finish (Passed/Failed)",
-            reload=True,
-            poll_ms=30_000,
+        terminal = re.compile(r"Passed|(?<!Download )Failed")
+
+        self.go()
+        start = time.monotonic()
+        deadline = start + timeout / 1000.0
+        seen = ""  # full log text already consumed
+        pending = ""  # buffered partial (incomplete) trailing line
+        last_change = time.monotonic()
+        last_beat = 0.0
+        poll_ms = 3_000
+        idle_reload_s = 90.0
+
+        while True:
+            done = False
+            try:
+                done = self._badge(terminal).is_visible()
+                logs = self.page.locator("#processing-logs")
+                text = (logs.first.text_content() or "") if logs.count() else ""
+            except PlaywrightError:
+                # A page reload (triggered by the page's own JS on a status
+                # change) raced with our read; just try again next poll.
+                text = seen
+
+            if len(text) > len(seen):
+                pending += text[len(seen) :]
+                seen = text
+                last_change = time.monotonic()
+                # Emit only complete lines; keep any partial line buffered.
+                *lines, pending = pending.split("\n")
+                for line in lines:
+                    self._emit_log_line(line)
+
+            if done:
+                if pending.strip():
+                    self._emit_log_line(pending)
+                return
+            if time.monotonic() >= deadline:
+                msg = f"Precheck did not finish within {timeout} ms"
+                raise TimeoutError(msg)
+
+            # Periodic progress line with elapsed / expected.
+            if time.monotonic() - last_beat >= self.PROGRESS_INTERVAL_S:
+                self._emit_progress(int(time.monotonic() - start), expected_s)
+                last_beat = time.monotonic()
+
+            self.page.wait_for_timeout(poll_ms)
+            # If nothing has changed for a while, the page's JS poller may have
+            # stopped; reload to re-arm it (and to refresh the badge).
+            if time.monotonic() - last_change >= idle_reload_s:
+                with contextlib.suppress(PlaywrightError):
+                    self.page.reload()
+                last_change = time.monotonic()
+
+    def _emit_log_line(self, line: str) -> None:
+        """Print one streamed precheck log line, flushed, with a marker."""
+        print(f"[check] {line}", flush=True)  # noqa: T201
+
+    def _emit_progress(self, elapsed_s: int, expected_s: int | None) -> None:
+        """Print a flushed elapsed/expected progress line for the running check."""
+        eta = f" / ~{expected_s}s expected" if expected_s else ""
+        status = self.current_check_status()
+        print(  # noqa: T201
+            f"[{datetime.now(UTC):%H:%M:%S}]   ... precheck running: "
+            f"elapsed {elapsed_s}s{eta}, status={status!r}",
+            flush=True,
         )
 
     def wait_for_precheck_cancelled(self, timeout_ms: int | None = None) -> None:
@@ -179,6 +256,22 @@ class ProjectDetailPage(BasePage):
         self._wait_for_badge(
             "Cancelled", timeout, label="cancellation", reload=True, poll_ms=3_000
         )
+
+    def get_check_version_digest(self) -> str | None:
+        """The precheck image digest hex the current check reports, if shown.
+
+        The status badge renders ``<Status> | sha256:<hex>...``; returns the
+        (truncated) hex, lowercased, or None if no digest is shown yet.
+        """
+        badge = (
+            self.page.locator("span.badge")
+            .filter(has_text=re.compile(r"sha256:"))
+            .first
+        )
+        if badge.count() == 0:
+            return None
+        m = re.search(r"sha256:([0-9a-f]+)", badge.text_content() or "")
+        return m.group(1).lower() if m else None
 
     def is_manufacturable(self) -> bool:
         """Whether the finished check passed.
