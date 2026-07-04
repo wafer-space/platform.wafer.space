@@ -28,6 +28,7 @@ import hashlib
 import io
 import os
 import zipfile
+from dataclasses import dataclass
 from datetime import datetime
 
 import requests
@@ -116,25 +117,73 @@ def _extracted_gds_sha256(artifact_id: int) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def get_latest_precheck_digest() -> str:
-    """Return the digest of the newest published precheck image.
+@dataclass(frozen=True)
+class PrecheckIdentity:
+    """How the newest published precheck image can be identified.
 
-    Resolves the GHCR ``latest`` tag of the precheck container to its
-    ``sha256:...`` digest. This is what the platform pulls to run a check, so
-    the run can confirm a check used the newest published precheck.
+    The platform's version badge shows one of these forms depending on whether
+    it has cataloged the image: the ``sha256:`` digest (uncataloged), the
+    ``version`` label (or a tag-resolved semver derived from it), or the short
+    ``git_sha``. Keeping all three lets a run recognise the latest image
+    whichever form the badge happens to render.
+    """
+
+    digest: str  # full "sha256:..." of the GHCR 'latest' index
+    version: str  # org.opencontainers.image.version label ("" if unset)
+    git_sha: str  # org.opencontainers.image.revision label ("" if unset)
+
+
+def get_latest_precheck_identity() -> PrecheckIdentity:
+    """Identify the newest published precheck image (GHCR ``latest`` tag).
+
+    Reads the same OCI labels the platform reads (``.version`` / ``.revision``)
+    plus the index digest, so a run can independently confirm a check used the
+    newest published precheck regardless of how the badge displays it.
     """
     tok = _ghcr_pull_token()
-    resp = requests.get(
+    index = requests.get(
         f"{PRECHECK_GHCR}/manifests/latest",
         headers={"Authorization": f"Bearer {tok}", "Accept": _MANIFEST_ACCEPT},
         timeout=_TIMEOUT,
     )
-    resp.raise_for_status()
-    digest = resp.headers.get("Docker-Content-Digest")
+    index.raise_for_status()
+    digest = index.headers.get("Docker-Content-Digest")
     if not digest:
         msg = "GHCR did not return a Docker-Content-Digest for precheck 'latest'"
         raise RuntimeError(msg)
-    return digest
+
+    labels = _fetch_image_labels(tok, index.json())
+    return PrecheckIdentity(
+        digest=digest,
+        version=labels.get("org.opencontainers.image.version", ""),
+        git_sha=labels.get("org.opencontainers.image.revision", ""),
+    )
+
+
+def _fetch_image_labels(token: str, index_json: dict) -> dict[str, str]:
+    """Return the OCI config labels for the amd64 image of a manifest index."""
+    manifest_digest = "latest"
+    for m in index_json.get("manifests", []):
+        if m.get("platform", {}).get("architecture") == "amd64":
+            manifest_digest = m["digest"]
+            break
+
+    headers = {"Authorization": f"Bearer {token}", "Accept": _MANIFEST_ACCEPT}
+    manifest = requests.get(
+        f"{PRECHECK_GHCR}/manifests/{manifest_digest}",
+        headers=headers,
+        timeout=_TIMEOUT,
+    )
+    manifest.raise_for_status()
+    config_digest = manifest.json().get("config", {}).get("digest")
+    if not config_digest:
+        return {}
+
+    config = requests.get(
+        f"{PRECHECK_GHCR}/blobs/{config_digest}", headers=headers, timeout=_TIMEOUT
+    )
+    config.raise_for_status()
+    return config.json().get("config", {}).get("Labels") or {}
 
 
 def _ghcr_pull_token() -> str:
@@ -157,7 +206,7 @@ def get_expected_precheck_runtime(slot_size: str) -> int | None:
     runs = requests.get(
         f"{API}/repos/{PRECHECK_REPO}/actions/workflows/ci.yml/runs",
         headers=_headers(),
-        params={"status": "success", "branch": "main", "per_page": 1},
+        params={"status": "success", "branch": "main", "per_page": "1"},
         timeout=_TIMEOUT,
     )
     runs.raise_for_status()

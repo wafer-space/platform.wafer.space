@@ -20,9 +20,10 @@ from typing import TYPE_CHECKING
 from playwright.sync_api import sync_playwright
 from pyvirtualdisplay import Display
 
+from .artifact import PrecheckIdentity
 from .artifact import get_expected_precheck_runtime
 from .artifact import get_latest_artifact
-from .artifact import get_latest_precheck_digest
+from .artifact import get_latest_precheck_identity
 from .pages import FileSubmitPage
 from .pages import LoginPage
 from .pages import ProjectCreatePage
@@ -42,7 +43,7 @@ class RunInputs:
     artifact_url: str
     correct_hash: str
     expected_runtime_s: int | None
-    latest_precheck_digest: str
+    precheck_identity: PrecheckIdentity
 
 
 # ============================================================
@@ -92,23 +93,36 @@ def log(step: int, message: str) -> None:
     logger.info("Step %d/%d: %s", step, TOTAL_STEPS, message)
 
 
-def _verify_latest_precheck(actual_digest: str | None, latest_digest: str) -> str:
+def _verify_latest_precheck(token: str | None, identity: PrecheckIdentity) -> str:
     """Return a status message; raise if the check isn't the latest precheck.
 
-    ``actual_digest`` is the (truncated) hex the platform shows for the running
-    check; ``latest_digest`` is the full ``sha256:...`` of GHCR's ``latest``.
+    ``token`` is the version the platform shows for the running check -- a
+    ``sha256:`` digest, a semver/git-describe string, or a short git sha --
+    and ``identity`` is how GHCR's ``latest`` image identifies itself. The
+    token matches the latest image if it corresponds to any of those forms.
     """
-    latest_hex = latest_digest.split(":")[-1]
-    if actual_digest and latest_hex.startswith(actual_digest):
-        return f"Precheck version is latest ({actual_digest}...)"
-    if actual_digest:
-        msg = (
-            f"Precheck is NOT the latest published image: check ran "
-            f"sha256:{actual_digest}..., but GHCR 'latest' is "
-            f"sha256:{latest_hex[:12]}..."
-        )
+    if token is None:
+        msg = "Could not read the precheck version from the page to verify it"
         raise RuntimeError(msg)
-    return "Precheck version digest not shown; cannot verify"
+
+    latest_hex = identity.digest.split(":")[-1]
+    git7 = identity.git_sha[:7]
+    token_l = token.lower()
+
+    matches_digest = "sha256:" in token_l and latest_hex.startswith(
+        token_l.rsplit("sha256:", 1)[-1]
+    )
+    matches_version = bool(identity.version) and identity.version in token
+    matches_git = bool(git7) and git7 in token_l
+    if matches_digest or matches_version or matches_git:
+        return f"Precheck version is latest ({token})"
+
+    msg = (
+        f"Precheck is NOT the latest published image: check shows {token!r}, "
+        f"but GHCR 'latest' is sha256:{latest_hex[:12]}... "
+        f"(version={identity.version!r}, git={git7})"
+    )
+    raise RuntimeError(msg)
 
 
 def _resolve_inputs() -> RunInputs:
@@ -119,7 +133,7 @@ def _resolve_inputs() -> RunInputs:
         artifact_url=artifact_url,
         correct_hash=correct_hash,
         expected_runtime_s=get_expected_precheck_runtime(SLOT_SIZE),
-        latest_precheck_digest=get_latest_precheck_digest(),
+        precheck_identity=get_latest_precheck_identity(),
     )
     runtime = (
         f"~{inputs.expected_runtime_s}s (~{inputs.expected_runtime_s // 60}m)"
@@ -128,7 +142,7 @@ def _resolve_inputs() -> RunInputs:
     )
     logger.info("  artifact:         %s", inputs.artifact_url)
     logger.info("  sha256:           %s", inputs.correct_hash)
-    logger.info("  latest precheck:  %s", inputs.latest_precheck_digest)
+    logger.info("  latest precheck:  %s", inputs.precheck_identity.digest)
     logger.info("  expected runtime: %s", runtime)
     return inputs
 
@@ -256,9 +270,10 @@ def _rerun_and_await_verdict(
     log(12, "Waiting for new precheck to start...")
     detail_page.wait_for_precheck_running(timeout_ms=PRECHECK_START_TIMEOUT)
     log(12, "New precheck running")
-    # Verify the platform ran the *latest* published precheck image.
-    actual_digest = detail_page.get_check_version_digest()
-    log(12, _verify_latest_precheck(actual_digest, inputs.latest_precheck_digest))
+    # Verify the platform ran the *latest* published precheck image. Poll until
+    # the version is shown (it only appears once the image has been pulled).
+    token = detail_page.wait_for_check_version_token()
+    log(12, _verify_latest_precheck(token, inputs.precheck_identity))
 
     log(13, "Waiting for precheck to complete (this may take hours)...")
     detail_page.wait_for_precheck_complete(
