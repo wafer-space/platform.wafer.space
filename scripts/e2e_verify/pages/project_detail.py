@@ -200,6 +200,23 @@ class ProjectDetailPage(BasePage):
         self.page.on("dialog", lambda dialog: dialog.accept())
         self.page.get_by_role("button", name="Cancel").first.click()
 
+    def has_cancellable_check(self) -> bool:
+        """Whether the page shows a cancellable (in-progress) check."""
+        return self.page.get_by_role("button", name="Cancel").count() > 0
+
+    def cancel_check_if_running(self, timeout_ms: int = 180_000) -> bool:
+        """Cancel this project's check if one is in progress.
+
+        Waits until the check is reported ``Cancelled`` before returning.
+        Returns True if a check was cancelled, False if none was cancellable.
+        """
+        self.go()
+        if not self.has_cancellable_check():
+            return False
+        self.click_cancel_precheck()
+        self.wait_for_precheck_cancelled(timeout_ms=timeout_ms)
+        return True
+
     # ========================================
     # Logs
     # ========================================

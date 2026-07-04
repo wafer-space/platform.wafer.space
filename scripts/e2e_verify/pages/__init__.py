@@ -5,6 +5,7 @@ from .file_submit import FileSubmitPage
 from .login import LoginPage
 from .project_create import ProjectCreatePage
 from .project_detail import ProjectDetailPage
+from .project_list import ProjectListPage
 
 __all__ = [
     "BasePage",
@@ -12,4 +13,5 @@ __all__ = [
     "LoginPage",
     "ProjectCreatePage",
     "ProjectDetailPage",
+    "ProjectListPage",
 ]

@@ -22,6 +22,7 @@ from .pages import FileSubmitPage
 from .pages import LoginPage
 from .pages import ProjectCreatePage
 from .pages import ProjectDetailPage
+from .pages import ProjectListPage
 
 # ============================================================
 # CONFIGURATION
@@ -98,6 +99,20 @@ def run_full_flow(  # noqa: PLR0915
             login_page = LoginPage(page, base_url)
             login_page.login(USERNAME, PASSWORD)
             log(1, total_steps, "Login successful")
+
+            # ----------------------------------------
+            # Preflight: cancel any of this user's in-progress checks so the
+            # run starts from a clean slate and does not queue behind them
+            # (test-platform runs a limited number of checks concurrently).
+            # ----------------------------------------
+            log(1, total_steps, "Preflight: cancelling any running checks...")
+            project_ids = ProjectListPage(page, base_url).project_ids()
+            log(1, total_steps, f"Preflight: scanning {len(project_ids)} project(s)")
+            for pid in project_ids:
+                detail = ProjectDetailPage(page, base_url, pid)
+                if detail.cancel_check_if_running():
+                    log(1, total_steps, f"Preflight: cancelled check on {pid}")
+            log(1, total_steps, "Preflight complete")
 
             # ========================================
             # Step 2: Create project with quarter slot
