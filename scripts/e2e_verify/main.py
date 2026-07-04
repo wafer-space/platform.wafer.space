@@ -9,10 +9,13 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
+from dataclasses import dataclass
 from datetime import UTC
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from playwright.sync_api import sync_playwright
 from pyvirtualdisplay import Display
@@ -26,6 +29,22 @@ from .pages import ProjectCreatePage
 from .pages import ProjectDetailPage
 from .pages import ProjectListPage
 
+if TYPE_CHECKING:
+    from playwright.sync_api import Page
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class RunInputs:
+    """Resolved inputs for a run: the design to upload + precheck metadata."""
+
+    artifact_url: str
+    correct_hash: str
+    expected_runtime_s: int | None
+    latest_precheck_digest: str
+
+
 # ============================================================
 # CONFIGURATION
 # ============================================================
@@ -36,6 +55,7 @@ PASSWORD = os.environ.get("E2E_TEST_PASSWORD", "")
 # Slot size to test (quarter slot). Used both for project creation and to look
 # up the matching precheck CI job's expected run time.
 SLOT_SIZE = "0p5x0p5"
+TOTAL_STEPS = 13
 
 # The design to upload is resolved at runtime from the newest non-expired
 # template-repo artifact (see artifact.py). WRONG_HASH is a deliberately bad
@@ -47,13 +67,29 @@ DOWNLOAD_TIMEOUT = 5 * 60 * 1000  # 5 minutes
 HASH_TIMEOUT = 60 * 1000  # 1 minute
 PRECHECK_START_TIMEOUT = 10 * 60 * 1000  # 10 minutes
 PRECHECK_COMPLETE_TIMEOUT = 4 * 60 * 60 * 1000  # 4 hours
+LOGS_TIMEOUT = 90 * 1000  # 1.5 minutes
 
 
-def log(step: int, total: int, message: str) -> None:
-    """Print timestamped log message."""
-    timestamp = datetime.now(UTC).strftime("%H:%M:%S")
-    # flush so progress is visible in real time even when stdout is a file/pipe
-    print(f"[{timestamp}] Step {step}/{total}: {message}", flush=True)  # noqa: T201
+def configure_logging() -> None:
+    """Send this package's logs to stdout as ``[HH:MM:SS] message``.
+
+    A StreamHandler on stdout flushes on every record, so progress is visible
+    in real time even when stdout is redirected to a file or pipe.
+    """
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(
+        logging.Formatter("[%(asctime)s] %(message)s", datefmt="%H:%M:%S")
+    )
+    package_logger = logging.getLogger(__package__ or "scripts.e2e_verify")
+    package_logger.handlers.clear()
+    package_logger.addHandler(handler)
+    package_logger.setLevel(logging.INFO)
+    package_logger.propagate = False
+
+
+def log(step: int, message: str) -> None:
+    """Log a step-progress line (the timestamp is added by the formatter)."""
+    logger.info("Step %d/%d: %s", step, TOTAL_STEPS, message)
 
 
 def _verify_latest_precheck(actual_digest: str | None, latest_digest: str) -> str:
@@ -75,7 +111,167 @@ def _verify_latest_precheck(actual_digest: str | None, latest_digest: str) -> st
     return "Precheck version digest not shown; cannot verify"
 
 
-def run_full_flow(  # noqa: PLR0915
+def _resolve_inputs() -> RunInputs:
+    """Resolve the artifact + precheck metadata, logging what was found."""
+    logger.info("Resolving latest template-repo artifact + precheck metadata...")
+    artifact_url, correct_hash = get_latest_artifact()
+    inputs = RunInputs(
+        artifact_url=artifact_url,
+        correct_hash=correct_hash,
+        expected_runtime_s=get_expected_precheck_runtime(SLOT_SIZE),
+        latest_precheck_digest=get_latest_precheck_digest(),
+    )
+    runtime = (
+        f"~{inputs.expected_runtime_s}s (~{inputs.expected_runtime_s // 60}m)"
+        if inputs.expected_runtime_s
+        else "unknown"
+    )
+    logger.info("  artifact:         %s", inputs.artifact_url)
+    logger.info("  sha256:           %s", inputs.correct_hash)
+    logger.info("  latest precheck:  %s", inputs.latest_precheck_digest)
+    logger.info("  expected runtime: %s", runtime)
+    return inputs
+
+
+def _start_display(vnc_port: int, *, headless: bool) -> Display | None:
+    """Start an Xvnc display for headed runs; return None when headless."""
+    if headless:
+        return None
+    logger.info("=" * 60)
+    logger.info("  VNC server starting on port %d", vnc_port)
+    logger.info("  Connect to watch: vncviewer localhost:%d", vnc_port)
+    logger.info("=" * 60)
+    display = Display(backend="xvnc", size=(1920, 1080), rfbport=vnc_port)
+    display.start()
+    return display
+
+
+def _login_and_preflight(page: Page, base_url: str) -> None:
+    """Step 1: log in, then cancel any of the user's in-progress checks.
+
+    Cancelling first gives the run a clean slate and frees test-platform's
+    limited concurrent-check capacity so this run's check is not queued behind
+    leftover checks from earlier runs.
+    """
+    log(1, "Logging in...")
+    LoginPage(page, base_url).login(USERNAME, PASSWORD)
+    log(1, "Login successful")
+
+    log(1, "Preflight: cancelling any running checks...")
+    project_ids = ProjectListPage(page, base_url).project_ids()
+    log(1, f"Preflight: scanning {len(project_ids)} project(s)")
+    for pid in project_ids:
+        if ProjectDetailPage(page, base_url, pid).cancel_check_if_running():
+            log(1, f"Preflight: cancelled check on {pid}")
+    log(1, "Preflight complete")
+
+
+def _create_project(
+    page: Page, base_url: str
+) -> tuple[ProjectDetailPage, FileSubmitPage]:
+    """Step 2: create a quarter-slot chip-on-board project."""
+    log(2, "Creating project (quarter slot, CoB packaging)...")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    project_id = ProjectCreatePage(page, base_url).create_project(
+        f"E2E Test {timestamp}", slot_size=SLOT_SIZE, chip_on_board=True
+    )
+    log(2, f"Project created (CoB): {project_id}")
+    return (
+        ProjectDetailPage(page, base_url, project_id),
+        FileSubmitPage(page, base_url, project_id),
+    )
+
+
+def _verify_upload_and_hash(
+    detail_page: ProjectDetailPage,
+    file_submit: FileSubmitPage,
+    inputs: RunInputs,
+) -> None:
+    """Steps 3-6: wrong hash is rejected, correct hash is verified."""
+    log(3, "Submitting file with wrong hash...")
+    file_submit.submit_file(inputs.artifact_url, sha256_hash=WRONG_HASH)
+    log(3, "File submitted")
+
+    log(4, "Waiting for download to complete...")
+    detail_page.wait_for_downloaded(timeout_ms=DOWNLOAD_TIMEOUT)
+    log(4, "Download completed")
+    log(4, "Verifying hash mismatch detected...")
+    detail_page.wait_for_hash_mismatch(timeout_ms=HASH_TIMEOUT)
+    log(4, "Hash mismatch correctly detected")
+    detail_page.screenshot("04_hash_mismatch")
+
+    log(5, "Submitting file with correct hash...")
+    file_submit.submit_file(inputs.artifact_url, sha256_hash=inputs.correct_hash)
+    log(5, "File submitted")
+
+    log(6, "Waiting for download to complete...")
+    detail_page.wait_for_downloaded(timeout_ms=DOWNLOAD_TIMEOUT)
+    log(6, "Download completed")
+    log(6, "Verifying hash verification passes...")
+    detail_page.wait_for_hash_verified(timeout_ms=HASH_TIMEOUT)
+    log(6, "Hash verified")
+    detail_page.screenshot("06_hash_verified")
+
+
+def _run_and_cancel_precheck(detail_page: ProjectDetailPage) -> None:
+    """Steps 7-9: the precheck starts, produces logs, and can be cancelled."""
+    log(7, "Waiting for manufacturability check to start...")
+    detail_page.wait_for_precheck_running(timeout_ms=PRECHECK_START_TIMEOUT)
+    log(7, "Precheck running")
+    detail_page.screenshot("07_precheck_running")
+
+    log(8, "Waiting for precheck logs...")
+    # Logs are best-effort: the platform persists check.processing_logs with
+    # some delay, so it may have none while the check is early in its run.
+    try:
+        detail_page.wait_for_logs_contain("", timeout_ms=LOGS_TIMEOUT)
+    except TimeoutError:
+        log(8, "No precheck logs yet (continuing)")
+    logs = detail_page.get_precheck_logs()
+    log(8, f"Precheck logs received ({len(logs)} chars)")
+    detail_page.screenshot("08_precheck_logs")
+
+    log(9, "Cancelling precheck...")
+    detail_page.click_cancel_precheck()
+    detail_page.wait_for_precheck_cancelled()
+    log(9, "Precheck cancelled")
+    detail_page.screenshot("09_precheck_cancelled")
+
+
+def _rerun_and_await_verdict(
+    detail_page: ProjectDetailPage,
+    file_submit: FileSubmitPage,
+    inputs: RunInputs,
+) -> None:
+    """Steps 10-13: resubmit, verify the precheck version, await the verdict."""
+    log(10, "Submitting file again with correct hash...")
+    file_submit.submit_file(inputs.artifact_url, sha256_hash=inputs.correct_hash)
+    log(10, "File submitted")
+
+    log(11, "Waiting for download to complete...")
+    detail_page.wait_for_downloaded(timeout_ms=DOWNLOAD_TIMEOUT)
+    detail_page.wait_for_hash_verified(timeout_ms=HASH_TIMEOUT)
+    log(11, "Download and hash verified")
+
+    log(12, "Waiting for new precheck to start...")
+    detail_page.wait_for_precheck_running(timeout_ms=PRECHECK_START_TIMEOUT)
+    log(12, "New precheck running")
+    # Verify the platform ran the *latest* published precheck image.
+    actual_digest = detail_page.get_check_version_digest()
+    log(12, _verify_latest_precheck(actual_digest, inputs.latest_precheck_digest))
+
+    log(13, "Waiting for precheck to complete (this may take hours)...")
+    detail_page.wait_for_precheck_complete(
+        timeout_ms=PRECHECK_COMPLETE_TIMEOUT, expected_s=inputs.expected_runtime_s
+    )
+    if detail_page.is_manufacturable():
+        log(13, "Precheck PASSED - Design is manufacturable")
+    else:
+        log(13, "Precheck completed - Design is NOT manufacturable")
+    detail_page.screenshot("13_precheck_complete")
+
+
+def run_full_flow(
     base_url: str, vnc_port: int = 5901, *, headless: bool = False
 ) -> bool:
     """Run the complete E2E verification flow.
@@ -86,43 +282,10 @@ def run_full_flow(  # noqa: PLR0915
         headless: Run without a VNC display (for CI/headless environments)
 
     Returns:
-        True if all verifications passed, False otherwise
+        True if all verifications passed, False otherwise.
     """
-    total_steps = 13
-
-    # Resolve the design to upload: the newest non-expired quarter-slot GDS
-    # artifact from the template repo (GitHub expires artifacts after ~90 days,
-    # so we never rely on a pinned URL). Also resolve, from the precheck repo,
-    # the expected run time for this slot size and the digest of the latest
-    # published precheck image (to verify the platform runs the newest precheck).
-    print("Resolving latest template-repo artifact + precheck metadata...")  # noqa: T201
-    artifact_url, correct_hash = get_latest_artifact()
-    expected_runtime_s = get_expected_precheck_runtime(SLOT_SIZE)
-    latest_precheck_digest = get_latest_precheck_digest()
-    print(f"  artifact:         {artifact_url}")  # noqa: T201
-    print(f"  sha256:           {correct_hash}")  # noqa: T201
-    print(f"  latest precheck:  {latest_precheck_digest}")  # noqa: T201
-    print(  # noqa: T201
-        "  expected runtime: "
-        + (
-            f"~{expected_runtime_s}s (~{expected_runtime_s // 60}m)"
-            if expected_runtime_s
-            else "unknown"
-        )
-    )
-
-    # Start a VNC display unless running headless
-    display = None
-    if not headless:
-        print("=" * 60)  # noqa: T201
-        print(f"  VNC server starting on port {vnc_port}")  # noqa: T201
-        print(f"  Connect to watch: vncviewer localhost:{vnc_port}")  # noqa: T201
-        print("=" * 60)  # noqa: T201
-        print()  # noqa: T201
-        display = Display(backend="xvnc", size=(1920, 1080), rfbport=vnc_port)
-        display.start()
-
-    success = False
+    inputs = _resolve_inputs()
+    display = _start_display(vnc_port, headless=headless)
 
     try:
         with sync_playwright() as p:
@@ -133,191 +296,24 @@ def run_full_flow(  # noqa: PLR0915
             # Registered once here so it doesn't accumulate per cancel click.
             page.on("dialog", lambda dialog: dialog.accept())
 
-            # ========================================
-            # Step 1: Login
-            # ========================================
-            log(1, total_steps, "Logging in...")
-            login_page = LoginPage(page, base_url)
-            login_page.login(USERNAME, PASSWORD)
-            log(1, total_steps, "Login successful")
+            _login_and_preflight(page, base_url)
+            detail_page, file_submit = _create_project(page, base_url)
+            _verify_upload_and_hash(detail_page, file_submit, inputs)
+            _run_and_cancel_precheck(detail_page)
+            _rerun_and_await_verdict(detail_page, file_submit, inputs)
 
-            # ----------------------------------------
-            # Preflight: cancel any of this user's in-progress checks so the
-            # run starts from a clean slate and does not queue behind them
-            # (test-platform runs a limited number of checks concurrently).
-            # ----------------------------------------
-            log(1, total_steps, "Preflight: cancelling any running checks...")
-            project_ids = ProjectListPage(page, base_url).project_ids()
-            log(1, total_steps, f"Preflight: scanning {len(project_ids)} project(s)")
-            for pid in project_ids:
-                detail = ProjectDetailPage(page, base_url, pid)
-                if detail.cancel_check_if_running():
-                    log(1, total_steps, f"Preflight: cancelled check on {pid}")
-            log(1, total_steps, "Preflight complete")
-
-            # ========================================
-            # Step 2: Create project with quarter slot
-            # ========================================
-            log(2, total_steps, "Creating project (quarter slot, CoB packaging)...")
-            create_page = ProjectCreatePage(page, base_url)
-            timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-            project_name = f"E2E Test {timestamp}"
-            project_id = create_page.create_project(
-                project_name, slot_size=SLOT_SIZE, chip_on_board=True
-            )
-            log(2, total_steps, f"Project created (CoB): {project_id}")
-
-            # Create page objects for remaining steps
-            detail_page = ProjectDetailPage(page, base_url, project_id)
-            file_submit = FileSubmitPage(page, base_url, project_id)
-
-            # ========================================
-            # Step 3: Submit file with WRONG hash
-            # ========================================
-            log(3, total_steps, "Submitting file with wrong hash...")
-            file_submit.submit_file(artifact_url, sha256_hash=WRONG_HASH)
-            log(3, total_steps, "File submitted")
-
-            # ========================================
-            # Step 4: Verify download OK, hash fails
-            # ========================================
-            log(4, total_steps, "Waiting for download to complete...")
-            detail_page.wait_for_downloaded(timeout_ms=DOWNLOAD_TIMEOUT)
-            log(4, total_steps, "Download completed")
-
-            log(4, total_steps, "Verifying hash mismatch detected...")
-            detail_page.wait_for_hash_mismatch(timeout_ms=HASH_TIMEOUT)
-            log(4, total_steps, "Hash mismatch correctly detected")
-            detail_page.screenshot("04_hash_mismatch")
-
-            # ========================================
-            # Step 5: Submit file with CORRECT hash
-            # ========================================
-            log(5, total_steps, "Submitting file with correct hash...")
-            file_submit.submit_file(artifact_url, sha256_hash=correct_hash)
-            log(5, total_steps, "File submitted")
-
-            # ========================================
-            # Step 6: Verify download + hash OK
-            # ========================================
-            log(6, total_steps, "Waiting for download to complete...")
-            detail_page.wait_for_downloaded(timeout_ms=DOWNLOAD_TIMEOUT)
-            log(6, total_steps, "Download completed")
-
-            log(6, total_steps, "Verifying hash verification passes...")
-            detail_page.wait_for_hash_verified(timeout_ms=HASH_TIMEOUT)
-            log(6, total_steps, "Hash verified")
-            detail_page.screenshot("06_hash_verified")
-
-            # ========================================
-            # Step 7: Verify precheck starts
-            # ========================================
-            log(7, total_steps, "Waiting for manufacturability check to start...")
-            detail_page.wait_for_precheck_running(timeout_ms=PRECHECK_START_TIMEOUT)
-            log(7, total_steps, "Precheck running")
-            detail_page.screenshot("07_precheck_running")
-
-            # ========================================
-            # Step 8: Verify precheck produces logs
-            # ========================================
-            log(8, total_steps, "Waiting for precheck logs...")
-            # Logs are best-effort: the platform persists check.processing_logs
-            # with some delay, so it may have none while the check is early in
-            # its run. Don't fail the whole flow if none appear in time.
-            try:
-                detail_page.wait_for_logs_contain("", timeout_ms=90_000)
-            except TimeoutError:
-                log(8, total_steps, "No precheck logs yet (continuing)")
-            logs = detail_page.get_precheck_logs()
-            log(8, total_steps, f"Precheck logs received ({len(logs)} chars)")
-            detail_page.screenshot("08_precheck_logs")
-
-            # ========================================
-            # Step 9: Cancel precheck
-            # ========================================
-            log(9, total_steps, "Cancelling precheck...")
-            detail_page.click_cancel_precheck()
-            detail_page.wait_for_precheck_cancelled()
-            log(9, total_steps, "Precheck cancelled")
-            detail_page.screenshot("09_precheck_cancelled")
-
-            # ========================================
-            # Step 10: Submit file again (correct hash)
-            # ========================================
-            log(10, total_steps, "Submitting file again with correct hash...")
-            file_submit.submit_file(artifact_url, sha256_hash=correct_hash)
-            log(10, total_steps, "File submitted")
-
-            # ========================================
-            # Step 11: Verify download + hash OK again
-            # ========================================
-            log(11, total_steps, "Waiting for download to complete...")
-            detail_page.wait_for_downloaded(timeout_ms=DOWNLOAD_TIMEOUT)
-            detail_page.wait_for_hash_verified(timeout_ms=HASH_TIMEOUT)
-            log(11, total_steps, "Download and hash verified")
-
-            # ========================================
-            # Step 12: Verify new precheck starts
-            # ========================================
-            log(12, total_steps, "Waiting for new precheck to start...")
-            detail_page.wait_for_precheck_running(timeout_ms=PRECHECK_START_TIMEOUT)
-            log(12, total_steps, "New precheck running")
-
-            # Verify the platform ran the *latest* published precheck image.
-            actual_digest = detail_page.get_check_version_digest()
-            log(
-                12,
-                total_steps,
-                _verify_latest_precheck(actual_digest, latest_precheck_digest),
-            )
-
-            # ========================================
-            # Step 13: Wait for precheck to complete
-            # ========================================
-            log(
-                13,
-                total_steps,
-                "Waiting for precheck to complete (this may take hours)...",
-            )
-            detail_page.wait_for_precheck_complete(
-                timeout_ms=PRECHECK_COMPLETE_TIMEOUT, expected_s=expected_runtime_s
-            )
-
-            if detail_page.is_manufacturable():
-                log(13, total_steps, "Precheck PASSED - Design is manufacturable")
-            else:
-                log(
-                    13,
-                    total_steps,
-                    "Precheck completed - Design is NOT manufacturable",
-                )
-
-            detail_page.screenshot("13_precheck_complete")
-
-            success = True
-
-            # ========================================
-            # Done!
-            # ========================================
-            print()  # noqa: T201
-            print("=" * 60)  # noqa: T201
-            print("  E2E VERIFICATION COMPLETE")  # noqa: T201
-            print("=" * 60)  # noqa: T201
-
+            logger.info("=" * 60)
+            logger.info("  E2E VERIFICATION COMPLETE")
+            logger.info("=" * 60)
             browser.close()
-
-    except Exception as e:
-        print()  # noqa: T201
-        print("=" * 60)  # noqa: T201
-        print(f"  E2E VERIFICATION FAILED: {e}")  # noqa: T201
-        print("=" * 60)  # noqa: T201
-        raise
-
+    except Exception:
+        logger.exception("E2E VERIFICATION FAILED")
+        return False
+    else:
+        return True
     finally:
         if display is not None:
             display.stop()
-
-    return success
 
 
 def main() -> None:
@@ -342,6 +338,7 @@ def main() -> None:
             "E2E_TEST_PASSWORD environment variable is required (add it to .env)"
         )
 
+    configure_logging()
     success = run_full_flow(args.url, vnc_port=args.vnc_port, headless=args.headless)
     sys.exit(0 if success else 1)
 

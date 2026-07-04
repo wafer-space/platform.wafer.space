@@ -21,10 +21,9 @@ Badge labels (from the templates / model status metadata):
 from __future__ import annotations
 
 import contextlib
+import logging
 import re
 import time
-from datetime import UTC
-from datetime import datetime
 from typing import TYPE_CHECKING
 
 from playwright.sync_api import Error as PlaywrightError
@@ -34,6 +33,8 @@ from .base import BasePage
 if TYPE_CHECKING:
     from playwright.sync_api import Locator
     from playwright.sync_api import Page
+
+logger = logging.getLogger(__name__)
 
 # A finished check labels the badge "Failed"; the download badge uses
 # "Download Failed". This matches the precheck "Failed" but not the download one.
@@ -104,12 +105,13 @@ class ProjectDetailPage(BasePage):
         return "(no check badge yet)"
 
     def _heartbeat(self, label: str, start: float) -> None:
-        """Print a flushed, timestamped progress line."""
+        """Log a progress line while waiting for ``label``."""
         elapsed = int(time.monotonic() - start)
-        print(  # noqa: T201
-            f"[{datetime.now(UTC):%H:%M:%S}]   ... waiting for {label}: "
-            f"check={self.current_check_status()!r} (elapsed {elapsed}s)",
-            flush=True,
+        logger.info(
+            "   ... waiting for %s: check=%r (elapsed %ds)",
+            label,
+            self.current_check_status(),
+            elapsed,
         )
 
     def _wait_for_badge(
@@ -255,17 +257,17 @@ class ProjectDetailPage(BasePage):
                 last_change = time.monotonic()
 
     def _emit_log_line(self, line: str) -> None:
-        """Print one streamed precheck log line, flushed, with a marker."""
-        print(f"[check] {line}", flush=True)  # noqa: T201
+        """Log one streamed precheck log line, with a marker."""
+        logger.info("[check] %s", line)
 
     def _emit_progress(self, elapsed_s: int, expected_s: int | None) -> None:
-        """Print a flushed elapsed/expected progress line for the running check."""
+        """Log an elapsed/expected progress line for the running check."""
         eta = f" / ~{expected_s}s expected" if expected_s else ""
-        status = self.current_check_status()
-        print(  # noqa: T201
-            f"[{datetime.now(UTC):%H:%M:%S}]   ... precheck running: "
-            f"elapsed {elapsed_s}s{eta}, status={status!r}",
-            flush=True,
+        logger.info(
+            "   ... precheck running: elapsed %ds%s, status=%r",
+            elapsed_s,
+            eta,
+            self.current_check_status(),
         )
 
     def wait_for_precheck_cancelled(self, timeout_ms: int | None = None) -> None:
