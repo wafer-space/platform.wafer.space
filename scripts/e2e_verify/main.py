@@ -104,8 +104,11 @@ def run_full_flow(  # noqa: PLR0915
     print(f"  latest precheck:  {latest_precheck_digest}")  # noqa: T201
     print(  # noqa: T201
         "  expected runtime: "
-        + (f"~{expected_runtime_s}s (~{expected_runtime_s // 60}m)"
-           if expected_runtime_s else "unknown")
+        + (
+            f"~{expected_runtime_s}s (~{expected_runtime_s // 60}m)"
+            if expected_runtime_s
+            else "unknown"
+        )
     )
 
     # Start a VNC display unless running headless
