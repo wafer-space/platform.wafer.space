@@ -1,14 +1,16 @@
 """Project detail page interactions.
 
-Status is surfaced through Bootstrap badges (``span.badge``). Several statuses
-can appear more than once on the page (a per-file badge plus a dedicated check
-section), and the plain status words also appear in prose/table headers, so
-every check here is scoped to ``span.badge`` and takes the first match.
+Status is surfaced through Bootstrap badges (``span.badge``). The same status
+can appear several times on the page -- the file's download/hash badges, the
+current check card, and every *previous* check in the history section -- so
+reads are scoped: download/hash waits match page-wide, while check-status reads
+are scoped to the current check card (``.card.border-primary``) so a file badge
+or a stale history check can't satisfy them.
 
 The file (download/hash) badges live-update via JS; the manufacturability-check
 badge and the processing-logs block do not, so the precheck waits reload the
-page between polls. Every wait prints a flushed heartbeat each poll so long
-waits (the DRC can run for a long time) report their state at least once a poll.
+page between polls. Every wait logs a heartbeat each poll so long waits (the DRC
+can run for a long time) report their state at least once a poll.
 
 Badge labels (from the templates / model status metadata):
   - download:  "Downloaded" | "Downloading" | "Download Failed" | "Pending"
@@ -76,32 +78,39 @@ class ProjectDetailPage(BasePage):
     # ========================================
 
     def _badge(self, pattern: str | re.Pattern[str]) -> Locator:
-        """First status badge whose text matches ``pattern`` (str or regex)."""
+        """First page-wide badge whose text matches ``pattern``.
+
+        Used for the file (download/hash) badges, which live outside the check
+        card.
+        """
         return self.page.locator("span.badge").filter(has_text=pattern).first
 
-    def current_check_status(self) -> str:
-        """Text of the most relevant manufacturability-check status badge.
+    def _check_card(self) -> Locator:
+        """The current check's card (``.card.border-primary`` in _file_display).
 
-        A project can show several check badges at once (e.g. a cancelled first
-        check plus the current one), so pick by status priority -- an
-        in-progress or finished state before a stale "Cancelled" -- rather than
-        just the first badge in the DOM.
+        Scoping check reads here excludes both the file's download/hash badges
+        and the *history* checks (rendered inside collapsed ``<details>``), so a
+        stale or wrong check can't be picked up by a page-wide match.
         """
-        priority = [
-            "Analyzing",
-            "Running",
-            "Starting",
-            "Dispatching",
-            "Passed",
-            _CHECK_FAILED,
-            "Pending",
-            "Cancelling",
-            "Cancelled",
-        ]
-        for status in priority:
-            badge = self.page.locator("span.badge").filter(has_text=status).first
-            if badge.count() > 0:
-                return " ".join((badge.text_content() or "").split())
+        return self.page.locator("div.card.border-primary").first
+
+    def _check_badge(self, pattern: str | re.Pattern[str]) -> Locator:
+        """First check-status badge (within the current check card) matching."""
+        return self._check_card().locator("span.badge").filter(has_text=pattern).first
+
+    def _check_logs(self) -> Locator:
+        """The processing-logs element within the current check card."""
+        return self._check_card().locator("#processing-logs")
+
+    def current_check_status(self) -> str:
+        """Text of the current check's status badge, or a placeholder.
+
+        Read from the current check card only, so a cancelled earlier check
+        (now in the history section) is never reported here.
+        """
+        badge = self._check_badge(_CHECK_STATUS)
+        if badge.count() > 0:
+            return " ".join((badge.text_content() or "").split())
         return "(no check badge yet)"
 
     def _heartbeat(self, label: str, start: float) -> None:
@@ -120,25 +129,32 @@ class ProjectDetailPage(BasePage):
         timeout_ms: int,
         *,
         label: str,
-        reload: bool = False,
+        check: bool = False,
         poll_ms: int = 5_000,
     ) -> None:
         """Poll until a matching badge is visible, heartbeating each poll.
 
-        File (download/hash) badges live-update, so ``reload`` stays False;
-        the check badge does not, so precheck waits pass ``reload=True``.
+        ``check=False`` (default) matches a page-wide file (download/hash)
+        badge, which live-updates via JS. ``check=True`` matches a
+        precheck-status badge: it is scoped to the current check card (so file
+        badges and history checks can't satisfy it) and the page is reloaded
+        between polls, because the check card does not live-update.
         """
         deadline = time.monotonic() + timeout_ms / 1000.0
         start = time.monotonic()
         while True:
-            if self._badge(pattern).is_visible():
-                return
+            badge = self._check_badge(pattern) if check else self._badge(pattern)
+            # A page reload (ours, or the page's own JS on a status change) can
+            # race with this read; treat that as "not yet" and retry next poll.
+            with contextlib.suppress(PlaywrightError):
+                if badge.is_visible():
+                    return
             if time.monotonic() >= deadline:
                 msg = f"Timed out waiting for {label} ({timeout_ms} ms)"
                 raise TimeoutError(msg)
             self._heartbeat(label, start)
             self.page.wait_for_timeout(poll_ms)
-            if reload:
+            if check:
                 self.page.reload()
 
     # ========================================
@@ -178,13 +194,17 @@ class ProjectDetailPage(BasePage):
     # ========================================
 
     def wait_for_precheck_running(self, timeout_ms: int | None = None) -> None:
-        """Wait for the precheck to be queued or running (any in-progress state)."""
+        """Wait for the precheck to be queued or running (any in-progress state).
+
+        Scoped to the check card so the *download* badge's "Pending" label
+        (a different badge) can't satisfy the wait.
+        """
         timeout = timeout_ms or self.PRECHECK_START_TIMEOUT
         self._wait_for_badge(
             re.compile(r"Pending|Dispatching|Starting|Running|Analyzing"),
             timeout,
             label="precheck to start",
-            reload=True,
+            check=True,
             poll_ms=10_000,
         )
 
@@ -218,8 +238,8 @@ class ProjectDetailPage(BasePage):
         while True:
             done = False
             try:
-                done = self._badge(terminal).is_visible()
-                logs = self.page.locator("#processing-logs")
+                done = self._check_badge(terminal).is_visible()
+                logs = self._check_logs()
                 text = (logs.first.text_content() or "") if logs.count() else ""
             except PlaywrightError:
                 # A page reload (triggered by the page's own JS on a status
@@ -274,24 +294,41 @@ class ProjectDetailPage(BasePage):
         """Wait for precheck cancellation to be confirmed."""
         timeout = timeout_ms or 30_000
         self._wait_for_badge(
-            "Cancelled", timeout, label="cancellation", reload=True, poll_ms=3_000
+            "Cancelled", timeout, label="cancellation", check=True, poll_ms=3_000
         )
 
-    def get_check_version_digest(self) -> str | None:
-        """The precheck image digest hex the current check reports, if shown.
+    def get_check_version_token(self) -> str | None:
+        """The precheck version the current check reports, or None.
 
-        The status badge renders ``<Status> | sha256:<hex>...``; returns the
-        (truncated) hex, lowercased, or None if no digest is shown yet.
+        The status-and-version badge renders ``<Status> | <version>``, where
+        ``<version>`` is a ``sha256:<hex>...`` digest (uncataloged image), a
+        semver / git-describe string, or a short git sha. Returns that token
+        (trailing ``...`` stripped) or None when no version is shown yet (the
+        image has not been pulled, so the badge is just ``<Status>``).
         """
-        badge = (
-            self.page.locator("span.badge")
-            .filter(has_text=re.compile(r"sha256:"))
-            .first
-        )
-        if badge.count() == 0:
+        status = self.current_check_status()
+        if "|" not in status:
             return None
-        m = re.search(r"sha256:([0-9a-f]+)", badge.text_content() or "")
-        return m.group(1).lower() if m else None
+        token = status.split("|", 1)[1].strip().removesuffix("...").strip()
+        return token or None
+
+    def wait_for_check_version_token(
+        self, timeout_ms: int = 300_000, poll_ms: int = 5_000
+    ) -> str | None:
+        """Reload-poll until the check reports a precheck version; return it.
+
+        Returns None if none appears within ``timeout_ms``.
+        """
+        deadline = time.monotonic() + timeout_ms / 1000.0
+        while True:
+            token = self.get_check_version_token()
+            if token:
+                return token
+            if time.monotonic() >= deadline:
+                return None
+            self.page.wait_for_timeout(poll_ms)
+            with contextlib.suppress(PlaywrightError):
+                self.page.reload()
 
     def is_manufacturable(self) -> bool:
         """Whether the finished check passed.
@@ -299,9 +336,9 @@ class ProjectDetailPage(BasePage):
         Call after :meth:`wait_for_precheck_complete`. A passing check shows a
         "Passed" badge; a failing one shows "Failed".
         """
-        if self._badge(_CHECK_FAILED).is_visible():
+        if self._check_badge(_CHECK_FAILED).is_visible():
             return False
-        return self._badge("Passed").is_visible()
+        return self._check_badge("Passed").is_visible()
 
     # ========================================
     # Actions
@@ -338,7 +375,7 @@ class ProjectDetailPage(BasePage):
 
     def get_precheck_logs(self) -> str:
         """Get the current precheck processing logs (empty if none rendered)."""
-        logs = self.page.locator("#processing-logs")
+        logs = self._check_logs()
         if logs.count() > 0 and logs.first.is_visible():
             return logs.first.text_content() or ""
         return ""
@@ -355,7 +392,7 @@ class ProjectDetailPage(BasePage):
         deadline = time.monotonic() + timeout_ms / 1000.0
         start = time.monotonic()
         while True:
-            logs = self.page.locator("#processing-logs")
+            logs = self._check_logs()
             if logs.count() > 0 and text in (logs.first.text_content() or ""):
                 return
             if time.monotonic() >= deadline:
