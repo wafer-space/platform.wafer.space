@@ -44,7 +44,7 @@ def generate_package(
     write_summary(output_path / "summary.csv", slots)
     write_checks_csv(output_path / "checks.csv", slots)
     write_readme(output_path / "README.md", shuttle, slots)
-    write_manifest_and_copy_gds(output_path, slots, pending)
+    write_manifest_and_copy_layout(output_path, slots, pending)
 
     # Handle pending issues
     warnings = [f"{code}: {', '.join(issues)}" for code, issues in pending.items()]
@@ -56,7 +56,7 @@ def generate_package(
     return warnings
 
 
-def write_manifest_and_copy_gds(
+def write_manifest_and_copy_layout(
     output_path: Path,
     slots: list[ShuttleSlot],
     pending: dict[str, list[str]],

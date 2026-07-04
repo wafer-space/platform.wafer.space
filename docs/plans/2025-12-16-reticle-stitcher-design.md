@@ -46,13 +46,13 @@ G801/
 ├── checks.csv          # Manufacturability check details for all projects
 ├── MOLE/
 │   ├── info.json       # Complete project data dump
-│   └── MOLE_TOP.gds    # Hardlinked GDS file (named by top_cell)
+│   └── MOLE_TOP.oas    # Hardlinked OASIS layout (named by top_cell)
 ├── KIAN/
 │   ├── info.json
-│   └── KIAN_MAIN.gds
+│   └── KIAN_MAIN.oas
 └── CAFE/
     ├── info.json
-    └── CAFE_DIE.gds
+    └── CAFE_DIE.oas
 ```
 
 ## CSV File Formats
@@ -92,7 +92,7 @@ For the reticle stitcher tool.
 | SLOT_SIZE | Slot size: `1x1`, `0p5x1`, `1x0p5`, or `0p5x0p5` |
 | TOP | Top cell name from `project_file.top_cell` |
 | SHA256 | SHA256 hash from `manufacturability_check.output_gds_sha256` |
-| LAYOUT | Relative path: `{CODE}/{top_cell}.gds` |
+| LAYOUT | Relative path: `{CODE}/{top_cell}.oas` |
 
 **Note:** Each project appears once, even if assigned to multiple slots.
 
@@ -291,9 +291,9 @@ See Error Handling section.
 | Check exists but `output_gds` missing | **Fail fast** - data integrity issue |
 | No `top_cell` on ProjectFile | **Fail fast** - required field |
 
-## GDS File Handling
+## Layout File Handling
 
-- Each `{CODE}/{top_cell}.gds` is a **hardlink** to the source `ManufacturabilityCheck.output_gds` file
+- Each `{CODE}/{top_cell}.oas` is a **hardlink** to the source `ManufacturabilityCheck.output_gds` file (OASIS layout)
 - If hardlink fails (cross-filesystem), **fall back to copy** with a warning
 - Duplicate projects (same project in multiple slots): single hardlink, manifest has multiple rows pointing to same file
 
@@ -301,7 +301,7 @@ See Error Handling section.
 
 ### File Locations
 
-- Source GDS: `ManufacturabilityCheck.output_gds` field
+- Source layout (OASIS): `ManufacturabilityCheck.output_gds` field
 - Source hash: `ManufacturabilityCheck.output_gds_sha256` field
 - Top cell: `ProjectFile.top_cell` field
 
@@ -324,12 +324,11 @@ The tilemap operates at "tile" resolution, which is 2× the "slot" resolution:
 
 1. **Unit tests** for CSV generation functions
 2. **Unit tests** for tilemap grid building
-3. **Integration test** with a test shuttle and mock GDS files
+3. **Integration test** with a test shuttle and mock layout files
 4. **Test `--allow-pending`** behavior with partial data
 5. **Test hardlink fallback** to copy
 
 ## Future Considerations
 
-- OAS output format (pending issue #224)
 - Web UI for triggering package generation
 - Automatic package generation on shuttle lock

@@ -118,6 +118,11 @@ class TestGeneratePackage:
         assert (output / "TST1" / "TOP1.oas").exists()
         assert (output / "TST2" / "TOP2.oas").exists()
 
+        # The manifest's LAYOUT column references the .oas deliverable
+        manifest = (output / "manifest.csv").read_text()
+        assert "TST1/TOP1.oas" in manifest
+        assert "TST2/TOP2.oas" in manifest
+
     def test_allow_pending_uses_fallback(self, tmp_path):
         """allow_pending uses fallback query when no submitted_file."""
         shuttle = create_shuttle_with_config(tmp_path, "G898")
