@@ -73,6 +73,16 @@ class ProjectDetailPage(BasePage):
         """Refresh the page."""
         self.page.reload()
 
+    def _safe_reload(self) -> None:
+        """Reload, ignoring a reload aborted by the page's own JS navigation.
+
+        The detail page reloads itself when a check's status changes, so our
+        poll-loop reloads can race it and raise net::ERR_ABORTED / detached
+        frame; that's harmless -- the next poll re-reads and reloads again.
+        """
+        with contextlib.suppress(PlaywrightError):
+            self.page.reload()
+
     # ========================================
     # Helpers
     # ========================================
@@ -106,11 +116,13 @@ class ProjectDetailPage(BasePage):
         """Text of the current check's status badge, or a placeholder.
 
         Read from the current check card only, so a cancelled earlier check
-        (now in the history section) is never reported here.
+        (now in the history section) is never reported here. Reads are
+        best-effort: a reload racing the read just yields the placeholder.
         """
-        badge = self._check_badge(_CHECK_STATUS)
-        if badge.count() > 0:
-            return " ".join((badge.text_content() or "").split())
+        with contextlib.suppress(PlaywrightError):
+            badge = self._check_badge(_CHECK_STATUS)
+            if badge.count() > 0:
+                return " ".join((badge.text_content() or "").split())
         return "(no check badge yet)"
 
     def _heartbeat(self, label: str, start: float) -> None:
@@ -155,7 +167,7 @@ class ProjectDetailPage(BasePage):
             self._heartbeat(label, start)
             self.page.wait_for_timeout(poll_ms)
             if check:
-                self.page.reload()
+                self._safe_reload()
 
     # ========================================
     # Download / hash status
@@ -272,8 +284,7 @@ class ProjectDetailPage(BasePage):
             # If nothing has changed for a while, the page's JS poller may have
             # stopped; reload to re-arm it (and to refresh the badge).
             if time.monotonic() - last_change >= idle_reload_s:
-                with contextlib.suppress(PlaywrightError):
-                    self.page.reload()
+                self._safe_reload()
                 last_change = time.monotonic()
 
     def _emit_log_line(self, line: str) -> None:
@@ -327,8 +338,7 @@ class ProjectDetailPage(BasePage):
             if time.monotonic() >= deadline:
                 return None
             self.page.wait_for_timeout(poll_ms)
-            with contextlib.suppress(PlaywrightError):
-                self.page.reload()
+            self._safe_reload()
 
     def is_manufacturable(self) -> bool:
         """Whether the finished check passed.
@@ -392,12 +402,13 @@ class ProjectDetailPage(BasePage):
         deadline = time.monotonic() + timeout_ms / 1000.0
         start = time.monotonic()
         while True:
-            logs = self._check_logs()
-            if logs.count() > 0 and text in (logs.first.text_content() or ""):
-                return
+            with contextlib.suppress(PlaywrightError):
+                logs = self._check_logs()
+                if logs.count() > 0 and text in (logs.first.text_content() or ""):
+                    return
             if time.monotonic() >= deadline:
                 msg = f"Logs did not contain {text!r} within {timeout_ms} ms"
                 raise TimeoutError(msg)
             self._heartbeat("precheck logs", start)
             self.page.wait_for_timeout(poll_ms)
-            self.page.reload()
+            self._safe_reload()
