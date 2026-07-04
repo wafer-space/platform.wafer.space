@@ -79,10 +79,28 @@ class ProjectDetailPage(BasePage):
         return self.page.locator("span.badge").filter(has_text=pattern).first
 
     def current_check_status(self) -> str:
-        """Text of the current manufacturability-check status badge, if any."""
-        badge = self.page.locator("span.badge").filter(has_text=_CHECK_STATUS).first
-        if badge.count() > 0:
-            return " ".join((badge.text_content() or "").split())
+        """Text of the most relevant manufacturability-check status badge.
+
+        A project can show several check badges at once (e.g. a cancelled first
+        check plus the current one), so pick by status priority -- an
+        in-progress or finished state before a stale "Cancelled" -- rather than
+        just the first badge in the DOM.
+        """
+        priority = [
+            "Analyzing",
+            "Running",
+            "Starting",
+            "Dispatching",
+            "Passed",
+            _CHECK_FAILED,
+            "Pending",
+            "Cancelling",
+            "Cancelled",
+        ]
+        for status in priority:
+            badge = self.page.locator("span.badge").filter(has_text=status).first
+            if badge.count() > 0:
+                return " ".join((badge.text_content() or "").split())
         return "(no check badge yet)"
 
     def _heartbeat(self, label: str, start: float) -> None:
