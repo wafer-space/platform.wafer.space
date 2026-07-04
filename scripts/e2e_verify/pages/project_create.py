@@ -43,7 +43,7 @@ class ProjectCreatePage(BasePage):
                 proprietary-terms URL is not required.
 
         Returns:
-            The project's full id from the redirect URL (e.g. ``G802AB12``).
+            The project's UUID (pk) from the redirect URL ``/projects/<uuid>/``.
         """
         if project_id is None:
             alphabet = string.ascii_uppercase + string.digits

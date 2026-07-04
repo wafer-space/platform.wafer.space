@@ -252,7 +252,7 @@ lint-fix: ## Run ruff with auto-fix
 .PHONY: type-check
 type-check: ## Run mypy type checking
 	@echo "$(BLUE)Running mypy type checker...$(NC)"
-	@$(UV) run mypy wafer_space
+	@$(UV) run mypy wafer_space scripts
 	@echo "$(GREEN)✓ Type checking complete$(NC)"
 
 .PHONY: format

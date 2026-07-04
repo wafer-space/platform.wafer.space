@@ -2283,6 +2283,7 @@ dependencies = [
     { name = "python-frontmatter" },
     { name = "python-magic" },
     { name = "python-slugify" },
+    { name = "requests" },
     { name = "sqlalchemy" },
     { name = "whitenoise" },
 ]
@@ -2345,6 +2346,7 @@ requires-dist = [
     { name = "python-frontmatter", specifier = "==1.1.0" },
     { name = "python-magic", specifier = ">=0.4.27" },
     { name = "python-slugify", specifier = "==8.0.4" },
+    { name = "requests", specifier = ">=2.32.0" },
     { name = "sqlalchemy", specifier = ">=2.0.0" },
     { name = "whitenoise", specifier = "==6.11.0" },
 ]

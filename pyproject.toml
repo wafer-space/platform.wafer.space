@@ -207,4 +207,5 @@ dependencies = [
     "docker>=7.1.0",
     "gdstk>=0.9.61",
     "django-simple-history>=3.10.1",
+    "requests>=2.32.0", # GHCR/GitHub API calls (revision tracking + e2e script)
 ]

@@ -7,7 +7,7 @@
 #
 # Prerequisites:
 #   - Secrets repository must be set up (02a-setup-secrets.sh)
-#   - Secret file must exist: /home/django/.secrets/e2e-test-password
+#   - Secret file must exist: $SECRETS_DIR/test-user (e.g. /home/django/.secrets/test-user)
 
 set -e
 
@@ -59,6 +59,8 @@ echo ""
 echo "=== E2E test user setup complete ==="
 echo ""
 echo "To run E2E verification:"
+echo "  export E2E_TEST_PASSWORD=\"\$(cat $E2E_SECRET_FILE)\""
 echo "  uv run python -m scripts.e2e_verify https://$MAIN_DOMAIN"
 echo ""
-echo "Note: Update scripts/e2e_verify/main.py with the password from secrets"
+echo "Note: the script reads the password from the E2E_TEST_PASSWORD env var"
+echo "      (or a .env file); never hard-code it in source."

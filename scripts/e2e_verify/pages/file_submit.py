@@ -44,5 +44,10 @@ class FileSubmitPage(BasePage):
         # Submit form
         self.page.click('button[type="submit"]')
 
-        # Wait for redirect back to project detail
-        expect(self.page).to_have_url(re.compile(rf"/projects/{self.project_id}/"))
+        # Wait for the redirect to the project detail page. The negative
+        # lookahead excludes the submit-url page we were on, so a validation
+        # failure (which re-renders submit-url) surfaces here instead of
+        # passing because the URL still shares the /projects/<id>/ prefix.
+        expect(self.page).to_have_url(
+            re.compile(rf"/projects/{self.project_id}/(?!submit-url)")
+        )
