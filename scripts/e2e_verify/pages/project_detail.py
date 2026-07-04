@@ -16,6 +16,7 @@ Badge labels (from the templates / model status metadata):
 from __future__ import annotations
 
 import re
+import time
 from typing import TYPE_CHECKING
 
 from playwright.sync_api import expect
@@ -56,6 +57,28 @@ class ProjectDetailPage(BasePage):
         """First status badge whose text matches ``pattern`` (str or regex)."""
         return self.page.locator("span.badge").filter(has_text=pattern).first
 
+    def _wait_badge_reloading(
+        self,
+        pattern: str | re.Pattern[str],
+        timeout_ms: int,
+        poll_ms: int = 10_000,
+    ) -> None:
+        """Poll for a matching badge, reloading the page between checks.
+
+        The detail page live-updates the file (download/hash) badges but not
+        the manufacturability-check badge, so we reload to pick up check-status
+        transitions (created -> running -> finished).
+        """
+        deadline = time.monotonic() + timeout_ms / 1000.0
+        while True:
+            if self._badge(pattern).is_visible():
+                return
+            if time.monotonic() >= deadline:
+                msg = f"No badge matching {pattern!r} within {timeout_ms} ms"
+                raise TimeoutError(msg)
+            self.page.wait_for_timeout(poll_ms)
+            self.page.reload()
+
     # ========================================
     # Download / hash status
     # ========================================
@@ -89,21 +112,22 @@ class ProjectDetailPage(BasePage):
     def wait_for_precheck_running(self, timeout_ms: int | None = None) -> None:
         """Wait for the precheck to be queued or running (any in-progress state)."""
         timeout = timeout_ms or self.PRECHECK_START_TIMEOUT
-        expect(
-            self._badge(re.compile(r"Pending|Dispatching|Starting|Running|Analyzing"))
-        ).to_be_visible(timeout=timeout)
+        self._wait_badge_reloading(
+            re.compile(r"Pending|Dispatching|Starting|Running|Analyzing"), timeout
+        )
 
     def wait_for_precheck_complete(self, timeout_ms: int | None = None) -> None:
         """Wait for the precheck to finish (badge shows "Passed" or "Failed")."""
         timeout = timeout_ms or self.PRECHECK_COMPLETE_TIMEOUT
-        expect(self._badge(re.compile(r"Passed|(?<!Download )Failed"))).to_be_visible(
-            timeout=timeout
+        # DRC can run a long time; reload less aggressively.
+        self._wait_badge_reloading(
+            re.compile(r"Passed|(?<!Download )Failed"), timeout, poll_ms=30_000
         )
 
     def wait_for_precheck_cancelled(self, timeout_ms: int | None = None) -> None:
         """Wait for precheck cancellation to be confirmed."""
         timeout = timeout_ms or 30_000
-        expect(self._badge("Cancelled")).to_be_visible(timeout=timeout)
+        self._wait_badge_reloading("Cancelled", timeout, poll_ms=3_000)
 
     def is_manufacturable(self) -> bool:
         """Whether the finished check passed.
