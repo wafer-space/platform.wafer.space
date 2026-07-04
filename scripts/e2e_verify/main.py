@@ -165,7 +165,7 @@ def run_full_flow(  # noqa: PLR0915
             # ========================================
             log(8, total_steps, "Waiting for precheck logs...")
             # Wait for any log content to appear
-            detail_page.wait_for_logs_contain("", timeout_ms=60_000)
+            detail_page.wait_for_logs_contain("", timeout_ms=180_000)
             logs = detail_page.get_precheck_logs()
             log(8, total_steps, f"Precheck logs received ({len(logs)} chars)")
             detail_page.screenshot("08_precheck_logs")
@@ -270,9 +270,7 @@ def main() -> None:
             "E2E_TEST_PASSWORD environment variable is required (add it to .env)"
         )
 
-    success = run_full_flow(
-        args.url, vnc_port=args.vnc_port, headless=args.headless
-    )
+    success = run_full_flow(args.url, vnc_port=args.vnc_port, headless=args.headless)
     sys.exit(0 if success else 1)
 
 

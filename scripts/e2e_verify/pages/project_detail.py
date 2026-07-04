@@ -160,8 +160,22 @@ class ProjectDetailPage(BasePage):
             return logs_element.text_content() or ""
         return ""
 
-    def wait_for_logs_contain(self, text: str, timeout_ms: int = 60_000) -> None:
-        """Wait for precheck logs to contain specific text."""
-        expect(self.page.locator("#processing-logs")).to_contain_text(
-            text, timeout=timeout_ms
-        )
+    def wait_for_logs_contain(
+        self, text: str, timeout_ms: int = 120_000, poll_ms: int = 5_000
+    ) -> None:
+        """Wait (reloading) for the precheck logs to contain ``text``.
+
+        The #processing-logs element is only rendered once the check has
+        produced logs (``{% if check.processing_logs %}``) and the check
+        section does not live-update, so reload until it appears.
+        """
+        deadline = time.monotonic() + timeout_ms / 1000.0
+        while True:
+            logs = self.page.locator("#processing-logs")
+            if logs.count() > 0 and text in (logs.first.text_content() or ""):
+                return
+            if time.monotonic() >= deadline:
+                msg = f"Logs did not contain {text!r} within {timeout_ms} ms"
+                raise TimeoutError(msg)
+            self.page.wait_for_timeout(poll_ms)
+            self.page.reload()
