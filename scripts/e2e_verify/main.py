@@ -9,6 +9,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from datetime import UTC
 from datetime import datetime
@@ -16,22 +17,22 @@ from datetime import datetime
 from playwright.sync_api import sync_playwright
 from pyvirtualdisplay import Display
 
+from .artifact import get_latest_artifact
 from .pages import FileSubmitPage
 from .pages import LoginPage
 from .pages import ProjectCreatePage
 from .pages import ProjectDetailPage
 
 # ============================================================
-# CONFIGURATION - Edit these values directly
+# CONFIGURATION
 # ============================================================
-USERNAME = "e2e-test-user"
-PASSWORD = "changeme"  # noqa: S105
+# Credentials come from the environment (put E2E_TEST_PASSWORD in .env).
+USERNAME = os.environ.get("E2E_TEST_USERNAME", "e2e-test-user")
+PASSWORD = os.environ.get("E2E_TEST_PASSWORD", "")
 
-ARTIFACT_URL = (
-    "https://github.com/wafer-space/gf180mcu-project-template"
-    "/actions/runs/19704603402/artifacts/4686122452"
-)
-CORRECT_HASH = "sha256:ddce4c192bef84b45eec11e539e9f98345c16e89e8da4546c35dfe1ad663a616"
+# The design to upload is resolved at runtime from the newest non-expired
+# template-repo artifact (see artifact.py). WRONG_HASH is a deliberately bad
+# hash used to exercise the platform's mismatch detection.
 WRONG_HASH = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
 
 # Timeout configuration in milliseconds
@@ -47,33 +48,45 @@ def log(step: int, total: int, message: str) -> None:
     print(f"[{timestamp}] Step {step}/{total}: {message}")  # noqa: T201
 
 
-def run_full_flow(base_url: str, vnc_port: int = 5901) -> bool:  # noqa: PLR0915
+def run_full_flow(  # noqa: PLR0915
+    base_url: str, vnc_port: int = 5901, *, headless: bool = False
+) -> bool:
     """Run the complete E2E verification flow.
 
     Args:
         base_url: Base URL of the wafer.space instance
         vnc_port: Port for VNC server
+        headless: Run without a VNC display (for CI/headless environments)
 
     Returns:
         True if all verifications passed, False otherwise
     """
     total_steps = 13
 
-    # Start VNC server
-    print("=" * 60)  # noqa: T201
-    print(f"  VNC server starting on port {vnc_port}")  # noqa: T201
-    print(f"  Connect to watch: vncviewer localhost:{vnc_port}")  # noqa: T201
-    print("=" * 60)  # noqa: T201
-    print()  # noqa: T201
+    # Resolve the design to upload: the newest non-expired quarter-slot GDS
+    # artifact from the template repo (GitHub expires artifacts after ~90 days,
+    # so we never rely on a pinned URL).
+    print("Resolving latest template-repo artifact...")  # noqa: T201
+    artifact_url, correct_hash = get_latest_artifact()
+    print(f"  artifact: {artifact_url}")  # noqa: T201
+    print(f"  sha256:   {correct_hash}")  # noqa: T201
 
-    display = Display(backend="xvnc", size=(1920, 1080), rfbport=vnc_port)
-    display.start()
+    # Start a VNC display unless running headless
+    display = None
+    if not headless:
+        print("=" * 60)  # noqa: T201
+        print(f"  VNC server starting on port {vnc_port}")  # noqa: T201
+        print(f"  Connect to watch: vncviewer localhost:{vnc_port}")  # noqa: T201
+        print("=" * 60)  # noqa: T201
+        print()  # noqa: T201
+        display = Display(backend="xvnc", size=(1920, 1080), rfbport=vnc_port)
+        display.start()
 
     success = False
 
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=False)  # Visible in VNC
+            browser = p.chromium.launch(headless=headless)
             context = browser.new_context(viewport={"width": 1920, "height": 1080})
             page = context.new_page()
 
@@ -88,12 +101,14 @@ def run_full_flow(base_url: str, vnc_port: int = 5901) -> bool:  # noqa: PLR0915
             # ========================================
             # Step 2: Create project with quarter slot
             # ========================================
-            log(2, total_steps, "Creating project with quarter slot size...")
+            log(2, total_steps, "Creating project (quarter slot, CoB packaging)...")
             create_page = ProjectCreatePage(page, base_url)
             timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
             project_name = f"E2E Test {timestamp}"
-            project_id = create_page.create_project(project_name, slot_size="0p5x0p5")
-            log(2, total_steps, f"Project created: {project_id}")
+            project_id = create_page.create_project(
+                project_name, slot_size="0p5x0p5", chip_on_board=True
+            )
+            log(2, total_steps, f"Project created (CoB): {project_id}")
 
             # Create page objects for remaining steps
             detail_page = ProjectDetailPage(page, base_url, project_id)
@@ -103,7 +118,7 @@ def run_full_flow(base_url: str, vnc_port: int = 5901) -> bool:  # noqa: PLR0915
             # Step 3: Submit file with WRONG hash
             # ========================================
             log(3, total_steps, "Submitting file with wrong hash...")
-            file_submit.submit_file(ARTIFACT_URL, sha256_hash=WRONG_HASH)
+            file_submit.submit_file(artifact_url, sha256_hash=WRONG_HASH)
             log(3, total_steps, "File submitted")
 
             # ========================================
@@ -122,7 +137,7 @@ def run_full_flow(base_url: str, vnc_port: int = 5901) -> bool:  # noqa: PLR0915
             # Step 5: Submit file with CORRECT hash
             # ========================================
             log(5, total_steps, "Submitting file with correct hash...")
-            file_submit.submit_file(ARTIFACT_URL, sha256_hash=CORRECT_HASH)
+            file_submit.submit_file(artifact_url, sha256_hash=correct_hash)
             log(5, total_steps, "File submitted")
 
             # ========================================
@@ -168,7 +183,7 @@ def run_full_flow(base_url: str, vnc_port: int = 5901) -> bool:  # noqa: PLR0915
             # Step 10: Submit file again (correct hash)
             # ========================================
             log(10, total_steps, "Submitting file again with correct hash...")
-            file_submit.submit_file(ARTIFACT_URL, sha256_hash=CORRECT_HASH)
+            file_submit.submit_file(artifact_url, sha256_hash=correct_hash)
             log(10, total_steps, "File submitted")
 
             # ========================================
@@ -227,7 +242,8 @@ def run_full_flow(base_url: str, vnc_port: int = 5901) -> bool:  # noqa: PLR0915
         raise
 
     finally:
-        display.stop()
+        if display is not None:
+            display.stop()
 
     return success
 
@@ -242,9 +258,21 @@ def main() -> None:
     parser.add_argument(
         "--vnc-port", type=int, default=5901, help="VNC port (default: 5901)"
     )
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="Run without a VNC display (for CI/headless environments)",
+    )
     args = parser.parse_args()
 
-    success = run_full_flow(args.url, vnc_port=args.vnc_port)
+    if not PASSWORD:
+        parser.error(
+            "E2E_TEST_PASSWORD environment variable is required (add it to .env)"
+        )
+
+    success = run_full_flow(
+        args.url, vnc_port=args.vnc_port, headless=args.headless
+    )
     sys.exit(0 if success else 1)
 
 
