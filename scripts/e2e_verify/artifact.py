@@ -1,4 +1,4 @@
-"""Resolve the latest quarter-slot GDS artifact from the project template repo.
+"""Resolve E2E inputs and precheck metadata from GitHub / GHCR at runtime.
 
 The E2E flow uploads a design from ``wafer-space/gf180mcu-project-template``.
 GitHub Actions artifacts expire (~90 days), so instead of pinning a single
@@ -9,6 +9,13 @@ The platform hashes the *extracted* layout (not the downloaded zip), so we
 extract the single ``.gds`` (decompressing a ``.gds.gz`` if present) and hash
 that, which matches what the platform will compute after downloading the same
 artifact URL.
+
+It also resolves two facts about the precheck itself, from its own repo
+(``wafer-space/gf180mcu-precheck``):
+  - the expected run time for a slot size, from the durations of the
+    ``Run the Precheck (<slot>, ...)`` jobs in the latest precheck CI run; and
+  - the digest of the latest published precheck container image (GHCR ``latest``
+    tag), so the run can verify the platform actually ran the newest precheck.
 
 Requires a GitHub token in ``GITHUB_TOKEN`` or ``GH_TOKEN`` (artifact downloads
 require authentication even for public repos).
@@ -21,6 +28,7 @@ import hashlib
 import io
 import os
 import zipfile
+from datetime import datetime
 
 import requests
 
@@ -28,6 +36,16 @@ TEMPLATE_REPO = "wafer-space/gf180mcu-project-template"
 ARTIFACT_NAME = "0p5x0p5_gds"
 API = "https://api.github.com"
 _TIMEOUT = 180
+
+# Precheck repo + its published container image on GHCR.
+PRECHECK_REPO = "wafer-space/gf180mcu-precheck"
+PRECHECK_GHCR = f"https://ghcr.io/v2/{PRECHECK_REPO}"
+_MANIFEST_ACCEPT = (
+    "application/vnd.oci.image.index.v1+json,"
+    "application/vnd.docker.distribution.manifest.list.v2+json,"
+    "application/vnd.oci.image.manifest.v1+json,"
+    "application/vnd.docker.distribution.manifest.v2+json"
+)
 
 
 def _headers() -> dict[str, str]:
@@ -96,3 +114,78 @@ def _extracted_gds_sha256(artifact_id: int) -> str:
     if names[0].endswith(".gz"):
         data = gzip.decompress(data)
     return hashlib.sha256(data).hexdigest()
+
+
+def get_latest_precheck_digest() -> str:
+    """Return the digest of the newest published precheck image.
+
+    Resolves the GHCR ``latest`` tag of the precheck container to its
+    ``sha256:...`` digest. This is what the platform pulls to run a check, so
+    the run can confirm a check used the newest published precheck.
+    """
+    tok = _ghcr_pull_token()
+    resp = requests.get(
+        f"{PRECHECK_GHCR}/manifests/latest",
+        headers={"Authorization": f"Bearer {tok}", "Accept": _MANIFEST_ACCEPT},
+        timeout=_TIMEOUT,
+    )
+    resp.raise_for_status()
+    digest = resp.headers.get("Docker-Content-Digest")
+    if not digest:
+        msg = "GHCR did not return a Docker-Content-Digest for precheck 'latest'"
+        raise RuntimeError(msg)
+    return digest
+
+
+def _ghcr_pull_token() -> str:
+    """Anonymous GHCR pull token for the (public) precheck image."""
+    resp = requests.get(
+        f"https://ghcr.io/token?scope=repository:{PRECHECK_REPO}:pull",
+        timeout=_TIMEOUT,
+    )
+    resp.raise_for_status()
+    return resp.json()["token"]
+
+
+def get_expected_precheck_runtime(slot_size: str) -> int | None:
+    """Expected precheck run time in seconds for ``slot_size``, from precheck CI.
+
+    Averages (median) the durations of the ``Run the Precheck (<slot_size>, ...)``
+    matrix jobs in the latest successful precheck CI run on ``main``. Returns
+    None if no matching jobs are found.
+    """
+    runs = requests.get(
+        f"{API}/repos/{PRECHECK_REPO}/actions/workflows/ci.yml/runs",
+        headers=_headers(),
+        params={"status": "success", "branch": "main", "per_page": 1},
+        timeout=_TIMEOUT,
+    )
+    runs.raise_for_status()
+    workflow_runs = runs.json().get("workflow_runs", [])
+    if not workflow_runs:
+        return None
+
+    jobs = requests.get(
+        f"{API}/repos/{PRECHECK_REPO}/actions/runs/{workflow_runs[0]['id']}/jobs",
+        headers=_headers(),
+        params={"per_page": 100},
+        timeout=_TIMEOUT,
+    )
+    jobs.raise_for_status()
+
+    durations = [
+        _iso_seconds(j["started_at"], j["completed_at"])
+        for j in jobs.json().get("jobs", [])
+        if f"({slot_size}," in j["name"] and j["started_at"] and j["completed_at"]
+    ]
+    if not durations:
+        return None
+    durations.sort()
+    return durations[len(durations) // 2]  # median
+
+
+def _iso_seconds(start: str, end: str) -> int:
+    """Seconds between two ISO-8601 timestamps (e.g. GitHub's ...Z stamps)."""
+    started = datetime.fromisoformat(start)
+    completed = datetime.fromisoformat(end)
+    return int((completed - started).total_seconds())

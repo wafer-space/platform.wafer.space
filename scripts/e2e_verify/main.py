@@ -17,7 +17,9 @@ from datetime import datetime
 from playwright.sync_api import sync_playwright
 from pyvirtualdisplay import Display
 
+from .artifact import get_expected_precheck_runtime
 from .artifact import get_latest_artifact
+from .artifact import get_latest_precheck_digest
 from .pages import FileSubmitPage
 from .pages import LoginPage
 from .pages import ProjectCreatePage
@@ -30,6 +32,10 @@ from .pages import ProjectListPage
 # Credentials come from the environment (put E2E_TEST_PASSWORD in .env).
 USERNAME = os.environ.get("E2E_TEST_USERNAME", "e2e-test-user")
 PASSWORD = os.environ.get("E2E_TEST_PASSWORD", "")
+
+# Slot size to test (quarter slot). Used both for project creation and to look
+# up the matching precheck CI job's expected run time.
+SLOT_SIZE = "0p5x0p5"
 
 # The design to upload is resolved at runtime from the newest non-expired
 # template-repo artifact (see artifact.py). WRONG_HASH is a deliberately bad
@@ -50,6 +56,25 @@ def log(step: int, total: int, message: str) -> None:
     print(f"[{timestamp}] Step {step}/{total}: {message}", flush=True)  # noqa: T201
 
 
+def _verify_latest_precheck(actual_digest: str | None, latest_digest: str) -> str:
+    """Return a status message; raise if the check isn't the latest precheck.
+
+    ``actual_digest`` is the (truncated) hex the platform shows for the running
+    check; ``latest_digest`` is the full ``sha256:...`` of GHCR's ``latest``.
+    """
+    latest_hex = latest_digest.split(":")[-1]
+    if actual_digest and latest_hex.startswith(actual_digest):
+        return f"Precheck version is latest ({actual_digest}...)"
+    if actual_digest:
+        msg = (
+            f"Precheck is NOT the latest published image: check ran "
+            f"sha256:{actual_digest}..., but GHCR 'latest' is "
+            f"sha256:{latest_hex[:12]}..."
+        )
+        raise RuntimeError(msg)
+    return "Precheck version digest not shown; cannot verify"
+
+
 def run_full_flow(  # noqa: PLR0915
     base_url: str, vnc_port: int = 5901, *, headless: bool = False
 ) -> bool:
@@ -67,11 +92,21 @@ def run_full_flow(  # noqa: PLR0915
 
     # Resolve the design to upload: the newest non-expired quarter-slot GDS
     # artifact from the template repo (GitHub expires artifacts after ~90 days,
-    # so we never rely on a pinned URL).
-    print("Resolving latest template-repo artifact...")  # noqa: T201
+    # so we never rely on a pinned URL). Also resolve, from the precheck repo,
+    # the expected run time for this slot size and the digest of the latest
+    # published precheck image (to verify the platform runs the newest precheck).
+    print("Resolving latest template-repo artifact + precheck metadata...")  # noqa: T201
     artifact_url, correct_hash = get_latest_artifact()
-    print(f"  artifact: {artifact_url}")  # noqa: T201
-    print(f"  sha256:   {correct_hash}")  # noqa: T201
+    expected_runtime_s = get_expected_precheck_runtime(SLOT_SIZE)
+    latest_precheck_digest = get_latest_precheck_digest()
+    print(f"  artifact:         {artifact_url}")  # noqa: T201
+    print(f"  sha256:           {correct_hash}")  # noqa: T201
+    print(f"  latest precheck:  {latest_precheck_digest}")  # noqa: T201
+    print(  # noqa: T201
+        "  expected runtime: "
+        + (f"~{expected_runtime_s}s (~{expected_runtime_s // 60}m)"
+           if expected_runtime_s else "unknown")
+    )
 
     # Start a VNC display unless running headless
     display = None
@@ -125,7 +160,7 @@ def run_full_flow(  # noqa: PLR0915
             timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
             project_name = f"E2E Test {timestamp}"
             project_id = create_page.create_project(
-                project_name, slot_size="0p5x0p5", chip_on_board=True
+                project_name, slot_size=SLOT_SIZE, chip_on_board=True
             )
             log(2, total_steps, f"Project created (CoB): {project_id}")
 
@@ -225,6 +260,14 @@ def run_full_flow(  # noqa: PLR0915
             detail_page.wait_for_precheck_running(timeout_ms=PRECHECK_START_TIMEOUT)
             log(12, total_steps, "New precheck running")
 
+            # Verify the platform ran the *latest* published precheck image.
+            actual_digest = detail_page.get_check_version_digest()
+            log(
+                12,
+                total_steps,
+                _verify_latest_precheck(actual_digest, latest_precheck_digest),
+            )
+
             # ========================================
             # Step 13: Wait for precheck to complete
             # ========================================
@@ -233,7 +276,9 @@ def run_full_flow(  # noqa: PLR0915
                 total_steps,
                 "Waiting for precheck to complete (this may take hours)...",
             )
-            detail_page.wait_for_precheck_complete(timeout_ms=PRECHECK_COMPLETE_TIMEOUT)
+            detail_page.wait_for_precheck_complete(
+                timeout_ms=PRECHECK_COMPLETE_TIMEOUT, expected_s=expected_runtime_s
+            )
 
             if detail_page.is_manufacturable():
                 log(13, total_steps, "Precheck PASSED - Design is manufacturable")
