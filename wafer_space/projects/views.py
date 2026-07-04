@@ -733,8 +733,7 @@ class ProjectIDCheckView(LoginRequiredMixin, View):
 class ShuttleAvailableSizesView(LoginRequiredMixin, View):
     """AJAX endpoint to get available slot sizes for a shuttle.
 
-    For Phase A, returns all slot sizes from SlotSize enum.
-    For Phase B, will query shuttle's actual available sizes based on grid layout.
+    Returns all slot sizes from the SlotSize enum.
     """
 
     def get(self, request):
@@ -755,10 +754,10 @@ class ShuttleAvailableSizesView(LoginRequiredMixin, View):
             # Verify shuttle exists
             Shuttle.objects.get(pk=shuttle_id)
 
-            # Phase A: Return all slot sizes
-            # Phase B will query shuttle.get_available_slot_sizes()
+            # full_label matches the labels ProjectForm renders initially,
+            # so the JS rebuild on shuttle change keeps the descriptions.
             size_options = [
-                {"value": value, "label": label} for value, label in SlotSize.choices
+                {"value": size.value, "label": size.full_label} for size in SlotSize
             ]
 
             return JsonResponse({"sizes": size_options})

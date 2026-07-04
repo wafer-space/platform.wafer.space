@@ -198,7 +198,7 @@ class TestShuttleAvailableSizesView(TestCase):
         assert response.status_code in (HTTP_UNAUTHORIZED, 302)
 
     def test_returns_all_slot_sizes(self):
-        """Test that endpoint returns all available slot sizes for Phase A."""
+        """Test that endpoint returns all available slot sizes."""
         self.client.login(username="testuser", password=TEST_PASSWORD)
 
         response = self.client.get(self.url, {"shuttle": self.shuttle.pk})
@@ -230,6 +230,22 @@ class TestShuttleAvailableSizesView(TestCase):
             assert isinstance(size["value"], str)
             assert isinstance(size["label"], str)
             assert len(size["label"]) > 0
+
+    def test_labels_are_full_labels(self):
+        """Labels include dimensions so AJAX rebuilds match the initial form.
+
+        The project form renders slot sizes with SlotSize.full_label; the
+        JS that repopulates the dropdown on shuttle change must receive the
+        same labels or the descriptions vanish (issue #283).
+        """
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+
+        response = self.client.get(self.url, {"shuttle": self.shuttle.pk})
+
+        assert response.status_code == HTTP_OK
+        data = json.loads(response.content)
+        labels = {size["value"]: size["label"] for size in data["sizes"]}
+        assert labels == {size.value: size.full_label for size in SlotSize}
 
     def test_missing_shuttle_parameter(self):
         """Test that missing shuttle parameter returns empty list."""
