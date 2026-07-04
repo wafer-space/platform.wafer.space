@@ -1072,8 +1072,9 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
         "precheck.py",
         "--input",
         "/input/design.gds",
+        # Output the processed layout as OASIS (.oas) to save disk space (#272)
         "--output",
-        "/output/design.gds",
+        "/output/design.oas",
         "--top",
         top_cell,
         "--slot",
@@ -1138,7 +1139,7 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
         container.id[:12],
     )
 
-    # Create /output directory for precheck to write output GDS
+    # Create /output directory for precheck to write the output OAS layout
     logger.info(
         "[do_starting] Creating /output directory in container %s...",
         container.id[:12],
@@ -1571,10 +1572,11 @@ def _save_output_gds(
     container: "docker.models.containers.Container",
     logger: logging.Logger,
 ) -> None:
-    """Extract and save output GDS from /output/design.gds.
+    """Extract and save the output layout from /output/design.oas.
 
-    The output GDS is the modified design file produced by precheck,
-    which may include added QR codes or other modifications.
+    The output layout is the modified design file produced by precheck,
+    which may include added QR codes or other modifications. It is stored as
+    OASIS (.oas) to save disk space (#272), kept in the ``output_gds`` field.
 
     Args:
         check: The manufacturability check.
@@ -1582,57 +1584,59 @@ def _save_output_gds(
         logger: Logger for messages.
     """
     temp_dir = _get_temp_dir(check)
-    tar_path = temp_dir / "output_gds.tar"
+    tar_path = temp_dir / "output_layout.tar"
 
-    # Extract the tar archive containing the GDS file
+    # Extract the tar archive containing the OAS layout file
     result = stream_archive_to_file(
-        container, "/output/design.gds", tar_path, logger, compress=False
+        container, "/output/design.oas", tar_path, logger, compress=False
     )
     if not result:
-        logger.info("No output GDS found in container for check %s", check.id)
+        logger.info("No output layout found in container for check %s", check.id)
         return
 
     # The archive contains the file - need to extract it
-    gds_path = temp_dir / "design.gds"
+    layout_path = temp_dir / "design.oas"
 
     try:
         with tarfile.open(tar_path, "r") as tar:
             for member in tar.getmembers():
-                if member.name.endswith(".gds"):
-                    # Extract the GDS file
+                if member.name.endswith(".oas"):
+                    # Extract the OAS layout file
                     extracted_file = tar.extractfile(member)
                     if extracted_file:
-                        gds_path.write_bytes(extracted_file.read())
+                        layout_path.write_bytes(extracted_file.read())
                     break
     except tarfile.TarError as e:
-        logger.warning("Failed to extract GDS from tar for check %s: %s", check.id, e)
+        logger.warning(
+            "Failed to extract layout from tar for check %s: %s", check.id, e
+        )
         tar_path.unlink(missing_ok=True)
         return
 
-    if not gds_path.exists():
+    if not layout_path.exists():
         logger.warning(
-            "No GDS file found in /output/design.gds archive for check %s",
+            "No OAS file found in /output/design.oas archive for check %s",
             check.id,
         )
         tar_path.unlink(missing_ok=True)
         return
 
-    # Calculate checksum of actual GDS file
-    hasher = MultiHasher.from_file(gds_path, algorithms=["sha256"])
+    # Calculate checksum of actual OAS file
+    hasher = MultiHasher.from_file(layout_path, algorithms=["sha256"])
 
     # Save to Django FileField
-    with gds_path.open("rb") as f:
-        filename = f"check_{check.id}_output.gds"
+    with layout_path.open("rb") as f:
+        filename = f"check_{check.id}_output.oas"
         check.output_gds.save(filename, File(f), save=False)
     check.output_gds_sha256 = hasher.hexdigest("sha256")
     check.save(update_fields=["output_gds", "output_gds_sha256"])
 
     # Clean up temp files
     tar_path.unlink(missing_ok=True)
-    gds_path.unlink(missing_ok=True)
+    layout_path.unlink(missing_ok=True)
 
     logger.info(
-        "Saved output GDS for check %s (%d bytes, sha256=%s...)",
+        "Saved output layout for check %s (%d bytes, sha256=%s...)",
         check.id,
         hasher.bytes_processed,
         check.output_gds_sha256[:16],
@@ -1768,7 +1772,7 @@ def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
     This function:
     1. Saves processing logs to log_file field
     2. Extracts /workspace/runs/ directory as compressed tarball
-    3. Extracts output GDS from /output/design.gds if it exists
+    3. Extracts output layout from /output/design.oas if it exists
     4. Exports container filesystem changes for debugging
     5. Parses logs to determine manufacturability
     6. Transitions to FINISHED

@@ -61,13 +61,13 @@ class TestGeneratePackage:
         """Generate complete package with all files."""
         shuttle = create_shuttle_with_config(tmp_path, "G899")
 
-        # Create GDS files
-        gds_dir = tmp_path / "gds"
-        gds_dir.mkdir()
-        gds1 = gds_dir / "output1.gds"
-        gds1.write_text("GDS1")
-        gds2 = gds_dir / "output2.gds"
-        gds2.write_text("GDS2")
+        # Create OAS layout files
+        oas_dir = tmp_path / "oas"
+        oas_dir.mkdir()
+        oas1 = oas_dir / "output1.oas"
+        oas1.write_text("OAS1")
+        oas2 = oas_dir / "output2.oas"
+        oas2.write_text("OAS2")
 
         # Create two projects with checks
         project1 = ProjectFactory(project_id="TST1", slot_size="1x1")
@@ -77,7 +77,7 @@ class TestGeneratePackage:
             project_file=pf1,
             status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=True,
-            output_gds=str(gds1),
+            output_gds=str(oas1),
             output_gds_sha256="hash1",
         )
         project1.submitted_file = pf1
@@ -91,7 +91,7 @@ class TestGeneratePackage:
             status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=True,
             warnings=["warn1"],
-            output_gds=str(gds2),
+            output_gds=str(oas2),
             output_gds_sha256="hash2",
         )
         project2.submitted_file = pf2
@@ -115,17 +115,22 @@ class TestGeneratePackage:
         assert (output / "summary.csv").exists()
         assert (output / "checks.csv").exists()
         assert (output / "README.md").exists()
-        assert (output / "TST1" / "TOP1.gds").exists()
-        assert (output / "TST2" / "TOP2.gds").exists()
+        assert (output / "TST1" / "TOP1.oas").exists()
+        assert (output / "TST2" / "TOP2.oas").exists()
+
+        # The manifest's LAYOUT column references the .oas deliverable
+        manifest = (output / "manifest.csv").read_text()
+        assert "TST1/TOP1.oas" in manifest
+        assert "TST2/TOP2.oas" in manifest
 
     def test_allow_pending_uses_fallback(self, tmp_path):
         """allow_pending uses fallback query when no submitted_file."""
         shuttle = create_shuttle_with_config(tmp_path, "G898")
 
-        gds_dir = tmp_path / "gds"
-        gds_dir.mkdir()
-        gds = gds_dir / "output.gds"
-        gds.write_text("GDS")
+        oas_dir = tmp_path / "oas"
+        oas_dir.mkdir()
+        oas = oas_dir / "output.oas"
+        oas.write_text("OAS")
 
         project = ProjectFactory(project_id="FALL", slot_size="1x1")
         pf = ProjectFileFactory(project=project, top_cell="FALL_TOP")
@@ -134,7 +139,7 @@ class TestGeneratePackage:
             project_file=pf,
             status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=True,
-            output_gds=str(gds),
+            output_gds=str(oas),
             output_gds_sha256="hash",
         )
         # NOTE: NOT setting project.submitted_file
@@ -146,15 +151,15 @@ class TestGeneratePackage:
         output = tmp_path / "output"
         warnings = generate_package("G898", output, allow_pending=True)
 
-        assert (output / "FALL" / "FALL_TOP.gds").exists()
+        assert (output / "FALL" / "FALL_TOP.oas").exists()
         assert len(warnings) == 0
 
     def test_not_manufacturable_skipped_with_allow_pending(self, tmp_path):
         """NOT_MANUFACTURABLE projects are skipped with allow_pending."""
         shuttle = create_shuttle_with_config(tmp_path, "G897")
 
-        gds_dir = tmp_path / "gds"
-        gds_dir.mkdir()
+        oas_dir = tmp_path / "oas"
+        oas_dir.mkdir()
 
         project = ProjectFactory(project_id="FAIL", slot_size="1x1")
         pf = ProjectFileFactory(project=project, top_cell="FAIL_TOP")

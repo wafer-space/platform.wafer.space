@@ -1491,15 +1491,16 @@ def manufacturability_check_runs_path(instance, filename):
 
 
 def manufacturability_check_output_gds_path(instance, filename):
-    """Generate upload path for output GDS file.
+    """Generate upload path for the output layout file.
 
-    Output GDS contains the modified design with QR code and other additions.
-    Format: projects/<project_id>/<gds_name>.<top_cell>.precheck.<timestamp>.output.gds
+    The output layout is the modified design with QR code and other additions.
+    It is stored as OASIS (.oas) to save disk space (#272).
+    Format: projects/<project_id>/<gds_name>.<top_cell>.precheck.<timestamp>.output.oas
 
-    Example: projects/abc123/design.gds.TOP_CELL.precheck.20251126_231820.output.gds
+    Example: projects/abc123/design.gds.TOP_CELL.precheck.20251126_231820.output.oas
     """
     gds_name, top_cell, timestamp_str = _get_check_file_prefix(instance)
-    filename = f"{gds_name}.{top_cell}.precheck.{timestamp_str}.output.gds"
+    filename = f"{gds_name}.{top_cell}.precheck.{timestamp_str}.output.oas"
     return f"projects/{instance.project.id}/{filename}"
 
 

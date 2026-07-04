@@ -44,7 +44,7 @@ def generate_package(
     write_summary(output_path / "summary.csv", slots)
     write_checks_csv(output_path / "checks.csv", slots)
     write_readme(output_path / "README.md", shuttle, slots)
-    write_manifest_and_copy_gds(output_path, slots, pending)
+    write_manifest_and_copy_layout(output_path, slots, pending)
 
     # Handle pending issues
     warnings = [f"{code}: {', '.join(issues)}" for code, issues in pending.items()]
@@ -56,12 +56,12 @@ def generate_package(
     return warnings
 
 
-def write_manifest_and_copy_gds(
+def write_manifest_and_copy_layout(
     output_path: Path,
     slots: list[ShuttleSlot],
     pending: dict[str, list[str]],
 ) -> None:
-    """Write manifest.csv and copy GDS files for manufacturable projects."""
+    """Write manifest.csv and copy OAS layout files for manufacturable projects."""
     with (output_path / "manifest.csv").open("w") as f:
         writer = csv.writer(f)
         writer.writerow(["CODE", "PROJECT", "SLOT_SIZE", "TOP", "SHA256", "LAYOUT"])
@@ -77,7 +77,7 @@ def write_manifest_and_copy_gds(
                 prj_file = slot.project.output_file
 
                 src_file = Path(prj_file.output_check.output_gds.path).resolve()
-                dst_file = f"{code}/{prj_file.top_cell}.gds"
+                dst_file = f"{code}/{prj_file.top_cell}.oas"
 
                 writer.writerow(
                     [
