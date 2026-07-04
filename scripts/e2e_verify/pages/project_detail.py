@@ -1,4 +1,17 @@
-"""Project detail page interactions."""
+"""Project detail page interactions.
+
+Status is surfaced through Bootstrap badges (``span.badge``). Several statuses
+can appear more than once on the page (a per-file badge plus a dedicated check
+section), and the plain status words also appear in prose/table headers, so
+every check here is scoped to ``span.badge`` and takes the first match.
+
+Badge labels (from the templates / model status metadata):
+  - download:  "Downloaded" | "Downloading" | "Download Failed" | "Pending"
+  - hash:      "Hash Verified" | "Hash Mismatch" | "Hash Not Verified"
+  - precheck:  "Pending" | "Dispatching" | "Starting" | "Running" |
+               "Analyzing" | "Cancelling" | "Cancelled" | "Passed" | "Failed"
+    (a *finished* check shows "Passed"/"Failed", not "Manufacturable")
+"""
 
 from __future__ import annotations
 
@@ -10,7 +23,12 @@ from playwright.sync_api import expect
 from .base import BasePage
 
 if TYPE_CHECKING:
+    from playwright.sync_api import Locator
     from playwright.sync_api import Page
+
+# A finished check labels the badge "Failed"; the download badge uses
+# "Download Failed". This matches the precheck "Failed" but not the download one.
+_CHECK_FAILED = re.compile(r"(?<!Download )Failed")
 
 
 class ProjectDetailPage(BasePage):
@@ -34,73 +52,68 @@ class ProjectDetailPage(BasePage):
         """Refresh the page."""
         self.page.reload()
 
-    # ========================================
-    # Download status
-    # ========================================
+    def _badge(self, pattern: str | re.Pattern[str]) -> Locator:
+        """First status badge whose text matches ``pattern`` (str or regex)."""
+        return self.page.locator("span.badge").filter(has_text=pattern).first
 
-    def wait_for_downloading(self, timeout_ms: int | None = None) -> None:
-        """Wait for download to start."""
-        timeout = timeout_ms or self.DOWNLOAD_TIMEOUT
-        expect(self.page.get_by_text("Downloading")).to_be_visible(timeout=timeout)
+    # ========================================
+    # Download / hash status
+    # ========================================
 
     def wait_for_downloaded(self, timeout_ms: int | None = None) -> None:
-        """Wait for download to complete."""
-        timeout = timeout_ms or self.DOWNLOAD_TIMEOUT
-        expect(self.page.get_by_text("Downloaded")).to_be_visible(timeout=timeout)
+        """Wait for the file download to reach a terminal state.
 
-    # ========================================
-    # Hash verification status
-    # ========================================
+        The download badge shows "Downloaded" on success or "Hash Mismatch"
+        when the file downloaded but the hash didn't match; either (as well as
+        a "Hash Verified" badge) means the download itself completed.
+        """
+        timeout = timeout_ms or self.DOWNLOAD_TIMEOUT
+        expect(
+            self._badge(re.compile(r"Downloaded|Hash Verified|Hash Mismatch"))
+        ).to_be_visible(timeout=timeout)
 
     def wait_for_hash_verified(self, timeout_ms: int | None = None) -> None:
         """Wait for hash verification to pass."""
         timeout = timeout_ms or self.HASH_TIMEOUT
-        expect(self.page.get_by_text("Hash Verified")).to_be_visible(timeout=timeout)
+        expect(self._badge("Hash Verified")).to_be_visible(timeout=timeout)
 
     def wait_for_hash_mismatch(self, timeout_ms: int | None = None) -> None:
         """Wait for hash mismatch to be detected."""
         timeout = timeout_ms or self.HASH_TIMEOUT
-        expect(self.page.get_by_text("Hash Mismatch")).to_be_visible(timeout=timeout)
+        expect(self._badge("Hash Mismatch")).to_be_visible(timeout=timeout)
 
     # ========================================
     # Manufacturability precheck status
     # ========================================
 
-    def wait_for_precheck_queued(self, timeout_ms: int | None = None) -> None:
-        """Wait for precheck to be queued."""
-        timeout = timeout_ms or self.PRECHECK_START_TIMEOUT
-        expect(self.page.get_by_text("Check Queued")).to_be_visible(timeout=timeout)
-
     def wait_for_precheck_running(self, timeout_ms: int | None = None) -> None:
-        """Wait for precheck to start running."""
+        """Wait for the precheck to be queued or running (any in-progress state)."""
         timeout = timeout_ms or self.PRECHECK_START_TIMEOUT
-        expect(self.page.get_by_text("Checking...")).to_be_visible(timeout=timeout)
+        expect(
+            self._badge(re.compile(r"Pending|Dispatching|Starting|Running|Analyzing"))
+        ).to_be_visible(timeout=timeout)
 
     def wait_for_precheck_complete(self, timeout_ms: int | None = None) -> None:
-        """Wait for precheck to finish (either pass or fail)."""
+        """Wait for the precheck to finish (badge shows "Passed" or "Failed")."""
         timeout = timeout_ms or self.PRECHECK_COMPLETE_TIMEOUT
-        # Match either "Manufacturable" or "Not Manufacturable"
-        expect(
-            self.page.get_by_text(re.compile(r"^Manufacturable|^Not Manufacturable"))
-        ).to_be_visible(timeout=timeout)
+        expect(self._badge(re.compile(r"Passed|(?<!Download )Failed"))).to_be_visible(
+            timeout=timeout
+        )
 
     def wait_for_precheck_cancelled(self, timeout_ms: int | None = None) -> None:
         """Wait for precheck cancellation to be confirmed."""
         timeout = timeout_ms or 30_000
-        expect(self.page.get_by_text("Check Cancelled")).to_be_visible(timeout=timeout)
+        expect(self._badge("Cancelled")).to_be_visible(timeout=timeout)
 
     def is_manufacturable(self) -> bool:
-        """Check if the design passed manufacturability check.
+        """Whether the finished check passed.
 
-        Call after wait_for_precheck_complete().
+        Call after :meth:`wait_for_precheck_complete`. A passing check shows a
+        "Passed" badge; a failing one shows "Failed".
         """
-        # Check for "Manufacturable" but not "Not Manufacturable"
-        manufacturable = self.page.get_by_text("Manufacturable").first
-        not_manufacturable = self.page.get_by_text("Not Manufacturable").first
-
-        if not_manufacturable.is_visible():
+        if self._badge(_CHECK_FAILED).is_visible():
             return False
-        return manufacturable.is_visible()
+        return self._badge("Passed").is_visible()
 
     # ========================================
     # Actions
@@ -108,11 +121,9 @@ class ProjectDetailPage(BasePage):
 
     def click_cancel_precheck(self) -> None:
         """Click the cancel button for the manufacturability check."""
-        # Set up dialog handler before clicking
+        # Accept the confirmation dialog before clicking.
         self.page.on("dialog", lambda dialog: dialog.accept())
-
-        # Find and click the Cancel button
-        self.page.get_by_role("button", name="Cancel").click()
+        self.page.get_by_role("button", name="Cancel").first.click()
 
     # ========================================
     # Logs
