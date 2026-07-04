@@ -198,7 +198,7 @@ class TestShuttleAvailableSizesView(TestCase):
         assert response.status_code in (HTTP_UNAUTHORIZED, 302)
 
     def test_returns_all_slot_sizes(self):
-        """Test that endpoint returns all available slot sizes for Phase A."""
+        """Test that endpoint returns all available slot sizes."""
         self.client.login(username="testuser", password=TEST_PASSWORD)
 
         response = self.client.get(self.url, {"shuttle": self.shuttle.pk})
