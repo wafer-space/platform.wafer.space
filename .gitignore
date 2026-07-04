@@ -300,6 +300,10 @@ wafer.space - Django Website for User Management.pdf
 # Browser test screenshots (auto-generated)
 tests/browser/screenshots/
 
+# E2E verification script screenshots + run log (auto-generated)
+/screenshots/
+/e2e_run.log
+
 # Google OAuth client secret files
 client_secret_*.json
 *client_secret*.json
