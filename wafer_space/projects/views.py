@@ -757,8 +757,10 @@ class ShuttleAvailableSizesView(LoginRequiredMixin, View):
 
             # Phase A: Return all slot sizes
             # Phase B will query shuttle.get_available_slot_sizes()
+            # full_label matches the labels ProjectForm renders initially,
+            # so the JS rebuild on shuttle change keeps the descriptions.
             size_options = [
-                {"value": value, "label": label} for value, label in SlotSize.choices
+                {"value": size.value, "label": size.full_label} for size in SlotSize
             ]
 
             return JsonResponse({"sizes": size_options})
