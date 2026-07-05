@@ -70,18 +70,18 @@ def get_latest_artifact() -> tuple[str, str]:
     ``submit_url`` is the GitHub web URL the platform downloads; ``sha256`` is
     the hash of the extracted GDS, matching what the platform computes.
     """
+    # Filter by name server-side: the repo accumulates thousands of artifacts of
+    # many names, so a plain per_page=100 (most-recent-first, all names) can omit
+    # every ARTIFACT_NAME artifact once newer other-named ones fill page 1. The
+    # ``name`` query param returns only exact-name matches, newest first.
     resp = requests.get(
         f"{API}/repos/{TEMPLATE_REPO}/actions/artifacts",
         headers=_headers(),
-        params={"per_page": 100},
+        params={"name": ARTIFACT_NAME, "per_page": "100"},
         timeout=_TIMEOUT,
     )
     resp.raise_for_status()
-    artifacts = [
-        a
-        for a in resp.json()["artifacts"]
-        if a["name"] == ARTIFACT_NAME and not a["expired"]
-    ]
+    artifacts = [a for a in resp.json()["artifacts"] if not a["expired"]]
     if not artifacts:
         msg = f"No non-expired '{ARTIFACT_NAME}' artifact in {TEMPLATE_REPO}"
         raise RuntimeError(msg)
