@@ -4,6 +4,7 @@ E2E verification script for wafer.space.
 Usage:
     uv run python -m scripts.e2e_verify http://localhost:8081
     uv run python -m scripts.e2e_verify https://wafer.space
+    uv run python -m scripts.e2e_verify https://wafer.space --slot-size 1x1
 """
 
 from __future__ import annotations
@@ -53,9 +54,12 @@ class RunInputs:
 USERNAME = os.environ.get("E2E_TEST_USERNAME", "e2e-test-user")
 PASSWORD = os.environ.get("E2E_TEST_PASSWORD", "")
 
-# Slot size to test (quarter slot). Used both for project creation and to look
-# up the matching precheck CI job's expected run time.
-SLOT_SIZE = "0p5x0p5"
+# Slot sizes the template repo publishes a ``<slot>_gds`` artifact for, mirroring
+# wafer_space.core.enums.SlotSize (hardcoded so this script stays dependency-free).
+# The chosen size drives project creation, artifact resolution, and the matching
+# precheck CI job's expected run-time lookup.
+SLOT_SIZES = ("1x1", "0p5x1", "1x0p5", "0p5x0p5")
+DEFAULT_SLOT_SIZE = "0p5x0p5"
 TOTAL_STEPS = 13
 
 # The design to upload is resolved at runtime from the newest non-expired
@@ -125,14 +129,17 @@ def _verify_latest_precheck(token: str | None, identity: PrecheckIdentity) -> st
     raise RuntimeError(msg)
 
 
-def _resolve_inputs() -> RunInputs:
+def _resolve_inputs(slot_size: str) -> RunInputs:
     """Resolve the artifact + precheck metadata, logging what was found."""
-    logger.info("Resolving latest template-repo artifact + precheck metadata...")
-    artifact_url, correct_hash = get_latest_artifact()
+    logger.info(
+        "Resolving latest template-repo artifact + precheck metadata (slot %s)...",
+        slot_size,
+    )
+    artifact_url, correct_hash = get_latest_artifact(slot_size)
     inputs = RunInputs(
         artifact_url=artifact_url,
         correct_hash=correct_hash,
-        expected_runtime_s=get_expected_precheck_runtime(SLOT_SIZE),
+        expected_runtime_s=get_expected_precheck_runtime(slot_size),
         precheck_identity=get_latest_precheck_identity(),
     )
     runtime = (
@@ -181,13 +188,13 @@ def _login_and_preflight(page: Page, base_url: str) -> None:
 
 
 def _create_project(
-    page: Page, base_url: str
+    page: Page, base_url: str, slot_size: str
 ) -> tuple[ProjectDetailPage, FileSubmitPage]:
-    """Step 2: create a quarter-slot chip-on-board project."""
-    log(2, "Creating project (quarter slot, CoB packaging)...")
+    """Step 2: create a chip-on-board project of the given slot size."""
+    log(2, f"Creating project (slot {slot_size}, CoB packaging)...")
     timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     project_id = ProjectCreatePage(page, base_url).create_project(
-        f"E2E Test {timestamp}", slot_size=SLOT_SIZE, chip_on_board=True
+        f"E2E Test {timestamp}", slot_size=slot_size, chip_on_board=True
     )
     log(2, f"Project created (CoB): {project_id}")
     return (
@@ -287,19 +294,20 @@ def _rerun_and_await_verdict(
 
 
 def run_full_flow(
-    base_url: str, vnc_port: int = 5901, *, headless: bool = False
+    base_url: str, slot_size: str, vnc_port: int = 5901, *, headless: bool = False
 ) -> bool:
     """Run the complete E2E verification flow.
 
     Args:
         base_url: Base URL of the wafer.space instance
+        slot_size: Template slot size to test (one of SLOT_SIZES)
         vnc_port: Port for VNC server
         headless: Run without a VNC display (for CI/headless environments)
 
     Returns:
         True if all verifications passed, False otherwise.
     """
-    inputs = _resolve_inputs()
+    inputs = _resolve_inputs(slot_size)
     display = _start_display(vnc_port, headless=headless)
 
     try:
@@ -312,7 +320,7 @@ def run_full_flow(
             page.on("dialog", lambda dialog: dialog.accept())
 
             _login_and_preflight(page, base_url)
-            detail_page, file_submit = _create_project(page, base_url)
+            detail_page, file_submit = _create_project(page, base_url, slot_size)
             _verify_upload_and_hash(detail_page, file_submit, inputs)
             _run_and_cancel_precheck(detail_page)
             _rerun_and_await_verdict(detail_page, file_submit, inputs)
@@ -339,6 +347,12 @@ def main() -> None:
     )
     parser.add_argument("url", help="Base URL (e.g., https://wafer.space)")
     parser.add_argument(
+        "--slot-size",
+        choices=SLOT_SIZES,
+        default=DEFAULT_SLOT_SIZE,
+        help=f"Template slot size to test (default: {DEFAULT_SLOT_SIZE})",
+    )
+    parser.add_argument(
         "--vnc-port", type=int, default=5901, help="VNC port (default: 5901)"
     )
     parser.add_argument(
@@ -354,7 +368,12 @@ def main() -> None:
         )
 
     configure_logging()
-    success = run_full_flow(args.url, vnc_port=args.vnc_port, headless=args.headless)
+    success = run_full_flow(
+        args.url,
+        args.slot_size,
+        vnc_port=args.vnc_port,
+        headless=args.headless,
+    )
     sys.exit(0 if success else 1)
 
 
