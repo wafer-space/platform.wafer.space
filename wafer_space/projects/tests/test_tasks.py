@@ -14,6 +14,7 @@ import zipfile
 from datetime import timedelta
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from typing import IO
 from unittest.mock import MagicMock
 from unittest.mock import Mock
 from unittest.mock import patch
@@ -2073,6 +2074,109 @@ Precheck successfully completed."""
         with check.output_gds.open("rb") as f:
             assert f.read() == oas_content
         assert check.output_gds_sha256 == hashlib.sha256(oas_content).hexdigest()
+
+    @pytest.mark.django_db
+    def test_save_output_skips_non_file_members(self) -> None:
+        """Directory members ending in .oas must not shadow the layout file.
+
+        Issue #275: tar.extractfile() returns None for directories, so a
+        directory entry matching *.oas used to hit the break and silently
+        drop the real layout file behind it.
+        """
+        oas_content = b"real-oasis-layout-bytes"
+
+        tar_buffer = io.BytesIO()
+        with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
+            dir_info = tarfile.TarInfo(name="design.oas")
+            dir_info.type = tarfile.DIRTYPE
+            tar.addfile(dir_info)
+            info = tarfile.TarInfo(name="design.oas/design.oas")
+            info.size = len(oas_content)
+            tar.addfile(info, io.BytesIO(oas_content))
+        tar_bytes = tar_buffer.getvalue()
+
+        mock_container = MagicMock()
+        mock_container.get_archive.return_value = (iter([tar_bytes]), {})
+
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            docker_server_id="test-local",
+        )
+
+        _save_output_gds(check, mock_container, logging.getLogger("test"))
+
+        check.refresh_from_db()
+        assert bool(check.output_gds), "layout file was not saved"
+        with check.output_gds.open("rb") as f:
+            assert f.read() == oas_content
+
+    @pytest.mark.django_db
+    def test_save_output_streams_layout_in_chunks(self) -> None:
+        """The extracted layout is streamed to disk in bounded chunks.
+
+        Issue #275: reading the whole extracted member into memory via
+        read() can spike worker RAM on large layouts. Every read of the
+        extracted member must be bounded, and a layout larger than the
+        chunk size must survive extraction byte-for-byte.
+        """
+        chunk_limit = 4 * 1024 * 1024
+        # 2.5 MiB layout: forces several 1 MiB chunks during extraction.
+        oas_content = bytes(range(256)) * (10 * 1024)
+        read_sizes: list[int] = []
+
+        class ReadSizeRecorder:
+            """Records the size argument of every read() call."""
+
+            def __init__(self, inner: IO[bytes]) -> None:
+                self._inner = inner
+
+            def read(self, size: int = -1) -> bytes:
+                read_sizes.append(size)
+                return self._inner.read(size)
+
+            def close(self) -> None:
+                self._inner.close()
+
+            def __enter__(self) -> "ReadSizeRecorder":
+                return self
+
+            def __exit__(self, *exc_info: object) -> None:
+                self._inner.close()
+
+        tar_buffer = io.BytesIO()
+        with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
+            info = tarfile.TarInfo(name="design.oas")
+            info.size = len(oas_content)
+            tar.addfile(info, io.BytesIO(oas_content))
+        tar_bytes = tar_buffer.getvalue()
+
+        mock_container = MagicMock()
+        mock_container.get_archive.return_value = (iter([tar_bytes]), {})
+
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            docker_server_id="test-local",
+        )
+
+        real_extractfile = tarfile.TarFile.extractfile
+
+        def recording_extractfile(
+            tar: tarfile.TarFile, member: tarfile.TarInfo
+        ) -> ReadSizeRecorder | None:
+            inner = real_extractfile(tar, member)
+            if inner is None:
+                return None
+            return ReadSizeRecorder(inner)
+
+        with patch.object(tarfile.TarFile, "extractfile", recording_extractfile):
+            _save_output_gds(check, mock_container, logging.getLogger("test"))
+
+        check.refresh_from_db()
+        with check.output_gds.open("rb") as f:
+            assert f.read() == oas_content
+        assert read_sizes, "extracted layout was never read"
+        for size in read_sizes:
+            assert 0 < size <= chunk_limit, f"unbounded read (size={size})"
 
     @pytest.mark.django_db
     def test_errors_when_container_not_found(self) -> None:

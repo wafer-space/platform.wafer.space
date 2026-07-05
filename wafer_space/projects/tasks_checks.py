@@ -1600,11 +1600,14 @@ def _save_output_gds(
     try:
         with tarfile.open(tar_path, "r") as tar:
             for member in tar.getmembers():
-                if member.name.endswith(".oas"):
-                    # Extract the OAS layout file
+                if member.isfile() and member.name.endswith(".oas"):
+                    # Stream the OAS layout file to disk in chunks (#275)
                     extracted_file = tar.extractfile(member)
                     if extracted_file:
-                        layout_path.write_bytes(extracted_file.read())
+                        with extracted_file, layout_path.open("wb") as out_f:
+                            shutil.copyfileobj(
+                                extracted_file, out_f, length=1024 * 1024
+                            )
                     break
     except tarfile.TarError as e:
         logger.warning(
