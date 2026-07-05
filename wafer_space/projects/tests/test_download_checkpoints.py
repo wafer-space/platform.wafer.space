@@ -20,6 +20,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.test import override_settings
 
+from wafer_space.projects.exceptions import DownloadTooLargeError
 from wafer_space.projects.file_type_utils import GDS_SIGNATURE
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import Project
@@ -29,6 +30,7 @@ from wafer_space.projects.tasks import _ChunkDownloadState
 from wafer_space.projects.tasks import _download_chunks
 from wafer_space.projects.tasks import _should_log_progress
 from wafer_space.projects.tasks import _should_update_database
+from wafer_space.projects.tasks import download_project_file
 
 User = get_user_model()
 TEST_PASSWORD = "testpass123"  # noqa: S105
@@ -802,14 +804,15 @@ class DownloadSizeLimitTests(TestCase):
 
             with (
                 override_settings(MAX_DOWNLOAD_SIZE=3 * MB),
-                pytest.raises(ValueError, match="exceeds maximum allowed size"),
+                pytest.raises(
+                    DownloadTooLargeError, match="exceeds maximum allowed size"
+                ),
             ):
                 _download_chunks(state)
 
-            # Partial file is kept so a retry resumes and fails fast
-            # instead of re-downloading up to the limit again
-            assert temp_path.exists()
-            assert temp_path.stat().st_size == 4 * MB  # aborted after 4th chunk
+            # The failure is not retried, so the oversized partial file is
+            # deleted rather than kept for resume
+            assert not temp_path.exists()
         finally:
             temp_path.unlink(missing_ok=True)
 
@@ -836,6 +839,46 @@ class DownloadSizeLimitTests(TestCase):
             assert temp_path.stat().st_size == 3 * MB
         finally:
             temp_path.unlink(missing_ok=True)
+
+    @patch("wafer_space.projects.tasks_download.requests.get")
+    def test_oversized_download_fails_without_retry(self, mock_get):
+        """Test the task fails immediately on an oversized download.
+
+        Retrying is pointless (the file will not get smaller) and hosts
+        without Range support would re-download up to the full limit on
+        every retry, so DownloadTooLargeError must go straight to the
+        failure path: exactly one FAILED attempt and no PENDING retry.
+        """
+        # Fresh project/file so no pre-existing attempt muddies the count
+        project = Project.objects.create(user=self.user, name="Oversize Test")
+        project_file = ProjectFile.objects.create(
+            project=project,
+            source_url="http://example.com/huge.gds",
+            original_filename="huge.gds",
+            is_active=True,
+        )
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.headers = {}
+        mock_response.iter_content.return_value = iter(_gds_chunks(5))
+        mock_response.raise_for_status = Mock()
+        mock_get.return_value = mock_response
+
+        with override_settings(MAX_DOWNLOAD_SIZE=3 * MB):
+            task_result = download_project_file.apply(args=[str(project.id)])
+
+        result = task_result.result
+        assert result["status"] == "failed"
+        assert "exceeds maximum allowed size" in result["message"]
+
+        # Exactly one attempt, marked FAILED - no PENDING retry scheduled
+        attempts = project_file.download_attempts.all()
+        assert attempts.count() == 1
+        failed_attempt = attempts.first()
+        assert failed_attempt is not None
+        assert failed_attempt.status == DownloadAttempt.Status.FAILED
+        assert "exceeds maximum allowed size" in failed_attempt.download_error
 
 
 @pytest.mark.django_db

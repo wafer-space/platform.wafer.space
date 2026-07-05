@@ -260,6 +260,10 @@ Security validation errors are NOT retried:
 - File size exceeds 100GB
 - Unresolvable hostname
 
+Downloads whose actual received bytes exceed the 100GB limit are also NOT
+retried: the file will not get smaller, and hosts without Range support
+would re-download up to the full limit on every retry.
+
 ### Download Errors
 
 Network/file errors trigger retry:
@@ -267,6 +271,8 @@ Network/file errors trigger retry:
 - Network interruptions
 - Server errors (500, 502, 503, 504)
 - Incomplete downloads
+- Unaccepted content type detected in the leading bytes (cheap to retry -
+  the download aborts within the first chunk)
 
 ### Cleanup
 

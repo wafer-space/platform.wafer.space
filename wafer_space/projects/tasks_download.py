@@ -33,6 +33,7 @@ from .content_pipeline import ContentPipeline
 from .content_pipeline import cleanup_temp_dir
 from .content_pipeline import get_temp_dir_for_file
 from .content_processors import _processor_registry
+from .exceptions import DownloadTooLargeError
 from .file_type_utils import detect_file_type_from_data
 from .format_validators import validate_output_format
 from .models import DownloadAttempt
@@ -861,10 +862,12 @@ def _download_chunks(state: _ChunkDownloadState) -> None:
     Does NOT calculate hashes - that happens after extraction.
 
     Raises:
-        ValueError: If the download exceeds settings.MAX_DOWNLOAD_SIZE.
-            This is the authoritative size limit: pre-download validation
-            cannot always determine the size (some hosts omit Content-Length
-            or answer HEAD with 0), and response headers can lie.
+        DownloadTooLargeError: If the download exceeds
+            settings.MAX_DOWNLOAD_SIZE. This is the authoritative size
+            limit: pre-download validation cannot always determine the size
+            (some hosts omit Content-Length or answer HEAD with 0), and
+            response headers can lie.
+        ValueError: If the leading bytes are not an accepted file type.
     """
     logger = logging.getLogger(__name__)
 
@@ -905,21 +908,17 @@ def _download_chunks(state: _ChunkDownloadState) -> None:
             downloaded += len(chunk)
             chunk_count += 1
 
-            # Enforce the size limit on actual received bytes. The partial
-            # file is kept so a retry resumes at the limit and fails fast
-            # instead of re-downloading everything.
+            # Enforce the size limit on actual received bytes. The failure
+            # is not retried (the file will not get smaller), so the
+            # partial file is deleted rather than kept for resume.
             if downloaded > max_download_size:
                 logger.error(
                     "  ✗ Download aborted: received %s, limit is %s",
                     _format_bytes(downloaded),
                     _format_bytes(max_download_size),
                 )
-                msg = (
-                    f"Download size ({_format_bytes(downloaded)}) exceeds "
-                    f"maximum allowed size of "
-                    f"{_format_bytes(max_download_size)} - download aborted"
-                )
-                raise ValueError(msg)
+                state.temp_path.unlink(missing_ok=True)
+                raise DownloadTooLargeError(downloaded, max_download_size)
 
             # Log first chunk to confirm download is working
             if chunk_count == 1:
@@ -1245,6 +1244,74 @@ def _handle_download_failure(
         "status": "failed",
         "message": str(exc),
     }
+
+
+def _handle_download_task_error(
+    task_self,
+    project_id: str,
+    exc: Exception,
+    temp_path: Path | None,
+    attempt: DownloadAttempt | None,
+) -> dict[str, str | int]:
+    """Schedule a retry for a download error, or record the final failure.
+
+    When retry attempts remain, marks the current attempt as failed,
+    creates a PENDING attempt for the upcoming retry, and raises Celery's
+    Retry via _handle_download_retry. Otherwise returns the final failure
+    status from _handle_download_failure.
+    """
+    logger = logging.getLogger(__name__)
+
+    if task_self.request.retries < task_self.max_retries:
+        retry_num = task_self.request.retries + 1
+        retry_delay = settings.DOWNLOAD_TASK_RETRY_BASE_DELAY_SECONDS * (
+            settings.DOWNLOAD_TASK_RETRY_BACKOFF_MULTIPLIER**task_self.request.retries
+        )
+        logger.info(
+            "Retry %d/%d - Will retry in %d seconds",
+            retry_num,
+            task_self.max_retries,
+            retry_delay,
+        )
+        # Mark attempt as failed with error message if it exists
+        if attempt:
+            attempt.status = DownloadAttempt.Status.FAILED
+            attempt.download_error = str(exc)  # Store actual error message
+            attempt.completed_at = timezone.now()
+            if attempt.download_started_at:
+                attempt.download_duration_seconds = (
+                    attempt.completed_at - attempt.download_started_at
+                ).total_seconds()
+            attempt.save()
+
+            # Create structured error log for this failed attempt
+            error_msg = f"Download failed (retry {retry_num} scheduled): {exc}"
+            FileProcessingError.objects.create(
+                download_attempt=attempt,
+                error_type=FileProcessingError.ErrorType.DOWNLOAD,
+                error_message=error_msg,
+                error_detail={
+                    "original_url": attempt.project_file.original_url,
+                    "source_url": attempt.project_file.source_url,
+                    "error_type": exc.__class__.__name__,
+                    "traceback": traceback.format_exc(),
+                    "retry_number": retry_num,
+                    "retry_delay": retry_delay,
+                },
+            )
+
+            # Create a PENDING attempt atomically for the upcoming retry
+            # This ensures UI shows "Pending" instead of "Failed" during retry delay
+            _create_download_attempt_atomic(
+                attempt.project_file.id,
+                DownloadAttempt.Status.PENDING,
+            )
+        _handle_download_retry(task_self, project_id, exc)
+
+    logger.exception(
+        "DOWNLOAD TASK FAILED - Max retries reached for project %s", project_id
+    )
+    return _handle_download_failure(project_id, exc, temp_path, attempt)
 
 
 def _apply_post_download_processing(
@@ -1635,7 +1702,7 @@ def _log_download_completion(
     max_retries=settings.DOWNLOAD_TASK_MAX_RETRIES,
     default_retry_delay=settings.DOWNLOAD_TASK_RETRY_BASE_DELAY_SECONDS,
 )
-def download_project_file(self, project_id):  # noqa: PLR0915, C901
+def download_project_file(self, project_id):  # noqa: PLR0915
     """Background task to download a project file from a URL.
 
     Supports:
@@ -1840,58 +1907,18 @@ def download_project_file(self, project_id):  # noqa: PLR0915, C901
             "message": f"Project with id {project_id} not found",
         }
 
+    except DownloadTooLargeError as exc:
+        # Not retryable: the file will not get smaller, and each retry
+        # could re-download up to the full size limit before failing again
+        # (hosts without Range support restart from byte 0 on resume).
+        logger.exception(
+            "DOWNLOAD TASK FAILED - File too large for project %s", project_id
+        )
+        return _handle_download_failure(project_id, exc, temp_path, attempt)
+
     except (OSError, ValueError, requests.RequestException) as exc:
         logger.exception("DOWNLOAD TASK ERROR")
-        if self.request.retries < self.max_retries:
-            retry_num = self.request.retries + 1
-            retry_delay = settings.DOWNLOAD_TASK_RETRY_BASE_DELAY_SECONDS * (
-                settings.DOWNLOAD_TASK_RETRY_BACKOFF_MULTIPLIER**self.request.retries
-            )
-            logger.info(
-                "Retry %d/%d - Will retry in %d seconds",
-                retry_num,
-                self.max_retries,
-                retry_delay,
-            )
-            # Mark attempt as failed with error message if it exists
-            if attempt:
-                attempt.status = DownloadAttempt.Status.FAILED
-                attempt.download_error = str(exc)  # Store actual error message
-                attempt.completed_at = timezone.now()
-                if attempt.download_started_at:
-                    attempt.download_duration_seconds = (
-                        attempt.completed_at - attempt.download_started_at
-                    ).total_seconds()
-                attempt.save()
-
-                # Create structured error log for this failed attempt
-                error_msg = f"Download failed (retry {retry_num} scheduled): {exc}"
-                FileProcessingError.objects.create(
-                    download_attempt=attempt,
-                    error_type=FileProcessingError.ErrorType.DOWNLOAD,
-                    error_message=error_msg,
-                    error_detail={
-                        "original_url": attempt.project_file.original_url,
-                        "source_url": attempt.project_file.source_url,
-                        "error_type": exc.__class__.__name__,
-                        "traceback": traceback.format_exc(),
-                        "retry_number": retry_num,
-                        "retry_delay": retry_delay,
-                    },
-                )
-
-                # Create a PENDING attempt atomically for the upcoming retry
-                # This ensures UI shows "Pending" instead of "Failed" during retry delay
-                _create_download_attempt_atomic(
-                    attempt.project_file.id,
-                    DownloadAttempt.Status.PENDING,
-                )
-            _handle_download_retry(self, project_id, exc)
-        else:
-            logger.exception(
-                "DOWNLOAD TASK FAILED - Max retries reached for project %s", project_id
-            )
-            return _handle_download_failure(project_id, exc, temp_path, attempt)
+        return _handle_download_task_error(self, project_id, exc, temp_path, attempt)
 
 
 # AUTO-RETRY SYSTEM REMOVED

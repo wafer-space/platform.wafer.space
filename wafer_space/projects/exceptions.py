@@ -79,3 +79,27 @@ class TaskExecutionError(Exception):
         self.reason = reason
         self.message = message
         super().__init__(message)
+
+
+class DownloadTooLargeError(Exception):
+    """Raised when a download exceeds the maximum allowed size.
+
+    Raised on actual received bytes rather than advertised Content-Length,
+    so it cannot be avoided by a server lying in its headers. Deliberately
+    NOT retryable: the file at the URL will not get smaller, and each retry
+    could re-download up to the full size limit before failing again.
+
+    Attributes:
+        bytes_received: Number of bytes received before aborting
+        max_bytes: The configured maximum download size
+    """
+
+    def __init__(self, bytes_received: int, max_bytes: int) -> None:
+        self.bytes_received = bytes_received
+        self.max_bytes = max_bytes
+        gb = 1024 * 1024 * 1024
+        msg = (
+            f"Download size ({bytes_received / gb:.2f}GB) exceeds maximum "
+            f"allowed size of {max_bytes / gb:.0f}GB - download aborted"
+        )
+        super().__init__(msg)
