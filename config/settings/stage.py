@@ -94,13 +94,14 @@ INSTALLED_APPS += [
 # CELERY_BEAT_SCHEDULE: uses base.py defaults (all check lifecycle tasks)
 
 # Docker servers for manufacturability checks
-# Staging uses one remote Docker server with 3 concurrent checks
-# Total capacity: 3 concurrent checks, each using 24GB memory
+# Staging uses one remote Docker server with 2 concurrent checks
+# Total capacity: 2 concurrent checks, each using 32GB memory
+# Must match checker_concurrent_checks in hetzner-ansible host_vars
 DOCKER_SERVERS = [
     {
         "id": "checker.wafer.space@buddy",
         "url": "tcp://10.2.27.44:2375",
-        "max_concurrent": 3,
+        "max_concurrent": 2,
         "priority": 1,
     },
 ]
