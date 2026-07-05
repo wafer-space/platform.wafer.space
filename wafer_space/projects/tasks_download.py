@@ -1520,8 +1520,14 @@ def _process_and_save_content(
             )
     finally:
         # The pipeline output lives in pipeline_temp_dir, so it can only
-        # be removed after the file has been saved (or processing failed)
-        cleanup_temp_dir(pipeline_temp_dir)
+        # be removed after the file has been saved (or processing failed).
+        # A cleanup failure must not mask the real outcome of processing.
+        try:
+            cleanup_temp_dir(pipeline_temp_dir)
+        except OSError:
+            logger.exception(
+                "Failed to clean up pipeline temp dir %s", pipeline_temp_dir
+            )
     logger.info("  ✓ File saved to Django storage")
 
     # Set file size and hashes (for FINAL extracted file)

@@ -847,7 +847,7 @@ class ProjectFile(models.Model):
             return f"{self.project.name} - {self.original_filename} (from URL)"
         return f"{self.project.name} - {self.original_filename}"
 
-    def calculate_hashes(self):
+    def calculate_hashes(self) -> bool:
         """Calculate MD5, SHA1, and SHA256 hashes for the downloaded file.
 
         The file is hashed in bounded chunks so large layouts never get

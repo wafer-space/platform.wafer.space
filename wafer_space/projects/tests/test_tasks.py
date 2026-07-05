@@ -2882,6 +2882,45 @@ class TestDownloadStreaming:
             assert f.read() == gds_content
 
     @pytest.mark.django_db
+    def test_cleanup_failure_does_not_mask_successful_save(
+        self, tmp_path: Path
+    ) -> None:
+        """A pipeline temp dir cleanup error must not fail a good save.
+
+        cleanup_temp_dir runs in a finally block after the extracted
+        file is saved; if rmtree fails, the download must still
+        complete and persist its hashes.
+        """
+        gds_content = b"\x00\x06\x00\x02" + bytes(range(256)) * 1024
+        archive_path = tmp_path / "design.zip"
+        with zipfile.ZipFile(archive_path, "w") as zf:
+            zf.writestr("design.gds", gds_content)
+
+        project_file = ProjectFileFactory(
+            original_filename="design.zip",
+            source_url="https://example.com/design.zip",
+        )
+        attempt = DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
+        )
+
+        with patch(
+            "wafer_space.projects.tasks_download.cleanup_temp_dir",
+            side_effect=OSError("disk error during rmtree"),
+        ):
+            _, _, final_sha256 = _process_and_save_content(
+                project_file, attempt, archive_path
+            )
+
+        assert final_sha256 == hashlib.sha256(gds_content).hexdigest()
+        project_file.refresh_from_db()
+        assert project_file.hash_sha256 == final_sha256
+        with project_file.file.open("rb") as f:
+            assert f.read() == gds_content
+
+    @pytest.mark.django_db
     def test_post_download_processing_decodes_google_source_in_place(
         self, tmp_path: Path
     ) -> None:
