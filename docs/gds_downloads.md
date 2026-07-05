@@ -30,7 +30,7 @@ The system automatically converts common file hosting platform URLs to direct do
 - **GitHub**: `github.com/user/repo/blob/main/file.gds` → `raw.githubusercontent.com/user/repo/main/file.gds`
 - **GitLab**: `gitlab.com/user/repo/-/blob/main/file.gds` → `gitlab.com/user/repo/-/raw/main/file.gds`
 - **Dropbox**: `dropbox.com/s/abc?dl=0` → `dropbox.com/s/abc?dl=1`
-- **Google Drive**: `drive.google.com/file/d/ID/view` → `drive.google.com/uc?export=download&id=ID`
+- **Google Drive**: `drive.google.com/file/d/ID/view` → `drive.usercontent.google.com/download?id=ID&export=download&confirm=t`
 - **OneDrive**: Adds `download=1` parameter to share links
 
 **Implementation:** `wafer_space/projects/url_rewriters.py`

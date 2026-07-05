@@ -119,43 +119,50 @@ class URLRewriter:
     def _rewrite_google_drive_share(url: str) -> tuple[str, bool, str]:
         """Rewrite Google Drive share link to direct download.
 
+        Uses the drive.usercontent.google.com endpoint with confirm=t: the
+        legacy drive.google.com/uc endpoint answers HEAD requests with
+        Content-Length: 0 and serves a virus-scan interstitial page on GET,
+        while the usercontent endpoint serves the file bytes directly with
+        correct Content-Length and Content-Disposition headers.
+
         Examples:
             https://drive.google.com/file/d/FILE_ID/view?usp=sharing
-            → https://drive.google.com/uc?export=download&id=FILE_ID
+            → https://drive.usercontent.google.com/download
+              ?id=FILE_ID&export=download&confirm=t
         """
         parsed = urlparse(url)
+        params = parse_qs(parsed.query)
 
-        if "drive.google.com" in parsed.netloc:
-            # Check if already in direct download format
-            params = parse_qs(parsed.query)
-            is_direct_download = (
-                parsed.path == "/uc"
-                and "export" in params
-                and "download" in params.get("export", [])
-            )
-            if is_direct_download:
+        file_id = None
+
+        if "drive.usercontent.google.com" in parsed.netloc:
+            if "confirm" in params:
                 # Already a direct download URL
                 return url, False, ""
-
-            # Extract file ID from various Google Drive URL formats
-            file_id = None
-
+            # Missing confirm=t triggers the virus-scan interstitial page
+            # for large files - extract the file ID and rebuild the URL
+            if "id" in params:
+                file_id = params["id"][0]
+        elif "drive.google.com" in parsed.netloc:
             # Format 1: /file/d/FILE_ID/
             match = re.search(r"/file/d/([^/]+)", parsed.path)
             if match:
                 file_id = match.group(1)
 
-            # Format 2: /open?id=FILE_ID
+            # Format 2: /open?id=FILE_ID or legacy /uc?export=download&id=FILE_ID
             if not file_id and "id" in params:
                 file_id = params["id"][0]
 
-            if file_id:
-                new_url = f"https://drive.google.com/uc?export=download&id={file_id}"
-                return (
-                    new_url,
-                    True,
-                    "Converted Google Drive share link to direct download",
-                )
+        if file_id:
+            new_url = (
+                f"https://drive.usercontent.google.com/download"
+                f"?id={file_id}&export=download&confirm=t"
+            )
+            return (
+                new_url,
+                True,
+                "Converted Google Drive share link to direct download",
+            )
 
         return url, False, ""
 
