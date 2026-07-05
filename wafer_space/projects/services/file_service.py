@@ -263,14 +263,8 @@ class ProjectFileService:
                 "supports_range": False,
             }
         else:
-            # For URLs with handlers (like Google Source), allow missing Content-Length
-            # because the handler transforms the content (e.g., base64 decode)
-            allow_missing_length = handler is not None
             try:
-                validation_result = URLValidator.validate_url(
-                    rewritten_url,
-                    allow_missing_content_length=allow_missing_length,
-                )
+                validation_result = URLValidator.validate_url(rewritten_url)
             except SecurityValidationError as e:
                 # Re-raise with better context
                 msg = f"URL validation failed: {e}"

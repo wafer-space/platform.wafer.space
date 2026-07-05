@@ -56,8 +56,11 @@ Prevents SSRF (Server-Side Request Forgery) attacks and validates file accessibi
   - RFC 3927: `169.254.0.0/16` (link-local)
   - RFC 4193: `fc00::/7` (IPv6 unique local)
   - Loopback: `127.0.0.0/8`, `::1/128`
-- **File Size Limits**: Maximum 100GB (validated via Content-Length header)
+- **File Size Limits**: Maximum 100GB (advertised Content-Length checked
+  before download; actual received bytes enforced during download)
 - **File Accessibility**: HEAD request confirms file exists and is accessible
+  (falls back to a streaming GET when the server rejects HEAD or omits
+  Content-Length)
 
 **Implementation:** `wafer_space/projects/security.py`
 
@@ -251,7 +254,6 @@ Security validation errors are NOT retried:
 - Invalid URL scheme
 - Private IP address
 - File size exceeds 100GB
-- Missing Content-Length header
 - Unresolvable hostname
 
 ### Download Errors
@@ -382,7 +384,11 @@ This is intentional security behavior. Use public URLs or configure firewall rul
 
 ### File Size Check Fails
 
-Server must provide `Content-Length` header. If server doesn't support HEAD requests, downloads will fail validation.
+Servers that omit the `Content-Length` header (chunked transfer encoding)
+or reject HEAD requests are accepted with an unknown size; the 100GB limit
+is then enforced on actual received bytes during download. Validation only
+fails when the URL is unreachable or advertises an invalid or oversized
+Content-Length.
 
 ## Security Considerations
 

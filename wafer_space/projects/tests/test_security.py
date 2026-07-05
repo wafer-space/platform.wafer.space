@@ -141,20 +141,97 @@ class TestURLValidator:
         assert file_size == ONE_MB
         mock_head.assert_called_once()
 
+    @patch("requests.get")
     @patch("requests.head")
-    def test_validate_file_size_missing_content_length(self, mock_head):
-        """Test that missing Content-Length header is rejected."""
-        # Mock response without Content-Length header
-        mock_response = Mock()
-        mock_response.headers = {}
-        mock_response.raise_for_status = Mock()
-        mock_head.return_value = mock_response
+    def test_validate_file_size_missing_content_length_get_fallback(
+        self, mock_head, mock_get
+    ):
+        """Test fallback to GET when HEAD omits Content-Length."""
+        # HEAD response without Content-Length header
+        mock_head_response = Mock()
+        mock_head_response.headers = {}
+        mock_head_response.raise_for_status = Mock()
+        mock_head.return_value = mock_head_response
+
+        # GET response provides the real size
+        mock_get_response = Mock()
+        mock_get_response.headers = {"Content-Length": str(ONE_MB)}
+        mock_get_response.raise_for_status = Mock()
+        mock_get.return_value = mock_get_response
 
         url = "http://example.com/file.gds"
+        file_size = URLValidator.validate_file_size(url)
 
-        match_str = "did not provide Content-Length"
+        assert file_size == ONE_MB
+        mock_get.assert_called_once()
+        mock_get_response.close.assert_called_once()
+
+    @patch("requests.get")
+    @patch("requests.head")
+    def test_validate_file_size_unknown_size_accepted(self, mock_head, mock_get):
+        """Test that missing Content-Length on HEAD and GET returns 0.
+
+        Hosts like Dropbox stream downloads with Transfer-Encoding: chunked
+        and never send Content-Length; the size limit is enforced on actual
+        received bytes during download instead (issue #278).
+        """
+        # Neither HEAD nor GET provides Content-Length
+        mock_response = Mock()
+        mock_response.headers = {"Transfer-Encoding": "chunked"}
+        mock_response.raise_for_status = Mock()
+        mock_head.return_value = mock_response
+        mock_get.return_value = mock_response
+
+        url = "http://example.com/file.gds"
+        file_size = URLValidator.validate_file_size(url)
+
+        assert file_size == 0
+
+    @patch("requests.get")
+    @patch("requests.head")
+    def test_validate_file_size_head_rejected_get_fallback(self, mock_head, mock_get):
+        """Test fallback to GET when the server rejects HEAD requests."""
+        # HEAD is rejected with 405 Method Not Allowed
+        mock_head_response = Mock()
+        mock_head_response.raise_for_status.side_effect = requests.HTTPError(
+            "405 Method Not Allowed"
+        )
+        mock_head.return_value = mock_head_response
+
+        # GET succeeds with the real size
+        mock_get_response = Mock()
+        mock_get_response.headers = {"Content-Length": str(ONE_MB)}
+        mock_get_response.raise_for_status = Mock()
+        mock_get.return_value = mock_get_response
+
+        url = "http://example.com/file.gds"
+        file_size = URLValidator.validate_file_size(url)
+
+        assert file_size == ONE_MB
+
+    @patch("requests.get")
+    @patch("requests.head")
+    def test_validate_file_size_get_fallback_exceeds_limit(self, mock_head, mock_get):
+        """Test that oversized Content-Length from GET fallback is rejected."""
+        # HEAD provides no Content-Length
+        mock_head_response = Mock()
+        mock_head_response.headers = {}
+        mock_head_response.raise_for_status = Mock()
+        mock_head.return_value = mock_head_response
+
+        # GET reports a size over the limit
+        mock_get_response = Mock()
+        size_101gb = 101 * 1024 * 1024 * 1024
+        mock_get_response.headers = {"Content-Length": str(size_101gb)}
+        mock_get_response.raise_for_status = Mock()
+        mock_get.return_value = mock_get_response
+
+        url = "http://example.com/huge_file.gds"
+
+        match_str = "exceeds maximum allowed size"
         with pytest.raises(SecurityValidationError, match=match_str):
             URLValidator.validate_file_size(url)
+        mock_get_response.close.assert_called_once()
 
     @patch("requests.head")
     def test_validate_file_size_exceeds_limit(self, mock_head):
@@ -172,19 +249,30 @@ class TestURLValidator:
         with pytest.raises(SecurityValidationError, match=match_str):
             URLValidator.validate_file_size(url)
 
+    @patch("requests.get")
     @patch("requests.head")
-    def test_validate_file_size_zero_rejected(self, mock_head):
-        """Test that zero-byte files are rejected."""
-        # Mock response with zero size
-        mock_response = Mock()
-        mock_response.headers = {"Content-Length": "0"}
-        mock_response.raise_for_status = Mock()
-        mock_head.return_value = mock_response
+    def test_validate_file_size_zero_head_get_fallback(self, mock_head, mock_get):
+        """Test that Content-Length: 0 on HEAD falls back to GET.
 
-        url = "http://example.com/empty_file.gds"
+        Google Drive answers HEAD requests with Content-Length: 0 even
+        though a GET serves the real file (issue #279).
+        """
+        # HEAD reports zero size (e.g. Google Drive HTML shim)
+        mock_head_response = Mock()
+        mock_head_response.headers = {"Content-Length": "0"}
+        mock_head_response.raise_for_status = Mock()
+        mock_head.return_value = mock_head_response
 
-        with pytest.raises(SecurityValidationError, match="Invalid file size"):
-            URLValidator.validate_file_size(url)
+        # GET reports the real size
+        mock_get_response = Mock()
+        mock_get_response.headers = {"Content-Length": str(ONE_MB)}
+        mock_get_response.raise_for_status = Mock()
+        mock_get.return_value = mock_get_response
+
+        url = "http://example.com/file.gds"
+        file_size = URLValidator.validate_file_size(url)
+
+        assert file_size == ONE_MB
 
     @patch("requests.head")
     def test_validate_file_size_negative_rejected(self, mock_head):
@@ -214,24 +302,28 @@ class TestURLValidator:
         with pytest.raises(SecurityValidationError, match="Invalid Content-Length"):
             URLValidator.validate_file_size(url)
 
+    @patch("requests.get")
     @patch("requests.head")
-    def test_validate_file_size_request_error(self, mock_head):
+    def test_validate_file_size_request_error(self, mock_head, mock_get):
         """Test that network errors are caught."""
-        # Mock request exception
+        # Both HEAD and GET fail with a network error
         mock_head.side_effect = requests.RequestException("Connection timeout")
+        mock_get.side_effect = requests.RequestException("Connection timeout")
 
         url = "http://example.com/file.gds"
 
         with pytest.raises(SecurityValidationError, match="Failed to check file size"):
             URLValidator.validate_file_size(url)
 
+    @patch("requests.get")
     @patch("requests.head")
-    def test_validate_file_size_http_error(self, mock_head):
+    def test_validate_file_size_http_error(self, mock_head, mock_get):
         """Test that HTTP errors are caught."""
-        # Mock HTTP error response
+        # Both HEAD and GET respond with an HTTP error status
         mock_response = Mock()
         mock_response.raise_for_status.side_effect = requests.HTTPError("404 Not Found")
         mock_head.return_value = mock_response
+        mock_get.return_value = mock_response
 
         url = "http://example.com/file.gds"
 

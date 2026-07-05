@@ -9,6 +9,7 @@ Prevents SSRF (Server-Side Request Forgery) attacks and validates file downloads
 
 import ipaddress
 import socket
+from collections.abc import Mapping
 from urllib.parse import urlparse
 
 import requests
@@ -105,53 +106,42 @@ class URLValidator:
             raise SecurityValidationError(msg) from e
 
     @classmethod
-    def validate_file_size(
-        cls,
-        url: str,
-        *,
-        allow_missing_content_length: bool = False,
-    ) -> int:
-        """Validate file size is within allowed limits.
+    def _parse_content_length(cls, headers: Mapping[str, str]) -> int | None:
+        """Parse the Content-Length header into a usable file size.
 
         Args:
-            url: The URL to check
-            allow_missing_content_length: If True, return 0 when Content-Length
-                is missing (useful for URLs with special handlers that transform
-                content, like Google Source base64-encoded responses)
+            headers: Response headers to read Content-Length from
 
         Returns:
-            int: The file size in bytes (or 0 if Content-Length missing and
-                allowed)
+            int: The advertised file size in bytes, or None when the header
+                is missing or zero. Some hosts answer HEAD requests with
+                Content-Length: 0 (e.g. Google Drive) or omit the header
+                entirely when using chunked transfer encoding (e.g. Dropbox),
+                even though a GET serves the real file - so both cases mean
+                "size unknown", not "empty file".
 
         Raises:
-            SecurityValidationError: If file size exceeds limits or cannot be determined
+            SecurityValidationError: If the header is malformed, negative,
+                or exceeds the maximum allowed size
         """
+        content_length = headers.get("Content-Length")
+        if not content_length:
+            return None
+
         try:
-            response = requests.head(url, allow_redirects=True, timeout=10)
-            response.raise_for_status()
-
-            content_length = response.headers.get("Content-Length")
-            if not content_length:
-                if allow_missing_content_length:
-                    # Content-Length not provided, but allowed for this URL
-                    # (e.g., Google Source base64-encoded responses)
-                    return 0
-                msg = (
-                    "Server did not provide Content-Length header. "
-                    "Cannot validate file size."
-                )
-                raise SecurityValidationError(msg)
-
             file_size = int(content_length)
+        except ValueError as e:
+            msg = f"Invalid Content-Length header: {e}"
+            raise SecurityValidationError(msg) from e
 
-            if file_size <= 0:
-                msg = f"Invalid file size: {file_size} bytes"
-                raise SecurityValidationError(msg)
+        if file_size < 0:
+            msg = f"Invalid file size: {file_size} bytes"
+            raise SecurityValidationError(msg)
 
-            # Check if file size is within acceptable limits
-            if file_size <= cls.MAX_FILE_SIZE:
-                return file_size
+        if file_size == 0:
+            return None
 
+        if file_size > cls.MAX_FILE_SIZE:
             # File size exceeds maximum - convert to GB for error message
             size_gb = file_size / (1024 * 1024 * 1024)
             max_gb = cls.MAX_FILE_SIZE / (1024 * 1024 * 1024)
@@ -160,31 +150,93 @@ class URLValidator:
                 f"allowed size of {max_gb:.0f}GB"
             )
             raise SecurityValidationError(msg)
+
+        return file_size
+
+    @classmethod
+    def _fetch_metadata(cls, url: str) -> tuple[int, Mapping[str, str]]:
+        """Fetch file size and response headers for a URL.
+
+        Tries a HEAD request first. When that doesn't yield a usable
+        Content-Length (missing, zero, or the server rejects HEAD), falls
+        back to a streaming GET and reads only the response headers.
+
+        A size of 0 means the server did not report one; the download task
+        enforces the size limit on actual received bytes, so unknown sizes
+        are safe to accept here.
+
+        Args:
+            url: The URL to check
+
+        Returns:
+            tuple: (file size in bytes or 0 if unknown, response headers)
+
+        Raises:
+            SecurityValidationError: If the URL is unreachable or advertises
+                an invalid or oversized Content-Length
+        """
+        try:
+            try:
+                response = requests.head(url, allow_redirects=True, timeout=10)
+                response.raise_for_status()
+                file_size = cls._parse_content_length(response.headers)
+                headers: Mapping[str, str] = response.headers
+            except requests.RequestException:
+                # Some servers reject HEAD requests - retry as GET below
+                file_size = None
+                headers = {}
+
+            if file_size is None:
+                # HEAD gave no usable size - a streaming GET reads only the
+                # response headers without consuming the body
+                get_response = requests.get(
+                    url,
+                    allow_redirects=True,
+                    timeout=10,
+                    stream=True,
+                )
+                try:
+                    get_response.raise_for_status()
+                    file_size = cls._parse_content_length(get_response.headers)
+                    headers = get_response.headers
+                finally:
+                    get_response.close()
         except requests.RequestException as e:
             msg = f"Failed to check file size: {e}"
             raise SecurityValidationError(msg) from e
-        except ValueError as e:
-            msg = f"Invalid Content-Length header: {e}"
-            raise SecurityValidationError(msg) from e
+
+        return file_size or 0, headers
 
     @classmethod
-    def validate_url(
-        cls,
-        url: str,
-        *,
-        allow_missing_content_length: bool = False,
-    ) -> dict[str, int | str | None]:
+    def validate_file_size(cls, url: str) -> int:
+        """Validate file size is within allowed limits.
+
+        Args:
+            url: The URL to check
+
+        Returns:
+            int: The file size in bytes, or 0 when the server does not
+                report one (the download task enforces the limit on actual
+                received bytes)
+
+        Raises:
+            SecurityValidationError: If the URL is unreachable or advertises
+                an invalid or oversized Content-Length
+        """
+        file_size, _headers = cls._fetch_metadata(url)
+        return file_size
+
+    @classmethod
+    def validate_url(cls, url: str) -> dict[str, int | str | None]:
         """Perform complete URL validation.
 
         Args:
             url: The URL to validate
-            allow_missing_content_length: If True, allow missing Content-Length header
-                                         (useful for URLs with special handlers)
 
         Returns:
             dict: Validation results containing:
-                - file_size: File size in bytes (0 if Content-Length missing
-                    and allowed)
+                - file_size: File size in bytes (0 if the server does not
+                    report one)
                 - content_type: Content type from server
                 - content_disposition: Content-Disposition header if available
                 - etag: ETag header if available
@@ -199,24 +251,13 @@ class URLValidator:
         # Validate hostname is not private
         cls.validate_hostname(url)
 
-        # Validate file size
-        file_size = cls.validate_file_size(
-            url,
-            allow_missing_content_length=allow_missing_content_length,
-        )
+        # Validate file size and gather response metadata in one pass
+        file_size, headers = cls._fetch_metadata(url)
 
-        # Get additional metadata from HEAD request
-        try:
-            response = requests.head(url, allow_redirects=True, timeout=10)
-            response.raise_for_status()
-
-            return {
-                "file_size": file_size,
-                "content_type": response.headers.get("Content-Type"),
-                "content_disposition": response.headers.get("Content-Disposition"),
-                "etag": response.headers.get("ETag"),
-                "supports_range": response.headers.get("Accept-Ranges") == "bytes",
-            }
-        except requests.RequestException as e:
-            msg = f"Failed to retrieve file metadata: {e}"
-            raise SecurityValidationError(msg) from e
+        return {
+            "file_size": file_size,
+            "content_type": headers.get("Content-Type"),
+            "content_disposition": headers.get("Content-Disposition"),
+            "etag": headers.get("ETag"),
+            "supports_range": headers.get("Accept-Ranges") == "bytes",
+        }
