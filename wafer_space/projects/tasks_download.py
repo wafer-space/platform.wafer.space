@@ -702,9 +702,16 @@ def _download_chunks(state: _ChunkDownloadState) -> None:
     - Logs progress to console
 
     Does NOT calculate hashes - that happens after extraction.
+
+    Raises:
+        ValueError: If the download exceeds settings.MAX_DOWNLOAD_SIZE.
+            This is the authoritative size limit: pre-download validation
+            cannot always determine the size (some hosts omit Content-Length
+            or answer HEAD with 0), and response headers can lie.
     """
     logger = logging.getLogger(__name__)
 
+    max_download_size = settings.MAX_DOWNLOAD_SIZE
     downloaded = state.resume_byte_pos
     last_db_update_progress = 0
     last_log_progress = 0
@@ -738,6 +745,22 @@ def _download_chunks(state: _ChunkDownloadState) -> None:
             state.sha256_hasher.update(chunk)
             downloaded += len(chunk)
             chunk_count += 1
+
+            # Enforce the size limit on actual received bytes. The partial
+            # file is kept so a retry resumes at the limit and fails fast
+            # instead of re-downloading everything.
+            if downloaded > max_download_size:
+                logger.error(
+                    "  ✗ Download aborted: received %s, limit is %s",
+                    _format_bytes(downloaded),
+                    _format_bytes(max_download_size),
+                )
+                msg = (
+                    f"Download size ({_format_bytes(downloaded)}) exceeds "
+                    f"maximum allowed size of "
+                    f"{_format_bytes(max_download_size)} - download aborted"
+                )
+                raise ValueError(msg)
 
             # Log first chunk to confirm download is working
             if chunk_count == 1:

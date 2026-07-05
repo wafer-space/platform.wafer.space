@@ -18,6 +18,7 @@ from unittest.mock import patch
 import pytest
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.test import override_settings
 
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import Project
@@ -711,5 +712,114 @@ class ProgressLoggingIntegrationTests(TestCase):
             # Should have 5 progress logs: 10, 20, 30, 40, 50 MB
             assert len(progress_logs) >= EXPECTED_LOGS_50MB
 
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+
+@pytest.mark.django_db
+class DownloadSizeLimitTests(TestCase):
+    """Tests for MAX_DOWNLOAD_SIZE enforcement during chunked download.
+
+    The pre-download URL validation cannot always determine the file size
+    (some hosts omit Content-Length or answer HEAD with 0), and a server
+    can lie in its headers anyway - so the authoritative size limit is
+    enforced on actual received bytes in _download_chunks().
+    """
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test Description",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            source_url="http://example.com/test.gds",
+            original_filename="test.gds",
+            is_active=True,
+        )
+        self.download_attempt = DownloadAttempt.objects.create(
+            project_file=self.project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
+        )
+
+    def _make_state(self, mock_response, temp_path, *, resume_byte_pos=0):
+        """Build a _ChunkDownloadState for the given mocked response."""
+        mock_task = Mock()
+        mock_task.update_state = Mock()
+        return _ChunkDownloadState(
+            response=mock_response,
+            temp_path=temp_path,
+            task=mock_task,
+            project_file=self.project_file,
+            attempt=self.download_attempt,
+            total_size=0,  # Unknown size (e.g. chunked transfer encoding)
+            resume_byte_pos=resume_byte_pos,
+            md5_hasher=Mock(update=Mock()),
+            sha1_hasher=Mock(update=Mock()),
+            sha256_hasher=Mock(update=Mock()),
+            chunk_size=CHUNK_SIZE,
+            start_time=0.0,
+        )
+
+    @patch("wafer_space.projects.tasks_download.timezone")
+    def test_download_aborts_when_size_limit_exceeded(self, mock_timezone):
+        """Test that a download is aborted once it exceeds MAX_DOWNLOAD_SIZE."""
+        mock_timezone.now.return_value = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+
+        # Server streams more data than the configured limit
+        mock_response = Mock()
+        chunks = [b"x" * MB for _ in range(10)]
+        mock_response.iter_content.return_value = iter(chunks)
+
+        temp_dir = Path(tempfile.gettempdir()) / "wafer_space_test_downloads"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_path = temp_dir / "test_size_limit.gds"
+        temp_path.unlink(missing_ok=True)
+
+        try:
+            state = self._make_state(mock_response, temp_path)
+
+            with (
+                override_settings(MAX_DOWNLOAD_SIZE=3 * MB),
+                pytest.raises(ValueError, match="exceeds maximum allowed size"),
+            ):
+                _download_chunks(state)
+
+            # Partial file is kept so a retry resumes and fails fast
+            # instead of re-downloading up to the limit again
+            assert temp_path.exists()
+            assert temp_path.stat().st_size == 4 * MB  # aborted after 4th chunk
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+    @patch("wafer_space.projects.tasks_download.timezone")
+    def test_download_within_size_limit_completes(self, mock_timezone):
+        """Test that a download within MAX_DOWNLOAD_SIZE completes normally."""
+        mock_timezone.now.return_value = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+
+        mock_response = Mock()
+        chunks = [b"x" * MB for _ in range(3)]
+        mock_response.iter_content.return_value = iter(chunks)
+
+        temp_dir = Path(tempfile.gettempdir()) / "wafer_space_test_downloads"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_path = temp_dir / "test_size_ok.gds"
+        temp_path.unlink(missing_ok=True)
+
+        try:
+            state = self._make_state(mock_response, temp_path)
+
+            with override_settings(MAX_DOWNLOAD_SIZE=3 * MB):
+                _download_chunks(state)
+
+            assert temp_path.stat().st_size == 3 * MB
         finally:
             temp_path.unlink(missing_ok=True)
