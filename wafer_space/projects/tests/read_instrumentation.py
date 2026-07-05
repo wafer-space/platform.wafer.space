@@ -25,6 +25,9 @@ class ReadSizeRecorder:
         self._read_sizes.append(size)
         return self._inner.read(size)
 
+    def write(self, data: bytes) -> int:
+        return self._inner.write(data)
+
     def seek(self, *args: int) -> int:
         return self._inner.seek(*args)
 

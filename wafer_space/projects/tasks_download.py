@@ -21,7 +21,7 @@ from urllib.request import urlopen
 import requests
 from celery import shared_task
 from django.conf import settings
-from django.core.files.base import ContentFile
+from django.core.files import File
 from django.db import models
 from django.db import transaction
 from django.utils import timezone
@@ -36,6 +36,7 @@ from .content_processors import _processor_registry
 from .exceptions import DownloadTooLargeError
 from .file_type_utils import detect_file_type_from_data
 from .format_validators import validate_output_format
+from .hashing import MultiHasher
 from .models import DownloadAttempt
 from .models import FileProcessingError
 from .models import Project
@@ -115,20 +116,6 @@ def _extract_filename_from_url(url: str) -> str:
     """Extract filename from URL or return default."""
     parsed_url = urlparse(url)
     return Path(parsed_url.path).name or "downloaded_file"
-
-
-def _calculate_file_hashes(content: bytes) -> tuple[str, str, str]:
-    """Calculate MD5, SHA1, and SHA256 hashes for file content.
-
-    Note: MD5 and SHA1 are used here for file integrity verification only,
-    not for cryptographic security purposes. These match industry standard
-    hash algorithms commonly used for file verification in manufacturing.
-    SHA256 is also provided as a more modern alternative.
-    """
-    md5_hash = hashlib.md5(content, usedforsecurity=False).hexdigest()
-    sha1_hash = hashlib.sha1(content, usedforsecurity=False).hexdigest()
-    sha256_hash = hashlib.sha256(content).hexdigest()
-    return md5_hash, sha1_hash, sha256_hash
 
 
 def _verify_file_hashes(
@@ -1316,24 +1303,26 @@ def _handle_download_task_error(
 
 def _apply_post_download_processing(
     project_file: ProjectFile,
-    content: bytes,
-) -> bytes:
-    """Apply URL handler post-download processing if applicable.
+    temp_path: Path,
+) -> None:
+    """Apply URL handler post-download processing in place, if applicable.
+
+    The downloaded file is only read into memory when a transforming
+    handler (e.g. base64 decode) is configured; the common direct-URL
+    and GitHub-artifact paths never read it here.
 
     Args:
         project_file: The project file with handler_metadata
-        content: The raw downloaded content
-
-    Returns:
-        bytes: Processed content (or original if no handler)
+        temp_path: Path to the downloaded file, rewritten in place when
+            a handler transforms the content
     """
     # Check if handler metadata exists
     if not project_file.handler_metadata:
-        return content
+        return
 
     handler_name = project_file.handler_metadata.get("handler")
     if not handler_name:
-        return content
+        return
 
     # Get the appropriate handler from registry
     # We use the handler name to recreate the handler instance
@@ -1341,120 +1330,126 @@ def _apply_post_download_processing(
     if handler_name == "GoogleSourceHandler":
         handler = GoogleSourceHandler()
 
-    if handler:
-        return handler.post_download(content, project_file.handler_metadata)
+    if not handler:
+        return
 
-    return content
+    logger = logging.getLogger(__name__)
+    content = temp_path.read_bytes()
+    processed_content = handler.post_download(content, project_file.handler_metadata)
+    if processed_content != content:
+        logger.info("  Content was transformed by handler")
+        logger.info("  Original size: %s", _format_bytes(len(content)))
+        logger.info("  Processed size: %s", _format_bytes(len(processed_content)))
+        temp_path.write_bytes(processed_content)
 
 
 def _apply_content_pipeline(
     project_file: ProjectFile,
-    content: bytes,
     temp_path: Path,
-) -> tuple[bytes, str, str, str]:
+    pipeline_temp_dir: Path,
+) -> tuple[Path, int, str, str, str]:
     """Apply content extraction pipeline to process compressed/archived files.
+
+    The input file is processed file-to-file and the extracted output is
+    hashed in bounded chunks, so the content is never read fully into
+    memory.
 
     Args:
         project_file: The project file being processed
-        content: The content to process
-        temp_path: Temporary file path for intermediate processing
+        temp_path: Path to the downloaded (and post-processed) file
+        pipeline_temp_dir: Temp directory for pipeline outputs. The caller
+            owns this directory and must clean it up after consuming the
+            returned output path.
 
     Returns:
-        tuple: (processed_content, md5_hash, sha1_hash, sha256_hash)
+        tuple: (output_path, size_bytes, md5_hash, sha1_hash, sha256_hash)
 
     Raises:
         ValueError: If pipeline processing fails or format validation fails
     """
     logger = logging.getLogger(__name__)
 
-    # Write content to temp file for pipeline
-    temp_path.write_bytes(content)
+    # Run pipeline
+    pipeline = ContentPipeline(_processor_registry)
+    result = pipeline.process_file(
+        input_path=temp_path,
+        filename=project_file.original_filename,
+        temp_dir=pipeline_temp_dir,
+        max_size=settings.MAX_EXTRACTED_SIZE,
+    )
 
-    # Get temp directory for this file
-    pipeline_temp_dir = get_temp_dir_for_file(project_file.id)
+    # Validate format
+    format_name = validate_output_format(result.output_path)
+    logger.info("  ✓ Format validated: %s", format_name)
 
-    try:
-        # Run pipeline
-        pipeline = ContentPipeline(_processor_registry)
-        result = pipeline.process_file(
-            input_path=temp_path,
-            filename=project_file.original_filename,
-            temp_dir=pipeline_temp_dir,
-            max_size=settings.MAX_EXTRACTED_SIZE,
+    # Recalculate hashes after pipeline processing, streaming from disk.
+    # MD5 and SHA1 are for file integrity verification only, not for
+    # cryptographic security purposes.
+    logger.info("  Recalculating hashes after pipeline processing...")
+    digests = MultiHasher.from_file(result.output_path).hexdigests()
+    final_md5 = digests["md5"]
+    final_sha1 = digests["sha1"]
+    final_sha256 = digests["sha256"]
+    logger.info("  ✓ MD5: %s", final_md5)
+    logger.info("  ✓ SHA1: %s", final_sha1)
+    logger.info("  ✓ SHA256: %s", final_sha256)
+
+    # Build final filename
+    # For GitHub artifacts, include metadata prefix for better identification
+    final_filename = result.filename
+    if (
+        project_file.handler_metadata
+        and project_file.handler_metadata.get("handler") == "GitHubArtifactHandler"
+    ):
+        final_filename = _build_github_artifact_filename(
+            project_file.handler_metadata,
+            result.filename,
+        )
+        logger.info(
+            "  ✓ Built GitHub artifact filename: %s",
+            final_filename,
         )
 
-        # Validate format
-        format_name = validate_output_format(result.output_path)
-        logger.info("  ✓ Format validated: %s", format_name)
+    # Always set processed_filename (even if unchanged from original)
+    # This indicates processing completed successfully
+    project_file.processed_filename = final_filename
 
-        # Read processed content
-        processed_content = result.output_path.read_bytes()
+    if final_filename != project_file.original_filename:
+        logger.info(
+            "  ✓ Pipeline transformed: %s → %s",
+            project_file.original_filename,
+            final_filename,
+        )
+    else:
+        logger.info(
+            "  ✓ No transformation needed: %s",
+            final_filename,
+        )
 
-        # Recalculate hashes after pipeline processing
-        logger.info("  Recalculating hashes after pipeline processing...")
-        final_md5, final_sha1, final_sha256 = _calculate_file_hashes(processed_content)
-        logger.info("  ✓ MD5: %s", final_md5)
-        logger.info("  ✓ SHA1: %s", final_sha1)
-        logger.info("  ✓ SHA256: %s", final_sha256)
+    logger.info("  ✓ Pipeline processing complete")
+    logger.info("  ✓ Output size: %s", _format_bytes(result.size_bytes))
 
-        # Build final filename
-        # For GitHub artifacts, include metadata prefix for better identification
-        final_filename = result.filename
-        if (
-            project_file.handler_metadata
-            and project_file.handler_metadata.get("handler") == "GitHubArtifactHandler"
-        ):
-            final_filename = _build_github_artifact_filename(
-                project_file.handler_metadata,
-                result.filename,
-            )
-            logger.info(
-                "  ✓ Built GitHub artifact filename: %s",
-                final_filename,
-            )
-
-        # Always set processed_filename (even if unchanged from original)
-        # This indicates processing completed successfully
-        project_file.processed_filename = final_filename
-
-        if final_filename != project_file.original_filename:
-            logger.info(
-                "  ✓ Pipeline transformed: %s → %s",
-                project_file.original_filename,
-                final_filename,
-            )
-        else:
-            logger.info(
-                "  ✓ No transformation needed: %s",
-                final_filename,
-            )
-
-        logger.info("  ✓ Pipeline processing complete")
-        logger.info("  ✓ Output size: %s", _format_bytes(result.size_bytes))
-
-        return processed_content, final_md5, final_sha1, final_sha256
-
-    finally:
-        # Always cleanup temp directory
-        cleanup_temp_dir(pipeline_temp_dir)
+    return result.output_path, result.size_bytes, final_md5, final_sha1, final_sha256
 
 
 def _process_and_save_content(
     project_file: ProjectFile,
     attempt: DownloadAttempt,
-    downloaded_content: bytes,
     temp_path: Path,
-) -> tuple[bytes, str, str, str]:
-    """Process downloaded content and save to Django storage.
+) -> tuple[str, str, str]:
+    """Process the downloaded file on disk and save to Django storage.
+
+    The downloaded file is processed file-to-file and the extracted
+    output is streamed into storage, so the content is never read fully
+    into memory.
 
     Args:
         project_file: The ProjectFile being processed
         attempt: The DownloadAttempt for error tracking
-        downloaded_content: The raw downloaded content
-        temp_path: Path to temporary file
+        temp_path: Path to the downloaded temporary file
 
     Returns:
-        tuple: (processed_content, final_md5_hash, final_sha1_hash, final_sha256_hash)
+        tuple: (final_md5_hash, final_sha1_hash, final_sha256_hash)
               Hashes are for the FINAL extracted GDS/OASIS file
     """
     logger = logging.getLogger(__name__)
@@ -1463,75 +1458,72 @@ def _process_and_save_content(
     logger.info("Step 6: Checking for post-download processing...")
     if project_file.handler_metadata:
         logger.info("  Handler metadata found: %s", project_file.handler_metadata)
-    processed_content = _apply_post_download_processing(
-        project_file,
-        downloaded_content,
-    )
-
-    if processed_content != downloaded_content:
-        logger.info("  Content was transformed by handler")
-        logger.info("  Original size: %s", _format_bytes(len(downloaded_content)))
-        logger.info("  Processed size: %s", _format_bytes(len(processed_content)))
-        temp_path.write_bytes(processed_content)
-    else:
-        logger.info("  ✓ No transformation needed - using original content")
+    _apply_post_download_processing(project_file, temp_path)
 
     # Apply content extraction pipeline
     # This extracts GDS/OASIS from archives and calculates hashes on final file
     logger.info("Step 6.5: Running content extraction pipeline...")
+    pipeline_temp_dir = get_temp_dir_for_file(project_file.id)
     try:
-        result = _apply_content_pipeline(project_file, processed_content, temp_path)
-        processed_content, final_md5, final_sha1, final_sha256 = result
-    except ValueError as e:
-        logger.exception("Pipeline processing failed")
+        try:
+            output_path, output_size, final_md5, final_sha1, final_sha256 = (
+                _apply_content_pipeline(project_file, temp_path, pipeline_temp_dir)
+            )
+        except ValueError as e:
+            logger.exception("Pipeline processing failed")
 
-        # Create structured error log
-        FileProcessingError.objects.create(
-            download_attempt=attempt,
-            error_type=FileProcessingError.ErrorType.PIPELINE,
-            error_message=str(e),
-            error_detail={
-                "stage": "content_extraction",
-                "traceback": traceback.format_exc(),
-                "original_filename": project_file.original_filename,
-                "file_size": len(processed_content),
-            },
+            # Create structured error log
+            FileProcessingError.objects.create(
+                download_attempt=attempt,
+                error_type=FileProcessingError.ErrorType.PIPELINE,
+                error_message=str(e),
+                error_detail={
+                    "stage": "content_extraction",
+                    "traceback": traceback.format_exc(),
+                    "original_filename": project_file.original_filename,
+                    "file_size": temp_path.stat().st_size,
+                },
+            )
+
+            # Mark attempt as failed
+            attempt.status = DownloadAttempt.Status.FAILED
+            attempt.completed_at = timezone.now()
+            if attempt.download_started_at:
+                attempt.download_duration_seconds = (
+                    attempt.completed_at - attempt.download_started_at
+                ).total_seconds()
+            attempt.save()
+
+            # Note: download_status is now derived from attempt status
+            project_file.download_error = f"Pipeline error: {e}"
+            project_file.save(update_fields=["download_error"])
+            raise
+
+        # Save to Django file field using processed filename
+        logger.info("Step 7: Saving file to Django storage...")
+        # Use processed_filename (set by pipeline) for the final file
+        # This is the extracted/decompressed filename, not the original
+        # download name
+        final_filename = (
+            project_file.processed_filename
+            if project_file.processed_filename
+            else project_file.original_filename
         )
-
-        # Mark attempt as failed
-        attempt.status = DownloadAttempt.Status.FAILED
-        attempt.completed_at = timezone.now()
-        if attempt.download_started_at:
-            attempt.download_duration_seconds = (
-                attempt.completed_at - attempt.download_started_at
-            ).total_seconds()
-        attempt.save()
-
-        # Note: download_status is now derived from attempt status
-        project_file.download_error = f"Pipeline error: {e}"
-        project_file.save(update_fields=["download_error"])
-        raise
-
-    # Save to Django file field using processed filename
-    logger.info("Step 7: Saving file to Django storage...")
-    # Use processed_filename (set by pipeline) for the final file
-    # This is the extracted/decompressed filename, not the original download name
-    final_filename = (
-        project_file.processed_filename
-        if project_file.processed_filename
-        else project_file.original_filename
-    )
-    django_file = ContentFile(processed_content)
-    django_file.name = final_filename
-    project_file.file.save(
-        final_filename,
-        django_file,
-        save=False,
-    )
+        # Stream the extracted file from disk into storage
+        with output_path.open("rb") as extracted_file:
+            project_file.file.save(
+                final_filename,
+                File(extracted_file),
+                save=False,
+            )
+    finally:
+        # The pipeline output lives in pipeline_temp_dir, so it can only
+        # be removed after the file has been saved (or processing failed)
+        cleanup_temp_dir(pipeline_temp_dir)
     logger.info("  ✓ File saved to Django storage")
 
     # Set file size and hashes (for FINAL extracted file)
-    project_file.file_size = len(processed_content)
+    project_file.file_size = output_size
     project_file.hash_md5 = final_md5
     project_file.hash_sha1 = final_sha1
     project_file.hash_sha256 = final_sha256
@@ -1550,7 +1542,7 @@ def _process_and_save_content(
     logger.info("  ✓ SHA1 hash: %s", final_sha1)
     logger.info("  ✓ SHA256 hash: %s", final_sha256)
 
-    return processed_content, final_md5, final_sha1, final_sha256
+    return final_md5, final_sha1, final_sha256
 
 
 def _verify_and_notify(
@@ -1787,18 +1779,18 @@ def download_project_file(self, project_id):  # noqa: PLR0915
         logger.info("  ✓ SHA1: %s", sha1_hash)
         logger.info("  ✓ SHA256: %s", sha256_hash)
 
-        # Read downloaded content
-        logger.info("Step 5: Reading downloaded content...")
-        with temp_path.open("rb") as temp_file:
-            downloaded_content = temp_file.read()
-        formatted_size = _format_bytes(len(downloaded_content))
-        logger.info("  ✓ Read %s from temp file", formatted_size)
+        # The downloaded file stays on disk; only the header needed for
+        # type detection is read, never the whole artifact
+        logger.info("Step 5: Checking downloaded content on disk...")
+        formatted_size = _format_bytes(temp_path.stat().st_size)
+        logger.info("  ✓ Downloaded %s to temp file", formatted_size)
 
         # Detect file type from actual content
         logger.info("Step 6: Detecting file type from content...")
 
         # Use first 1MB for MIME detection (or entire file if smaller)
-        detection_data = downloaded_content[: 1024 * 1024]
+        with temp_path.open("rb") as temp_file:
+            detection_data = temp_file.read(1024 * 1024)
         try:
             mime_type, detected_extension = detect_file_type_from_data(detection_data)
             logger.info("  ✓ Detected MIME type: %s", mime_type)
@@ -1843,10 +1835,9 @@ def download_project_file(self, project_id):  # noqa: PLR0915
 
         # Process and save content (extracts GDS/OASIS and calculates hashes)
         logger.info("Step 7: Processing and saving content...")
-        result = _process_and_save_content(
-            project_file, attempt, downloaded_content, temp_path
+        final_md5, final_sha1, final_sha256 = _process_and_save_content(
+            project_file, attempt, temp_path
         )
-        _processed_content, final_md5, final_sha1, final_sha256 = result
 
         # Create HashResults for verification
         # All hashes are for the FINAL extracted file
