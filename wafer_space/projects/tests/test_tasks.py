@@ -15,6 +15,7 @@ import zipfile
 from datetime import timedelta
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from tempfile import mkdtemp
 from typing import IO
 from unittest.mock import MagicMock
 from unittest.mock import Mock
@@ -459,8 +460,9 @@ class TestContentPipelineIntegration(TestCase):
             finally:
                 temp_path.unlink(missing_ok=True)
 
+    @patch("wafer_space.projects.tasks_download.get_temp_dir_for_file")
     @patch("wafer_space.projects.tasks_download._apply_content_pipeline")
-    def test_download_with_format_validation(self, mock_pipeline):
+    def test_download_with_format_validation(self, mock_pipeline, mock_get_temp_dir):
         """Test that format validation is enforced after extraction."""
         project_file = ProjectFile.objects.create(
             project=self.project,
@@ -472,6 +474,10 @@ class TestContentPipelineIntegration(TestCase):
         # Mock pipeline raises ValueError for invalid format
         mock_pipeline.side_effect = ValueError("File is not a valid GDS or OASIS file")
 
+        # Use a known pipeline temp dir so its cleanup can be asserted
+        pipeline_temp_dir = Path(mkdtemp(prefix="pipeline_temp_test_"))
+        mock_get_temp_dir.return_value = pipeline_temp_dir
+
         # Create a download attempt for the test
         attempt = DownloadAttempt.objects.create(
             project_file=project_file,
@@ -480,17 +486,21 @@ class TestContentPipelineIntegration(TestCase):
         )
 
         with NamedTemporaryFile(delete=False) as temp_file:
+            temp_file.write(b"fake_invalid_content")
             temp_path = Path(temp_file.name)
-            try:
-                with pytest.raises(ValueError, match="not a valid GDS or OASIS"):
-                    _process_and_save_content(project_file, attempt, temp_path)
+        try:
+            with pytest.raises(ValueError, match="not a valid GDS or OASIS"):
+                _process_and_save_content(project_file, attempt, temp_path)
 
-                # Verify file was marked as failed
-                project_file.refresh_from_db()
-                assert project_file.download_status == ProjectFile.DownloadStatus.FAILED
-                assert "not a valid GDS or OASIS" in project_file.download_error
-            finally:
-                temp_path.unlink(missing_ok=True)
+            # Verify file was marked as failed
+            project_file.refresh_from_db()
+            assert project_file.download_status == ProjectFile.DownloadStatus.FAILED
+            assert "not a valid GDS or OASIS" in project_file.download_error
+
+            # Pipeline temp dir must be cleaned up even on failure
+            assert not pipeline_temp_dir.exists()
+        finally:
+            temp_path.unlink(missing_ok=True)
 
 
 class DownloadTaskTests(TestCase):

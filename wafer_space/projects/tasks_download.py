@@ -1481,7 +1481,9 @@ def _process_and_save_content(
                     "stage": "content_extraction",
                     "traceback": traceback.format_exc(),
                     "original_filename": project_file.original_filename,
-                    "file_size": temp_path.stat().st_size,
+                    "file_size": (
+                        temp_path.stat().st_size if temp_path.exists() else None
+                    ),
                 },
             )
 

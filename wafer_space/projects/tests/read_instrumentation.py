@@ -4,6 +4,11 @@ These wrappers record the ``size`` argument of every ``read()`` call so
 tests can assert that large files are processed in bounded chunks instead
 of being read fully into memory (the pattern fixed for precheck output
 extraction in #275, applied here to the download pipeline).
+
+Note: ``RecordingPath`` only observes reads made through ``Path.open()``.
+Code that opens the path via ``os.fspath()`` (e.g. ``zipfile.ZipFile``,
+``tarfile.open``) bypasses the recorder, so a bounded-reads assertion
+covers our own file handling, not the stdlib archive internals.
 """
 
 from __future__ import annotations
