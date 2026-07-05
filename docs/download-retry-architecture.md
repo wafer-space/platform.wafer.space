@@ -200,9 +200,9 @@ assert project_file.download_status == ProjectFile.DownloadStatus.DOWNLOADING
 # Step 2: Download file with progress tracking
 _download_with_progress(self, project_file, attempt, temp_path)
 
-# Step 3: Process content (extract, validate, hash)
-processed_content, final_md5, final_sha1 = _process_and_save_content(
-    project_file, attempt, content, temp_path
+# Step 3: Process content on disk (extract, validate, hash, save)
+final_md5, final_sha1, final_sha256 = _process_and_save_content(
+    project_file, attempt, temp_path
 )
 
 # Step 4: Mark attempt as COMPLETED
