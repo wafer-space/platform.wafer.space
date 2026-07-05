@@ -2111,6 +2111,79 @@ Precheck successfully completed."""
             assert f.read() == oas_content
 
     @pytest.mark.django_db
+    def test_save_output_extracts_first_of_multiple_oas_members(self) -> None:
+        """The first regular .oas member wins when several are present.
+
+        The archive from container.get_archive("/output/design.oas")
+        should only ever hold one layout, but if several .oas members
+        are present the first one is saved and the rest are ignored.
+        """
+        first_content = b"first-oasis-layout"
+        second_content = b"second-oasis-layout"
+
+        tar_buffer = io.BytesIO()
+        with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
+            for name, content in [
+                ("design.oas", first_content),
+                ("design_backup.oas", second_content),
+            ]:
+                info = tarfile.TarInfo(name=name)
+                info.size = len(content)
+                tar.addfile(info, io.BytesIO(content))
+        tar_bytes = tar_buffer.getvalue()
+
+        mock_container = MagicMock()
+        mock_container.get_archive.return_value = (iter([tar_bytes]), {})
+
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            docker_server_id="test-local",
+        )
+
+        _save_output_gds(check, mock_container, logging.getLogger("test"))
+
+        check.refresh_from_db()
+        assert bool(check.output_gds), "layout file was not saved"
+        with check.output_gds.open("rb") as f:
+            assert f.read() == first_content
+
+    @pytest.mark.django_db
+    def test_save_output_ignores_non_oas_members(self) -> None:
+        """Non-.oas members must be skipped, even when they come first.
+
+        Log files or GDS artifacts sharing the archive must never be
+        saved as the output layout; only the .oas member is extracted.
+        """
+        oas_content = b"the-oasis-layout"
+
+        tar_buffer = io.BytesIO()
+        with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
+            for name, content in [
+                ("report.txt", b"precheck report text"),
+                ("design.gds", b"legacy-gds-layout"),
+                ("design.oas", oas_content),
+            ]:
+                info = tarfile.TarInfo(name=name)
+                info.size = len(content)
+                tar.addfile(info, io.BytesIO(content))
+        tar_bytes = tar_buffer.getvalue()
+
+        mock_container = MagicMock()
+        mock_container.get_archive.return_value = (iter([tar_bytes]), {})
+
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            docker_server_id="test-local",
+        )
+
+        _save_output_gds(check, mock_container, logging.getLogger("test"))
+
+        check.refresh_from_db()
+        assert bool(check.output_gds), "layout file was not saved"
+        with check.output_gds.open("rb") as f:
+            assert f.read() == oas_content
+
+    @pytest.mark.django_db
     def test_save_output_streams_layout_in_chunks(self) -> None:
         """The extracted layout is streamed to disk in bounded chunks.
 
