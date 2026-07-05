@@ -57,9 +57,11 @@ from wafer_space.projects.tasks_checks import _save_output_gds
 from wafer_space.projects.tasks_checks import checks_cleanup
 from wafer_space.projects.tasks_checks import checks_cleanup_stale_pending_tasks
 from wafer_space.projects.tasks_checks import checks_drc_update_requeue
+from wafer_space.projects.tasks_download import _initialize_hash_calculators
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.projects.tests.factories import ProjectFileFactory
+from wafer_space.projects.tests.read_instrumentation import RecordingPath
 from wafer_space.shuttles.tests.factories import ShuttleFactory
 
 User = get_user_model()
@@ -2767,3 +2769,43 @@ class TestChecksDrcUpdateRequeue:
         assert result["stats"]["total"] == TEST_PROJECT_COUNT_WITH_REFERENCE
         # Only self.project's latest file's latest check is outdated
         assert result["outdated_count"] == 1
+
+
+class TestDownloadStreaming:
+    """Memory-usage contracts for the download pipeline.
+
+    Large downloads must be processed in bounded chunks, never read
+    fully into worker RAM (same class of issue as #275).
+    """
+
+    CHUNK_LIMIT = 4 * 1024 * 1024
+
+    def test_resume_hash_seeding_reads_partial_file_in_chunks(
+        self, tmp_path: Path
+    ) -> None:
+        """Seeding hashers from a partial download must use bounded reads.
+
+        When a download resumes, the existing partial file is hashed
+        before new chunks arrive. A 2.5 MiB partial file must be read
+        in bounded chunks and still produce the correct digests.
+        """
+        partial_content = bytes(range(256)) * (10 * 1024)  # 2.5 MiB
+        partial_file = tmp_path / "partial.download"
+        partial_file.write_bytes(partial_content)
+
+        read_sizes: list[int] = []
+        recording_path = RecordingPath(partial_file)
+        recording_path.read_sizes = read_sizes
+
+        md5_hasher, sha1_hasher, sha256_hasher = _initialize_hash_calculators(
+            recording_path, len(partial_content)
+        )
+
+        expected_md5 = hashlib.md5(partial_content, usedforsecurity=False).hexdigest()
+        expected_sha1 = hashlib.sha1(partial_content, usedforsecurity=False).hexdigest()
+        assert md5_hasher.hexdigest() == expected_md5
+        assert sha1_hasher.hexdigest() == expected_sha1
+        assert sha256_hasher.hexdigest() == hashlib.sha256(partial_content).hexdigest()
+        assert read_sizes, "partial file was never read"
+        for size in read_sizes:
+            assert 0 < size <= self.CHUNK_LIMIT, f"unbounded read (size={size})"

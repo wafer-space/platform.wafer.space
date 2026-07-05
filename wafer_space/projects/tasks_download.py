@@ -570,10 +570,10 @@ def _initialize_hash_calculators(
     if resume_byte_pos > 0:
         logger.info("  Reading existing partial download for hash calculation...")
         with temp_path.open("rb") as existing_file:
-            existing_content = existing_file.read()
-            md5_hasher.update(existing_content)
-            sha1_hasher.update(existing_content)
-            sha256_hasher.update(existing_content)
+            while chunk := existing_file.read(1024 * 1024):  # 1MB chunks
+                md5_hasher.update(chunk)
+                sha1_hasher.update(chunk)
+                sha256_hasher.update(chunk)
         logger.info("  ✓ Hashes updated with %s", _format_bytes(resume_byte_pos))
 
     return md5_hasher, sha1_hasher, sha256_hasher
