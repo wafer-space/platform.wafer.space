@@ -264,7 +264,7 @@ Infrastructure exists but not fully connected:
    - `?dl=0` → `?dl=1`
 
 4. **Google Drive**: Extracts file ID
-   - Various formats → `drive.google.com/uc?id=...&export=download`
+   - Various formats → `drive.usercontent.google.com/download?id=...&export=download&confirm=t`
 
 5. **OneDrive**: Converts embed to download
    - `embed` parameter → `download` parameter

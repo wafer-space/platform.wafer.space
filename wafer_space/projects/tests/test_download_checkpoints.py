@@ -18,7 +18,10 @@ from unittest.mock import patch
 import pytest
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.test import override_settings
 
+from wafer_space.projects.exceptions import DownloadTooLargeError
+from wafer_space.projects.file_type_utils import GDS_SIGNATURE
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
@@ -27,6 +30,7 @@ from wafer_space.projects.tasks import _ChunkDownloadState
 from wafer_space.projects.tasks import _download_chunks
 from wafer_space.projects.tasks import _should_log_progress
 from wafer_space.projects.tasks import _should_update_database
+from wafer_space.projects.tasks import download_project_file
 
 User = get_user_model()
 TEST_PASSWORD = "testpass123"  # noqa: S105
@@ -34,6 +38,18 @@ TEST_PASSWORD = "testpass123"  # noqa: S105
 # Test constants
 MB = 1024 * 1024
 CHUNK_SIZE = 1 * MB  # 1MB chunks
+
+
+def _gds_chunks(count: int) -> list[bytes]:
+    """Build 1MB chunks whose leading bytes carry the GDSII signature.
+
+    The download loop validates the leading bytes of streamed content,
+    so test data downloaded from position 0 must look like an accepted
+    file type.
+    """
+    first = GDS_SIGNATURE + b"x" * (MB - len(GDS_SIGNATURE))
+    return [first] + [b"x" * MB for _ in range(count - 1)]
+
 
 # Expected checkpoint counts for test verification
 EXPECTED_CHECKPOINTS_25MB = 5  # 25MB file: checkpoints at 5, 10, 15, 20, 25 MB
@@ -351,7 +367,7 @@ class DownloadChunksIntegrationTests(TestCase):
         # Create mock response with 25MB of data (should create 5 checkpoints)
         mock_response = Mock()
         # Simulate streaming 1MB chunks
-        chunks = [b"x" * MB for _ in range(DOWNLOAD_CHUNKS_25MB)]
+        chunks = _gds_chunks(DOWNLOAD_CHUNKS_25MB)
         mock_response.iter_content.return_value = iter(chunks)
 
         # Create mock task
@@ -468,7 +484,7 @@ class DownloadChunksIntegrationTests(TestCase):
 
         # Download 10MB (should create 2 checkpoints: 5MB, 10MB)
         mock_response = Mock()
-        chunks = [b"x" * MB for _ in range(ALIGNMENT_10MB_CHUNK)]
+        chunks = _gds_chunks(ALIGNMENT_10MB_CHUNK)
         mock_response.iter_content.return_value = iter(chunks)
 
         mock_task = Mock()
@@ -559,7 +575,7 @@ class KnownSizeCheckpointTests(TestCase):
         # That's 10 checkpoints total
         total_size = 10 * MB  # Known size
         mock_response = Mock()
-        chunks = [b"x" * MB for _ in range(ALIGNMENT_10MB_CHUNK)]
+        chunks = _gds_chunks(ALIGNMENT_10MB_CHUNK)
         mock_response.iter_content.return_value = iter(chunks)
 
         mock_task = Mock()
@@ -662,7 +678,7 @@ class ProgressLoggingIntegrationTests(TestCase):
 
         # Download 50MB (should log at: 10, 20, 30, 40, 50 MB)
         mock_response = Mock()
-        chunks = [b"x" * MB for _ in range(DOWNLOAD_CHUNKS_50MB)]
+        chunks = _gds_chunks(DOWNLOAD_CHUNKS_50MB)
         mock_response.iter_content.return_value = iter(chunks)
 
         mock_task = Mock()
@@ -711,5 +727,318 @@ class ProgressLoggingIntegrationTests(TestCase):
             # Should have 5 progress logs: 10, 20, 30, 40, 50 MB
             assert len(progress_logs) >= EXPECTED_LOGS_50MB
 
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+
+@pytest.mark.django_db
+class DownloadSizeLimitTests(TestCase):
+    """Tests for MAX_DOWNLOAD_SIZE enforcement during chunked download.
+
+    The pre-download URL validation cannot always determine the file size
+    (some hosts omit Content-Length or answer HEAD with 0), and a server
+    can lie in its headers anyway - so the authoritative size limit is
+    enforced on actual received bytes in _download_chunks().
+    """
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test Description",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            source_url="http://example.com/test.gds",
+            original_filename="test.gds",
+            is_active=True,
+        )
+        self.download_attempt = DownloadAttempt.objects.create(
+            project_file=self.project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
+        )
+
+    def _make_state(self, mock_response, temp_path, *, resume_byte_pos=0):
+        """Build a _ChunkDownloadState for the given mocked response."""
+        mock_task = Mock()
+        mock_task.update_state = Mock()
+        return _ChunkDownloadState(
+            response=mock_response,
+            temp_path=temp_path,
+            task=mock_task,
+            project_file=self.project_file,
+            attempt=self.download_attempt,
+            total_size=0,  # Unknown size (e.g. chunked transfer encoding)
+            resume_byte_pos=resume_byte_pos,
+            md5_hasher=Mock(update=Mock()),
+            sha1_hasher=Mock(update=Mock()),
+            sha256_hasher=Mock(update=Mock()),
+            chunk_size=CHUNK_SIZE,
+            start_time=0.0,
+        )
+
+    @patch("wafer_space.projects.tasks_download.timezone")
+    def test_download_aborts_when_size_limit_exceeded(self, mock_timezone):
+        """Test that a download is aborted once it exceeds MAX_DOWNLOAD_SIZE."""
+        mock_timezone.now.return_value = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+
+        # Server streams more data than the configured limit
+        mock_response = Mock()
+        chunks = _gds_chunks(10)
+        mock_response.iter_content.return_value = iter(chunks)
+
+        temp_dir = Path(tempfile.gettempdir()) / "wafer_space_test_downloads"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_path = temp_dir / "test_size_limit.gds"
+        temp_path.unlink(missing_ok=True)
+
+        try:
+            state = self._make_state(mock_response, temp_path)
+
+            with (
+                override_settings(MAX_DOWNLOAD_SIZE=3 * MB),
+                pytest.raises(
+                    DownloadTooLargeError, match="exceeds maximum allowed size"
+                ),
+            ):
+                _download_chunks(state)
+
+            # The failure is not retried, so the oversized partial file is
+            # deleted rather than kept for resume
+            assert not temp_path.exists()
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+    @patch("wafer_space.projects.tasks_download.timezone")
+    def test_download_within_size_limit_completes(self, mock_timezone):
+        """Test that a download within MAX_DOWNLOAD_SIZE completes normally."""
+        mock_timezone.now.return_value = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+
+        mock_response = Mock()
+        chunks = _gds_chunks(3)
+        mock_response.iter_content.return_value = iter(chunks)
+
+        temp_dir = Path(tempfile.gettempdir()) / "wafer_space_test_downloads"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_path = temp_dir / "test_size_ok.gds"
+        temp_path.unlink(missing_ok=True)
+
+        try:
+            state = self._make_state(mock_response, temp_path)
+
+            with override_settings(MAX_DOWNLOAD_SIZE=3 * MB):
+                _download_chunks(state)
+
+            assert temp_path.stat().st_size == 3 * MB
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+    @patch("wafer_space.projects.tasks_download.requests.get")
+    def test_oversized_download_fails_without_retry(self, mock_get):
+        """Test the task fails immediately on an oversized download.
+
+        Retrying is pointless (the file will not get smaller) and hosts
+        without Range support would re-download up to the full limit on
+        every retry, so DownloadTooLargeError must go straight to the
+        failure path: exactly one FAILED attempt and no PENDING retry.
+        """
+        # Fresh project/file so no pre-existing attempt muddies the count
+        project = Project.objects.create(user=self.user, name="Oversize Test")
+        project_file = ProjectFile.objects.create(
+            project=project,
+            source_url="http://example.com/huge.gds",
+            original_filename="huge.gds",
+            is_active=True,
+        )
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.headers = {}
+        mock_response.iter_content.return_value = iter(_gds_chunks(5))
+        mock_response.raise_for_status = Mock()
+        mock_get.return_value = mock_response
+
+        with override_settings(MAX_DOWNLOAD_SIZE=3 * MB):
+            task_result = download_project_file.apply(args=[str(project.id)])
+
+        result = task_result.result
+        assert result["status"] == "failed"
+        assert "exceeds maximum allowed size" in result["message"]
+
+        # Exactly one attempt, marked FAILED - no PENDING retry scheduled
+        attempts = project_file.download_attempts.all()
+        assert attempts.count() == 1
+        failed_attempt = attempts.first()
+        assert failed_attempt is not None
+        assert failed_attempt.status == DownloadAttempt.Status.FAILED
+        assert "exceeds maximum allowed size" in failed_attempt.download_error
+
+
+@pytest.mark.django_db
+class EarlyContentValidationTests(TestCase):
+    """Tests for first-chunk content validation during download.
+
+    Rejecting unsupported content (e.g. an HTML error page served instead
+    of the file) after the first chunk avoids downloading gigabytes of
+    garbage before the post-download file type check would catch it.
+    """
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.project = Project.objects.create(
+            user=self.user,
+            name="Test Project",
+            description="Test Description",
+        )
+        self.project_file = ProjectFile.objects.create(
+            project=self.project,
+            source_url="http://example.com/test.gds",
+            original_filename="test.gds",
+            is_active=True,
+        )
+        self.download_attempt = DownloadAttempt.objects.create(
+            project_file=self.project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
+        )
+        self.temp_dir = Path(tempfile.gettempdir()) / "wafer_space_test_downloads"
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
+
+    def _make_state(self, chunks, temp_path, *, resume_byte_pos=0):
+        """Build a _ChunkDownloadState streaming the given chunks."""
+        mock_response = Mock()
+        mock_response.iter_content.return_value = iter(chunks)
+        mock_task = Mock()
+        mock_task.update_state = Mock()
+        return _ChunkDownloadState(
+            response=mock_response,
+            temp_path=temp_path,
+            task=mock_task,
+            project_file=self.project_file,
+            attempt=self.download_attempt,
+            total_size=0,
+            resume_byte_pos=resume_byte_pos,
+            md5_hasher=Mock(update=Mock()),
+            sha1_hasher=Mock(update=Mock()),
+            sha256_hasher=Mock(update=Mock()),
+            chunk_size=CHUNK_SIZE,
+            start_time=0.0,
+        )
+
+    @patch("wafer_space.projects.tasks_download.timezone")
+    def test_html_content_rejected_after_first_chunk(self, mock_timezone):
+        """Test that an HTML response is rejected without full download."""
+        mock_timezone.now.return_value = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+
+        html = b"<!DOCTYPE html><html><body>Virus scan warning</body></html>"
+        chunks = [html + b"x" * (MB - len(html)), b"x" * MB]
+        temp_path = self.temp_dir / "test_early_html.gds"
+        temp_path.unlink(missing_ok=True)
+
+        state = self._make_state(chunks, temp_path)
+
+        with pytest.raises(ValueError, match="Unsupported file type"):
+            _download_chunks(state)
+
+        # Garbage content is removed so retries start fresh
+        assert not temp_path.exists()
+
+    @patch("wafer_space.projects.tasks_download.timezone")
+    def test_gds_content_accepted(self, mock_timezone):
+        """Test that GDS content streams through the early check."""
+        mock_timezone.now.return_value = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+
+        # GDSII HEADER record signature followed by filler
+        gds = b"\x00\x06\x00\x02" + b"\x00" * (MB - 4)
+        temp_path = self.temp_dir / "test_early_gds.gds"
+        temp_path.unlink(missing_ok=True)
+
+        try:
+            state = self._make_state([gds, b"\x00" * MB], temp_path)
+            _download_chunks(state)
+            assert temp_path.stat().st_size == 2 * MB
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+    @patch("wafer_space.projects.tasks_download.timezone")
+    def test_small_html_response_rejected_at_stream_end(self, mock_timezone):
+        """Test that a tiny HTML response is still rejected.
+
+        Chunked transfer encoding can deliver less than the requested chunk
+        size (a Fastmail probe returned a 16KB first chunk), so validation
+        must also run at end of stream if the threshold was never reached.
+        """
+        mock_timezone.now.return_value = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+
+        chunks = [b"<!DOCTYPE html><html><body>404</body></html>"]
+        temp_path = self.temp_dir / "test_early_small_html.gds"
+        temp_path.unlink(missing_ok=True)
+
+        state = self._make_state(chunks, temp_path)
+
+        with pytest.raises(ValueError, match="Unsupported file type"):
+            _download_chunks(state)
+        assert not temp_path.exists()
+
+    @patch("wafer_space.projects.tasks_download.timezone")
+    def test_resumed_download_skips_early_check(self, mock_timezone):
+        """Test that resumed downloads are not sniffed mid-stream.
+
+        On resume the received chunks are not the start of the file, so
+        signature checks would produce false rejections; the post-download
+        file type check still validates the complete content.
+        """
+        mock_timezone.now.return_value = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+
+        temp_path = self.temp_dir / "test_early_resume.gds"
+        temp_path.write_bytes(b"\x00" * MB)
+
+        try:
+            # Mid-file bytes that look like HTML must NOT be rejected
+            state = self._make_state(
+                [b"<html>looks like html</html>" + b"\x00" * MB],
+                temp_path,
+                resume_byte_pos=MB,
+            )
+            _download_chunks(state)
+            assert temp_path.exists()
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+    @patch("wafer_space.projects.tasks_download.timezone")
+    def test_base64_handler_content_skips_early_check(self, mock_timezone):
+        """Test that base64-encoded handler downloads are not sniffed.
+
+        Google Source serves base64 text that only becomes GDS/OASIS after
+        post-download decoding, so raw-content sniffing would reject it.
+        """
+        mock_timezone.now.return_value = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+
+        self.project_file.handler_metadata = {
+            "handler": "GoogleSourceHandler",
+            "base64_encoded": True,
+        }
+        self.project_file.save(update_fields=["handler_metadata"])
+
+        temp_path = self.temp_dir / "test_early_base64.gds"
+        temp_path.unlink(missing_ok=True)
+
+        try:
+            # Base64 text is not an accepted file type but must pass here
+            state = self._make_state([b"AAYAAg==" * (MB // 8)], temp_path)
+            _download_chunks(state)
+            assert temp_path.exists()
         finally:
             temp_path.unlink(missing_ok=True)

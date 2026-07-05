@@ -30,7 +30,7 @@ The system automatically converts common file hosting platform URLs to direct do
 - **GitHub**: `github.com/user/repo/blob/main/file.gds` → `raw.githubusercontent.com/user/repo/main/file.gds`
 - **GitLab**: `gitlab.com/user/repo/-/blob/main/file.gds` → `gitlab.com/user/repo/-/raw/main/file.gds`
 - **Dropbox**: `dropbox.com/s/abc?dl=0` → `dropbox.com/s/abc?dl=1`
-- **Google Drive**: `drive.google.com/file/d/ID/view` → `drive.google.com/uc?export=download&id=ID`
+- **Google Drive**: `drive.google.com/file/d/ID/view` → `drive.usercontent.google.com/download?id=ID&export=download&confirm=t`
 - **OneDrive**: Adds `download=1` parameter to share links
 
 **Implementation:** `wafer_space/projects/url_rewriters.py`
@@ -56,8 +56,15 @@ Prevents SSRF (Server-Side Request Forgery) attacks and validates file accessibi
   - RFC 3927: `169.254.0.0/16` (link-local)
   - RFC 4193: `fc00::/7` (IPv6 unique local)
   - Loopback: `127.0.0.0/8`, `::1/128`
-- **File Size Limits**: Maximum 100GB (validated via Content-Length header)
+- **File Size Limits**: Maximum 100GB (advertised Content-Length checked
+  before download; actual received bytes enforced during download)
 - **File Accessibility**: HEAD request confirms file exists and is accessible
+  (falls back to a streaming GET when the server rejects HEAD or omits
+  Content-Length)
+- **Early Content Check**: The leading bytes of the download are validated
+  against accepted signatures (GDS/OASIS/zip/gzip/bzip2/xz), so a server
+  answering with an HTML error or interstitial page aborts after the first
+  chunk instead of downloading the complete response
 
 **Implementation:** `wafer_space/projects/security.py`
 
@@ -251,8 +258,11 @@ Security validation errors are NOT retried:
 - Invalid URL scheme
 - Private IP address
 - File size exceeds 100GB
-- Missing Content-Length header
 - Unresolvable hostname
+
+Downloads whose actual received bytes exceed the 100GB limit are also NOT
+retried: the file will not get smaller, and hosts without Range support
+would re-download up to the full limit on every retry.
 
 ### Download Errors
 
@@ -261,6 +271,8 @@ Network/file errors trigger retry:
 - Network interruptions
 - Server errors (500, 502, 503, 504)
 - Incomplete downloads
+- Unaccepted content type detected in the leading bytes (cheap to retry -
+  the download aborts within the first chunk)
 
 ### Cleanup
 
@@ -382,7 +394,11 @@ This is intentional security behavior. Use public URLs or configure firewall rul
 
 ### File Size Check Fails
 
-Server must provide `Content-Length` header. If server doesn't support HEAD requests, downloads will fail validation.
+Servers that omit the `Content-Length` header (chunked transfer encoding)
+or reject HEAD requests are accepted with an unknown size; the 100GB limit
+is then enforced on actual received bytes during download. Validation only
+fails when the URL is unreachable or advertises an invalid or oversized
+Content-Length.
 
 ## Security Considerations
 

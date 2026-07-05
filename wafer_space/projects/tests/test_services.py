@@ -110,11 +110,8 @@ class TestProjectFileService(TestCase):
         # Verify URL rewriting was called
         mock_rewrite.assert_called_once_with(original_url)
 
-        # Verify validation was called (without URL handler, so allow_missing=False)
-        mock_validate.assert_called_once_with(
-            rewritten_url,
-            allow_missing_content_length=False,
-        )
+        # Verify validation was called
+        mock_validate.assert_called_once_with(rewritten_url)
 
         # Verify download task was started
         mock_task.assert_called_once_with(str(self.project.id))

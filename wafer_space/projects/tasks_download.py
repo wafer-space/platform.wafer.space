@@ -33,6 +33,7 @@ from .content_pipeline import ContentPipeline
 from .content_pipeline import cleanup_temp_dir
 from .content_pipeline import get_temp_dir_for_file
 from .content_processors import _processor_registry
+from .exceptions import DownloadTooLargeError
 from .file_type_utils import detect_file_type_from_data
 from .format_validators import validate_output_format
 from .models import DownloadAttempt
@@ -72,6 +73,12 @@ BYTES_PER_KILOBYTE = 1024
 
 # Progress logging interval (seconds)
 PROGRESS_LOG_INTERVAL_SECONDS = 30
+
+# Minimum leading bytes to collect before early content validation. All
+# accepted signatures (GDS, OASIS, zip, gzip, bzip2, xz) are decided within
+# the first ~16 bytes, but libmagic classifies rejects (e.g. HTML error
+# pages) more reliably with more context.
+EARLY_SNIFF_MIN_BYTES = 4096
 
 # Initialize URL handler registry for post-download processing
 _url_handler_registry = URLHandlerRegistry()
@@ -693,6 +700,157 @@ def _should_update_database(
     return False, last_db_update_progress, last_db_update_bytes
 
 
+def _should_sniff_content(state: _ChunkDownloadState) -> bool:
+    """Whether the leading bytes of this download can be validated early.
+
+    Early validation is skipped when:
+    - Resuming: received chunks are not the start of the file, so
+      signature checks would produce false rejections.
+    - The URL handler transforms content after download (e.g. Google
+      Source serves base64 text that only becomes GDS/OASIS after
+      decoding).
+
+    The post-download file type check still validates the complete
+    content in those cases.
+    """
+    if state.resume_byte_pos > 0:
+        return False
+    handler_metadata = state.project_file.handler_metadata or {}
+    return not handler_metadata.get("base64_encoded")
+
+
+def _validate_leading_bytes(data: bytes, temp_path: Path) -> None:
+    """Abort the download early if the leading bytes are an unaccepted type.
+
+    Catches servers that answer with an HTML error or interstitial page
+    instead of the file, without downloading the complete response first.
+
+    Args:
+        data: Leading bytes of the download
+        temp_path: Partial download to delete on rejection, so retries
+            start fresh instead of resuming garbage content
+
+    Raises:
+        ValueError: If the content is not GDS/OASIS or a supported archive
+    """
+    logger = logging.getLogger(__name__)
+    try:
+        mime_type, _extension = detect_file_type_from_data(data)
+    except ValueError:
+        temp_path.unlink(missing_ok=True)
+        raise
+    logger.info("  ✓ Early content check passed: %s", mime_type)
+
+
+@dataclass
+class _ProgressBookkeeping:
+    """Tracks when progress was last logged and checkpointed to the database."""
+
+    last_log_progress: int = 0
+    last_log_bytes: int = 0
+    last_db_update_progress: int = 0
+    last_db_update_bytes: int = 0
+
+    @classmethod
+    def for_resume_position(cls, resume_byte_pos: int) -> "_ProgressBookkeeping":
+        """Align counters to clean boundaries for a (possibly resumed) download.
+
+        E.g. when resumed at 42.31 MB, logging aligns to 40 MB (next log at
+        50 MB) and database checkpoints align to 40 MB (next at 45 MB).
+        """
+        mb_downloaded = resume_byte_pos / (1024 * 1024)
+        last_log_mb = int(mb_downloaded / 10) * 10  # Round down to nearest 10MB
+        last_db_update_mb = int(mb_downloaded / 5) * 5  # Round down to nearest 5MB
+        return cls(
+            last_log_bytes=last_log_mb * 1024 * 1024,
+            last_db_update_bytes=last_db_update_mb * 1024 * 1024,
+        )
+
+
+def _report_chunk_progress(
+    state: _ChunkDownloadState,
+    bookkeeping: _ProgressBookkeeping,
+    downloaded: int,
+    chunk_count: int,
+) -> None:
+    """Report progress for a received chunk.
+
+    Updates the Celery task state on every chunk, logs progress every
+    10MB/10%, and checkpoints the database every 5MB/5%.
+    """
+    # Calculate download speed for task state
+    elapsed_time = time.time() - state.start_time
+    speed_bytes_per_sec = downloaded / elapsed_time if elapsed_time > 0 else 0
+
+    # Update Celery task state with progress
+    progress = int((downloaded / state.total_size) * 100) if state.total_size > 0 else 0
+    if state.total_size > 0:
+        progress_msg = (
+            f"Downloaded {_format_bytes(downloaded)} of "
+            f"{_format_bytes(state.total_size)} "
+            f"({_format_bytes(int(speed_bytes_per_sec))}/s)"
+        )
+    else:
+        progress_msg = (
+            f"Downloaded {_format_bytes(downloaded)} "
+            f"({_format_bytes(int(speed_bytes_per_sec))}/s)"
+        )
+
+    state.task.update_state(
+        state="PROGRESS",
+        meta={
+            "current": downloaded,
+            "total": state.total_size,
+            "progress": progress,
+            "message": progress_msg,
+            "speed": speed_bytes_per_sec,
+        },
+    )
+
+    # Check if we should log progress
+    should_log, bookkeeping.last_log_progress, bookkeeping.last_log_bytes = (
+        _should_log_progress(
+            total_size=state.total_size,
+            downloaded=downloaded,
+            last_log_progress=bookkeeping.last_log_progress,
+            last_log_bytes=bookkeeping.last_log_bytes,
+        )
+    )
+    if should_log:
+        _log_download_progress(
+            file_path=state.temp_path,
+            total_size=state.total_size,
+            downloaded=downloaded,
+            chunk_count=chunk_count,
+            start_time=state.start_time,
+        )
+
+    # Check if we should update database
+    (
+        should_update_db,
+        bookkeeping.last_db_update_progress,
+        bookkeeping.last_db_update_bytes,
+    ) = _should_update_database(
+        total_size=state.total_size,
+        downloaded=downloaded,
+        last_db_update_progress=bookkeeping.last_db_update_progress,
+        last_db_update_bytes=bookkeeping.last_db_update_bytes,
+    )
+    if should_update_db:
+        # Update attempt with current progress
+        state.attempt.last_activity = timezone.now()
+        state.attempt.bytes_downloaded = bookkeeping.last_db_update_bytes
+        state.attempt.save(update_fields=["last_activity", "bytes_downloaded"])
+
+        # Record chunk checkpoint for performance analysis
+        # Use rounded checkpoint values at exact 5MB boundaries
+        ProjectFileChunk.objects.create(
+            download_attempt=state.attempt,
+            bytes_downloaded=bookkeeping.last_db_update_bytes,
+            chunk_number=chunk_count,
+        )
+
+
 def _download_chunks(state: _ChunkDownloadState) -> None:
     """Download file in chunks with progress tracking.
 
@@ -702,23 +860,20 @@ def _download_chunks(state: _ChunkDownloadState) -> None:
     - Logs progress to console
 
     Does NOT calculate hashes - that happens after extraction.
+
+    Raises:
+        DownloadTooLargeError: If the download exceeds
+            settings.MAX_DOWNLOAD_SIZE. This is the authoritative size
+            limit: pre-download validation cannot always determine the size
+            (some hosts omit Content-Length or answer HEAD with 0), and
+            response headers can lie.
+        ValueError: If the leading bytes are not an accepted file type.
     """
     logger = logging.getLogger(__name__)
 
+    max_download_size = settings.MAX_DOWNLOAD_SIZE
     downloaded = state.resume_byte_pos
-    last_db_update_progress = 0
-    last_log_progress = 0
-
-    # Align last_log_bytes to 10MB boundaries for consistent logging
-    # E.g., if resumed at 42.31 MB, set to 40 MB so next log is at 50 MB
-    mb_downloaded = state.resume_byte_pos / (1024 * 1024)
-    last_log_mb = int(mb_downloaded / 10) * 10  # Round down to nearest 10MB
-    last_log_bytes = last_log_mb * 1024 * 1024
-
-    # Align last_db_update_bytes to 5MB boundaries for consistent database checkpoints
-    # E.g., if resumed at 42.31 MB, set to 40 MB so next checkpoint is at 45 MB
-    last_db_update_mb = int(mb_downloaded / 5) * 5  # Round down to nearest 5MB
-    last_db_update_bytes = last_db_update_mb * 1024 * 1024
+    bookkeeping = _ProgressBookkeeping.for_resume_position(state.resume_byte_pos)
 
     mode = "ab" if state.resume_byte_pos > 0 else "wb"
 
@@ -726,10 +881,24 @@ def _download_chunks(state: _ChunkDownloadState) -> None:
     logger.info("  Starting chunked download (chunk size: %s)...", formatted_chunk_size)
     chunk_count = 0
 
+    # Validate leading bytes so unaccepted content (e.g. an HTML error page
+    # served instead of the file) aborts early. Chunked transfer encoding
+    # can deliver arbitrarily small chunks, so bytes accumulate until the
+    # sniff threshold is reached (or the stream ends, handled after loop).
+    sniff_pending = _should_sniff_content(state)
+    sniff_buffer = b""
+
     with state.temp_path.open(mode) as temp_file:
         for chunk in state.response.iter_content(chunk_size=state.chunk_size):
             if not chunk:  # filter out keep-alive chunks
                 continue
+
+            if sniff_pending:
+                sniff_buffer += chunk
+                if len(sniff_buffer) >= EARLY_SNIFF_MIN_BYTES:
+                    _validate_leading_bytes(sniff_buffer, state.temp_path)
+                    sniff_pending = False
+                    sniff_buffer = b""
 
             # Write chunk
             temp_file.write(chunk)
@@ -739,83 +908,28 @@ def _download_chunks(state: _ChunkDownloadState) -> None:
             downloaded += len(chunk)
             chunk_count += 1
 
+            # Enforce the size limit on actual received bytes. The failure
+            # is not retried (the file will not get smaller), so the
+            # partial file is deleted rather than kept for resume.
+            if downloaded > max_download_size:
+                logger.error(
+                    "  ✗ Download aborted: received %s, limit is %s",
+                    _format_bytes(downloaded),
+                    _format_bytes(max_download_size),
+                )
+                state.temp_path.unlink(missing_ok=True)
+                raise DownloadTooLargeError(downloaded, max_download_size)
+
             # Log first chunk to confirm download is working
             if chunk_count == 1:
                 logger.info("  ✓ Received first chunk (%s)", _format_bytes(len(chunk)))
 
-            # Calculate download speed for task state
-            elapsed_time = time.time() - state.start_time
-            speed_bytes_per_sec = downloaded / elapsed_time if elapsed_time > 0 else 0
+            _report_chunk_progress(state, bookkeeping, downloaded, chunk_count)
 
-            # Update Celery task state with progress
-            progress = (
-                int((downloaded / state.total_size) * 100)
-                if state.total_size > 0
-                else 0
-            )
-            if state.total_size > 0:
-                progress_msg = (
-                    f"Downloaded {_format_bytes(downloaded)} of "
-                    f"{_format_bytes(state.total_size)} "
-                    f"({_format_bytes(int(speed_bytes_per_sec))}/s)"
-                )
-            else:
-                progress_msg = (
-                    f"Downloaded {_format_bytes(downloaded)} "
-                    f"({_format_bytes(int(speed_bytes_per_sec))}/s)"
-                )
-
-            state.task.update_state(
-                state="PROGRESS",
-                meta={
-                    "current": downloaded,
-                    "total": state.total_size,
-                    "progress": progress,
-                    "message": progress_msg,
-                    "speed": speed_bytes_per_sec,
-                },
-            )
-
-            # Check if we should log progress
-            should_log, last_log_progress, last_log_bytes = _should_log_progress(
-                total_size=state.total_size,
-                downloaded=downloaded,
-                last_log_progress=last_log_progress,
-                last_log_bytes=last_log_bytes,
-            )
-            if should_log:
-                _log_download_progress(
-                    file_path=state.temp_path,
-                    total_size=state.total_size,
-                    downloaded=downloaded,
-                    chunk_count=chunk_count,
-                    start_time=state.start_time,
-                )
-
-            # Check if we should update database
-            (
-                should_update_db,
-                last_db_update_progress,
-                last_db_update_bytes,
-            ) = _should_update_database(
-                total_size=state.total_size,
-                downloaded=downloaded,
-                last_db_update_progress=last_db_update_progress,
-                last_db_update_bytes=last_db_update_bytes,
-            )
-            if should_update_db:
-                # Update attempt with current progress
-                state.attempt.last_activity = timezone.now()
-                state.attempt.bytes_downloaded = last_db_update_bytes
-                state.attempt.save(update_fields=["last_activity", "bytes_downloaded"])
-
-                # Record chunk checkpoint for performance analysis
-                # Use rounded checkpoint values at exact 5MB boundaries
-                ProjectFileChunk.objects.create(
-                    download_attempt=state.attempt,
-                    bytes_downloaded=last_db_update_bytes,
-                    chunk_number=chunk_count,
-                )
+    # Stream ended before the sniff threshold was reached (small file or
+    # small error response) - validate whatever arrived
+    if sniff_pending and sniff_buffer:
+        _validate_leading_bytes(sniff_buffer, state.temp_path)
 
     # Calculate final download speed
     elapsed_time = time.time() - state.start_time
@@ -1130,6 +1244,74 @@ def _handle_download_failure(
         "status": "failed",
         "message": str(exc),
     }
+
+
+def _handle_download_task_error(
+    task_self,
+    project_id: str,
+    exc: Exception,
+    temp_path: Path | None,
+    attempt: DownloadAttempt | None,
+) -> dict[str, str | int]:
+    """Schedule a retry for a download error, or record the final failure.
+
+    When retry attempts remain, marks the current attempt as failed,
+    creates a PENDING attempt for the upcoming retry, and raises Celery's
+    Retry via _handle_download_retry. Otherwise returns the final failure
+    status from _handle_download_failure.
+    """
+    logger = logging.getLogger(__name__)
+
+    if task_self.request.retries < task_self.max_retries:
+        retry_num = task_self.request.retries + 1
+        retry_delay = settings.DOWNLOAD_TASK_RETRY_BASE_DELAY_SECONDS * (
+            settings.DOWNLOAD_TASK_RETRY_BACKOFF_MULTIPLIER**task_self.request.retries
+        )
+        logger.info(
+            "Retry %d/%d - Will retry in %d seconds",
+            retry_num,
+            task_self.max_retries,
+            retry_delay,
+        )
+        # Mark attempt as failed with error message if it exists
+        if attempt:
+            attempt.status = DownloadAttempt.Status.FAILED
+            attempt.download_error = str(exc)  # Store actual error message
+            attempt.completed_at = timezone.now()
+            if attempt.download_started_at:
+                attempt.download_duration_seconds = (
+                    attempt.completed_at - attempt.download_started_at
+                ).total_seconds()
+            attempt.save()
+
+            # Create structured error log for this failed attempt
+            error_msg = f"Download failed (retry {retry_num} scheduled): {exc}"
+            FileProcessingError.objects.create(
+                download_attempt=attempt,
+                error_type=FileProcessingError.ErrorType.DOWNLOAD,
+                error_message=error_msg,
+                error_detail={
+                    "original_url": attempt.project_file.original_url,
+                    "source_url": attempt.project_file.source_url,
+                    "error_type": exc.__class__.__name__,
+                    "traceback": traceback.format_exc(),
+                    "retry_number": retry_num,
+                    "retry_delay": retry_delay,
+                },
+            )
+
+            # Create a PENDING attempt atomically for the upcoming retry
+            # This ensures UI shows "Pending" instead of "Failed" during retry delay
+            _create_download_attempt_atomic(
+                attempt.project_file.id,
+                DownloadAttempt.Status.PENDING,
+            )
+        _handle_download_retry(task_self, project_id, exc)
+
+    logger.exception(
+        "DOWNLOAD TASK FAILED - Max retries reached for project %s", project_id
+    )
+    return _handle_download_failure(project_id, exc, temp_path, attempt)
 
 
 def _apply_post_download_processing(
@@ -1520,7 +1702,7 @@ def _log_download_completion(
     max_retries=settings.DOWNLOAD_TASK_MAX_RETRIES,
     default_retry_delay=settings.DOWNLOAD_TASK_RETRY_BASE_DELAY_SECONDS,
 )
-def download_project_file(self, project_id):  # noqa: PLR0915, C901
+def download_project_file(self, project_id):  # noqa: PLR0915
     """Background task to download a project file from a URL.
 
     Supports:
@@ -1725,58 +1907,18 @@ def download_project_file(self, project_id):  # noqa: PLR0915, C901
             "message": f"Project with id {project_id} not found",
         }
 
+    except DownloadTooLargeError as exc:
+        # Not retryable: the file will not get smaller, and each retry
+        # could re-download up to the full size limit before failing again
+        # (hosts without Range support restart from byte 0 on resume).
+        logger.exception(
+            "DOWNLOAD TASK FAILED - File too large for project %s", project_id
+        )
+        return _handle_download_failure(project_id, exc, temp_path, attempt)
+
     except (OSError, ValueError, requests.RequestException) as exc:
         logger.exception("DOWNLOAD TASK ERROR")
-        if self.request.retries < self.max_retries:
-            retry_num = self.request.retries + 1
-            retry_delay = settings.DOWNLOAD_TASK_RETRY_BASE_DELAY_SECONDS * (
-                settings.DOWNLOAD_TASK_RETRY_BACKOFF_MULTIPLIER**self.request.retries
-            )
-            logger.info(
-                "Retry %d/%d - Will retry in %d seconds",
-                retry_num,
-                self.max_retries,
-                retry_delay,
-            )
-            # Mark attempt as failed with error message if it exists
-            if attempt:
-                attempt.status = DownloadAttempt.Status.FAILED
-                attempt.download_error = str(exc)  # Store actual error message
-                attempt.completed_at = timezone.now()
-                if attempt.download_started_at:
-                    attempt.download_duration_seconds = (
-                        attempt.completed_at - attempt.download_started_at
-                    ).total_seconds()
-                attempt.save()
-
-                # Create structured error log for this failed attempt
-                error_msg = f"Download failed (retry {retry_num} scheduled): {exc}"
-                FileProcessingError.objects.create(
-                    download_attempt=attempt,
-                    error_type=FileProcessingError.ErrorType.DOWNLOAD,
-                    error_message=error_msg,
-                    error_detail={
-                        "original_url": attempt.project_file.original_url,
-                        "source_url": attempt.project_file.source_url,
-                        "error_type": exc.__class__.__name__,
-                        "traceback": traceback.format_exc(),
-                        "retry_number": retry_num,
-                        "retry_delay": retry_delay,
-                    },
-                )
-
-                # Create a PENDING attempt atomically for the upcoming retry
-                # This ensures UI shows "Pending" instead of "Failed" during retry delay
-                _create_download_attempt_atomic(
-                    attempt.project_file.id,
-                    DownloadAttempt.Status.PENDING,
-                )
-            _handle_download_retry(self, project_id, exc)
-        else:
-            logger.exception(
-                "DOWNLOAD TASK FAILED - Max retries reached for project %s", project_id
-            )
-            return _handle_download_failure(project_id, exc, temp_path, attempt)
+        return _handle_download_task_error(self, project_id, exc, temp_path, attempt)
 
 
 # AUTO-RETRY SYSTEM REMOVED

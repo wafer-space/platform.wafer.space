@@ -114,7 +114,10 @@ class TestURLRewriter:
     def test_google_drive_file_view_rewrite(self):
         """Test Google Drive file view URL is rewritten to direct download."""
         url = "https://drive.google.com/file/d/1ABC123DEF456/view?usp=sharing"
-        expected = "https://drive.google.com/uc?export=download&id=1ABC123DEF456"
+        expected = (
+            "https://drive.usercontent.google.com/download"
+            "?id=1ABC123DEF456&export=download&confirm=t"
+        )
 
         rewritten_url, was_rewritten, reason = URLRewriter.rewrite_url(url)
 
@@ -125,7 +128,10 @@ class TestURLRewriter:
     def test_google_drive_file_without_view(self):
         """Test Google Drive file URL without /view."""
         url = "https://drive.google.com/file/d/1ABC123DEF456/"
-        expected = "https://drive.google.com/uc?export=download&id=1ABC123DEF456"
+        expected = (
+            "https://drive.usercontent.google.com/download"
+            "?id=1ABC123DEF456&export=download&confirm=t"
+        )
 
         rewritten_url, was_rewritten, _reason = URLRewriter.rewrite_url(url)
 
@@ -135,16 +141,56 @@ class TestURLRewriter:
     def test_google_drive_open_id_format(self):
         """Test Google Drive open?id= format."""
         url = "https://drive.google.com/open?id=1ABC123DEF456"
-        expected = "https://drive.google.com/uc?export=download&id=1ABC123DEF456"
+        expected = (
+            "https://drive.usercontent.google.com/download"
+            "?id=1ABC123DEF456&export=download&confirm=t"
+        )
 
         rewritten_url, was_rewritten, _reason = URLRewriter.rewrite_url(url)
 
         assert rewritten_url == expected
         assert was_rewritten is True
 
-    def test_google_drive_already_direct_download(self):
-        """Test Google Drive direct download URLs are not rewritten."""
+    def test_google_drive_legacy_uc_download_rewritten(self):
+        """Test legacy uc?export=download URLs are upgraded to usercontent.
+
+        The drive.google.com/uc endpoint answers HEAD requests with
+        Content-Length: 0 and serves a virus-scan interstitial page on GET,
+        so it must be rewritten to the drive.usercontent.google.com endpoint.
+        """
         url = "https://drive.google.com/uc?export=download&id=1ABC123DEF456"
+        expected = (
+            "https://drive.usercontent.google.com/download"
+            "?id=1ABC123DEF456&export=download&confirm=t"
+        )
+
+        rewritten_url, was_rewritten, _reason = URLRewriter.rewrite_url(url)
+
+        assert rewritten_url == expected
+        assert was_rewritten is True
+
+    def test_google_drive_usercontent_adds_confirm(self):
+        """Test usercontent download URLs get the confirm parameter added."""
+        url = (
+            "https://drive.usercontent.google.com/download"
+            "?id=1ABC123DEF456&export=download"
+        )
+        expected = (
+            "https://drive.usercontent.google.com/download"
+            "?id=1ABC123DEF456&export=download&confirm=t"
+        )
+
+        rewritten_url, was_rewritten, _reason = URLRewriter.rewrite_url(url)
+
+        assert rewritten_url == expected
+        assert was_rewritten is True
+
+    def test_google_drive_usercontent_already_direct_download(self):
+        """Test usercontent URLs with confirm parameter are not rewritten."""
+        url = (
+            "https://drive.usercontent.google.com/download"
+            "?id=1ABC123DEF456&export=download&confirm=t"
+        )
 
         rewritten_url, was_rewritten, _reason = URLRewriter.rewrite_url(url)
 
