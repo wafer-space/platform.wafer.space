@@ -25,6 +25,7 @@ from django.core.cache import cache
 from django.test import TestCase
 from django.utils import timezone
 
+from wafer_space.projects.file_type_utils import GDS_SIGNATURE
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import ManufacturabilityCheckpoint
@@ -622,7 +623,9 @@ class DownloadTaskTests(TestCase):
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.headers = {"Content-Length": str(expected_file_size)}
-        mock_response.iter_content = lambda chunk_size: [b"test" * 256]
+        # Leading bytes must carry an accepted signature (early content check)
+        payload = GDS_SIGNATURE + b"t" * (expected_file_size - len(GDS_SIGNATURE))
+        mock_response.iter_content = lambda chunk_size: [payload]
         mock_response.raise_for_status = Mock()
         mock_get.return_value = mock_response
 

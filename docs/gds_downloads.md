@@ -61,6 +61,10 @@ Prevents SSRF (Server-Side Request Forgery) attacks and validates file accessibi
 - **File Accessibility**: HEAD request confirms file exists and is accessible
   (falls back to a streaming GET when the server rejects HEAD or omits
   Content-Length)
+- **Early Content Check**: The leading bytes of the download are validated
+  against accepted signatures (GDS/OASIS/zip/gzip/bzip2/xz), so a server
+  answering with an HTML error or interstitial page aborts after the first
+  chunk instead of downloading the complete response
 
 **Implementation:** `wafer_space/projects/security.py`
 
