@@ -5,6 +5,8 @@ Usage:
     uv run python -m scripts.e2e_verify http://localhost:8081
     uv run python -m scripts.e2e_verify https://wafer.space
     uv run python -m scripts.e2e_verify https://wafer.space --slot-size 1x1
+    uv run python -m scripts.e2e_verify https://wafer.space \
+        --submit-url https://example.com/design.gds --sha256 <hex>
 """
 
 from __future__ import annotations
@@ -47,6 +49,22 @@ class RunInputs:
     precheck_identity: PrecheckIdentity
 
 
+@dataclass(frozen=True)
+class InputSource:
+    """Where the design-to-upload comes from, plus the project slot to use.
+
+    ``slot_size`` always chooses the project's slot (one of ``SLOT_SIZES``) and,
+    by default, the matching newest template-repo artifact. Setting
+    ``submit_url`` overrides *what* is uploaded -- that URL is submitted verbatim
+    and ``sha256`` (required alongside it) is the expected hash of its final
+    downloaded content -- while the project is still created at ``slot_size``.
+    """
+
+    slot_size: str
+    submit_url: str | None = None
+    sha256: str | None = None
+
+
 # ============================================================
 # CONFIGURATION
 # ============================================================
@@ -63,8 +81,9 @@ DEFAULT_SLOT_SIZE = "0p5x0p5"
 TOTAL_STEPS = 13
 
 # The design to upload is resolved at runtime from the newest non-expired
-# template-repo artifact (see artifact.py). WRONG_HASH is a deliberately bad
-# hash used to exercise the platform's mismatch detection.
+# template-repo artifact (see artifact.py), or supplied directly via
+# --submit-url. WRONG_HASH is a deliberately bad hash used to exercise the
+# platform's mismatch detection.
 WRONG_HASH = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
 
 # Timeout configuration in milliseconds
@@ -129,19 +148,42 @@ def _verify_latest_precheck(token: str | None, identity: PrecheckIdentity) -> st
     raise RuntimeError(msg)
 
 
-def _resolve_inputs(slot_size: str) -> RunInputs:
-    """Resolve the artifact + precheck metadata, logging what was found."""
-    logger.info(
-        "Resolving latest template-repo artifact + precheck metadata (slot %s)...",
-        slot_size,
-    )
-    artifact_url, correct_hash = get_latest_artifact(slot_size)
-    inputs = RunInputs(
-        artifact_url=artifact_url,
-        correct_hash=correct_hash,
-        expected_runtime_s=get_expected_precheck_runtime(slot_size),
-        precheck_identity=get_latest_precheck_identity(),
-    )
+def _resolve_inputs(source: InputSource) -> RunInputs:
+    """Resolve the artifact + precheck metadata, logging what was found.
+
+    With ``source.submit_url`` set, that URL and ``source.sha256`` are used
+    verbatim (the precheck run time is unknown, since it depends on the
+    supplied design rather than a known template). Otherwise the newest
+    template-repo artifact for ``source.slot_size`` is resolved, along with that
+    slot's expected precheck run time.
+    """
+    if source.submit_url is not None:
+        if source.sha256 is None:  # guaranteed by CLI validation; guard for typing
+            msg = "submit_url requires a sha256"
+            raise RuntimeError(msg)
+        logger.info(
+            "Using supplied submit URL (project slot %s); "
+            "resolving precheck metadata...",
+            source.slot_size,
+        )
+        inputs = RunInputs(
+            artifact_url=source.submit_url,
+            correct_hash=source.sha256,
+            expected_runtime_s=None,
+            precheck_identity=get_latest_precheck_identity(),
+        )
+    else:
+        logger.info(
+            "Resolving latest template-repo artifact + precheck metadata (slot %s)...",
+            source.slot_size,
+        )
+        artifact_url, correct_hash = get_latest_artifact(source.slot_size)
+        inputs = RunInputs(
+            artifact_url=artifact_url,
+            correct_hash=correct_hash,
+            expected_runtime_s=get_expected_precheck_runtime(source.slot_size),
+            precheck_identity=get_latest_precheck_identity(),
+        )
     runtime = (
         f"~{inputs.expected_runtime_s}s (~{inputs.expected_runtime_s // 60}m)"
         if inputs.expected_runtime_s
@@ -294,20 +336,21 @@ def _rerun_and_await_verdict(
 
 
 def run_full_flow(
-    base_url: str, slot_size: str, vnc_port: int = 5901, *, headless: bool = False
+    base_url: str, source: InputSource, vnc_port: int = 5901, *, headless: bool = False
 ) -> bool:
     """Run the complete E2E verification flow.
 
     Args:
         base_url: Base URL of the wafer.space instance
-        slot_size: Template slot size to test (one of SLOT_SIZES)
+        source: The design to upload (template slot or explicit URL) + the
+            project slot to create (see InputSource)
         vnc_port: Port for VNC server
         headless: Run without a VNC display (for CI/headless environments)
 
     Returns:
         True if all verifications passed, False otherwise.
     """
-    inputs = _resolve_inputs(slot_size)
+    inputs = _resolve_inputs(source)
     display = _start_display(vnc_port, headless=headless)
 
     try:
@@ -320,7 +363,7 @@ def run_full_flow(
             page.on("dialog", lambda dialog: dialog.accept())
 
             _login_and_preflight(page, base_url)
-            detail_page, file_submit = _create_project(page, base_url, slot_size)
+            detail_page, file_submit = _create_project(page, base_url, source.slot_size)
             _verify_upload_and_hash(detail_page, file_submit, inputs)
             _run_and_cancel_precheck(detail_page)
             _rerun_and_await_verdict(detail_page, file_submit, inputs)
@@ -350,7 +393,25 @@ def main() -> None:
         "--slot-size",
         choices=SLOT_SIZES,
         default=DEFAULT_SLOT_SIZE,
-        help=f"Template slot size to test (default: {DEFAULT_SLOT_SIZE})",
+        help=(
+            f"Slot size to create the project at (default: {DEFAULT_SLOT_SIZE}). "
+            "Also selects the template artifact to upload unless --submit-url is "
+            "given."
+        ),
+    )
+    parser.add_argument(
+        "--submit-url",
+        help=(
+            "Download URL to submit instead of the --slot-size template artifact. "
+            "Requires --sha256; the project is still created at --slot-size."
+        ),
+    )
+    parser.add_argument(
+        "--sha256",
+        help=(
+            "Expected sha256 of --submit-url's final downloaded content "
+            "(required with --submit-url; a 'sha256:' prefix is optional)."
+        ),
     )
     parser.add_argument(
         "--vnc-port", type=int, default=5901, help="VNC port (default: 5901)"
@@ -367,10 +428,21 @@ def main() -> None:
             "E2E_TEST_PASSWORD environment variable is required (add it to .env)"
         )
 
+    if args.submit_url and not args.sha256:
+        parser.error("--sha256 is required when --submit-url is given")
+    if args.sha256 and not args.submit_url:
+        parser.error("--sha256 only applies together with --submit-url")
+
+    source = InputSource(
+        slot_size=args.slot_size,
+        submit_url=args.submit_url,
+        sha256=args.sha256,
+    )
+
     configure_logging()
     success = run_full_flow(
         args.url,
-        args.slot_size,
+        source,
         vnc_port=args.vnc_port,
         headless=args.headless,
     )
