@@ -97,24 +97,25 @@ INSTALLED_APPS += [
 # Production uses two remote Docker servers with 5 concurrent checks each
 # Total capacity: 10 concurrent checks (5 + 5), each using 32GB memory
 # Must match checker_concurrent_checks in hetzner-ansible host_vars
-# check_workers x check_threads = vCPUs per check (20 vCPUs / 5 checks = 4);
-# 4 workers share the 32GB mem_limit, giving 8GB per worker
+# Each check is sized to the whole VM, not a per-check share: workers x
+# threads ~= VM vCPUs (8 x 2 = 16 of 20, rounded down), and concurrent
+# checks share idle CPU via the scheduler. 8 workers x 4GB = 32GB mem_limit.
 DOCKER_SERVERS = [
     {
         "id": "checker.wafer.space@harken",
         "url": "tcp://10.3.27.44:2375",
         "max_concurrent": 5,
         "priority": 1,
-        "check_workers": 4,
-        "check_threads": 1,
+        "check_workers": 8,
+        "check_threads": 2,
     },
     {
         "id": "checker.wafer.space@micky",
         "url": "tcp://10.4.27.44:2375",
         "max_concurrent": 5,
         "priority": 2,
-        "check_workers": 4,
-        "check_threads": 1,
+        "check_workers": 8,
+        "check_threads": 2,
     },
 ]
 
