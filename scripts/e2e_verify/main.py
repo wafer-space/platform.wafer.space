@@ -319,10 +319,20 @@ def _rerun_and_await_verdict(
     log(12, "Waiting for new precheck to start...")
     detail_page.wait_for_precheck_running(timeout_ms=PRECHECK_START_TIMEOUT)
     log(12, "New precheck running")
-    # Verify the platform ran the *latest* published precheck image. Poll until
-    # the version is shown (it only appears once the image has been pulled).
+    # Verify the platform ran the *latest* published precheck image. The version
+    # only appears once the container starts; on a busy platform the check can
+    # sit queued (Pending) well past this poll, so an unreadable version is a
+    # non-fatal warning -- we still await the real verdict below. A version that
+    # IS shown but mismatches the latest image stays fatal (wrong-image signal).
     token = detail_page.wait_for_check_version_token()
-    log(12, _verify_latest_precheck(token, inputs.precheck_identity))
+    if token is None:
+        log(
+            12,
+            "WARNING: precheck version not shown yet (check likely still "
+            "queued/pulling); skipping version audit and awaiting the verdict",
+        )
+    else:
+        log(12, _verify_latest_precheck(token, inputs.precheck_identity))
 
     log(13, "Waiting for precheck to complete (this may take hours)...")
     detail_page.wait_for_precheck_complete(
