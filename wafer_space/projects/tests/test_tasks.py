@@ -1467,6 +1467,89 @@ class TestDoStarting:
         ]
 
     @pytest.mark.django_db
+    def test_command_includes_workers_and_threads_from_server_config(
+        self, tmp_path, settings
+    ) -> None:
+        """--workers/--threads come from server config, before --cob."""
+        settings.DOCKER_SERVERS = [
+            {
+                "id": "test-local",
+                "url": "unix:///test.sock",
+                "max_concurrent": 5,
+                "priority": 1,
+                "check_workers": 4,
+                "check_threads": 1,
+            },
+        ]
+
+        test_file = tmp_path / "design.gds"
+        test_file.write_bytes(b"test gds content")
+
+        shuttle = ShuttleFactory(name="G850")
+
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.STARTING,
+            docker_server_id="test-local",
+            docker_image="ghcr.io/test:latest",
+            project__shuttle=shuttle,
+            project__project_id="ABCD",
+            project__chip_on_board=True,
+        )
+        check.project_file.file.name = str(test_file)
+        check.project_file.top_cell = "chip_top"
+        check.project_file.save()
+
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_starting"
+        )
+
+        mock_docker_path = "wafer_space.projects.tasks_checks.get_docker_client"
+        mock_tar_path = "wafer_space.projects.tasks_checks.create_tar_archive"
+        with (
+            patch(mock_docker_path) as mock_get_docker_client,
+            patch(mock_tar_path) as mock_create_tar,
+            patch("wafer_space.projects.tasks_checks.Path") as mock_path,
+        ):
+            mock_client = MagicMock()
+            mock_get_docker_client.return_value = mock_client
+            mock_container = MagicMock()
+            mock_container.id = "container123"
+            mock_container.status = "running"
+            mock_client.containers.create.return_value = mock_container
+
+            mock_path_instance = MagicMock()
+            mock_path_instance.exists.return_value = True
+            mock_path.return_value = mock_path_instance
+
+            mock_tar_stream = MagicMock()
+            mock_create_tar.return_value.__enter__.return_value = mock_tar_stream
+
+            result = do_starting(check.id)
+
+        assert result["status"] == "success"
+
+        create_call = mock_client.containers.create.call_args
+        assert create_call.kwargs["command"] == [
+            "python3",
+            "precheck.py",
+            "--input",
+            "/input/design.gds",
+            "--output",
+            "/output/design.oas",
+            "--top",
+            "chip_top",
+            "--slot",
+            "1x1",
+            "--id",
+            "G850ABCD",
+            "--workers",
+            "4",
+            "--threads",
+            "1",
+            "--cob",
+        ]
+
+    @pytest.mark.django_db
     def test_cleans_up_task_tracking(self, tmp_path) -> None:
         """Deletes ManufacturabilityCheckTask when done."""
         test_file = tmp_path / "design.gds"

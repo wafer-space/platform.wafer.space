@@ -97,12 +97,16 @@ INSTALLED_APPS += [
 # Staging uses one remote Docker server with 2 concurrent checks
 # Total capacity: 2 concurrent checks, each using 32GB memory
 # Must match checker_concurrent_checks in hetzner-ansible host_vars
+# check_workers x check_threads = vCPUs per check (12 vCPUs / 2 checks = 6);
+# 6 workers share the 32GB mem_limit, giving ~5.3GB per worker
 DOCKER_SERVERS = [
     {
         "id": "checker.wafer.space@buddy",
         "url": "tcp://10.2.27.44:2375",
         "max_concurrent": 2,
         "priority": 1,
+        "check_workers": 6,
+        "check_threads": 1,
     },
 ]
 
