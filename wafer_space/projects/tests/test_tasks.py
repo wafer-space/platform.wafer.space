@@ -6,6 +6,7 @@ Security-Critical Tests:
 - Only http:// and https:// schemes are allowed for file downloads
 """
 
+import base64
 import hashlib
 import io
 import logging
@@ -14,6 +15,7 @@ import zipfile
 from datetime import timedelta
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from tempfile import mkdtemp
 from typing import IO
 from unittest.mock import MagicMock
 from unittest.mock import Mock
@@ -57,9 +59,12 @@ from wafer_space.projects.tasks_checks import _save_output_gds
 from wafer_space.projects.tasks_checks import checks_cleanup
 from wafer_space.projects.tasks_checks import checks_cleanup_stale_pending_tasks
 from wafer_space.projects.tasks_checks import checks_drc_update_requeue
+from wafer_space.projects.tasks_download import _apply_post_download_processing
+from wafer_space.projects.tasks_download import _initialize_hash_calculators
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.projects.tests.factories import ProjectFileFactory
+from wafer_space.projects.tests.read_instrumentation import RecordingPath
 from wafer_space.shuttles.tests.factories import ShuttleFactory
 
 User = get_user_model()
@@ -374,13 +379,21 @@ class TestContentPipelineIntegration(TestCase):
         # Mock download returns ZIP content
         mock_download.return_value = ("abc123", "def456")
 
-        # Mock pipeline extracts and returns GDS
-        mock_pipeline.return_value = (
-            b"\x00\x06\x00\x02test_gds_content",
-            "extracted_md5",
-            "extracted_sha1",
-            "extracted_sha256",
-        )
+        # Mock pipeline extracts a GDS file into the pipeline temp dir
+        gds_content = b"\x00\x06\x00\x02test_gds_content"
+
+        def fake_pipeline(pf, temp_path, pipeline_temp_dir):
+            output_path = pipeline_temp_dir / "design.gds"
+            output_path.write_bytes(gds_content)
+            return (
+                output_path,
+                len(gds_content),
+                "extracted_md5",
+                "extracted_sha1",
+                "extracted_sha256",
+            )
+
+        mock_pipeline.side_effect = fake_pipeline
 
         # Create a download attempt for the test
         attempt = DownloadAttempt.objects.create(
@@ -393,9 +406,7 @@ class TestContentPipelineIntegration(TestCase):
         with NamedTemporaryFile(delete=False) as temp_file:
             temp_path = Path(temp_file.name)
             try:
-                _process_and_save_content(
-                    project_file, attempt, b"fake_zip_content", temp_path
-                )
+                _process_and_save_content(project_file, attempt, temp_path)
 
                 # Verify pipeline was called
                 assert mock_pipeline.called
@@ -413,12 +424,20 @@ class TestContentPipelineIntegration(TestCase):
         )
 
         # Mock pipeline handles nested compression
-        mock_pipeline.return_value = (
-            b"\x00\x06\x00\x02gds_content",
-            "final_md5",
-            "final_sha1",
-            "final_sha256",
-        )
+        gds_content = b"\x00\x06\x00\x02gds_content"
+
+        def fake_pipeline(pf, temp_path, pipeline_temp_dir):
+            output_path = pipeline_temp_dir / "design.gds"
+            output_path.write_bytes(gds_content)
+            return (
+                output_path,
+                len(gds_content),
+                "final_md5",
+                "final_sha1",
+                "final_sha256",
+            )
+
+        mock_pipeline.side_effect = fake_pipeline
 
         # Create a download attempt for the test
         attempt = DownloadAttempt.objects.create(
@@ -430,9 +449,7 @@ class TestContentPipelineIntegration(TestCase):
         with NamedTemporaryFile(delete=False) as temp_file:
             temp_path = Path(temp_file.name)
             try:
-                _process_and_save_content(
-                    project_file, attempt, b"fake_compressed_content", temp_path
-                )
+                _process_and_save_content(project_file, attempt, temp_path)
 
                 # Verify pipeline was called
                 assert mock_pipeline.called
@@ -443,8 +460,9 @@ class TestContentPipelineIntegration(TestCase):
             finally:
                 temp_path.unlink(missing_ok=True)
 
+    @patch("wafer_space.projects.tasks_download.get_temp_dir_for_file")
     @patch("wafer_space.projects.tasks_download._apply_content_pipeline")
-    def test_download_with_format_validation(self, mock_pipeline):
+    def test_download_with_format_validation(self, mock_pipeline, mock_get_temp_dir):
         """Test that format validation is enforced after extraction."""
         project_file = ProjectFile.objects.create(
             project=self.project,
@@ -456,6 +474,10 @@ class TestContentPipelineIntegration(TestCase):
         # Mock pipeline raises ValueError for invalid format
         mock_pipeline.side_effect = ValueError("File is not a valid GDS or OASIS file")
 
+        # Use a known pipeline temp dir so its cleanup can be asserted
+        pipeline_temp_dir = Path(mkdtemp(prefix="pipeline_temp_test_"))
+        mock_get_temp_dir.return_value = pipeline_temp_dir
+
         # Create a download attempt for the test
         attempt = DownloadAttempt.objects.create(
             project_file=project_file,
@@ -464,19 +486,21 @@ class TestContentPipelineIntegration(TestCase):
         )
 
         with NamedTemporaryFile(delete=False) as temp_file:
+            temp_file.write(b"fake_invalid_content")
             temp_path = Path(temp_file.name)
-            try:
-                with pytest.raises(ValueError, match="not a valid GDS or OASIS"):
-                    _process_and_save_content(
-                        project_file, attempt, b"fake_invalid_content", temp_path
-                    )
+        try:
+            with pytest.raises(ValueError, match="not a valid GDS or OASIS"):
+                _process_and_save_content(project_file, attempt, temp_path)
 
-                # Verify file was marked as failed
-                project_file.refresh_from_db()
-                assert project_file.download_status == ProjectFile.DownloadStatus.FAILED
-                assert "not a valid GDS or OASIS" in project_file.download_error
-            finally:
-                temp_path.unlink(missing_ok=True)
+            # Verify file was marked as failed
+            project_file.refresh_from_db()
+            assert project_file.download_status == ProjectFile.DownloadStatus.FAILED
+            assert "not a valid GDS or OASIS" in project_file.download_error
+
+            # Pipeline temp dir must be cleaned up even on failure
+            assert not pipeline_temp_dir.exists()
+        finally:
+            temp_path.unlink(missing_ok=True)
 
 
 class DownloadTaskTests(TestCase):
@@ -698,13 +722,19 @@ class DownloadTaskTests(TestCase):
         # Mock file type detection
         mock_detect.return_value = ("application/zip", ".zip")
 
-        # Mock the pipeline to extract GDS and return hashes
-        mock_pipeline.return_value = (
-            gds_content,
-            expected_md5,
-            expected_sha1,
-            expected_sha256,
-        )
+        # Mock the pipeline to extract GDS into the pipeline temp dir
+        def fake_pipeline(pf, temp_path, pipeline_temp_dir):
+            output_path = pipeline_temp_dir / "design.gds"
+            output_path.write_bytes(gds_content)
+            return (
+                output_path,
+                len(gds_content),
+                expected_md5,
+                expected_sha1,
+                expected_sha256,
+            )
+
+        mock_pipeline.side_effect = fake_pipeline
 
         # Mock top cell extraction
         mock_extract_top_cell.return_value = "TestCell"
@@ -2767,3 +2797,210 @@ class TestChecksDrcUpdateRequeue:
         assert result["stats"]["total"] == TEST_PROJECT_COUNT_WITH_REFERENCE
         # Only self.project's latest file's latest check is outdated
         assert result["outdated_count"] == 1
+
+
+class TestDownloadStreaming:
+    """Memory-usage contracts for the download pipeline.
+
+    Large downloads must be processed in bounded chunks, never read
+    fully into worker RAM (same class of issue as #275).
+    """
+
+    CHUNK_LIMIT = 4 * 1024 * 1024
+
+    def test_resume_hash_seeding_reads_partial_file_in_chunks(
+        self, tmp_path: Path
+    ) -> None:
+        """Seeding hashers from a partial download must use bounded reads.
+
+        When a download resumes, the existing partial file is hashed
+        before new chunks arrive. A 2.5 MiB partial file must be read
+        in bounded chunks and still produce the correct digests.
+        """
+        partial_content = bytes(range(256)) * (10 * 1024)  # 2.5 MiB
+        partial_file = tmp_path / "partial.download"
+        partial_file.write_bytes(partial_content)
+
+        read_sizes: list[int] = []
+        recording_path = RecordingPath(partial_file)
+        recording_path.read_sizes = read_sizes
+
+        md5_hasher, sha1_hasher, sha256_hasher = _initialize_hash_calculators(
+            recording_path, len(partial_content)
+        )
+
+        expected_md5 = hashlib.md5(partial_content, usedforsecurity=False).hexdigest()
+        expected_sha1 = hashlib.sha1(partial_content, usedforsecurity=False).hexdigest()
+        assert md5_hasher.hexdigest() == expected_md5
+        assert sha1_hasher.hexdigest() == expected_sha1
+        assert sha256_hasher.hexdigest() == hashlib.sha256(partial_content).hexdigest()
+        assert read_sizes, "partial file was never read"
+        for size in read_sizes:
+            assert 0 < size <= self.CHUNK_LIMIT, f"unbounded read (size={size})"
+
+    @pytest.mark.django_db
+    def test_process_and_save_content_processes_archive_from_disk(
+        self, tmp_path: Path
+    ) -> None:
+        """Content processing works file-to-file from the downloaded archive.
+
+        The downloaded archive stays on disk: the pipeline extracts it
+        file-to-file and the result is saved to storage from disk. A
+        2.5 MiB GDS inside a ZIP must survive with correct content,
+        hashes, size, and processed filename.
+        """
+        gds_content = b"\x00\x06\x00\x02" + bytes(range(256)) * (10 * 1024)
+        archive_path = tmp_path / "design.zip"
+        with zipfile.ZipFile(archive_path, "w") as zf:
+            zf.writestr("design.gds", gds_content)
+
+        project_file = ProjectFileFactory(
+            original_filename="design.zip",
+            source_url="https://example.com/design.zip",
+        )
+        attempt = DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
+        )
+
+        final_md5, final_sha1, final_sha256 = _process_and_save_content(
+            project_file, attempt, archive_path
+        )
+
+        assert final_md5 == hashlib.md5(gds_content, usedforsecurity=False).hexdigest()
+        assert (
+            final_sha1 == hashlib.sha1(gds_content, usedforsecurity=False).hexdigest()
+        )
+        assert final_sha256 == hashlib.sha256(gds_content).hexdigest()
+
+        project_file.refresh_from_db()
+        assert project_file.processed_filename == "design.gds"
+        assert project_file.file_size == len(gds_content)
+        assert project_file.hash_sha256 == final_sha256
+        with project_file.file.open("rb") as f:
+            assert f.read() == gds_content
+
+    @pytest.mark.django_db
+    def test_cleanup_failure_does_not_mask_successful_save(
+        self, tmp_path: Path
+    ) -> None:
+        """A pipeline temp dir cleanup error must not fail a good save.
+
+        cleanup_temp_dir runs in a finally block after the extracted
+        file is saved; if rmtree fails, the download must still
+        complete and persist its hashes.
+        """
+        gds_content = b"\x00\x06\x00\x02" + bytes(range(256)) * 1024
+        archive_path = tmp_path / "design.zip"
+        with zipfile.ZipFile(archive_path, "w") as zf:
+            zf.writestr("design.gds", gds_content)
+
+        project_file = ProjectFileFactory(
+            original_filename="design.zip",
+            source_url="https://example.com/design.zip",
+        )
+        attempt = DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.DOWNLOADING,
+        )
+
+        with patch(
+            "wafer_space.projects.tasks_download.cleanup_temp_dir",
+            side_effect=OSError("disk error during rmtree"),
+        ):
+            _, _, final_sha256 = _process_and_save_content(
+                project_file, attempt, archive_path
+            )
+
+        assert final_sha256 == hashlib.sha256(gds_content).hexdigest()
+        project_file.refresh_from_db()
+        assert project_file.hash_sha256 == final_sha256
+        with project_file.file.open("rb") as f:
+            assert f.read() == gds_content
+
+    @pytest.mark.django_db
+    def test_post_download_processing_decodes_google_source_in_place(
+        self, tmp_path: Path
+    ) -> None:
+        """GoogleSource base64 payloads are decoded on disk, in place."""
+        content = b"\x00\x06\x00\x02layout-bytes"
+        encoded_file = tmp_path / "download.b64"
+        encoded_file.write_bytes(base64.b64encode(content))
+
+        project_file = ProjectFileFactory(
+            handler_metadata={
+                "handler": "GoogleSourceHandler",
+                "base64_encoded": True,
+            }
+        )
+
+        _apply_post_download_processing(project_file, encoded_file)
+
+        assert encoded_file.read_bytes() == content
+
+    @pytest.mark.django_db
+    def test_download_task_reads_bounded_chunks_only(self, tmp_path: Path) -> None:
+        """download_project_file must never read the artifact unbounded.
+
+        Once the download lands on disk, type detection needs only the
+        first 1 MiB and all further processing is file-based, so every
+        read of the temp file must be bounded even for an artifact
+        larger than the chunk size.
+        """
+        gds_content = b"\x00\x06\x00\x02" + bytes(range(256)) * (10 * 1024)
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w") as zf:
+            zf.writestr("design.gds", gds_content)
+        zip_bytes = zip_buffer.getvalue()
+
+        project = ProjectFactory()
+        project_file = ProjectFile.objects.create(
+            project=project,
+            source_url="https://example.com/design.zip",
+            original_filename="design.zip",
+            is_active=True,
+        )
+
+        read_sizes: list[int] = []
+        recording_path = RecordingPath(tmp_path / "design.zip")
+        recording_path.read_sizes = read_sizes
+
+        def write_zip(
+            task: object,
+            pf: ProjectFile,
+            attempt: DownloadAttempt,
+            temp_path: Path,
+        ) -> tuple[str, str, str]:
+            temp_path.write_bytes(zip_bytes)
+            return ("zip-md5", "zip-sha1", "zip-sha256")
+
+        with (
+            patch(
+                "wafer_space.projects.tasks_download._setup_download_temp_path",
+                return_value=recording_path,
+            ),
+            patch(
+                "wafer_space.projects.tasks_download._download_with_progress",
+                side_effect=write_zip,
+            ),
+            patch(
+                "wafer_space.projects.tasks_download.detect_file_type_from_data",
+                return_value=("application/zip", ".zip"),
+            ),
+            patch(
+                "wafer_space.projects.tasks_download.extract_top_cell",
+                return_value="TOP",
+            ),
+        ):
+            result = download_project_file(str(project.id))
+
+        assert result["status"] == "completed"
+        project_file.refresh_from_db()
+        assert project_file.hash_sha256 == hashlib.sha256(gds_content).hexdigest()
+        with project_file.file.open("rb") as f:
+            assert f.read() == gds_content
+        assert read_sizes, "temp file was never read"
+        for size in read_sizes:
+            assert 0 < size <= self.CHUNK_LIMIT, f"unbounded read (size={size})"

@@ -1,10 +1,12 @@
 """Tests for project models."""
 
+import hashlib
 from datetime import timedelta
 
 import pytest
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
+from django.core.files.base import ContentFile
 from django.test import TestCase
 from django.utils import timezone
 
@@ -20,6 +22,7 @@ from wafer_space.projects.models import validate_crowd_supply_order_id
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.projects.tests.factories import ProjectFileFactory
+from wafer_space.projects.tests.read_instrumentation import ReadSizeRecorder
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.users.models import User
 from wafer_space.users.tests.factories import UserFactory
@@ -755,6 +758,41 @@ class TestProjectFile(TestCase):
             name="Test Project",
             description="Test project",
         )
+
+    def test_calculate_hashes_streams_file_in_chunks(self):
+        """calculate_hashes must hash the stored file with bounded reads.
+
+        A 2.5 MiB stored file must be hashed in bounded chunks rather
+        than one full read() into memory, and still produce the correct
+        digests and file size.
+        """
+        content = bytes(range(256)) * (10 * 1024)  # 2.5 MiB
+        project_file = ProjectFile.objects.create(
+            project=self.project,
+            original_filename="design.gds",
+            is_active=False,
+        )
+        project_file.file.save("design.gds", ContentFile(content), save=True)
+
+        # Re-fetch so the file is opened from storage, then wrap the
+        # underlying file object to record every read() size.
+        project_file = ProjectFile.objects.get(pk=project_file.pk)
+        read_sizes: list[int] = []
+        project_file.file.open("rb")
+        project_file.file.file = ReadSizeRecorder(project_file.file.file, read_sizes)
+
+        assert project_file.calculate_hashes() is True
+
+        expected_md5 = hashlib.md5(content, usedforsecurity=False).hexdigest()
+        expected_sha1 = hashlib.sha1(content, usedforsecurity=False).hexdigest()
+        assert project_file.hash_md5 == expected_md5
+        assert project_file.hash_sha1 == expected_sha1
+        assert project_file.hash_sha256 == hashlib.sha256(content).hexdigest()
+        assert project_file.file_size == len(content)
+        assert read_sizes, "stored file was never read"
+        chunk_limit = 4 * 1024 * 1024
+        for size in read_sizes:
+            assert 0 < size <= chunk_limit, f"unbounded read (size={size})"
 
     def test_downloadattempt_has_worker_tracking_fields(self):
         """Test that DownloadAttempt has worker tracking fields."""

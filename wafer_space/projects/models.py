@@ -1,4 +1,3 @@
-import hashlib
 import json
 import logging
 import urllib.parse
@@ -20,6 +19,7 @@ from simple_history.models import HistoricalRecords
 
 from wafer_space.core.enums import SlotSize
 from wafer_space.projects.exceptions import InvalidStateTransitionError
+from wafer_space.projects.hashing import MultiHasher
 from wafer_space.projects.storage import ProjectFileStorage
 
 logger = logging.getLogger(__name__)
@@ -847,19 +847,25 @@ class ProjectFile(models.Model):
             return f"{self.project.name} - {self.original_filename} (from URL)"
         return f"{self.project.name} - {self.original_filename}"
 
-    def calculate_hashes(self):
-        """Calculate MD5, SHA1, and SHA256 hashes for the downloaded file."""
+    def calculate_hashes(self) -> bool:
+        """Calculate MD5, SHA1, and SHA256 hashes for the downloaded file.
+
+        The file is hashed in bounded chunks so large layouts never get
+        read fully into memory.
+        """
         if not self.file:
             return False
 
         try:
-            self.file.seek(0)
-            content = self.file.read()
+            hasher = MultiHasher()
+            for chunk in self.file.chunks():
+                hasher.update(chunk)
+            digests = hasher.hexdigests()
 
-            self.hash_md5 = hashlib.md5(content, usedforsecurity=False).hexdigest()
-            self.hash_sha1 = hashlib.sha1(content, usedforsecurity=False).hexdigest()
-            self.hash_sha256 = hashlib.sha256(content).hexdigest()
-            self.file_size = len(content)
+            self.hash_md5 = digests["md5"]
+            self.hash_sha1 = digests["sha1"]
+            self.hash_sha256 = digests["sha256"]
+            self.file_size = hasher.bytes_processed
 
             self.file.seek(0)  # Reset file pointer
             self.save()

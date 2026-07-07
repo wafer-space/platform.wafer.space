@@ -50,7 +50,11 @@ class MultiHasher:
         """
         if algorithms is None:
             algorithms = self.DEFAULT_ALGORITHMS
-        self._hashers = {alg: hashlib.new(alg) for alg in algorithms}
+        # Hashes are for file integrity verification only, not for
+        # cryptographic security (keeps MD5/SHA1 usable on FIPS builds).
+        self._hashers = {
+            alg: hashlib.new(alg, usedforsecurity=False) for alg in algorithms
+        }
         self._bytes_processed = 0
 
     def update(self, data: bytes) -> None:
