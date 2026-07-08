@@ -1116,10 +1116,18 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
     command_str = " ".join(command)
     logger.info("[do_starting] Container command: %s", command_str)
 
+    # Memory policy: soft limit is the expected working set; the hard limit
+    # is always 2x the soft limit; memswap_limit == mem_limit disables swap.
+    mem_soft_gb = settings.PRECHECK_MEM_SOFT_LIMIT_GB
+    mem_hard_gb = mem_soft_gb * 2
+
     # Create container WITHOUT volumes (for remote Docker support)
     logger.info(
-        "[do_starting] Creating container from image %s (mem_limit=32g)...",
+        "[do_starting] Creating container from image %s "
+        "(mem soft=%dg hard=%dg swap=0)...",
         check.docker_image,
+        mem_soft_gb,
+        mem_hard_gb,
     )
     # Extract site hostname for container labeling (prevents cross-environment cleanup)
     site_host = urlparse(settings.SITE_URL).netloc if settings.SITE_URL else "unknown"
@@ -1133,7 +1141,9 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
             "wafer.space.project_id": str(check.project.id),
             "wafer.space.site": site_host,
         },
-        mem_limit="32g",
+        mem_reservation=f"{mem_soft_gb}g",
+        mem_limit=f"{mem_hard_gb}g",
+        memswap_limit=f"{mem_hard_gb}g",
         network_disabled=True,
         environment={
             "COLUMNS": "200",  # Wide terminal for better log output

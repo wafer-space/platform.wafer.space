@@ -1356,6 +1356,12 @@ class TestDoStarting:
         create_call = mock_client.containers.create.call_args
         assert "volumes" not in create_call.kwargs
 
+        # Memory policy: hard limit is always 2x the soft limit; memswap ==
+        # mem_limit disables swap (PRECHECK_MEM_SOFT_LIMIT_GB = 36 in base.py)
+        assert create_call.kwargs["mem_reservation"] == "36g"
+        assert create_call.kwargs["mem_limit"] == "72g"
+        assert create_call.kwargs["memswap_limit"] == "72g"
+
         # Verify command includes precheck.py with --slot and --id flags,
         # and outputs OAS instead of GDS (#272)
         assert create_call.kwargs["command"] == [
