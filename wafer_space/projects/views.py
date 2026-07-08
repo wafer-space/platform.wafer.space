@@ -777,6 +777,8 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
         "name": ("name",),
         "owner": ("user__username",),
         "email": ("user__email",),
+        "cs_order": ("crowd_supply_order_id", "name"),
+        "cob": ("chip_on_board", "name"),
         "status": ("latest_check_status",),
     }
     DEFAULT_SORT: ClassVar[str] = "name"

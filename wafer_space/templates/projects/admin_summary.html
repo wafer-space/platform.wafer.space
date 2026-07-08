@@ -346,6 +346,36 @@
                 {% endif %}
               </a>
             </th>
+            <th class="text-nowrap"
+                style="width: 1%"
+                title="CrowdSupply Order Number">
+              <a href="?sort={% if current_sort == 'cs_order' and not sort_descending %}-{% endif %}cs_order"
+                 class="text-decoration-none text-dark">
+                CS#
+                {% if current_sort == 'cs_order' %}
+                  {% if sort_descending %}
+                    ▼
+                  {% else %}
+                    ▲
+                  {% endif %}
+                {% endif %}
+              </a>
+            </th>
+            <th class="text-nowrap text-center"
+                style="width: 1%"
+                title="Chip-on-Board (CoB) packaging">
+              <a href="?sort={% if current_sort == 'cob' and not sort_descending %}-{% endif %}cob"
+                 class="text-decoration-none text-dark">
+                CoB
+                {% if current_sort == 'cob' %}
+                  {% if sort_descending %}
+                    ▼
+                  {% else %}
+                    ▲
+                  {% endif %}
+                {% endif %}
+              </a>
+            </th>
             <th class="text-nowrap" style="width: 1%;">
               <a href="?sort={% if current_sort == 'status' and not sort_descending %}-{% endif %}status"
                  class="text-decoration-none text-dark">
@@ -373,6 +403,22 @@
               </td>
               <td class="text-nowrap">{{ project.user.username }}</td>
               <td class="text-nowrap">{{ project.user.email }}</td>
+              <td class="font-monospace text-nowrap">
+                {% if project.crowd_supply_order_id %}
+                  <a href="{{ project.crowd_supply_order_url }}"
+                     target="_blank"
+                     rel="noopener">{{ project.crowd_supply_order_id }}</a>
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+              <td class="text-nowrap text-center">
+                {% if project.chip_on_board %}
+                  <i class="bi bi-check-lg text-success"
+                     aria-label="Chip-on-Board packaging"></i>
+                  <span class="visually-hidden">Yes</span>
+                {% endif %}
+              </td>
               {% with active_file=project.active_files.0 %}
                 {% if active_file and active_file.latest_manufacturability_check %}
                   <td class="text-nowrap">{% badge_check_status_and_version active_file.latest_manufacturability_check %}</td>
@@ -383,7 +429,7 @@
             </tr>
           {% empty %}
             <tr>
-              <td colspan="6" class="text-center text-muted">No projects found.</td>
+              <td colspan="8" class="text-center text-muted">No projects found.</td>
             </tr>
           {% endfor %}
         </tbody>
