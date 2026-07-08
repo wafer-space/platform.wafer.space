@@ -1055,9 +1055,8 @@ def _build_precheck_command(
         "--id",
         full_id,
     ]
-    # Parallelism from server config: check_workers x check_threads is sized
-    # to the whole checker VM (~= its vCPU count), not a per-check share;
-    # concurrent checks share idle CPU via the scheduler.
+    # Parallelism from server config: check_workers/check_threads are tuned
+    # per environment (see the DOCKER_SERVERS settings comments).
     # When unset, precheck.py defaults apply (--workers 1, --threads max).
     server_config = (
         get_server_config(check.docker_server_id) if check.docker_server_id else None

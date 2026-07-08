@@ -1477,8 +1477,8 @@ class TestDoStarting:
                 "url": "unix:///test.sock",
                 "max_concurrent": 5,
                 "priority": 1,
-                "check_workers": 8,
-                "check_threads": 2,
+                "check_workers": 6,
+                "check_threads": 1,
             },
         ]
 
@@ -1543,9 +1543,9 @@ class TestDoStarting:
             "--id",
             "G850ABCD",
             "--workers",
-            "8",
+            "6",
             "--threads",
-            "2",
+            "1",
             "--cob",
         ]
 
