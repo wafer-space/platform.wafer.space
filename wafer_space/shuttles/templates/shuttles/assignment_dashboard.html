@@ -24,6 +24,8 @@
                   <th class="py-1">Size</th>
                   <th class="py-1 text-end">Proj</th>
                   <th class="py-1 text-end">Mfg</th>
+                  <th class="py-1 text-end">CS#</th>
+                  <th class="py-1 text-end">CoB</th>
                   <th class="py-1 text-end">Slots</th>
                 </tr>
               </thead>
@@ -40,6 +42,14 @@
                       <td class="py-1 text-end"
                           title="{{ stat.manufacturable_assigned }} projects passing manufacturing precheck with slot allocated.&#10;{{ stat.manufacturable_total }} projects passing manufacturing precheck available for slot allocation.">
                         {{ stat.manufacturable_assigned }}/{{ stat.manufacturable_total }}
+                      </td>
+                      <td class="py-1 text-end"
+                          title="{{ stat.cs_order_assigned }} projects with a CrowdSupply order number with slot allocated.&#10;{{ stat.cs_order_total }} projects with a CrowdSupply order number.">
+                        {{ stat.cs_order_assigned }}/{{ stat.cs_order_total }}
+                      </td>
+                      <td class="py-1 text-end"
+                          title="{{ stat.cob_count }} projects requesting Chip-on-Board (CoB) packaging.">
+                        {{ stat.cob_count }}
                       </td>
                       <td class="py-1 text-end"
                           title="{{ stat.available_slots }} slots available.&#10;{{ stat.total_slots }} slots of this size.">
@@ -113,6 +123,21 @@
                 Size <span class="sort-indicator"></span>
               </th>
               <th data-sortable="true"
+                  data-sort-type="text"
+                  class="sortable"
+                  style="cursor: pointer"
+                  title="CrowdSupply Order Number">
+                CS# <span class="sort-indicator"></span>
+              </th>
+              <th data-sortable="true"
+                  data-sort-type="text"
+                  class="sortable text-center"
+                  style="cursor: pointer;
+                         width: 1%"
+                  title="Chip-on-Board (CoB) packaging">
+                CoB <span class="sort-indicator"></span>
+              </th>
+              <th data-sortable="true"
                   data-sort-type="date"
                   class="sortable text-center"
                   style="cursor: pointer;
@@ -141,6 +166,23 @@
                 <td>{{ project.user.username|default:"—" }}</td>
                 <td data-sort-value="{{ project.slot_size }}">
                   <span class="badge bg-secondary">{{ project.get_slot_size_display }}</span>
+                </td>
+                <td class="font-monospace"
+                    data-sort-value="{{ project.crowd_supply_order_id }}">
+                  {% if project.crowd_supply_order_id %}
+                    <a href="{{ project.crowd_supply_order_url }}"
+                       target="_blank"
+                       rel="noopener">{{ project.crowd_supply_order_id }}</a>
+                  {% else %}
+                    <span class="text-muted">-</span>
+                  {% endif %}
+                </td>
+                <td class="text-center"
+                    data-sort-value="{% if project.chip_on_board %}1{% else %}0{% endif %}">
+                  {% if project.chip_on_board %}
+                    <i class="bi bi-check-lg text-success"
+                       aria-label="Chip-on-Board packaging"></i>
+                  {% endif %}
                 </td>
                 <td class="text-center"
                     data-sort-value="{{ project.submitted_at|date:'Y-m-d H:i:s'|default:'' }}"
