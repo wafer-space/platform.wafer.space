@@ -32,21 +32,37 @@
         {% if projects %}
           <div class="list-group">
             {% for project in projects %}
-              <a href="{% url 'projects:detail' pk=project.pk %}"
-                 class="list-group-item list-group-item-action">
+              <div class="list-group-item list-group-item-action position-relative">
                 <div class="d-flex w-100 justify-content-between">
                   <h5 class="mb-1">
-                    {{ project.name }}
+                    <a href="{% url 'projects:detail' pk=project.pk %}"
+                       class="stretched-link text-decoration-none text-reset">{{ project.name }}</a>
                     {% if project.user == request.user %}
                       <span class="badge bg-success ms-2">Your Project</span>
                     {% else %}
                       <span class="badge bg-info ms-2">{{ project.user.username }}'s Project</span>
                     {% endif %}
+                    {% if project.chip_on_board %}
+                      <span class="badge bg-info ms-1"><i class="bi bi-cpu"></i> CoB</span>
+                    {% else %}
+                      <span class="badge bg-secondary ms-1">Bare Die</span>
+                    {% endif %}
                   </h5>
                   <small class="text-muted">{{ project.created_at|date:"M d, Y" }}</small>
                 </div>
                 {% if project.description %}<p class="mb-1">{{ project.description|truncatewords:30 }}</p>{% endif %}
-              </a>
+                {% if project.crowd_supply_order_id %}
+                  <small>
+                    <a href="{{ project.crowd_supply_order_url }}"
+                       target="_blank"
+                       rel="noopener"
+                       class="position-relative"
+                       style="z-index: 2">
+                      <i class="bi bi-box-arrow-up-right"></i> CrowdSupply Order {{ project.crowd_supply_order_id }}
+                    </a>
+                  </small>
+                {% endif %}
+              </div>
             {% endfor %}
           </div>
           {% if is_paginated %}
