@@ -1,0 +1,7 @@
+{# Consistent packaging badge for a project (CoB vs bare die). #}
+{# Parameters: project #}
+{% if project.chip_on_board %}
+  <span class="badge bg-secondary" title="Chip-on-Board (CoB) packaging"><i class="bi bi-cpu"></i> CoB</span>
+{% else %}
+  <span class="badge bg-secondary" title="Bare die (no packaging)">Bare</span>
+{% endif %}

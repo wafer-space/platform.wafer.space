@@ -42,26 +42,31 @@
                     {% else %}
                       <span class="badge bg-info ms-2">{{ project.user.username }}'s Project</span>
                     {% endif %}
-                    {% if project.chip_on_board %}
-                      <span class="badge bg-info ms-1"><i class="bi bi-cpu"></i> CoB</span>
+                    {% include "projects/_packaging_badge.html" with project=project %}
+                    {% if project.submitted_at %}
+                      <span class="badge bg-primary" title="Submitted for manufacturing"><i class="bi bi-send-check"></i> Submitted</span>
                     {% else %}
-                      <span class="badge bg-secondary ms-1">Bare Die</span>
+                      <span class="badge bg-light text-muted border"
+                            title="Not submitted for manufacturing">Draft</span>
                     {% endif %}
                   </h5>
-                  <small class="text-muted">{{ project.created_at|date:"M d, Y" }}</small>
+                  <div class="text-end ms-3 text-nowrap">
+                    <small class="text-muted d-block">{{ project.created_at|date:"M d, Y" }}</small>
+                    {% if project.crowd_supply_order_id %}
+                      <small>
+                        <a href="{{ project.crowd_supply_order_url }}"
+                           target="_blank"
+                           rel="noopener"
+                           class="position-relative"
+                           style="z-index: 2"
+                           title="CrowdSupply order {{ project.crowd_supply_order_id }}">
+                          <i class="bi bi-box-arrow-up-right"></i> CS# {{ project.crowd_supply_order_id }}
+                        </a>
+                      </small>
+                    {% endif %}
+                  </div>
                 </div>
                 {% if project.description %}<p class="mb-1">{{ project.description|truncatewords:30 }}</p>{% endif %}
-                {% if project.crowd_supply_order_id %}
-                  <small>
-                    <a href="{{ project.crowd_supply_order_url }}"
-                       target="_blank"
-                       rel="noopener"
-                       class="position-relative"
-                       style="z-index: 2">
-                      <i class="bi bi-box-arrow-up-right"></i> CrowdSupply Order {{ project.crowd_supply_order_id }}
-                    </a>
-                  </small>
-                {% endif %}
               </div>
             {% endfor %}
           </div>

@@ -128,11 +128,7 @@
             </p>
             <p class="mb-2">
               <strong>Packaging:</strong>
-              {% if project.chip_on_board %}
-                <span class="badge bg-info"><i class="bi bi-cpu"></i> Chip-on-Board (CoB)</span>
-              {% else %}
-                <span class="badge bg-secondary">Bare Die</span>
-              {% endif %}
+              {% include "projects/_packaging_badge.html" with project=project %}
             </p>
             {% if project.repository_url %}
               <p class="mb-2">
