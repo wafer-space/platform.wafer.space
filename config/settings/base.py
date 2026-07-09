@@ -489,7 +489,7 @@ PRECHECK_SCAN_INTERVAL_SECONDS = 30.0  # Scan for files ready to check every 30s
 # the soft limit (Docker mem_reservation, cgroup memory.low) is the expected
 # working set; the hard limit (mem_limit) is ALWAYS 2x the soft limit as a
 # runaway backstop, and swap is disabled (memswap_limit == mem_limit).
-PRECHECK_MEM_SOFT_LIMIT_GB = 36
+PRECHECK_MEM_SOFT_LIMIT_GB = 32
 
 # Docker server configuration
 # Servers are selected in priority order (lowest number = highest priority)
