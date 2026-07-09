@@ -220,11 +220,11 @@ class TestShuttleAssignmentView:
 
         assert response.status_code == HTTPStatus.OK
         content = response.content.decode()
-        assert "Packaging: Chip-on-Board (CoB)" in content
+        assert "Packaging: CoB" in content
         assert "CS Order: 327373" in content
 
-    def test_grid_tooltip_shows_bare_die_without_cs_order(self, client):
-        """Tooltip shows Bare Die and omits CS Order when neither is set."""
+    def test_grid_tooltip_shows_bare_without_cs_order(self, client):
+        """Tooltip shows Bare and omits CS Order when neither is set."""
         user = UserFactory(is_staff=True)
         client.force_login(user)
 
@@ -245,7 +245,8 @@ class TestShuttleAssignmentView:
 
         assert response.status_code == HTTPStatus.OK
         content = response.content.decode()
-        assert "Packaging: Bare Die" in content
+        assert "Packaging: Bare" in content
+        assert "Bare Die" not in content
         assert "CS Order:" not in content
 
 
