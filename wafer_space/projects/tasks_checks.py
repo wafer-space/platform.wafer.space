@@ -48,6 +48,7 @@ from .models import ManufacturabilityCheckpoint
 from .models import ManufacturabilityCheckTask
 from .models import PrecheckImageRevision
 from .models import ProjectFile
+from .precheck_command import build_precheck_command
 from .precheck_parser import PrecheckLogParser
 from .precheck_parser import classify_failure
 from .verification import is_check_task_actively_running
@@ -1010,64 +1011,21 @@ def _wait_for_container_running(
 def _build_precheck_command(
     check: ManufacturabilityCheck, logger: logging.Logger
 ) -> list[str]:
-    """Build the precheck.py command line for a check's container.
+    """Build the precheck.py command line, logging the key inputs.
 
-    Args:
-        check: ManufacturabilityCheck to build the command for.
-        logger: Logger for progress messages.
-
-    Returns:
-        Command as a list of arguments.
+    Delegates to precheck_command.build_precheck_command, the single source
+    of truth shared with the user-facing reproduction instructions.
 
     Raises:
         ValueError: If the project has no full_id (not assigned to a shuttle).
     """
-    # Get top cell name for precheck command
-    top_cell = check.project_file.top_cell or "unknown"
-    logger.info("[do_starting] Top cell: %s", top_cell)
-
-    # Get slot size and full_id from project (required for precheck)
-    slot_size = check.project.slot_size
-    full_id = check.project.full_id
-    if not full_id:
-        msg = (
-            "Cannot run manufacturability check: "
-            "project must be assigned to shuttle with project ID"
-        )
-        raise ValueError(msg)
-    logger.info("[do_starting] Slot size: %s, Full ID: %s", slot_size, full_id)
-
-    # Build precheck command with slot size and project ID
-    # The container has ENTRYPOINT ["dev-shell"] and WORKDIR /workspace
-    # precheck.py is at /workspace/precheck.py
-    command = [
-        "python3",
-        "precheck.py",
-        "--input",
-        "/input/design.gds",
-        # Output the processed layout as OASIS (.oas) to save disk space (#272)
-        "--output",
-        "/output/design.oas",
-        "--top",
-        top_cell,
-        "--slot",
-        slot_size,
-        "--id",
-        full_id,
-    ]
-    # Parallelism from server config: check_workers/check_threads are tuned
-    # per environment (see the DOCKER_SERVERS settings comments).
-    # When unset, precheck.py defaults apply (--workers 1, --threads max).
-    server_config = (
-        get_server_config(check.docker_server_id) if check.docker_server_id else None
+    logger.info("[do_starting] Top cell: %s", check.project_file.top_cell or "unknown")
+    logger.info(
+        "[do_starting] Slot size: %s, Full ID: %s",
+        check.project.slot_size,
+        check.project.full_id,
     )
-    if server_config and "check_workers" in server_config:
-        command += ["--workers", str(server_config["check_workers"])]
-    if server_config and "check_threads" in server_config:
-        command += ["--threads", str(server_config["check_threads"])]
-    if check.project.chip_on_board:
-        command.append("--cob")
-    return command
+    return build_precheck_command(check)
 
 
 @queued_check_task(expected_status="STARTING", queue="dock:ro:checks-fast")

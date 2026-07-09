@@ -7,6 +7,7 @@ from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
+from wafer_space.shuttles.tests.factories import ShuttleFactory
 from wafer_space.users.models import User
 
 from .constants import TEST_PASSWORD
@@ -23,11 +24,16 @@ class TestManufacturabilityCheckReproducibility(TestCase):
             email="test@example.com",
             password=TEST_PASSWORD,
         )
+        # Shuttle + project_id are immutable after creation and are required
+        # for the precheck command embedded in reproduction instructions.
+        self.shuttle = ShuttleFactory(name="G850")
         self.project = Project.objects.create(
             user=self.user,
             name="Test Project",
             description="Test project",
             status=Project.Status.DRAFT,
+            shuttle=self.shuttle,
+            project_id="ABCD",
         )
         self.project_file = ProjectFile.objects.create(
             project=self.project,
@@ -37,6 +43,7 @@ class TestManufacturabilityCheckReproducibility(TestCase):
             is_active=True,
             hash_md5="abc123def456",
             hash_sha1="sha1hash123",
+            top_cell="chip_top",
         )
         # Create DownloadAttempt to set download_status to COMPLETED
         DownloadAttempt.objects.create(
@@ -83,8 +90,10 @@ class TestManufacturabilityCheckReproducibility(TestCase):
         assert "0.28.12" in instructions
         assert "gf180mcuD-v1.2.3" in instructions
 
-        # Verify project information
-        assert self.project.name in instructions
+        # Verify the embedded precheck command reflects the real run inputs
+        assert "--top chip_top" in instructions
+        assert "--id G850ABCD" in instructions
+        assert "--workdir /workspace" in instructions
 
     def test_generate_github_issue_url(self):
         """Test GitHub issue URL generation."""
