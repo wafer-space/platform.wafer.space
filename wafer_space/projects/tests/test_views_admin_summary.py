@@ -192,6 +192,27 @@ class TestProjectAdminSummaryView:
         niner_pos = content.find("Order Niner")
         assert wun_pos < niner_pos, "Lower order number should appear first"
 
+    def test_summary_stats_include_cs_and_cob_counts(self, client):
+        """Top-of-page summary includes CS order and CoB project counts."""
+        staff_user = UserFactory(is_staff=True)
+        ProjectFactory(name="CS One", crowd_supply_order_id="111111")
+        ProjectFactory(
+            name="CS Two CoB",
+            crowd_supply_order_id="222222",
+            chip_on_board=True,
+        )
+        ProjectFactory(name="Plain Project")
+        client.force_login(staff_user)
+
+        response = client.get(reverse("projects:admin_summary"))
+
+        summary = response.context["summary"]
+        expected_cs_order_count = 2
+        assert summary["cs_order_count"] == expected_cs_order_count
+        assert summary["cob_count"] == 1
+        content = response.content.decode()
+        assert "CrowdSupply" in content
+
     def test_sort_by_cob(self, client):
         """Sort by Chip-on-Board flag descending puts CoB projects first."""
         staff_user = UserFactory(is_staff=True)

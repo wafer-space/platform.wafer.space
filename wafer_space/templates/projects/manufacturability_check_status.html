@@ -46,10 +46,10 @@
                   <th style="width: 120px; text-align: right;">Created</th>
                   <th style="width: 120px; text-align: right;">Duration</th>
                   <th style="width: 70px; text-align: center;">Size</th>
-                  <th style="width: 90px;" title="CrowdSupply Order Number">CS#</th>
-                  <th style="width: 50px;
+                  <th style="width: 1%;
                              text-align: center"
                       title="Chip-on-Board (CoB) packaging">CoB</th>
+                  <th style="width: 1%" title="CrowdSupply Order Number">CS#</th>
                   <th>Project</th>
                 </tr>
               </thead>
@@ -77,19 +77,19 @@
                     <td class="text-center">
                       <span class="badge bg-secondary">{{ check.project.get_slot_size_display }}</span>
                     </td>
-                    <td class="font-monospace">
+                    <td class="text-center">
+                      {% if check.project.chip_on_board %}
+                        <i class="bi bi-check-lg text-success"
+                           aria-label="Chip-on-Board packaging"></i>
+                      {% endif %}
+                    </td>
+                    <td class="font-monospace text-nowrap">
                       {% if check.project.crowd_supply_order_id %}
                         <a href="{{ check.project.crowd_supply_order_url }}"
                            target="_blank"
                            rel="noopener">{{ check.project.crowd_supply_order_id }}</a>
                       {% else %}
                         <span class="text-muted">-</span>
-                      {% endif %}
-                    </td>
-                    <td class="text-center">
-                      {% if check.project.chip_on_board %}
-                        <i class="bi bi-check-lg text-success"
-                           aria-label="Chip-on-Board packaging"></i>
                       {% endif %}
                     </td>
                     <td>
@@ -126,10 +126,10 @@
                   <th style="width: 120px; text-align: right;">Created</th>
                   <th style="width: 120px; text-align: right;">Duration</th>
                   <th style="width: 70px; text-align: center;">Size</th>
-                  <th style="width: 90px;" title="CrowdSupply Order Number">CS#</th>
-                  <th style="width: 50px;
+                  <th style="width: 1%;
                              text-align: center"
                       title="Chip-on-Board (CoB) packaging">CoB</th>
+                  <th style="width: 1%" title="CrowdSupply Order Number">CS#</th>
                   <th>Project</th>
                   <th style="width: 120px;">Status</th>
                 </tr>
@@ -158,19 +158,19 @@
                     <td class="text-center">
                       <span class="badge bg-secondary">{{ check.project.get_slot_size_display }}</span>
                     </td>
-                    <td class="font-monospace">
+                    <td class="text-center">
+                      {% if check.project.chip_on_board %}
+                        <i class="bi bi-check-lg text-success"
+                           aria-label="Chip-on-Board packaging"></i>
+                      {% endif %}
+                    </td>
+                    <td class="font-monospace text-nowrap">
                       {% if check.project.crowd_supply_order_id %}
                         <a href="{{ check.project.crowd_supply_order_url }}"
                            target="_blank"
                            rel="noopener">{{ check.project.crowd_supply_order_id }}</a>
                       {% else %}
                         <span class="text-muted">-</span>
-                      {% endif %}
-                    </td>
-                    <td class="text-center">
-                      {% if check.project.chip_on_board %}
-                        <i class="bi bi-check-lg text-success"
-                           aria-label="Chip-on-Board packaging"></i>
                       {% endif %}
                     </td>
                     <td>
