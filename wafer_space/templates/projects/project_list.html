@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% load static %}
+{% load static badges %}
 
 {% block title %}
   My Projects
@@ -46,6 +46,12 @@
                   <small class="text-muted">{{ project.created_at|date:"M d, Y" }}</small>
                 </div>
                 {% if project.description %}<p class="mb-1">{{ project.description|truncatewords:30 }}</p>{% endif %}
+                <div class="d-flex gap-1 mt-2">
+                  {% render_badge project.get_status_badge %}
+                  {% for badge in project.get_badges %}
+                    {% render_badge badge %}
+                  {% endfor %}
+                </div>
               </a>
             {% endfor %}
           </div>

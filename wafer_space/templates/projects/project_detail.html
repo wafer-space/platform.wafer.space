@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% load static %}
+{% load static badges %}
 
 {% block title %}
   {{ project.name }}
@@ -78,9 +78,7 @@
               <div class="card-body">
                 <p class="mb-2">
                   <strong>Status:</strong>
-                  <span class="badge {% if project.status == 'draft' %}bg-secondary{% elif project.status == 'submitted' %}bg-primary{% elif project.status == 'manufacturable' %}bg-success{% elif project.status == 'not_manufacturable' %}bg-danger{% else %}bg-info{% endif %}">
-                    {{ project.get_status_display }}
-                  </span>
+                  {% render_badge project.get_status_badge %}
                 </p>
                 <p class="mb-2">
                   <strong>Submitted:</strong>
@@ -450,8 +448,6 @@
               const progressBar = document.getElementById('progress-bar');
               const progressText = document.getElementById('progress-text');
               const progressMessage = document.getElementById('progress-message');
-              const statusBadge = document.getElementById('status-badge');
-              const statusText = document.getElementById('status-text');
 
               if (progressBar && progressText) {
                 progressBar.style.width = data.progress + '%';
@@ -463,42 +459,8 @@
                 progressMessage.textContent = data.message;
               }
 
-              // Update status badge
-              if (statusBadge && statusText && data.status) {
-                console.log('[Progress Polling] Updating status badge to:', data.status);
-                // Update badge color and icon based on status
-                statusBadge.className = 'badge';
-                let iconHtml = '';
-
-                if (data.status === 'completed') {
-                  statusBadge.classList.add('bg-success');
-                  iconHtml = '<i class="bi bi-check-circle"></i> ';
-                  statusText.textContent = 'Download Completed';
-                } else if (data.status === 'failed') {
-                  statusBadge.classList.add('bg-danger');
-                  iconHtml = '<i class="bi bi-exclamation-triangle"></i> ';
-                  statusText.textContent = 'Download Failed';
-                } else if (data.status === 'downloading') {
-                  statusBadge.classList.add('bg-primary');
-                  iconHtml = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> ';
-                  statusText.textContent = 'Downloading';
-                } else if (data.status === 'queued') {
-                  statusBadge.classList.add('bg-info');
-                  iconHtml = '<i class="bi bi-clock"></i> ';
-                  statusText.textContent = 'Queued';
-                } else if (data.status === 'retrying') {
-                  statusBadge.classList.add('bg-warning');
-                  iconHtml = '<i class="bi bi-arrow-clockwise"></i> ';
-                  statusText.textContent = 'Retrying';
-                } else {
-                  statusBadge.classList.add('bg-secondary');
-                  iconHtml = '<i class="bi bi-clock"></i> ';
-                  statusText.textContent = data.status;
-                }
-
-                // Update the badge content with icon + text
-                statusBadge.innerHTML = iconHtml + '<span id="status-text">' + statusText.textContent + '</span>';
-              }
+              // Status badges are server-rendered (see _file_badges.html);
+              // the page reload below refreshes them on completion.
 
               // Stop polling and reload if completed or failed
               if (data.status === 'completed' || data.status === 'failed') {

@@ -17,6 +17,8 @@ from django.utils import timezone
 from django.utils.formats import date_format
 from simple_history.models import HistoricalRecords
 
+from wafer_space.core.badges import BadgeInfo
+from wafer_space.core.badges import BadgeType
 from wafer_space.core.enums import SlotSize
 from wafer_space.projects.exceptions import InvalidStateTransitionError
 from wafer_space.projects.hashing import MultiHasher
@@ -537,6 +539,74 @@ class Project(models.Model):
     def is_other_license(self) -> bool:
         """Check if project uses 'other' (custom SPDX) license."""
         return self.license_type == LicenseType.OTHER
+
+    def get_status_badge(self) -> BadgeInfo:
+        """Return badge representing current project status.
+
+        Returns:
+            BadgeInfo with appropriate type, text, and icon.
+        """
+        status_badges: dict[str, BadgeInfo] = {
+            self.Status.DRAFT.value: BadgeInfo(
+                text="Draft",
+                badge_type=BadgeType.NEUTRAL,
+                icon="bi-pencil",
+            ),
+            self.Status.SUBMITTED.value: BadgeInfo(
+                text="Submitted",
+                badge_type=BadgeType.INFO,
+                icon="bi-send",
+            ),
+            self.Status.CHECKING.value: BadgeInfo(
+                text="Checking",
+                badge_type=BadgeType.PROCESSING,
+            ),
+            self.Status.MANUFACTURABLE.value: BadgeInfo(
+                text="Manufacturable",
+                badge_type=BadgeType.SUCCESS,
+                icon="bi-check-circle",
+            ),
+            self.Status.NOT_MANUFACTURABLE.value: BadgeInfo(
+                text="Not Manufacturable",
+                badge_type=BadgeType.DANGER,
+                icon="bi-x-circle",
+            ),
+            self.Status.ASSIGNED_TO_SHUTTLE.value: BadgeInfo(
+                text="Assigned to Shuttle",
+                badge_type=BadgeType.INFO,
+                icon="bi-truck",
+            ),
+            self.Status.IN_PRODUCTION.value: BadgeInfo(
+                text="In Production",
+                badge_type=BadgeType.PROCESSING,
+            ),
+            self.Status.COMPLETED.value: BadgeInfo(
+                text="Completed",
+                badge_type=BadgeType.SUCCESS,
+                icon="bi-check-circle-fill",
+            ),
+            self.Status.CANCELLED.value: BadgeInfo(
+                text="Cancelled",
+                badge_type=BadgeType.NEUTRAL,
+                icon="bi-x-circle",
+            ),
+        }
+        return status_badges[self.status]
+
+    def get_badges(self) -> list[BadgeInfo]:
+        """Return download/hash pipeline badges for this project's active file.
+
+        Project badges delegate to the active file since that represents
+        the current state of the project.
+
+        Returns:
+            List of BadgeInfo from active file, or empty list.
+        """
+        try:
+            active_file = self.files.get(is_active=True)
+        except ProjectFile.DoesNotExist:
+            return []
+        return active_file.get_badges()
 
     def can_submit(self) -> tuple[bool, str]:
         """Check if project can be submitted.
@@ -1151,6 +1221,124 @@ class ProjectFile(models.Model):
             or self.expected_hash_sha256
         )
 
+    def get_download_badge(self) -> BadgeInfo:
+        """Return badge for current download status."""
+        if self.download_status == self.DownloadStatus.PENDING:
+            return BadgeInfo(
+                text="Download Pending",
+                badge_type=BadgeType.NEUTRAL,
+                icon="bi-clock",
+            )
+        if self.download_status == self.DownloadStatus.QUEUED:
+            return BadgeInfo(
+                text="Queued",
+                badge_type=BadgeType.NEUTRAL,
+                icon="bi-hourglass-split",
+            )
+        if self.download_status == self.DownloadStatus.DOWNLOADING:
+            return BadgeInfo(
+                text="Downloading",
+                badge_type=BadgeType.PROCESSING,
+            )
+        if self.download_status == self.DownloadStatus.COMPLETED:
+            return BadgeInfo(
+                text="Downloaded",
+                badge_type=BadgeType.SUCCESS,
+                icon="bi-check-circle",
+            )
+        # FAILED
+        return BadgeInfo(
+            text="Download Failed",
+            badge_type=BadgeType.DANGER,
+            icon="bi-exclamation-triangle",
+        )
+
+    def get_hash_badge(self) -> BadgeInfo | None:
+        """Return badge for hash verification status.
+
+        Returns:
+            BadgeInfo if hash verification applicable, None otherwise.
+        """
+        if not self.has_expected_hash:
+            return None
+
+        if self.hash_verified:
+            return BadgeInfo(
+                text="Hash Verified",
+                badge_type=BadgeType.SUCCESS,
+                icon="bi-shield-check",
+            )
+        if self.has_hash_mismatch:
+            return BadgeInfo(
+                text="Hash Mismatch",
+                badge_type=BadgeType.DANGER,
+                icon="bi-shield-x",
+            )
+        # Has expected hash but not yet verified
+        return BadgeInfo(
+            text="Hash Unverified",
+            badge_type=BadgeType.WARNING,
+            icon="bi-shield-exclamation",
+        )
+
+    def get_inline_hash_badge(self, hash_type: str) -> BadgeInfo | None:
+        """Return inline badge for a specific hash verification.
+
+        Used in templates to show Verified/Mismatch next to each hash value.
+
+        Args:
+            hash_type: One of 'md5', 'sha1', 'sha256'
+
+        Returns:
+            BadgeInfo if expected hash exists, None otherwise.
+        """
+        hash_field = f"hash_{hash_type}"
+        expected_field = f"expected_hash_{hash_type}"
+
+        actual = getattr(self, hash_field, None)
+        expected = getattr(self, expected_field, None)
+
+        if not expected:
+            return None
+
+        if actual and actual.lower() == expected.lower():
+            return BadgeInfo(
+                text="Verified",
+                badge_type=BadgeType.SUCCESS,
+                icon="bi-check-circle",
+            )
+        return BadgeInfo(
+            text="Mismatch",
+            badge_type=BadgeType.DANGER,
+            icon="bi-x-circle",
+        )
+
+    def get_badges(self) -> list[BadgeInfo]:
+        """Return download/hash pipeline badges for this file.
+
+        Badges represent stages: Download -> Hash. Failure at any stage
+        stops the pipeline. The manufacturability check that follows the
+        pipeline is rendered separately via the precheck_tags template tags,
+        which add container version indicators (see docs/design/badge-system.md).
+
+        Returns:
+            List of BadgeInfo objects in pipeline order.
+        """
+        badges: list[BadgeInfo] = []
+
+        # Stage 1: Download (always shown)
+        badges.append(self.get_download_badge())
+        if self.download_status == self.DownloadStatus.FAILED:
+            return badges  # Pipeline stops
+
+        # Stage 2: Hash verification (only if download completed)
+        if self.download_status == self.DownloadStatus.COMPLETED:
+            hash_badge = self.get_hash_badge()
+            if hash_badge:
+                badges.append(hash_badge)
+
+        return badges
+
     @property
     def latest_manufacturability_check(self) -> "ManufacturabilityCheck | None":
         """Get the most recent manufacturability check.
@@ -1365,6 +1553,35 @@ class DownloadAttempt(models.Model):
                 return f"{speed_bytes_per_sec:.1f} {unit}"
             speed_bytes_per_sec /= bytes_per_unit
         return f"{speed_bytes_per_sec:.1f} TB/s"
+
+    def get_badge(self) -> BadgeInfo:
+        """Return badge representing current download attempt status.
+
+        Returns:
+            BadgeInfo with appropriate type, text, and icon.
+        """
+        status_badges: dict[str, BadgeInfo] = {
+            self.Status.PENDING.value: BadgeInfo(
+                text="Pending",
+                badge_type=BadgeType.NEUTRAL,
+                icon="bi-clock",
+            ),
+            self.Status.DOWNLOADING.value: BadgeInfo(
+                text="Downloading",
+                badge_type=BadgeType.PROCESSING,
+            ),
+            self.Status.COMPLETED.value: BadgeInfo(
+                text="Completed",
+                badge_type=BadgeType.SUCCESS,
+                icon="bi-check-circle",
+            ),
+            self.Status.FAILED.value: BadgeInfo(
+                text="Failed",
+                badge_type=BadgeType.DANGER,
+                icon="bi-exclamation-triangle",
+            ),
+        }
+        return status_badges[self.status]
 
 
 class ProjectFileChunk(models.Model):

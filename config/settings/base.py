@@ -138,6 +138,7 @@ THIRD_PARTY_APPS = [
 
 LOCAL_APPS = [
     "wafer_space.users",
+    "wafer_space.core",
     "wafer_space.legal",
     "wafer_space.notifications",
     "wafer_space.referrals",
