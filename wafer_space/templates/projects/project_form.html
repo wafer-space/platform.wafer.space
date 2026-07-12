@@ -49,9 +49,35 @@
                   These settings are locked. Contact staff to modify.
                 </div>
               {% endif %}
-              {{ form.shuttle|as_crispy_field }}
-              {{ form.project_id|as_crispy_field }}
-              {{ form.slot_size|as_crispy_field }}
+              {% if is_new or request.user.is_staff %}
+                {{ form.shuttle|as_crispy_field }}
+                {{ form.project_id|as_crispy_field }}
+                {{ form.slot_size|as_crispy_field }}
+              {% else %}
+                {# Locked for non-staff: static values, no form inputs. #}
+                {# Disabled fields ignore POST data, so omitting the inputs is safe. #}
+                <div class="mb-3">
+                  <label class="form-label">Shuttle</label>
+                  <p class="form-control-plaintext mb-0">
+                    <i class="bi bi-lock" aria-hidden="true"></i>
+                    {{ form.instance.shuttle }}
+                  </p>
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Project ID</label>
+                  <p class="form-control-plaintext mb-0">
+                    <i class="bi bi-lock" aria-hidden="true"></i>
+                    {{ form.instance.project_id }}
+                  </p>
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Slot size</label>
+                  <p class="form-control-plaintext mb-0">
+                    <i class="bi bi-lock" aria-hidden="true"></i>
+                    {{ form.instance.slot_size_full_label }}
+                  </p>
+                </div>
+              {% endif %}
             </div>
           </div>
           {# Section 2: User Fields (Project Details) #}

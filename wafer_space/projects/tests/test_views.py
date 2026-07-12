@@ -499,6 +499,92 @@ class TestProjectUpdateView(TestCase):
         assert "slot_size" in form.fields
         assert form.fields["slot_size"].disabled is True
 
+    def test_owner_sees_locked_static_values_not_dropdowns(self):
+        """Non-staff owners see locked core fields as static text, not inputs.
+
+        Regression test for issue #297: locked shuttle/slot-size fields must
+        not render as dropdowns, and each locked value carries a lock icon.
+        """
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:update", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+        # No form inputs for locked core fields
+        assert 'name="shuttle"' not in content
+        assert 'name="project_id"' not in content
+        assert 'name="slot_size"' not in content
+        # Static values rendered instead
+        assert "G800 - Test Shuttle" in content
+        assert "ABCD" in content
+        assert SlotSize.FULL.full_label in content
+        # Lock icon on the banner plus one per locked field value
+        min_lock_icons = 4
+        assert content.count("bi-lock") >= min_lock_icons
+
+    def test_owner_sees_correct_shuttle_when_project_shuttle_closed(self):
+        """The locked display shows the project's own (closed) shuttle.
+
+        Regression test for issue #297: the page displayed the first OPEN
+        shuttle instead of the project's actual shuttle once that shuttle
+        left OPEN status.
+        """
+        self.shuttle.status = Shuttle.Status.COMPLETED
+        self.shuttle.save()
+        Shuttle.objects.create(
+            name="G881",
+            description="Other Open Shuttle",
+            status=Shuttle.Status.OPEN,
+        )
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:update", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+        assert "G800 - Test Shuttle" in content
+        assert "G881 - Other Open Shuttle" not in content
+
+    def test_owner_can_update_details_when_shuttle_closed(self):
+        """Owner edits still save after the project's shuttle closes."""
+        self.shuttle.status = Shuttle.Status.COMPLETED
+        self.shuttle.save()
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:update", kwargs={"pk": self.project.pk})
+        form_data = {
+            "name": "Renamed After Close",
+            "description": "Still editable",
+            "repository_url": "",
+            "license_type": "proprietary",
+            "other_license_spdx_id": "",
+            "proprietary_terms_url": "",
+        }
+        response = self.client.post(url, form_data)
+
+        assert response.status_code == HTTP_FOUND
+        self.project.refresh_from_db()
+        assert self.project.name == "Renamed After Close"
+        assert self.project.shuttle == self.shuttle
+
+    def test_staff_sees_editable_core_field_dropdowns(self):
+        """Staff still get the editable shuttle/slot-size dropdowns."""
+        User.objects.create_user(
+            username="staffdrop",
+            email="staffdrop@example.com",
+            password=TEST_PASSWORD,
+            is_staff=True,
+        )
+        self.client.login(username="staffdrop", password=TEST_PASSWORD)
+        url = reverse("projects:update", kwargs={"pk": self.project.pk})
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+        assert 'name="shuttle"' in content
+        assert 'name="slot_size"' in content
+        assert 'name="project_id"' in content
+
     def test_staff_can_update_all_fields(self):
         """Test that staff can update all project fields."""
         User.objects.create_user(
