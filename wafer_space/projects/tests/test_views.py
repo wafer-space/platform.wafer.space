@@ -567,6 +567,35 @@ class TestProjectUpdateView(TestCase):
         assert self.project.name == "Renamed After Close"
         assert self.project.shuttle == self.shuttle
 
+    def test_owner_forged_core_field_post_is_ignored(self):
+        """A crafted POST cannot change core fields for a non-staff owner."""
+        other_shuttle = Shuttle.objects.create(
+            name="G882",
+            description="Other Open Shuttle",
+            status=Shuttle.Status.OPEN,
+        )
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse("projects:update", kwargs={"pk": self.project.pk})
+        form_data = {
+            "name": "Forged Post",
+            "description": "",
+            "shuttle": other_shuttle.pk,
+            "project_id": "EVIL",
+            "slot_size": "0p5x0p5",
+            "repository_url": "",
+            "license_type": "proprietary",
+            "other_license_spdx_id": "",
+            "proprietary_terms_url": "",
+        }
+        response = self.client.post(url, form_data)
+
+        assert response.status_code == HTTP_FOUND
+        self.project.refresh_from_db()
+        assert self.project.name == "Forged Post"
+        assert self.project.shuttle == self.shuttle
+        assert self.project.project_id == "ABCD"
+        assert self.project.slot_size == "1x1"
+
     def test_staff_sees_editable_core_field_dropdowns(self):
         """Staff still get the editable shuttle/slot-size dropdowns."""
         User.objects.create_user(

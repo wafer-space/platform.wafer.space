@@ -300,6 +300,46 @@ class TestProjectFormShuttleQueryset(TestCase):
         assert form.is_valid(), form.errors
         assert form.cleaned_data["shuttle"] == self.completed_shuttle
 
+    def test_edit_form_does_not_duplicate_open_shuttle(self):
+        """A project on an OPEN shuttle lists that shuttle exactly once."""
+        open_project = Project.objects.create(
+            user=self.owner,
+            name="Open Project",
+            shuttle=self.open_shuttle,
+            project_id="OPEN",
+        )
+        form = ProjectForm(user=self.owner, instance=open_project)
+        shuttle_field = form.fields["shuttle"]
+        assert isinstance(shuttle_field, forms.ModelChoiceField)
+        assert shuttle_field.queryset is not None
+        assert shuttle_field.queryset.filter(pk=self.open_shuttle.pk).count() == 1
+
+    def test_forged_core_field_post_is_ignored_for_non_staff(self):
+        """POSTed core-field values are ignored for non-staff owners.
+
+        Disabled fields must fall back to the instance values even when a
+        crafted POST supplies different shuttle/project_id/slot_size.
+        """
+        form = ProjectForm(
+            user=self.owner,
+            instance=self.project,
+            data={
+                "name": "Legacy Project",
+                "shuttle": self.open_shuttle.pk,
+                "project_id": "EVIL",
+                "slot_size": "0p5x0p5",
+                "repository_url": "",
+                "license_type": "proprietary",
+                "other_license_spdx_id": "",
+                "proprietary_terms_url": "",
+            },
+        )
+        assert form.is_valid(), form.errors
+        project = form.save()
+        assert project.shuttle == self.completed_shuttle
+        assert project.project_id == "LGCY"
+        assert project.slot_size == "1x1"
+
     def test_project_id_label_is_upper_case_id(self):
         """The project_id field label must read 'Project ID', not 'Project id'."""
         form = ProjectForm()
