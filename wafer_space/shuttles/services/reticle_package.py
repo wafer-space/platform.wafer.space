@@ -41,6 +41,7 @@ def generate_package(
     pending: dict[str, list[str]] = {}
 
     write_tilemap(output_path / "tilemap.csv", slots, grid_config)
+    write_summary(output_path / "summary.csv", slots)
     write_checks_csv(output_path / "checks.csv", slots)
     write_readme(output_path / "README.md", shuttle, slots)
     write_manifest_and_copy_layout(output_path, slots, pending)
@@ -62,8 +63,9 @@ def write_manifest_and_copy_layout(
 ) -> None:
     """Write manifest.csv and copy OAS layout files for manufacturable projects.
 
-    Every assigned project gets a manifest row; SHA256 and LAYOUT stay empty
-    when no manufacturable layout is available (recorded in ``pending``).
+    VISIBILITY, PROJECT_DETAILS and REPOSITORY are the optional keys of the
+    reticle-stitcher manifest format; VISIBILITY controls whether a layout is
+    included in an obfuscated reticle.
     """
     with (output_path / "manifest.csv").open("w") as f:
         writer = csv.writer(f)
@@ -78,9 +80,6 @@ def write_manifest_and_copy_layout(
                 "VISIBILITY",
                 "PROJECT_DETAILS",
                 "REPOSITORY",
-                "PROJECT_URL",
-                "STATUS",
-                "SUBMITTED_AT",
             ]
         )
 
@@ -94,8 +93,6 @@ def write_manifest_and_copy_layout(
             prj = slot.project
             prj_file = prj.output_file
 
-            sha256 = ""
-            layout = ""
             try:
                 src_file = Path(prj_file.output_check.output_gds.path).resolve()
                 dst_file = f"{code}/{prj_file.top_cell}.oas"
@@ -104,29 +101,23 @@ def write_manifest_and_copy_layout(
                 dst_path.parent.mkdir(exist_ok=True)
                 os.link(src_file, dst_path)
 
-                sha256 = prj_file.output_check.output_gds_sha256
-                layout = dst_file
+                writer.writerow(
+                    [
+                        code,
+                        prj.name,
+                        slot.slot_size,
+                        prj_file.top_cell,
+                        prj_file.output_check.output_gds_sha256,
+                        dst_file,
+                        "Public" if prj.is_public else "Private",
+                        prj.description,
+                        prj.repository_url or "",
+                    ]
+                )
             except ValueError as e:
                 pending.setdefault(code, []).append(f"missing value: {e}")
             except OSError as e:
                 pending.setdefault(code, []).append(f"hardlink failed: {e}")
-
-            writer.writerow(
-                [
-                    code,
-                    prj.name,
-                    slot.slot_size,
-                    prj_file.top_cell,
-                    sha256,
-                    layout,
-                    "Public" if prj.is_public else "Private",
-                    prj.description,
-                    prj.repository_url or "",
-                    f"{settings.SITE_URL}/projects/{prj.id}/",
-                    prj.status,
-                    prj.submitted_at.isoformat() if prj.submitted_at else "",
-                ]
-            )
 
 
 def get_slots(shuttle: Shuttle) -> list[ShuttleSlot]:
@@ -183,6 +174,45 @@ def write_tilemap(
         writer = csv.writer(f)
         for row in grid:
             writer.writerow(row)
+
+
+def write_summary(path: Path, slots: list[ShuttleSlot]) -> None:
+    """Write summary.csv."""
+    seen: set[Any] = set()
+    with path.open("w") as f:
+        writer = csv.writer(f)
+        writer.writerow(
+            [
+                "CODE",
+                "PROJECT_NAME",
+                "PROJECT_URL",
+                "SLOT_SIZE",
+                "STATUS",
+                "TOP_CELL",
+                "SUBMITTED_AT",
+                "REPOSITORY_URL",
+            ]
+        )
+
+        for slot in slots:
+            if not slot.project or slot.project_id in seen:
+                continue
+            seen.add(slot.project_id)
+            prj = slot.project
+            prj_file = prj.output_file
+
+            writer.writerow(
+                [
+                    prj.project_id,
+                    prj.name,
+                    f"{settings.SITE_URL}/projects/{prj.id}/",
+                    slot.slot_size,
+                    prj.status,
+                    prj_file.top_cell,
+                    prj.submitted_at.isoformat() if prj.submitted_at else "",
+                    prj.repository_url or "",
+                ]
+            )
 
 
 def write_checks_csv(path: Path, slots: list[ShuttleSlot]) -> None:

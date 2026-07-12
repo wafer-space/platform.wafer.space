@@ -119,7 +119,7 @@ class TestGeneratePackage:
         assert len(warnings) == 0
         assert (output / "tilemap.csv").exists()
         assert (output / "manifest.csv").exists()
-        assert not (output / "summary.csv").exists()
+        assert (output / "summary.csv").exists()
         assert (output / "checks.csv").exists()
         assert (output / "README.md").exists()
         assert (output / "TST1" / "TOP1.oas").exists()
@@ -186,14 +186,13 @@ class TestGeneratePackage:
         output = tmp_path / "output"
         warnings = generate_package("G897", output, allow_pending=True)
 
-        # No layout copied, not in tilemap
+        # Skipped from tilemap/manifest
         assert not (output / "FAIL").exists()
         assert "FAIL" not in (output / "tilemap.csv").read_text()
+        assert "FAIL" not in (output / "manifest.csv").read_text()
 
-        # Present in manifest (with empty layout fields) and checks
-        manifest = read_manifest(output)
-        assert manifest["FAIL"]["SHA256"] == ""
-        assert manifest["FAIL"]["LAYOUT"] == ""
+        # Present in summary/checks
+        assert "FAIL" in (output / "summary.csv").read_text()
         assert "FAIL" in (output / "checks.csv").read_text()
 
         assert any("missing value" in w for w in warnings)
@@ -286,8 +285,8 @@ class TestGeneratePackage:
         assert manifest["PRIV"]["VISIBILITY"] == "Private"
         assert manifest["PRIV"]["REPOSITORY"] == ""
 
-    def test_manifest_includes_summary_columns(self, tmp_path):
-        """Manifest absorbs the columns previously written to summary.csv."""
+    def test_summary_kept_as_separate_file(self, tmp_path):
+        """summary.csv remains a separate file with its own columns."""
         shuttle = create_shuttle_with_config(tmp_path, "G893")
 
         oas_dir = tmp_path / "oas"
@@ -315,9 +314,15 @@ class TestGeneratePackage:
         output = tmp_path / "output"
         generate_package("G893", output)
 
-        row = read_manifest(output)["SUMM"]
+        with (output / "summary.csv").open() as f:
+            summary = {row["CODE"]: row for row in csv.DictReader(f)}
+        row = summary["SUMM"]
+        assert row["PROJECT_NAME"] == project.name
         assert row["PROJECT_URL"].endswith(f"/projects/{project.id}/")
         assert row["STATUS"] == project.status
-        assert row["SUBMITTED_AT"] == (
-            project.submitted_at.isoformat() if project.submitted_at else ""
-        )
+        assert row["TOP_CELL"] == "SUMM_TOP"
+
+        # The merged columns are NOT duplicated into the manifest
+        manifest_row = read_manifest(output)["SUMM"]
+        assert "PROJECT_URL" not in manifest_row
+        assert "STATUS" not in manifest_row
