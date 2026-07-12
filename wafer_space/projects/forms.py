@@ -170,6 +170,7 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
     )
 
     project_id = forms.CharField(
+        label="Project ID",
         max_length=PROJECT_ID_LENGTH,
         min_length=PROJECT_ID_LENGTH,
         widget=forms.TextInput(
@@ -300,11 +301,27 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
 
         # Set shuttle queryset fresh each time (not at class definition time).
         # This is critical for tests where shuttles are created after import.
+        # When editing, the project's own shuttle must stay in the queryset
+        # even once it is no longer OPEN: the disabled field validates its
+        # initial value against this queryset, so omitting the shuttle both
+        # displays the wrong value and blocks the owner from saving any
+        # edit at all (issue #297).
         shuttle_field = self.fields["shuttle"]
         if isinstance(shuttle_field, forms.ModelChoiceField):
-            shuttle_field.queryset = Shuttle.objects.filter(
-                status=Shuttle.Status.OPEN,
-            ).order_by("name")
+            shuttles = Shuttle.objects.filter(status=Shuttle.Status.OPEN)
+            if self.instance.shuttle_id:
+                shuttles = shuttles | Shuttle.objects.filter(
+                    pk=self.instance.shuttle_id,
+                )
+            shuttle_field.queryset = shuttles.order_by("name")
+
+        # Use full labels (with dimensions) for the slot_size dropdown on
+        # both the create and edit forms.
+        slot_size_field = self.fields["slot_size"]
+        if isinstance(slot_size_field, forms.TypedChoiceField):
+            slot_size_field.choices = [
+                (size.value, size.full_label) for size in SlotSize
+            ]
 
         self._configure_fields()
         self._set_defaults()
@@ -413,13 +430,6 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
 
         # Set default license_type for new projects
         self.fields["license_type"].initial = LicenseType.PROPRIETARY
-
-        # Use full labels for slot_size dropdown (includes dimensions)
-        slot_size_field = self.fields["slot_size"]
-        if isinstance(slot_size_field, forms.TypedChoiceField):
-            slot_size_field.choices = [
-                (size.value, size.full_label) for size in SlotSize
-            ]
 
     def clean(self):
         """Validate license fields and cache proprietary terms."""
