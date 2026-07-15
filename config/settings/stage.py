@@ -117,10 +117,13 @@ LOGGING = {
         },
     },
     "handlers": {
+        # Rate-limited: at most one email per error signature per hour,
+        # so a repeating failure (e.g. a periodic task erroring every few
+        # minutes) cannot flood ADMINS. See issue #293.
         "mail_admins": {
             "level": "ERROR",
             "filters": ["require_debug_false"],
-            "class": "django.utils.log.AdminEmailHandler",
+            "class": "wafer_space.core.log.RateLimitedAdminEmailHandler",
         },
         "console": {
             "level": "DEBUG",
@@ -138,6 +141,17 @@ LOGGING = {
         "django.security.DisallowedHost": {
             "level": "ERROR",
             "handlers": ["console", "mail_admins"],
+            "propagate": True,
+        },
+        # Application errors (logger.error/logger.exception anywhere under
+        # wafer_space.*, including Celery tasks and the task_failure bridge
+        # in config/celery.py) email ADMINS. Celery's root-logger hijack in
+        # workers does not touch explicitly-configured loggers, so this
+        # works in web and worker processes alike. See issue #293: metadata
+        # fetches failed every 5 minutes for a month with no email.
+        "wafer_space": {
+            "handlers": ["mail_admins"],
+            "level": "ERROR",
             "propagate": True,
         },
     },
