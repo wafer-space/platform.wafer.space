@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 from typing import TYPE_CHECKING
 
 import pytest
@@ -19,6 +20,12 @@ from wafer_space.shuttles.tests.factories import ShuttleFactory
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+def read_manifest(output: Path) -> dict[str, dict[str, str]]:
+    """Read manifest.csv into a dict keyed by project CODE."""
+    with (output / "manifest.csv").open() as f:
+        return {row["CODE"]: row for row in csv.DictReader(f)}
 
 
 def create_shuttle_with_config(tmp_path: Path, name: str) -> Shuttle:
@@ -212,3 +219,110 @@ class TestGeneratePackage:
         output = tmp_path / "output"
         with pytest.raises(ReticlePackageError, match="missing value"):
             generate_package("G895", output, allow_pending=False)
+
+    def test_manifest_exports_visibility_details_repository(self, tmp_path):
+        """Manifest includes VISIBILITY, PROJECT_DETAILS and REPOSITORY columns."""
+        shuttle = create_shuttle_with_config(tmp_path, "G894")
+
+        oas_dir = tmp_path / "oas"
+        oas_dir.mkdir()
+        oas1 = oas_dir / "output1.oas"
+        oas1.write_text("OAS1")
+        oas2 = oas_dir / "output2.oas"
+        oas2.write_text("OAS2")
+
+        public_prj = ProjectFactory(
+            project_id="PUBL",
+            slot_size="1x1",
+            is_public=True,
+            description="An open source RISC-V core",
+            repository_url="https://github.com/example/riscv",
+        )
+        pf1 = ProjectFileFactory(project=public_prj, top_cell="TOP1")
+        ManufacturabilityCheckFactory(
+            project=public_prj,
+            project_file=pf1,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+            output_gds=str(oas1),
+            output_gds_sha256="hash1",
+        )
+        public_prj.submitted_file = pf1
+        public_prj.save()
+
+        private_prj = ProjectFactory(
+            project_id="PRIV",
+            slot_size="1x1",
+            is_public=False,
+            repository_url="",
+        )
+        pf2 = ProjectFileFactory(project=private_prj, top_cell="TOP2")
+        ManufacturabilityCheckFactory(
+            project=private_prj,
+            project_file=pf2,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+            output_gds=str(oas2),
+            output_gds_sha256="hash2",
+        )
+        private_prj.submitted_file = pf2
+        private_prj.save()
+
+        ShuttleSlot.objects.create(
+            shuttle=shuttle, project=public_prj, row=0, column=0, slot_size="1x1"
+        )
+        ShuttleSlot.objects.create(
+            shuttle=shuttle, project=private_prj, row=0, column=1, slot_size="1x1"
+        )
+
+        output = tmp_path / "output"
+        generate_package("G894", output)
+
+        manifest = read_manifest(output)
+        assert manifest["PUBL"]["VISIBILITY"] == "Public"
+        assert manifest["PUBL"]["PROJECT_DETAILS"] == "An open source RISC-V core"
+        assert manifest["PUBL"]["REPOSITORY"] == "https://github.com/example/riscv"
+        assert manifest["PRIV"]["VISIBILITY"] == "Private"
+        assert manifest["PRIV"]["REPOSITORY"] == ""
+
+    def test_summary_kept_as_separate_file(self, tmp_path):
+        """summary.csv remains a separate file with its own columns."""
+        shuttle = create_shuttle_with_config(tmp_path, "G893")
+
+        oas_dir = tmp_path / "oas"
+        oas_dir.mkdir()
+        oas = oas_dir / "output.oas"
+        oas.write_text("OAS")
+
+        project = ProjectFactory(project_id="SUMM", slot_size="1x1")
+        pf = ProjectFileFactory(project=project, top_cell="SUMM_TOP")
+        ManufacturabilityCheckFactory(
+            project=project,
+            project_file=pf,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+            output_gds=str(oas),
+            output_gds_sha256="hash",
+        )
+        project.submitted_file = pf
+        project.save()
+
+        ShuttleSlot.objects.create(
+            shuttle=shuttle, project=project, row=0, column=0, slot_size="1x1"
+        )
+
+        output = tmp_path / "output"
+        generate_package("G893", output)
+
+        with (output / "summary.csv").open() as f:
+            summary = {row["CODE"]: row for row in csv.DictReader(f)}
+        row = summary["SUMM"]
+        assert row["PROJECT_NAME"] == project.name
+        assert row["PROJECT_URL"].endswith(f"/projects/{project.id}/")
+        assert row["STATUS"] == project.status
+        assert row["TOP_CELL"] == "SUMM_TOP"
+
+        # The merged columns are NOT duplicated into the manifest
+        manifest_row = read_manifest(output)["SUMM"]
+        assert "PROJECT_URL" not in manifest_row
+        assert "STATUS" not in manifest_row
