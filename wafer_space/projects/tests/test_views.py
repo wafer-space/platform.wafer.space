@@ -93,6 +93,84 @@ class TestProjectListView(TestCase):
         assert self.project2 in projects
         assert self.other_project not in projects
 
+    def test_shows_cob_badge_for_chip_on_board_project(self):
+        """Chip-on-Board projects show a CoB badge in the list."""
+        self.project1.chip_on_board = True
+        self.project1.save()
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+
+        response = self.client.get(reverse("projects:list"))
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+        assert "bi-cpu" in content
+        assert 'title="Chip-on-Board (CoB) packaging"' in content
+
+    def test_shows_bare_badge_for_non_cob_project(self):
+        """Non-CoB projects show a Bare badge in the list."""
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+
+        response = self.client.get(reverse("projects:list"))
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+        assert 'title="Bare die (no packaging)"' in content
+        assert "Bare Die" not in content
+
+    def test_packaging_badges_use_consistent_color(self):
+        """CoB and Bare packaging badges share the same badge color."""
+        self.project1.chip_on_board = True
+        self.project1.save()
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+
+        response = self.client.get(reverse("projects:list"))
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+        assert 'title="Chip-on-Board (CoB) packaging"' in content
+        assert 'title="Bare die (no packaging)"' in content
+        # Both packaging badges use the same bg-secondary style; no bg-info
+        # appears anywhere for a non-staff user viewing their own projects.
+        assert "bg-info" not in content
+        min_secondary_badges = 2
+        assert content.count("badge bg-secondary") >= min_secondary_badges
+
+    def test_shows_submitted_indicator(self):
+        """Submitted projects show a submitted-for-manufacturing badge."""
+        self.project1.status = Project.Status.SUBMITTED
+        self.project1.submitted_at = timezone.now()
+        self.project1.save()
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+
+        response = self.client.get(reverse("projects:list"))
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+        assert 'title="Submitted for manufacturing"' in content
+
+    def test_shows_not_submitted_indicator(self):
+        """Draft projects show a not-submitted indicator."""
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+
+        response = self.client.get(reverse("projects:list"))
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+        assert 'title="Not submitted for manufacturing"' in content
+
+    def test_shows_crowd_supply_order_link(self):
+        """Projects with a CrowdSupply order link to the CS order page."""
+        self.project1.crowd_supply_order_id = "327373"
+        self.project1.save()
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+
+        response = self.client.get(reverse("projects:list"))
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+        assert "https://www.crowdsupply.com/account/order/327373" in content
+        assert "327373" in content
+
 
 @pytest.mark.django_db
 class TestProjectDetailView(TestCase):
@@ -286,10 +364,12 @@ class TestProjectDetailView(TestCase):
         response = self.client.get(url)
 
         assert response.status_code == HTTP_OK
-        assert "Chip-on-Board (CoB)" in response.content.decode()
+        content = response.content.decode()
+        assert 'title="Chip-on-Board (CoB) packaging"' in content
+        assert "bi-cpu" in content
 
-    def test_detail_shows_bare_die_packaging_when_not_requested(self):
-        """Detail page labels non-CoB packaging as 'Bare Die'."""
+    def test_detail_shows_bare_packaging_when_not_requested(self):
+        """Detail page labels non-CoB packaging as 'Bare'."""
         self.client.login(username="testuser", password=TEST_PASSWORD)
         url = reverse("projects:detail", kwargs={"pk": self.project.pk})
 
@@ -297,9 +377,10 @@ class TestProjectDetailView(TestCase):
 
         assert response.status_code == HTTP_OK
         content = response.content.decode()
-        assert "Chip-on-Board" not in content
+        assert "Chip-on-Board (CoB) packaging" not in content
         assert "Packaging:" in content
-        assert "Bare Die" in content
+        assert 'title="Bare die (no packaging)"' in content
+        assert "Bare Die" not in content
 
     def test_detail_shows_cob_change_badge_in_check_history(self):
         """Detail page shows CoB Change badge for COB_CHANGE trigger in history."""

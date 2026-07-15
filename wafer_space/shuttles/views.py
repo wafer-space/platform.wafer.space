@@ -89,6 +89,14 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
                 1 for p in manufacturable_projects if p.shuttle_slots.exists()
             )
 
+            # Count projects with a CrowdSupply order and CoB packaging
+            cs_order_projects = [p for p in project_list if p.crowd_supply_order_id]
+            cs_order_total = len(cs_order_projects)
+            cs_order_assigned = sum(
+                1 for p in cs_order_projects if p.shuttle_slots.exists()
+            )
+            cob_count = sum(1 for p in project_list if p.chip_on_board)
+
             stats[slot_size] = {
                 "total_slots": total_slots,
                 "available_slots": available_slots,
@@ -96,6 +104,9 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
                 "assigned_count": assigned_count,
                 "manufacturable_total": manufacturable_total,
                 "manufacturable_assigned": manufacturable_assigned,
+                "cs_order_total": cs_order_total,
+                "cs_order_assigned": cs_order_assigned,
+                "cob_count": cob_count,
             }
 
         context["stats"] = stats

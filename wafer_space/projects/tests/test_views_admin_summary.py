@@ -154,6 +154,81 @@ class TestProjectAdminSummaryView:
         assert "▲" in content, "Sort indicator should be visible"
         assert "sort=-name" in content, "Toggle link should point to descending sort"
 
+    def test_displays_crowd_supply_order_link(self, client):
+        """Projects with a CrowdSupply order link to the CS order page."""
+        staff_user = UserFactory(is_staff=True)
+        ProjectFactory(name="CS Project", crowd_supply_order_id="327373")
+        client.force_login(staff_user)
+
+        response = client.get(reverse("projects:admin_summary"))
+
+        content = response.content.decode()
+        assert "https://www.crowdsupply.com/account/order/327373" in content
+        assert "327373" in content
+
+    def test_displays_cob_indicator(self, client):
+        """Chip-on-Board projects show a CoB check in the table."""
+        staff_user = UserFactory(is_staff=True)
+        ProjectFactory(name="CoB Project", chip_on_board=True)
+        client.force_login(staff_user)
+
+        response = client.get(reverse("projects:admin_summary"))
+
+        content = response.content.decode()
+        assert "CoB" in content, "CoB column header should be present"
+        assert 'aria-label="Chip-on-Board packaging"' in content
+
+    def test_sort_by_cs_order(self, client):
+        """Sort by CrowdSupply order number."""
+        staff_user = UserFactory(is_staff=True)
+        ProjectFactory(name="Order Niner", crowd_supply_order_id="999999")
+        ProjectFactory(name="Order Wun", crowd_supply_order_id="111111")
+        client.force_login(staff_user)
+
+        response = client.get(reverse("projects:admin_summary") + "?sort=cs_order")
+
+        content = response.content.decode()
+        wun_pos = content.find("Order Wun")
+        niner_pos = content.find("Order Niner")
+        assert wun_pos < niner_pos, "Lower order number should appear first"
+
+    def test_summary_stats_include_cs_and_cob_counts(self, client):
+        """Top-of-page summary includes CS order and CoB project counts."""
+        staff_user = UserFactory(is_staff=True)
+        ProjectFactory(name="CS One", crowd_supply_order_id="111111")
+        ProjectFactory(
+            name="CS Two CoB",
+            crowd_supply_order_id="222222",
+            chip_on_board=True,
+        )
+        ProjectFactory(name="Plain Project")
+        client.force_login(staff_user)
+
+        response = client.get(reverse("projects:admin_summary"))
+
+        summary = response.context["summary"]
+        expected_cs_order_count = 2
+        assert summary["cs_order_count"] == expected_cs_order_count
+        assert summary["cob_count"] == 1
+        content = response.content.decode()
+        assert "CrowdSupply" in content
+
+    def test_sort_by_cob(self, client):
+        """Sort by Chip-on-Board flag descending puts CoB projects first."""
+        staff_user = UserFactory(is_staff=True)
+        # Name the CoB project so the default name-sort fallback would put
+        # it last: the test only passes when -cob sorting actually works.
+        ProjectFactory(name="Zebra Packaged Project", chip_on_board=True)
+        ProjectFactory(name="Alpha Plain Project", chip_on_board=False)
+        client.force_login(staff_user)
+
+        response = client.get(reverse("projects:admin_summary") + "?sort=-cob")
+
+        content = response.content.decode()
+        cob_pos = content.find("Zebra Packaged Project")
+        bare_pos = content.find("Alpha Plain Project")
+        assert cob_pos < bare_pos, "CoB project should appear first"
+
 
 @pytest.mark.django_db
 class TestManufacturabilityCheckAdminStatusView:
@@ -230,3 +305,49 @@ class TestManufacturabilityCheckAdminStatusView:
             ManufacturabilityCheck.Status.CANCELLING,
         }
         assert statuses == expected_statuses
+
+    def test_active_checks_show_cs_order_and_cob(self, client):
+        """Active check rows show the project's CS order link and CoB flag."""
+        staff_user = UserFactory(is_staff=True)
+        project = ProjectFactory(
+            crowd_supply_order_id="327373",
+            chip_on_board=True,
+        )
+        project_file = ProjectFileFactory(project=project)
+        ManufacturabilityCheck.objects.create(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        client.force_login(staff_user)
+
+        response = client.get(reverse("projects:admin_check_status"))
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+        assert "https://www.crowdsupply.com/account/order/327373" in content
+        assert 'aria-label="Chip-on-Board packaging"' in content
+
+    def test_recent_checks_show_cs_order_and_cob(self, client):
+        """Recent (terminal) check rows show CS order link and CoB flag."""
+        staff_user = UserFactory(is_staff=True)
+        project = ProjectFactory(
+            crowd_supply_order_id="654321",
+            chip_on_board=True,
+        )
+        project_file = ProjectFileFactory(project=project)
+        # Terminal status: appears only in the Recent Checks table
+        ManufacturabilityCheck.objects.create(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
+        client.force_login(staff_user)
+
+        response = client.get(reverse("projects:admin_check_status"))
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+        assert "https://www.crowdsupply.com/account/order/654321" in content
+        assert 'aria-label="Chip-on-Board packaging"' in content

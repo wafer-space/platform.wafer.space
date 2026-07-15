@@ -777,6 +777,8 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
         "name": ("name",),
         "owner": ("user__username",),
         "email": ("user__email",),
+        "cs_order": ("crowd_supply_order_id", "name"),
+        "cob": ("chip_on_board", "name"),
         "status": ("latest_check_status",),
     }
     DEFAULT_SORT: ClassVar[str] = "name"
@@ -944,6 +946,9 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
 
         return {
             "total": len(projects),
+            # CrowdSupply order / CoB packaging stats
+            "cs_order_count": sum(1 for p in projects if p.crowd_supply_order_id),
+            "cob_count": sum(1 for p in projects if p.chip_on_board),
             # Latest precheck version stats
             "latest_manufacturable_total": sum(latest_manufacturable_by_size.values()),
             "latest_manufacturable_by_size": build_size_breakdown(

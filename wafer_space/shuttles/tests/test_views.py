@@ -110,6 +110,145 @@ class TestShuttleAssignmentView:
         assert project1 in projects
         assert project2 in projects
 
+    def test_stats_include_crowd_supply_and_cob_counts(self, client):
+        """Stats should count CrowdSupply-order and CoB projects per size."""
+        user = UserFactory(is_staff=True)
+        client.force_login(user)
+
+        shuttle = ShuttleFactory(name="G806")
+        slot = ShuttleSlot.objects.create(
+            shuttle=shuttle,
+            row=0,
+            column=0,
+            slot_size=SlotSize.FULL,
+            status=ShuttleSlot.Status.RESERVED,
+        )
+        assigned = ProjectFactory(
+            shuttle=shuttle,
+            slot_size=SlotSize.FULL,
+            crowd_supply_order_id="327373",
+            chip_on_board=True,
+        )
+        slot.project = assigned
+        slot.save()
+
+        # Unassigned project with a CrowdSupply order, no CoB
+        ProjectFactory(
+            shuttle=shuttle,
+            slot_size=SlotSize.FULL,
+            crowd_supply_order_id="654321",
+        )
+        # Project with neither
+        ProjectFactory(shuttle=shuttle, slot_size=SlotSize.FULL)
+
+        url = reverse("shuttles:assignment", kwargs={"name": shuttle.name})
+        response = client.get(url)
+
+        assert response.status_code == HTTPStatus.OK
+        full_stats = response.context["stats"][SlotSize.FULL]
+        expected_cs_order_total = 2
+        assert full_stats["cs_order_assigned"] == 1
+        assert full_stats["cs_order_total"] == expected_cs_order_total
+        assert full_stats["cob_count"] == 1
+
+    def test_summary_table_has_cs_and_cob_columns(self, client):
+        """Summary table should have CS# and CoB column headers."""
+        user = UserFactory(is_staff=True)
+        client.force_login(user)
+
+        shuttle = ShuttleFactory(name="G807")
+        ShuttleSlot.objects.create(
+            shuttle=shuttle,
+            row=0,
+            column=0,
+            slot_size=SlotSize.FULL,
+            status=ShuttleSlot.Status.AVAILABLE,
+        )
+
+        url = reverse("shuttles:assignment", kwargs={"name": shuttle.name})
+        response = client.get(url)
+
+        assert response.status_code == HTTPStatus.OK
+        content = response.content.decode()
+        assert "CS#" in content
+        assert "CoB" in content
+
+    def test_assignment_table_shows_cs_order_link_and_cob(self, client):
+        """Assignment table should link CS orders and flag CoB projects."""
+        user = UserFactory(is_staff=True)
+        client.force_login(user)
+
+        shuttle = ShuttleFactory(name="G808")
+        ProjectFactory(
+            shuttle=shuttle,
+            crowd_supply_order_id="327373",
+            chip_on_board=True,
+        )
+
+        url = reverse("shuttles:assignment", kwargs={"name": shuttle.name})
+        response = client.get(url)
+
+        assert response.status_code == HTTPStatus.OK
+        content = response.content.decode()
+        assert "https://www.crowdsupply.com/account/order/327373" in content
+        assert 'aria-label="Chip-on-Board packaging"' in content
+
+    def test_grid_tooltip_shows_packaging_and_cs_order(self, client):
+        """Grid cell tooltip should include packaging and CS order info."""
+        user = UserFactory(is_staff=True)
+        client.force_login(user)
+
+        shuttle = ShuttleFactory(name="G809")
+        slot = ShuttleSlot.objects.create(
+            shuttle=shuttle,
+            row=0,
+            column=0,
+            slot_size=SlotSize.FULL,
+            status=ShuttleSlot.Status.RESERVED,
+        )
+        project = ProjectFactory(
+            shuttle=shuttle,
+            slot_size=SlotSize.FULL,
+            crowd_supply_order_id="327373",
+            chip_on_board=True,
+        )
+        slot.project = project
+        slot.save()
+
+        url = reverse("shuttles:assignment", kwargs={"name": shuttle.name})
+        response = client.get(url)
+
+        assert response.status_code == HTTPStatus.OK
+        content = response.content.decode()
+        assert "Packaging: CoB" in content
+        assert "CS Order: 327373" in content
+
+    def test_grid_tooltip_shows_bare_without_cs_order(self, client):
+        """Tooltip shows Bare and omits CS Order when neither is set."""
+        user = UserFactory(is_staff=True)
+        client.force_login(user)
+
+        shuttle = ShuttleFactory(name="G814")
+        slot = ShuttleSlot.objects.create(
+            shuttle=shuttle,
+            row=0,
+            column=0,
+            slot_size=SlotSize.FULL,
+            status=ShuttleSlot.Status.RESERVED,
+        )
+        project = ProjectFactory(shuttle=shuttle, slot_size=SlotSize.FULL)
+        slot.project = project
+        slot.save()
+
+        url = reverse("shuttles:assignment", kwargs={"name": shuttle.name})
+        response = client.get(url)
+
+        assert response.status_code == HTTPStatus.OK
+        content = response.content.decode()
+        assert "Packaging: Bare" in content
+        assert "Bare Die" not in content
+        assert "CS Order:" not in content
+
 
 @pytest.mark.django_db
 class TestGridPreviewView:
