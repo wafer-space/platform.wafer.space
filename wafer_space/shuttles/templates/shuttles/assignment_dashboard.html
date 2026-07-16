@@ -205,11 +205,11 @@
                 <td data-sort-value="{% if project.latest_file_manufacturable %}0{% elif project.latest_file_manufacturable is None %}2{% else %}1{% endif %}">
                   {% if project.submitted_file and project.submitted_file != project.latest_file %}
                     <div class="text-nowrap">
-                      <small class="text-muted">Latest:</small>
+                      <small class="text-muted" title="Latest file revision">L:</small>
                       {% badge_check_status_and_version project.latest_file_check %}
                     </div>
                     <div class="text-nowrap">
-                      <small class="text-muted">Submitted:</small>
+                      <small class="text-muted" title="Submitted for manufacturing">S:</small>
                       {% badge_check_status_and_version project.submitted_file_check %}
                     </div>
                   {% else %}

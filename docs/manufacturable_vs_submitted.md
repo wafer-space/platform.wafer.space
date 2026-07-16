@@ -96,7 +96,10 @@ rules:
 - **Status column**: always shows one line with the precheck status of the
   **latest** file revision. If a submitted revision exists and it is *not*
   the latest revision, a second line shows the precheck status of the
-  **submitted** revision. Each line is labelled when both are shown.
+  **submitted** revision. When both are shown each line carries a compact
+  `L:` / `S:` label (hover title spells out "Latest file revision" /
+  "Submitted for manufacturing"); tooltips use the full `Latest:` /
+  `Submitted:` words.
 - **Grid tiles and the assign-autocomplete indicator** (✓/?/✗) are keyed on
   the **latest** revision's manufacturability, consistent with the rest of
   the page. The grid tooltip carries the same information as the Status

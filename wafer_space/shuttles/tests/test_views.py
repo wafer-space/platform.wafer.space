@@ -16,6 +16,8 @@ from wafer_space.users.tests.factories import UserFactory
 
 SUBMITTED_ICON = 'aria-label="File submitted for manufacturing"'
 NOT_SUBMITTED_ICON = 'aria-label="No file submitted for manufacturing"'
+LATEST_LABEL = 'title="Latest file revision">L:'
+SUBMITTED_LABEL = 'title="Submitted for manufacturing">S:'
 
 
 @pytest.mark.django_db
@@ -382,8 +384,8 @@ class TestAssignmentPageRevisionStatus:
         content = self._get_content(client, shuttle)
 
         assert "Passed" in content
-        assert "Latest:" not in content
-        assert "Submitted:" not in content
+        assert LATEST_LABEL not in content
+        assert SUBMITTED_LABEL not in content
         assert SUBMITTED_ICON in content
 
     def test_submitted_older_revision_shows_both_status_lines(self, client):
@@ -409,8 +411,8 @@ class TestAssignmentPageRevisionStatus:
 
         content = self._get_content(client, shuttle)
 
-        assert "Latest:" in content
-        assert "Submitted:" in content
+        assert LATEST_LABEL in content
+        assert SUBMITTED_LABEL in content
         assert "Passed" in content
         assert "Failed" in content
 
