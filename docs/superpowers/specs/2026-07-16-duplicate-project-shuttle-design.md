@@ -98,8 +98,9 @@ Set fresh: `shuttle=target_shuttle`, `project_id` (same value as source),
 **Not copied:** `crowd_supply_order_id` — a CrowdSupply order belongs to a
 specific shuttle run, so the duplicate starts blank.
 
-The new instance sets `_current_user = admin_user` before `save()` so model
-validation treats this as a staff operation.
+The new instance sets `_current_user = admin_user` before `save()`. This is
+belt-and-braces only: `Project.clean()` skips the core-field immutability
+check for instances being added, so creation would validate either way.
 
 ### Step 2 — Copy the active `ProjectFile`
 
@@ -111,18 +112,36 @@ validation treats this as a staff operation.
   computed hashes (`hash_md5`/`hash_sha1`/`hash_sha256`), `hash_verified`,
   `handler_metadata`, `file_size`, `original_filename`, `processed_filename`,
   `top_cell`, `content_type`, `download_started_at`, `download_completed_at`.
-- Set fresh: `project=<new project>`, `is_active=True`, `replaced_by=None`,
-  `download_task_id=""`.
-- `DownloadAttempt` / `ProjectFileChunk` history is **not** copied — it
-  describes the original download, which never happened for the duplicate.
+- Set fresh: `project=<new project>`, `is_active=True`, `replaced_by=None`.
+- **The duplicate must be invisible to the download recovery scanner.**
+  `ensure_download_tasks_queued` (runs every 60 s) re-queues any active file
+  with an empty `download_task_id`, and treats files with a task id but no
+  DOWNLOADING/COMPLETED/FAILED attempt as orphaned. `download_status` is a
+  property derived from the latest `DownloadAttempt`. Therefore the service
+  must also:
+  1. Copy the source file's latest `DownloadAttempt` row (guaranteed
+     COMPLETED by validation) to the new file with `attempt_number=1`, so
+     the derived `download_status` is COMPLETED and the "queued files"
+     branch skips it.
+  2. Set `download_task_id` to the sentinel `f"duplicated:{source_file.pk}"`
+     (non-empty, self-documenting) so the "pending files" branch skips it.
+- Other `DownloadAttempt` rows and `ProjectFileChunk` history are **not**
+  copied — they describe the original download's transport details.
 
 ### Step 3 — Copy the latest `ManufacturabilityCheck` (provenance)
 
-If the source file has at least one check, the most recent one
-(`latest_manufacturability_check`) is row-copied with FKs remapped to the new
-project/file:
+The provenance copy uses the source file's **latest FINISHED check** (the
+same selection as `ProjectFile.output_check`), not simply the newest check.
+A newest-but-non-terminal check (PENDING/DISPATCHING/RUNNING) must never be
+copied: the periodic check scanner dispatches every PENDING row, so a copied
+PENDING check would trigger a second real run, and copied active states would
+reference Docker servers/containers that do not exist. Copying only FINISHED
+checks guarantees the copy is inert. If the source file has no FINISHED
+check, this step is skipped.
 
-- Copied: `status`, `finished_status`, `is_manufacturable`, `errors`,
+The copy is row-copied with FKs remapped to the new project/file:
+
+- Copied: `status` (always FINISHED), `is_manufacturable`, `errors`,
   `warnings`, `processing_logs`, `error_message`, `docker_*` metadata fields,
   `tool_versions`, `precheck_version`, timing fields, `docker_exit_code`,
   and the artifact SHA-256 fields (`log_file_sha256`, `runs_archive_sha256`,
@@ -138,7 +157,9 @@ project/file:
   timestamped at duplication time.
 - `ManufacturabilityCheckpoint` rows and the `ManufacturabilityCheckTask`
   row are **not** copied.
-- If the source file has no checks, this step is skipped.
+
+(`finished_status` is a derived property, not a column — it follows from
+`status` + `is_manufacturable` + `warnings` automatically.)
 
 ### Step 4 — Queue a fresh check
 
@@ -203,8 +224,14 @@ The new `Project` instance.
   status `DRAFT`; `submitted_file`/`submitted_at` empty.
 - File bytes readable from the new `ProjectFile` and identical to source;
   new storage path differs from source path.
+- New file has a COMPLETED `DownloadAttempt` copy and the
+  `duplicated:<pk>` sentinel `download_task_id`, so its derived
+  `download_status` is COMPLETED and the recovery scanner's "pending" and
+  "queued" querysets both exclude it (assert against the actual querysets
+  used by `ensure_download_tasks_queued`).
 - Provenance check copied with artifact `FileField`s empty and SHA fields
-  populated; skipped cleanly when the source has no checks.
+  populated; uses the latest FINISHED check even when a newer non-terminal
+  check exists; skipped cleanly when the source has no FINISHED checks.
 - Fresh check exists, `PENDING`, `trigger_reason=DUPLICATED`,
   `parent_check` set to the provenance copy.
 - Each validation failure raises `ProjectDuplicationError` and creates
