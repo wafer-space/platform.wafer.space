@@ -327,10 +327,13 @@ Infrastructure exists but not fully connected:
 - `submitted_at` (DateTimeField, nullable)
 - `estimated_cost` (DecimalField, nullable)
 
-**Derived Properties (computed from latest check):**
-- `is_manufacturable` (@property) - Derived from latest FINISHED check on submitted file
-- `manufacturability_errors` (@property) - Errors from latest FINISHED check
-- `check_completed_at` (@property) - Completion timestamp from latest check
+**Derived Properties (each names the file revision it reads from — see
+`docs/manufacturable_vs_submitted.md`):**
+- `latest_file` (@property) - The latest (active) file revision
+- `latest_file_check` (@property) - Latest check on the latest revision
+- `submitted_file_check` (@property) - Latest check on the submitted revision
+- `latest_file_manufacturable` (@property) - Whether the latest revision's
+  latest FINISHED check passed (None while unfinished)
 
 ### ProjectFile Table
 - `id` (AutoField, PK)
