@@ -297,6 +297,9 @@ wafer.space - Django Website for User Management.pdf
 # Claude Code configuration (user-specific)
 .claude/
 
+# Playwright MCP plugin artifacts (page snapshots, console logs)
+.playwright-mcp/
+
 # Browser test screenshots (auto-generated)
 tests/browser/screenshots/
 
