@@ -213,8 +213,10 @@ The new `Project` instance.
   pipeline makes) — but the copy is performed as late as possible to
   minimise the window.
 - Concurrent duplication with the same `project_id` onto the same shuttle is
-  caught by the DB `unique_project_id_per_shuttle` constraint; the view maps
-  `IntegrityError`/`ValidationError` from `full_clean()` to a friendly error.
+  caught by the DB `unique_project_id_per_shuttle` constraint. The service
+  catches `IntegrityError`/`ValidationError` from `full_clean()`/`save()` and
+  re-raises them as `ProjectDuplicationError`, so the admin view has a single
+  exception surface.
 
 ## Testing
 
