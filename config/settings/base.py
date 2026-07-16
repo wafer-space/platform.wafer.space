@@ -452,6 +452,14 @@ CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes hard time limit
 CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes soft time limit
 
+# Worker pool process recycling (issue #309)
+# Prefork pool processes accumulate memory indefinitely (2-3.5GB RSS each in
+# prod after ~9 days). Recycling a child after N tasks or ~1GiB RSS returns
+# that memory to the OS; the replacement happens after the in-flight task
+# completes, so long-running tasks are never interrupted.
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 100
+CELERY_WORKER_MAX_MEMORY_PER_CHILD = 1024 * 1024  # kB (~1GiB RSS)
+
 # Download task configuration
 # Celery retry settings for download tasks (built-in retry mechanism)
 DOWNLOAD_TASK_MAX_RETRIES = 2  # Total of 3 attempts (initial + 2 retries)
