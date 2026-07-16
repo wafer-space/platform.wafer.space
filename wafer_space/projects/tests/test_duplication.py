@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
@@ -24,6 +25,9 @@ from wafer_space.users.models import User
 from .constants import TEST_PASSWORD
 from .factories import ProjectFactory
 from .factories import ProjectFileFactory
+
+if TYPE_CHECKING:
+    from django.core.files.storage import Storage
 
 GDS_BYTES = b"fake-gds-content-for-duplication-tests"
 
@@ -351,32 +355,86 @@ class TestDuplicationCheckSelection(TestCase):
 
 @pytest.mark.django_db
 class TestDuplicationAtomicity(TestCase):
-    """A failure mid-copy rolls back everything."""
+    """A failure mid-copy rolls back everything, including the blob."""
 
-    def test_integrityerror_rolls_back_and_becomes_duplication_error(self) -> None:
-        admin_user = User.objects.create_superuser(
+    def setUp(self) -> None:
+        self.admin_user = User.objects.create_superuser(
             username="admin",
             email="admin@example.com",
             password=TEST_PASSWORD,
         )
-        source_shuttle = make_shuttle("G890")
-        target_shuttle = make_shuttle("G891")
-        source = make_source_project(shuttle=source_shuttle)
+        self.source_shuttle = make_shuttle("G890")
+        self.target_shuttle = make_shuttle("G891")
+        self.source = make_source_project(shuttle=self.source_shuttle)
+
+    def test_integrityerror_rolls_back_and_becomes_duplication_error(self) -> None:
         projects_before = Project.objects.count()
         files_before = ProjectFile.objects.count()
+
+        # Record the copied blob from inside the failing step: the DB
+        # rollback discards the rows that would name it, and the media
+        # root is shared with parallel tests, so a directory diff would
+        # be racy.
+        copied_names: list[str] = []
+        copied_storages: list[Storage] = []
+
+        def record_and_boom(
+            source_file: ProjectFile,
+            new_project: Project,
+            new_file: ProjectFile,
+        ) -> None:
+            copied_names.append(new_file.file.name)
+            copied_storages.append(new_file.file.storage)
+            msg = "boom"
+            raise IntegrityError(msg)
 
         with (
             patch(
                 "wafer_space.projects.duplication._copy_provenance_check",
-                side_effect=IntegrityError("boom"),
+                side_effect=record_and_boom,
             ),
             pytest.raises(ProjectDuplicationError, match="boom"),
         ):
             duplicate_project_to_shuttle(
-                project=source,
-                target_shuttle=target_shuttle,
-                admin_user=admin_user,
+                project=self.source,
+                target_shuttle=self.target_shuttle,
+                admin_user=self.admin_user,
             )
 
         assert Project.objects.count() == projects_before
         assert ProjectFile.objects.count() == files_before
+        # The copied storage blob must not be left orphaned.
+        assert copied_names
+        assert copied_names[0]
+        assert not copied_storages[0].exists(copied_names[0])
+
+    def test_failure_inside_copy_file_removes_blob(self) -> None:
+        """_copy_file cleans up its own blob when a later step in it fails."""
+        copied_names: list[str] = []
+        copied_storages: list[Storage] = []
+
+        def record_and_boom(**kwargs: object) -> None:
+            new_file = kwargs["project_file"]
+            assert isinstance(new_file, ProjectFile)
+            copied_names.append(new_file.file.name)
+            copied_storages.append(new_file.file.storage)
+            msg = "boom"
+            raise IntegrityError(msg)
+
+        with (
+            patch.object(
+                DownloadAttempt.objects,
+                "create",
+                side_effect=record_and_boom,
+            ),
+            pytest.raises(ProjectDuplicationError, match="boom"),
+        ):
+            duplicate_project_to_shuttle(
+                project=self.source,
+                target_shuttle=self.target_shuttle,
+                admin_user=self.admin_user,
+            )
+
+        assert copied_names
+        assert copied_names[0]
+        assert not copied_storages[0].exists(copied_names[0])

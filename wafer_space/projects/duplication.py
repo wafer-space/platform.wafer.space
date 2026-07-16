@@ -64,6 +64,7 @@ def duplicate_project_to_shuttle(
     ``tasks_duplication.duplicate_project_task`` from views.
     """
     source_file = validate_duplication(project, target_shuttle)
+    new_file: ProjectFile | None = None
     try:
         with transaction.atomic():
             new_project = _copy_project(project, target_shuttle)
@@ -80,6 +81,12 @@ def duplicate_project_to_shuttle(
     # surface as ProjectDuplicationError so the task records a FAILED
     # LogEntry instead of dying invisibly.
     except (IntegrityError, ValidationError, OSError) as exc:
+        # The transaction rollback removes the DB rows but not the
+        # already-copied storage blob; delete it so a failed duplication
+        # leaves nothing behind. (_copy_file cleans up its own internal
+        # failures; this covers failures in the steps after it.)
+        if new_file is not None:
+            _delete_copied_blob(new_file)
         msg = f"Duplication failed while saving: {exc}"
         raise ProjectDuplicationError(msg) from exc
 
@@ -199,32 +206,53 @@ def _copy_file(source_file: ProjectFile, new_project: Project) -> ProjectFile:
         download_task_id=f"duplicated:{source_file.pk}",
         is_active=True,
     )
+    # Newest attempt; COMPLETED per validation. The None guard exists
+    # for mypy (first() is typed Optional) and for races where attempts
+    # were deleted between validation and here. Checked before the blob
+    # is written so the failure needs no storage cleanup.
+    source_attempt = source_file.download_attempts.first()
+    if source_attempt is None:
+        msg = "Source file has no download attempt to copy."
+        raise ProjectDuplicationError(msg)
+
     with source_file.file.open("rb") as source_handle:
         new_file.file.save(
             PurePosixPath(source_file.file.name).name,
             File(source_handle),
             save=False,
         )
-    new_file.save()
-
-    # Newest attempt; COMPLETED per validation. The None guard exists for
-    # mypy (first() is typed Optional) and for races where attempts were
-    # deleted between validation and here.
-    source_attempt = source_file.download_attempts.first()
-    if source_attempt is None:
-        msg = "Source file has no download attempt to copy."
-        raise ProjectDuplicationError(msg)
-    DownloadAttempt.objects.create(
-        project_file=new_file,
-        attempt_number=1,
-        status=DownloadAttempt.Status.COMPLETED,
-        completed_at=source_attempt.completed_at,
-        download_started_at=source_attempt.download_started_at,
-        download_completed_at=source_attempt.download_completed_at,
-        download_duration_seconds=source_attempt.download_duration_seconds,
-        bytes_downloaded=source_attempt.bytes_downloaded,
-    )
+    # The blob exists in storage from here on; if any later step in this
+    # function fails, delete it before re-raising (the DB transaction
+    # rollback cannot remove storage files).
+    try:
+        new_file.save()
+        DownloadAttempt.objects.create(
+            project_file=new_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
+            completed_at=source_attempt.completed_at,
+            download_started_at=source_attempt.download_started_at,
+            download_completed_at=source_attempt.download_completed_at,
+            download_duration_seconds=source_attempt.download_duration_seconds,
+            bytes_downloaded=source_attempt.bytes_downloaded,
+        )
+    except (IntegrityError, ValidationError, OSError):
+        _delete_copied_blob(new_file)
+        raise
     return new_file
+
+
+def _delete_copied_blob(new_file: ProjectFile) -> None:
+    """Best-effort removal of the copied storage blob after a rollback."""
+    if not new_file.file or not new_file.file.name:
+        return
+    try:
+        new_file.file.storage.delete(new_file.file.name)
+    except OSError:
+        logger.warning(
+            "Could not delete orphaned duplicate file %s",
+            new_file.file.name,
+        )
 
 
 def _copy_provenance_check(

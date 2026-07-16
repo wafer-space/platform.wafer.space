@@ -242,11 +242,13 @@ The new `Project` instance.
 
 - All service validation errors raise `ProjectDuplicationError` with a
   user-facing message; the admin view surfaces them via `messages.error`.
-- The transaction guarantees no partial duplicates. Storage-file copy happens
-  inside the transaction; if the subsequent DB writes fail, the orphaned
-  storage file is acceptable garbage (same trade-off the existing download
-  pipeline makes) — but the copy is performed as late as possible to
-  minimise the window.
+- The transaction guarantees no partial duplicates. The storage-file copy
+  happens inside the transaction, and because a DB rollback cannot remove
+  storage files, every failure path deletes the copied blob
+  (`_delete_copied_blob`, best-effort): `_copy_file` cleans up its own
+  internal failures, and the outer handler cleans up when a later step
+  fails. *(Supersedes the earlier "orphaned file is acceptable garbage"
+  trade-off.)*
 - Concurrent duplication with the same `project_id` onto the same shuttle is
   caught by the DB `unique_project_id_per_shuttle` constraint. The service
   catches `IntegrityError`/`ValidationError` from `full_clean()`/`save()` and
