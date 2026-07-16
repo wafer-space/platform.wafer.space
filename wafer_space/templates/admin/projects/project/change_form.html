@@ -1,0 +1,10 @@
+{% extends "admin/change_form.html" %}
+
+{% block object-tools-items %}
+  {% if original and has_add_permission %}
+    <li>
+      <a href="{% url 'admin:projects_project_duplicate' original.pk %}">Duplicate to another shuttle…</a>
+    </li>
+  {% endif %}
+  {{ block.super }}
+{% endblock object-tools-items %}

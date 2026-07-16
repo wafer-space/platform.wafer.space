@@ -1,9 +1,23 @@
 """Django admin configuration for projects app."""
 
+from typing import TYPE_CHECKING
+from typing import Any
+from typing import cast
+
+from django import forms
 from django.contrib import admin
+from django.contrib import messages
+from django.core.exceptions import PermissionDenied
+from django.http import HttpRequest
+from django.http import HttpResponse
+from django.shortcuts import redirect
+from django.template.response import TemplateResponse
+from django.urls import path
+from django.urls import reverse
 from simple_history.admin import SimpleHistoryAdmin
 
 from wafer_space.contrib.admin_mixins import StaffReadOnlyAdminMixin
+from wafer_space.projects.exceptions import ProjectDuplicationError
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import FileProcessingError
 from wafer_space.projects.models import ManufacturabilityCheck
@@ -13,6 +27,38 @@ from wafer_space.projects.models import PrecheckImageRevision
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectAccessLog
 from wafer_space.projects.models import ProjectFileChunk
+from wafer_space.projects.services import ELIGIBLE_TARGET_SHUTTLE_STATUSES
+from wafer_space.projects.services import duplicate_project_to_shuttle
+from wafer_space.shuttles.models import Shuttle
+
+if TYPE_CHECKING:
+    from wafer_space.users.models import User
+
+
+class DuplicateProjectForm(forms.Form):
+    """Pick the shuttle to duplicate a project onto."""
+
+    target_shuttle = forms.ModelChoiceField(
+        queryset=Shuttle.objects.none(),
+        label="Target shuttle",
+        help_text="The duplicate is created as a draft on this shuttle.",
+    )
+
+    def __init__(
+        self,
+        *args: Any,
+        source_shuttle: Shuttle | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        queryset = Shuttle.objects.filter(
+            status__in=ELIGIBLE_TARGET_SHUTTLE_STATUSES,
+        ).order_by("name")
+        if source_shuttle is not None:
+            queryset = queryset.exclude(pk=source_shuttle.pk)
+        target_shuttle_field = self.fields["target_shuttle"]
+        if isinstance(target_shuttle_field, forms.ModelChoiceField):
+            target_shuttle_field.queryset = queryset
 
 
 @admin.register(Project)
@@ -53,6 +99,90 @@ class ProjectAdmin(SimpleHistoryAdmin):
         "other_license_spdx_id",
     ]
     readonly_fields = ["created_at", "updated_at"]
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "<uuid:object_id>/duplicate/",
+                self.admin_site.admin_view(self.duplicate_view),
+                name="projects_project_duplicate",
+            ),
+        ]
+        return custom_urls + urls
+
+    def duplicate_view(
+        self,
+        request: HttpRequest,
+        object_id: object,
+    ) -> HttpResponse:
+        """Intermediate page: pick a target shuttle, then duplicate."""
+        project = self.get_object(request, str(object_id))
+        if project is None:
+            return self._get_obj_does_not_exist_redirect(
+                request,
+                self.opts,
+                str(object_id),
+            )
+        if not self.has_add_permission(request):
+            raise PermissionDenied
+
+        form = DuplicateProjectForm(
+            request.POST if request.method == "POST" else None,
+            source_shuttle=project.shuttle,
+        )
+        if request.method == "POST" and form.is_valid():
+            target_shuttle = form.cleaned_data["target_shuttle"]
+            try:
+                # cast: django-stubs types request.user as AbstractBaseUser |
+                # AnonymousUser; admin_view guarantees an authenticated staff
+                # user (same pattern as projects/views.py:70).
+                duplicate = duplicate_project_to_shuttle(
+                    project=project,
+                    target_shuttle=target_shuttle,
+                    admin_user=cast("User", request.user),
+                )
+            except ProjectDuplicationError as exc:
+                messages.error(request, str(exc))
+            else:
+                self.log_addition(
+                    request,
+                    duplicate,
+                    f"Duplicated from project {project.pk} "
+                    f"(shuttle {project.shuttle.name})",
+                )
+                self.log_change(
+                    request,
+                    project,
+                    f"Duplicated to shuttle {target_shuttle.name} "
+                    f"as project {duplicate.pk}",
+                )
+                messages.success(
+                    request,
+                    f"Project duplicated onto shuttle {target_shuttle.name}. "
+                    "A fresh manufacturability check has been queued.",
+                )
+                return redirect(
+                    reverse(
+                        "admin:projects_project_change",
+                        args=[duplicate.pk],
+                    ),
+                )
+
+        source_file = project.files.filter(is_active=True).first()
+        context = {
+            **self.admin_site.each_context(request),
+            "title": f"Duplicate {project.name}",
+            "opts": self.opts,
+            "project": project,
+            "source_file": source_file,
+            "form": form,
+        }
+        return TemplateResponse(
+            request,
+            "admin/projects/project/duplicate_confirm.html",
+            context,
+        )
 
 
 @admin.register(ProjectAccessLog)
