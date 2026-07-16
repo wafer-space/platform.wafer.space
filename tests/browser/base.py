@@ -5,6 +5,7 @@ Base classes for browser tests.
 import time
 
 from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions
 from selenium.webdriver.support.wait import WebDriverWait
@@ -90,6 +91,32 @@ class BaseBrowserTest:
         if clear:
             element.clear()
         element.send_keys(value)
+
+    def set_input_value(self, driver, locator, value, timeout=10, attempts=3):
+        """Set an input's value and verify the text actually landed.
+
+        send_keys can silently lose keystrokes when page JS is still
+        initialising focus or event handlers while typing (issue #316);
+        an unnoticed empty required field then makes the browser's
+        client-side validation block the form submit. Verify the DOM
+        value after typing and retype if it did not land.
+        """
+        last_value = None
+        for _ in range(attempts):
+            element = self.wait_for_element_clickable(driver, locator, timeout)
+            element.click()
+            element.clear()
+            element.send_keys(value)
+            try:
+                WebDriverWait(driver, 2).until(
+                    lambda d: d.find_element(*locator).get_attribute("value") == value,
+                )
+            except TimeoutException:
+                last_value = driver.find_element(*locator).get_attribute("value")
+                continue
+            return
+        msg = f"Input {locator} kept value {last_value!r}, expected {value!r}"
+        raise AssertionError(msg)
 
     def submit_form(self, driver, form_locator=None):
         """Submit a form."""
