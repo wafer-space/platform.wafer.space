@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 from django.core.files.base import ContentFile
+from django.db import IntegrityError
+from django.db.models import Q
 from django.test import TestCase
 from django.utils import timezone
 
@@ -147,3 +151,215 @@ class TestDuplicationValidation(TestCase):
         attempt.status = DownloadAttempt.Status.FAILED
         attempt.save()
         self.assert_fails(project, self.target_shuttle, "download")
+
+
+@pytest.mark.django_db
+class TestDuplicationCopy(TestCase):
+    """Happy-path duplication copies exactly what the spec says."""
+
+    def setUp(self) -> None:
+        self.admin_user = User.objects.create_superuser(
+            username="admin",
+            email="admin@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.source_shuttle = make_shuttle("G890")
+        self.target_shuttle = make_shuttle("G891")
+        self.source = make_source_project(shuttle=self.source_shuttle)
+        self.duplicate = duplicate_project_to_shuttle(
+            project=self.source,
+            target_shuttle=self.target_shuttle,
+            admin_user=self.admin_user,
+        )
+
+    def test_project_metadata_copied(self) -> None:
+        assert self.duplicate.pk != self.source.pk
+        assert self.duplicate.user == self.source.user
+        assert self.duplicate.name == self.source.name
+        assert self.duplicate.description == self.source.description
+        assert self.duplicate.slot_size == self.source.slot_size
+        assert self.duplicate.is_public == self.source.is_public
+        assert self.duplicate.chip_on_board == self.source.chip_on_board
+        assert self.duplicate.repository_url == self.source.repository_url
+        assert self.duplicate.license_type == self.source.license_type
+
+    def test_project_fresh_fields(self) -> None:
+        assert self.duplicate.shuttle == self.target_shuttle
+        assert self.duplicate.project_id == self.source.project_id
+        assert self.duplicate.status == Project.Status.DRAFT
+        assert self.duplicate.submitted_at is None
+        assert self.duplicate.submitted_file is None
+        assert self.duplicate.crowd_supply_order_id == ""
+
+    def test_source_untouched(self) -> None:
+        self.source.refresh_from_db()
+        assert self.source.shuttle == self.source_shuttle
+        assert self.source.status == Project.Status.SUBMITTED
+
+    def test_file_bytes_copied_to_new_path(self) -> None:
+        new_file = self.duplicate.files.get(is_active=True)
+        source_file = self.source.files.get(is_active=True)
+        assert new_file.file.name != source_file.file.name
+        with new_file.file.open("rb") as handle:
+            assert handle.read() == GDS_BYTES
+
+    def test_file_metadata_copied(self) -> None:
+        new_file = self.duplicate.files.get(is_active=True)
+        source_file = self.source.files.get(is_active=True)
+        assert new_file.hash_sha256 == source_file.hash_sha256
+        assert new_file.hash_verified is True
+        assert new_file.original_filename == source_file.original_filename
+        assert new_file.top_cell == source_file.top_cell
+        assert new_file.replaced_by is None
+
+    def test_file_invisible_to_download_recovery_scanner(self) -> None:
+        """Replicates the querysets in ensure_download_tasks_queued."""
+        new_file = self.duplicate.files.get(is_active=True)
+        assert new_file.download_task_id.startswith("duplicated:")
+        assert new_file.download_status == ProjectFile.DownloadStatus.COMPLETED
+
+        pending = ProjectFile.objects.filter(is_active=True).filter(
+            Q(download_task_id="") | Q(download_task_id__isnull=True),
+        )
+        assert new_file not in pending
+
+        queued = (
+            ProjectFile.objects.filter(is_active=True)
+            .exclude(
+                Q(download_task_id="") | Q(download_task_id__isnull=True),
+            )
+            .exclude(
+                download_attempts__status__in=[
+                    DownloadAttempt.Status.DOWNLOADING,
+                    DownloadAttempt.Status.COMPLETED,
+                    DownloadAttempt.Status.FAILED,
+                ],
+            )
+        )
+        assert new_file not in queued
+
+    def test_download_attempt_copied(self) -> None:
+        new_file = self.duplicate.files.get(is_active=True)
+        attempt = new_file.download_attempts.get()
+        assert attempt.status == DownloadAttempt.Status.COMPLETED
+        assert attempt.attempt_number == 1
+        assert attempt.bytes_downloaded == len(GDS_BYTES)
+
+    def test_provenance_check_copied(self) -> None:
+        new_file = self.duplicate.files.get(is_active=True)
+        provenance = new_file.manufacturability_checks.get(
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+        assert provenance.is_manufacturable is True
+        assert provenance.warnings == ["minor spacing"]
+        assert provenance.precheck_version == "v1.2.3"
+        assert provenance.log_file_sha256 == "c" * 64
+        assert not provenance.log_file
+        assert not provenance.runs_archive
+        assert not provenance.output_gds
+        assert not provenance.docker_layer_export
+        assert provenance.parent_check is None
+
+    def test_fresh_check_queued(self) -> None:
+        new_file = self.duplicate.files.get(is_active=True)
+        fresh = new_file.manufacturability_checks.get(
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        assert fresh.trigger_reason == ManufacturabilityCheck.TriggerReason.DUPLICATED
+        assert fresh.parent_check is not None
+        assert fresh.parent_check.status == ManufacturabilityCheck.Status.FINISHED
+
+
+@pytest.mark.django_db
+class TestDuplicationCheckSelection(TestCase):
+    """Provenance uses the latest FINISHED check; non-terminal never copied."""
+
+    def setUp(self) -> None:
+        self.admin_user = User.objects.create_superuser(
+            username="admin",
+            email="admin@example.com",
+            password=TEST_PASSWORD,
+        )
+        self.source_shuttle = make_shuttle("G890")
+        self.target_shuttle = make_shuttle("G891")
+
+    def test_newer_pending_check_is_ignored(self) -> None:
+        source = make_source_project(shuttle=self.source_shuttle)
+        source_file = source.files.get(is_active=True)
+        ManufacturabilityCheck.objects.create(
+            project=source,
+            project_file=source_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        duplicate = duplicate_project_to_shuttle(
+            project=source,
+            target_shuttle=self.target_shuttle,
+            admin_user=self.admin_user,
+        )
+        new_file = duplicate.files.get(is_active=True)
+        finished = new_file.manufacturability_checks.filter(
+            status=ManufacturabilityCheck.Status.FINISHED,
+        )
+        assert finished.count() == 1
+        assert finished.get().precheck_version == "v1.2.3"
+        # Exactly one PENDING check: the fresh DUPLICATED one, not a copy
+        # of the source's pending check.
+        pending = new_file.manufacturability_checks.filter(
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        assert pending.count() == 1
+        assert (
+            pending.get().trigger_reason
+            == ManufacturabilityCheck.TriggerReason.DUPLICATED
+        )
+
+    def test_no_finished_check_skips_provenance(self) -> None:
+        source = make_source_project(
+            shuttle=self.source_shuttle,
+            with_finished_check=False,
+        )
+        duplicate = duplicate_project_to_shuttle(
+            project=source,
+            target_shuttle=self.target_shuttle,
+            admin_user=self.admin_user,
+        )
+        new_file = duplicate.files.get(is_active=True)
+        checks = new_file.manufacturability_checks.all()
+        assert checks.count() == 1
+        fresh = checks.get()
+        assert fresh.status == ManufacturabilityCheck.Status.PENDING
+        assert fresh.parent_check is None
+
+
+@pytest.mark.django_db
+class TestDuplicationAtomicity(TestCase):
+    """A failure mid-copy rolls back everything."""
+
+    def test_integrityerror_rolls_back_and_becomes_duplication_error(self) -> None:
+        admin_user = User.objects.create_superuser(
+            username="admin",
+            email="admin@example.com",
+            password=TEST_PASSWORD,
+        )
+        source_shuttle = make_shuttle("G890")
+        target_shuttle = make_shuttle("G891")
+        source = make_source_project(shuttle=source_shuttle)
+        projects_before = Project.objects.count()
+        files_before = ProjectFile.objects.count()
+
+        with (
+            patch(
+                "wafer_space.projects.services.duplication_service."
+                "_copy_provenance_check",
+                side_effect=IntegrityError("boom"),
+            ),
+            pytest.raises(ProjectDuplicationError, match="boom"),
+        ):
+            duplicate_project_to_shuttle(
+                project=source,
+                target_shuttle=target_shuttle,
+                admin_user=admin_user,
+            )
+
+        assert Project.objects.count() == projects_before
+        assert ProjectFile.objects.count() == files_before
