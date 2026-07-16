@@ -392,3 +392,79 @@ class TestFormatVersionDisplay:
         version_str, is_latest = PrecheckImageRevision.format_version_display(check)
         assert version_str == "-"
         assert is_latest is None
+
+
+@pytest.mark.django_db
+class TestCheckVersionDisplayProperties:
+    """Tests for ManufacturabilityCheck display properties (#315)."""
+
+    DIGEST = "sha256:315aaa5678901234567890123456789012345678901234567890123456789012"
+
+    def test_precheck_version_display_prefers_stamped_field(self):
+        """A stamped precheck_version wins over the catalog."""
+        PrecheckImageRevision.objects.create(
+            digest=self.DIGEST,
+            precheck_version="9.9.9",
+        )
+        check = ManufacturabilityCheckFactory(
+            docker_image_digest=self.DIGEST,
+            precheck_version="1.7.2",
+        )
+
+        assert check.precheck_version_display == "1.7.2"
+
+    def test_precheck_version_display_falls_back_to_catalog(self):
+        """An unstamped check resolves its version via the revision catalog."""
+        PrecheckImageRevision.objects.create(
+            digest=self.DIGEST,
+            precheck_version="1.7.2",
+        )
+        check = ManufacturabilityCheckFactory(docker_image_digest=self.DIGEST)
+
+        assert check.precheck_version_display == "1.7.2"
+
+    def test_precheck_version_display_empty_when_unresolvable(self):
+        """No stamped value and no catalog row yields empty string."""
+        check = ManufacturabilityCheckFactory(docker_image_digest=self.DIGEST)
+
+        assert check.precheck_version_display == ""
+
+    def test_precheck_version_display_empty_without_digest(self):
+        """A check that never recorded a digest yields empty string."""
+        check = ManufacturabilityCheckFactory(docker_image_digest="")
+
+        assert check.precheck_version_display == ""
+
+    def test_tool_versions_display_filters_unknown_placeholder(self):
+        """Legacy {'precheck': 'unknown'} placeholders are not displayed."""
+        check = ManufacturabilityCheckFactory(
+            docker_image_digest=self.DIGEST,
+            tool_versions={"precheck": "unknown"},
+        )
+
+        assert check.tool_versions_display == {}
+
+    def test_tool_versions_display_falls_back_to_catalog(self):
+        """Placeholder-only checks resolve tool versions via the catalog."""
+        PrecheckImageRevision.objects.create(
+            digest=self.DIGEST,
+            tool_versions={"klayout": "0.29.1", "magic": "8.3.486"},
+        )
+        check = ManufacturabilityCheckFactory(
+            docker_image_digest=self.DIGEST,
+            tool_versions={"precheck": "unknown"},
+        )
+
+        assert check.tool_versions_display == {
+            "klayout": "0.29.1",
+            "magic": "8.3.486",
+        }
+
+    def test_tool_versions_display_keeps_real_values(self):
+        """Real stored tool versions are shown as-is."""
+        check = ManufacturabilityCheckFactory(
+            docker_image_digest=self.DIGEST,
+            tool_versions={"klayout": "0.29.1"},
+        )
+
+        assert check.tool_versions_display == {"klayout": "0.29.1"}

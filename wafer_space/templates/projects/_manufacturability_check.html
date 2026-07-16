@@ -463,11 +463,13 @@
             <strong>Precheck:</strong>
           </td>
           <td>
-            {% if check.precheck_version %}
-              {{ check.precheck_version }}
-            {% else %}
-              <span class="text-muted">-</span>
-            {% endif %}
+            {% with precheck_version=check.precheck_version_display %}
+              {% if precheck_version %}
+                {{ precheck_version }}
+              {% else %}
+                <span class="text-muted">-</span>
+              {% endif %}
+            {% endwith %}
           </td>
         </tr>
         <tr>
@@ -490,13 +492,15 @@
             <strong>Tools:</strong>
           </td>
           <td>
-            {% if check.tool_versions %}
-              {% for key, value in check.tool_versions.items %}
-                <span class="badge bg-light text-dark border me-1">{{ key }}: {{ value }}</span>
-              {% endfor %}
-            {% else %}
-              <span class="text-muted">-</span>
-            {% endif %}
+            {% with tool_versions=check.tool_versions_display %}
+              {% if tool_versions %}
+                {% for key, value in tool_versions.items %}
+                  <span class="badge bg-light text-dark border me-1">{{ key }}: {{ value }}</span>
+                {% endfor %}
+              {% else %}
+                <span class="text-muted">-</span>
+              {% endif %}
+            {% endwith %}
           </td>
         </tr>
       </tbody>

@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 from django.contrib.messages import get_messages
 from django.core.cache import cache
+from django.template.loader import render_to_string
 from django.test import Client
 from django.test import TestCase
 from django.urls import reverse
@@ -15,6 +16,7 @@ from django.utils import timezone
 from wafer_space.core.enums import SlotSize
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
+from wafer_space.projects.models import PrecheckImageRevision
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.security import SecurityValidationError
@@ -2541,3 +2543,46 @@ class TestCheckDrcUpdateRequeue:
         )
 
         assert response.status_code == HTTP_METHOD_NOT_ALLOWED
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckPartialVersionInfo:
+    """Version Info panel resolves versions via the catalog (#315)."""
+
+    DIGEST = "sha256:315ccc5678901234567890123456789012345678901234567890123456789012"
+    TEMPLATE = "projects/_manufacturability_check.html"
+
+    def test_precheck_row_resolves_version_from_catalog(self):
+        """An unstamped historical check shows the catalog version, not '-'."""
+        PrecheckImageRevision.objects.create(
+            digest=self.DIGEST,
+            precheck_version="1.7.2",
+        )
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+            docker_image_digest=self.DIGEST,
+        )
+
+        html = render_to_string(self.TEMPLATE, {"check": check})
+
+        precheck_row = html.split("<strong>Precheck:</strong>")[1].split("</tr>")[0]
+        assert "1.7.2" in precheck_row
+
+    def test_tools_row_hides_unknown_placeholder(self):
+        """The legacy 'precheck: unknown' placeholder badge is not rendered."""
+        PrecheckImageRevision.objects.create(
+            digest=self.DIGEST,
+            tool_versions={"klayout": "0.29.1"},
+        )
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+            docker_image_digest=self.DIGEST,
+            tool_versions={"precheck": "unknown"},
+        )
+
+        html = render_to_string(self.TEMPLATE, {"check": check})
+
+        assert "precheck: unknown" not in html
+        assert "klayout: 0.29.1" in html

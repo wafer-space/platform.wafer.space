@@ -1689,6 +1689,32 @@ def _save_docker_layer_export(
     )
 
 
+def _resolve_check_versions(
+    check: ManufacturabilityCheck,
+    logger: logging.Logger,
+) -> dict[str, str]:
+    """Resolve version info from the image revision catalog.
+
+    Stamps check.precheck_version so the value survives later catalog
+    changes, and returns the tool versions recorded for the image this
+    check ran with. The catalog row may not exist yet (revisions are
+    fetched by a periodic task); display falls back to the catalog via
+    precheck_version_display in that case.
+    """
+    revision = check.precheck_revision
+    if revision is None:
+        logger.info(
+            "[do_analyzing] No image revision cataloged for digest %s; "
+            "leaving version info unset",
+            check.docker_image_digest or "<empty>",
+        )
+        return {}
+    if revision.precheck_version and not check.precheck_version:
+        check.precheck_version = revision.precheck_version
+        check.save(update_fields=["precheck_version"])
+    return dict(revision.tool_versions)
+
+
 def _finalize_analyzing(
     check: ManufacturabilityCheck,
     failure_type: str,
@@ -1855,10 +1881,7 @@ def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
     # Classify the failure type: 'success', 'design', or 'system'
     failure_type = classify_failure(logs, exit_code)
 
-    # Extract tool versions from logs if available
-    tool_versions: dict[str, str] = {}
-    if "precheck" in logs.lower():
-        tool_versions["precheck"] = "unknown"
+    tool_versions = _resolve_check_versions(check, logger)
 
     logger.info(
         "[do_analyzing] Log parsing complete: failure_type=%s, errors=%d, warnings=%d",
