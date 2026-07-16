@@ -210,6 +210,36 @@ class TestComplianceCertificationCreateView(TestCase):
         assert len(messages) == 1
         assert "manufacturability" in str(messages[0]).lower()
 
+    def test_redirects_if_latest_revision_unchecked(self):
+        """A passing check on an older revision must not open the gate.
+
+        Manufacturability is per file revision
+        (docs/manufacturable_vs_submitted.md): a new latest revision with
+        no checks means the gate must close, even though an older revision
+        passed.
+        """
+        self.project_file.is_active = False
+        self.project_file.save()
+        ProjectFile.objects.create(
+            project=self.project,
+            original_filename="test_v2.gds",
+            source_url="https://example.com/test_v2.gds",
+            is_active=True,
+        )
+
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+        url = reverse(
+            "projects:compliance_certify",
+            kwargs={"pk": self.project.pk},
+        )
+        response = self.client.get(url)
+
+        assert response.status_code == HTTP_FOUND
+        assert f"/projects/{self.project.pk}/" in response["Location"]
+        messages = list(get_messages(response.wsgi_request))
+        assert len(messages) == 1
+        assert "manufacturability" in str(messages[0]).lower()
+
     def test_get_shows_form(self):
         """Test GET request shows certification form."""
         self.client.login(username="testuser", password=TEST_PASSWORD)

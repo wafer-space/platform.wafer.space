@@ -5,11 +5,19 @@ import pytest
 from django.urls import reverse
 
 from wafer_space.core.enums import SlotSize
+from wafer_space.projects.models import ManufacturabilityCheck
+from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.projects.tests.factories import ProjectFactory
+from wafer_space.projects.tests.factories import ProjectFileFactory
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.models import ShuttleSlot
 from wafer_space.shuttles.tests.factories import ShuttleFactory
 from wafer_space.users.tests.factories import UserFactory
+
+SUBMITTED_ICON = 'aria-label="File submitted for manufacturing"'
+NOT_SUBMITTED_ICON = 'aria-label="No file submitted for manufacturing"'
+LATEST_LABEL = 'title="Latest file revision">L:'
+SUBMITTED_LABEL = 'title="Submitted for manufacturing">S:'
 
 
 @pytest.mark.django_db
@@ -249,6 +257,188 @@ class TestShuttleAssignmentView:
         assert "Packaging: Bare" in content
         assert "Bare Die" not in content
         assert "CS Order:" not in content
+
+    def test_grid_tooltip_shows_latest_revision_status(self, client):
+        """Tooltip carries the same status text as the Status column."""
+        user = UserFactory(is_staff=True)
+        client.force_login(user)
+
+        shuttle = ShuttleFactory(name="G815")
+        slot = ShuttleSlot.objects.create(
+            shuttle=shuttle,
+            row=0,
+            column=0,
+            slot_size=SlotSize.FULL,
+            status=ShuttleSlot.Status.RESERVED,
+        )
+        project = ProjectFactory(shuttle=shuttle, slot_size=SlotSize.FULL)
+        project_file = ProjectFileFactory(project=project)
+        ManufacturabilityCheckFactory(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
+        slot.project = project
+        slot.save()
+
+        url = reverse("shuttles:assignment", kwargs={"name": shuttle.name})
+        response = client.get(url)
+
+        assert response.status_code == HTTPStatus.OK
+        content = response.content.decode()
+        assert "Status: Passed" in content
+
+    def test_grid_tooltip_shows_both_revisions_when_submitted_differs(self, client):
+        """Tooltip shows Latest and Submitted lines like the Status column."""
+        user = UserFactory(is_staff=True)
+        client.force_login(user)
+
+        shuttle = ShuttleFactory(name="G816")
+        slot = ShuttleSlot.objects.create(
+            shuttle=shuttle,
+            row=0,
+            column=0,
+            slot_size=SlotSize.FULL,
+            status=ShuttleSlot.Status.RESERVED,
+        )
+        project = ProjectFactory(shuttle=shuttle, slot_size=SlotSize.FULL)
+        submitted_file = ProjectFileFactory(project=project, is_active=False)
+        ManufacturabilityCheckFactory(
+            project=project,
+            project_file=submitted_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
+        latest_file = ProjectFileFactory(project=project)
+        ManufacturabilityCheckFactory(
+            project=project,
+            project_file=latest_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=False,
+        )
+        project.submitted_file = submitted_file
+        project.save()
+        slot.project = project
+        slot.save()
+
+        url = reverse("shuttles:assignment", kwargs={"name": shuttle.name})
+        response = client.get(url)
+
+        assert response.status_code == HTTPStatus.OK
+        content = response.content.decode()
+        assert "Latest: Failed" in content
+        assert "Submitted: Passed" in content
+
+
+@pytest.mark.django_db
+class TestAssignmentPageRevisionStatus:
+    """Status/Submitted columns follow docs/manufacturable_vs_submitted.md.
+
+    The Status column always shows the precheck status of the latest file
+    revision, plus a second line for the submitted revision when that is
+    a different (older) revision. The Submitted column reflects
+    Project.submitted_file, never Project.status.
+    """
+
+    def _get_content(self, client, shuttle):
+        user = UserFactory(is_staff=True)
+        client.force_login(user)
+        url = reverse("shuttles:assignment", kwargs={"name": shuttle.name})
+        response = client.get(url)
+        assert response.status_code == HTTPStatus.OK
+        return response.content.decode()
+
+    def test_unsubmitted_project_shows_latest_revision_check(self, client):
+        """A passing check on the latest revision shows even before submit."""
+        shuttle = ShuttleFactory(name="G820")
+        project = ProjectFactory(shuttle=shuttle)
+        project_file = ProjectFileFactory(project=project)
+        ManufacturabilityCheckFactory(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
+
+        content = self._get_content(client, shuttle)
+
+        assert "Passed" in content
+        assert "No check" not in content
+        assert NOT_SUBMITTED_ICON in content
+
+    def test_submitted_latest_revision_shows_single_status_line(self, client):
+        """No Latest/Submitted labels when the submitted revision is latest."""
+        shuttle = ShuttleFactory(name="G821")
+        project = ProjectFactory(shuttle=shuttle)
+        project_file = ProjectFileFactory(project=project)
+        ManufacturabilityCheckFactory(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
+        project.submitted_file = project_file
+        project.save()
+
+        content = self._get_content(client, shuttle)
+
+        assert "Passed" in content
+        assert LATEST_LABEL not in content
+        assert SUBMITTED_LABEL not in content
+        assert SUBMITTED_ICON in content
+
+    def test_submitted_older_revision_shows_both_status_lines(self, client):
+        """Both revisions' statuses show when submitted is not latest."""
+        shuttle = ShuttleFactory(name="G822")
+        project = ProjectFactory(shuttle=shuttle)
+        submitted_file = ProjectFileFactory(project=project, is_active=False)
+        ManufacturabilityCheckFactory(
+            project=project,
+            project_file=submitted_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
+        latest_file = ProjectFileFactory(project=project)
+        ManufacturabilityCheckFactory(
+            project=project,
+            project_file=latest_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=False,
+        )
+        project.submitted_file = submitted_file
+        project.save()
+
+        content = self._get_content(client, shuttle)
+
+        assert LATEST_LABEL in content
+        assert SUBMITTED_LABEL in content
+        assert "Passed" in content
+        assert "Failed" in content
+
+    def test_submitted_column_ignores_project_status(self, client):
+        """Submitted icon keyed on submitted_file even when status moved on.
+
+        A later check completion overwrites Project.status (SUBMITTED ->
+        MANUFACTURABLE), which must not make the submitted marker vanish.
+        """
+        shuttle = ShuttleFactory(name="G823")
+        project = ProjectFactory(shuttle=shuttle)
+        project_file = ProjectFileFactory(project=project)
+        ManufacturabilityCheckFactory(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
+        project.submitted_file = project_file
+        project.status = project.Status.MANUFACTURABLE
+        project.save()
+
+        content = self._get_content(client, shuttle)
+
+        assert SUBMITTED_ICON in content
+        assert NOT_SUBMITTED_ICON not in content
 
 
 @pytest.mark.django_db

@@ -15,6 +15,7 @@ from django.db import models
 from django.db import transaction
 from django.utils import timezone
 from django.utils.formats import date_format
+from django.utils.functional import cached_property
 from simple_history.models import HistoricalRecords
 
 from wafer_space.core.enums import SlotSize
@@ -247,10 +248,10 @@ class Project(models.Model):
         help_text="The file that was submitted for manufacturing",
     )
 
-    # NOTE: is_manufacturable, manufacturability_errors, and check_completed_at
-    # are now derived properties (see @property methods below) that read from
-    # the latest ManufacturabilityCheck on the submitted_file. This enables
-    # multiple checks per file (retries, DRC updates, etc.) without losing history.
+    # NOTE: Manufacturability is a property of a file revision, not of the
+    # project — see docs/manufacturable_vs_submitted.md. The derived
+    # properties below (latest_file_check, submitted_file_check, etc.) name
+    # the file revision they read from explicitly.
 
     # Visibility settings
     is_public = models.BooleanField(
@@ -435,41 +436,64 @@ class Project(models.Model):
             )
             raise ValidationError(msg)
 
-    # Derived manufacturability properties (from latest check on submitted_file)
-    @property
-    def latest_manufacturability_check(self) -> "ManufacturabilityCheck | None":
-        """Get the latest manufacturability check for this project's submitted file.
+    # Derived manufacturability properties. Two distinct concepts here —
+    # see docs/manufacturable_vs_submitted.md:
+    # (a) manufacturable: a per-file-revision fact (its latest finished
+    #     check passed);
+    # (b) submitted for manufacturing: the revision submitted_file points at.
+    # Each property names the file revision it reads from.
+    @cached_property
+    def latest_file(self) -> "ProjectFile | None":
+        """Get the latest file revision (the active file).
 
-        Returns the most recent check on the submitted_file, or None if no
-        submitted file or no checks exist.
+        Falls back to the most recently uploaded file if no file is
+        marked active. Returns None if the project has no files.
+
+        Cached per instance: the assignment dashboard reads this (and the
+        check properties below) several times per project per request.
+        """
+        active = self.files.filter(is_active=True).first()
+        if active:
+            return active
+        return self.files.order_by("-uploaded_at").first()
+
+    @cached_property
+    def latest_file_check(self) -> "ManufacturabilityCheck | None":
+        """Get the latest manufacturability check on the latest file revision.
+
+        Returns None if the project has no files or the latest revision has
+        no checks. Cached per instance.
+        """
+        latest = self.latest_file
+        if not latest:
+            return None
+        return latest.latest_manufacturability_check
+
+    @cached_property
+    def submitted_file_check(self) -> "ManufacturabilityCheck | None":
+        """Get the latest manufacturability check on the submitted revision.
+
+        Returns None if no file revision has been submitted for
+        manufacturing (submitted_file is NULL) or it has no checks.
+        Cached per instance.
         """
         if not self.submitted_file:
             return None
         return self.submitted_file.latest_manufacturability_check
 
-    @property
-    def is_manufacturable(self) -> bool | None:
-        """Derived from latest completed check on submitted file."""
-        check = self.latest_manufacturability_check
-        if not check or check.status != ManufacturabilityCheck.Status.FINISHED:
-            return None
-        return check.is_manufacturable
+    @cached_property
+    def latest_file_manufacturable(self) -> bool | None:
+        """Whether the latest file revision is manufacturable.
 
-    @property
-    def manufacturability_errors(self) -> list[str]:
-        """Derived from latest completed check."""
-        check = self.latest_manufacturability_check
-        if not check or check.status != ManufacturabilityCheck.Status.FINISHED:
-            return []
-        return check.errors
-
-    @property
-    def check_completed_at(self) -> datetime | None:
-        """Derived from latest completed check."""
-        check = self.latest_manufacturability_check
-        if not check or check.status != ManufacturabilityCheck.Status.FINISHED:
+        Per docs/manufacturable_vs_submitted.md this is the verdict of the
+        latest *finished* check on the latest revision, so an in-flight
+        re-check does not reset an existing verdict. Returns None while the
+        revision has no finished check at all. Cached per instance.
+        """
+        latest = self.latest_file
+        if not latest:
             return None
-        return check.analysis_completed_at
+        return latest.output_check.is_manufacturable
 
     @property
     def output_file(self) -> "ProjectFile":
@@ -479,7 +503,7 @@ class Project(models.Model):
         """
         if self.submitted_file:
             return self.submitted_file
-        latest = self.files.order_by("-uploaded_at").first()
+        latest = self.latest_file
         if latest:
             return latest
         # Return unsaved dummy for consistent interface
@@ -546,10 +570,12 @@ class Project(models.Model):
                 - can_submit: True if project can be submitted
                 - reason_if_not: Empty string if can submit, error message otherwise
         """
-        # Check if project has active file
-        try:
-            active_file = self.files.get(is_active=True)
-        except ProjectFile.DoesNotExist:
+        # Validate the same latest_file snapshot submit() will write, so a
+        # concurrent file replacement cannot slip an unvalidated revision
+        # in between the checks and the write (latest_file is cached per
+        # instance).
+        active_file = self.latest_file
+        if active_file is None or not active_file.is_active:
             return False, "Project has no active file"
 
         # Check file download and verification status
@@ -561,14 +587,22 @@ class Project(models.Model):
             return False, "File hash has not been verified"
 
         # Check project status - only MANUFACTURABLE can be submitted
-        # (MANUFACTURABLE status guarantees is_manufacturable=True via mark_finished)
         if self.status != self.Status.MANUFACTURABLE:
-            msg = (
-                "Manufacturability check must complete before submission"
-                if self.status == self.Status.DRAFT
-                else "Project has already been submitted"
-            )
+            if self.status == self.Status.DRAFT:
+                msg = "Manufacturability check must complete before submission"
+            elif self.status == self.Status.NOT_MANUFACTURABLE:
+                msg = "The latest file has not passed its manufacturability check"
+            else:
+                msg = "Project has already been submitted"
             return False, msg
+
+        # Rule 1 (docs/manufacturable_vs_submitted.md): the revision being
+        # submitted must itself be manufacturable. Status alone is not
+        # enough - a check finishing on an older revision also sets
+        # MANUFACTURABLE, which must not let an unchecked newer revision
+        # through.
+        if self.latest_file_manufacturable is not True:
+            return False, ("The latest file has not passed its manufacturability check")
 
         return True, ""
 
@@ -583,14 +617,28 @@ class Project(models.Model):
         if not can_submit:
             raise ValidationError(reason)
 
-        # Get the active file that's being submitted
-        active_file = self.files.get(is_active=True)
+        # Submit the exact revision can_submit() validated (latest_file is
+        # cached per instance), re-checking under a row lock that it is
+        # still the active revision - a concurrent replacement must not
+        # sneak an unvalidated revision into submitted_file.
+        submitted = self.latest_file
+        if submitted is None:
+            msg = "Project has no active file"
+            raise ValidationError(msg)
+        with transaction.atomic():
+            still_active = (
+                ProjectFile.objects.select_for_update()
+                .filter(pk=submitted.pk, is_active=True)
+                .exists()
+            )
+            if not still_active:
+                msg = "The file was replaced during submission; please try again"
+                raise ValidationError(msg)
 
-        # Update project status
-        self.status = self.Status.SUBMITTED
-        self.submitted_at = timezone.now()
-        self.submitted_file = active_file
-        self.save()
+            self.status = self.Status.SUBMITTED
+            self.submitted_at = timezone.now()
+            self.submitted_file = submitted
+            self.save()
 
         # Note: Manufacturability check has already been completed
         # (it was triggered automatically when file hash was verified)
@@ -2137,8 +2185,10 @@ class ManufacturabilityCheck(models.Model):
         )
 
         # Update project status
-        # Note: is_manufacturable, manufacturability_errors, and check_completed_at
-        # are now derived properties on Project, so we only update the status.
+        # Note: manufacturability itself is derived per file revision (see
+        # docs/manufacturable_vs_submitted.md); only the coarse lifecycle
+        # status is stored on the project. This overwrites SUBMITTED, which
+        # is why submission state must be read from submitted_file instead.
         if is_manufacturable:
             self.project.status = Project.Status.MANUFACTURABLE
         else:

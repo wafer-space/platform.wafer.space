@@ -1021,8 +1021,13 @@ class Command(BaseCommand):
         project_file = ProjectFile.objects.create(**file_kwargs)
         self._create_download_attempts(project_file, download_scenario)
 
-        project.submitted_file = project_file
-        project.save(update_fields=["submitted_file"])
+        # Only projects created as submitted get a revision submitted for
+        # manufacturing - submitted_file is the canonical signal for that
+        # concept (see docs/manufacturable_vs_submitted.md), so setting it
+        # on drafts would contradict their status/submitted_at.
+        if project.submitted_at is not None:
+            project.submitted_file = project_file
+            project.save(update_fields=["submitted_file"])
 
         # Create manufacturability checks based on scenario
         self._create_manufacturability_checks(project, project_file, scenario, now)

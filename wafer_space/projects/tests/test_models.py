@@ -213,6 +213,49 @@ class TestProjectCanSubmit(TestCase):
         assert can_submit is True
         assert reason == ""
 
+    def test_cannot_submit_unchecked_latest_revision(self):
+        """An unchecked latest revision cannot ride on stale MANUFACTURABLE.
+
+        mark_finished() on an older revision's check also sets the project
+        status to MANUFACTURABLE, which must not allow submitting a newer
+        revision that has no passing check of its own (Rule 1 in
+        docs/manufacturable_vs_submitted.md).
+        """
+        old_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/old.gds",
+            source_url="https://example.com/old.gds",
+            original_filename="old.gds",
+            is_active=False,
+            hash_verified=True,
+        )
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=old_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
+        new_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/new.gds",
+            source_url="https://example.com/new.gds",
+            original_filename="new.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+        DownloadAttempt.objects.create(
+            project_file=new_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
+        )
+        self.project.status = Project.Status.MANUFACTURABLE
+        self.project.save()
+
+        can_submit, reason = self.project.can_submit()
+
+        assert can_submit is False
+        assert "latest file" in reason.lower()
+
 
 @pytest.mark.django_db
 class TestProjectSubmit(TestCase):
@@ -259,6 +302,57 @@ class TestProjectSubmit(TestCase):
             self.project.submit()
 
         assert "hash" in str(exc_info.value).lower()
+
+    def test_submit_rejects_concurrently_replaced_file(self):
+        """A revision replaced after validation must not be submitted.
+
+        submit() writes the exact latest_file snapshot can_submit()
+        validated; if that revision stopped being active in the meantime
+        (concurrent replacement), the row-lock re-check must abort rather
+        than submit either the stale or the unvalidated new revision.
+        """
+        validated = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+        DownloadAttempt.objects.create(
+            project_file=validated,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
+        )
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=validated,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
+        self.project.status = Project.Status.MANUFACTURABLE
+        self.project.save()
+
+        # Cache the validated snapshot, then simulate a concurrent
+        # replacement flipping the active flag to a new unchecked revision.
+        assert self.project.latest_file == validated
+        ProjectFile.objects.filter(pk=validated.pk).update(is_active=False)
+        ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file_v2.gds",
+            source_url="https://example.com/file_v2.gds",
+            original_filename="file_v2.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+
+        with pytest.raises(ValidationError) as exc_info:
+            self.project.submit()
+
+        assert "replaced" in str(exc_info.value).lower()
+        self.project.refresh_from_db()
+        assert self.project.submitted_file is None
+        assert self.project.status == Project.Status.MANUFACTURABLE
 
     def test_submit_sets_status_to_submitted(self):
         """Test that submit() sets status to SUBMITTED."""
@@ -466,7 +560,13 @@ class TestProjectSubmit(TestCase):
 
 @pytest.mark.django_db
 class TestProjectDerivedManufacturabilityProperties(TestCase):
-    """Tests for Project's derived manufacturability properties."""
+    """Tests for Project's per-file-revision derived properties.
+
+    See docs/manufacturable_vs_submitted.md: manufacturability (a) is a
+    property of a file revision, submission for manufacturing (b) is the
+    revision submitted_file points at. Each property names the revision
+    it reads from.
+    """
 
     def setUp(self):
         """Set up test fixtures."""
@@ -481,110 +581,139 @@ class TestProjectDerivedManufacturabilityProperties(TestCase):
             description="Test project",
         )
 
-    def test_is_manufacturable_returns_none_without_submitted_file(self):
-        """Returns None when no submitted_file."""
-        assert self.project.is_manufacturable is None
+    def test_latest_file_returns_none_without_files(self):
+        """Returns None when the project has no files."""
+        assert self.project.latest_file is None
 
-    def test_is_manufacturable_returns_none_without_finished_check(self):
-        """Returns None when check is not FINISHED."""
-        project_file = ProjectFileFactory(project=self.project)
-        self.project.submitted_file = project_file
-        self.project.save()
+    def test_latest_file_returns_active_file(self):
+        """Returns the active file, not older inactive revisions."""
+        ProjectFileFactory(project=self.project, is_active=False)
+        active = ProjectFileFactory(project=self.project, is_active=True)
+        assert self.project.latest_file == active
+
+    def test_latest_file_check_returns_none_without_checks(self):
+        """Returns None when the latest revision has no checks."""
+        ProjectFileFactory(project=self.project)
+        assert self.project.latest_file_check is None
+
+    def test_latest_file_check_ignores_older_revisions(self):
+        """Reads checks from the latest revision, not older ones."""
+        old_file = ProjectFileFactory(project=self.project, is_active=False)
         ManufacturabilityCheckFactory(
             project=self.project,
-            project_file=project_file,
+            project_file=old_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
+        new_file = ProjectFileFactory(project=self.project, is_active=True)
+        new_check = ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=new_file,
             status=ManufacturabilityCheck.Status.RUNNING,
         )
-        assert self.project.is_manufacturable is None
+        assert self.project.latest_file_check == new_check
 
-    def test_is_manufacturable_returns_true_from_finished_check(self):
-        """Returns True from latest finished check when manufacturable."""
+    def test_submitted_file_check_returns_none_without_submitted_file(self):
+        """Returns None when nothing has been submitted for manufacturing."""
         project_file = ProjectFileFactory(project=self.project)
-        self.project.submitted_file = project_file
-        self.project.save()
         ManufacturabilityCheckFactory(
             project=self.project,
             project_file=project_file,
             status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=True,
         )
-        assert self.project.is_manufacturable is True
+        assert self.project.submitted_file_check is None
 
-    def test_is_manufacturable_returns_false_from_finished_check(self):
-        """Returns False from latest finished check when not manufacturable."""
-        project_file = ProjectFileFactory(project=self.project)
-        self.project.submitted_file = project_file
-        self.project.save()
-        ManufacturabilityCheckFactory(
+    def test_submitted_file_check_reads_submitted_revision(self):
+        """Reads checks from the submitted revision even when not latest."""
+        submitted = ProjectFileFactory(project=self.project, is_active=False)
+        submitted_check = ManufacturabilityCheckFactory(
             project=self.project,
-            project_file=project_file,
+            project_file=submitted,
             status=ManufacturabilityCheck.Status.FINISHED,
-            is_manufacturable=False,
+            is_manufacturable=True,
         )
-        assert self.project.is_manufacturable is False
-
-    def test_manufacturability_errors_returns_empty_without_submitted_file(self):
-        """Returns empty list when no submitted_file."""
-        assert self.project.manufacturability_errors == []
-
-    def test_manufacturability_errors_returns_empty_without_finished_check(self):
-        """Returns empty list when check is not FINISHED."""
-        project_file = ProjectFileFactory(project=self.project)
-        self.project.submitted_file = project_file
-        self.project.save()
+        latest = ProjectFileFactory(project=self.project, is_active=True)
         ManufacturabilityCheckFactory(
             project=self.project,
-            project_file=project_file,
+            project_file=latest,
             status=ManufacturabilityCheck.Status.RUNNING,
-            errors=["Error 1", "Error 2"],
         )
-        assert self.project.manufacturability_errors == []
-
-    def test_manufacturability_errors_returns_errors_from_finished_check(self):
-        """Returns errors from latest finished check."""
-        project_file = ProjectFileFactory(project=self.project)
-        self.project.submitted_file = project_file
+        self.project.submitted_file = submitted
         self.project.save()
-        errors = ["Error 1", "Error 2"]
-        ManufacturabilityCheckFactory(
-            project=self.project,
-            project_file=project_file,
-            status=ManufacturabilityCheck.Status.FINISHED,
-            errors=errors,
-            is_manufacturable=False,
-        )
-        assert self.project.manufacturability_errors == errors
+        assert self.project.submitted_file_check == submitted_check
 
-    def test_check_completed_at_returns_none_without_submitted_file(self):
-        """Returns None when no submitted_file."""
-        assert self.project.check_completed_at is None
+    def test_latest_file_manufacturable_none_without_files(self):
+        """Returns None when the project has no files."""
+        assert self.project.latest_file_manufacturable is None
 
-    def test_check_completed_at_returns_none_without_finished_check(self):
-        """Returns None when check is not FINISHED."""
+    def test_latest_file_manufacturable_none_without_finished_check(self):
+        """Returns None while the latest revision has no finished check."""
         project_file = ProjectFileFactory(project=self.project)
-        self.project.submitted_file = project_file
-        self.project.save()
         ManufacturabilityCheckFactory(
             project=self.project,
             project_file=project_file,
             status=ManufacturabilityCheck.Status.RUNNING,
         )
-        assert self.project.check_completed_at is None
+        assert self.project.latest_file_manufacturable is None
 
-    def test_check_completed_at_returns_timestamp_from_finished_check(self):
-        """Returns analysis_completed_at from latest finished check."""
+    def test_latest_file_manufacturable_true_from_finished_check(self):
+        """Returns True when the latest revision's finished check passed."""
         project_file = ProjectFileFactory(project=self.project)
-        self.project.submitted_file = project_file
-        self.project.save()
-        completed_at = timezone.now()
         ManufacturabilityCheckFactory(
             project=self.project,
             project_file=project_file,
             status=ManufacturabilityCheck.Status.FINISHED,
             is_manufacturable=True,
-            analysis_completed_at=completed_at,
         )
-        assert self.project.check_completed_at == completed_at
+        assert self.project.latest_file_manufacturable is True
+
+    def test_latest_file_manufacturable_false_from_finished_check(self):
+        """Returns False when the latest revision's finished check failed."""
+        project_file = ProjectFileFactory(project=self.project)
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=False,
+        )
+        assert self.project.latest_file_manufacturable is False
+
+    def test_latest_file_manufacturable_keeps_verdict_during_recheck(self):
+        """An in-flight re-check does not reset an existing verdict."""
+        project_file = ProjectFileFactory(project=self.project)
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        assert self.project.latest_file_manufacturable is True
+
+    def test_latest_file_manufacturable_ignores_submitted_revision(self):
+        """A passing submitted revision does not mask a failing latest one."""
+        submitted = ProjectFileFactory(project=self.project, is_active=False)
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=submitted,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
+        latest = ProjectFileFactory(project=self.project, is_active=True)
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=latest,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=False,
+        )
+        self.project.submitted_file = submitted
+        self.project.save()
+        assert self.project.latest_file_manufacturable is False
 
 
 @pytest.mark.django_db

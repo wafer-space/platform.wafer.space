@@ -173,9 +173,11 @@ class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView
         )
         context["history_files"] = history_files
 
-        # Add manufacturability check (from active file if it exists)
+        # Add manufacturability check (from active file if it exists).
+        # latest_file covers the edge where no file is active and nothing
+        # was submitted - its newest-upload fallback still has the check.
         check = None
-        active_file = in_progress_file or submitted_file
+        active_file = in_progress_file or submitted_file or project.latest_file
         if active_file:
             check = active_file.latest_manufacturability_check
         context["check"] = check
@@ -255,10 +257,19 @@ class ProjectUpdateView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, UpdateView
         response = super().form_valid(form)
 
         if cob_changed:
-            latest_check = self.object.latest_manufacturability_check
-            if latest_check is not None:
+            # Re-check both the latest revision and (when different) the
+            # submitted revision: manufacturing consumes the submitted one,
+            # so its verdict must also reflect the new CoB flag. See
+            # docs/manufacturable_vs_submitted.md.
+            checks_to_rerun = [self.object.latest_file_check]
+            submitted_check = self.object.submitted_file_check
+            if submitted_check is not None and submitted_check not in checks_to_rerun:
+                checks_to_rerun.append(submitted_check)
+            for source_check in checks_to_rerun:
+                if source_check is None:
+                    continue
                 try:
-                    latest_check.create_check_cob_change()
+                    source_check.create_check_cob_change()
                 except ValueError:
                     # The source check stopped being its file's latest between
                     # page load and submit (e.g. a concurrent re-check). The CoB
@@ -269,7 +280,7 @@ class ProjectUpdateView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, UpdateView
                         "CoB re-check skipped for project %s: source check %s is "
                         "no longer the latest for its file.",
                         self.object.pk,
-                        latest_check.pk,
+                        source_check.pk,
                         exc_info=True,
                     )
 
