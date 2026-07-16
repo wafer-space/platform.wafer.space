@@ -136,6 +136,24 @@ Django 5.2+ application for wafer.space silicon manufacturing.
 
 ---
 
+## MANUFACTURABLE vs SUBMITTED - TWO DISTINCT CONCEPTS
+
+**See `docs/manufacturable_vs_submitted.md` for the authoritative definitions.**
+
+- **Manufacturable** is a property of a *file revision* (`ProjectFile`):
+  its latest **finished** manufacturability check passed.
+- **Submitted to be manufactured** is a pointer held by the project
+  (`Project.submitted_file`) to exactly one file revision.
+- A revision must be manufacturable before it can be submitted. New revisions
+  can be uploaded (and re-submitted) after submission, so *latest revision ≠
+  submitted revision* is a normal state.
+- ❌ **NEVER** use `Project.status` to decide whether a file was submitted —
+  later check completions overwrite `SUBMITTED`. Use `Project.submitted_file`.
+- Any UI showing a precheck status must make clear **which file revision**
+  that status belongs to.
+
+---
+
 ## OAUTH CONFIGURATION
 
 **CRITICAL: This project uses SETTINGS-BASED OAuth, NOT database-based.**

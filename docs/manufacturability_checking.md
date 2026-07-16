@@ -4,6 +4,8 @@
 
 The platform automatically checks your design files for manufacturability using the [gf180mcu-precheck](https://github.com/wafer-space/gf180mcu-precheck) tool. This runs 5 checks in a Docker container to verify your design meets manufacturing requirements.
 
+Checks are always attached to a specific **file revision**. Passing a check (being *manufacturable*) is a separate concept from being *submitted to be manufactured* — see [Manufacturable vs Submitted for Manufacturing](manufacturable_vs_submitted.md) for the authoritative definitions.
+
 ## The Five Checks
 
 1. **Top Cell Validation** - Ensures only one top-level cell exists with correct name
