@@ -72,10 +72,9 @@ class TestAdminDuplicateView(TestCase):
             {"target_shuttle": self.target_shuttle.pk},
         )
         duplicate = Project.objects.get(shuttle=self.target_shuttle)
-        assert response.status_code == HTTP_FOUND
-        assert response.url == reverse(  # type: ignore[attr-defined]
-            "admin:projects_project_change",
-            args=[duplicate.pk],
+        self.assertRedirects(
+            response,
+            reverse("admin:projects_project_change", args=[duplicate.pk]),
         )
         assert duplicate.status == Project.Status.DRAFT
         assert LogEntry.objects.filter(
