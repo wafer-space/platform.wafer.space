@@ -150,7 +150,7 @@ class TestProjectListView(TestCase):
         assert response.status_code == HTTP_OK
         content = response.content.decode()
         assert "Submitted" in content
-        assert "bg-primary" in content
+        assert "text-wrap bg-primary" in content
 
     def test_shows_draft_status_badge(self):
         """Draft projects show the Draft status badge column."""
@@ -174,7 +174,7 @@ class TestProjectListView(TestCase):
         assert response.status_code == HTTP_OK
         content = response.content.decode()
         assert "Manufacturable" in content
-        assert "bg-success" in content
+        assert "text-wrap bg-success" in content
 
     def test_shows_shuttle_name_when_assigned(self):
         """Projects assigned to a shuttle show the shuttle name column."""
