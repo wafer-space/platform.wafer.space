@@ -213,6 +213,49 @@ class TestProjectCanSubmit(TestCase):
         assert can_submit is True
         assert reason == ""
 
+    def test_cannot_submit_unchecked_latest_revision(self):
+        """An unchecked latest revision cannot ride on stale MANUFACTURABLE.
+
+        mark_finished() on an older revision's check also sets the project
+        status to MANUFACTURABLE, which must not allow submitting a newer
+        revision that has no passing check of its own (Rule 1 in
+        docs/manufacturable_vs_submitted.md).
+        """
+        old_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/old.gds",
+            source_url="https://example.com/old.gds",
+            original_filename="old.gds",
+            is_active=False,
+            hash_verified=True,
+        )
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=old_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
+        new_file = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/new.gds",
+            source_url="https://example.com/new.gds",
+            original_filename="new.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+        DownloadAttempt.objects.create(
+            project_file=new_file,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
+        )
+        self.project.status = Project.Status.MANUFACTURABLE
+        self.project.save()
+
+        can_submit, reason = self.project.can_submit()
+
+        assert can_submit is False
+        assert "latest file" in reason.lower()
+
 
 @pytest.mark.django_db
 class TestProjectSubmit(TestCase):
@@ -584,6 +627,22 @@ class TestProjectDerivedManufacturabilityProperties(TestCase):
             is_manufacturable=False,
         )
         assert self.project.latest_file_manufacturable is False
+
+    def test_latest_file_manufacturable_keeps_verdict_during_recheck(self):
+        """An in-flight re-check does not reset an existing verdict."""
+        project_file = ProjectFileFactory(project=self.project)
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        assert self.project.latest_file_manufacturable is True
 
     def test_latest_file_manufacturable_ignores_submitted_revision(self):
         """A passing submitted revision does not mask a failing latest one."""

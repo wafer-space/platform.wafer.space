@@ -66,6 +66,13 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
         context = super().get_context_data(**kwargs)
         shuttle = self.object
 
+        # Fetch all projects once; the same instances feed the stats, the
+        # template table and the JS data below, so the cached per-instance
+        # manufacturability properties are only computed once per project.
+        all_projects = list(
+            shuttle.projects.select_related("user").prefetch_related("shuttle_slots")
+        )
+
         # Calculate statistics by slot size
         stats = {}
         for slot_size in SlotSize:
@@ -74,28 +81,26 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
             total_slots = slots.count()
             available_slots = slots.filter(status=ShuttleSlot.Status.AVAILABLE).count()
 
-            # Count projects of this size
-            projects = shuttle.projects.filter(slot_size=slot_size)
-            projects_count = projects.count()
-            assigned_projects = projects.filter(shuttle_slots__isnull=False).distinct()
-            assigned_count = assigned_projects.count()
+            project_list = [p for p in all_projects if p.slot_size == slot_size]
+            projects_count = len(project_list)
+            # shuttle_slots is prefetched, so .all() hits the cache
+            assigned_count = sum(1 for p in project_list if p.shuttle_slots.all())
 
             # Count manufacturable projects (latest file revision passing its
             # precheck — see docs/manufacturable_vs_submitted.md)
-            project_list = list(projects)
             manufacturable_projects = [
                 p for p in project_list if p.latest_file_manufacturable
             ]
             manufacturable_total = len(manufacturable_projects)
             manufacturable_assigned = sum(
-                1 for p in manufacturable_projects if p.shuttle_slots.exists()
+                1 for p in manufacturable_projects if p.shuttle_slots.all()
             )
 
             # Count projects with a CrowdSupply order and CoB packaging
             cs_order_projects = [p for p in project_list if p.crowd_supply_order_id]
             cs_order_total = len(cs_order_projects)
             cs_order_assigned = sum(
-                1 for p in cs_order_projects if p.shuttle_slots.exists()
+                1 for p in cs_order_projects if p.shuttle_slots.all()
             )
             cob_count = sum(1 for p in project_list if p.chip_on_board)
 
@@ -119,10 +124,7 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
             for size in SlotSize
         }
 
-        # Get all projects on this shuttle with their slot assignments
-        projects = shuttle.projects.select_related("user").prefetch_related(
-            "shuttle_slots"
-        )
+        projects = all_projects
         context["projects"] = projects
 
         # Build slots_by_project data for JavaScript

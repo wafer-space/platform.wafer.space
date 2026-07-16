@@ -18,10 +18,12 @@ Manufacturability is always evaluated per file revision, never per project:
 - Each file revision has its own independent check history (retries, DRC
   updates, re-runs).
 - A revision's manufacturability can be in one of three states:
-  - **Unknown** (`None`) — no finished check yet (no check, or the latest
-    check is pending/running/errored/cancelled).
+  - **Unknown** (`None`) — the revision has no finished check at all.
   - **Manufacturable** (`True`) — latest finished check passed.
   - **Not manufacturable** (`False`) — latest finished check failed.
+- The verdict comes from the latest **finished** check: a newer check that
+  is still pending/running does not reset an existing verdict; when it
+  finishes, its result becomes the verdict.
 
 ### (b) Submitted to be manufactured — a designation held by the *project*
 
@@ -51,7 +53,7 @@ user clicks "Submit for Manufacturing" (`Project.submit()`).
 | Concept | Code |
 |---|---|
 | File revision | `ProjectFile` |
-| Latest file revision | `ProjectFile.is_active=True` (unique per project via `one_active_file_per_project`); `Project.latest_file` |
+| Latest file revision | `ProjectFile.is_active=True` (unique per project via `one_active_file_per_project`); `Project.latest_file` (falls back to the most recently uploaded revision if none is marked active) |
 | Manufacturability of a revision (a) | `ProjectFile.latest_manufacturability_check.is_manufacturable` (only when that check is `FINISHED`) |
 | Latest revision's check | `Project.latest_file_check` |
 | Latest revision manufacturable? | `Project.latest_file_manufacturable` (`True`/`False`/`None`) |
@@ -95,3 +97,9 @@ rules:
   **latest** file revision. If a submitted revision exists and it is *not*
   the latest revision, a second line shows the precheck status of the
   **submitted** revision. Each line is labelled when both are shown.
+- **Grid tiles and the assign-autocomplete indicator** (✓/?/✗) are keyed on
+  the **latest** revision's manufacturability, consistent with the rest of
+  the page. Note this is a display convention only: the revision that
+  manufacturing actually consumes is `Project.output_file` (submitted,
+  falling back to latest), and the reticle packaging service independently
+  validates that revision's check before placing a project.

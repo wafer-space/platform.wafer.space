@@ -66,16 +66,16 @@ def compliance_certification_create(request: HttpRequest, pk: UUID) -> HttpRespo
     """
     project = get_object_or_404(Project, pk=pk, user=request.user)
 
-    # Check if project is manufacturable
-    # Get the most recent manufacturability check
-    check = project.manufacturability_checks.order_by("-created_at").first()
-    if not check:
+    # The latest file revision must be manufacturable (its latest finished
+    # check passed) - see docs/manufacturable_vs_submitted.md. A check on an
+    # older revision must not open the gate for a newer, unchecked one.
+    if not project.latest_file_check:
         messages.error(
             request,
             "This project has not been checked for manufacturability yet.",
         )
         return redirect("projects:detail", pk=project.pk)
-    if not check.is_manufacturable:
+    if project.latest_file_manufacturable is not True:
         messages.error(
             request,
             "This project must pass manufacturability checks before certification.",

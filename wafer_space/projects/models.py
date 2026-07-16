@@ -15,6 +15,7 @@ from django.db import models
 from django.db import transaction
 from django.utils import timezone
 from django.utils.formats import date_format
+from django.utils.functional import cached_property
 from simple_history.models import HistoricalRecords
 
 from wafer_space.core.enums import SlotSize
@@ -441,52 +442,58 @@ class Project(models.Model):
     #     check passed);
     # (b) submitted for manufacturing: the revision submitted_file points at.
     # Each property names the file revision it reads from.
-    @property
+    @cached_property
     def latest_file(self) -> "ProjectFile | None":
         """Get the latest file revision (the active file).
 
         Falls back to the most recently uploaded file if no file is
         marked active. Returns None if the project has no files.
+
+        Cached per instance: the assignment dashboard reads this (and the
+        check properties below) several times per project per request.
         """
         active = self.files.filter(is_active=True).first()
         if active:
             return active
         return self.files.order_by("-uploaded_at").first()
 
-    @property
+    @cached_property
     def latest_file_check(self) -> "ManufacturabilityCheck | None":
         """Get the latest manufacturability check on the latest file revision.
 
         Returns None if the project has no files or the latest revision has
-        no checks.
+        no checks. Cached per instance.
         """
         latest = self.latest_file
         if not latest:
             return None
         return latest.latest_manufacturability_check
 
-    @property
+    @cached_property
     def submitted_file_check(self) -> "ManufacturabilityCheck | None":
         """Get the latest manufacturability check on the submitted revision.
 
         Returns None if no file revision has been submitted for
         manufacturing (submitted_file is NULL) or it has no checks.
+        Cached per instance.
         """
         if not self.submitted_file:
             return None
         return self.submitted_file.latest_manufacturability_check
 
-    @property
+    @cached_property
     def latest_file_manufacturable(self) -> bool | None:
         """Whether the latest file revision is manufacturable.
 
-        Returns None while the latest revision has no finished check
-        (no check yet, or still pending/running/errored).
+        Per docs/manufacturable_vs_submitted.md this is the verdict of the
+        latest *finished* check on the latest revision, so an in-flight
+        re-check does not reset an existing verdict. Returns None while the
+        revision has no finished check at all. Cached per instance.
         """
-        check = self.latest_file_check
-        if not check or check.status != ManufacturabilityCheck.Status.FINISHED:
+        latest = self.latest_file
+        if not latest:
             return None
-        return check.is_manufacturable
+        return latest.output_check.is_manufacturable
 
     @property
     def output_file(self) -> "ProjectFile":
@@ -578,7 +585,6 @@ class Project(models.Model):
             return False, "File hash has not been verified"
 
         # Check project status - only MANUFACTURABLE can be submitted
-        # (MANUFACTURABLE status guarantees is_manufacturable=True via mark_finished)
         if self.status != self.Status.MANUFACTURABLE:
             msg = (
                 "Manufacturability check must complete before submission"
@@ -586,6 +592,14 @@ class Project(models.Model):
                 else "Project has already been submitted"
             )
             return False, msg
+
+        # Rule 1 (docs/manufacturable_vs_submitted.md): the revision being
+        # submitted must itself be manufacturable. Status alone is not
+        # enough - a check finishing on an older revision also sets
+        # MANUFACTURABLE, which must not let an unchecked newer revision
+        # through.
+        if self.latest_file_manufacturable is not True:
+            return False, ("The latest file has not passed its manufacturability check")
 
         return True, ""
 
