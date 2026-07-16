@@ -255,5 +255,4 @@ def _copy_provenance_check(
         docker_command=source_check.docker_command,
         tool_versions=source_check.tool_versions,
         precheck_version=source_check.precheck_version,
-        rerun_reason=source_check.rerun_reason,
     )

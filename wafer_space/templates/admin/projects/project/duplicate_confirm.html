@@ -1,5 +1,14 @@
 {% extends "admin/base_site.html" %}
 
+{% block breadcrumbs %}
+  <div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Home</a>
+    › <a href="{% url 'admin:app_list' app_label='projects' %}">Projects</a>
+    › <a href="{% url 'admin:projects_project_changelist' %}">Projects</a>
+    › <a href="{% url 'admin:projects_project_change' project.pk %}">{{ project.name }}</a>
+    › Duplicate
+  </div>
+{% endblock breadcrumbs %}
 {% block content %}
   <h1>Duplicate “{{ project.name }}” to another shuttle</h1>
   <p>

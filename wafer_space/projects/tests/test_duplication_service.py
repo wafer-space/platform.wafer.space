@@ -17,6 +17,7 @@ from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.services import duplicate_project_to_shuttle
+from wafer_space.projects.tasks_download import ensure_download_tasks_queued
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.users.models import User
 
@@ -237,6 +238,23 @@ class TestDuplicationCopy(TestCase):
             )
         )
         assert new_file not in queued
+
+    def test_recovery_scanner_task_leaves_duplicate_alone(self) -> None:
+        """Run the real scanner: it must not re-queue or fail the duplicate."""
+        new_file = self.duplicate.files.get(is_active=True)
+        with patch(
+            "wafer_space.projects.tasks_download.download_project_file.delay",
+        ) as mock_delay:
+            result = ensure_download_tasks_queued()
+
+        mock_delay.assert_not_called()
+        assert result["created_tasks"] == 0
+        assert result["orphaned"] == 0
+        new_file.refresh_from_db()
+        assert new_file.download_task_id.startswith("duplicated:")
+        assert not new_file.download_attempts.filter(
+            status=DownloadAttempt.Status.FAILED,
+        ).exists()
 
     def test_download_attempt_copied(self) -> None:
         new_file = self.duplicate.files.get(is_active=True)

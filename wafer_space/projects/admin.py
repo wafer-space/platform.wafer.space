@@ -1,5 +1,6 @@
 """Django admin configuration for projects app."""
 
+import uuid
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import cast
@@ -12,6 +13,7 @@ from django.http import HttpRequest
 from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.template.response import TemplateResponse
+from django.urls import URLPattern
 from django.urls import path
 from django.urls import reverse
 from simple_history.admin import SimpleHistoryAdmin
@@ -100,7 +102,7 @@ class ProjectAdmin(SimpleHistoryAdmin):
     ]
     readonly_fields = ["created_at", "updated_at"]
 
-    def get_urls(self):
+    def get_urls(self) -> list[URLPattern]:
         urls = super().get_urls()
         custom_urls = [
             path(
@@ -114,7 +116,7 @@ class ProjectAdmin(SimpleHistoryAdmin):
     def duplicate_view(
         self,
         request: HttpRequest,
-        object_id: object,
+        object_id: uuid.UUID,
     ) -> HttpResponse:
         """Intermediate page: pick a target shuttle, then duplicate."""
         project = self.get_object(request, str(object_id))

@@ -15,7 +15,6 @@ from wafer_space.shuttles.models import Shuttle
 
 from .constants import HTTP_FORBIDDEN
 from .constants import HTTP_FOUND
-from .constants import HTTP_NOT_FOUND
 from .constants import HTTP_OK
 from .constants import TEST_PASSWORD
 from .factories import ProjectFactory
@@ -117,4 +116,4 @@ class TestAdminDuplicateView(TestCase):
         )
         response = self.client.get(url)
         # Django admin redirects unknown objects to the index with a message
-        assert response.status_code in (HTTP_FOUND, HTTP_NOT_FOUND)
+        assert response.status_code == HTTP_FOUND
