@@ -98,9 +98,10 @@ Set fresh: `shuttle=target_shuttle`, `project_id` (same value as source),
 **Not copied:** `crowd_supply_order_id` — a CrowdSupply order belongs to a
 specific shuttle run, so the duplicate starts blank.
 
-The new instance sets `_current_user = admin_user` before `save()`. This is
-belt-and-braces only: `Project.clean()` skips the core-field immutability
-check for instances being added, so creation would validate either way.
+No `_current_user` is set on the new instance: `Project.clean()` skips the
+core-field immutability check for instances being added (`_state.adding`),
+so creation validates without it, and setting it would need a new
+`# noqa: SLF001` (prohibited by repo policy without explicit permission).
 
 ### Step 2 — Copy the active `ProjectFile`
 
