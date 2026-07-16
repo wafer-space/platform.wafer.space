@@ -1,5 +1,6 @@
 """Tests for project views."""
 
+import uuid
 from datetime import timedelta
 from unittest.mock import Mock
 from unittest.mock import patch
@@ -18,6 +19,7 @@ from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import PrecheckImageRevision
 from wafer_space.projects.models import Project
+from wafer_space.projects.models import ProjectAccessLog
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.security import SecurityValidationError
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
@@ -408,6 +410,177 @@ class TestProjectDetailView(TestCase):
 
         assert response.status_code == HTTP_OK
         assert "CoB Change" in response.content.decode()
+
+
+@pytest.mark.django_db
+class TestProjectDetailPkRedirect:
+    """The pk URL redirects to the canonical full_id URL."""
+
+    def test_pk_redirects_to_full_id_for_owner(self, client):
+        """Owner hitting the pk URL is sent to the canonical full_id URL."""
+        user = UserFactory()
+        shuttle = Shuttle.objects.create(name="G871", description="Redirect run")
+        project = ProjectFactory(user=user, shuttle=shuttle)
+        client.force_login(user)
+
+        response = client.get(reverse("projects:detail", kwargs={"pk": project.pk}))
+
+        assert response.status_code == HTTP_FOUND
+        assert response["Location"] == reverse(
+            "projects:detail_by_full_id", kwargs={"full_id": project.full_id}
+        )
+
+    def test_pk_serves_page_when_project_has_no_shuttle(self, client):
+        """Without a shuttle there is no full_id, so the pk URL serves the page."""
+        user = UserFactory()
+        project = ProjectFactory(user=user, shuttle=None)
+        client.force_login(user)
+
+        response = client.get(reverse("projects:detail", kwargs={"pk": project.pk}))
+
+        assert project.full_id == ""
+        assert response.status_code == HTTP_OK
+
+    def test_anonymous_is_sent_to_login_and_learns_no_full_id(self, client):
+        """Anonymous users must not learn a project's manufacturing ID.
+
+        Regression test: redirecting before the login check ran turned this
+        view into an existence oracle that disclosed the full_id to anyone
+        holding a pk.
+        """
+        shuttle = Shuttle.objects.create(name="G872", description="Anon run")
+        project = ProjectFactory(shuttle=shuttle)
+
+        response = client.get(reverse("projects:detail", kwargs={"pk": project.pk}))
+
+        assert response.status_code == HTTP_FOUND
+        assert "/accounts/login/" in response["Location"]
+        assert project.full_id not in response["Location"]
+
+    def test_anonymous_gets_login_redirect_for_unknown_pk(self, client):
+        """An unknown pk must not 404 for anonymous users, which leaks existence."""
+        known = ProjectFactory(
+            shuttle=Shuttle.objects.create(name="G873", description="Oracle run")
+        )
+        missing_pk = uuid.uuid4()
+
+        known_response = client.get(reverse("projects:detail", kwargs={"pk": known.pk}))
+        missing_response = client.get(
+            reverse("projects:detail", kwargs={"pk": missing_pk})
+        )
+
+        # Both must be indistinguishable to an anonymous caller.
+        assert known_response.status_code == HTTP_FOUND
+        assert missing_response.status_code == HTTP_FOUND
+        assert "/accounts/login/" in missing_response["Location"]
+
+    def test_non_owner_is_forbidden_and_learns_no_full_id(self, client):
+        """A non-owner gets 403 rather than a redirect disclosing the full_id."""
+        shuttle = Shuttle.objects.create(name="G874", description="Denied run")
+        project = ProjectFactory(shuttle=shuttle)
+        client.force_login(UserFactory())
+
+        response = client.get(reverse("projects:detail", kwargs={"pk": project.pk}))
+
+        assert response.status_code == HTTP_FORBIDDEN
+
+    def test_staff_pk_access_logs_once_against_canonical_view(self, client):
+        """Staff pk access creates exactly one log, named for the canonical view.
+
+        The redirect leg must not log: the canonical request it redirects to
+        creates the audit entry, so logging both would record one access twice.
+        """
+        shuttle = Shuttle.objects.create(name="G875", description="Audit run")
+        project = ProjectFactory(shuttle=shuttle)
+        client.force_login(UserFactory(is_staff=True))
+
+        response = client.get(
+            reverse("projects:detail", kwargs={"pk": project.pk}), follow=True
+        )
+
+        assert response.status_code == HTTP_OK
+        logs = ProjectAccessLog.objects.filter(project=project)
+        assert logs.count() == 1
+        assert logs.get().view_name == "ProjectDetailByFullIdView"
+
+
+@pytest.mark.django_db
+class TestProjectDetailByFullIdView:
+    """The canonical /projects/<full_id>/ URL."""
+
+    def test_owner_can_view_by_full_id(self, client):
+        """Owner can load the project through its manufacturing ID."""
+        user = UserFactory()
+        shuttle = Shuttle.objects.create(name="G876", description="Canonical run")
+        project = ProjectFactory(user=user, shuttle=shuttle)
+        client.force_login(user)
+
+        response = client.get(
+            reverse("projects:detail_by_full_id", kwargs={"full_id": project.full_id})
+        )
+
+        assert response.status_code == HTTP_OK
+        assert response.context["project"] == project
+
+    def test_staff_can_view_by_full_id(self, client):
+        """Staff can load another user's project through its manufacturing ID."""
+        shuttle = Shuttle.objects.create(name="G877", description="Staff run")
+        project = ProjectFactory(shuttle=shuttle)
+        client.force_login(UserFactory(is_staff=True))
+
+        response = client.get(
+            reverse("projects:detail_by_full_id", kwargs={"full_id": project.full_id})
+        )
+
+        assert response.status_code == HTTP_OK
+
+    def test_non_owner_cannot_view_by_full_id(self, client):
+        """A non-owner is denied on the canonical URL too."""
+        shuttle = Shuttle.objects.create(name="G878", description="Denied run")
+        project = ProjectFactory(shuttle=shuttle)
+        client.force_login(UserFactory())
+
+        response = client.get(
+            reverse("projects:detail_by_full_id", kwargs={"full_id": project.full_id})
+        )
+
+        assert response.status_code == HTTP_FORBIDDEN
+
+    def test_requires_login(self, client):
+        """The canonical URL requires login."""
+        shuttle = Shuttle.objects.create(name="G879", description="Anon run")
+        project = ProjectFactory(shuttle=shuttle)
+
+        response = client.get(
+            reverse("projects:detail_by_full_id", kwargs={"full_id": project.full_id})
+        )
+
+        assert response.status_code == HTTP_FOUND
+        assert "/accounts/login/" in response["Location"]
+
+    def test_unknown_full_id_returns_404(self, client):
+        """A well-formed but unused manufacturing ID is a 404."""
+        client.force_login(UserFactory())
+
+        response = client.get("/projects/G999ZZZZ/")
+
+        assert response.status_code == HTTP_NOT_FOUND
+
+    @pytest.mark.parametrize(
+        "bad_id",
+        [
+            "g871abcd",  # lowercase
+            "ABCDEFG",  # too short
+            "ABCDEFGHI",  # too long
+        ],
+    )
+    def test_malformed_full_id_does_not_resolve(self, client, bad_id):
+        """Only 8 upper-case alphanumerics route to the canonical view."""
+        client.force_login(UserFactory())
+
+        response = client.get(f"/projects/{bad_id}/")
+
+        assert response.status_code == HTTP_NOT_FOUND
 
 
 @pytest.mark.django_db
