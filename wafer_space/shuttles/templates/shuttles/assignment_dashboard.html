@@ -188,8 +188,8 @@
                 {# (submitted_file), never Project.status - see #}
                 {# docs/manufacturable_vs_submitted.md #}
                 <td class="text-center"
-                    data-sort-value="{{ project.submitted_at|date:'Y-m-d H:i:s'|default:'' }}"
-                    title="{{ project.submitted_at|date:'Y-m-d H:i:s'|default:'—' }}">
+                    data-sort-value="{% if project.submitted_file %}{{ project.submitted_at|date:'Y-m-d H:i:s' }}{% endif %}"
+                    title="{% if project.submitted_file %}{{ project.submitted_at|date:'Y-m-d H:i:s'|default:'Submitted' }}{% else %}—{% endif %}">
                   {% if project.submitted_file %}
                     <i class="bi bi-check-lg text-success"
                        aria-label="File submitted for manufacturing"></i>

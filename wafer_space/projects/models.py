@@ -503,7 +503,7 @@ class Project(models.Model):
         """
         if self.submitted_file:
             return self.submitted_file
-        latest = self.files.order_by("-uploaded_at").first()
+        latest = self.latest_file
         if latest:
             return latest
         # Return unsaved dummy for consistent interface
@@ -570,10 +570,12 @@ class Project(models.Model):
                 - can_submit: True if project can be submitted
                 - reason_if_not: Empty string if can submit, error message otherwise
         """
-        # Check if project has active file
-        try:
-            active_file = self.files.get(is_active=True)
-        except ProjectFile.DoesNotExist:
+        # Validate the same latest_file snapshot submit() will write, so a
+        # concurrent file replacement cannot slip an unvalidated revision
+        # in between the checks and the write (latest_file is cached per
+        # instance).
+        active_file = self.latest_file
+        if active_file is None or not active_file.is_active:
             return False, "Project has no active file"
 
         # Check file download and verification status
@@ -586,11 +588,12 @@ class Project(models.Model):
 
         # Check project status - only MANUFACTURABLE can be submitted
         if self.status != self.Status.MANUFACTURABLE:
-            msg = (
-                "Manufacturability check must complete before submission"
-                if self.status == self.Status.DRAFT
-                else "Project has already been submitted"
-            )
+            if self.status == self.Status.DRAFT:
+                msg = "Manufacturability check must complete before submission"
+            elif self.status == self.Status.NOT_MANUFACTURABLE:
+                msg = "The latest file has not passed its manufacturability check"
+            else:
+                msg = "Project has already been submitted"
             return False, msg
 
         # Rule 1 (docs/manufacturable_vs_submitted.md): the revision being
@@ -614,14 +617,28 @@ class Project(models.Model):
         if not can_submit:
             raise ValidationError(reason)
 
-        # Get the active file that's being submitted
-        active_file = self.files.get(is_active=True)
+        # Submit the exact revision can_submit() validated (latest_file is
+        # cached per instance), re-checking under a row lock that it is
+        # still the active revision - a concurrent replacement must not
+        # sneak an unvalidated revision into submitted_file.
+        submitted = self.latest_file
+        if submitted is None:
+            msg = "Project has no active file"
+            raise ValidationError(msg)
+        with transaction.atomic():
+            still_active = (
+                ProjectFile.objects.select_for_update()
+                .filter(pk=submitted.pk, is_active=True)
+                .exists()
+            )
+            if not still_active:
+                msg = "The file was replaced during submission; please try again"
+                raise ValidationError(msg)
 
-        # Update project status
-        self.status = self.Status.SUBMITTED
-        self.submitted_at = timezone.now()
-        self.submitted_file = active_file
-        self.save()
+            self.status = self.Status.SUBMITTED
+            self.submitted_at = timezone.now()
+            self.submitted_file = submitted
+            self.save()
 
         # Note: Manufacturability check has already been completed
         # (it was triggered automatically when file hash was verified)

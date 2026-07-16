@@ -54,12 +54,12 @@ user clicks "Submit for Manufacturing" (`Project.submit()`).
 |---|---|
 | File revision | `ProjectFile` |
 | Latest file revision | `ProjectFile.is_active=True` (unique per project via `one_active_file_per_project`); `Project.latest_file` (falls back to the most recently uploaded revision if none is marked active) |
-| Manufacturability of a revision (a) | `ProjectFile.latest_manufacturability_check.is_manufacturable` (only when that check is `FINISHED`) |
+| Manufacturability of a revision (a) | `ProjectFile.output_check.is_manufacturable` (the latest **finished** check's verdict; `None` when no check has finished) |
 | Latest revision's check | `Project.latest_file_check` |
 | Latest revision manufacturable? | `Project.latest_file_manufacturable` (`True`/`False`/`None`) |
 | Submitted for manufacturing (b) | `Project.submitted_file` (+ `Project.submitted_at`) |
 | Submitted revision's check | `Project.submitted_file_check` |
-| Revision that manufacturing consumes | `Project.output_file` (submitted revision, falling back to latest) |
+| Revision that manufacturing consumes | `Project.output_file` (submitted revision, falling back to `latest_file`) |
 
 ## Pitfalls
 
@@ -104,11 +104,12 @@ rules:
   the **latest** revision's manufacturability, consistent with the rest of
   the page. The grid tooltip carries the same information as the Status
   column: one `Status:` line for the latest revision, or `Latest:` plus
-  `Submitted:` lines when the submitted revision differs.
+  `Submitted:` lines when the submitted revision differs. Note this is a
+  display convention only: the revision that manufacturing actually
+  consumes is `Project.output_file` (submitted, falling back to latest),
+  and the reticle packaging service independently validates that
+  revision's check before placing a project.
 
 ![Slot assignment page](images/slot-assignment-page.png)
 
-![Grid tooltips showing per-revision status](images/slot-assignment-grid-tooltips.png) Note this is a display convention only: the revision that
-  manufacturing actually consumes is `Project.output_file` (submitted,
-  falling back to latest), and the reticle packaging service independently
-  validates that revision's check before placing a project.
+![Grid tooltips showing per-revision status](images/slot-assignment-grid-tooltips.png)

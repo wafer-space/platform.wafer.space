@@ -67,11 +67,13 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
         shuttle = self.object
 
         # Fetch all projects once; the same instances feed the stats, the
-        # template table and the JS data below, so the cached per-instance
-        # manufacturability properties are only computed once per project.
+        # template table, the JS data and the grid slots below, so the
+        # cached per-instance manufacturability properties are only
+        # computed once per project.
         all_projects = list(
             shuttle.projects.select_related("user").prefetch_related("shuttle_slots")
         )
+        projects_by_pk = {p.pk: p for p in all_projects}
 
         # Calculate statistics by slot size
         stats = {}
@@ -163,7 +165,11 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
         num_rows, num_cols = shuttle.grid_dimensions
         if num_rows > 0 and num_cols > 0:
             grid = [[None for _ in range(num_cols)] for _ in range(num_rows)]
-            for slot in shuttle.slots.select_related("project"):
+            for slot in shuttle.slots.all():
+                # Reuse the already-fetched project instances so the grid
+                # tooltip hits their cached manufacturability properties.
+                if slot.project_id in projects_by_pk:
+                    slot.project = projects_by_pk[slot.project_id]
                 grid[slot.row][slot.column] = slot
             context["grid"] = grid
             context["columns"] = [

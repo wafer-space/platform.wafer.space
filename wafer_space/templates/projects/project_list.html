@@ -43,7 +43,7 @@
                       <span class="badge bg-info ms-2">{{ project.user.username }}'s Project</span>
                     {% endif %}
                     {% include "projects/_packaging_badge.html" with project=project %}
-                    {% if project.submitted_at %}
+                    {% if project.submitted_file %}
                       <span class="badge bg-primary" title="Submitted for manufacturing"><i class="bi bi-send-check"></i> Submitted</span>
                     {% else %}
                       <span class="badge bg-light text-muted border"

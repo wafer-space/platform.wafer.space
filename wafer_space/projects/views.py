@@ -173,9 +173,11 @@ class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView
         )
         context["history_files"] = history_files
 
-        # Add manufacturability check (from active file if it exists)
+        # Add manufacturability check (from active file if it exists).
+        # latest_file covers the edge where no file is active and nothing
+        # was submitted - its newest-upload fallback still has the check.
         check = None
-        active_file = in_progress_file or submitted_file
+        active_file = in_progress_file or submitted_file or project.latest_file
         if active_file:
             check = active_file.latest_manufacturability_check
         context["check"] = check

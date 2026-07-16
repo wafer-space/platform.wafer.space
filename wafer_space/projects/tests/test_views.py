@@ -136,9 +136,15 @@ class TestProjectListView(TestCase):
         assert content.count("badge bg-secondary") >= min_secondary_badges
 
     def test_shows_submitted_indicator(self):
-        """Submitted projects show a submitted-for-manufacturing badge."""
+        """Submitted projects show a submitted-for-manufacturing badge.
+
+        The badge is keyed on submitted_file, the canonical submission
+        signal (see docs/manufacturable_vs_submitted.md).
+        """
+        submitted_file = ProjectFileFactory(project=self.project1)
         self.project1.status = Project.Status.SUBMITTED
         self.project1.submitted_at = timezone.now()
+        self.project1.submitted_file = submitted_file
         self.project1.save()
         self.client.login(username="testuser", password=TEST_PASSWORD)
 

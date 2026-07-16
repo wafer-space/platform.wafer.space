@@ -303,6 +303,57 @@ class TestProjectSubmit(TestCase):
 
         assert "hash" in str(exc_info.value).lower()
 
+    def test_submit_rejects_concurrently_replaced_file(self):
+        """A revision replaced after validation must not be submitted.
+
+        submit() writes the exact latest_file snapshot can_submit()
+        validated; if that revision stopped being active in the meantime
+        (concurrent replacement), the row-lock re-check must abort rather
+        than submit either the stale or the unvalidated new revision.
+        """
+        validated = ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file.gds",
+            source_url="https://example.com/file.gds",
+            original_filename="file.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+        DownloadAttempt.objects.create(
+            project_file=validated,
+            attempt_number=1,
+            status=DownloadAttempt.Status.COMPLETED,
+        )
+        ManufacturabilityCheckFactory(
+            project=self.project,
+            project_file=validated,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
+        self.project.status = Project.Status.MANUFACTURABLE
+        self.project.save()
+
+        # Cache the validated snapshot, then simulate a concurrent
+        # replacement flipping the active flag to a new unchecked revision.
+        assert self.project.latest_file == validated
+        ProjectFile.objects.filter(pk=validated.pk).update(is_active=False)
+        ProjectFile.objects.create(
+            project=self.project,
+            original_url="https://example.com/file_v2.gds",
+            source_url="https://example.com/file_v2.gds",
+            original_filename="file_v2.gds",
+            is_active=True,
+            hash_verified=True,
+        )
+
+        with pytest.raises(ValidationError) as exc_info:
+            self.project.submit()
+
+        assert "replaced" in str(exc_info.value).lower()
+        self.project.refresh_from_db()
+        assert self.project.submitted_file is None
+        assert self.project.status == Project.Status.MANUFACTURABLE
+
     def test_submit_sets_status_to_submitted(self):
         """Test that submit() sets status to SUBMITTED."""
 
