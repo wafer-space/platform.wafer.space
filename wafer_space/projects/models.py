@@ -13,6 +13,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.db import transaction
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.formats import date_format
 from django.utils.functional import cached_property
@@ -348,6 +349,22 @@ class Project(models.Model):
             "slot_size": self.slot_size,
             "proprietary_terms_url": self.proprietary_terms_url,
         }
+
+    def get_absolute_url(self) -> str:
+        """Get URL for the project's detail view.
+
+        Prefers the canonical manufacturing-ID URL, falling back to the pk
+        URL for projects not yet on a shuttle (which have no full_id).
+
+        Returns:
+            str: URL for project detail.
+
+        """
+        if self.full_id:
+            return reverse(
+                "projects:detail_by_full_id", kwargs={"full_id": self.full_id}
+            )
+        return reverse("projects:detail", kwargs={"pk": self.pk})
 
     def clean(self):
         """Validate model, including core field immutability.
