@@ -255,7 +255,7 @@ class ProjectUpdateView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, UpdateView
         response = super().form_valid(form)
 
         if cob_changed:
-            latest_check = self.object.latest_manufacturability_check
+            latest_check = self.object.latest_file_check
             if latest_check is not None:
                 try:
                     latest_check.create_check_cob_change()

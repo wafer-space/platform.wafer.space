@@ -80,10 +80,12 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
             assigned_projects = projects.filter(shuttle_slots__isnull=False).distinct()
             assigned_count = assigned_projects.count()
 
-            # Count manufacturable projects
-            # Note: is_manufacturable is now a derived property, so we filter in Python
+            # Count manufacturable projects (latest file revision passing its
+            # precheck — see docs/manufacturable_vs_submitted.md)
             project_list = list(projects)
-            manufacturable_projects = [p for p in project_list if p.is_manufacturable]
+            manufacturable_projects = [
+                p for p in project_list if p.latest_file_manufacturable
+            ]
             manufacturable_total = len(manufacturable_projects)
             manufacturable_assigned = sum(
                 1 for p in manufacturable_projects if p.shuttle_slots.exists()
@@ -148,7 +150,7 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
                     "project_id": project.project_id or "",
                     "name": project.name,
                     "slot_size": project.slot_size,
-                    "is_manufacturable": project.is_manufacturable,
+                    "latest_file_manufacturable": project.latest_file_manufacturable,
                     "is_assigned": bool(assigned_slots),
                     "assigned_slots": assigned_slots,
                 }

@@ -144,8 +144,8 @@
       // Within same size group, sort by status
       function getPriority(proj) {
         if (proj.is_assigned) return 3;
-        if (proj.is_manufacturable === true) return 0;
-        if (proj.is_manufacturable === false) return 1;
+        if (proj.latest_file_manufacturable === true) return 0;
+        if (proj.latest_file_manufacturable === false) return 1;
         return 2; // pending (null)
       }
 
@@ -216,8 +216,8 @@
 
       // Add minor separator between status groups (within same size)
       const status = proj.is_assigned ? 'assigned' :
-                     proj.is_manufacturable === true ? 'ready' :
-                     proj.is_manufacturable === false ? 'failed' : 'pending';
+                     proj.latest_file_manufacturable === true ? 'ready' :
+                     proj.latest_file_manufacturable === false ? 'failed' : 'pending';
 
       if (lastStatus !== null && lastStatus !== status && isSameSize) {
         html += '<div class="autocomplete-separator"></div>';
@@ -225,10 +225,10 @@
       lastStatus = status;
 
       // Manufacturing status indicator
-      const mfgText = proj.is_manufacturable === true ? '✓' :
-                      proj.is_manufacturable === false ? '✗' : '?';
-      const mfgClass = proj.is_manufacturable === true ? 'mfg-pass' :
-                       proj.is_manufacturable === false ? 'mfg-fail' : 'mfg-pending';
+      const mfgText = proj.latest_file_manufacturable === true ? '✓' :
+                      proj.latest_file_manufacturable === false ? '✗' : '?';
+      const mfgClass = proj.latest_file_manufacturable === true ? 'mfg-pass' :
+                       proj.latest_file_manufacturable === false ? 'mfg-fail' : 'mfg-pending';
 
       // Size badge (only for different size)
       const sizeBadge = isSameSize ? '' :
@@ -274,8 +274,8 @@
     // Show selected display
     const display = document.getElementById('selected-project-display');
     const badge = document.getElementById('selected-project-badge');
-    const mfgText = project.is_manufacturable === true ? '✓' :
-                    project.is_manufacturable === false ? '✗' : '?';
+    const mfgText = project.latest_file_manufacturable === true ? '✓' :
+                    project.latest_file_manufacturable === false ? '✗' : '?';
     badge.textContent = project.project_id + mfgText + ' - ' + project.name;
     display.style.display = 'block';
 

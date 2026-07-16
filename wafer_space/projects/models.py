@@ -247,10 +247,10 @@ class Project(models.Model):
         help_text="The file that was submitted for manufacturing",
     )
 
-    # NOTE: is_manufacturable, manufacturability_errors, and check_completed_at
-    # are now derived properties (see @property methods below) that read from
-    # the latest ManufacturabilityCheck on the submitted_file. This enables
-    # multiple checks per file (retries, DRC updates, etc.) without losing history.
+    # NOTE: Manufacturability is a property of a file revision, not of the
+    # project — see docs/manufacturable_vs_submitted.md. The derived
+    # properties below (latest_file_check, submitted_file_check, etc.) name
+    # the file revision they read from explicitly.
 
     # Visibility settings
     is_public = models.BooleanField(
@@ -435,41 +435,58 @@ class Project(models.Model):
             )
             raise ValidationError(msg)
 
-    # Derived manufacturability properties (from latest check on submitted_file)
+    # Derived manufacturability properties. Two distinct concepts here —
+    # see docs/manufacturable_vs_submitted.md:
+    # (a) manufacturable: a per-file-revision fact (its latest finished
+    #     check passed);
+    # (b) submitted for manufacturing: the revision submitted_file points at.
+    # Each property names the file revision it reads from.
     @property
-    def latest_manufacturability_check(self) -> "ManufacturabilityCheck | None":
-        """Get the latest manufacturability check for this project's submitted file.
+    def latest_file(self) -> "ProjectFile | None":
+        """Get the latest file revision (the active file).
 
-        Returns the most recent check on the submitted_file, or None if no
-        submitted file or no checks exist.
+        Falls back to the most recently uploaded file if no file is
+        marked active. Returns None if the project has no files.
+        """
+        active = self.files.filter(is_active=True).first()
+        if active:
+            return active
+        return self.files.order_by("-uploaded_at").first()
+
+    @property
+    def latest_file_check(self) -> "ManufacturabilityCheck | None":
+        """Get the latest manufacturability check on the latest file revision.
+
+        Returns None if the project has no files or the latest revision has
+        no checks.
+        """
+        latest = self.latest_file
+        if not latest:
+            return None
+        return latest.latest_manufacturability_check
+
+    @property
+    def submitted_file_check(self) -> "ManufacturabilityCheck | None":
+        """Get the latest manufacturability check on the submitted revision.
+
+        Returns None if no file revision has been submitted for
+        manufacturing (submitted_file is NULL) or it has no checks.
         """
         if not self.submitted_file:
             return None
         return self.submitted_file.latest_manufacturability_check
 
     @property
-    def is_manufacturable(self) -> bool | None:
-        """Derived from latest completed check on submitted file."""
-        check = self.latest_manufacturability_check
+    def latest_file_manufacturable(self) -> bool | None:
+        """Whether the latest file revision is manufacturable.
+
+        Returns None while the latest revision has no finished check
+        (no check yet, or still pending/running/errored).
+        """
+        check = self.latest_file_check
         if not check or check.status != ManufacturabilityCheck.Status.FINISHED:
             return None
         return check.is_manufacturable
-
-    @property
-    def manufacturability_errors(self) -> list[str]:
-        """Derived from latest completed check."""
-        check = self.latest_manufacturability_check
-        if not check or check.status != ManufacturabilityCheck.Status.FINISHED:
-            return []
-        return check.errors
-
-    @property
-    def check_completed_at(self) -> datetime | None:
-        """Derived from latest completed check."""
-        check = self.latest_manufacturability_check
-        if not check or check.status != ManufacturabilityCheck.Status.FINISHED:
-            return None
-        return check.analysis_completed_at
 
     @property
     def output_file(self) -> "ProjectFile":
@@ -2137,8 +2154,10 @@ class ManufacturabilityCheck(models.Model):
         )
 
         # Update project status
-        # Note: is_manufacturable, manufacturability_errors, and check_completed_at
-        # are now derived properties on Project, so we only update the status.
+        # Note: manufacturability itself is derived per file revision (see
+        # docs/manufacturable_vs_submitted.md); only the coarse lifecycle
+        # status is stored on the project. This overwrites SUBMITTED, which
+        # is why submission state must be read from submitted_file instead.
         if is_manufacturable:
             self.project.status = Project.Status.MANUFACTURABLE
         else:
