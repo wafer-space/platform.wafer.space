@@ -8,9 +8,11 @@ from unittest.mock import patch
 import pytest
 from django.contrib.messages import get_messages
 from django.core.cache import cache
+from django.db import connection
 from django.template.loader import render_to_string
 from django.test import Client
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -413,6 +415,35 @@ class TestProjectDetailView(TestCase):
 
 
 @pytest.mark.django_db
+class TestProjectListQueryCount:
+    """The project list must not run a query per project."""
+
+    def test_query_count_does_not_grow_with_project_count(self, client):
+        """Guard against an N+1 in the list.
+
+        Every row links via get_absolute_url(), which reads full_id and so
+        touches the shuttle FK. Without select_related("shuttle") that costs
+        one extra query per project. Asserting the count is unchanged by
+        adding rows catches that without pinning a brittle absolute number.
+        """
+        user = UserFactory()
+        shuttle = Shuttle.objects.create(name="G881", description="List run")
+        ProjectFactory(user=user, shuttle=shuttle)
+        client.force_login(user)
+        url = reverse("projects:list")
+
+        with CaptureQueriesContext(connection) as one_project:
+            client.get(url)
+
+        ProjectFactory.create_batch(5, user=user, shuttle=shuttle)
+
+        with CaptureQueriesContext(connection) as six_projects:
+            client.get(url)
+
+        assert len(six_projects.captured_queries) == len(one_project.captured_queries)
+
+
+@pytest.mark.django_db
 class TestProjectDetailPkRedirect:
     """The pk URL redirects to the canonical full_id URL."""
 
@@ -491,10 +522,13 @@ class TestProjectDetailPkRedirect:
             reverse("projects:detail", kwargs={"pk": missing_pk})
         )
 
-        # Both must be indistinguishable to an anonymous caller.
+        # Both must be indistinguishable to an anonymous caller: same status,
+        # and both sent to login rather than one revealing the project.
         assert known_response.status_code == HTTP_FOUND
         assert missing_response.status_code == HTTP_FOUND
+        assert "/accounts/login/" in known_response["Location"]
         assert "/accounts/login/" in missing_response["Location"]
+        assert known.full_id not in known_response["Location"]
 
     def test_non_owner_is_forbidden_and_learns_no_full_id(self, client):
         """A non-owner gets 403 rather than a redirect disclosing the full_id."""
@@ -505,6 +539,7 @@ class TestProjectDetailPkRedirect:
         response = client.get(reverse("projects:detail", kwargs={"pk": project.pk}))
 
         assert response.status_code == HTTP_FORBIDDEN
+        assert project.full_id not in response.content.decode()
 
     def test_staff_pk_access_logs_once_against_canonical_view(self, client):
         """Staff pk access creates exactly one log, named for the canonical view.

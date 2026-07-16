@@ -68,16 +68,27 @@ class ProjectListView(LoginRequiredMixin, ListView):
 
         - Regular users: only their own projects
         - Staff users: all projects from all users
+
+        Selects the shuttle: every row links via get_absolute_url(), which
+        reads full_id and so touches the shuttle, one query per project.
         """
         # Cast user since LoginRequiredMixin ensures authentication
         user = cast("User", self.request.user)
 
         if user.is_staff:
             # Staff users see all projects
-            return Project.objects.all().select_related("user").order_by("-created_at")
+            return (
+                Project.objects.all()
+                .select_related("user", "shuttle")
+                .order_by("-created_at")
+            )
 
         # Regular users see only their own projects
-        return Project.objects.filter(user=user).order_by("-created_at")
+        return (
+            Project.objects.filter(user=user)
+            .select_related("user", "shuttle")
+            .order_by("-created_at")
+        )
 
 
 class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView):
