@@ -430,6 +430,28 @@ class TestProjectDetailPkRedirect:
             "projects:detail_by_full_id", kwargs={"full_id": project.full_id}
         )
 
+    def test_redirect_preserves_query_string(self, client):
+        """The canonical URL answers the request the pk URL was asked.
+
+        Dropping the query string would silently discard the caller's
+        parameters on every redirected link.
+        """
+        user = UserFactory()
+        shuttle = Shuttle.objects.create(name="G880", description="Query run")
+        project = ProjectFactory(user=user, shuttle=shuttle)
+        client.force_login(user)
+
+        response = client.get(
+            reverse("projects:detail", kwargs={"pk": project.pk}),
+            {"tab": "files", "page": "2"},
+        )
+
+        assert response.status_code == HTTP_FOUND
+        canonical = reverse(
+            "projects:detail_by_full_id", kwargs={"full_id": project.full_id}
+        )
+        assert response["Location"] == f"{canonical}?tab=files&page=2"
+
     def test_pk_serves_page_when_project_has_no_shuttle(self, client):
         """Without a shuttle there is no full_id, so the pk URL serves the page."""
         user = UserFactory()

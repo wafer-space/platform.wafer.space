@@ -106,7 +106,7 @@
               {% endif %}
             </button>
             <a class="btn btn-secondary"
-               href="{% if not is_new %}{% url 'projects:detail' pk=object.pk %}{% else %}{% url 'projects:list' %}{% endif %}"
+               href="{% if not is_new %}{{ object.get_absolute_url }}{% else %}{% url 'projects:list' %}{% endif %}"
                role="button">
               <i class="bi bi-x-circle"></i> Cancel
             </a>

@@ -35,7 +35,7 @@
               <div class="list-group-item list-group-item-action position-relative">
                 <div class="d-flex w-100 justify-content-between">
                   <h5 class="mb-1">
-                    <a href="{% url 'projects:detail' pk=project.pk %}"
+                    <a href="{{ project.get_absolute_url }}"
                        class="stretched-link text-decoration-none text-reset">{{ project.name }}</a>
                     {% if project.user == request.user %}
                       <span class="badge bg-success ms-2">Your Project</span>

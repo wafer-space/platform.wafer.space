@@ -104,7 +104,13 @@ class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView
         if "pk" in kwargs and request.user.is_authenticated:
             project = self.get_object()
             if project.full_id and self.test_func():
-                return redirect("projects:detail_by_full_id", full_id=project.full_id)
+                # Carry the query string over: the canonical URL should answer
+                # the same request the pk URL was asked, not a truncated one.
+                url = project.get_absolute_url()
+                query_string = request.META.get("QUERY_STRING", "")
+                if query_string:
+                    url = f"{url}?{query_string}"
+                return redirect(url)
         return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
@@ -275,7 +281,7 @@ class ProjectCreateView(LoginRequiredMixin, CreateView):
         """Redirect to project detail page."""
         # self.object is set after form_valid succeeds
         assert self.object is not None
-        return reverse_lazy("projects:detail", kwargs={"pk": self.object.pk})
+        return self.object.get_absolute_url()
 
 
 class ProjectUpdateView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, UpdateView):
@@ -352,7 +358,7 @@ class ProjectUpdateView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, UpdateView
         """Redirect to project detail page."""
         # self.object is set after form_valid succeeds
         assert self.object is not None
-        return reverse_lazy("projects:detail", kwargs={"pk": self.object.pk})
+        return self.object.get_absolute_url()
 
 
 class ProjectDeleteView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DeleteView):
@@ -422,7 +428,7 @@ class ProjectFileSubmitURLView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, Vie
                     msg += f" (URL rewritten: {metadata['rewrite_reason']})"
 
                 messages.success(request, msg)
-                return redirect("projects:detail", pk=pk)
+                return redirect(project.get_absolute_url())
 
             except SecurityValidationError as e:
                 messages.error(request, f"Security validation failed: {e}")
@@ -625,7 +631,7 @@ class ManufacturabilityCheckCancelView(LoginRequiredMixin, UserPassesTestMixin, 
             msg = "Check could not be cancelled (already finished or in error state)."
             messages.warning(request, msg)
 
-        return redirect("projects:detail", pk=pk)
+        return redirect(project.get_absolute_url())
 
 
 class ManufacturabilityCheckAdminStatusView(
@@ -742,7 +748,7 @@ class ProjectSubmitView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
             )
 
         # Always redirect back to project detail page
-        return redirect("projects:detail", pk=pk)
+        return redirect(project.get_absolute_url())
 
 
 class ProjectIDCheckView(LoginRequiredMixin, View):
@@ -1078,4 +1084,4 @@ def check_drc_update_requeue(request, check_id):
     except ValueError as e:
         messages.error(request, str(e))
 
-    return redirect("projects:detail", pk=check.project.pk)
+    return redirect(check.project.get_absolute_url())

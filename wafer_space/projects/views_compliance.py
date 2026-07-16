@@ -74,13 +74,13 @@ def compliance_certification_create(request: HttpRequest, pk: UUID) -> HttpRespo
             request,
             "This project has not been checked for manufacturability yet.",
         )
-        return redirect("projects:detail", pk=project.pk)
+        return redirect(project.get_absolute_url())
     if project.latest_file_manufacturable is not True:
         messages.error(
             request,
             "This project must pass manufacturability checks before certification.",
         )
-        return redirect("projects:detail", pk=project.pk)
+        return redirect(project.get_absolute_url())
 
     # Check if already certified for context
     try:
@@ -116,7 +116,7 @@ def compliance_certification_create(request: HttpRequest, pk: UUID) -> HttpRespo
                 request,
                 "Compliance certification completed successfully.",
             )
-            return redirect("projects:detail", pk=project.pk)
+            return redirect(project.get_absolute_url())
 
         messages.error(request, "Please correct the errors below.")
     # Pre-populate form if already certified
