@@ -117,6 +117,25 @@ def badge_check_status_and_version(
     )
 
 
+@register.simple_tag
+def check_status_text(check: ManufacturabilityCheck | None) -> str:
+    """Plain-text form of badge_check_status_and_version for tooltips.
+
+    Returns the same information as the badge (status label plus container
+    version when known), e.g. "Passed | v1.2.3" or "No check".
+
+    Usage: {% check_status_text check %}
+    """
+    if not check:
+        return "No check"
+
+    _icon, label, _bg_class = _get_status_display(check)
+    version_str, _is_latest = PrecheckImageRevision.format_version_display(check)
+    if version_str != "-":
+        return f"{label} | {version_str}"
+    return label
+
+
 # --- Helper functions ---
 
 

@@ -99,7 +99,9 @@ rules:
   **submitted** revision. Each line is labelled when both are shown.
 - **Grid tiles and the assign-autocomplete indicator** (✓/?/✗) are keyed on
   the **latest** revision's manufacturability, consistent with the rest of
-  the page. Note this is a display convention only: the revision that
+  the page. The grid tooltip carries the same information as the Status
+  column: one `Status:` line for the latest revision, or `Latest:` plus
+  `Submitted:` lines when the submitted revision differs. Note this is a display convention only: the revision that
   manufacturing actually consumes is `Project.output_file` (submitted,
   falling back to latest), and the reticle packaging service independently
   validates that revision's check before placing a project.

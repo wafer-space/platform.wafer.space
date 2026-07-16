@@ -256,6 +256,78 @@ class TestShuttleAssignmentView:
         assert "Bare Die" not in content
         assert "CS Order:" not in content
 
+    def test_grid_tooltip_shows_latest_revision_status(self, client):
+        """Tooltip carries the same status text as the Status column."""
+        user = UserFactory(is_staff=True)
+        client.force_login(user)
+
+        shuttle = ShuttleFactory(name="G815")
+        slot = ShuttleSlot.objects.create(
+            shuttle=shuttle,
+            row=0,
+            column=0,
+            slot_size=SlotSize.FULL,
+            status=ShuttleSlot.Status.RESERVED,
+        )
+        project = ProjectFactory(shuttle=shuttle, slot_size=SlotSize.FULL)
+        project_file = ProjectFileFactory(project=project)
+        ManufacturabilityCheckFactory(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
+        slot.project = project
+        slot.save()
+
+        url = reverse("shuttles:assignment", kwargs={"name": shuttle.name})
+        response = client.get(url)
+
+        assert response.status_code == HTTPStatus.OK
+        content = response.content.decode()
+        assert "Status: Passed" in content
+
+    def test_grid_tooltip_shows_both_revisions_when_submitted_differs(self, client):
+        """Tooltip shows Latest and Submitted lines like the Status column."""
+        user = UserFactory(is_staff=True)
+        client.force_login(user)
+
+        shuttle = ShuttleFactory(name="G816")
+        slot = ShuttleSlot.objects.create(
+            shuttle=shuttle,
+            row=0,
+            column=0,
+            slot_size=SlotSize.FULL,
+            status=ShuttleSlot.Status.RESERVED,
+        )
+        project = ProjectFactory(shuttle=shuttle, slot_size=SlotSize.FULL)
+        submitted_file = ProjectFileFactory(project=project, is_active=False)
+        ManufacturabilityCheckFactory(
+            project=project,
+            project_file=submitted_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
+        latest_file = ProjectFileFactory(project=project)
+        ManufacturabilityCheckFactory(
+            project=project,
+            project_file=latest_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=False,
+        )
+        project.submitted_file = submitted_file
+        project.save()
+        slot.project = project
+        slot.save()
+
+        url = reverse("shuttles:assignment", kwargs={"name": shuttle.name})
+        response = client.get(url)
+
+        assert response.status_code == HTTPStatus.OK
+        content = response.content.decode()
+        assert "Latest: Failed" in content
+        assert "Submitted: Passed" in content
+
 
 @pytest.mark.django_db
 class TestAssignmentPageRevisionStatus:
