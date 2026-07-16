@@ -65,6 +65,20 @@ class TestValidateShuttleId:
             validate_shuttle_id("G8AB")
         assert "two digits" in str(exc_info.value)
 
+    def test_invalid_shuttle_id_non_ascii_digit_suffix(self):
+        """Test that non-ASCII digits are invalid.
+
+        Fullwidth digits satisfy str.isdigit() and int() reads them as 88, so
+        they passed both the digit and range checks, but they cannot appear in
+        the ASCII-only canonical project URL built from the shuttle name.
+
+        The suffix is written as escapes: a literal fullwidth digit here would
+        be indistinguishable from an ASCII 8 to anyone reading the source.
+        """
+        with pytest.raises(ValidationError) as exc_info:
+            validate_shuttle_id("G8\uff18\uff18")
+        assert "two digits" in str(exc_info.value)
+
     def test_invalid_shuttle_id_one_digit_suffix(self):
         """Test that single digit suffix is invalid."""
         with pytest.raises(ValidationError) as exc_info:

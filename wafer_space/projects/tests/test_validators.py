@@ -47,6 +47,18 @@ class TestValidateProjectId:
             validate_project_id("AB-D")
         assert "alphanumeric" in str(exc_info.value)
 
+    def test_invalid_project_id_non_ascii_alphanumeric(self):
+        """Test that non-ASCII alphanumerics are invalid.
+
+        "ÀBCD" satisfies str.isalnum() and is left unchanged by str.upper(),
+        so it passed both the alphanumeric and uppercase checks. It has no
+        place in the ASCII-only canonical project URL: storing one made every
+        page that links the project raise NoReverseMatch.
+        """
+        with pytest.raises(ValidationError) as exc_info:
+            validate_project_id("ÀBCD")
+        assert "alphanumeric" in str(exc_info.value)
+
     def test_invalid_project_id_spaces(self):
         """Test that spaces are invalid."""
         with pytest.raises(ValidationError) as exc_info:

@@ -452,7 +452,9 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
             msg = "Project ID is required"
             raise ValidationError(msg)
 
-        if not project_id.isalnum():
+        # ASCII check matters: .upper() leaves "àbcd" as "ÀBCD", which passes
+        # .isalnum() but has no place in the ASCII-only canonical project URL.
+        if not (project_id.isascii() and project_id.isalnum()):
             msg = "Project ID must be alphanumeric (A-Z, 0-9)"
             raise ValidationError(msg)
 

@@ -35,9 +35,12 @@ def validate_shuttle_id(value: str) -> None:
         msg = "Shuttle ID must start with 'G8'"
         raise ValidationError(msg)
 
-    # Check last two characters are digits
+    # Check last two characters are digits. The ASCII check matters: fullwidth
+    # and Arabic-Indic digits satisfy str.isdigit() and are read by int(), but
+    # cannot be reversed into the ASCII-only canonical project URL built from
+    # the shuttle name.
     suffix = value[2:]
-    if not suffix.isdigit():
+    if not (suffix.isascii() and suffix.isdigit()):
         msg = (
             f"Shuttle ID must end with two digits "
             f"({SHUTTLE_ID_MIN_NUMBER:02d}-{SHUTTLE_ID_MAX_NUMBER:02d})"

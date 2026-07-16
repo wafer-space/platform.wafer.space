@@ -51,11 +51,18 @@ PROJECT_ID_LENGTH = 4
 
 
 def validate_project_id(value: str) -> None:
-    """Validate project ID is 4 alphanumeric uppercase characters."""
+    """Validate project ID is 4 alphanumeric uppercase ASCII characters.
+
+    Uses an explicit ASCII check rather than ``str.isalnum()`` alone, which
+    also accepts non-ASCII alphanumerics (e.g. "ÀBCD", which is unchanged by
+    ``str.upper()`` and so passes the uppercase check too). Those cannot be
+    reversed into the ASCII-only canonical project URL, so accepting one here
+    would store a project whose every link raises NoReverseMatch.
+    """
     if len(value) != PROJECT_ID_LENGTH:
         msg = "Project ID must be exactly 4 characters"
         raise ValidationError(msg)
-    if not value.isalnum():
+    if not (value.isascii() and value.isalnum()):
         msg = "Project ID must be alphanumeric (A-Z, 0-9)"
         raise ValidationError(msg)
     # Check that any letters present are uppercase (digits are okay)
