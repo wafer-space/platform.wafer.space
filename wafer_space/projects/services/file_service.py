@@ -7,6 +7,7 @@ This service layer prevents circular imports by providing a clean separation:
 - Tasks handle background processing
 """
 
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +15,7 @@ from urllib.parse import unquote
 from urllib.parse import urlparse
 
 from celery.result import AsyncResult
+from django.db import IntegrityError
 from django.db import transaction
 
 from wafer_space.projects.exceptions import InvalidStateTransitionError
@@ -27,6 +29,13 @@ from wafer_space.projects.url_handlers import GitHubArtifactHandler
 from wafer_space.projects.url_handlers import GoogleSourceHandler
 from wafer_space.projects.url_handlers import URLHandlerRegistry
 from wafer_space.projects.url_rewriters import URLRewriter
+
+logger = logging.getLogger(__name__)
+
+# How many times to retry the deactivate+insert step when a concurrent
+# submission for the same project wins the one_active_file_per_project
+# constraint first (issue #310).
+MAX_SUBMISSION_ATTEMPTS = 3
 
 # Valid GDS/OASIS file formats
 VALID_GDS_FORMATS = {".gds", ".gdsii", ".gds2"}
@@ -280,10 +289,8 @@ class ProjectFileService:
             content_disposition=content_disposition,
         )
 
-        # Step 5: Handle file replacement if needed
-        cls._handle_file_replacement(project)
-
-        # Step 6: Create ProjectFile record with handler metadata
+        # Steps 5+6 (replace active file, create record) happen together in
+        # _replace_active_file so a concurrent submission can be retried.
         file_size = validation_result["file_size"]
         content_type = validation_result.get("content_type", "")
 
@@ -302,7 +309,7 @@ class ProjectFileService:
             file_size=file_size,
             content_type=content_type,
         )
-        project_file = cls._create_project_file(
+        project_file = cls._replace_active_file(
             project=project,
             file_data=file_data,
             filename=filename,
@@ -323,6 +330,60 @@ class ProjectFileService:
         }
 
         return project_file, metadata
+
+    @classmethod
+    def _replace_active_file(
+        cls,
+        *,
+        project: Project,
+        file_data: FileCreationData,
+        filename: str,
+        handler_metadata: dict | None = None,
+    ) -> ProjectFile:
+        """Deactivate the active file and insert the new one, absorbing races.
+
+        Concurrent submissions for the same project can both read the
+        active-file state before either transaction commits; the loser's
+        insert then violates the one_active_file_per_project constraint
+        (issue #310). _create_project_file runs in its own atomic block —
+        a savepoint under ATOMIC_REQUESTS — so the failed insert rolls
+        back cleanly and the retry re-reads the winner's committed row
+        and replaces it: last writer wins.
+
+        Args:
+            project: The project to attach the file to
+            file_data: File creation data (URLs, hashes, size, content type)
+            filename: The extracted and validated filename
+            handler_metadata: Optional metadata from URL handler
+
+        Returns:
+            ProjectFile: The created file record
+
+        Raises:
+            IntegrityError: If the conflict persists after
+                MAX_SUBMISSION_ATTEMPTS attempts.
+        """
+        attempts = 0
+        while True:
+            attempts += 1
+            cls._handle_file_replacement(project)
+            try:
+                return cls._create_project_file(
+                    project=project,
+                    file_data=file_data,
+                    filename=filename,
+                    handler_metadata=handler_metadata,
+                )
+            except IntegrityError:
+                if attempts >= MAX_SUBMISSION_ATTEMPTS:
+                    raise
+                logger.warning(
+                    "Concurrent file submission detected for project %s "
+                    "(attempt %d/%d); retrying",
+                    project.pk,
+                    attempts,
+                    MAX_SUBMISSION_ATTEMPTS,
+                )
 
     @classmethod
     @transaction.atomic

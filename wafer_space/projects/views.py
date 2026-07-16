@@ -14,6 +14,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.mixins import UserPassesTestMixin
 from django.core.exceptions import PermissionDenied
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError
 from django.db.models import OuterRef
 from django.db.models import Prefetch
 from django.db.models import Subquery
@@ -364,6 +365,18 @@ class ProjectFileSubmitURLView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, Vie
             except OSError as e:
                 # Catch file and network-related errors
                 messages.error(request, f"An error occurred: {e}")
+
+            except IntegrityError:
+                # Concurrent submissions raced on one_active_file_per_project
+                # and the service's retries were exhausted (issue #310). One
+                # of the other submissions won, so point the user at it.
+                messages.info(
+                    request,
+                    "Another submission for this project completed at the "
+                    "same time and its file has been kept. Check the project "
+                    "page and resubmit if you need a different file.",
+                )
+                return redirect("projects:detail", pk=pk)
 
         return self.render_form(request, project, form)
 
