@@ -2,8 +2,8 @@
 
 The E2E flow uploads a design from ``wafer-space/gf180mcu-project-template``.
 GitHub Actions artifacts expire (~90 days), so instead of pinning a single
-artifact this module resolves the newest non-expired ``0p5x0p5_gds`` artifact
-at runtime and computes the sha256 of the extracted GDS.
+artifact this module resolves the newest non-expired ``<slot_size>_gds``
+artifact at runtime and computes the sha256 of the extracted GDS.
 
 The platform hashes the *extracted* layout (not the downloaded zip), so we
 extract the single ``.gds`` (decompressing a ``.gds.gz`` if present) and hash
@@ -34,7 +34,6 @@ from datetime import datetime
 import requests
 
 TEMPLATE_REPO = "wafer-space/gf180mcu-project-template"
-ARTIFACT_NAME = "0p5x0p5_gds"
 API = "https://api.github.com"
 _TIMEOUT = 180
 
@@ -64,26 +63,29 @@ def _headers() -> dict[str, str]:
     }
 
 
-def get_latest_artifact() -> tuple[str, str]:
-    """Return ``(submit_url, sha256)`` for the newest quarter-slot GDS artifact.
+def get_latest_artifact(slot_size: str) -> tuple[str, str]:
+    """Return ``(submit_url, sha256)`` for the newest GDS artifact of ``slot_size``.
 
-    ``submit_url`` is the GitHub web URL the platform downloads; ``sha256`` is
-    the hash of the extracted GDS, matching what the platform computes.
+    The template repo publishes one ``<slot_size>_gds`` artifact per slot size
+    (e.g. ``0p5x0p5_gds``, ``1x1_gds``). ``submit_url`` is the GitHub web URL the
+    platform downloads; ``sha256`` is the hash of the extracted GDS, matching
+    what the platform computes.
     """
+    artifact_name = f"{slot_size}_gds"
+    # Filter by name server-side: the repo accumulates thousands of artifacts of
+    # many names, so a plain per_page=100 (most-recent-first, all names) can omit
+    # every matching artifact once newer other-named ones fill page 1. The
+    # ``name`` query param returns only exact-name matches, newest first.
     resp = requests.get(
         f"{API}/repos/{TEMPLATE_REPO}/actions/artifacts",
         headers=_headers(),
-        params={"per_page": 100},
+        params={"name": artifact_name, "per_page": "100"},
         timeout=_TIMEOUT,
     )
     resp.raise_for_status()
-    artifacts = [
-        a
-        for a in resp.json()["artifacts"]
-        if a["name"] == ARTIFACT_NAME and not a["expired"]
-    ]
+    artifacts = [a for a in resp.json()["artifacts"] if not a["expired"]]
     if not artifacts:
-        msg = f"No non-expired '{ARTIFACT_NAME}' artifact in {TEMPLATE_REPO}"
+        msg = f"No non-expired '{artifact_name}' artifact in {TEMPLATE_REPO}"
         raise RuntimeError(msg)
 
     latest = max(artifacts, key=lambda a: a["created_at"])
