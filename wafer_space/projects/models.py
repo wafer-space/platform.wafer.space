@@ -2696,6 +2696,41 @@ Your GDS file should have:
             digest=self.docker_image_digest
         ).first()
 
+    @property
+    def precheck_version_display(self) -> str:
+        """Best-available precheck version for display.
+
+        Prefers the version stamped on this check at analysis time,
+        falling back to the image revision catalog for checks recorded
+        before stamping existed. Empty string when unresolvable.
+        """
+        if self.precheck_version:
+            return self.precheck_version
+        revision = self.precheck_revision
+        if revision is not None:
+            return revision.version_display
+        return ""
+
+    @property
+    def tool_versions_display(self) -> dict[str, str]:
+        """Tool versions for display, resolving legacy placeholders.
+
+        Checks analyzed before tool-version extraction existed stored a
+        hardcoded {"precheck": "unknown"} placeholder; treat those
+        entries as absent and fall back to the image revision catalog.
+        """
+        versions = {
+            name: version
+            for name, version in self.tool_versions.items()
+            if version != "unknown"
+        }
+        if versions:
+            return versions
+        revision = self.precheck_revision
+        if revision is not None:
+            return revision.tool_versions
+        return {}
+
 
 class ManufacturabilityCheckTask(models.Model):
     """Tracks pending/running Celery tasks for manufacturability checks.

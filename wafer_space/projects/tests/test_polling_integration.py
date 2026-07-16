@@ -6,6 +6,7 @@ for manufacturability checks, from PENDING to FINISHED state.
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -14,12 +15,14 @@ import pytest
 
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import ManufacturabilityCheckTask
+from wafer_space.projects.models import PrecheckImageRevision
 from wafer_space.projects.tasks import checks_dispatching
 from wafer_space.projects.tasks import checks_pending
 from wafer_space.projects.tasks import checks_running
 from wafer_space.projects.tasks import checks_starting
 from wafer_space.projects.tasks import do_analyzing
 from wafer_space.projects.tasks import do_dispatching
+from wafer_space.projects.tasks_checks import _resolve_check_versions
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.projects.tests.factories import ProjectFileFactory
 
@@ -697,3 +700,105 @@ Check for KLayout DRC errors clear.
             assert check.is_manufacturable is False
             assert len(check.errors) > 0
             assert result["status"] == "success"
+
+
+@pytest.mark.django_db
+class TestAnalyzingVersionStamping:
+    """do_analyzing stamps versions from the image revision catalog (#315)."""
+
+    DIGEST = "sha256:315bbb5678901234567890123456789012345678901234567890123456789012"
+
+    def _logger(self) -> logging.Logger:
+        return logging.getLogger("wafer_space.projects.tests")
+
+    def test_resolve_check_versions_stamps_from_catalog(self) -> None:
+        """Helper persists the catalog version and returns tool versions."""
+        PrecheckImageRevision.objects.create(
+            digest=self.DIGEST,
+            precheck_version="1.7.2",
+            tool_versions={"klayout": "0.29.1"},
+        )
+        check = ManufacturabilityCheckFactory(docker_image_digest=self.DIGEST)
+
+        tool_versions = _resolve_check_versions(check, self._logger())
+
+        check.refresh_from_db()
+        assert check.precheck_version == "1.7.2"
+        assert tool_versions == {"klayout": "0.29.1"}
+
+    def test_resolve_check_versions_without_catalog_row(self) -> None:
+        """No catalog row: nothing stamped, no tool versions."""
+        check = ManufacturabilityCheckFactory(docker_image_digest=self.DIGEST)
+
+        tool_versions = _resolve_check_versions(check, self._logger())
+
+        check.refresh_from_db()
+        assert check.precheck_version == ""
+        assert tool_versions == {}
+
+    def test_resolve_check_versions_keeps_existing_stamp(self) -> None:
+        """An already-stamped check is not overwritten by the catalog."""
+        PrecheckImageRevision.objects.create(
+            digest=self.DIGEST,
+            precheck_version="2.0.0",
+        )
+        check = ManufacturabilityCheckFactory(
+            docker_image_digest=self.DIGEST,
+            precheck_version="1.0.0",
+        )
+
+        _resolve_check_versions(check, self._logger())
+
+        check.refresh_from_db()
+        assert check.precheck_version == "1.0.0"
+
+    def test_analyzing_stamps_versions_from_catalog(self, settings) -> None:
+        """do_analyzing records real versions instead of 'unknown'."""
+        settings.DOCKER_SERVERS = [
+            {
+                "id": "test",
+                "url": "unix:///test.sock",
+                "max_concurrent": 4,
+                "priority": 1,
+            },
+        ]
+        PrecheckImageRevision.objects.create(
+            digest=self.DIGEST,
+            precheck_version="1.7.2",
+            tool_versions={"klayout": "0.29.1"},
+        )
+        project_file = ProjectFileFactory(
+            processed_filename="test.gds",
+            top_cell="TOP",
+        )
+        success_logs = """Check for Magic DRC errors clear.
+Check for KLayout DRC errors clear.
+Precheck successfully completed."""
+        check = ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            docker_server_id="test",
+            docker_container_id="test-container",
+            docker_exit_code=0,
+            docker_image_digest=self.DIGEST,
+            processing_logs=success_logs,
+        )
+
+        mock_path = "wafer_space.projects.tasks_checks.get_docker_client"
+        with patch(mock_path) as mock_get_docker_client:
+            mock_client = MagicMock()
+            mock_get_docker_client.return_value = mock_client
+            mock_container = MagicMock()
+            mock_client.containers.get.return_value = mock_container
+            mock_container.get_archive.return_value = (
+                iter([b"tar content"]),
+                {"name": "file.tar"},
+            )
+
+            result = do_analyzing(check.id)
+
+        check.refresh_from_db()
+        assert result["status"] == "success"
+        assert check.precheck_version == "1.7.2"
+        assert check.tool_versions == {"klayout": "0.29.1"}
