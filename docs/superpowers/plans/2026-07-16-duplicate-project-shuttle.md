@@ -126,11 +126,14 @@ Create `wafer_space/projects/tests/test_duplication_service.py`:
 
 from __future__ import annotations
 
-from django.core.files.base import ContentFile
-from django.utils import timezone
+from unittest.mock import patch
 
 import pytest
+from django.core.files.base import ContentFile
+from django.db import IntegrityError
+from django.db.models import Q
 from django.test import TestCase
+from django.utils import timezone
 
 from wafer_space.projects.exceptions import ProjectDuplicationError
 from wafer_space.projects.models import DownloadAttempt
@@ -141,6 +144,7 @@ from wafer_space.projects.services import duplicate_project_to_shuttle
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.users.models import User
 
+from .constants import TEST_PASSWORD
 from .factories import ProjectFactory
 from .factories import ProjectFileFactory
 
@@ -216,7 +220,7 @@ class TestDuplicationValidation(TestCase):
         self.admin_user = User.objects.create_superuser(
             username="admin",
             email="admin@example.com",
-            password="testpass123",  # noqa: S106 (test credential)
+            password=TEST_PASSWORD,
         )
         self.source_shuttle = make_shuttle("G890")
         self.target_shuttle = make_shuttle("G891")
@@ -434,7 +438,7 @@ class TestDuplicationCopy(TestCase):
         self.admin_user = User.objects.create_superuser(
             username="admin",
             email="admin@example.com",
-            password="testpass123",  # noqa: S106 (test credential)
+            password=TEST_PASSWORD,
         )
         self.source_shuttle = make_shuttle("G890")
         self.target_shuttle = make_shuttle("G891")
@@ -487,23 +491,19 @@ class TestDuplicationCopy(TestCase):
 
     def test_file_invisible_to_download_recovery_scanner(self) -> None:
         """Replicates the querysets in ensure_download_tasks_queued."""
-        from django.db import models as dj_models
-
         new_file = self.duplicate.files.get(is_active=True)
         assert new_file.download_task_id.startswith("duplicated:")
         assert new_file.download_status == ProjectFile.DownloadStatus.COMPLETED
 
         pending = ProjectFile.objects.filter(is_active=True).filter(
-            dj_models.Q(download_task_id="")
-            | dj_models.Q(download_task_id__isnull=True),
+            Q(download_task_id="") | Q(download_task_id__isnull=True),
         )
         assert new_file not in pending
 
         queued = (
             ProjectFile.objects.filter(is_active=True)
             .exclude(
-                dj_models.Q(download_task_id="")
-                | dj_models.Q(download_task_id__isnull=True),
+                Q(download_task_id="") | Q(download_task_id__isnull=True),
             )
             .exclude(
                 download_attempts__status__in=[
@@ -557,7 +557,7 @@ class TestDuplicationCheckSelection(TestCase):
         self.admin_user = User.objects.create_superuser(
             username="admin",
             email="admin@example.com",
-            password="testpass123",  # noqa: S106 (test credential)
+            password=TEST_PASSWORD,
         )
         self.source_shuttle = make_shuttle("G890")
         self.target_shuttle = make_shuttle("G891")
@@ -724,7 +724,13 @@ def _copy_file(source_file: ProjectFile, new_project: Project) -> ProjectFile:
         )
     new_file.save()
 
-    source_attempt = source_file.download_attempts.first()  # newest; COMPLETED
+    # Newest attempt; COMPLETED per validation. The None guard exists for
+    # mypy (first() is typed Optional) and for races where attempts were
+    # deleted between validation and here.
+    source_attempt = source_file.download_attempts.first()
+    if source_attempt is None:
+        msg = "Source file has no download attempt to copy."
+        raise ProjectDuplicationError(msg)
     DownloadAttempt.objects.create(
         project_file=new_file,
         attempt_number=1,
@@ -811,14 +817,10 @@ class TestDuplicationAtomicity(TestCase):
     """A failure mid-copy rolls back everything."""
 
     def test_integrityerror_rolls_back_and_becomes_duplication_error(self) -> None:
-        from unittest.mock import patch
-
-        from django.db import IntegrityError
-
         admin_user = User.objects.create_superuser(
             username="admin",
             email="admin@example.com",
-            password="testpass123",  # noqa: S106 (test credential)
+            password=TEST_PASSWORD,
         )
         source_shuttle = make_shuttle("G890")
         target_shuttle = make_shuttle("G891")
@@ -875,6 +877,9 @@ Create `wafer_space/projects/tests/test_admin_duplicate.py`:
 from __future__ import annotations
 
 import pytest
+from django.contrib.admin.models import ADDITION
+from django.contrib.admin.models import CHANGE
+from django.contrib.admin.models import LogEntry
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
@@ -882,17 +887,23 @@ from django.urls import reverse
 from wafer_space.projects.models import Project
 from wafer_space.shuttles.models import Shuttle
 
+from .constants import HTTP_FORBIDDEN
+from .constants import HTTP_FOUND
+from .constants import HTTP_NOT_FOUND
+from .constants import HTTP_OK
+from .constants import TEST_PASSWORD
 from .factories import ProjectFactory
 from .test_duplication_service import make_shuttle
 from .test_duplication_service import make_source_project
 
 User = get_user_model()
+```
 
-TEST_PASSWORD = "testpass123"  # noqa: S105
+(Check `wafer_space/projects/tests/constants.py` first — it already defines
+`TEST_PASSWORD` and the `HTTP_*` codes; import exactly the names that exist
+there and define any missing one locally as a module constant.)
 
-HTTP_OK = 200
-HTTP_FOUND = 302
-HTTP_FORBIDDEN = 403
+```python
 
 
 @pytest.mark.django_db
@@ -948,6 +959,14 @@ class TestAdminDuplicateView(TestCase):
             args=[duplicate.pk],
         )
         assert duplicate.status == Project.Status.DRAFT
+        assert LogEntry.objects.filter(
+            action_flag=ADDITION,
+            object_id=str(duplicate.pk),
+        ).exists()
+        assert LogEntry.objects.filter(
+            action_flag=CHANGE,
+            object_id=str(self.project.pk),
+        ).exists()
 
     def test_post_collision_shows_error(self) -> None:
         ProjectFactory(
@@ -979,9 +998,8 @@ class TestAdminDuplicateView(TestCase):
             args=["00000000-0000-0000-0000-000000000000"],
         )
         response = self.client.get(url)
-        expected_not_found = 404
         # Django admin redirects unknown objects to the index with a message
-        assert response.status_code in (HTTP_FOUND, expected_not_found)
+        assert response.status_code in (HTTP_FOUND, HTTP_NOT_FOUND)
 ```
 
 Note: `test_button_on_change_page` will fail until Task 6 adds the template;
@@ -1046,8 +1064,6 @@ class DuplicateProjectForm(forms.Form):
 Extend `ProjectAdmin`:
 
 ```python
-    change_form_template = "admin/projects/project/change_form.html"
-
     def get_urls(self):
         urls = super().get_urls()
         custom_urls = [
@@ -1133,26 +1149,18 @@ Extend `ProjectAdmin`:
 Implementation notes:
 - `self.opts` is the public alias for the model's `_meta` on `ModelAdmin` — do not use `self.model._meta` (SLF001).
 - `_get_obj_does_not_exist_redirect` is the standard `ModelAdmin` helper other admin views use for missing objects; if mypy/ruff rejects the private call, replace with `raise Http404` (`from django.http import Http404`) — the test accepts either.
-- `change_form_template` points at a template created in Task 6; the view tests here don't render the change page (only `test_button_on_change_page` does, and it stays excluded until Task 6).
+- No `change_form_template` attribute is needed: Django automatically picks up `admin/projects/project/change_form.html` (created in Task 6) by template-name convention.
 
 - [ ] **Step 4: Run the view tests**
 
 Run: `uv run pytest wafer_space/projects/tests/test_admin_duplicate.py -v -k "not button"`
 Expected: PASS (all except the excluded button test).
 
-- [ ] **Step 5: Pre-commit checks and commit**
+- [ ] **Step 5: Proceed directly to Task 6 — Tasks 5 and 6 are committed together**
 
-Run: `make lint-fix && make lint && make type-check && make test`
-
-Note: `make test` runs the whole suite including `test_button_on_change_page`, which fails until Task 6. If so, add the template in Task 6 FIRST, then commit Tasks 5+6 together — otherwise commit here:
-
-```bash
-git add wafer_space/projects/admin.py wafer_space/projects/tests/test_admin_duplicate.py
-git commit -m "feat(admin): duplicate-to-shuttle form, view, and URL"
-```
-
-(Recommended: since `change_form_template` without the template file breaks
-every project change page, do Task 6 immediately and commit both together.)
+`make test` runs the whole suite including `test_button_on_change_page`,
+which needs the Task 6 template. Do NOT commit yet; the single commit for
+both tasks happens at the end of Task 6.
 
 ---
 
@@ -1252,10 +1260,10 @@ Run: `make lint-fix && make lint && make type-check && make test`
 git add wafer_space/projects/admin.py \
         wafer_space/projects/tests/test_admin_duplicate.py \
         wafer_space/templates/admin/projects/project/
-git commit -m "feat(admin): duplicate-to-shuttle button and confirmation page"
+git commit -m "feat(admin): duplicate project to another shuttle"
 ```
 
-(If Task 5 was already committed separately, this commit contains only the templates.)
+(This commit covers Tasks 5 and 6 together — view, form, URL, and templates.)
 
 ---
 
