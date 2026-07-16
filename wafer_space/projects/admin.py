@@ -1,9 +1,23 @@
 """Django admin configuration for projects app."""
 
+import uuid
+from typing import Any
+
+from django import forms
 from django.contrib import admin
+from django.contrib import messages
+from django.core.exceptions import PermissionDenied
+from django.http import HttpRequest
+from django.http import HttpResponse
+from django.shortcuts import redirect
+from django.template.response import TemplateResponse
+from django.urls import URLPattern
+from django.urls import path
+from django.urls import reverse
 from simple_history.admin import SimpleHistoryAdmin
 
 from wafer_space.contrib.admin_mixins import StaffReadOnlyAdminMixin
+from wafer_space.projects.exceptions import ProjectDuplicationError
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import FileProcessingError
 from wafer_space.projects.models import ManufacturabilityCheck
@@ -13,6 +27,36 @@ from wafer_space.projects.models import PrecheckImageRevision
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectAccessLog
 from wafer_space.projects.models import ProjectFileChunk
+from wafer_space.projects.services import ELIGIBLE_TARGET_SHUTTLE_STATUSES
+from wafer_space.projects.services import duplicate_project_task
+from wafer_space.projects.services import validate_duplication
+from wafer_space.shuttles.models import Shuttle
+
+
+class DuplicateProjectForm(forms.Form):
+    """Pick the shuttle to duplicate a project onto."""
+
+    target_shuttle = forms.ModelChoiceField(
+        queryset=Shuttle.objects.none(),
+        label="Target shuttle",
+        help_text="The duplicate is created as a draft on this shuttle.",
+    )
+
+    def __init__(
+        self,
+        *args: Any,
+        source_shuttle: Shuttle | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        queryset = Shuttle.objects.filter(
+            status__in=ELIGIBLE_TARGET_SHUTTLE_STATUSES,
+        ).order_by("name")
+        if source_shuttle is not None:
+            queryset = queryset.exclude(pk=source_shuttle.pk)
+        target_shuttle_field = self.fields["target_shuttle"]
+        if isinstance(target_shuttle_field, forms.ModelChoiceField):
+            target_shuttle_field.queryset = queryset
 
 
 @admin.register(Project)
@@ -53,6 +97,85 @@ class ProjectAdmin(SimpleHistoryAdmin):
         "other_license_spdx_id",
     ]
     readonly_fields = ["created_at", "updated_at"]
+
+    def get_urls(self) -> list[URLPattern]:
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "<uuid:object_id>/duplicate/",
+                self.admin_site.admin_view(self.duplicate_view),
+                name="projects_project_duplicate",
+            ),
+        ]
+        return custom_urls + urls
+
+    def duplicate_view(
+        self,
+        request: HttpRequest,
+        object_id: uuid.UUID,
+    ) -> HttpResponse:
+        """Intermediate page: pick a target shuttle, then duplicate."""
+        project = self.get_object(request, str(object_id))
+        if project is None:
+            return self._get_obj_does_not_exist_redirect(
+                request,
+                self.opts,
+                str(object_id),
+            )
+        if not self.has_add_permission(request):
+            raise PermissionDenied
+
+        form = DuplicateProjectForm(
+            request.POST if request.method == "POST" else None,
+            source_shuttle=project.shuttle,
+        )
+        if request.method == "POST" and form.is_valid():
+            target_shuttle = form.cleaned_data["target_shuttle"]
+            try:
+                # Pre-flight for immediate feedback; the task re-validates.
+                validate_duplication(project, target_shuttle)
+            except ProjectDuplicationError as exc:
+                messages.error(request, str(exc))
+            else:
+                # The copy writes user-file storage, which deployed web
+                # processes cannot do (read-only mount) — it must run in
+                # the http:rw:downloads worker. Enqueued without
+                # transaction.on_commit: this view writes nothing the
+                # task depends on, and on_commit would skip the task in
+                # eager-mode tests.
+                duplicate_project_task.delay(
+                    str(project.pk),
+                    target_shuttle.pk,
+                    request.user.pk,
+                )
+                messages.success(
+                    request,
+                    f"Duplication onto shuttle {target_shuttle.name} has "
+                    "been queued. The new draft project will appear on "
+                    "that shuttle shortly; the outcome is recorded in "
+                    "this project's admin history.",
+                )
+                return redirect(
+                    reverse(
+                        "admin:projects_project_change",
+                        args=[project.pk],
+                    ),
+                )
+
+        source_file = project.files.filter(is_active=True).first()
+        context = {
+            **self.admin_site.each_context(request),
+            "title": f"Duplicate {project.name}",
+            "opts": self.opts,
+            "project": project,
+            "source_file": source_file,
+            "form": form,
+        }
+        return TemplateResponse(
+            request,
+            "admin/projects/project/duplicate_confirm.html",
+            context,
+        )
 
 
 @admin.register(ProjectAccessLog)

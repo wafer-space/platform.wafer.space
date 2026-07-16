@@ -1648,6 +1648,7 @@ class ManufacturabilityCheck(models.Model):
         ADMIN_RERUN = "admin_rerun", "Admin Requested Re-run"
         RETRY = "retry", "Retry After Error"
         COB_CHANGE = "cob_change", "Chip-on-Board Option Changed"
+        DUPLICATED = "duplicated", "Project Duplicated"
 
     class FinishedStatus(models.TextChoices):
         """Sub-status for FINISHED checks indicating manufacturability result."""

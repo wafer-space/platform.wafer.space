@@ -1,0 +1,52 @@
+{% extends "admin/base_site.html" %}
+
+{% block breadcrumbs %}
+  <div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Home</a>
+    › <a href="{% url 'admin:app_list' app_label='projects' %}">Projects</a>
+    › <a href="{% url 'admin:projects_project_changelist' %}">Projects</a>
+    › <a href="{% url 'admin:projects_project_change' project.pk %}">{{ project.name }}</a>
+    › Duplicate
+  </div>
+{% endblock breadcrumbs %}
+{% block content %}
+  <h1>Duplicate “{{ project.name }}” to another shuttle</h1>
+  <p>
+    This creates a new <strong>draft</strong> project owned by
+    <strong>{{ project.user }}</strong> with the same design file and a
+    fresh manufacturability check. The original project is not changed.
+    Duplication runs in the background — the new project appears on the
+    target shuttle shortly, and the outcome is recorded in this
+    project's admin history.
+  </p>
+  <table>
+    <tr>
+      <th scope="row">Source shuttle</th>
+      <td>{{ project.shuttle.name }}</td>
+    </tr>
+    <tr>
+      <th scope="row">Project ID (kept on the new shuttle)</th>
+      <td>{{ project.project_id }}</td>
+    </tr>
+    <tr>
+      <th scope="row">Design file</th>
+      <td>{{ source_file.original_filename|default:"—" }}</td>
+    </tr>
+    <tr>
+      <th scope="row">Latest check result</th>
+      {# latest_manufacturability_check is None when no check exists; #}
+      {# output_check would return a PENDING dummy instead of "—" #}
+      <td>{{ source_file.latest_manufacturability_check.get_status_display|default:"—" }}</td>
+    </tr>
+    <tr>
+      <th scope="row">Not copied</th>
+      <td>CrowdSupply order ID, slot assignment, submission state</td>
+    </tr>
+  </table>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <input type="submit" value="Duplicate project" />
+    <a href="{% url 'admin:projects_project_change' project.pk %}">Cancel</a>
+  </form>
+{% endblock content %}

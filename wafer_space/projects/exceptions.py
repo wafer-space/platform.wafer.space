@@ -103,3 +103,11 @@ class DownloadTooLargeError(Exception):
             f"allowed size of {max_bytes / gb:.0f}GB - download aborted"
         )
         super().__init__(msg)
+
+
+class ProjectDuplicationError(Exception):
+    """Raised when duplicating a project onto another shuttle fails.
+
+    The message is user-facing: the admin view shows it verbatim via
+    the messages framework.
+    """
