@@ -126,12 +126,8 @@ Create `wafer_space/projects/tests/test_duplication_service.py`:
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
 import pytest
 from django.core.files.base import ContentFile
-from django.db import IntegrityError
-from django.db.models import Q
 from django.test import TestCase
 from django.utils import timezone
 
@@ -384,11 +380,10 @@ def _validate_duplication(project: Project, target_shuttle: Shuttle) -> ProjectF
     return source_file
 ```
 
-Note: `download_status` on `ProjectFile` is a derived property; check how
-`get_download_status_display` exists — if the property has no
-`get_..._display` companion, format the raw value instead (verify in
-`wafer_space/projects/models.py` around line 1061 and adjust — the tests
-assert only on the word "download").
+Note: `download_status` on `ProjectFile` is a derived property and
+`get_download_status_display` exists alongside it
+(`wafer_space/projects/models.py:1061` and `:1088`) — the code above uses
+both as written.
 
 - [ ] **Step 4: Export from the services package**
 
@@ -427,7 +422,22 @@ git commit -m "feat(projects): duplication service validation rules"
 
 - [ ] **Step 1: Write the happy-path tests**
 
-Append to `test_duplication_service.py`:
+First ADD these imports to the module-top import block of
+`test_duplication_service.py` (they are first used by this task's tests;
+adding them in Task 3 would get them auto-deleted as unused by
+`make lint-fix` before the Task 3 commit):
+
+```python
+from unittest.mock import patch
+
+from django.db import IntegrityError
+from django.db.models import Q
+```
+
+(Merge them into the existing import groups in the correct sorted positions —
+`ruff` will fix ordering via `make lint-fix` anyway.)
+
+Then append to `test_duplication_service.py`:
 
 ```python
 @pytest.mark.django_db
@@ -1017,6 +1027,7 @@ Add imports to `wafer_space/projects/admin.py` (keep one-per-line style):
 
 ```python
 from typing import Any
+from typing import cast
 
 from django import forms
 from django.contrib import messages
@@ -1032,7 +1043,12 @@ from wafer_space.projects.exceptions import ProjectDuplicationError
 from wafer_space.projects.services import ELIGIBLE_TARGET_SHUTTLE_STATUSES
 from wafer_space.projects.services import duplicate_project_to_shuttle
 from wafer_space.shuttles.models import Shuttle
+from wafer_space.users.models import User
 ```
+
+(`admin.py` has no `from __future__ import annotations` yet; if `make
+lint-fix` relocates some of these into a `TYPE_CHECKING` block, keep
+whatever ruff produces.)
 
 Add the form (above `ProjectAdmin`):
 
@@ -1098,10 +1114,13 @@ Extend `ProjectAdmin`:
         if request.method == "POST" and form.is_valid():
             target_shuttle = form.cleaned_data["target_shuttle"]
             try:
+                # cast: django-stubs types request.user as AbstractBaseUser |
+                # AnonymousUser; admin_view guarantees an authenticated staff
+                # user (same pattern as projects/views.py:70).
                 duplicate = duplicate_project_to_shuttle(
                     project=project,
                     target_shuttle=target_shuttle,
-                    admin_user=request.user,
+                    admin_user=cast("User", request.user),
                 )
             except ProjectDuplicationError as exc:
                 messages.error(request, str(exc))
@@ -1218,7 +1237,11 @@ both tasks happens at the end of Task 6.
         </tr>
         <tr>
             <th scope="row">Latest check result</th>
-            <td>{{ source_file.output_check.get_status_display|default:"—" }}</td>
+            {# latest_manufacturability_check is None when no check exists; #}
+            {# output_check would return a PENDING dummy instead of "—" #}
+            <td>
+                {{ source_file.latest_manufacturability_check.get_status_display|default:"—" }}
+            </td>
         </tr>
         <tr>
             <th scope="row">Not copied</th>
