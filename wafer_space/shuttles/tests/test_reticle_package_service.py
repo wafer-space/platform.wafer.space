@@ -161,8 +161,17 @@ class TestGeneratePackage:
         assert (output / "FALL" / "FALL_TOP.oas").exists()
         assert len(warnings) == 0
 
-    def test_not_manufacturable_skipped_with_allow_pending(self, tmp_path):
-        """NOT_MANUFACTURABLE projects are skipped with allow_pending."""
+    def test_not_manufacturable_in_tilemap_skipped_from_manifest(self, tmp_path):
+        """NOT_MANUFACTURABLE projects appear in tilemap (slot occupancy)
+        but are skipped from manifest (no shippable GDS).
+
+        Tilemap is the canonical "what's in this slot" view —
+        downstream tools like shipping locator labels need to know
+        the slot of every assigned project, even ones that haven't
+        passed (or have failed) the manufacturability check. The
+        manifest is the "what to ship" view — projects without a
+        usable GDS file get dropped there and surfaced as warnings.
+        """
         shuttle = create_shuttle_with_config(tmp_path, "G897")
 
         oas_dir = tmp_path / "oas"
@@ -186,9 +195,11 @@ class TestGeneratePackage:
         output = tmp_path / "output"
         warnings = generate_package("G897", output, allow_pending=True)
 
-        # Skipped from tilemap/manifest
+        # Present in tilemap (slot occupancy includes all assigned projects)
+        assert "FAIL" in (output / "tilemap.csv").read_text()
+
+        # Skipped from manifest (no GDS to ship — caught by ValueError)
         assert not (output / "FAIL").exists()
-        assert "FAIL" not in (output / "tilemap.csv").read_text()
         assert "FAIL" not in (output / "manifest.csv").read_text()
 
         # Present in summary/checks

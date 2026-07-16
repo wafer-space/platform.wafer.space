@@ -142,7 +142,19 @@ def _is_manufacturable(check: ManufacturabilityCheck) -> bool:
 def write_tilemap(
     path: Path, slots: list[ShuttleSlot], grid_config: GridConfig
 ) -> None:
-    """Write tilemap.csv."""
+    """Write tilemap.csv — slot-occupancy view of the reticle.
+
+    Includes EVERY slot that has a project assigned, regardless of
+    the project's manufacturability check status. The tilemap is
+    the canonical answer to "what project is in this slot" and is
+    consumed by downstream tooling (e.g. shipping/locator labels)
+    that needs slot positions for projects that are still being
+    iterated on or shipped despite a stale/failing check.
+
+    Manufacturability is reported separately in summary.csv and
+    checks.csv; readers that need the manufacturable subset should
+    cross-reference those files.
+    """
     # Build cumulative tile offsets from row heights and column widths
     # Each height/width of 1.0 = 2 tiles, 0.5 = 1 tile
     row_starts = [0]
@@ -158,9 +170,6 @@ def write_tilemap(
 
     for slot in slots:
         if not slot.project:
-            continue
-        check = slot.project.output_file.output_check
-        if not _is_manufacturable(check):
             continue
         tile_row = row_starts[slot.row]
         tile_col = col_starts[slot.column]
