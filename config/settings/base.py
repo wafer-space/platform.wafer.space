@@ -458,7 +458,10 @@ CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes soft time limit
 # that memory to the OS; the replacement happens after the in-flight task
 # completes, so long-running tasks are never interrupted.
 CELERY_WORKER_MAX_TASKS_PER_CHILD = 100
-CELERY_WORKER_MAX_MEMORY_PER_CHILD = 1024 * 1024  # kB (~1GiB RSS)
+# Checked after each task against *peak* RSS (getrusage ru_maxrss), so a
+# child whose task transiently spiked past the limit is recycled even if
+# the memory was since freed.
+CELERY_WORKER_MAX_MEMORY_PER_CHILD = 1024 * 1024  # kB (~1GiB peak RSS)
 
 # Download task configuration
 # Celery retry settings for download tasks (built-in retry mechanism)
