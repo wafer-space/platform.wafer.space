@@ -39,7 +39,6 @@ from wafer_space.shuttles.models import Shuttle
 from .exceptions import InvalidStateTransitionError
 from .forms import ProjectFileURLSubmitForm
 from .forms import ProjectForm
-from .mixins import HTTP_SUCCESS_THRESHOLD
 from .mixins import ProjectOwnerOrStaffMixin
 from .models import PROJECT_ID_LENGTH
 from .models import DownloadAttempt
@@ -93,22 +92,19 @@ class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView
     context_object_name = "project"
 
     def dispatch(self, request, *args, **kwargs):
-        """Redirect to full_id URL if project has one and accessed by pk."""
-        # Only redirect if accessed by pk (not full_id)
-        if "pk" in kwargs:
+        """Redirect to the canonical full_id URL when accessed by pk.
+
+        Only authenticated, authorised users are redirected. Everyone else
+        falls through to ``super()`` and gets the response they would have
+        got without this view: anonymous users the login redirect, and
+        unauthorised users a 403. Redirecting them instead would disclose
+        the project's existence and its manufacturing ID to someone who is
+        not allowed to see it, which the permission mixin exists to prevent.
+        """
+        if "pk" in kwargs and request.user.is_authenticated:
             project = self.get_object()
-            if project.full_id:
-                # Call parent dispatch first so login/permission checks run,
-                # but leave audit logging to the canonical request that
-                # follows the redirect.
-                self.skip_success_audit_log = True
-                parent_response = super().dispatch(request, *args, **kwargs)
-                # Only redirect if parent dispatch succeeded (not 403/404)
-                if parent_response.status_code < HTTP_SUCCESS_THRESHOLD:
-                    return redirect(
-                        "projects:detail_by_full_id", full_id=project.full_id
-                    )
-                return parent_response
+            if project.full_id and self.test_func():
+                return redirect("projects:detail_by_full_id", full_id=project.full_id)
         return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
