@@ -93,7 +93,7 @@ class TestLockedCoreFields(BaseBrowserTest):
         self.login()
         self.navigate_to(self.driver, f"/projects/{self.project.pk}/update/")
         self.wait_for_page_load(self.driver)
-        name_input = self.wait_for_element(self.driver, (By.ID, "id_name"))
+        self.wait_for_element(self.driver, (By.ID, "id_name"))
 
         # Locked core fields render as static text, not form inputs.
         assert not self.driver.find_elements(By.ID, "id_shuttle")
@@ -111,8 +111,9 @@ class TestLockedCoreFields(BaseBrowserTest):
         assert len(lock_icons) >= min_lock_icons
 
         # User fields still save even though the shuttle is closed.
-        name_input.clear()
-        name_input.send_keys("Renamed Via Browser")
+        # Typed-and-verified: a lost keystroke leaves the required name
+        # empty and client-side validation silently blocks the submit.
+        self.set_input_value(self.driver, (By.ID, "id_name"), "Renamed Via Browser")
         current_url = self.driver.current_url
         submit_button = self.driver.find_element(
             By.CSS_SELECTOR, 'button[type="submit"]'
