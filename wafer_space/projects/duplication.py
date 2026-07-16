@@ -4,6 +4,13 @@ Admin-triggered operation: copies the project metadata, the active
 design file (bytes included), and the latest FINISHED manufacturability
 check as provenance, then queues a fresh check. See the design spec:
 docs/superpowers/specs/2026-07-16-duplicate-project-shuttle-design.md
+
+This module imports models only (like ``check_operations``) so both the
+services layer and Celery tasks may use it. The actual copy MUST run in
+a Celery task on the ``http:rw:downloads`` queue: in staging/production
+the gunicorn web process runs with ``ProtectSystem=strict`` and user
+files mounted read-only, so any synchronous file write from a view
+fails with EROFS. Only the ``*:rw:*`` workers may write user files.
 """
 
 from __future__ import annotations
@@ -50,8 +57,13 @@ def duplicate_project_to_shuttle(
     Returns the new DRAFT project. Raises ProjectDuplicationError with a
     user-facing message when validation fails; nothing is created in that
     case.
+
+    Writes the copied file to user-file storage, so in deployed
+    environments this must run inside a worker with write access
+    (queue ``http:rw:downloads``) — never in the web process. Use
+    ``tasks_duplication.duplicate_project_task`` from views.
     """
-    source_file = _validate_duplication(project, target_shuttle)
+    source_file = validate_duplication(project, target_shuttle)
     try:
         with transaction.atomic():
             new_project = _copy_project(project, target_shuttle)
@@ -63,7 +75,11 @@ def duplicate_project_to_shuttle(
                 trigger_reason=ManufacturabilityCheck.TriggerReason.DUPLICATED,
                 parent_check=provenance,
             )
-    except (IntegrityError, ValidationError) as exc:
+    # OSError included: the file copy writes user-file storage, and a
+    # misrouted worker or read-only mount fails with EROFS — that must
+    # surface as ProjectDuplicationError so the task records a FAILED
+    # LogEntry instead of dying invisibly.
+    except (IntegrityError, ValidationError, OSError) as exc:
         msg = f"Duplication failed while saving: {exc}"
         raise ProjectDuplicationError(msg) from exc
 
@@ -77,8 +93,13 @@ def duplicate_project_to_shuttle(
     return new_project
 
 
-def _validate_duplication(project: Project, target_shuttle: Shuttle) -> ProjectFile:
-    """Validate the duplication request, returning the source's active file."""
+def validate_duplication(project: Project, target_shuttle: Shuttle) -> ProjectFile:
+    """Validate the duplication request, returning the source's active file.
+
+    Public so the admin view can pre-flight the request synchronously
+    before enqueueing the task; the task re-validates because state can
+    change between enqueue and execution.
+    """
     if project.shuttle_id is None:
         msg = "Source project is not assigned to a shuttle."
         raise ProjectDuplicationError(msg)

@@ -136,6 +136,26 @@ Django 5.2+ application for wafer.space silicon manufacturing.
 
 ---
 
+## DEPLOYED WEB PROCESS CANNOT WRITE FILES
+
+**In staging/production, gunicorn runs with `ProtectSystem=strict` and the
+app checkout plus `/mnt/user-files` (where `wafer_space/media` points) in
+`ReadOnlyPaths`. Any file write from a view raises
+`OSError: [Errno 30] Read-only file system`.**
+
+- Only Celery workers whose queue names carry `rw` may write user files:
+  `http:rw:downloads` (downloads/file copies) and `dock:rw:checks-save`
+  (check artifacts). The `ro`/`rw` in every queue name encodes this.
+- ✅ **DO**: perform file writes in a Celery task on an `rw` queue;
+  views validate and enqueue.
+- ❌ **DON'T**: call `FileField.save()`, `Storage.save()`, or
+  `os.makedirs()` under `MEDIA_ROOT` from views/admin — it works in dev
+  (writable media dir) and fails only when deployed.
+- The systemd hardening lives in the `hetzner-ansible` repo, not here —
+  local tests cannot catch violations.
+
+---
+
 ## MANUFACTURABLE vs SUBMITTED - TWO DISTINCT CONCEPTS
 
 **See `docs/manufacturable_vs_submitted.md` for the authoritative definitions.**

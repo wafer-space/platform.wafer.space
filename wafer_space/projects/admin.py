@@ -1,9 +1,7 @@
 """Django admin configuration for projects app."""
 
 import uuid
-from typing import TYPE_CHECKING
 from typing import Any
-from typing import cast
 
 from django import forms
 from django.contrib import admin
@@ -30,11 +28,9 @@ from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectAccessLog
 from wafer_space.projects.models import ProjectFileChunk
 from wafer_space.projects.services import ELIGIBLE_TARGET_SHUTTLE_STATUSES
-from wafer_space.projects.services import duplicate_project_to_shuttle
+from wafer_space.projects.services import duplicate_project_task
+from wafer_space.projects.services import validate_duplication
 from wafer_space.shuttles.models import Shuttle
-
-if TYPE_CHECKING:
-    from wafer_space.users.models import User
 
 
 class DuplicateProjectForm(forms.Form):
@@ -136,38 +132,33 @@ class ProjectAdmin(SimpleHistoryAdmin):
         if request.method == "POST" and form.is_valid():
             target_shuttle = form.cleaned_data["target_shuttle"]
             try:
-                # cast: django-stubs types request.user as AbstractBaseUser |
-                # AnonymousUser; admin_view guarantees an authenticated staff
-                # user (same pattern as projects/views.py:70).
-                duplicate = duplicate_project_to_shuttle(
-                    project=project,
-                    target_shuttle=target_shuttle,
-                    admin_user=cast("User", request.user),
-                )
+                # Pre-flight for immediate feedback; the task re-validates.
+                validate_duplication(project, target_shuttle)
             except ProjectDuplicationError as exc:
                 messages.error(request, str(exc))
             else:
-                self.log_addition(
-                    request,
-                    duplicate,
-                    f"Duplicated from project {project.pk} "
-                    f"(shuttle {project.shuttle.name})",
-                )
-                self.log_change(
-                    request,
-                    project,
-                    f"Duplicated to shuttle {target_shuttle.name} "
-                    f"as project {duplicate.pk}",
+                # The copy writes user-file storage, which deployed web
+                # processes cannot do (read-only mount) — it must run in
+                # the http:rw:downloads worker. Enqueued without
+                # transaction.on_commit: this view writes nothing the
+                # task depends on, and on_commit would skip the task in
+                # eager-mode tests.
+                duplicate_project_task.delay(
+                    str(project.pk),
+                    target_shuttle.pk,
+                    request.user.pk,
                 )
                 messages.success(
                     request,
-                    f"Project duplicated onto shuttle {target_shuttle.name}. "
-                    "A fresh manufacturability check has been queued.",
+                    f"Duplication onto shuttle {target_shuttle.name} has "
+                    "been queued. The new draft project will appear on "
+                    "that shuttle shortly; the outcome is recorded in "
+                    "this project's admin history.",
                 )
                 return redirect(
                     reverse(
                         "admin:projects_project_change",
-                        args=[duplicate.pk],
+                        args=[project.pk],
                     ),
                 )
 

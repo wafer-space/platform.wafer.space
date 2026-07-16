@@ -1,8 +1,40 @@
 # Design: Admin "Duplicate Project to Another Shuttle"
 
 - **Date:** 2026-07-16
-- **Status:** Approved by user (brainstorming session)
+- **Status:** Approved by user (brainstorming session);
+  revised 2026-07-17 — duplication now runs asynchronously (see
+  "Revision: Async Execution" below)
 - **Branch:** `feature/duplicate-project-to-shuttle`
+
+## Revision: Async Execution (2026-07-17)
+
+Staging exposed a deployment constraint the original design missed: the
+gunicorn unit runs with `ProtectSystem=strict` and both the app checkout
+and `/mnt/user-files` (the target of the `wafer_space/media` symlink) in
+`ReadOnlyPaths`. **The web process cannot write user files at all** —
+only the Celery workers whose queue names carry `rw`
+(`http:rw:downloads`, `dock:rw:checks-save`) have `ReadWritePaths` for
+the user-files mount. The original synchronous copy 500'd with
+`OSError: [Errno 30] Read-only file system`.
+
+Revised flow:
+
+- The core logic lives in `wafer_space/projects/duplication.py`
+  (imports models only, like `check_operations.py`), so both the
+  services layer and tasks may use it.
+- The admin view pre-flights `validate_duplication()` synchronously for
+  immediate error feedback, then enqueues
+  `tasks_duplication.duplicate_project_task` on the
+  `http:rw:downloads` queue and redirects back to the **source**
+  project with a "duplication queued" message.
+- The task re-validates (state may change between enqueue and
+  execution), performs the same atomic copy, and records the outcome as
+  admin `LogEntry` rows (ADDITION on the duplicate + CHANGE on the
+  source; a CHANGE "FAILED: …" entry on the source when it fails), so
+  the admin can see the result in the project's admin history.
+
+Everything else in this design (copy semantics, validation rules,
+scanner invisibility, keep-or-fail project ID) is unchanged.
 
 ## Problem
 
@@ -196,11 +228,13 @@ The new `Project` instance.
    source shuttle, `project_id`, active file, latest check result) and a form
    with a single `ModelChoiceField` of eligible target shuttles (statuses
    from the validation list, excluding the source shuttle).
-4. **POST** — calls the service.
-   - Success: `messages.success`, admin `LogEntry` ADDITION on the new
-     project and CHANGE on the source ("Duplicated to shuttle …"), redirect
-     to the new project's change page.
-   - `ProjectDuplicationError`: `messages.error`, redisplay the form.
+4. **POST** — *(superseded — see "Revision: Async Execution")* pre-flights
+   `validate_duplication()`, then enqueues `duplicate_project_task`.
+   - Success: `messages.success` ("queued"), redirect back to the
+     **source** project's change page; the task later writes the
+     `LogEntry` ADDITION/CHANGE rows.
+   - `ProjectDuplicationError` from pre-flight: `messages.error`,
+     redisplay the form.
 5. **Permissions** — requires `projects.add_project`; the view returns 403
    otherwise. Non-staff users never reach it (admin site login).
 
@@ -247,8 +281,10 @@ The new `Project` instance.
 
 - Button rendered on the change page for staff with add permission.
 - GET renders the intermediate page with only eligible shuttles listed.
-- POST duplicates, redirects to the new project's change page, sets
-  messages, writes `LogEntry` rows.
+- POST enqueues the duplication task (eager under pytest, so the
+  duplicate materialises inline), redirects to the source project's
+  change page, sets the "queued" message; the task writes `LogEntry`
+  rows *(superseded wording — see "Revision: Async Execution")*.
 - POST with collision shows `messages.error` and redisplays.
 - User without `add_project` permission gets 403.
 

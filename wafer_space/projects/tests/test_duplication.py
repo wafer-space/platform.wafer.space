@@ -367,8 +367,7 @@ class TestDuplicationAtomicity(TestCase):
 
         with (
             patch(
-                "wafer_space.projects.services.duplication_service."
-                "_copy_provenance_check",
+                "wafer_space.projects.duplication._copy_provenance_check",
                 side_effect=IntegrityError("boom"),
             ),
             pytest.raises(ProjectDuplicationError, match="boom"),

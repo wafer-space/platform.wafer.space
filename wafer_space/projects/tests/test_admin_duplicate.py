@@ -18,8 +18,8 @@ from .constants import HTTP_FOUND
 from .constants import HTTP_OK
 from .constants import TEST_PASSWORD
 from .factories import ProjectFactory
-from .test_duplication_service import make_shuttle
-from .test_duplication_service import make_source_project
+from .test_duplication import make_shuttle
+from .test_duplication import make_source_project
 
 User = get_user_model()
 
@@ -65,16 +65,18 @@ class TestAdminDuplicateView(TestCase):
         form = response.context["form"]
         assert self.source_shuttle not in form.fields["target_shuttle"].queryset
 
-    def test_post_duplicates_and_redirects(self) -> None:
+    def test_post_queues_duplication_and_redirects_to_source(self) -> None:
+        # Celery runs eagerly under pytest, so the queued task executes
+        # inline and the duplicate exists by the time the response returns.
         response = self.client.post(
             self.url,
             {"target_shuttle": self.target_shuttle.pk},
         )
-        duplicate = Project.objects.get(shuttle=self.target_shuttle)
         self.assertRedirects(
             response,
-            reverse("admin:projects_project_change", args=[duplicate.pk]),
+            reverse("admin:projects_project_change", args=[self.project.pk]),
         )
+        duplicate = Project.objects.get(shuttle=self.target_shuttle)
         assert duplicate.status == Project.Status.DRAFT
         assert LogEntry.objects.filter(
             action_flag=ADDITION,
@@ -84,6 +86,15 @@ class TestAdminDuplicateView(TestCase):
             action_flag=CHANGE,
             object_id=str(self.project.pk),
         ).exists()
+
+    def test_post_shows_queued_message(self) -> None:
+        response = self.client.post(
+            self.url,
+            {"target_shuttle": self.target_shuttle.pk},
+            follow=True,
+        )
+        messages = [str(m) for m in response.context["messages"]]
+        assert any("queued" in m for m in messages)
 
     def test_post_collision_shows_error(self) -> None:
         ProjectFactory(
