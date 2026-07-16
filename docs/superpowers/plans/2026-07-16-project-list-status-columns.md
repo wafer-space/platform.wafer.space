@@ -304,3 +304,11 @@ git push origin feature/project-list-status-columns
 ```
 
 Then create the PR (title: "Add shuttle and status columns to the projects list"), body referencing the spec and screenshot, ending with the standard generated-with footer.
+
+---
+
+## Amendments during execution
+
+- Task 2/3: colour assertions tightened from `"bg-<colour>"` to `"text-wrap bg-<colour>"` — plain `bg-success` also matches the ownership badge, making the original assertion vacuous (Task 2 quality review).
+- Task 3: item root gained `flex-column flex-sm-row` — the 375px visual check in Task 4 showed the fixed-width cells clipping content on phones; cells now stack vertically below the `sm` breakpoint (fix pre-approved in Task 3 quality review).
+- Task 4: `test_shows_draft_status_badge` also asserts `"text-wrap bg-secondary"` for parity with the other colour assertions (final review).

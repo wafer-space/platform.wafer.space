@@ -161,6 +161,7 @@ class TestProjectListView(TestCase):
         assert response.status_code == HTTP_OK
         content = response.content.decode()
         assert "Draft" in content
+        assert "text-wrap bg-secondary" in content
         assert 'title="Not submitted for manufacturing"' not in content
 
     def test_shows_full_status_display_name(self):
