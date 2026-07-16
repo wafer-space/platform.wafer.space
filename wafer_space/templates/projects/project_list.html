@@ -32,7 +32,7 @@
         {% if projects %}
           <div class="list-group">
             {% for project in projects %}
-              <div class="list-group-item list-group-item-action position-relative d-flex">
+              <div class="list-group-item list-group-item-action position-relative d-flex flex-column flex-sm-row">
                 <div class="flex-shrink-0 pe-2" style="width: 4.5rem">
                   {% if project.shuttle %}<span class="fw-semibold">{{ project.shuttle.name }}</span>{% endif %}
                 </div>
