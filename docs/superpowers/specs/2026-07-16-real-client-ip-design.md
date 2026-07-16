@@ -111,12 +111,20 @@ corrected `REMOTE_ADDR` is visible to every later middleware and view.
 ```python
 def get_client_ip(request: HttpRequest) -> str | None:
     """Return the client IP, as resolved by RealClientIPMiddleware."""
-    return request.META.get("REMOTE_ADDR")
+    return request.META.get("REMOTE_ADDR") or None
 ```
 
 Single source of truth for all call sites. The old
 `views_compliance.get_client_ip` (with its `X-Forwarded-For` logic) is
 **deleted** and replaced by this import.
+
+The `or None` normalisation matters: gunicorn on a unix socket leaves
+`REMOTE_ADDR` as an **empty string**, not absent. All three consumers store
+into `GenericIPAddressField(null=True, blank=True)` over a Postgres `inet`
+column, where `""` raises `DataError` on save while `None` is valid. The
+current code has the same latent bug (its fallback also returns `""`); since
+this function is being rewritten anyway, normalising falsy to `None` fixes it
+in one line.
 
 `wafer_space/core/` is a plain module namespace (not an installed app),
 which is sufficient: middleware is referenced by dotted path and the helper
@@ -196,7 +204,11 @@ already having host access. That socket isolation is the trust boundary.
 
 ### New — `wafer_space/core/tests/test_utils.py` (extend)
 
-`get_client_ip()` returns `REMOTE_ADDR`; returns `None` when absent.
+| Case | Expectation |
+|------|-------------|
+| `REMOTE_ADDR` set | returns that value |
+| `REMOTE_ADDR` absent | returns `None` |
+| `REMOTE_ADDR` empty string (unix-socket case) | returns `None`, **not** `""` |
 
 ### Updated — existing tests asserting `X-Forwarded-For` precedence
 
@@ -236,6 +248,8 @@ Baseline before changes: 79 passed.
 
 - **No `X-Real-IP`** (misconfig, or direct-to-origin without nginx) →
   `REMOTE_ADDR` left as-is. Never fall back to spoofable `X-Forwarded-For`.
+  Behind gunicorn's unix socket that leaves `REMOTE_ADDR` as `""`, which the
+  helper normalises to `None` (see §3) so the `inet` column accepts it.
 - **IPv6 direct to VM** → nginx sets `X-Real-IP` to the real client; flows
   through unchanged.
 - **Malformed `X-Real-IP`** → ipware returns `None`; `REMOTE_ADDR` untouched.
@@ -251,8 +265,12 @@ Baseline before changes: 79 passed.
 2. hetzner-ansible #132 + #133 are deployed to `doc` before
    `TRUST_X_REAL_IP=True` is relied upon (until then the middleware is
    harmless: no `X-Real-IP` means no rewrite).
-3. `django-ipware` 7.0.1 accepts `request_header_order` as specified —
-   verify against the installed version during implementation.
+3. `django-ipware` 7.0.1 — verify **against the installed package**, not
+   docs: the pinned version resolves, the import path is
+   `from ipware import get_client_ip`, and `request_header_order` is accepted
+   with the semantics assumed in §2 (restricting lookup to that header only).
+4. Re-establish the test baseline in the worktree before making changes
+   rather than trusting the number recorded above.
 
 ## Out of scope
 
