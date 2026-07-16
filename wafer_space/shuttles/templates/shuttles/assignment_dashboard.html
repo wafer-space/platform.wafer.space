@@ -184,20 +184,37 @@
                        aria-label="Chip-on-Board packaging"></i>
                   {% endif %}
                 </td>
+                {# Submitted = a file revision is submitted for manufacturing #}
+                {# (submitted_file), never Project.status - see #}
+                {# docs/manufacturable_vs_submitted.md #}
                 <td class="text-center"
                     data-sort-value="{{ project.submitted_at|date:'Y-m-d H:i:s'|default:'' }}"
                     title="{{ project.submitted_at|date:'Y-m-d H:i:s'|default:'—' }}">
-                  {% if project.status == 'submitted' %}
-                    <i class="bi bi-check-lg text-success"></i>
+                  {% if project.submitted_file %}
+                    <i class="bi bi-check-lg text-success"
+                       aria-label="File submitted for manufacturing"></i>
                   {% else %}
-                    <i class="bi bi-x-lg text-danger"></i>
+                    <i class="bi bi-x-lg text-danger"
+                       aria-label="No file submitted for manufacturing"></i>
                   {% endif %}
                 </td>
-                {# Sort order: Ready(0) < Failed(1) < Pending(2) - prioritizes actionable projects #}
-                <td data-sort-value="{% if project.is_manufacturable %}0{% elif project.is_manufacturable is None %}2{% else %}1{% endif %}">
-                  {% with check=project.latest_manufacturability_check %}
-                    {% badge_check_status_and_version check %}
-                  {% endwith %}
+                {# Sort order: Ready(0) < Failed(1) < Pending(2) - prioritizes #}
+                {# actionable projects, keyed on the latest file revision. #}
+                {# One line: precheck status of the latest file revision. #}
+                {# Second line only when the submitted revision differs. #}
+                <td data-sort-value="{% if project.latest_file_manufacturable %}0{% elif project.latest_file_manufacturable is None %}2{% else %}1{% endif %}">
+                  {% if project.submitted_file and project.submitted_file != project.latest_file %}
+                    <div class="text-nowrap">
+                      <small class="text-muted">Latest:</small>
+                      {% badge_check_status_and_version project.latest_file_check %}
+                    </div>
+                    <div class="text-nowrap">
+                      <small class="text-muted">Submitted:</small>
+                      {% badge_check_status_and_version project.submitted_file_check %}
+                    </div>
+                  {% else %}
+                    {% badge_check_status_and_version project.latest_file_check %}
+                  {% endif %}
                 </td>
                 <td>
                   {% if project.shuttle_slots.exists %}
