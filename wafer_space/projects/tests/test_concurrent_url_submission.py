@@ -21,6 +21,7 @@ from __future__ import annotations
 from unittest.mock import Mock
 from unittest.mock import patch
 
+import pytest
 from django.db import IntegrityError
 from django.test import TestCase
 from django.urls import reverse
@@ -128,6 +129,47 @@ class ConcurrentSubmissionRaceTest(TestCase):
             == ROWS_AFTER_REPLACEMENT_RACE
         )
         mock_task.assert_called_once()
+
+
+class ExhaustedRetriesRollbackTest(TestCase):
+    """Exhausted retries must not commit partial replacement side-effects.
+
+    If every attempt loses the race, the raised IntegrityError is handled
+    by the view (which returns a redirect, not a 500), so under
+    ATOMIC_REQUESTS the request transaction still commits. The failed
+    replacement attempts must therefore leave no trace — in particular
+    the previously active file must remain active.
+    """
+
+    def setUp(self):
+        self.project = ProjectFactory()
+
+    @patch("wafer_space.projects.tasks.download_project_file.delay")
+    @patch("wafer_space.projects.services.URLValidator.validate_url")
+    def test_active_file_survives_exhausted_retries(self, mock_validate, mock_task):
+        mock_validate.return_value = VALIDATION_RESULT
+        old_file = ProjectFileFactory(project=self.project, is_active=True)
+
+        def always_racing_replacement(project):
+            # Every attempt loses: deactivate the active file, then a
+            # concurrent winner commits another active file.
+            ProjectFile.objects.filter(project=project, is_active=True).update(
+                is_active=False,
+            )
+            ProjectFileFactory(project=project, is_active=True)
+
+        with (
+            patch(REPLACEMENT_HOOK, side_effect=always_racing_replacement),
+            pytest.raises(IntegrityError),
+        ):
+            ProjectFileService.submit_file_from_url(
+                project=self.project,
+                url="https://example.com/design.gds",
+            )
+
+        old_file.refresh_from_db()
+        assert old_file.is_active is True
+        mock_task.assert_not_called()
 
 
 class SubmitURLViewConflictFallbackTest(TestCase):

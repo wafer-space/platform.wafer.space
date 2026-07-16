@@ -332,6 +332,7 @@ class ProjectFileService:
         return project_file, metadata
 
     @classmethod
+    @transaction.atomic
     def _replace_active_file(
         cls,
         *,
@@ -346,9 +347,15 @@ class ProjectFileService:
         active-file state before either transaction commits; the loser's
         insert then violates the one_active_file_per_project constraint
         (issue #310). _create_project_file runs in its own atomic block —
-        a savepoint under ATOMIC_REQUESTS — so the failed insert rolls
-        back cleanly and the retry re-reads the winner's committed row
-        and replaces it: last writer wins.
+        a savepoint inside this method's transaction — so the failed
+        insert rolls back cleanly and the retry re-reads the winner's
+        committed row and replaces it: last writer wins.
+
+        The method itself is atomic so that exhausted retries leave no
+        partial state behind (deactivated files, cancelled checks): the
+        caller may handle the IntegrityError and return a success
+        response, which would otherwise commit those side-effects under
+        ATOMIC_REQUESTS.
 
         Args:
             project: The project to attach the file to
