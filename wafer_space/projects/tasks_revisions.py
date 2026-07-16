@@ -8,15 +8,23 @@ import logging
 import re
 from datetime import datetime
 from typing import Any
+from urllib.parse import urljoin
 
 import requests
 from celery import shared_task
+from django.db.models import Q
 from django.utils import timezone
 
 from .models import ManufacturabilityCheck
 from .models import PrecheckImageRevision
 
 logger = logging.getLogger(__name__)
+
+# Stop requeueing a digest after this many failed fetch attempts. Each beat
+# scan requeues an unfetched digest and every task execution (including each
+# celery retry) counts as one attempt, so this bounds a permanently-broken
+# digest to a finite number of fetches instead of one every 5 minutes forever.
+MAX_METADATA_FETCH_ATTEMPTS = 50
 
 
 @shared_task(queue="none:ro:default")
@@ -30,10 +38,12 @@ def revisions_needs_fetching() -> dict[str, int]:
     Returns:
         {"new_revisions_queued": int}
     """
-    # Only consider digests as "known" if metadata was actually fetched
+    # A digest is "known" once metadata was fetched, or once we gave up on
+    # it (fetch-attempt cap reached) - neither kind is ever requeued.
     known_digests = set(
         PrecheckImageRevision.objects.filter(
-            metadata_fetched_at__isnull=False
+            Q(metadata_fetched_at__isnull=False)
+            | Q(metadata_fetch_attempts__gte=MAX_METADATA_FETCH_ATTEMPTS)
         ).values_list("digest", flat=True)
     )
 
@@ -71,7 +81,9 @@ def do_revision_fetch(self, digest: str) -> dict[str, Any]:
         digest: The SHA256 digest to fetch metadata for
 
     Returns:
-        {"status": str, "digest": str} or {"error": str}
+        {"status": "success"|"partial"|"already_fetched", "digest": str}
+        or {"error": str, ...}. "partial" means the metadata was saved but
+        some optional field (e.g. pdk_version) could not be determined.
     """
     try:
         revision = PrecheckImageRevision.objects.get(digest=digest)
@@ -81,13 +93,27 @@ def do_revision_fetch(self, digest: str) -> dict[str, Any]:
     if revision.metadata_fetched_at:
         return {"status": "already_fetched", "digest": digest}
 
+    revision.metadata_fetch_attempts += 1
+    revision.save(update_fields=["metadata_fetch_attempts"])
+
     try:
         metadata = _fetch_ghcr_metadata(digest)
     except requests.RequestException as exc:
+        revision.metadata_fetch_last_error = str(exc)[:255]
+        revision.save(update_fields=["metadata_fetch_last_error"])
+        if revision.metadata_fetch_attempts >= MAX_METADATA_FETCH_ATTEMPTS:
+            logger.exception(
+                "Giving up fetching metadata for %s after %d attempts",
+                digest[:20],
+                revision.metadata_fetch_attempts,
+            )
+            return {"error": str(exc), "digest": digest, "gave_up": True}
         logger.warning("Failed to fetch metadata for %s: %s", digest[:20], exc)
         retry_countdown = 60 * (2**self.request.retries)
         raise self.retry(exc=exc, countdown=retry_countdown) from exc
     except ValueError as exc:
+        revision.metadata_fetch_last_error = str(exc)[:255]
+        revision.save(update_fields=["metadata_fetch_last_error"])
         logger.exception("Validation error for %s", digest[:20])
         return {"error": str(exc), "digest": digest}
 
@@ -99,7 +125,15 @@ def do_revision_fetch(self, digest: str) -> dict[str, Any]:
     revision.commit_message = metadata.get("commit_message", "")
     revision.commit_date = metadata.get("commit_date")
     revision.metadata_fetched_at = timezone.now()
+    revision.metadata_fetch_last_error = ""
     revision.save()
+
+    if not revision.pdk_version:
+        logger.warning(
+            "Saved partial metadata for %s (pdk_version unresolved)",
+            digest[:20],
+        )
+        return {"status": "partial", "digest": digest}
 
     logger.info("Fetched metadata for revision: %s", digest[:20])
     return {"status": "success", "digest": digest}
@@ -113,10 +147,10 @@ def _fetch_ghcr_metadata(digest: str) -> dict[str, Any]:
 
     Returns:
         Dict with image_created_at, git_commit_sha, precheck_version,
-        pdk_version, tool_versions, commit info, and raw labels.
-
-    Raises:
-        ValueError: If required fields (pdk_version) cannot be determined.
+        pdk_version, tool_versions, commit info, and raw labels. Fields
+        that cannot be determined are left empty rather than failing the
+        whole fetch (see #293: discarding good metadata over one missing
+        field caused weeks of raw digests on the status pages).
     """
     labels = _fetch_container_labels(digest)
     result = _parse_container_labels(labels)
@@ -138,10 +172,12 @@ def _fetch_ghcr_metadata(digest: str) -> dict[str, Any]:
         if not result["tool_versions"]:
             result["tool_versions"] = github_info.get("tool_versions", {})
 
-    # Validate required fields
     if not result["pdk_version"]:
-        msg = f"Could not determine PDK version for digest {digest[:20]}"
-        raise ValueError(msg)
+        logger.warning(
+            "Could not determine PDK version for digest %s; "
+            "continuing with partial metadata",
+            digest[:20],
+        )
 
     return result
 
@@ -262,10 +298,7 @@ def _resolve_version_from_tags(digest: str) -> str:
             "Accept": "application/vnd.oci.image.index.v1+json",
         }
 
-        # Get all tags
-        tags_resp = requests.get(f"{base_url}/tags/list", headers=headers, timeout=30)
-        tags_resp.raise_for_status()
-        tags = tags_resp.json().get("tags", [])
+        tags = _list_all_tags(base_url, headers)
 
         # Find semver-style tags that point to this digest
         matching_tags: list[str] = []
@@ -292,6 +325,25 @@ def _resolve_version_from_tags(digest: str) -> str:
     except (requests.RequestException, KeyError):
         logger.warning("Failed to resolve version from tags for %s", digest[:20])
         return ""
+
+
+def _list_all_tags(base_url: str, headers: dict[str, str]) -> list[str]:
+    """List every tag in the repository, following pagination.
+
+    GHCR returns tags oldest-first in pages linked via the RFC-5988 Link
+    header, so once a repository exceeds one page every newly pushed tag
+    is only reachable by following rel="next" links (issue #295).
+    """
+    tags: list[str] = []
+    url: str | None = f"{base_url}/tags/list?n=1000"
+    while url:
+        resp = requests.get(url, headers=headers, timeout=30)
+        resp.raise_for_status()
+        tags.extend(resp.json().get("tags", []))
+        link = resp.headers.get("Link", "")
+        match = re.search(r"<([^>]+)>", link) if 'rel="next"' in link else None
+        url = urljoin(base_url, match.group(1)) if match else None
+    return tags
 
 
 def _parse_container_labels(labels: dict[str, str]) -> dict[str, Any]:
@@ -332,6 +384,7 @@ def _parse_container_labels(labels: dict[str, str]) -> dict[str, Any]:
 
 
 GITHUB_REPO = "wafer-space/gf180mcu-precheck"
+OPEN_PDKS_REPO = "efabless/open_pdks"
 
 
 def _fetch_github_info(commit_sha: str) -> dict[str, Any]:
@@ -410,15 +463,47 @@ def _fetch_tool_versions(commit_sha: str) -> dict[str, str]:
 
 
 def _fetch_pdk_version(commit_sha: str) -> str:
-    """Fetch PDK version from Makefile."""
+    """Fetch PDK version from the precheck repo's Makefile.
+
+    Older Makefiles pin the PDK with PDK_TAG (a release tag, used
+    directly). Since June 2026 the Makefile pins PDK_COMMIT (an open_pdks
+    commit hash used by `ciel enable`), which is resolved to open_pdks'
+    VERSION file content at that commit.
+    """
     url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{commit_sha}/Makefile"
 
     try:
         resp = requests.get(url, timeout=30)
         if resp.status_code == http.HTTPStatus.OK:
-            return _parse_makefile_pdk_version(resp.text)
+            version = _parse_makefile_pdk_version(resp.text)
+            if version:
+                return version
+            pdk_commit = _parse_makefile_pdk_commit(resp.text)
+            if pdk_commit:
+                return _fetch_open_pdks_version(pdk_commit)
     except requests.RequestException:
         logger.warning("Failed to fetch Makefile for %s", commit_sha[:12])
+
+    return ""
+
+
+def _fetch_open_pdks_version(pdk_commit: str) -> str:
+    """Resolve an open_pdks commit hash to its VERSION file content."""
+    url = f"https://raw.githubusercontent.com/{OPEN_PDKS_REPO}/{pdk_commit}/VERSION"
+
+    try:
+        resp = requests.get(url, timeout=30)
+        if resp.status_code == http.HTTPStatus.OK:
+            version = resp.text.strip()
+            if re.fullmatch(r"\d+\.\d+(\.\d+)*", version):
+                return version
+            logger.warning(
+                "open_pdks VERSION at %s is not a version number: %r",
+                pdk_commit[:12],
+                version[:50],
+            )
+    except requests.RequestException:
+        logger.warning("Failed to fetch open_pdks VERSION for %s", pdk_commit[:12])
 
     return ""
 
@@ -486,4 +571,21 @@ def _parse_makefile_pdk_version(makefile_content: str) -> str:
     match = re.search(r"^PDK_TAG\s*\??=\s*(.+)$", makefile_content, re.MULTILINE)
     if match:
         return match.group(1).strip()
+    return ""
+
+
+def _parse_makefile_pdk_commit(makefile_content: str) -> str:
+    """Parse Makefile to extract the PDK_COMMIT hash (post-June 2026 pin).
+
+    Args:
+        makefile_content: Raw Makefile text
+
+    Returns:
+        40-char open_pdks commit hash or empty string if not found
+    """
+    match = re.search(
+        r"^PDK_COMMIT\s*\??=\s*([0-9a-f]{40})\s*$", makefile_content, re.MULTILINE
+    )
+    if match:
+        return match.group(1)
     return ""

@@ -3007,6 +3007,15 @@ class PrecheckImageRevision(models.Model):
         blank=True,
         help_text="When GHCR metadata was last fetched",
     )
+    metadata_fetch_attempts = models.PositiveIntegerField(
+        default=0,
+        help_text="Number of metadata fetch attempts (requeue stops at cap)",
+    )
+    metadata_fetch_last_error = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Error from the most recent failed metadata fetch",
+    )
 
     class Meta:
         ordering = ["-first_seen_at"]
