@@ -6,6 +6,7 @@ from django.urls import reverse
 
 from wafer_space.core.enums import SlotSize
 from wafer_space.projects.tests.factories import ProjectFactory
+from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.models import ShuttleSlot
 from wafer_space.shuttles.tests.factories import ShuttleFactory
 from wafer_space.users.tests.factories import UserFactory
@@ -393,6 +394,36 @@ class TestAssignProjectView:
         assert data["success"] is True
         assert "warning" in data
         assert "Size mismatch" in data["warning"]
+
+    def test_assign_succeeds_on_closed_shuttle_with_warning(self, client):
+        """Assignment on a closed shuttle succeeds with a warning (#312)."""
+        user = UserFactory(is_staff=True)
+        client.force_login(user)
+
+        shuttle = ShuttleFactory(name="G815", status=Shuttle.Status.LOCKED)
+        slot = ShuttleSlot.objects.create(
+            shuttle=shuttle,
+            row=0,
+            column=0,
+            slot_size=SlotSize.FULL,
+            status=ShuttleSlot.Status.AVAILABLE,
+        )
+        project = ProjectFactory(shuttle=shuttle, slot_size=SlotSize.FULL)
+
+        url = reverse("shuttles:assign_project", kwargs={"name": shuttle.name})
+        response = client.post(
+            url,
+            data=json.dumps({"project_pk": str(project.pk), "slot_id": slot.pk}),
+            content_type="application/json",
+        )
+
+        assert response.status_code == HTTPStatus.OK
+        data = response.json()
+        assert data["success"] is True
+        assert "not open" in data["warning"]
+
+        slot.refresh_from_db()
+        assert slot.project == project
 
     def test_reassign_slot_replaces_project(self, client):
         """Should allow reassigning a slot to a different project."""

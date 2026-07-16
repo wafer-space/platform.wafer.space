@@ -185,17 +185,6 @@ class Shuttle(models.Model):
         """Number of available slots."""
         return self.slots.filter(status=ShuttleSlot.Status.AVAILABLE).count()
 
-    def can_accept_projects(self):
-        """Check if shuttle can accept new projects."""
-        return (
-            self.status in [self.Status.OPEN]
-            and self.available_slots > 0
-            and (
-                not self.submission_deadline
-                or timezone.now() < self.submission_deadline
-            )
-        )
-
     def get_available_slot_sizes(self) -> list[str]:
         """Get list of slot sizes that have available slots.
 
@@ -367,38 +356,32 @@ class ShuttleSlot(models.Model):
 
         Allows reassignment: if the slot is already reserved, the existing
         assignment will be replaced with the new project.
+
+        Slot assignment is a staff operation that legitimately happens after
+        the submission deadline (between GDS close and foundry delivery), so
+        shuttle status and deadline never block it - they only add warnings.
         """
         warnings = []
-        is_reassignment = False
 
         # Handle reassignment case
         if self.status == self.Status.RESERVED:
             if self.project == project:
                 # Already assigned to this project - no-op
                 return None
-            # Reassigning to a different project (no warning needed)
-            is_reassignment = True
         elif self.status != self.Status.AVAILABLE:
             # Other statuses (OCCUPIED, CANCELLED) are not reassignable
             msg = "Slot is not available"
             raise ValueError(msg)
 
-        # For new reservations, check can_accept_projects (includes available_slots > 0)
-        # For reassignment, only check shuttle status and deadline (not available slots)
         shuttle = self.shuttle
-        if is_reassignment:
-            # Check shuttle is still open
-            if shuttle.status != Shuttle.Status.OPEN:
-                msg = "Shuttle is not open for assignments"
-                raise ValueError(msg)
-            # Check deadline hasn't passed
-            deadline = shuttle.submission_deadline
-            if deadline and timezone.now() >= deadline:
-                msg = "Shuttle submission deadline has passed"
-                raise ValueError(msg)
-        elif not shuttle.can_accept_projects():
-            msg = "Shuttle is not accepting projects"
-            raise ValueError(msg)
+        if shuttle.status != Shuttle.Status.OPEN:
+            warnings.append(
+                f"Shuttle is not open for submissions "
+                f"(status: {shuttle.get_status_display()})"
+            )
+        deadline = shuttle.submission_deadline
+        if deadline and timezone.now() >= deadline:
+            warnings.append("Shuttle submission deadline has passed")
 
         # Check for size mismatch (warning only, not blocking)
         if hasattr(project, "slot_size") and project.slot_size != self.slot_size:

@@ -499,6 +499,9 @@
       })
       .then(function(data) {
         if (data.success) {
+          if (data.warning) {
+            alert('Warning: ' + data.warning);
+          }
           location.reload();
         } else {
           alert('Error: ' + data.error);
