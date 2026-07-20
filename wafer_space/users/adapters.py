@@ -5,11 +5,13 @@ import typing
 
 from allauth.account.adapter import DefaultAccountAdapter
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
+from allauth.socialaccount.providers.base import AuthError
 from django.conf import settings
 from django.contrib import messages
 
 if typing.TYPE_CHECKING:
     from allauth.socialaccount.models import SocialLogin
+    from allauth.socialaccount.providers.base import Provider
     from django.http import HttpRequest
 
     from wafer_space.users.models import User
@@ -124,31 +126,31 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
     def on_authentication_error(
         self,
         request: HttpRequest,
-        provider_id: str,
-        error: Exception | None = None,
+        provider: str | Provider,
+        error: str | None = None,
         exception: Exception | None = None,
         extra_context: dict[str, typing.Any] | None = None,
     ) -> None:
         """
         Handle authentication errors and provide better error messages.
 
-        This method is called when authentication fails. We log detailed
-        information for debugging and provide user-friendly error messages.
+        allauth passes ``error`` as an ``AuthError`` string constant
+        ("unknown", "cancelled", "denied") and only sets ``exception``
+        for genuine failures; a user cancelling the provider consent
+        screen arrives here with ``error="cancelled"`` and no exception.
         """
-        # Use the exception if provided, otherwise use error
-        exc = exception or error
-
         # Extract provider ID string - handle both string and Provider object
-        if hasattr(provider_id, "id"):
-            provider_str = provider_id.id
-        else:
-            provider_str = str(provider_id)
+        provider_str = provider if isinstance(provider, str) else str(provider.id)
+        error_code = str(error) if error else AuthError.UNKNOWN
 
         # Build error context - only log safe information, not full error messages
-        # that could contain tokens or sensitive URLs
-        error_context = {
+        # that could contain tokens or sensitive URLs. Include the request so
+        # AdminEmailHandler can add request data to error emails.
+        error_context: dict[str, typing.Any] = {
             "provider": provider_str,
-            "error_type": type(exc).__name__ if exc else "Unknown",
+            "error_code": error_code,
+            "error_type": type(exception).__name__ if exception else None,
+            "request": request,
         }
 
         # Only add safe extra context (exclude any OAuth response data)
@@ -161,20 +163,44 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
             if safe_context:
                 error_context["extra"] = safe_context
 
-        # Log the error with sanitized context
-        logger.error(
-            "Social authentication error for %s: %s",
-            provider_str,
-            error_context["error_type"],
-            exc_info=exc if exc else None,
-            extra=error_context,
+        if error_code == AuthError.CANCELLED:
+            # User backed out at the provider - not an application error, and
+            # allauth already renders its dedicated "login cancelled" page.
+            logger.info(
+                "Social login cancelled by user for %s",
+                provider_str,
+                extra=error_context,
+            )
+        else:
+            logger.error(
+                "Social authentication error for %s: %s",
+                provider_str,
+                error_code,
+                exc_info=exception if isinstance(exception, BaseException) else None,
+                extra=error_context,
+            )
+            self._add_authentication_error_message(request, provider_str, exception)
+
+        # Call parent implementation
+        super().on_authentication_error(
+            request,
+            provider,
+            error=error,
+            exception=exception,
+            extra_context=extra_context,
         )
 
-        # Provide user-friendly error message WITHOUT exposing raw error details
+    @staticmethod
+    def _add_authentication_error_message(
+        request: HttpRequest,
+        provider_str: str,
+        exception: Exception | None,
+    ) -> None:
+        """Queue a user-friendly flash message WITHOUT raw error details."""
         provider_name = provider_str.replace("_", " ").title()
 
-        if exc:
-            error_msg = str(exc).lower()
+        if exception:
+            error_msg = str(exception).lower()
             # Check for common error patterns but NEVER display the raw error
             if "email" in error_msg:
                 messages.error(
@@ -206,14 +232,6 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
         else:
             messages.error(
                 request,
-                f"{provider_name} login failed. Please try again or contact support.",
+                f"{provider_name} login failed. "
+                f"Please try again or contact support if the problem persists.",
             )
-
-        # Call parent implementation
-        super().on_authentication_error(
-            request,
-            provider_id,
-            error=error,
-            exception=exception,
-            extra_context=extra_context,
-        )
