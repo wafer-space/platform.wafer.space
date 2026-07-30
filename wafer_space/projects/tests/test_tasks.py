@@ -1356,6 +1356,12 @@ class TestDoStarting:
         create_call = mock_client.containers.create.call_args
         assert "volumes" not in create_call.kwargs
 
+        # Memory policy: hard limit is always 2x the soft limit; memswap ==
+        # mem_limit disables swap (PRECHECK_MEM_SOFT_LIMIT_GB = 32 in base.py)
+        assert create_call.kwargs["mem_reservation"] == "32g"
+        assert create_call.kwargs["mem_limit"] == "64g"
+        assert create_call.kwargs["memswap_limit"] == "64g"
+
         # Verify command includes precheck.py with --slot and --id flags,
         # and outputs OAS instead of GDS (#272)
         assert create_call.kwargs["command"] == [
@@ -1465,6 +1471,161 @@ class TestDoStarting:
             "--id",
             "G850ABCD",
         ]
+
+    @pytest.mark.django_db
+    def test_command_includes_workers_and_threads_from_server_config(
+        self, tmp_path, settings
+    ) -> None:
+        """--workers/--threads come from server config, before --cob."""
+        settings.DOCKER_SERVERS = [
+            {
+                "id": "test-local",
+                "url": "unix:///test.sock",
+                "max_concurrent": 5,
+                "priority": 1,
+                "check_workers": 6,
+                "check_threads": 1,
+            },
+        ]
+
+        test_file = tmp_path / "design.gds"
+        test_file.write_bytes(b"test gds content")
+
+        shuttle = ShuttleFactory(name="G850")
+
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.STARTING,
+            docker_server_id="test-local",
+            docker_image="ghcr.io/test:latest",
+            project__shuttle=shuttle,
+            project__project_id="ABCD",
+            project__chip_on_board=True,
+        )
+        check.project_file.file.name = str(test_file)
+        check.project_file.top_cell = "chip_top"
+        check.project_file.save()
+
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_starting"
+        )
+
+        mock_docker_path = "wafer_space.projects.tasks_checks.get_docker_client"
+        mock_tar_path = "wafer_space.projects.tasks_checks.create_tar_archive"
+        with (
+            patch(mock_docker_path) as mock_get_docker_client,
+            patch(mock_tar_path) as mock_create_tar,
+            patch("wafer_space.projects.tasks_checks.Path") as mock_path,
+        ):
+            mock_client = MagicMock()
+            mock_get_docker_client.return_value = mock_client
+            mock_container = MagicMock()
+            mock_container.id = "container123"
+            mock_container.status = "running"
+            mock_client.containers.create.return_value = mock_container
+
+            mock_path_instance = MagicMock()
+            mock_path_instance.exists.return_value = True
+            mock_path.return_value = mock_path_instance
+
+            mock_tar_stream = MagicMock()
+            mock_create_tar.return_value.__enter__.return_value = mock_tar_stream
+
+            result = do_starting(check.id)
+
+        assert result["status"] == "success"
+
+        create_call = mock_client.containers.create.call_args
+        assert create_call.kwargs["command"] == [
+            "python3",
+            "precheck.py",
+            "--input",
+            "/input/design.gds",
+            "--output",
+            "/output/design.oas",
+            "--top",
+            "chip_top",
+            "--slot",
+            "1x1",
+            "--id",
+            "G850ABCD",
+            "--workers",
+            "6",
+            "--threads",
+            "1",
+            "--cob",
+        ]
+
+    @pytest.mark.django_db
+    def test_reproduction_instructions_match_run_command(
+        self, tmp_path, settings
+    ) -> None:
+        """Repro instructions embed the exact container command and limits."""
+        settings.DOCKER_SERVERS = [
+            {
+                "id": "test-local",
+                "url": "unix:///test.sock",
+                "max_concurrent": 5,
+                "priority": 1,
+                "check_workers": 6,
+                "check_threads": 1,
+            },
+        ]
+
+        test_file = tmp_path / "design.gds"
+        test_file.write_bytes(b"test gds content")
+
+        shuttle = ShuttleFactory(name="G850")
+
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.STARTING,
+            docker_server_id="test-local",
+            docker_image="ghcr.io/test:latest",
+            project__shuttle=shuttle,
+            project__project_id="ABCD",
+        )
+        check.project_file.file.name = str(test_file)
+        check.project_file.top_cell = "chip_top"
+        check.project_file.save()
+
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_starting"
+        )
+
+        mock_docker_path = "wafer_space.projects.tasks_checks.get_docker_client"
+        mock_tar_path = "wafer_space.projects.tasks_checks.create_tar_archive"
+        with (
+            patch(mock_docker_path) as mock_get_docker_client,
+            patch(mock_tar_path) as mock_create_tar,
+            patch("wafer_space.projects.tasks_checks.Path") as mock_path,
+        ):
+            mock_client = MagicMock()
+            mock_get_docker_client.return_value = mock_client
+            mock_container = MagicMock()
+            mock_container.id = "container123"
+            mock_container.status = "running"
+            mock_client.containers.create.return_value = mock_container
+
+            mock_path_instance = MagicMock()
+            mock_path_instance.exists.return_value = True
+            mock_path.return_value = mock_path_instance
+
+            mock_tar_stream = MagicMock()
+            mock_create_tar.return_value.__enter__.return_value = mock_tar_stream
+
+            result = do_starting(check.id)
+
+        assert result["status"] == "success"
+        create_call = mock_client.containers.create.call_args
+
+        instructions = check.get_reproduction_instructions()
+
+        # The exact command the container ran must appear verbatim in the
+        # instructions, and the memory limits must match the container's.
+        assert " ".join(create_call.kwargs["command"]) in instructions
+        reservation = create_call.kwargs["mem_reservation"]
+        assert f"--memory-reservation {reservation}" in instructions
+        assert f"--memory {create_call.kwargs['mem_limit']}" in instructions
+        assert f"--memory-swap {create_call.kwargs['memswap_limit']}" in instructions
 
     @pytest.mark.django_db
     def test_cleans_up_task_tracking(self, tmp_path) -> None:

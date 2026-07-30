@@ -48,6 +48,7 @@ from .models import ManufacturabilityCheckpoint
 from .models import ManufacturabilityCheckTask
 from .models import PrecheckImageRevision
 from .models import ProjectFile
+from .precheck_command import build_precheck_command
 from .precheck_parser import PrecheckLogParser
 from .precheck_parser import classify_failure
 from .verification import is_check_task_actively_running
@@ -1007,6 +1008,26 @@ def _wait_for_container_running(
         raise TaskExecutionError(reason="failed_to_start", message=msg)
 
 
+def _build_precheck_command(
+    check: ManufacturabilityCheck, logger: logging.Logger
+) -> list[str]:
+    """Build the precheck.py command line, logging the key inputs.
+
+    Delegates to precheck_command.build_precheck_command, the single source
+    of truth shared with the user-facing reproduction instructions.
+
+    Raises:
+        ValueError: If the project has no full_id (not assigned to a shuttle).
+    """
+    logger.info("[do_starting] Top cell: %s", check.project_file.top_cell or "unknown")
+    logger.info(
+        "[do_starting] Slot size: %s, Full ID: %s",
+        check.project.slot_size,
+        check.project.full_id,
+    )
+    return build_precheck_command(check)
+
+
 @queued_check_task(expected_status="STARTING", queue="dock:ro:checks-fast")
 def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
     """Create and start Docker container for a STARTING check.
@@ -1049,48 +1070,22 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
         file_size,
     )
 
-    # Get top cell name for precheck command
-    top_cell = check.project_file.top_cell or "unknown"
-    logger.info("[do_starting] Top cell: %s", top_cell)
-
-    # Get slot size and full_id from project (required for precheck)
-    slot_size = check.project.slot_size
-    full_id = check.project.full_id
-    if not full_id:
-        msg = (
-            "Cannot run manufacturability check: "
-            "project must be assigned to shuttle with project ID"
-        )
-        raise ValueError(msg)
-    logger.info("[do_starting] Slot size: %s, Full ID: %s", slot_size, full_id)
-
-    # Build precheck command with slot size and project ID
-    # The container has ENTRYPOINT ["dev-shell"] and WORKDIR /workspace
-    # precheck.py is at /workspace/precheck.py
-    command = [
-        "python3",
-        "precheck.py",
-        "--input",
-        "/input/design.gds",
-        # Output the processed layout as OASIS (.oas) to save disk space (#272)
-        "--output",
-        "/output/design.oas",
-        "--top",
-        top_cell,
-        "--slot",
-        slot_size,
-        "--id",
-        full_id,
-    ]
-    if check.project.chip_on_board:
-        command.append("--cob")
+    command = _build_precheck_command(check, logger)
     command_str = " ".join(command)
     logger.info("[do_starting] Container command: %s", command_str)
 
+    # Memory policy: soft limit is the expected working set; the hard limit
+    # is always 2x the soft limit; memswap_limit == mem_limit disables swap.
+    mem_soft_gb = settings.PRECHECK_MEM_SOFT_LIMIT_GB
+    mem_hard_gb = mem_soft_gb * 2
+
     # Create container WITHOUT volumes (for remote Docker support)
     logger.info(
-        "[do_starting] Creating container from image %s (mem_limit=24g)...",
+        "[do_starting] Creating container from image %s "
+        "(mem soft=%dg hard=%dg swap=0)...",
         check.docker_image,
+        mem_soft_gb,
+        mem_hard_gb,
     )
     # Extract site hostname for container labeling (prevents cross-environment cleanup)
     site_host = urlparse(settings.SITE_URL).netloc if settings.SITE_URL else "unknown"
@@ -1104,7 +1099,9 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
             "wafer.space.project_id": str(check.project.id),
             "wafer.space.site": site_host,
         },
-        mem_limit="24g",
+        mem_reservation=f"{mem_soft_gb}g",
+        mem_limit=f"{mem_hard_gb}g",
+        memswap_limit=f"{mem_hard_gb}g",
         network_disabled=True,
         environment={
             "COLUMNS": "200",  # Wide terminal for better log output

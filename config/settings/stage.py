@@ -94,14 +94,21 @@ INSTALLED_APPS += [
 # CELERY_BEAT_SCHEDULE: uses base.py defaults (all check lifecycle tasks)
 
 # Docker servers for manufacturability checks
-# Staging uses one remote Docker server with 3 concurrent checks
-# Total capacity: 3 concurrent checks, each using 24GB memory
+# Staging uses one remote Docker server with 2 concurrent checks
+# Total capacity: 2 concurrent checks, each reserving 32GB memory
+# (soft limit; hard cap 2x = 64GB, no swap - see PRECHECK_MEM_SOFT_LIMIT_GB)
+# Must match checker_concurrent_checks in hetzner-ansible host_vars
+# E2E testing showed --workers 6 --threads 1 gives the best performance vs
+# memory trade-off per check: 6 workers share the 32GB soft limit (~5.3GB
+# each), and concurrent checks share idle CPU via the scheduler.
 DOCKER_SERVERS = [
     {
         "id": "checker.wafer.space@buddy",
         "url": "tcp://10.2.27.44:2375",
-        "max_concurrent": 3,
+        "max_concurrent": 2,
         "priority": 1,
+        "check_workers": 6,
+        "check_threads": 1,
     },
 ]
 

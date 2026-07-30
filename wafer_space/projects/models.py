@@ -21,6 +21,7 @@ from simple_history.models import HistoricalRecords
 from wafer_space.core.enums import SlotSize
 from wafer_space.projects.exceptions import InvalidStateTransitionError
 from wafer_space.projects.hashing import MultiHasher
+from wafer_space.projects.precheck_command import build_precheck_command
 from wafer_space.projects.storage import ProjectFileStorage
 
 logger = logging.getLogger(__name__)
@@ -2624,6 +2625,11 @@ class ManufacturabilityCheck(models.Model):
     def get_reproduction_instructions(self) -> str:
         """Generate markdown instructions for reproducing check locally."""
         project_file = self.project_file
+        # Same command builder as the real container run (tasks_checks),
+        # so these instructions cannot drift from production behavior.
+        command = " ".join(build_precheck_command(self))
+        mem_soft_gb = settings.PRECHECK_MEM_SOFT_LIMIT_GB
+        mem_hard_gb = mem_soft_gb * 2
 
         return f"""# Reproducing Manufacturability Check Locally
 
@@ -2642,13 +2648,17 @@ docker images --digests | grep gf180mcu-precheck
 
 ### 2. Run the precheck
 ```bash
+# Memory limits mirror production (soft {mem_soft_gb}GB, hard {mem_hard_gb}GB,
+# swap disabled); drop the three --memory* flags if you have less RAM.
 docker run --rm \\
   -v "$(pwd)/{project_file.original_filename}":/input/design.gds:ro \\
+  -v "$(pwd)/precheck-output":/output \\
+  --workdir /workspace \\
+  --memory-reservation {mem_soft_gb}g \\
+  --memory {mem_hard_gb}g \\
+  --memory-swap {mem_hard_gb}g \\
   {self.docker_image} \\
-  python3 /precheck/precheck.py \\
-    --input /input/design.gds \\
-    --top "{self.project.name}" \\
-    --id {self.project.full_id}
+  {command}
 ```
 
 ### 3. Verify file hash
