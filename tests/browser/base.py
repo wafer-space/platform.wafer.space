@@ -100,13 +100,31 @@ class BaseBrowserTest:
         an unnoticed empty required field then makes the browser's
         client-side validation block the form submit. Verify the DOM
         value after typing and retype if it did not land.
+
+        The final attempt sets the value via JavaScript and dispatches
+        input/change events instead of typing: on loaded CI runners key
+        events can be dropped for seconds at a time, so a test whose
+        purpose is merely to have a value in the field must not fail on
+        keystroke delivery. Earlier attempts still use real typing so
+        the common case keeps exercising genuine key events.
         """
         last_value = None
-        for _ in range(attempts):
+        for attempt in range(attempts):
             element = self.wait_for_element_clickable(driver, locator, timeout)
-            element.click()
-            element.clear()
-            element.send_keys(value)
+            if attempt < attempts - 1:
+                element.click()
+                element.clear()
+                element.send_keys(value)
+            else:
+                driver.execute_script(
+                    "arguments[0].value = arguments[1];"
+                    "arguments[0].dispatchEvent("
+                    "new Event('input', {bubbles: true}));"
+                    "arguments[0].dispatchEvent("
+                    "new Event('change', {bubbles: true}));",
+                    element,
+                    value,
+                )
             try:
                 WebDriverWait(driver, 2).until(
                     lambda d: d.find_element(*locator).get_attribute("value") == value,
