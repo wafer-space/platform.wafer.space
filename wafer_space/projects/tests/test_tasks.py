@@ -1440,6 +1440,8 @@ class TestDoStarting:
         ):
             mock_client = MagicMock()
             mock_get_docker_client.return_value = mock_client
+            # No pre-existing containers for this check
+            mock_client.containers.list.return_value = []
             mock_container = MagicMock()
             mock_container.id = "container123"
             mock_container.status = "running"
@@ -1520,6 +1522,8 @@ class TestDoStarting:
         ):
             mock_client = MagicMock()
             mock_get_docker_client.return_value = mock_client
+            # No pre-existing containers for this check
+            mock_client.containers.list.return_value = []
             mock_container = MagicMock()
             mock_container.id = "container123"
             mock_container.status = "running"
@@ -1602,6 +1606,8 @@ class TestDoStarting:
         ):
             mock_client = MagicMock()
             mock_get_docker_client.return_value = mock_client
+            # No pre-existing containers for this check
+            mock_client.containers.list.return_value = []
             mock_container = MagicMock()
             mock_container.id = "container123"
             mock_container.status = "running"
