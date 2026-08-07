@@ -1,0 +1,24 @@
+# G803 Shuttle Grid Layout Configuration
+# GF180MCU Shuttle Run 3
+#
+# Same layout as G802 (GF180MCU Shuttle Run 2).
+#
+# Grid: 6 rows x 9 columns = 54 slots
+# - Rows 1-3 (top): half-height (0.5)
+# - Rows 4-6: full-height (1.0)
+# - Columns A-F: full-width (1.0)
+# - Columns G-I (rightmost): half-width (0.5)
+#
+# Resulting slot sizes (format: width x height):
+# - Rows 1-3, Cols A-F: HALF_HEIGHT (1x0.5) - full width, half height (18 slots)
+# - Rows 1-3, Cols G-I: QUARTER (0.5x0.5) (9 slots)
+# - Rows 4-6, Cols A-F: FULL (1x1) (18 slots)
+# - Rows 4-6, Cols G-I: HALF_WIDTH (0.5x1) - half width, full height (9 slots)
+
+shuttle: G803
+
+# 6 rows: Rows 1-3 are half-height, Rows 4-6 are full-height
+row_heights: [0.5, 0.5, 0.5, 1.0, 1.0, 1.0]
+
+# 9 columns: Columns A-F are full-width, Columns G-I are half-width
+column_widths: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5]
