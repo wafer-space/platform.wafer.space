@@ -72,10 +72,18 @@ class ProjectListView(LoginRequiredMixin, ListView):
 
         if user.is_staff:
             # Staff users see all projects
-            return Project.objects.all().select_related("user").order_by("-created_at")
+            return (
+                Project.objects.all()
+                .select_related("user", "shuttle")
+                .order_by("-created_at")
+            )
 
         # Regular users see only their own projects
-        return Project.objects.filter(user=user).order_by("-created_at")
+        return (
+            Project.objects.filter(user=user)
+            .select_related("user", "shuttle")
+            .order_by("-created_at")
+        )
 
 
 class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView):

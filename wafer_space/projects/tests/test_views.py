@@ -25,6 +25,7 @@ from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.projects.tests.factories import ProjectFileFactory
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.models import ShuttleSlot
+from wafer_space.shuttles.tests.factories import ShuttleFactory
 from wafer_space.users.models import User
 from wafer_space.users.tests.factories import UserFactory
 
@@ -137,16 +138,10 @@ class TestProjectListView(TestCase):
         min_secondary_badges = 2
         assert content.count("badge bg-secondary") >= min_secondary_badges
 
-    def test_shows_submitted_indicator(self):
-        """Submitted projects show a submitted-for-manufacturing badge.
-
-        The badge is keyed on submitted_file, the canonical submission
-        signal (see docs/manufacturable_vs_submitted.md).
-        """
-        submitted_file = ProjectFileFactory(project=self.project1)
+    def test_shows_submitted_status_badge(self):
+        """Submitted projects show the Submitted status badge column."""
         self.project1.status = Project.Status.SUBMITTED
         self.project1.submitted_at = timezone.now()
-        self.project1.submitted_file = submitted_file
         self.project1.save()
         self.client.login(username="testuser", password=TEST_PASSWORD)
 
@@ -154,17 +149,50 @@ class TestProjectListView(TestCase):
 
         assert response.status_code == HTTP_OK
         content = response.content.decode()
-        assert 'title="Submitted for manufacturing"' in content
+        assert "Submitted" in content
+        assert "text-wrap bg-primary" in content
 
-    def test_shows_not_submitted_indicator(self):
-        """Draft projects show a not-submitted indicator."""
+    def test_shows_draft_status_badge(self):
+        """Draft projects show the Draft status badge column."""
         self.client.login(username="testuser", password=TEST_PASSWORD)
 
         response = self.client.get(reverse("projects:list"))
 
         assert response.status_code == HTTP_OK
         content = response.content.decode()
-        assert 'title="Not submitted for manufacturing"' in content
+        assert "Draft" in content
+        assert "text-wrap bg-secondary" in content
+        assert 'title="Not submitted for manufacturing"' not in content
+
+    def test_shows_full_status_display_name(self):
+        """The status column uses the full status field, not just Draft/Submitted."""
+        self.project1.status = Project.Status.MANUFACTURABLE
+        self.project1.save()
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+
+        response = self.client.get(reverse("projects:list"))
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+        assert "Manufacturable" in content
+        assert "text-wrap bg-success" in content
+
+    def test_shows_shuttle_name_when_assigned(self):
+        """Projects assigned to a shuttle show the shuttle name column."""
+        shuttle = ShuttleFactory(name="G850")
+        ProjectFactory(
+            user=self.user,
+            name="Shuttle Project",
+            shuttle=shuttle,
+            project_id="TST1",
+        )
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+
+        response = self.client.get(reverse("projects:list"))
+
+        assert response.status_code == HTTP_OK
+        content = response.content.decode()
+        assert "G850" in content
 
     def test_shows_crowd_supply_order_link(self):
         """Projects with a CrowdSupply order link to the CS order page."""

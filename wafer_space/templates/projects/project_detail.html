@@ -78,9 +78,7 @@
               <div class="card-body">
                 <p class="mb-2">
                   <strong>Status:</strong>
-                  <span class="badge {% if project.status == 'draft' %}bg-secondary{% elif project.status == 'submitted' %}bg-primary{% elif project.status == 'manufacturable' %}bg-success{% elif project.status == 'not_manufacturable' %}bg-danger{% else %}bg-info{% endif %}">
-                    {{ project.get_status_display }}
-                  </span>
+                  {% include "projects/_status_badge.html" with project=project %}
                 </p>
                 <p class="mb-2">
                   <strong>Submitted:</strong>
