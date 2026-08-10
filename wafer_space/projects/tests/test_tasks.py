@@ -2499,6 +2499,151 @@ Precheck successfully completed."""
         assert result["status"] == "error"
         assert "missing_container_info" in result.get("reason", "")
 
+    @pytest.mark.django_db
+    def test_continues_extraction_when_runs_archive_fails(self) -> None:
+        """Continues extracting other outputs when runs archive extraction fails.
+
+        Even if _save_runs_archive fails, we should still try to extract the
+        output GDS and continue with log parsing and state transitions.
+        """
+        success_logs = """Check for Magic DRC errors clear.
+Check for KLayout DRC errors clear.
+Precheck successfully completed."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            docker_exit_code=0,
+            processing_logs=success_logs,
+            docker_server_id="test-local",
+            docker_container_id="test-container-id",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_analyzing"
+        )
+
+        # Mock container where runs archive extraction fails but GDS works
+        mock_container = MagicMock()
+        mock_container.status = "exited"
+
+        not_found_msg = "no archive"
+
+        def mock_get_archive(path: str) -> tuple:
+            if "/workspace/runs" in path:
+                msg = "Simulated runs extraction failure"
+                raise RuntimeError(msg)
+            # Return empty for other paths
+            raise docker.errors.NotFound(not_found_msg)
+
+        mock_container.get_archive.side_effect = mock_get_archive
+        mock_client = MagicMock()
+        mock_client.containers.get.return_value = mock_container
+
+        with patch(
+            "wafer_space.projects.tasks_checks.get_docker_client",
+            return_value=mock_client,
+        ):
+            result = do_analyzing(check.id)
+
+        # Should still complete analysis despite extraction failure
+        assert result["status"] == "success"
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
+        assert check.is_manufacturable is True
+
+    @pytest.mark.django_db
+    def test_continues_extraction_when_output_gds_fails(self) -> None:
+        """Continues analysis when output GDS extraction fails.
+
+        Even if _save_output_gds fails, we should still complete log parsing
+        and state transitions. The runs archive may have been saved.
+        """
+        success_logs = """Check for Magic DRC errors clear.
+Check for KLayout DRC errors clear.
+Precheck successfully completed."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            docker_exit_code=0,
+            processing_logs=success_logs,
+            docker_server_id="test-local",
+            docker_container_id="test-container-id",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_analyzing"
+        )
+
+        # Mock container where GDS extraction fails
+        mock_container = MagicMock()
+        mock_container.status = "exited"
+        not_found_msg = "no archive"
+
+        def mock_get_archive(path: str) -> tuple:
+            if "/output/design.gds" in path:
+                msg = "Simulated GDS extraction failure"
+                raise RuntimeError(msg)
+            # Return not found for other paths
+            raise docker.errors.NotFound(not_found_msg)
+
+        mock_container.get_archive.side_effect = mock_get_archive
+        mock_client = MagicMock()
+        mock_client.containers.get.return_value = mock_container
+
+        with patch(
+            "wafer_space.projects.tasks_checks.get_docker_client",
+            return_value=mock_client,
+        ):
+            result = do_analyzing(check.id)
+
+        # Should still complete analysis despite extraction failure
+        assert result["status"] == "success"
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
+        assert check.is_manufacturable is True
+
+    @pytest.mark.django_db
+    def test_continues_analysis_on_drc_errors_with_extraction_failures(self) -> None:
+        """Analysis completes for DRC errors even if file extraction fails.
+
+        When a design has DRC errors (design failure), we should still:
+        1. Try to extract all outputs (even if they fail)
+        2. Parse logs and transition to FINISHED with is_manufacturable=False
+        3. Store the DRC errors for the user to see
+        """
+        drc_error_logs = """Error: 5 Magic DRC errors found.
+Error: 3 KLayout DRC errors found.
+Check for Magic DRC errors NOT clear.
+Check for KLayout DRC errors NOT clear.
+"""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            docker_exit_code=1,
+            processing_logs=drc_error_logs,
+            docker_server_id="test-local",
+            docker_container_id="test-container-id",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_analyzing"
+        )
+
+        # Mock container where all extractions fail
+        mock_container = MagicMock()
+        mock_container.status = "exited"
+        mock_container.get_archive.side_effect = RuntimeError("Simulated failure")
+        mock_client = MagicMock()
+        mock_client.containers.get.return_value = mock_container
+
+        with patch(
+            "wafer_space.projects.tasks_checks.get_docker_client",
+            return_value=mock_client,
+        ):
+            result = do_analyzing(check.id)
+
+        # Should complete analysis and report design errors
+        assert result["status"] == "success"
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
+        assert check.is_manufacturable is False
+        # Should have extracted DRC errors from logs
+        assert len(check.errors) > 0
+
 
 class TestChecksCleanupStalePendingTasks:
     """Tests for checks_cleanup_stale_pending_tasks task."""
