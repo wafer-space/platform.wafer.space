@@ -55,6 +55,21 @@ class TestProjectShuttleProperties(TestCase):
         project = Project.objects.create(user=self.user, name="Test Project")
         assert project.full_id == ""
 
+    def test_get_absolute_url_uses_full_id_when_on_a_shuttle(self):
+        """The canonical URL is the manufacturing-ID one once assigned."""
+        project = Project.objects.create(
+            user=self.user, name="Test Project", shuttle=self.shuttle, project_id="ABCD"
+        )
+        assert project.get_absolute_url() == "/projects/G891ABCD/"
+
+    def test_get_absolute_url_falls_back_to_pk_without_full_id(self):
+        """Projects with no shuttle have no full_id, so the pk URL stands in."""
+        project = Project.objects.create(
+            user=self.user, name="Test Project", project_id="ABCD"
+        )
+        assert project.full_id == ""
+        assert project.get_absolute_url() == f"/projects/{project.pk}/"
+
     def test_shuttle_run_display_with_shuttle(self):
         """Test shuttle_run_display property returns formatted string."""
         project = Project.objects.create(

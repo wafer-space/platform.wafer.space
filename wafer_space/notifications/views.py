@@ -74,10 +74,8 @@ def mark_notification_read(request, notification_id):
         with contextlib.suppress(Exception):
             # For ProjectFile, redirect to the project detail page
             if hasattr(notification.content_object, "project"):
-                return redirect(
-                    "projects:detail",
-                    pk=notification.content_object.project.pk,
-                )
+                project = notification.content_object.project
+                return redirect(project.get_absolute_url())
 
     # Default: redirect back to notifications list
     return redirect("notifications:list")

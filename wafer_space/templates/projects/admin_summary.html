@@ -446,7 +446,7 @@
                 {% endif %}
               </td>
               <td>
-                <a href="{% url 'projects:detail' pk=project.pk %}">{{ project.name }}</a>
+                <a href="{{ project.get_absolute_url }}">{{ project.name }}</a>
               </td>
               <td class="text-nowrap">{{ project.user.username }}</td>
               <td class="text-nowrap">{{ project.user.email }}</td>

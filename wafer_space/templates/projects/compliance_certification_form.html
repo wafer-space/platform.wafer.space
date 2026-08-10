@@ -13,7 +13,7 @@
           <a href="{% url 'projects:list' %}">Projects</a>
         </li>
         <li class="breadcrumb-item">
-          <a href="{% url 'projects:detail' project.pk %}">{{ project.name }}</a>
+          <a href="{{ project.get_absolute_url }}">{{ project.name }}</a>
         </li>
         <li class="breadcrumb-item active" aria-current="page">Compliance Certification</li>
       </ol>
@@ -81,8 +81,7 @@
                 <div class="form-text">{{ form.fields.end_use_statement.help_text }}</div>
               </div>
               <div class="d-grid gap-2 d-md-flex justify-content-md-end">
-                <a href="{% url 'projects:detail' project.pk %}"
-                   class="btn btn-secondary">Cancel</a>
+                <a href="{{ project.get_absolute_url }}" class="btn btn-secondary">Cancel</a>
                 <button type="submit" class="btn btn-primary">
                   <i class="bi bi-check-circle"></i>
                   Certify and Continue

@@ -286,7 +286,8 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
         # Login as staff user
         self.perform_login(driver, "admin", TEST_PASSWORD, wait)
 
-        # Navigate to owner's project
+        # Navigate to owner's project; the pk URL redirects to the canonical
+        # full_id URL, which serves the page and creates the single audit log
         driver.get(f"{self.live_server_url}/projects/{project.pk}/")
 
         # Verify audit log created
@@ -298,7 +299,7 @@ class TestAdminProjectAccess(AuthenticatedBrowserTest):
 
         log = logs.first()
         assert log.action == ProjectAccessLog.Action.VIEW
-        assert log.view_name == "ProjectDetailView"
+        assert log.view_name == "ProjectDetailByFullIdView"
 
     def test_regular_user_denied_access_not_logged(self, driver, owner, project, wait):
         """Test that regular user denied access is NOT logged.
