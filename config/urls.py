@@ -6,8 +6,12 @@ from django.urls import path
 from django.views import defaults as default_views
 from django.views.generic import TemplateView
 
+from wafer_space.core.views import health
+
 urlpatterns = [
     path("", TemplateView.as_view(template_name="pages/home.html"), name="home"),
+    # Liveness probe for nginx and deployment tooling (issue #336)
+    path("health/", health, name="health"),
     path(
         "about/",
         TemplateView.as_view(template_name="pages/about.html"),
