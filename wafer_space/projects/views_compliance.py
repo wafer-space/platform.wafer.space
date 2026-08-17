@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from ipaddress import ip_address
 from typing import TYPE_CHECKING
 
 from django.contrib import messages
@@ -11,6 +10,8 @@ from django.shortcuts import get_object_or_404
 from django.shortcuts import redirect
 from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
+
+from wafer_space.core.utils import get_client_ip
 
 from .forms import ComplianceCertificationForm
 from .models import Project
@@ -21,35 +22,6 @@ if TYPE_CHECKING:
 
     from django.http import HttpRequest
     from django.http import HttpResponse
-
-
-def get_client_ip(request: HttpRequest) -> str | None:
-    """Extract and validate client IP address from request.
-
-    Args:
-        request: Django request object
-
-    Returns:
-        str: Validated IP address or None if invalid
-    """
-    x_forwarded_for = request.headers.get("x-forwarded-for")
-    potential_ip: str | None
-    if x_forwarded_for:
-        # Get first IP from comma-separated list
-        potential_ip = x_forwarded_for.split(",")[0].strip()
-    else:
-        potential_ip = request.META.get("REMOTE_ADDR")
-
-    # Validate IP address format
-    if potential_ip is None:
-        return request.META.get("REMOTE_ADDR")
-    try:
-        ip_address(potential_ip)  # Validates IPv4/IPv6
-    except (ValueError, AttributeError):
-        # Fall back to REMOTE_ADDR if validation fails
-        return request.META.get("REMOTE_ADDR")
-    else:
-        return potential_ip
 
 
 @login_required
