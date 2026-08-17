@@ -304,6 +304,13 @@ DJANGO_ADMIN_FORCE_ALLAUTH = env.bool("DJANGO_ADMIN_FORCE_ALLAUTH", default=Fals
 
 # LOGGING
 # ------------------------------------------------------------------------------
+# https://docs.djangoproject.com/en/dev/ref/settings/#default-exception-reporter-filter
+# Django only redacts settings by *name*; this subclass also scrubs
+# ``scheme://user:password@`` credentials from string values so that
+# CELERY_BROKER_URL (which embeds the DB password) is safe in admin emails.
+DEFAULT_EXCEPTION_REPORTER_FILTER = (
+    "wafer_space.core.debug.CredentialScrubbingReporterFilter"
+)
 # https://docs.djangoproject.com/en/dev/ref/settings/#logging
 # See https://docs.djangoproject.com/en/dev/topics/logging for
 # more details on how to customize your logging configuration.
