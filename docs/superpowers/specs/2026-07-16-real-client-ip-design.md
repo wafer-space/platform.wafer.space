@@ -1,8 +1,10 @@
 # Real client IP from trusted proxy header — Design
 
 **Date:** 2026-07-16
-**Branch:** `issue/274-real-client-ip` (base `main`)
-**Status:** Approved by user (design discussion in session)
+**Branch:** `fix/274-real-client-ip` (base `main`; supersedes the
+spec-only `issue/274-real-client-ip`)
+**Status:** Approved by user (design discussion in session); implemented
+2026-08-17, assumptions below verified
 **Issue:** [#274](https://github.com/wafer-space/platform.wafer.space/issues/274)
 **Depends on:** [hetzner-ansible#132](https://github.com/mithro/hetzner-ansible/pull/132),
 [hetzner-ansible#133](https://github.com/mithro/hetzner-ansible/pull/133)
@@ -258,6 +260,17 @@ Baseline before changes: 79 passed.
   an internal address, and dropping it would lose audit data.
 
 ## Assumptions to verify before trusting in prod
+
+All four verified on 2026-08-17 during implementation: (1) the platform nginx
+template sets `proxy_set_header X-Real-IP $remote_addr` at *server* level
+(hetzner-ansible#144), so it is overwritten on every proxied location;
+(2) hetzner-ansible#132 (2026-06-25) and #133 (2026-08-02) are merged and
+the nginx role was re-rendered live on stage and prod on 2026-08-17;
+(3) `django-ipware==7.0.1` is the latest release, imports as
+`from ipware import get_client_ip`, and `request_header_order=("HTTP_X_REAL_IP",)`
+consults only that header (probed against the installed package: XFF-only ->
+`None`, malformed -> `None`, private/IPv6 returned); (4) baseline in the new
+worktree was 84 passed across the affected test files (not 79).
 
 1. **nginx overwrites `X-Real-IP`** (`proxy_set_header X-Real-IP
    $remote_addr`) rather than passing a client-supplied value through. The
