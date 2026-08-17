@@ -22,84 +22,45 @@ from .constants import TEST_PASSWORD
 
 @pytest.mark.django_db
 class TestGetClientIP(TestCase):
-    """Test get_client_ip helper function."""
+    """The view records the client IP via the shared core helper.
+
+    Resolution from the trusted X-Real-IP header happens in
+    RealClientIPMiddleware; the helper reads REMOTE_ADDR and never consults
+    the client-controlled X-Forwarded-For (issue #274).
+    """
 
     def setUp(self):
         """Set up test fixtures."""
         self.factory = RequestFactory()
 
-    def test_extracts_ip_from_remote_addr(self):
-        """Test extracting IP from REMOTE_ADDR when no X-Forwarded-For."""
+    def test_returns_remote_addr(self):
+        """REMOTE_ADDR (as set by the middleware) is returned."""
         request = self.factory.get("/")
         request.META["REMOTE_ADDR"] = "192.168.1.100"
 
-        ip = get_client_ip(request)
-        assert ip == "192.168.1.100"
+        assert get_client_ip(request) == "192.168.1.100"
 
-    def test_extracts_ip_from_x_forwarded_for(self):
-        """Test extracting IP from X-Forwarded-For header."""
+    def test_returns_ipv6_remote_addr(self):
+        """IPv6 addresses pass through unchanged."""
+        request = self.factory.get("/")
+        request.META["REMOTE_ADDR"] = "2001:0db8:85a3:0000:0000:8a2e:0370:7334"
+
+        assert get_client_ip(request) == "2001:0db8:85a3:0000:0000:8a2e:0370:7334"
+
+    def test_ignores_x_forwarded_for(self):
+        """A client-supplied X-Forwarded-For must never override REMOTE_ADDR."""
         request = self.factory.get("/")
         request.META["HTTP_X_FORWARDED_FOR"] = "203.0.113.195, 192.168.1.1"
         request.META["REMOTE_ADDR"] = "192.168.1.1"
 
-        ip = get_client_ip(request)
-        assert ip == "203.0.113.195"
+        assert get_client_ip(request) == "192.168.1.1"
 
-    def test_strips_whitespace_from_x_forwarded_for(self):
-        """Test that whitespace is stripped from X-Forwarded-For IP."""
+    def test_returns_none_for_empty_remote_addr(self):
+        """gunicorn on a unix socket leaves REMOTE_ADDR == "" -> None, not ""."""
         request = self.factory.get("/")
-        request.META["HTTP_X_FORWARDED_FOR"] = "  203.0.113.195  , 192.168.1.1"
-        request.META["REMOTE_ADDR"] = "192.168.1.1"
+        request.META["REMOTE_ADDR"] = ""
 
-        ip = get_client_ip(request)
-        assert ip == "203.0.113.195"
-
-    def test_validates_ipv4_address(self):
-        """Test that IPv4 addresses are validated."""
-        request = self.factory.get("/")
-        request.META["REMOTE_ADDR"] = "192.168.1.100"
-
-        ip = get_client_ip(request)
-        assert ip == "192.168.1.100"
-
-    def test_validates_ipv6_address(self):
-        """Test that IPv6 addresses are validated."""
-        request = self.factory.get("/")
-        request.META["REMOTE_ADDR"] = "2001:0db8:85a3:0000:0000:8a2e:0370:7334"
-
-        ip = get_client_ip(request)
-        assert ip == "2001:0db8:85a3:0000:0000:8a2e:0370:7334"
-
-    def test_falls_back_to_remote_addr_on_invalid_x_forwarded_for(self):
-        """Test fallback to REMOTE_ADDR when X-Forwarded-For is invalid."""
-        request = self.factory.get("/")
-        request.META["HTTP_X_FORWARDED_FOR"] = "invalid-ip-address"
-        request.META["REMOTE_ADDR"] = "192.168.1.1"
-
-        ip = get_client_ip(request)
-        # Falls back to REMOTE_ADDR which is validated and returned
-        assert ip == "192.168.1.1"
-
-    def test_returns_fallback_ip_when_x_forwarded_for_invalid(self):
-        """Test returns fallback REMOTE_ADDR when X-Forwarded-For is invalid."""
-        request = self.factory.get("/")
-        # Invalid X-Forwarded-For should trigger fallback
-        request.META["HTTP_X_FORWARDED_FOR"] = "not-an-ip"
-        request.META["REMOTE_ADDR"] = "10.0.0.1"
-
-        ip = get_client_ip(request)
-        # Should fall back to REMOTE_ADDR
-        assert ip == "10.0.0.1"
-
-    def test_handles_empty_x_forwarded_for(self):
-        """Test handling when X-Forwarded-For is empty."""
-        request = self.factory.get("/")
-        request.META["HTTP_X_FORWARDED_FOR"] = ""
-        request.META["REMOTE_ADDR"] = "192.168.1.1"
-
-        # Should fall back to REMOTE_ADDR
-        ip = get_client_ip(request)
-        assert ip == "192.168.1.1"
+        assert get_client_ip(request) is None
 
 
 @pytest.mark.django_db

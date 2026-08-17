@@ -5,6 +5,7 @@ from http import HTTPStatus
 import pytest
 from django.contrib.auth import get_user_model
 from django.test import Client
+from django.test import override_settings
 from django.urls import reverse
 
 from wafer_space.legal.models import TermsOfServiceAcceptance
@@ -259,16 +260,20 @@ class TestIPAndUserAgentRecording:
 
         client.login(username="proxytest", password=test_password)
 
-        # Accept with X-Forwarded-For header (proxy scenario)
-        client.post(
-            reverse("legal:tos_accept"),
-            {"agree": "on"},
-            HTTP_X_FORWARDED_FOR="203.0.113.195, 70.41.3.18, 150.172.238.178",
-        )
+        # Accept behind the nginx proxy: it forwards the resolved visitor in
+        # X-Real-IP; X-Forwarded-For is client-controlled and must be ignored.
+        with override_settings(TRUST_X_REAL_IP=True):
+            client.post(
+                reverse("legal:tos_accept"),
+                {"agree": "on"},
+                REMOTE_ADDR="",
+                HTTP_X_REAL_IP="198.51.100.23",
+                HTTP_X_FORWARDED_FOR="203.0.113.195, 70.41.3.18, 150.172.238.178",
+            )
 
-        # Should record the first (original client) IP
+        # Should record the proxy-resolved visitor, not the spoofable header
         acceptance = TermsOfServiceAcceptance.objects.get(user=user)
-        assert acceptance.ip_address == "203.0.113.195"
+        assert acceptance.ip_address == "198.51.100.23"
 
     def test_user_agent_recorded(self, client):
         """Test that user agent string is recorded."""
