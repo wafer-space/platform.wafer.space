@@ -191,6 +191,8 @@ AUTH_PASSWORD_VALIDATORS = [
 # ------------------------------------------------------------------------------
 # https://docs.djangoproject.com/en/dev/ref/settings/#middleware
 MIDDLEWARE = [
+    # First, so every later middleware/view sees the real visitor IP
+    "wafer_space.core.middleware.RealClientIPMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -277,6 +279,10 @@ SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = True
 # https://docs.djangoproject.com/en/dev/ref/settings/#x-frame-options
 X_FRAME_OPTIONS = "DENY"
+# Rewrite REMOTE_ADDR from the X-Real-IP header set by nginx
+# (wafer_space.core.middleware.RealClientIPMiddleware, issue #274). Off by
+# default; only stage/prod -- where nginx is the sole ingress -- turn it on.
+TRUST_X_REAL_IP = False
 
 # EMAIL
 # ------------------------------------------------------------------------------
