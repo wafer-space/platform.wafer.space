@@ -9,6 +9,7 @@ from typing import cast
 from django.contrib.auth.mixins import UserPassesTestMixin
 from django.views.generic.edit import DeleteView
 
+from wafer_space.core.utils import get_client_ip
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectAccessLog
 
@@ -156,12 +157,7 @@ class ProjectOwnerOrStaffMixin(UserPassesTestMixin):
         method = request.method or "GET"
         action = action_map.get(method, ProjectAccessLog.Action.VIEW)
 
-        # Get client IP address
-        x_forwarded_for = request.headers.get("x-forwarded-for")
-        if x_forwarded_for:
-            ip_address: str | None = x_forwarded_for.split(",")[0].strip()
-        else:
-            ip_address = request.META.get("REMOTE_ADDR")
+        ip_address = get_client_ip(request)
 
         # Create log entry
         ProjectAccessLog.objects.create(
@@ -183,12 +179,7 @@ class ProjectOwnerOrStaffMixin(UserPassesTestMixin):
             user: User who was denied access
             request: HTTP request object
         """
-        # Get client IP address
-        x_forwarded_for = request.headers.get("x-forwarded-for")
-        if x_forwarded_for:
-            ip_address: str | None = x_forwarded_for.split(",")[0].strip()
-        else:
-            ip_address = request.META.get("REMOTE_ADDR")
+        ip_address = get_client_ip(request)
 
         # Create log entry with ACCESS_DENIED action
         ProjectAccessLog.objects.create(
