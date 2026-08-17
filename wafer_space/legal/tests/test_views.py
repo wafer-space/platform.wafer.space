@@ -5,6 +5,7 @@ from http import HTTPStatus
 import pytest
 from django.contrib.messages import get_messages
 from django.test import Client
+from django.test import override_settings
 from django.urls import reverse
 
 from wafer_space.legal.models import TermsOfServiceAcceptance
@@ -196,8 +197,8 @@ class TestTOSAcceptView:
         acceptance = TermsOfServiceAcceptance.objects.get(user=user)
         assert "Mozilla/5.0" in acceptance.user_agent
 
-    def test_accept_view_handles_x_forwarded_for(self, client):
-        """Test that X-Forwarded-For header is handled correctly."""
+    def test_accept_view_ignores_x_forwarded_for(self, client):
+        """A client-supplied X-Forwarded-For is spoofable and must be ignored."""
         user = UserFactory()
         TermsOfServiceFactory(is_active=True)
 
@@ -205,12 +206,29 @@ class TestTOSAcceptView:
         client.post(
             reverse("legal:tos_accept"),
             {"agree": "on"},
+            REMOTE_ADDR="192.168.1.1",
             HTTP_X_FORWARDED_FOR="10.0.0.1, 192.168.1.1",
         )
 
         acceptance = TermsOfServiceAcceptance.objects.get(user=user)
-        # Should use the first IP in the chain
-        assert acceptance.ip_address == "10.0.0.1"
+        assert acceptance.ip_address == "192.168.1.1"
+
+    @override_settings(TRUST_X_REAL_IP=True)
+    def test_accept_view_records_x_real_ip_when_trusted(self, client):
+        """Behind nginx (TRUST_X_REAL_IP) the X-Real-IP visitor is recorded."""
+        user = UserFactory()
+        TermsOfServiceFactory(is_active=True)
+
+        client.force_login(user)
+        client.post(
+            reverse("legal:tos_accept"),
+            {"agree": "on"},
+            REMOTE_ADDR="",
+            HTTP_X_REAL_IP="198.51.100.23",
+        )
+
+        acceptance = TermsOfServiceAcceptance.objects.get(user=user)
+        assert acceptance.ip_address == "198.51.100.23"
 
     def test_accept_view_default_redirect(self, client):
         """Test default redirect when no redirect URL in session."""

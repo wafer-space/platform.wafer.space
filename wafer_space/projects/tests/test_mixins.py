@@ -137,6 +137,27 @@ class ProjectOwnerOrStaffMixinTestCase(TestCase):
         assert log.user_agent == "Mozilla/5.0"
         assert log.view_name == "DummyProjectView"
 
+    def test_audit_log_ignores_x_forwarded_for(self):
+        """The audit log records REMOTE_ADDR, never the spoofable X-Forwarded-For."""
+        request = self.factory.get(f"/projects/{self.project.pk}/")
+        request.user = self.staff_user
+        request.META = {
+            "REMOTE_ADDR": "127.0.0.1",
+            "HTTP_X_FORWARDED_FOR": "203.0.113.99, 10.0.0.1",
+            "HTTP_USER_AGENT": "Mozilla/5.0",
+        }
+
+        view = DummyProjectView()
+        view.request = request
+        view.kwargs = {"pk": self.project.pk}
+        view.dispatch(request, pk=self.project.pk)
+
+        log = ProjectAccessLog.objects.get(
+            project=self.project,
+            admin_user=self.staff_user,
+        )
+        assert log.ip_address == "127.0.0.1"
+
     def test_owner_access_no_audit_log(self):
         """Test that owner access does NOT create audit log."""
         request = self.factory.get(f"/projects/{self.project.pk}/")
