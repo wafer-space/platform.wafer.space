@@ -33,6 +33,9 @@ CACHES = {
 # SECURITY
 # ------------------------------------------------------------------------------
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+# nginx is the sole ingress and sets X-Real-IP from its own (Cloudflare-scoped
+# real_ip) resolution; gunicorn is reachable only via a local unix socket.
+TRUST_X_REAL_IP = True
 SECURE_SSL_REDIRECT = True
 SESSION_COOKIE_SECURE = True
 SESSION_COOKIE_NAME = "__Secure-sessionid"
