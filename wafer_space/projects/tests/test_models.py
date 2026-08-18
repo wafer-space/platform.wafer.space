@@ -24,6 +24,7 @@ from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.projects.tests.factories import ProjectFileFactory
 from wafer_space.projects.tests.read_instrumentation import ReadSizeRecorder
 from wafer_space.shuttles.models import Shuttle
+from wafer_space.shuttles.tests.factories import ShuttleFactory
 from wafer_space.users.models import User
 from wafer_space.users.tests.factories import UserFactory
 
@@ -3273,6 +3274,47 @@ class TestCreateCheckDrcUpdate:
     def setup_method(self):
         """Clear cache before each test."""
         cache.clear()
+
+    @pytest.mark.parametrize(
+        "shuttle_status",
+        [
+            Shuttle.Status.IN_PRODUCTION,
+            Shuttle.Status.COMPLETED,
+            Shuttle.Status.CANCELLED,
+        ],
+    )
+    def test_not_blocked_by_terminal_shuttle_status(self, shuttle_status):
+        """Manual re-check works in ANY shuttle state (issue #270).
+
+        The shuttle scope filter must live only in the automatic task; the
+        shared create_check_drc_update() method must never gate on shuttle
+        status, or the manual "Recheck with Latest" button would break for
+        these designs.
+        """
+        # Explicit name avoids colliding with the migration-seeded "G801".
+        shuttle = ShuttleFactory(status=shuttle_status, name="G870")
+        project = ProjectFactory(shuttle=shuttle)
+        project_file = ProjectFileFactory(project=project, is_active=True)
+        old_check = ManufacturabilityCheckFactory(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            docker_image_digest="sha256:old123456789012345678901234567890123456789012345678901234567",
+            container_started_at=timezone.now() - timedelta(hours=2),
+        )
+        # Newer digest elsewhere makes old_check outdated (eligible to requeue).
+        ManufacturabilityCheckFactory(
+            docker_image_digest="sha256:new456789012345678901234567890123456789012345678901234567890",
+            container_started_at=timezone.now(),
+        )
+        cache.clear()
+
+        new_check = old_check.create_check_drc_update()
+
+        assert (
+            new_check.trigger_reason == ManufacturabilityCheck.TriggerReason.DRC_UPDATE
+        )
+        assert new_check.parent_check == old_check
 
     def test_create_check_drc_update_success(self):
         """create_check_drc_update creates new check with correct attributes."""
