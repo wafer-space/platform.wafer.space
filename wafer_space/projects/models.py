@@ -2370,8 +2370,9 @@ class ManufacturabilityCheck(models.Model):
     def create_check_drc_update(self) -> "ManufacturabilityCheck":
         """Create a new pending check to re-run with latest precheck version.
 
-        If this check is still in progress, it will be automatically cancelled
-        by the existing superseded check cleanup logic.
+        If this check is still in progress, the newly created check supersedes
+        it; the older in-progress check is then cancelled by the scheduled
+        ``checks_cleanup_superseded`` task.
 
         Returns:
             The newly created ManufacturabilityCheck.
