@@ -17,6 +17,7 @@ costs a fixed number of queries however many projects it shows.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import replace
 from typing import TYPE_CHECKING
 from typing import TypedDict
 
@@ -25,6 +26,7 @@ from django.db.models import OuterRef
 from django.db.models import Subquery
 from django.db.models.functions import Coalesce
 
+from .models import DownloadAttempt
 from .models import ManufacturabilityCheck
 from .models import ProjectFile
 
@@ -46,6 +48,7 @@ class ListStateAnnotations(TypedDict):
     state_latest_verdict: bool | None
     state_latest_check_status: str | None
     state_submitted_verdict: bool | None
+    state_latest_download_status: str | None
 
 
 @dataclass(frozen=True)
@@ -57,6 +60,8 @@ class ListState:
     css: str
     title: str
     basis: str
+    # Set on a submitted project whose latest revision is a newer one.
+    newer_revision: ListState | None = None
 
 
 def annotate_list_state(projects: QuerySet[Project]) -> QuerySet[Project]:
@@ -83,6 +88,14 @@ def annotate_list_state(projects: QuerySet[Project]) -> QuerySet[Project]:
         state_latest_check_status=Subquery(latest_file_checks.values("status")[:1]),
         state_submitted_verdict=Subquery(
             submitted_checks.values("is_manufacturable")[:1]
+        ),
+        # Same ordering as ProjectFile.latest_attempt (-attempt_number).
+        state_latest_download_status=Subquery(
+            DownloadAttempt.objects.filter(
+                project_file=OuterRef("state_latest_file_id")
+            )
+            .order_by("-attempt_number")
+            .values("status")[:1]
         ),
     )
 
@@ -125,17 +138,22 @@ _BY_VERDICT = {
     False: _latest("not-manufacturable", "Not manufacturable", "bg-danger"),
 }
 CHECKING = _latest("checking", "Checking", "bg-info")
+DOWNLOAD_FAILED = _latest("download-failed", "Download failed", "bg-danger")
+DOWNLOADING = _latest("downloading", "Downloading", "bg-info")
+DOWNLOAD_PENDING = _latest("download-pending", "Download pending", "bg-secondary")
 CHECK_ERROR = _latest("check-error", "Check error", "bg-warning")
 NOT_CHECKED = _latest("not-checked", "Not checked", "bg-secondary")
 
 
 def list_state(project: WithAnnotations[Project, ListStateAnnotations]) -> ListState:
     """The list state of a project annotated by ``annotate_list_state``."""
-    if project.submitted_file_id is not None:
-        if project.state_submitted_verdict is False:
-            return SUBMITTED_FAILING
-        return SUBMITTED
-    return _latest_revision_state(project)
+    if project.submitted_file_id is None:
+        return _latest_revision_state(project)
+    state = SUBMITTED_FAILING if project.state_submitted_verdict is False else SUBMITTED
+    if project.state_latest_file_id != project.submitted_file_id:
+        # Routine: a newer revision was uploaded after submission.
+        state = replace(state, newer_revision=_latest_revision_state(project))
+    return state
 
 
 def _latest_revision_state(
@@ -149,8 +167,21 @@ def _latest_revision_state(
         return _BY_VERDICT[verdict]
     # No finished check yet: describe the latest check instead.
     status = project.state_latest_check_status
+    if status is None:
+        return _download_state(project.state_latest_download_status)
     if status in ManufacturabilityCheck.Status.in_progress():
         return CHECKING
     if status == ManufacturabilityCheck.Status.ERROR:
         return CHECK_ERROR
     return NOT_CHECKED
+
+
+def _download_state(download_status: str | None) -> ListState:
+    """State of a latest revision that has no check yet: its download."""
+    if download_status == DownloadAttempt.Status.FAILED:
+        return DOWNLOAD_FAILED
+    if download_status == DownloadAttempt.Status.DOWNLOADING:
+        return DOWNLOADING
+    if download_status == DownloadAttempt.Status.COMPLETED:
+        return NOT_CHECKED
+    return DOWNLOAD_PENDING

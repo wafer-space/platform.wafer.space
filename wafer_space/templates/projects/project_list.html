@@ -43,11 +43,17 @@
                     <span class="badge text-wrap {{ state.css }}"
                           data-project-state="{{ state.key }}"
                           title="{{ state.title }}">
-                      {% if state.key == "submitted" %}<i class="bi bi-send-check"></i>{% endif %}
+                      {% if state.key == "submitted" %}<i class="bi bi-send-check" aria-hidden="true"></i>{% endif %}
                       {{ state.label }}
                     </span>
                     {% if state.basis %}
                       <small class="d-block text-muted" data-state-basis="{{ state.basis }}">{{ state.basis }}</small>
+                    {% endif %}
+                    {% if state.newer_revision %}
+                      <small class="d-block" data-state-latest="{{ state.newer_revision.key }}">
+                        <span class="badge {{ state.newer_revision.css }}">{{ state.newer_revision.label }}</span>
+                        <span class="text-muted">{{ state.newer_revision.basis }}</span>
+                      </small>
                     {% endif %}
                   </div>
                   <div class="flex-grow-1">

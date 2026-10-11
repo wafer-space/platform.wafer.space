@@ -1,7 +1,18 @@
 # Project List: Shuttle and State Columns
 
 **Date:** 2026-07-16
-**Status:** Approved
+**Status:** Approved (16 Jul); state column redesigned 11 Oct, see the amendment
+
+> **Amended 2026-10-11 (supersedes the state column below).** The state column
+> no longer shows the raw `Project.status`. That field is overwritten by every
+> check completion (`docs/manufacturable_vs_submitted.md`; issue #354), and
+> Tim's answer to oldprs-01 was: "Keep both the shuttle column and the submitted
+> state column but calculate the state properly." The state is now derived in
+> `wafer_space/projects/list_state.py` from `Project.submitted_file` and the
+> latest revision's checks and download. Each badge names the revision it
+> describes. The `_status_badge.html` partial remains, used by the project
+> detail page only, which is outside this change (#354 covers it). The sections
+> below that describe the raw-status badge are kept as the July record.
 
 ## Goal
 

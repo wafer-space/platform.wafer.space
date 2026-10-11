@@ -2,6 +2,17 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Amended 2026-10-11 (supersedes the state column below).** The state column
+> no longer shows the raw `Project.status`. That field is overwritten by every
+> check completion (`docs/manufacturable_vs_submitted.md`; issue #354), and
+> Tim's answer to oldprs-01 was: "Keep both the shuttle column and the submitted
+> state column but calculate the state properly." The state is now derived in
+> `wafer_space/projects/list_state.py` from `Project.submitted_file` and the
+> latest revision's checks and download. Each badge names the revision it
+> describes. The `_status_badge.html` partial remains, used by the project
+> detail page only, which is outside this change (#354 covers it). The sections
+> below that describe the raw-status badge are kept as the July record.
+
 **Goal:** Add two fixed-width columns to the left of each row on `/projects/` — the assigned shuttle number (e.g. G801) and a colour-coded project status badge.
 
 **Architecture:** The page stays a Bootstrap list-group; each `list-group-item` becomes a flex row with two `flex-shrink-0` cells (shuttle, status) before the existing content. The status badge lives in a new shared partial `_status_badge.html` used by both the list and detail pages. `ProjectListView` gains `select_related` to avoid N+1 queries.
