@@ -452,7 +452,7 @@
                 {% endif %}
               </td>
               <td>
-                <a href="{% url 'projects:detail' pk=project.pk %}">{{ project.name }}</a>
+                <a href="{{ project.get_absolute_url }}">{{ project.name }}</a>
                 {% if project.is_archived %}
                   <span class="badge bg-secondary"
                         data-archived-badge

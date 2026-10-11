@@ -38,7 +38,7 @@
             <ul class="mb-0 mt-1">
               {% for warned, level in deadline_warned_projects %}
                 <li data-warned-project="{{ warned.pk }}">
-                  <a href="{% url 'projects:detail' pk=warned.pk %}">{{ warned.name }}</a>
+                  <a href="{{ warned.get_absolute_url }}">{{ warned.name }}</a>
                   ({{ warned.shuttle.name }})
                   {% shuttle_deadline warned.shuttle.submission_deadline compact=True %}
                   {% if level == "urgent" %}<span class="badge bg-danger">Urgent</span>{% endif %}
@@ -86,7 +86,7 @@
                   <div class="flex-grow-1">
                     <div class="d-flex w-100 justify-content-between">
                       <h5 class="mb-1">
-                        <a href="{% url 'projects:detail' pk=project.pk %}"
+                        <a href="{{ project.get_absolute_url }}"
                            class="stretched-link text-decoration-none text-reset">{{ project.name }}</a>
                         {% if project.user == request.user %}
                           <span class="badge bg-success ms-2">Your Project</span>
