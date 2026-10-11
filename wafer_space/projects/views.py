@@ -44,6 +44,7 @@ from .exceptions import InvalidStateTransitionError
 from .forms import ProjectFileURLSubmitForm
 from .forms import ProjectForm
 from .forms import SubmitOverrideForm
+from .list_state import annotate_list_state
 from .mixins import ProjectOwnerOrStaffMixin
 from .mixins import RefuseArchivedProjectMixin
 from .mixins import RefuseClosedShuttleMixin
@@ -90,10 +91,13 @@ class ProjectListView(LoginRequiredMixin, ListView):
 
         if user.is_staff:
             # Staff users see all projects
-            projects = Project.objects.all().select_related("user")
+            projects = Project.objects.all()
         else:
             # Regular users see only their own projects
             projects = Project.objects.filter(user=user)
+        # Shuttle and state columns (PR #321): state derived per
+        # docs/manufacturable_vs_submitted.md, never from Project.status.
+        projects = annotate_list_state(projects.select_related("user", "shuttle"))
 
         # Archived projects come last, each group newest first (issue #307).
         is_archived = ExpressionWrapper(

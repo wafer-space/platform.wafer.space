@@ -7,13 +7,17 @@ from unittest.mock import patch
 import pytest
 from django.contrib.messages import get_messages
 from django.core.cache import cache
+from django.db import connection
 from django.template.loader import render_to_string
 from django.test import Client
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
 from wafer_space.core.enums import SlotSize
+from wafer_space.projects.list_state import ListStateAnnotations
+from wafer_space.projects.list_state import annotate_list_state
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import PrecheckImageRevision
@@ -23,6 +27,7 @@ from wafer_space.projects.security import SecurityValidationError
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.projects.tests.factories import ProjectFileFactory
+from wafer_space.projects.tests.factories import make_downloaded_file
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.models import ShuttleSlot
 from wafer_space.shuttles.tests.factories import ShuttleFactory
@@ -2202,6 +2207,271 @@ class TestProjectDetailSlotVisibility:
         # Should NOT show slot section
         assert "Assigned Slots" not in content
         assert "Grid Position" not in content
+
+
+@pytest.mark.django_db
+class TestProjectListStateColumn:
+    """The projects list's shuttle and state columns (PR #321, Tim 11 Oct).
+
+    The state is derived from Project.submitted_file and the file revisions'
+    checks (docs/manufacturable_vs_submitted.md), never from Project.status,
+    which later check completions overwrite (issue #354).
+    """
+
+    @staticmethod
+    def _row(client, user, project: Project) -> str:
+        """The rendered list row for ``project``."""
+        client.force_login(user)
+        html = client.get(reverse("projects:list")).content.decode()
+        marker = f'data-project-row="{project.pk}"'
+        assert marker in html
+        return html.split(marker, 1)[1].split("data-project-row=", 1)[0]
+
+    @staticmethod
+    def _revision(project: Project, *checks: tuple[str, bool | None]) -> ProjectFile:
+        """A downloaded, active revision of ``project`` with checks.
+
+        Any previously active revision is deactivated first (one active file
+        per project).
+        """
+        project.files.update(is_active=False)
+        revision = make_downloaded_file(project)
+        start = timezone.now()
+        for offset, (status, verdict) in enumerate(checks):
+            check = ManufacturabilityCheckFactory(
+                project=project,
+                project_file=revision,
+                status=status,
+                is_manufacturable=verdict,
+            )
+            # created_at is auto_now_add: order the checks explicitly.
+            ManufacturabilityCheck.objects.filter(pk=check.pk).update(
+                created_at=start + timedelta(seconds=offset),
+            )
+        return revision
+
+    def test_shows_shuttle_name(self, client) -> None:
+        """The first column names the project's shuttle."""
+        user = UserFactory()
+        project = ProjectFactory(user=user, shuttle=ShuttleFactory(name="G850"))
+
+        assert "G850" in self._row(client, user, project)
+
+    def test_submitted_even_when_status_was_overwritten(self, client) -> None:
+        """A submitted project reads Submitted, whatever Project.status says.
+
+        mark_finished() overwrites SUBMITTED with MANUFACTURABLE whenever a
+        check finishes, so the raw status would say "Manufacturable".
+        """
+        user = UserFactory()
+        project = ProjectFactory(user=user)
+        finished = ManufacturabilityCheck.Status.FINISHED
+        project.submitted_file = self._revision(project, (finished, True))
+        project.status = Project.Status.MANUFACTURABLE
+        project.save()
+
+        row = self._row(client, user, project)
+
+        assert 'data-project-state="submitted"' in row
+
+    def test_submitted_revision_now_failing_is_flagged(self, client) -> None:
+        """A submitted revision whose latest finished check failed is flagged."""
+        user = UserFactory()
+        project = ProjectFactory(user=user)
+        finished = ManufacturabilityCheck.Status.FINISHED
+        project.submitted_file = self._revision(
+            project, (finished, True), (finished, False)
+        )
+        project.save()
+
+        row = self._row(client, user, project)
+
+        assert 'data-project-state="submitted-failing"' in row
+
+    @pytest.mark.parametrize(
+        ("checks", "state"),
+        [
+            ([("finished", True)], "manufacturable"),
+            ([("finished", False)], "not-manufacturable"),
+            ([("finished", True), ("running", None)], "manufacturable"),
+            ([("pending", None)], "checking"),
+            ([("error", None)], "check-error"),
+            ([], "not-checked"),
+        ],
+    )
+    def test_unsubmitted_state_comes_from_latest_revision(
+        self, client, checks: list[tuple[str, bool | None]], state: str
+    ) -> None:
+        """Verdict of the latest finished check; else the latest check's state.
+
+        An in-flight re-check does not reset an existing verdict.
+        """
+        user = UserFactory()
+        project = ProjectFactory(user=user)
+        self._revision(project, *checks)
+
+        row = self._row(client, user, project)
+
+        assert f'data-project-state="{state}"' in row
+
+    def test_state_says_which_revision_it_describes(self, client) -> None:
+        """CLAUDE.md: a precheck status must name the revision it belongs to."""
+        user = UserFactory()
+        project = ProjectFactory(user=user)
+        self._revision(project, (ManufacturabilityCheck.Status.FINISHED, True))
+
+        row = self._row(client, user, project)
+
+        assert 'data-state-basis="latest revision"' in row
+
+    def test_project_without_file(self, client) -> None:
+        """No revision yet reads No file, even if Project.status says otherwise."""
+        user = UserFactory()
+        project = ProjectFactory(user=user, status=Project.Status.CHECKING)
+
+        row = self._row(client, user, project)
+
+        assert ('data-project-state="no-file"' in row, "Checking" in row) == (
+            True,
+            False,
+        )
+
+    @pytest.mark.parametrize(
+        ("attempt_status", "state"),
+        [
+            (DownloadAttempt.Status.FAILED, "download-failed"),
+            (DownloadAttempt.Status.DOWNLOADING, "downloading"),
+            (DownloadAttempt.Status.PENDING, "download-pending"),
+            (None, "download-pending"),
+        ],
+    )
+    def test_revision_without_checks_shows_its_download(
+        self, client, attempt_status: str | None, state: str
+    ) -> None:
+        """A file never checked because it is not downloaded says so."""
+        user = UserFactory()
+        project = ProjectFactory(user=user)
+        revision = ProjectFileFactory(project=project, is_active=True)
+        if attempt_status is not None:
+            DownloadAttempt.objects.create(
+                project_file=revision, attempt_number=1, status=attempt_status
+            )
+
+        row = self._row(client, user, project)
+
+        assert f'data-project-state="{state}"' in row
+
+    @pytest.mark.parametrize(
+        ("checks", "state"),
+        [
+            ([("finished", True), ("error", None)], "manufacturable"),
+            ([("error", None), ("pending", None)], "checking"),
+            ([("cancelled", None)], "not-checked"),
+        ],
+    )
+    def test_later_checks_without_a_verdict(
+        self, client, checks: list[tuple[str, bool | None]], state: str
+    ) -> None:
+        """A verdict survives a later error; a retry after an error is Checking."""
+        user = UserFactory()
+        project = ProjectFactory(user=user)
+        self._revision(project, *checks)
+
+        row = self._row(client, user, project)
+
+        assert f'data-project-state="{state}"' in row
+
+    def test_only_an_older_revision_finished(self, client) -> None:
+        """The latest revision's state is shown, not an older revision's verdict."""
+        user = UserFactory()
+        project = ProjectFactory(user=user)
+        finished = ManufacturabilityCheck.Status.FINISHED
+        self._revision(project, (finished, True))
+        self._revision(project, (ManufacturabilityCheck.Status.RUNNING, None))
+
+        row = self._row(client, user, project)
+
+        assert 'data-project-state="checking"' in row
+
+    def test_submitted_with_newer_failing_revision_shows_both(self, client) -> None:
+        """Submitted stays; a second line describes the newer latest revision."""
+        user = UserFactory()
+        project = ProjectFactory(user=user)
+        finished = ManufacturabilityCheck.Status.FINISHED
+        project.submitted_file = self._revision(project, (finished, True))
+        project.save()
+        self._revision(project, (finished, False))
+
+        row = self._row(client, user, project)
+
+        shown = (
+            'data-project-state="submitted"' in row,
+            'data-state-latest="not-manufacturable"' in row,
+        )
+        assert shown == (True, True)
+
+    def test_submitted_latest_revision_has_no_second_line(self, client) -> None:
+        """No "latest revision" line when the submitted revision is the latest."""
+        user = UserFactory()
+        project = ProjectFactory(user=user)
+        finished = ManufacturabilityCheck.Status.FINISHED
+        project.submitted_file = self._revision(project, (finished, True))
+        project.save()
+
+        row = self._row(client, user, project)
+
+        assert "data-state-latest=" not in row
+
+    def test_archived_project_keeps_its_state(self, client) -> None:
+        """An archived row still shows its derived state."""
+        user = UserFactory()
+        project = ProjectFactory(user=user, archived_at=timezone.now())
+        self._revision(project, (ManufacturabilityCheck.Status.FINISHED, True))
+
+        row = self._row(client, user, project)
+
+        assert 'data-project-state="manufacturable"' in row
+
+    def test_annotation_names_match_the_typed_dict(self) -> None:
+        """ListStateAnnotations names exactly what annotate_list_state adds.
+
+        mypy checks attribute names against the TypedDict only, so this pins
+        the TypedDict to the real queryset annotations.
+        """
+        annotated = annotate_list_state(Project.objects.all())
+
+        assert set(annotated.query.annotations) == set(
+            ListStateAnnotations.__annotations__
+        )
+
+    def test_staff_list_query_count_does_not_grow(self, client) -> None:
+        """Staff see everyone's projects; still no per-row queries."""
+        staff = UserFactory(is_staff=True)
+        finished = ManufacturabilityCheck.Status.FINISHED
+        self._revision(ProjectFactory(), (finished, True))
+        one_project = self._list_query_count(client, staff)
+        for _ in range(24):
+            self._revision(ProjectFactory(), (finished, True))
+
+        assert self._list_query_count(client, staff) == one_project
+
+    def _list_query_count(self, client, user) -> int:
+        """Number of queries one render of the list takes."""
+        client.force_login(user)
+        with CaptureQueriesContext(connection) as queries:
+            client.get(reverse("projects:list"))
+        return len(queries)
+
+    def test_query_count_does_not_grow_with_projects(self, client) -> None:
+        """The state is annotated, not computed per row (no N+1)."""
+        user = UserFactory()
+        finished = ManufacturabilityCheck.Status.FINISHED
+        self._revision(ProjectFactory(user=user), (finished, True))
+        one_project = self._list_query_count(client, user)
+        for _ in range(14):
+            self._revision(ProjectFactory(user=user), (finished, True))
+
+        assert self._list_query_count(client, user) == one_project
 
 
 @pytest.mark.django_db

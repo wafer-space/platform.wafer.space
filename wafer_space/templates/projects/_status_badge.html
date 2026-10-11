@@ -1,0 +1,7 @@
+{% comment %}
+Colour-coded project status badge.
+Usage: {% include "projects/_status_badge.html" with project=project %}
+{% endcomment %}
+<span class="badge text-wrap {% if project.status == 'draft' %}bg-secondary{% elif project.status == 'submitted' %}bg-primary{% elif project.status == 'manufacturable' %}bg-success{% elif project.status == 'not_manufacturable' %}bg-danger{% else %}bg-info{% endif %}">
+  {{ project.get_status_display }}
+</span>
