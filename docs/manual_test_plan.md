@@ -195,7 +195,7 @@ Result: PASS / FAIL (circle one)
 - ✅ Description visible (if provided)
 - ✅ Creation and modification dates visible
 - ✅ "Edit" button visible
-- ✅ "Delete" button visible
+- ✅ "Archive" button visible
 - ✅ "Submit File URL" button visible
 - ✅ "Upload File" button visible
 - ✅ File status section visible
@@ -229,21 +229,22 @@ Result: PASS / FAIL (circle one)
 
 ---
 
-### Test 2.5: Delete Project
-**Feature:** Project deletion
+### Test 2.5: Archive and Unarchive Project
+**Feature:** Project archiving (projects are never deleted; see #307, #344)
 **Priority:** Medium
 
 **Steps:**
-1. Create a new project for deletion testing
-2. From project detail page, click "Delete"
-3. Confirm deletion on confirmation page
+1. Create a new project for archive testing
+2. From project detail page, click "Archive" and confirm the dialog
+3. Open the project list
+4. Open the project again and click "Unarchive"
 
 **Expected Results:**
-- ✅ Confirmation page displayed
-- ✅ Warning about permanent deletion shown
-- ✅ After confirmation, success message displayed
-- ✅ Redirected to project list
-- ✅ Deleted project no longer in list
+- ✅ After archiving, a success message and an "archived, read-only" banner are shown
+- ✅ "Edit" and "Submit New File URL" are disabled while archived
+- ✅ In the project list the project is last, with an "Archived" badge
+- ✅ After unarchiving, the banner is gone and the project returns to its place
+- ✅ `/projects/<uuid>/delete/` returns 404 (there is no delete page)
 
 **Actual Results:** ___________________
 **Status:** PASS / FAIL / SKIP
@@ -827,7 +828,7 @@ zip, rar, 7z, tar, gz, gds, gdsii, cif, pdf, png, jpg, svg
 1. Perform various successful actions:
    - Create project
    - Update project
-   - Delete project
+   - Archive project
    - Upload file
 2. Observe success messages
 

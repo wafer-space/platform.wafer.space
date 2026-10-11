@@ -120,9 +120,8 @@ Each rewriter returns:
 2. **ProjectDetailView** - Show project details with file status
 3. **ProjectCreateView** - Create new project
 4. **ProjectUpdateView** - Edit project details
-5. **ProjectDeleteView** - Delete project
-6. **ProjectFileSubmitURLView** - Submit file URL with checksums
-7. **ProjectFileProgressView** - AJAX endpoint for download progress
+5. **ProjectFileSubmitURLView** - Submit file URL with checksums
+6. **ProjectFileProgressView** - AJAX endpoint for download progress
 
 #### Forms (`forms.py`)
 
@@ -143,7 +142,6 @@ Each rewriter returns:
 - `project_list.html` - Project listing
 - `project_detail.html` - Project details with download progress
 - `project_form.html` - Create/edit project
-- `project_confirm_delete.html` - Delete confirmation
 - `project_file_submit_url.html` - URL submission form
 
 ## Current Implementation Status
@@ -306,8 +304,6 @@ Infrastructure exists but not fully connected:
 - `POST /projects/create/` - Create project
 - `GET /projects/<uuid>/update/` - Update project form
 - `POST /projects/<uuid>/update/` - Update project
-- `GET /projects/<uuid>/delete/` - Delete confirmation
-- `POST /projects/<uuid>/delete/` - Delete project
 - `GET /projects/<uuid>/submit-url/` - Submit file URL form
 - `POST /projects/<uuid>/submit-url/` - Submit file URL
 
