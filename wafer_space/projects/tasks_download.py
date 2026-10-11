@@ -2,12 +2,10 @@
 Background tasks for project file downloads and processing.
 """
 
-import contextlib
 import hashlib
 import logging
 import os
 import socket
-import tempfile
 import time
 import traceback
 from dataclasses import dataclass
@@ -31,6 +29,8 @@ from wafer_space.notifications.services import NotificationService
 
 from .content_pipeline import ContentPipeline
 from .content_pipeline import cleanup_temp_dir
+from .content_pipeline import download_dir_path
+from .content_pipeline import get_download_dir_for_file
 from .content_pipeline import get_temp_dir_for_file
 from .content_processors import _processor_registry
 from .exceptions import DownloadTooLargeError
@@ -103,13 +103,6 @@ def _format_bytes(num_bytes: int) -> str:
             return f"{bytes_float:.2f} {unit}"
         bytes_float /= BYTES_PER_KILOBYTE
     return f"{bytes_float:.2f} PB"
-
-
-def _setup_temp_directory() -> Path:
-    """Create and return temporary directory for downloads."""
-    temp_dir = Path(tempfile.gettempdir()) / "wafer_space_downloads"
-    temp_dir.mkdir(parents=True, exist_ok=True)
-    return temp_dir
 
 
 def _extract_filename_from_url(url: str) -> str:
@@ -1220,12 +1213,10 @@ def _handle_download_failure(
                 project_file=project_file,
                 error_message=str(exc),
             )
+            # No retry is coming: remove the partial download (#139).
+            _remove_download_staging(project_file.id)
     except Project.DoesNotExist:
         pass
-
-    if temp_path and temp_path.exists():
-        with contextlib.suppress(OSError):
-            temp_path.unlink()
 
     return {
         "status": "failed",
@@ -1304,43 +1295,37 @@ def _handle_download_task_error(
 def _apply_post_download_processing(
     project_file: ProjectFile,
     temp_path: Path,
-) -> None:
-    """Apply URL handler post-download processing in place, if applicable.
+) -> Path:
+    """Apply URL handler post-download processing; return the file to process.
 
-    The downloaded file is only read into memory when a transforming
-    handler (e.g. base64 decode) is configured; the common direct-URL
-    and GitHub-artifact paths never read it here.
+    A transforming handler (e.g. the googlesource base64 decode) writes a new
+    sibling file in bounded chunks and leaves the download byte-exact, so a
+    retry can still resume it with an HTTP Range request; nothing is read
+    whole into memory (issue #139).
 
     Args:
         project_file: The project file with handler_metadata
-        temp_path: Path to the downloaded file, rewritten in place when
-            a handler transforms the content
+        temp_path: Path to the downloaded file (not modified)
+
+    Returns:
+        Path: The file the content pipeline should process
     """
-    # Check if handler metadata exists
     if not project_file.handler_metadata:
-        return
+        return temp_path
 
     handler_name = project_file.handler_metadata.get("handler")
-    if not handler_name:
-        return
-
-    # Get the appropriate handler from registry
     # We use the handler name to recreate the handler instance
-    handler = None
-    if handler_name == "GoogleSourceHandler":
-        handler = GoogleSourceHandler()
-
-    if not handler:
-        return
+    if handler_name != "GoogleSourceHandler":
+        return temp_path
 
     logger = logging.getLogger(__name__)
-    content = temp_path.read_bytes()
-    processed_content = handler.post_download(content, project_file.handler_metadata)
-    if processed_content != content:
-        logger.info("  Content was transformed by handler")
-        logger.info("  Original size: %s", _format_bytes(len(content)))
-        logger.info("  Processed size: %s", _format_bytes(len(processed_content)))
-        temp_path.write_bytes(processed_content)
+    processed_path = GoogleSourceHandler().post_download_file(
+        temp_path, project_file.handler_metadata
+    )
+    logger.info("  Content was transformed by handler")
+    logger.info("  Original size: %s", _format_bytes(temp_path.stat().st_size))
+    logger.info("  Processed size: %s", _format_bytes(processed_path.stat().st_size))
+    return processed_path
 
 
 def _apply_content_pipeline(
@@ -1458,7 +1443,7 @@ def _process_and_save_content(
     logger.info("Step 6: Checking for post-download processing...")
     if project_file.handler_metadata:
         logger.info("  Handler metadata found: %s", project_file.handler_metadata)
-    _apply_post_download_processing(project_file, temp_path)
+    content_path = _apply_post_download_processing(project_file, temp_path)
 
     # Apply content extraction pipeline
     # This extracts GDS/OASIS from archives and calculates hashes on final file
@@ -1467,7 +1452,7 @@ def _process_and_save_content(
     try:
         try:
             output_path, output_size, final_md5, final_sha1, final_sha256 = (
-                _apply_content_pipeline(project_file, temp_path, pipeline_temp_dir)
+                _apply_content_pipeline(project_file, content_path, pipeline_temp_dir)
             )
         except ValueError as e:
             logger.exception("Pipeline processing failed")
@@ -1482,7 +1467,7 @@ def _process_and_save_content(
                     "traceback": traceback.format_exc(),
                     "original_filename": project_file.original_filename,
                     "file_size": (
-                        temp_path.stat().st_size if temp_path.exists() else None
+                        content_path.stat().st_size if content_path.exists() else None
                     ),
                 },
             )
@@ -1641,10 +1626,7 @@ def _log_download_start(project_id: str, project_file: ProjectFile) -> None:
     """Log download task start information."""
     logger = logging.getLogger(__name__)
 
-    # Calculate temp path for display
-    temp_dir = Path(tempfile.gettempdir()) / "wafer_space_downloads"
-    temp_filename = f"{project_file.id}_{project_file.original_filename}"
-    temp_path = temp_dir / temp_filename
+    temp_path = _download_temp_path(project_file)
 
     logger.info("=" * 80)
     logger.info("DOWNLOAD TASK STARTED - Project ID: %s", project_id)
@@ -1658,6 +1640,29 @@ def _log_download_start(project_id: str, project_file: ProjectFile) -> None:
     logger.info("  ✓ Source URL: %s", project_file.source_url)
 
 
+def _remove_download_staging(project_file_id: int) -> None:
+    """Remove a file's download staging directory, loudly on failure.
+
+    Called on completion and on final failure; a retryable failure keeps
+    the partial file so the next attempt can resume. A directory left on
+    user storage is a disk leak, so a failure is logged at ERROR (admin
+    email) rather than suppressed.
+    """
+    logger = logging.getLogger(__name__)
+    download_dir = download_dir_path(project_file_id)
+    try:
+        cleanup_temp_dir(download_dir)
+    except OSError:
+        logger.exception("Failed to remove download staging dir %s", download_dir)
+    else:
+        logger.info("  ✓ Staging directory removed: %s", download_dir)
+
+
+def _download_temp_path(project_file: ProjectFile) -> Path:
+    """The download's temp file: its original name in the file's staging dir."""
+    return get_download_dir_for_file(project_file.id) / project_file.original_filename
+
+
 def _setup_download_temp_path(project_file: ProjectFile) -> Path:
     """Set up temporary directory and return temp file path.
 
@@ -1666,9 +1671,7 @@ def _setup_download_temp_path(project_file: ProjectFile) -> Path:
     """
     logger = logging.getLogger(__name__)
     logger.info("Step 3: Setting up temporary download directory...")
-    temp_dir = _setup_temp_directory()
-    temp_filename = f"{project_file.id}_{project_file.original_filename}"
-    temp_path = temp_dir / temp_filename
+    temp_path = _download_temp_path(project_file)
     logger.info("  ✓ Temp file path: %s", temp_path)
     return temp_path
 
@@ -1877,11 +1880,8 @@ def download_project_file(self, project_id):  # noqa: PLR0915
         attempt.save()
         logger.info("  ✓ Attempt #%d marked as COMPLETED", attempt.attempt_number)
 
-        # Clean up temp file
         logger.info("Step 9: Cleaning up temporary files...")
-        with contextlib.suppress(OSError):
-            temp_path.unlink()
-        logger.info("  ✓ Temp file removed")
+        _remove_download_staging(project_file.id)
 
         # Log completion
         _log_download_completion(project_id, project_file, hash_verified=hash_verified)

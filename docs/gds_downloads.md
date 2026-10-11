@@ -276,10 +276,16 @@ Network/file errors trigger retry:
 
 ### Cleanup
 
-Temporary files are automatically cleaned up:
+Downloads stage in a per-file directory on user storage,
+`MEDIA_ROOT/temp/downloads/file_<ProjectFile id>/` (issue #139). It is keyed
+by the file, not the Celery task, so a retry finds the partial download and
+resumes it with an HTTP Range request. The directory is removed:
 - On successful completion
 - On final failure (after max retries)
-- Stored in: `/tmp/wafer_space_downloads/`
+
+A retryable failure keeps it for the next attempt. A removal failure is
+logged at ERROR. Directories left by a killed worker are not swept yet
+(issue #364).
 
 ## Testing
 
@@ -416,10 +422,12 @@ MD5 and SHA1 are used for **file integrity verification only**, not cryptographi
 
 ### Temporary File Security
 
-Temporary files are stored with restrictive permissions:
-- Directory: `/tmp/wafer_space_downloads/`
-- Permissions: User-only read/write
-- Cleanup: Automatic on completion or failure
+Temporary files are stored on user storage, not the system temp directory:
+- Directory: `MEDIA_ROOT/temp/downloads/file_<id>/`, created by the
+  `http:rw:downloads` worker, the only process allowed to write under
+  `MEDIA_ROOT` (the web process and `ro` workers have it read-only)
+- Permissions: those of the media directory (no extra restriction is applied)
+- Cleanup: on completion or final failure; kept across retries for resume
 
 ## Performance Considerations
 

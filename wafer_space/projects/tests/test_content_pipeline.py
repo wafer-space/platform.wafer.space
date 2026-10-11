@@ -10,6 +10,7 @@ import pytest
 
 from wafer_space.projects.content_pipeline import ContentPipeline
 from wafer_space.projects.content_pipeline import cleanup_temp_dir
+from wafer_space.projects.content_pipeline import get_download_dir_for_file
 from wafer_space.projects.content_pipeline import get_temp_dir_for_file
 from wafer_space.projects.content_processors import ContentProcessorRegistry
 from wafer_space.projects.processors.decompressors import Bzip2Decompressor
@@ -328,3 +329,19 @@ def test_pipeline_stops_when_no_processor_matches(pipeline, temp_dir):
     # Should stop immediately (no processing needed)
     assert result.metadata["pipeline_stages"] == 0
     assert result.output_path == gds_file
+
+
+def test_download_dir_is_per_file_under_media_temp(settings, tmp_path):
+    """Downloads stage on user storage, one directory per ProjectFile (#139)."""
+    settings.MEDIA_ROOT = str(tmp_path)
+
+    path = get_download_dir_for_file(42)
+
+    assert (path, path.is_dir()) == (tmp_path / "temp" / "downloads" / "file_42", True)
+
+
+def test_download_dir_is_stable_across_calls(settings, tmp_path):
+    """A retry is a new Celery task and must find the partial file to resume."""
+    settings.MEDIA_ROOT = str(tmp_path)
+
+    assert get_download_dir_for_file(7) == get_download_dir_for_file(7)

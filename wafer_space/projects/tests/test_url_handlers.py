@@ -1,6 +1,7 @@
 """Tests for URL handler framework and implementations."""
 
 import base64
+from pathlib import Path
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -9,10 +10,21 @@ import pytest
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.services import ProjectFileService
+from wafer_space.projects.tests.read_instrumentation import RecordingPath
+from wafer_space.projects.url_handlers import DECODE_CHUNK_SIZE
 from wafer_space.projects.url_handlers import GitHubArtifactHandler
 from wafer_space.projects.url_handlers import GoogleSourceHandler
 from wafer_space.projects.url_handlers import URLHandler
 from wafer_space.projects.url_handlers import URLHandlerRegistry
+
+
+def _post_process(
+    handler: URLHandler, content: bytes, metadata: dict, tmp_path: Path
+) -> bytes:
+    """Run a handler's file hook on ``content``; return the resulting bytes."""
+    path = tmp_path / "download.bin"
+    path.write_bytes(content)
+    return handler.post_download_file(path, metadata).read_bytes()
 
 
 class TestURLHandler:
@@ -24,7 +36,7 @@ class TestURLHandler:
         # We test this by ensuring it has abstract methods
         assert hasattr(URLHandler, "can_handle")
         assert hasattr(URLHandler, "process_url")
-        assert hasattr(URLHandler, "post_download")
+        assert hasattr(URLHandler, "post_download_file")
 
 
 class TestGoogleSourceHandler:
@@ -98,7 +110,7 @@ class TestGoogleSourceHandler:
         assert "foo=bar" in result["url"]
         assert "format=TEXT" in result["url"]
 
-    def test_post_download_base64_decodes_content(self):
+    def test_post_download_base64_decodes_content(self, tmp_path: Path) -> None:
         """GoogleSourceHandler base64 decodes downloaded content."""
         handler = GoogleSourceHandler()
 
@@ -111,22 +123,22 @@ class TestGoogleSourceHandler:
             "base64_encoded": True,
         }
 
-        result = handler.post_download(encoded_content, metadata)
+        result = _post_process(handler, encoded_content, metadata, tmp_path)
 
         assert result == original_content
 
-    def test_post_download_handles_empty_content(self):
+    def test_post_download_handles_empty_content(self, tmp_path: Path) -> None:
         """GoogleSourceHandler handles empty content correctly."""
         handler = GoogleSourceHandler()
 
         encoded_content = base64.b64encode(b"")
         metadata = {"handler": "GoogleSourceHandler", "base64_encoded": True}
 
-        result = handler.post_download(encoded_content, metadata)
+        result = _post_process(handler, encoded_content, metadata, tmp_path)
 
         assert result == b""
 
-    def test_post_download_handles_large_content(self):
+    def test_post_download_handles_large_content(self, tmp_path: Path) -> None:
         """GoogleSourceHandler handles large base64-encoded content."""
         handler = GoogleSourceHandler()
 
@@ -136,7 +148,7 @@ class TestGoogleSourceHandler:
 
         metadata = {"handler": "GoogleSourceHandler", "base64_encoded": True}
 
-        result = handler.post_download(encoded_content, metadata)
+        result = _post_process(handler, encoded_content, metadata, tmp_path)
 
         assert result == original_content
         assert len(result) == 1024 * 1024
@@ -312,7 +324,7 @@ class TestGitHubArtifactHandler:
         with pytest.raises(ValueError, match="Invalid GitHub Actions URL format"):
             handler.process_url(invalid_url)
 
-    def test_post_download_passes_through_content(self):
+    def test_post_download_passes_through_content(self, tmp_path: Path) -> None:
         """GitHubArtifactHandler returns ZIP content unchanged."""
         handler = GitHubArtifactHandler()
 
@@ -327,21 +339,21 @@ class TestGitHubArtifactHandler:
             "requires_github_auth": True,
         }
 
-        result = handler.post_download(fake_zip_content, metadata)
+        result = _post_process(handler, fake_zip_content, metadata, tmp_path)
 
         # Content should be unchanged
         assert result == fake_zip_content
 
-    def test_post_download_handles_empty_content(self):
+    def test_post_download_handles_empty_content(self, tmp_path: Path) -> None:
         """GitHubArtifactHandler handles empty ZIP files."""
         handler = GitHubArtifactHandler()
 
         metadata = {"handler": "GitHubArtifactHandler"}
-        result = handler.post_download(b"", metadata)
+        result = _post_process(handler, b"", metadata, tmp_path)
 
         assert result == b""
 
-    def test_post_download_handles_large_content(self):
+    def test_post_download_handles_large_content(self, tmp_path: Path) -> None:
         """GitHubArtifactHandler handles large artifact files."""
         handler = GitHubArtifactHandler()
 
@@ -349,7 +361,7 @@ class TestGitHubArtifactHandler:
         large_content = b"x" * (5 * 1024 * 1024)
         metadata = {"handler": "GitHubArtifactHandler"}
 
-        result = handler.post_download(large_content, metadata)
+        result = _post_process(handler, large_content, metadata, tmp_path)
 
         assert result == large_content
         assert len(result) == 5 * 1024 * 1024
@@ -424,7 +436,7 @@ class TestURLHandlerRegistry:
 class TestGoogleSourceHandlerIntegration:
     """Integration tests for GoogleSourceHandler with real URL patterns."""
 
-    def test_full_googlesource_url_workflow(self):
+    def test_full_googlesource_url_workflow(self, tmp_path: Path) -> None:
         """Test complete workflow: URL processing and content decoding."""
         handler = GoogleSourceHandler()
 
@@ -450,11 +462,11 @@ class TestGoogleSourceHandlerIntegration:
         fake_file_content = b"GDS FILE CONTENT HERE"
         fake_response = base64.b64encode(fake_file_content)
 
-        decoded_content = handler.post_download(fake_response, metadata)
+        decoded_content = _post_process(handler, fake_response, metadata, tmp_path)
 
         assert decoded_content == fake_file_content
 
-    def test_registry_integration_with_googlesource(self):
+    def test_registry_integration_with_googlesource(self, tmp_path: Path) -> None:
         """Test registry integration with GoogleSourceHandler."""
         registry = URLHandlerRegistry()
         registry.register(GoogleSourceHandler())
@@ -475,7 +487,7 @@ class TestGoogleSourceHandlerIntegration:
         # Decode content
         original = b"test content"
         encoded = base64.b64encode(original)
-        decoded = handler.post_download(encoded, result["metadata"])
+        decoded = _post_process(handler, encoded, result["metadata"], tmp_path)
         assert decoded == original
 
 
@@ -483,7 +495,7 @@ class TestGoogleSourceHandlerIntegration:
 class TestGitHubArtifactHandlerIntegration:
     """Integration tests for GitHubArtifactHandler with real URL patterns."""
 
-    def test_full_github_artifact_url_workflow(self):
+    def test_full_github_artifact_url_workflow(self, tmp_path: Path) -> None:
         """Test complete workflow: URL detection, parsing, and pass-through."""
         handler = GitHubArtifactHandler()
 
@@ -507,12 +519,14 @@ class TestGitHubArtifactHandlerIntegration:
         # Step 3: Simulate download and verify pass-through
         # GitHub artifacts come as ZIP files
         fake_artifact_zip = b"PK\x03\x04" + b"fake artifact content"
-        processed_content = handler.post_download(fake_artifact_zip, metadata)
+        processed_content = _post_process(
+            handler, fake_artifact_zip, metadata, tmp_path
+        )
 
         # Content should be unchanged (no transformation like base64 decode)
         assert processed_content == fake_artifact_zip
 
-    def test_registry_integration_with_github_artifacts(self):
+    def test_registry_integration_with_github_artifacts(self, tmp_path: Path) -> None:
         """Test registry integration with GitHubArtifactHandler."""
         registry = URLHandlerRegistry()
         registry.register(GitHubArtifactHandler())
@@ -534,7 +548,7 @@ class TestGitHubArtifactHandlerIntegration:
 
         # Pass through content
         content = b"test artifact"
-        processed = handler.post_download(content, result["metadata"])
+        processed = _post_process(handler, content, result["metadata"], tmp_path)
         assert processed == content
 
     def test_registry_distinguishes_handlers(self):
@@ -700,3 +714,84 @@ class TestServiceIntegrationWithHandlers:
         assert project_file.expected_hash_md5 == "abc123def456"
         expected_sha1 = "7df059597099bb7dcf25d2a9aedfaf4465f72d8d"
         assert project_file.expected_hash_sha1 == expected_sha1
+
+
+class TestGoogleSourceStreamingDecode:
+    """GoogleSourceHandler decodes on disk in bounded chunks (#139)."""
+
+    @staticmethod
+    def _decode(tmp_path: Path, encoded: bytes) -> Path:
+        path = tmp_path / "download.b64"
+        path.write_bytes(encoded)
+        return GoogleSourceHandler().post_download_file(path, {"base64_encoded": True})
+
+    def test_round_trip_matches_b64decode(self, tmp_path: Path) -> None:
+        """Output equals base64.b64decode for a file spanning several chunks."""
+        content = bytes(range(256)) * 9000
+        path = self._decode(tmp_path, base64.b64encode(content))
+        assert path.read_bytes() == content
+
+    def test_line_wrapped_input(self, tmp_path: Path) -> None:
+        """googlesource wraps lines; line breaks are skipped like b64decode."""
+        content = b"layout" * 50000
+        path = self._decode(tmp_path, base64.encodebytes(content))
+        assert path.read_bytes() == content
+
+    def test_groups_straddling_a_chunk_boundary(self, tmp_path: Path) -> None:
+        """A 4-character group split across two reads still decodes."""
+        encoded = b"\n" * (DECODE_CHUNK_SIZE - 2) + base64.b64encode(b"abcdef")
+        path = self._decode(tmp_path, encoded)
+        assert path.read_bytes() == b"abcdef"
+
+    def test_download_stays_byte_exact(self, tmp_path: Path) -> None:
+        """The download is never rewritten, so a retry can still resume it.
+
+        A retry sends Range: bytes=<size>- for the encoded stream; a
+        decoded-in-place file would get encoded bytes appended to it.
+        """
+        encoded = base64.b64encode(b"layout" * 1000)
+        decoded_path = self._decode(tmp_path, encoded)
+
+        assert ((tmp_path / "download.b64").read_bytes(), decoded_path.name) == (
+            encoded,
+            "download.b64.decoded",
+        )
+
+    def test_default_handler_returns_the_download(self, tmp_path: Path) -> None:
+        """Handlers without a transform hand the download on unchanged."""
+        path = tmp_path / "artifact.zip"
+        path.write_bytes(b"PK")
+
+        assert GitHubArtifactHandler().post_download_file(path, {}) == path
+
+    def test_reads_are_bounded(self, tmp_path: Path) -> None:
+        """The encoded file is never read whole (no read(-1))."""
+        real = tmp_path / "download.b64"
+        real.write_bytes(base64.b64encode(b"x" * (3 * DECODE_CHUNK_SIZE)))
+        path = RecordingPath(real)
+        path.read_sizes = []
+        GoogleSourceHandler().post_download_file(path, {})
+        assert path.read_sizes
+        assert all(0 < size <= DECODE_CHUNK_SIZE for size in path.read_sizes)
+
+    @pytest.mark.parametrize(
+        "encoded",
+        [
+            b"YWJ=ZGVm",
+            b"YWJjZ",
+            b"YWI=" + b"\n" * (DECODE_CHUNK_SIZE - 4) + b"YWJj",
+        ],
+        ids=["padding-mid", "truncated", "padding-across-chunks"],
+    )
+    def test_invalid_input_raises_and_leaves_file(
+        self, tmp_path: Path, encoded: bytes
+    ) -> None:
+        """Invalid base64 fails loudly and never half-replaces the file."""
+        path = tmp_path / "download.b64"
+        path.write_bytes(encoded)
+        with pytest.raises(ValueError, match="base64"):
+            GoogleSourceHandler().post_download_file(path, {})
+        assert (path.read_bytes(), sorted(p.name for p in tmp_path.iterdir())) == (
+            encoded,
+            ["download.b64"],
+        )

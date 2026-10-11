@@ -31,6 +31,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from wafer_space.projects import tasks_checks
+from wafer_space.projects import tasks_download
 from wafer_space.projects.file_type_utils import GDS_SIGNATURE
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
@@ -64,11 +65,16 @@ from wafer_space.projects.tasks_checks import checks_cleanup_stale_pending_tasks
 from wafer_space.projects.tasks_checks import checks_cleanup_superseded
 from wafer_space.projects.tasks_checks import checks_drc_update_requeue
 from wafer_space.projects.tasks_download import _apply_post_download_processing
+from wafer_space.projects.tasks_download import _handle_download_failure
+from wafer_space.projects.tasks_download import _handle_download_task_error
 from wafer_space.projects.tasks_download import _initialize_hash_calculators
+from wafer_space.projects.tasks_download import _remove_download_staging
+from wafer_space.projects.tasks_download import _setup_download_temp_path
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.projects.tests.factories import ProjectFileFactory
 from wafer_space.projects.tests.read_instrumentation import RecordingPath
+from wafer_space.projects.url_handlers import DECODE_CHUNK_SIZE
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.tests.factories import ShuttleFactory
 
@@ -3689,10 +3695,10 @@ class TestDownloadStreaming:
             assert f.read() == gds_content
 
     @pytest.mark.django_db
-    def test_post_download_processing_decodes_google_source_in_place(
+    def test_post_download_processing_decodes_google_source_to_a_sibling(
         self, tmp_path: Path
     ) -> None:
-        """GoogleSource base64 payloads are decoded on disk, in place."""
+        """GoogleSource base64 payloads are decoded on disk, not in place."""
         content = b"\x00\x06\x00\x02layout-bytes"
         encoded_file = tmp_path / "download.b64"
         encoded_file.write_bytes(base64.b64encode(content))
@@ -3704,9 +3710,193 @@ class TestDownloadStreaming:
             }
         )
 
-        _apply_post_download_processing(project_file, encoded_file)
+        decoded_file = _apply_post_download_processing(project_file, encoded_file)
 
-        assert encoded_file.read_bytes() == content
+        assert (decoded_file.read_bytes(), encoded_file.read_bytes()) == (
+            content,
+            base64.b64encode(content),
+        )
+
+    @pytest.mark.django_db
+    def test_staging_removal_deletes_the_file_dir(
+        self, settings, tmp_path: Path
+    ) -> None:
+        """Completion removes the whole staging dir, not just the file."""
+        settings.MEDIA_ROOT = str(tmp_path)
+        project_file = ProjectFileFactory()
+        temp_path = _setup_download_temp_path(project_file)
+        temp_path.write_bytes(b"partial")
+
+        _remove_download_staging(project_file.id)
+
+        assert not temp_path.parent.exists()
+
+    @pytest.mark.django_db
+    def test_staging_removal_failure_is_logged_at_error(
+        self, settings, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A dir left on user storage is a disk leak someone must see."""
+        settings.MEDIA_ROOT = str(tmp_path)
+        project_file = ProjectFileFactory()
+        _setup_download_temp_path(project_file)
+
+        with (
+            patch(
+                "wafer_space.projects.tasks_download.cleanup_temp_dir",
+                side_effect=OSError("busy"),
+            ),
+            caplog.at_level(logging.ERROR, logger=tasks_download.__name__),
+        ):
+            _remove_download_staging(project_file.id)
+
+        assert any(f"file_{project_file.id}" in r.getMessage() for r in caplog.records)
+
+    @pytest.mark.django_db
+    def test_final_failure_removes_the_staging_dir(
+        self, settings, tmp_path: Path
+    ) -> None:
+        """No retry is coming, so the partial download is removed."""
+        settings.MEDIA_ROOT = str(tmp_path)
+        project_file = ProjectFileFactory(is_active=True)
+        temp_path = _setup_download_temp_path(project_file)
+        temp_path.write_bytes(b"partial")
+
+        _handle_download_failure(
+            str(project_file.project.id), RuntimeError("gone"), temp_path
+        )
+
+        assert not temp_path.parent.exists()
+
+    def test_download_task_does_not_stage_in_system_temp(self) -> None:
+        """Downloads stage under MEDIA_ROOT, never the system temp dir (#139).
+
+        /tmp is the root filesystem under systemd PrivateTmp, not user
+        storage: a 100 GB download could fill / and the final save copies
+        across filesystems.
+        """
+        source = Path(tasks_download.__file__).read_text()
+
+        assert "gettempdir" not in source
+
+    @pytest.mark.django_db
+    def test_download_temp_path_is_in_the_file_staging_dir(
+        self, settings, tmp_path: Path
+    ) -> None:
+        """The temp file is the original filename inside its file's dir."""
+        settings.MEDIA_ROOT = str(tmp_path)
+        project_file = ProjectFileFactory(original_filename="chip.gds.gz")
+
+        temp_path = _setup_download_temp_path(project_file)
+
+        assert temp_path == (
+            tmp_path / "temp" / "downloads" / f"file_{project_file.id}" / "chip.gds.gz"
+        )
+
+    @pytest.mark.django_db
+    def test_post_download_processing_reads_bounded_chunks(
+        self, tmp_path: Path
+    ) -> None:
+        """The googlesource decode never reads the download whole (#139)."""
+        real = tmp_path / "download.b64"
+        real.write_bytes(base64.b64encode(b"y" * (3 * DECODE_CHUNK_SIZE)))
+        path = RecordingPath(real)
+        path.read_sizes = []
+        project_file = ProjectFileFactory(
+            handler_metadata={
+                "handler": "GoogleSourceHandler",
+                "base64_encoded": True,
+            }
+        )
+
+        _apply_post_download_processing(project_file, path)
+
+        assert path.read_sizes
+        assert -1 not in path.read_sizes
+
+    @pytest.mark.django_db
+    def test_successful_download_leaves_no_staging_dir(
+        self, settings, tmp_path: Path
+    ) -> None:
+        """A whole successful run removes MEDIA_ROOT/temp/downloads/file_<id>."""
+        settings.MEDIA_ROOT = str(tmp_path)
+        gds_content = b"\x00\x06\x00\x02" + bytes(range(256)) * 64
+        project = ProjectFactory()
+        project_file = ProjectFile.objects.create(
+            project=project,
+            source_url="https://example.com/design.gds",
+            original_filename="design.gds",
+            is_active=True,
+        )
+
+        def write_gds(
+            task: object,
+            pf: ProjectFile,
+            attempt: DownloadAttempt,
+            temp_path: Path,
+        ) -> tuple[str, str, str]:
+            temp_path.write_bytes(gds_content)
+            return ("md5", "sha1", "sha256")
+
+        with (
+            patch(
+                "wafer_space.projects.tasks_download._download_with_progress",
+                side_effect=write_gds,
+            ),
+            patch(
+                "wafer_space.projects.tasks_download.detect_file_type_from_data",
+                return_value=("application/octet-stream", ".gds"),
+            ),
+            patch(
+                "wafer_space.projects.tasks_download.extract_top_cell",
+                return_value="TOP",
+            ),
+        ):
+            result = download_project_file(str(project.id))
+
+        staging = tmp_path / "temp" / "downloads" / f"file_{project_file.id}"
+        assert (result["status"], staging.exists()) == ("completed", False)
+
+    @pytest.mark.django_db
+    def test_retryable_failure_keeps_the_partial_download(
+        self, settings, tmp_path: Path
+    ) -> None:
+        """A retry must find the partial file, so it is not removed."""
+        settings.MEDIA_ROOT = str(tmp_path)
+        project_file = ProjectFileFactory(is_active=True)
+        temp_path = _setup_download_temp_path(project_file)
+        temp_path.write_bytes(b"x" * 1000)
+        task_self = Mock()
+        task_self.request.retries = 0
+        task_self.max_retries = 2
+        task_self.retry.side_effect = RuntimeError("retry scheduled")
+
+        with pytest.raises(RuntimeError, match="retry scheduled"):
+            _handle_download_task_error(
+                task_self,
+                str(project_file.project.id),
+                OSError("connection reset"),
+                temp_path,
+                None,
+            )
+
+        assert temp_path.read_bytes() == b"x" * 1000
+
+    @pytest.mark.django_db
+    def test_next_attempt_resumes_from_the_staging_dir(
+        self, settings, tmp_path: Path
+    ) -> None:
+        """A new task resolves the same path and asks for the remaining bytes."""
+        settings.MEDIA_ROOT = str(tmp_path)
+        project_file = ProjectFileFactory(
+            source_url="https://example.com/design.gds", handler_metadata={}
+        )
+        _setup_download_temp_path(project_file).write_bytes(b"x" * 1000)
+
+        _url, headers, resume_from = _prepare_download_request(
+            project_file, _setup_download_temp_path(project_file)
+        )
+
+        assert (headers.get("Range"), resume_from) == ("bytes=1000-", 1000)
 
     @pytest.mark.django_db
     def test_download_task_reads_bounded_chunks_only(self, tmp_path: Path) -> None:

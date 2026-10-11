@@ -164,6 +164,32 @@ def get_temp_dir_for_file(project_file_id: int) -> Path:
     return temp_dir
 
 
+def get_download_dir_for_file(project_file_id: int) -> Path:
+    """Staging directory for one ProjectFile's download (issue #139).
+
+    Pattern: media/temp/downloads/file_{project_file_id}/
+
+    On user storage (the same filesystem as the final file, unlike the
+    system temp dir) and keyed by the file, not the Celery task: a retry is
+    a new task and must find the partial file to resume with an HTTP Range
+    request. Only the http:rw:downloads worker writes here.
+
+    Args:
+        project_file_id: Database ID of ProjectFile
+
+    Returns:
+        Path to the staging directory (created if it doesn't exist)
+    """
+    download_dir = download_dir_path(project_file_id)
+    download_dir.mkdir(parents=True, exist_ok=True)
+    return download_dir
+
+
+def download_dir_path(project_file_id: int) -> Path:
+    """Path of a ProjectFile's download staging directory, without creating it."""
+    return Path(settings.MEDIA_ROOT) / "temp" / "downloads" / f"file_{project_file_id}"
+
+
 def cleanup_temp_dir(temp_dir: Path) -> None:
     """Recursively delete temp directory.
 
