@@ -31,6 +31,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from wafer_space.projects import tasks_checks
+from wafer_space.projects import tasks_download
 from wafer_space.projects.file_type_utils import GDS_SIGNATURE
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
@@ -65,6 +66,7 @@ from wafer_space.projects.tasks_checks import checks_cleanup_superseded
 from wafer_space.projects.tasks_checks import checks_drc_update_requeue
 from wafer_space.projects.tasks_download import _apply_post_download_processing
 from wafer_space.projects.tasks_download import _initialize_hash_calculators
+from wafer_space.projects.tasks_download import _setup_download_temp_path
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.projects.tests.factories import ProjectFileFactory
@@ -3708,6 +3710,31 @@ class TestDownloadStreaming:
         _apply_post_download_processing(project_file, encoded_file)
 
         assert encoded_file.read_bytes() == content
+
+    def test_download_task_does_not_stage_in_system_temp(self) -> None:
+        """Downloads stage under MEDIA_ROOT, never the system temp dir (#139).
+
+        /tmp is the root filesystem under systemd PrivateTmp, not user
+        storage: a 100 GB download could fill / and the final save copies
+        across filesystems.
+        """
+        source = Path(tasks_download.__file__).read_text()
+
+        assert "gettempdir" not in source
+
+    @pytest.mark.django_db
+    def test_download_temp_path_is_in_the_file_staging_dir(
+        self, settings, tmp_path: Path
+    ) -> None:
+        """The temp file is the original filename inside its file's dir."""
+        settings.MEDIA_ROOT = str(tmp_path)
+        project_file = ProjectFileFactory(original_filename="chip.gds.gz")
+
+        temp_path = _setup_download_temp_path(project_file)
+
+        assert temp_path == (
+            tmp_path / "temp" / "downloads" / f"file_{project_file.id}" / "chip.gds.gz"
+        )
 
     @pytest.mark.django_db
     def test_post_download_processing_reads_bounded_chunks(

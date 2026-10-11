@@ -7,7 +7,6 @@ import hashlib
 import logging
 import os
 import socket
-import tempfile
 import time
 import traceback
 from dataclasses import dataclass
@@ -31,6 +30,7 @@ from wafer_space.notifications.services import NotificationService
 
 from .content_pipeline import ContentPipeline
 from .content_pipeline import cleanup_temp_dir
+from .content_pipeline import get_download_dir_for_file
 from .content_pipeline import get_temp_dir_for_file
 from .content_processors import _processor_registry
 from .exceptions import DownloadTooLargeError
@@ -103,13 +103,6 @@ def _format_bytes(num_bytes: int) -> str:
             return f"{bytes_float:.2f} {unit}"
         bytes_float /= BYTES_PER_KILOBYTE
     return f"{bytes_float:.2f} PB"
-
-
-def _setup_temp_directory() -> Path:
-    """Create and return temporary directory for downloads."""
-    temp_dir = Path(tempfile.gettempdir()) / "wafer_space_downloads"
-    temp_dir.mkdir(parents=True, exist_ok=True)
-    return temp_dir
 
 
 def _extract_filename_from_url(url: str) -> str:
@@ -1639,10 +1632,7 @@ def _log_download_start(project_id: str, project_file: ProjectFile) -> None:
     """Log download task start information."""
     logger = logging.getLogger(__name__)
 
-    # Calculate temp path for display
-    temp_dir = Path(tempfile.gettempdir()) / "wafer_space_downloads"
-    temp_filename = f"{project_file.id}_{project_file.original_filename}"
-    temp_path = temp_dir / temp_filename
+    temp_path = _download_temp_path(project_file)
 
     logger.info("=" * 80)
     logger.info("DOWNLOAD TASK STARTED - Project ID: %s", project_id)
@@ -1656,6 +1646,11 @@ def _log_download_start(project_id: str, project_file: ProjectFile) -> None:
     logger.info("  ✓ Source URL: %s", project_file.source_url)
 
 
+def _download_temp_path(project_file: ProjectFile) -> Path:
+    """The download's temp file: its original name in the file's staging dir."""
+    return get_download_dir_for_file(project_file.id) / project_file.original_filename
+
+
 def _setup_download_temp_path(project_file: ProjectFile) -> Path:
     """Set up temporary directory and return temp file path.
 
@@ -1664,9 +1659,7 @@ def _setup_download_temp_path(project_file: ProjectFile) -> Path:
     """
     logger = logging.getLogger(__name__)
     logger.info("Step 3: Setting up temporary download directory...")
-    temp_dir = _setup_temp_directory()
-    temp_filename = f"{project_file.id}_{project_file.original_filename}"
-    temp_path = temp_dir / temp_filename
+    temp_path = _download_temp_path(project_file)
     logger.info("  ✓ Temp file path: %s", temp_path)
     return temp_path
 
