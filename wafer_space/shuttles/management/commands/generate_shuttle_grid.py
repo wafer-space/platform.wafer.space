@@ -96,10 +96,15 @@ class Command(BaseCommand):
     def _get_shuttle(self, shuttle_name: str) -> Shuttle:
         """Get shuttle by name or raise error."""
         try:
-            return Shuttle.objects.get(name=shuttle_name)
+            shuttle = Shuttle.objects.get(name=shuttle_name)
         except Shuttle.DoesNotExist as exc:
             msg = f"Shuttle not found: {shuttle_name}"
             raise CommandError(msg) from exc
+        if shuttle.is_test_only:
+            # Test-only shuttles are never placed in slots (#221).
+            msg = f"{shuttle_name} is a test-only shuttle; it has no grid"
+            raise CommandError(msg)
+        return shuttle
 
     def _validate_existing_slots(
         self, shuttle: Shuttle, shuttle_name: str, *, update: bool, force: bool

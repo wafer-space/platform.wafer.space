@@ -39,7 +39,7 @@
                      data-project-row="{{ project.pk }}">
                   <div class="flex-shrink-0 pe-2" style="width: 4.5rem">
                     <span class="fw-semibold">{{ project.shuttle.name }}</span>
-                    {% if project.shuttle and not project.shuttle.is_closed and project.shuttle.submission_deadline %}
+                    {% if project.shuttle and not project.shuttle.is_closed and not project.shuttle.is_test_only and project.shuttle.submission_deadline %}
                       {% shuttle_deadline project.shuttle.submission_deadline compact=True %}
                     {% endif %}
                   </div>

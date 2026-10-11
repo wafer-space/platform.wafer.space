@@ -32,6 +32,9 @@ def generate_package(
         raise ReticlePackageError(msg)
 
     shuttle = Shuttle.objects.get(name=shuttle_name)
+    if shuttle.is_test_only:
+        msg = f"{shuttle.name} is a test-only shuttle; it has no reticle package"
+        raise ReticlePackageError(msg)
     slots = get_slots(shuttle)
 
     output_path.mkdir(parents=True)

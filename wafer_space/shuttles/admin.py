@@ -15,13 +15,14 @@ class ShuttleAdmin(admin.ModelAdmin):
         "name",
         "description",
         "status",
+        "is_test_only",
         "max_slots",
         "reserved_slots",
         "available_slots",
         "submission_deadline",
         "created_at",
     )
-    list_filter = ("status", "technology_node", "foundry")
+    list_filter = ("status", "is_test_only", "technology_node", "foundry")
     search_fields = ("name", "description", "technology_node", "foundry")
     readonly_fields = ("created_at",)
     fieldsets = (
@@ -32,6 +33,7 @@ class ShuttleAdmin(admin.ModelAdmin):
                     "name",
                     "description",
                     "status",
+                    "is_test_only",
                     "crowd_supply_url",
                     "website_url",
                 ),

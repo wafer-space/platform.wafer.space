@@ -567,6 +567,11 @@
   function highlightSlotsBySize(size, gridId) {
     gridId = gridId || 'grid-table';
     var grid = document.getElementById(gridId);
+    // A shuttle with no slots (before generate_shuttle_grid, or test-only)
+    // renders no grid table.
+    if (!grid) {
+      return;
+    }
     grid.querySelectorAll('td[data-slot-size]').forEach(function(cell) {
       if (cell.dataset.slotSize === size) {
         cell.classList.add('slot-highlight-size');
@@ -578,6 +583,11 @@
   function highlightAssignedSlots(positions, gridId) {
     gridId = gridId || 'grid-table';
     var grid = document.getElementById(gridId);
+    // A shuttle with no slots (before generate_shuttle_grid, or test-only)
+    // renders no grid table.
+    if (!grid) {
+      return;
+    }
     grid.querySelectorAll('td[data-slot-position]').forEach(function(cell) {
       if (positions.indexOf(cell.dataset.slotPosition) !== -1) {
         cell.classList.add('slot-highlight-assigned');
@@ -589,6 +599,11 @@
   function clearSlotHighlights(gridId) {
     gridId = gridId || 'grid-table';
     var grid = document.getElementById(gridId);
+    // A shuttle with no slots (before generate_shuttle_grid, or test-only)
+    // renders no grid table.
+    if (!grid) {
+      return;
+    }
     grid.querySelectorAll('.slot-highlight-size, .slot-highlight-assigned').forEach(function(cell) {
       cell.classList.remove('slot-highlight-size', 'slot-highlight-assigned');
     });

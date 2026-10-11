@@ -8,7 +8,10 @@
 {% block content %}
   <div class="container-fluid mt-4">
     <h1>Project Summary</h1>
-    <p class="text-muted">{{ summary.total }} project{{ summary.total|pluralize }}</p>
+    <p class="text-muted">
+      {{ summary.total }} project{{ summary.total|pluralize }}
+      {% if test_only_count %}(plus {{ test_only_count }} test only){% endif %}
+    </p>
     <!-- Summary Statistics -->
     <div class="row mb-4">
       <!-- Manufacturability Summary -->
@@ -425,7 +428,10 @@
         <tbody>
           {% for project in projects %}
             <tr>
-              <td class="font-monospace text-nowrap">{{ project.full_id|default:"-" }}</td>
+              <td class="font-monospace text-nowrap">
+                {{ project.full_id|default:"-" }}
+                {% if project.shuttle.is_test_only %}<span class="badge bg-info text-dark">Test only</span>{% endif %}
+              </td>
               <td class="font-monospace text-nowrap text-center">
                 {% if project.crowd_supply_order_id %}
                   <a href="{{ project.crowd_supply_order_url }}"

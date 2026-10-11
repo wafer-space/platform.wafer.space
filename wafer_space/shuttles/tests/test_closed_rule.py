@@ -27,6 +27,11 @@ CASES = [
     (Shuttle.Status.CANCELLED, None, False),
 ]
 
+# A test-only shuttle (#221) is open whatever its status or deadline.
+TEST_ONLY_CASES = [
+    (status, deadline) for status in Shuttle.Status for deadline in (None, NOW - SECOND)
+]
+
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(("status", "deadline", "expected"), CASES)
@@ -40,6 +45,32 @@ def test_instance_and_queryset_agree(status, deadline, expected):
 
     in_queryset = Shuttle.objects.open_to_users(now=NOW).filter(pk=shuttle.pk).exists()
     assert (shuttle.is_open_to_users(now=NOW), in_queryset) == (expected, expected)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(("status", "deadline"), TEST_ONLY_CASES)
+def test_test_only_shuttle_is_always_open(status, deadline):
+    shuttle = Shuttle.objects.create(
+        name="G885",
+        description="Test only",
+        status=status,
+        submission_deadline=deadline,
+        is_test_only=True,
+    )
+
+    in_queryset = Shuttle.objects.open_to_users(now=NOW).filter(pk=shuttle.pk).exists()
+    assert (shuttle.is_open_to_users(now=NOW), in_queryset) == (True, True)
+
+
+def test_test_only_shuttle_has_no_closed_reason():
+    shuttle = Shuttle(
+        name="G886",
+        status=Shuttle.Status.COMPLETED,
+        submission_deadline=PAST,
+        is_test_only=True,
+    )
+
+    assert (shuttle.is_closed, shuttle.closed_reason) == (False, None)
 
 
 def test_open_until_last_second_of_aoe_day():

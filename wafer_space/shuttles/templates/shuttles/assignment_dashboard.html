@@ -11,73 +11,81 @@
   <div class="container-fluid mt-4 px-4">
     <h1>Shuttle {{ shuttle.name }} Assignment Status</h1>
     <p>{% include "shuttles/_shuttle_state.html" with shuttle=shuttle %}</p>
-    <div class="row mb-4">
-      <!-- Summary Statistics -->
-      <div class="col-lg-auto">
-        <div class="card h-100">
-          <div class="card-header py-1">
-            <strong>Summary</strong>
+    {% if shuttle.is_test_only %}
+      <div class="alert alert-info" role="status">
+        <i class="bi bi-clipboard2-check" aria-hidden="true"></i>
+        {{ shuttle.name }} is test only: no slot assignment.
+        Its designs are checked but never manufactured.
+      </div>
+    {% else %}
+      <div class="row mb-4">
+        <!-- Summary Statistics -->
+        <div class="col-lg-auto">
+          <div class="card h-100">
+            <div class="card-header py-1">
+              <strong>Summary</strong>
+            </div>
+            <div class="card-body p-1">
+              <table class="table table-sm mb-0" style="font-size: 0.85rem;">
+                <thead>
+                  <tr>
+                    <th class="py-1 px-1">Size</th>
+                    <th class="py-1 px-1 text-end">Proj</th>
+                    <th class="py-1 px-1 text-end">Mfg</th>
+                    <th class="py-1 px-1 text-end">CS#</th>
+                    <th class="py-1 px-1 text-end">CoB</th>
+                    <th class="py-1 px-1 text-end">Slots</th>
+                  </tr>
+                </thead>
+                <tbody id="summary-table-body">
+                  {% for slot_size, stat in stats.items %}
+                    {% if stat.total_slots > 0 %}
+                      <tr data-size="{{ slot_size.value }}">
+                        <td class="py-1 px-1">{{ slot_size.label }}</td>
+                        {# djlint:off H023 #}
+                        <td class="py-1 px-1 text-end"
+                            title="{{ stat.assigned_count }} projects with slot allocated.&#10;{{ stat.projects_count }} projects of this size available for slot allocation.">
+                          {{ stat.assigned_count }}/{{ stat.projects_count }}
+                        </td>
+                        <td class="py-1 px-1 text-end"
+                            title="{{ stat.manufacturable_assigned }} projects passing manufacturing precheck with slot allocated.&#10;{{ stat.manufacturable_total }} projects passing manufacturing precheck available for slot allocation.">
+                          {{ stat.manufacturable_assigned }}/{{ stat.manufacturable_total }}
+                        </td>
+                        <td class="py-1 px-1 text-end"
+                            title="{{ stat.cs_order_assigned }} projects with a CrowdSupply order number with slot allocated.&#10;{{ stat.cs_order_total }} projects with a CrowdSupply order number.">
+                          {{ stat.cs_order_assigned }}/{{ stat.cs_order_total }}
+                        </td>
+                        <td class="py-1 px-1 text-end"
+                            title="{{ stat.cob_count }} projects requesting Chip-on-Board (CoB) packaging.">
+                          {{ stat.cob_count }}
+                        </td>
+                        <td class="py-1 px-1 text-end"
+                            title="{{ stat.available_slots }} slots available.&#10;{{ stat.total_slots }} slots of this size.">
+                          {{ stat.available_slots }}/{{ stat.total_slots }}
+                        </td>
+                        {# djlint:on #}
+                      </tr>
+                    {% endif %}
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
           </div>
-          <div class="card-body p-1">
-            <table class="table table-sm mb-0" style="font-size: 0.85rem;">
-              <thead>
-                <tr>
-                  <th class="py-1 px-1">Size</th>
-                  <th class="py-1 px-1 text-end">Proj</th>
-                  <th class="py-1 px-1 text-end">Mfg</th>
-                  <th class="py-1 px-1 text-end">CS#</th>
-                  <th class="py-1 px-1 text-end">CoB</th>
-                  <th class="py-1 px-1 text-end">Slots</th>
-                </tr>
-              </thead>
-              <tbody id="summary-table-body">
-                {% for slot_size, stat in stats.items %}
-                  {% if stat.total_slots > 0 %}
-                    <tr data-size="{{ slot_size.value }}">
-                      <td class="py-1 px-1">{{ slot_size.label }}</td>
-                      {# djlint:off H023 #}
-                      <td class="py-1 px-1 text-end"
-                          title="{{ stat.assigned_count }} projects with slot allocated.&#10;{{ stat.projects_count }} projects of this size available for slot allocation.">
-                        {{ stat.assigned_count }}/{{ stat.projects_count }}
-                      </td>
-                      <td class="py-1 px-1 text-end"
-                          title="{{ stat.manufacturable_assigned }} projects passing manufacturing precheck with slot allocated.&#10;{{ stat.manufacturable_total }} projects passing manufacturing precheck available for slot allocation.">
-                        {{ stat.manufacturable_assigned }}/{{ stat.manufacturable_total }}
-                      </td>
-                      <td class="py-1 px-1 text-end"
-                          title="{{ stat.cs_order_assigned }} projects with a CrowdSupply order number with slot allocated.&#10;{{ stat.cs_order_total }} projects with a CrowdSupply order number.">
-                        {{ stat.cs_order_assigned }}/{{ stat.cs_order_total }}
-                      </td>
-                      <td class="py-1 px-1 text-end"
-                          title="{{ stat.cob_count }} projects requesting Chip-on-Board (CoB) packaging.">
-                        {{ stat.cob_count }}
-                      </td>
-                      <td class="py-1 px-1 text-end"
-                          title="{{ stat.available_slots }} slots available.&#10;{{ stat.total_slots }} slots of this size.">
-                        {{ stat.available_slots }}/{{ stat.total_slots }}
-                      </td>
-                      {# djlint:on #}
-                    </tr>
-                  {% endif %}
-                {% endfor %}
-              </tbody>
-            </table>
+        </div>
+        <!-- Grid Layout -->
+        <div class="col-lg-auto">
+          <div class="card h-100 grid-layout-card">
+            <div class="card-header py-2">
+              <strong>Grid Layout</strong>
+              <small class="text-muted ms-2">Click a slot to assign</small>
+            </div>
+            <div class="card-body p-2">
+              {% include "shuttles/_grid.html" with grid=grid columns=columns click_handler="showSlotModal" grid_id="grid-table" %}
+            </div>
           </div>
         </div>
       </div>
-      <!-- Grid Layout -->
-      <div class="col-lg-auto">
-        <div class="card h-100 grid-layout-card">
-          <div class="card-header py-2">
-            <strong>Grid Layout</strong>
-            <small class="text-muted ms-2">Click a slot to assign</small>
-          </div>
-          <div class="card-body p-2">
-            {% include "shuttles/_grid.html" with grid=grid columns=columns click_handler="showSlotModal" grid_id="grid-table" %}
-          </div>
-        </div>
-      </div>
-    </div>
+    {% endif %}
     <!-- Project Assignment Table -->
     <div class="card">
       <div class="card-header d-flex justify-content-between align-items-center">
@@ -227,16 +235,18 @@
                   {% endif %}
                 </td>
                 <td>
-                  <button class="btn btn-sm btn-primary"
-                          data-assign-project="{{ project.pk }}"
-                          data-project-name="{{ project.full_id|default:project.project_id|escapejs }}"
-                          data-project-size="{{ project.slot_size|escapejs }}">
-                    {% if project.shuttle_slots.exists %}
-                      Edit
-                    {% else %}
-                      Assign
-                    {% endif %}
-                  </button>
+                  {% if not shuttle.is_test_only %}
+                    <button class="btn btn-sm btn-primary"
+                            data-assign-project="{{ project.pk }}"
+                            data-project-name="{{ project.full_id|default:project.project_id|escapejs }}"
+                            data-project-size="{{ project.slot_size|escapejs }}">
+                      {% if project.shuttle_slots.exists %}
+                        Edit
+                      {% else %}
+                        Assign
+                      {% endif %}
+                    </button>
+                  {% endif %}
                 </td>
               </tr>
             {% endfor %}

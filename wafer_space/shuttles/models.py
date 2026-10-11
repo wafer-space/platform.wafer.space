@@ -70,8 +70,15 @@ class ShuttleQuerySet(models.QuerySet["Shuttle"]):
         Must agree with Shuttle.is_open_to_users.
         """
         moment = now or timezone.now()
-        return self.filter(status=Shuttle.Status.OPEN).filter(
-            Q(submission_deadline__isnull=True) | Q(submission_deadline__gt=moment)
+        return self.filter(
+            Q(is_test_only=True)
+            | (
+                Q(status=Shuttle.Status.OPEN)
+                & (
+                    Q(submission_deadline__isnull=True)
+                    | Q(submission_deadline__gt=moment)
+                )
+            )
         )
 
 
@@ -112,6 +119,14 @@ class Shuttle(models.Model):
         max_length=20,
         choices=Status.choices,
         default=Status.PLANNING,
+    )
+    is_test_only = models.BooleanField(
+        default=False,
+        verbose_name="Test only",
+        help_text=(
+            "Designs are checked but never manufactured; never in manifests, "
+            "reticle packages or slot assignment."
+        ),
     )
 
     # Grid configuration
@@ -215,8 +230,11 @@ class Shuttle(models.Model):
 
         The one definition of a closed shuttle (#320; Tim, issues-09:
         "Computed: closed after deadline or status not open").
-        ShuttleQuerySet.open_to_users must agree with it.
+        A test-only shuttle is always open, whatever its status or
+        deadline (#221). ShuttleQuerySet.open_to_users must agree with it.
         """
+        if self.is_test_only:
+            return True
         moment = now or timezone.now()
         return self.status == self.Status.OPEN and (
             self.submission_deadline is None or moment < self.submission_deadline
@@ -280,6 +298,9 @@ class Shuttle(models.Model):
 
     def generate_manifest(self) -> dict[str, str | int | list[dict[str, str | None]]]:
         """Generate manifest data for production."""
+        if self.is_test_only:
+            msg = f"{self.name} is a test-only shuttle; it has no manifest"
+            raise ValueError(msg)
         slots = self.slots.filter(status=ShuttleSlot.Status.RESERVED).select_related(
             "project",
         )
@@ -428,6 +449,14 @@ class ShuttleSlot(models.Model):
         shuttle status and deadline never block it - they only add warnings.
         """
         warnings = []
+
+        # Test-only shuttles are checked, never manufactured (#221).
+        if self.shuttle.is_test_only:
+            msg = (
+                f"{self.shuttle.name} is a test-only shuttle; "
+                "its projects are never placed in slots"
+            )
+            raise ValueError(msg)
 
         # Archived projects are excluded from slot allocation (issue #307).
         if project.is_archived:
