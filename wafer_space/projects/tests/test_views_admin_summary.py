@@ -2,6 +2,7 @@
 
 import pytest
 from django.urls import reverse
+from django.utils import timezone
 
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.users.tests.factories import UserFactory
@@ -351,3 +352,16 @@ class TestManufacturabilityCheckAdminStatusView:
         content = response.content.decode()
         assert "https://www.crowdsupply.com/account/order/654321" in content
         assert 'aria-label="Chip-on-Board packaging"' in content
+
+
+@pytest.mark.django_db
+def test_summary_marks_archived_project(client):
+    """An archived project keeps its row and carries the badge (#307)."""
+    client.force_login(UserFactory(is_staff=True))
+    ProjectFactory(name="Active one")
+    ProjectFactory(name="Archived one", archived_at=timezone.now())
+
+    content = client.get(reverse("projects:admin_summary")).content.decode()
+
+    assert "Archived one" in content
+    assert content.count("data-archived-badge") == 1

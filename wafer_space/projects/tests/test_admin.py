@@ -6,6 +6,7 @@ from django.test import RequestFactory
 from django.test import TestCase
 
 from wafer_space.projects.admin import ProjectAccessLogAdmin
+from wafer_space.projects.admin import ProjectAdmin
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectAccessLog
 
@@ -121,3 +122,15 @@ class ProjectAccessLogAdminTestCase(TestCase):
         request.user = self.admin_user
 
         assert admin.has_delete_permission(request, obj=self.log) is False
+
+
+class ProjectAdminArchiveTestCase(TestCase):
+    """ProjectAdmin lets staff find archived projects (issue #307)."""
+
+    def test_archived_at_is_a_list_filter(self):
+        project_admin = ProjectAdmin(Project, AdminSite())
+        assert "archived_at" in project_admin.list_filter
+
+    def test_archived_at_is_read_only(self):
+        project_admin = ProjectAdmin(Project, AdminSite())
+        assert "archived_at" in project_admin.readonly_fields
