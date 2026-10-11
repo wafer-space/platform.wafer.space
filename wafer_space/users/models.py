@@ -16,6 +16,18 @@ class User(AbstractUser):
     first_name = None  # type: ignore[assignment]
     last_name = None  # type: ignore[assignment]
 
+    def get_full_name(self) -> str:
+        """Return the user's name.
+
+        AbstractUser builds this from first_name and last_name, which this
+        model removes, so it would return "None None" (issue #304).
+        """
+        return self.name
+
+    def get_short_name(self) -> str:
+        """Return the user's name (there is no separate short name)."""
+        return self.name
+
     def get_absolute_url(self) -> str:
         """Get URL for user's detail view.
 
