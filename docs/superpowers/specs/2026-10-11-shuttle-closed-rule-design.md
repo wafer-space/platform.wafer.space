@@ -85,8 +85,8 @@ class Shuttle(models.Model):
 The rule says what is closed. One helper says what that means for a user, so
 that views and forms do not each re-derive it.
 
-`wafer_space/projects/services/shuttle_gate.py` (the services layer may
-import models; views and forms import services):
+Amended by the coordinator on 11 Oct 2026: same shape as the archive rule (PR #353). The gate lives in `wafer_space/projects/mixins.py` as
+`shuttle_closed_reason_for(project, user)`, `refuse_if_shuttle_closed(request, project)` and `RefuseClosedShuttleMixin`, with a URL guard test. The reason text is `Shuttle.closed_reason`. Originally planned as:
 
 ```python
 def closed_shuttle_reason(project: Project, user: User) -> str | None:

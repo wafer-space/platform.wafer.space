@@ -98,3 +98,20 @@ def test_project_form_locked_shuttle_shows_closed(
     content = client.get(reverse("projects:update", args=[project.pk])).content.decode()
 
     assert CLOSED_BADGE in content
+
+
+@pytest.mark.parametrize("url_name", ["shuttles:list", "shuttles:detail"])
+def test_lapsed_open_status_never_shows_green(staff: Client, url_name: str) -> None:
+    # Status still "open" but the deadline has passed: the only state shown
+    # is "Closed"; no green badge may contradict it.
+    Shuttle.objects.create(
+        name="G896",
+        description="Lapsed",
+        status=Shuttle.Status.OPEN,
+        submission_deadline=datetime.datetime(2020, 1, 1, tzinfo=datetime.UTC),
+    )
+    kwargs = {} if url_name == "shuttles:list" else {"name": "G896"}
+
+    content = staff.get(reverse(url_name, kwargs=kwargs)).content.decode()
+
+    assert (CLOSED_BADGE in content, "badge bg-success" in content) == (True, False)

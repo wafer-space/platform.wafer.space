@@ -308,9 +308,12 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
         # edit at all (issue #297).
         shuttle_field = self.fields["shuttle"]
         if isinstance(shuttle_field, forms.ModelChoiceField):
-            # Only shuttles open to users (#320): status open and GDS
-            # deadline not passed.
-            shuttles = Shuttle.objects.open_to_users()
+            # Users see only shuttles open to users (#320): status open and
+            # GDS deadline not passed. Staff are never blocked (dates-03).
+            if self.user is not None and self.user.is_staff:
+                shuttles = Shuttle.objects.all()
+            else:
+                shuttles = Shuttle.objects.open_to_users()
             if self.instance.shuttle_id:
                 shuttles = shuttles | Shuttle.objects.filter(
                     pk=self.instance.shuttle_id,

@@ -57,16 +57,6 @@ def test_create_form_never_offers_closed_shuttles(shuttles):
     assert _names(form.fields["shuttle"]).isdisjoint({"G887", "G888"})
 
 
-def test_default_skips_lapsed_open_shuttle(shuttles):
-    # Make the lapsed shuttle the oldest "open" one, which the old default
-    # (oldest status=open) would have picked.
-    Shuttle.objects.filter(name="G887").update(created_at=PAST)
-
-    form = ProjectForm(user=UserFactory())
-
-    assert form.fields["shuttle"].initial.name != "G887"
-
-
 def test_cob_locked_for_owner_on_closed_shuttle(shuttles):
     project = ProjectFactory(shuttle=shuttles["production"])
 
@@ -116,3 +106,17 @@ def test_owner_rename_saves_but_cob_flip_is_ignored_when_closed(client, shuttles
         project.chip_on_board,
         ManufacturabilityCheck.objects.count(),
     ) == (HTTPStatus.FOUND, "Renamed after close", False, checks_before)
+
+
+def test_default_is_an_open_shuttle(shuttles):
+    Shuttle.objects.filter(name="G887").update(created_at=PAST)
+
+    form = ProjectForm(user=UserFactory())
+
+    assert form.fields["shuttle"].initial.name in {"G885", "G886"}
+
+
+def test_staff_create_form_offers_closed_shuttles(shuttles):
+    form = ProjectForm(user=UserFactory(is_staff=True))
+
+    assert {"G885", "G886", "G887", "G888"} <= _names(form.fields["shuttle"])
