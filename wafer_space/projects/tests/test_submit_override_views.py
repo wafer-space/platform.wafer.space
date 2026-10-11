@@ -11,6 +11,7 @@ from django.utils import timezone
 from wafer_space.projects.models import ARCHIVED_READ_ONLY_MESSAGE
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectAccessLog
+from wafer_space.shuttles.models import Shuttle
 from wafer_space.users.tests.factories import UserFactory
 
 from .constants import HTTP_FORBIDDEN
@@ -128,3 +129,20 @@ def test_admin_summary_marks_override(client: Client) -> None:
     client.force_login(UserFactory(is_staff=True))
     content = client.get(reverse("projects:admin_summary")).content.decode()
     assert content.count("data-submission-override-badge") == 1
+
+
+def test_staff_override_on_closed_shuttle_like_staff_submit(
+    staff_client: Client,
+) -> None:
+    """The closed-shuttle rule (#320) never refuses staff, so neither here."""
+    project = make_failed_project()
+    shuttle = Shuttle.objects.create(
+        name="G886",
+        description="Closed run",
+        status=Shuttle.Status.IN_PRODUCTION,
+    )
+    Project.objects.filter(pk=project.pk).update(shuttle=shuttle)
+    response = staff_client.post(override_url(project), {"reason": REASON})
+    assert response.status_code == HTTP_FOUND
+    project.refresh_from_db()
+    assert project.is_submission_override

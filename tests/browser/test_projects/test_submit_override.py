@@ -82,11 +82,20 @@ class TestSubmitOverride(BaseBrowserTest):
         ).click()
 
     def logout(self) -> None:
+        """Sign out and wait until the sign-out has completed.
+
+        Navigating on before the POST finishes leaves the session logged in,
+        and the next login page then redirects away.
+        """
         self.navigate_to(self.driver, "/accounts/logout/")
+        current_url = self.driver.current_url
         self.wait_for_element(
             self.driver,
             (By.CSS_SELECTOR, 'form button[type="submit"]'),
         ).click()
+        WebDriverWait(self.driver, 10).until(
+            expected_conditions.url_changes(current_url),
+        )
 
     def test_staff_override_then_owner_sees_banner(self):
         self.login(self.staff)
