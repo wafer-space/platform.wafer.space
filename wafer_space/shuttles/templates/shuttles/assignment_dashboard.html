@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="{% static 'shuttles/css/assignment.css' %}" />
   <div class="container-fluid mt-4 px-4">
     <h1>Shuttle {{ shuttle.name }} Assignment Status</h1>
+    <p>{% include "shuttles/_shuttle_state.html" with shuttle=shuttle %}</p>
     <div class="row mb-4">
       <!-- Summary Statistics -->
       <div class="col-lg-auto">

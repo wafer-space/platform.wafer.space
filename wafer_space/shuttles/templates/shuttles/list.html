@@ -17,6 +17,7 @@
             </div>
             <div class="card-body">
               <p class="card-text">{{ shuttle.description }}</p>
+              <p class="card-text">{% include "shuttles/_shuttle_state.html" with shuttle=shuttle %}</p>
               <dl class="row mb-0">
                 <dt class="col-sm-6">Status</dt>
                 <dd class="col-sm-6">

@@ -61,6 +61,7 @@
                   <p class="form-control-plaintext mb-0">
                     <i class="bi bi-lock" aria-hidden="true"></i>
                     {{ form.instance.shuttle }}
+                    {% include "shuttles/_shuttle_state.html" with shuttle=form.instance.shuttle %}
                   </p>
                 </div>
                 <div class="mb-3">

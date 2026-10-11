@@ -1,0 +1,26 @@
+{% load shuttle_dates %}
+
+{# A shuttle's state for users, with its links (#320, #350). Pass shuttle. #}
+{# Open or closed comes only from Shuttle.is_open_to_users. #}
+<span class="shuttle-state">
+  {% if shuttle.is_closed %}
+    <span class="badge bg-secondary"><i class="bi bi-lock-fill" aria-hidden="true"></i> Closed</span>
+  {% else %}
+    <span class="badge bg-success">Open</span>
+    {% if shuttle.submission_deadline %}
+      <span class="small">GDS due {{ shuttle.submission_deadline|aoe_deadline }}</span>
+    {% endif %}
+  {% endif %}
+  {% if shuttle.website_url %}
+    <a href="{{ shuttle.website_url }}"
+       target="_blank"
+       rel="noopener"
+       class="small ms-1">Run page <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a>
+  {% endif %}
+  {% if shuttle.crowd_supply_url %}
+    <a href="{{ shuttle.crowd_supply_url }}"
+       target="_blank"
+       rel="noopener"
+       class="small ms-1">CrowdSupply <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a>
+  {% endif %}
+</span>

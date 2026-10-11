@@ -22,6 +22,7 @@
       </span>
     </div>
     <p class="lead">{{ shuttle.description }}</p>
+    <p>{% include "shuttles/_shuttle_state.html" with shuttle=shuttle %}</p>
     <div class="row">
       <!-- Capacity Card -->
       <div class="col-md-6 mb-4">

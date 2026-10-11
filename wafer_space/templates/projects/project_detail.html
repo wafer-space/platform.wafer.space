@@ -73,6 +73,7 @@
                   <strong>Shuttle Run:</strong>
                   {% if project.shuttle %}
                     {{ project.shuttle.name }}
+                    {% include "shuttles/_shuttle_state.html" with shuttle=project.shuttle %}
                   {% else %}
                     <span class="text-muted">Not assigned</span>
                   {% endif %}
