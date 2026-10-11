@@ -318,7 +318,7 @@ def checks_cleanup_orphaned_docker() -> dict:
     server_results: dict[str, dict] = {}
 
     active_states = list(ManufacturabilityCheck.Status.active())
-    our_site = urlparse(settings.SITE_URL).netloc if settings.SITE_URL else "unknown"
+    our_site = _site_label()
     logger.info("Filtering for containers with wafer.space.site=%s", our_site)
 
     for server in settings.DOCKER_SERVERS:
@@ -992,6 +992,55 @@ def _get_project_file_path(
     return gds_path
 
 
+def _site_label() -> str:
+    """This site's ``wafer.space.site`` container label value.
+
+    Prod and staging share Docker servers, and check ids are per-database,
+    so every container is labelled with the site it belongs to.
+    """
+    return urlparse(settings.SITE_URL).netloc if settings.SITE_URL else "unknown"
+
+
+def _existing_check_containers(
+    client: docker.DockerClient,
+    check: ManufacturabilityCheck,
+) -> list[str]:
+    """Containers (running or stopped) this site already has for ``check``.
+
+    Prevents creating duplicate containers when do_starting runs more than
+    once for the same check: a worker that dies after creating the container
+    leaves the check in STARTING, the stale pending-task cleanup removes the
+    task row, and checks_starting re-queues do_starting. Only do_starting
+    creates check containers, and the unique task row stops two queued runs,
+    so this re-run is the case to guard.
+
+    The filter includes the site label: another site's check with the same
+    id is a different check.
+
+    Args:
+        client: Docker client for the check's assigned server.
+        check: ManufacturabilityCheck to look up by container label.
+
+    Returns:
+        "short_id (status)" for each existing container; empty if none.
+
+    Raises:
+        docker.errors.DockerException: If the query fails. Fail closed: an
+            unanswered query must not let a duplicate start; do_starting's
+            decorator errors the check and checks_retry runs it again.
+    """
+    containers = client.containers.list(
+        all=True,  # Include stopped containers
+        filters={
+            "label": [
+                f"wafer.space.check_id={check.id}",
+                f"wafer.space.site={_site_label()}",
+            ]
+        },
+    )
+    return [f"{c.short_id} ({c.status})" for c in containers]
+
+
 def _wait_for_container_running(
     container: "docker.models.containers.Container",
     logger: logging.Logger,
@@ -1048,6 +1097,9 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
     via put_archive (for remote Docker support), starts the container, and
     waits briefly for it to reach running state.
 
+    Aborts if a container (running or stopped) already exists for this check,
+    preventing duplicate containers when do_starting runs more than once.
+
     Args:
         check: ManufacturabilityCheck in STARTING status (validated by decorator).
 
@@ -1055,7 +1107,8 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
         Dict with status and container info.
 
     Raises:
-        TaskExecutionError: If server/file validation fails (handled by decorator).
+        TaskExecutionError: If server/file validation fails or a container
+            already exists for this check (handled by decorator).
         docker.errors.DockerException: If Docker operations fail (handled by decorator).
     """
     logger = logging.getLogger(__name__)
@@ -1072,6 +1125,12 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
     )
     client = _get_docker_client_for_server(check.docker_server_id, logger)
     logger.info("[do_starting] Connected to Docker server")
+
+    # Safety check: prevent duplicate containers for this check
+    existing = _existing_check_containers(client, check)
+    if existing:
+        msg = f"Container already exists for check {check.id}: {', '.join(existing)}"
+        raise TaskExecutionError(reason="container_already_exists", message=msg)
 
     logger.info("[do_starting] Validating project file path...")
     gds_path = _get_project_file_path(check, logger)
@@ -1099,8 +1158,8 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
         mem_soft_gb,
         mem_hard_gb,
     )
-    # Extract site hostname for container labeling (prevents cross-environment cleanup)
-    site_host = urlparse(settings.SITE_URL).netloc if settings.SITE_URL else "unknown"
+    # Site label: prod and staging share Docker servers (see the orphan cleanup).
+    site_host = _site_label()
     container = client.containers.create(
         check.docker_image,
         command=command,

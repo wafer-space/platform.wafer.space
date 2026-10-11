@@ -60,6 +60,7 @@ from wafer_space.projects.tasks import do_running
 from wafer_space.projects.tasks import do_starting
 from wafer_space.projects.tasks import download_project_file
 from wafer_space.projects.tasks_checks import MISSING_LAYOUT_ERROR
+from wafer_space.projects.tasks_checks import _existing_check_containers
 from wafer_space.projects.tasks_checks import _save_output_gds
 from wafer_space.projects.tasks_checks import checks_cleanup_stale_pending_tasks
 from wafer_space.projects.tasks_checks import checks_cleanup_superseded
@@ -1295,8 +1296,96 @@ class TestDoDispatching:
         assert result["reason"] == "status_changed"
 
 
+class TestExistingCheckContainers:
+    """_existing_check_containers guards do_starting against duplicates (#189)."""
+
+    @pytest.mark.django_db
+    def test_existing_container_is_found(self, settings) -> None:
+        """A stopped container with this site's label and check id counts."""
+        settings.SITE_URL = "https://platform.example"
+        check = ManufacturabilityCheckFactory()
+        client = MagicMock()
+        stopped = MagicMock(short_id="abc", status="exited")
+        client.containers.list.return_value = [stopped]
+
+        found = _existing_check_containers(client, check)
+
+        assert found == ["abc (exited)"]
+
+    @pytest.mark.django_db
+    def test_filter_is_scoped_to_this_site(self, settings) -> None:
+        """Another site's check with the same id is a different check.
+
+        Prod and staging share Docker servers and check ids are per-database.
+        """
+        settings.SITE_URL = "https://platform.example"
+        check = ManufacturabilityCheckFactory()
+        client = MagicMock()
+        client.containers.list.return_value = []
+
+        _existing_check_containers(client, check)
+
+        client.containers.list.assert_called_once_with(
+            all=True,
+            filters={
+                "label": [
+                    f"wafer.space.check_id={check.id}",
+                    "wafer.space.site=platform.example",
+                ]
+            },
+        )
+
+    @pytest.mark.django_db
+    def test_docker_query_failure_propagates(self) -> None:
+        """Fail closed: an unanswered query must not let a duplicate start.
+
+        do_starting's decorator then errors the check and checks_retry
+        runs it again, instead of creating a container blind.
+        """
+        client = MagicMock()
+        client.containers.list.side_effect = docker.errors.APIError("boom")
+
+        with pytest.raises(docker.errors.APIError):
+            _existing_check_containers(client, ManufacturabilityCheckFactory())
+
+
 class TestDoStarting:
     """Test do_starting work task."""
+
+    @pytest.mark.django_db
+    def test_existing_container_aborts_without_creating_another(self, settings) -> None:
+        """A second do_starting for a check never creates a second container.
+
+        The check goes to ERROR instead (checks_retry runs it again as a new
+        check); the orphan cleanup removes the old container (#189).
+        """
+        settings.DOCKER_SERVERS = [
+            {"id": "test-local", "url": "unix:///test.sock", "max_concurrent": 4},
+        ]
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.STARTING,
+            docker_server_id="test-local",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_starting"
+        )
+        mock_client = MagicMock()
+        mock_client.containers.list.return_value = [MagicMock(short_id="old")]
+
+        with patch(
+            "wafer_space.projects.tasks_checks.get_docker_client",
+            return_value=mock_client,
+        ):
+            do_starting(check.id)
+
+        check.refresh_from_db()
+        # The error must come from the guard, not from a later step (the
+        # factory check has no file on disk, which would also error it).
+        assert (
+            check.status,
+            "Container already exists" in check.error_message,
+            mock_client.containers.create.called,
+        ) == (ManufacturabilityCheck.Status.ERROR, True, False)
 
     @pytest.mark.django_db
     def test_creates_and_starts_container(self, tmp_path, settings) -> None:
@@ -1345,6 +1434,8 @@ class TestDoStarting:
         ):
             mock_client = MagicMock()
             mock_get_docker_client.return_value = mock_client
+            # No pre-existing containers for this check
+            mock_client.containers.list.return_value = []
             mock_container = MagicMock()
             mock_container.id = "container123"
             mock_container.status = "running"
@@ -1452,6 +1543,8 @@ class TestDoStarting:
         ):
             mock_client = MagicMock()
             mock_get_docker_client.return_value = mock_client
+            # No pre-existing containers for this check
+            mock_client.containers.list.return_value = []
             mock_container = MagicMock()
             mock_container.id = "container123"
             mock_container.status = "running"
@@ -1532,6 +1625,8 @@ class TestDoStarting:
         ):
             mock_client = MagicMock()
             mock_get_docker_client.return_value = mock_client
+            # No pre-existing containers for this check
+            mock_client.containers.list.return_value = []
             mock_container = MagicMock()
             mock_container.id = "container123"
             mock_container.status = "running"
@@ -1614,6 +1709,8 @@ class TestDoStarting:
         ):
             mock_client = MagicMock()
             mock_get_docker_client.return_value = mock_client
+            # No pre-existing containers for this check
+            mock_client.containers.list.return_value = []
             mock_container = MagicMock()
             mock_container.id = "container123"
             mock_container.status = "running"
