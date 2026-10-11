@@ -40,6 +40,7 @@ from wafer_space.shuttles.models import Shuttle
 from .exceptions import InvalidStateTransitionError
 from .forms import ProjectFileURLSubmitForm
 from .forms import ProjectForm
+from .forms import SubmitOverrideForm
 from .mixins import ProjectOwnerOrStaffMixin
 from .mixins import RefuseArchivedProjectMixin
 from .mixins import RefuseClosedShuttleMixin
@@ -51,6 +52,7 @@ from .models import DownloadAttempt
 from .models import ManufacturabilityCheck
 from .models import PrecheckImageRevision
 from .models import Project
+from .models import ProjectAccessLog
 from .models import ProjectFile
 from .security import SecurityValidationError
 from .services import ProjectFileService
@@ -124,6 +126,10 @@ class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView
         # Archive controls and read-only state (issue #307)
         context["can_archive"] = project.can_be_archived_by(user)
         context["archived_read_only_message"] = ARCHIVED_READ_ONLY_MESSAGE
+
+        # Staff override of the precheck when submitting (issue #252)
+        context["can_override_submit"] = project.can_override_submit(user)
+        context["override_form"] = SubmitOverrideForm()
 
         # Get submitted file (file that was submitted for manufacturing)
         submitted_file = project.submitted_file
@@ -709,6 +715,51 @@ class ProjectSubmitView(
             )
 
         # Always redirect back to project detail page
+        return redirect("projects:detail", pk=pk)
+
+
+class ProjectOverrideSubmitView(
+    LoginRequiredMixin,
+    ProjectOwnerOrStaffMixin,
+    RefuseArchivedProjectMixin,
+    View,
+):
+    """Staff submit despite a failed precheck, with a reason (issue #252)."""
+
+    http_method_names = ["post"]
+
+    def get_object(self) -> Project:
+        """Get the project object for permission checking."""
+        return get_object_or_404(Project, pk=self.kwargs["pk"])
+
+    def post(self, request: HttpRequest, pk: UUID) -> HttpResponse:
+        """Override-submit the latest revision and audit-log the reason."""
+        user = cast("User", request.user)
+        if not user.is_staff:
+            raise PermissionDenied
+        project = self.get_object()
+        form = SubmitOverrideForm(request.POST)
+        if not form.is_valid():
+            for error in form.errors["reason"]:
+                messages.error(request, f"Cannot override: {error}")
+            return redirect("projects:detail", pk=pk)
+        reason = form.cleaned_data["reason"]
+        try:
+            project.override_submit(user, reason)
+        except ValidationError as exc:
+            messages.error(request, f"Cannot override: {exc.message}")
+            return redirect("projects:detail", pk=pk)
+        self._create_audit_log(
+            project,
+            user,
+            request,
+            action=ProjectAccessLog.Action.SUBMIT_OVERRIDE,
+            details=reason,
+        )
+        messages.success(
+            request,
+            f"Project '{project.name}' submitted for manufacturing by staff override.",
+        )
         return redirect("projects:detail", pk=pk)
 
 

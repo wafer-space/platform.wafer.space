@@ -457,7 +457,14 @@
               <td class="text-nowrap">{{ project.user.email }}</td>
               {% with active_file=project.active_files.0 %}
                 {% if active_file and active_file.latest_manufacturability_check %}
-                  <td class="text-nowrap">{% badge_check_status_and_version active_file.latest_manufacturability_check %}</td>
+                  <td class="text-nowrap">
+                    {% badge_check_status_and_version active_file.latest_manufacturability_check %}
+                    {% if project.is_submission_override %}
+                      <span class="badge bg-danger"
+                            data-submission-override-badge
+                            title="Submitted by staff override">override</span>
+                    {% endif %}
+                  </td>
                 {% else %}
                   <td class="text-nowrap">-</td>
                 {% endif %}

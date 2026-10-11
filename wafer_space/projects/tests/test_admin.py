@@ -96,6 +96,7 @@ class ProjectAccessLogAdminTestCase(TestCase):
             "ip_address",
             "user_agent",
             "view_name",
+            "details",
         ]
         assert list(admin.readonly_fields) == expected_readonly
 

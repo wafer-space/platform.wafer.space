@@ -41,6 +41,7 @@ ALLOWED_ON_ARCHIVED = {
 REFUSED_ON_ARCHIVED = {
     "update",
     "submit",
+    "submit_override",
     "submit_url",
     "archive",
     "compliance_certify",

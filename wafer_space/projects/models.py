@@ -53,6 +53,9 @@ ARCHIVED_READ_ONLY_MESSAGE = (
     "This project is archived and cannot be changed. Unarchive it first."
 )
 
+# Minimum length of the reason staff give for a submit override (#252).
+SUBMIT_OVERRIDE_REASON_MIN_LENGTH = 20
+
 
 def validate_project_id(value: str) -> None:
     """Validate project ID is 4 alphanumeric uppercase characters."""
@@ -171,6 +174,8 @@ class Project(models.Model):
             "submitted_at",
             "submitted_file",
             "archived_at",
+            "submission_override_by",
+            "submission_override_reason",
             "proprietary_terms_cached",
             "proprietary_terms_cached_at",
         }
@@ -262,6 +267,21 @@ class Project(models.Model):
         blank=True,
         db_index=True,
         help_text="When the project was archived; empty while active.",
+    )
+
+    # Staff override of the manufacturability requirement when submitting
+    # (Issue #252). Empty for normal submissions; history keeps old values.
+    submission_override_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="Staff user who submitted despite a failed precheck.",
+    )
+    submission_override_reason = models.TextField(
+        blank=True,
+        help_text="Why staff overrode the precheck when submitting.",
     )
 
     # NOTE: Manufacturability is a property of a file revision, not of the
@@ -648,20 +668,91 @@ class Project(models.Model):
         return True, ""
 
     def submit(self):
-        """Mark project as submitted and queue manufacturability check.
+        """Mark the latest revision as submitted for manufacturing.
 
         Raises:
             ValidationError: If project cannot be submitted
         """
-        # Validate submission
         can_submit, reason = self.can_submit()
         if not can_submit:
             raise ValidationError(reason)
+        self._write_submission()
 
-        # Submit the exact revision can_submit() validated (latest_file is
-        # cached per instance), re-checking under a row lock that it is
-        # still the active revision - a concurrent replacement must not
-        # sneak an unvalidated revision into submitted_file.
+        # Note: Manufacturability check has already been completed
+        # (it was triggered automatically when file hash was verified)
+
+    def can_override_submit(self, user: Any) -> tuple[bool, str]:
+        """Check whether staff ``user`` may submit despite a failed precheck.
+
+        Only the manufacturability requirement is overridden (issue #252):
+        the file must still be downloaded and verified, and its latest
+        finished check must have produced the processed layout that the
+        reticle package uses.
+        """
+        if not user.is_staff:
+            return False, "Only staff can override the precheck"
+        if self.is_archived:
+            return False, ARCHIVED_READ_ONLY_MESSAGE
+        file_problem = self._latest_file_problem()
+        if file_problem:
+            return False, file_problem
+        check_problem = self._override_check_problem()
+        if check_problem:
+            return False, check_problem
+        return True, ""
+
+    def _override_check_problem(self) -> str:
+        """Why the latest revision's check cannot be overridden, or "".
+
+        Call only after _latest_file_problem() found no problem.
+        """
+        if self.can_submit()[0]:
+            return "The latest revision passed its precheck; use Submit"
+        latest = self.latest_file
+        assert latest is not None  # _latest_file_problem() checked it
+        check = latest.output_check
+        if check.pk is None:
+            return "No finished precheck to override yet"
+        if not check.output_gds:
+            return (
+                "The precheck produced no processed layout, so there is "
+                "nothing that could be manufactured"
+            )
+        return ""
+
+    def override_submit(self, user: Any, reason: str) -> None:
+        """Submit the latest revision despite a failed precheck (staff only).
+
+        Raises:
+            ValidationError: If the reason is too short or the override is
+                not allowed (see can_override_submit).
+        """
+        reason = reason.strip()
+        if len(reason) < SUBMIT_OVERRIDE_REASON_MIN_LENGTH:
+            msg = (
+                "Give a reason of at least "
+                f"{SUBMIT_OVERRIDE_REASON_MIN_LENGTH} characters"
+            )
+            raise ValidationError(msg)
+        allowed, refusal = self.can_override_submit(user)
+        if not allowed:
+            raise ValidationError(refusal)
+        self._write_submission(override_by=user, override_reason=reason)
+
+    def _write_submission(
+        self,
+        *,
+        override_by: Any = None,
+        override_reason: str = "",
+    ) -> None:
+        """Point submitted_file at the validated latest revision.
+
+        Submits the exact revision the caller validated (latest_file is
+        cached per instance), re-checking under a row lock that it is still
+        the active revision - a concurrent replacement must not sneak an
+        unvalidated revision into submitted_file. A normal submission
+        clears any earlier override; history keeps it.
+        """
         submitted = self.latest_file
         if submitted is None:
             msg = "Project has no active file"
@@ -679,10 +770,14 @@ class Project(models.Model):
             self.status = self.Status.SUBMITTED
             self.submitted_at = timezone.now()
             self.submitted_file = submitted
+            self.submission_override_by = override_by
+            self.submission_override_reason = override_reason
             self.save()
 
-        # Note: Manufacturability check has already been completed
-        # (it was triggered automatically when file hash was verified)
+    @property
+    def is_submission_override(self) -> bool:
+        """Whether the current submission was a staff override (#252)."""
+        return self.submission_override_by_id is not None
 
     @property
     def is_archived(self) -> bool:
@@ -775,6 +870,7 @@ class ProjectAccessLog(models.Model):
         EDIT = "edit", "Edited"
         DELETE = "delete", "Deleted"
         ACCESS_DENIED = "access_denied", "Access Denied"
+        SUBMIT_OVERRIDE = "submit_override", "Submitted by override"
 
     project = models.ForeignKey(
         Project,
@@ -816,6 +912,10 @@ class ProjectAccessLog(models.Model):
         max_length=200,
         blank=True,
         help_text="Name of the view that was accessed",
+    )
+    details = models.TextField(
+        blank=True,
+        help_text="Extra detail, e.g. the reason for a submit override",
     )
 
     class Meta:

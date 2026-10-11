@@ -9,14 +9,19 @@ import pytest
 import yaml
 
 from wafer_space.projects.models import ManufacturabilityCheck
+from wafer_space.projects.models import Project
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.projects.tests.factories import ProjectFileFactory
+from wafer_space.projects.tests.test_models_submit_override import REASON
+from wafer_space.projects.tests.test_models_submit_override import make_failed_project
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.models import ShuttleSlot
 from wafer_space.shuttles.services.reticle_package import ReticlePackageError
 from wafer_space.shuttles.services.reticle_package import generate_package
+from wafer_space.shuttles.services.reticle_package import write_readme
 from wafer_space.shuttles.tests.factories import ShuttleFactory
+from wafer_space.users.tests.factories import UserFactory
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -337,3 +342,25 @@ class TestGeneratePackage:
         manifest_row = read_manifest(output)["SUMM"]
         assert "PROJECT_URL" not in manifest_row
         assert "STATUS" not in manifest_row
+
+
+@pytest.mark.django_db
+def test_readme_marks_staff_override(tmp_path: Path) -> None:
+    """The README tells the reticle builder a project was overridden (#252)."""
+    shuttle = ShuttleFactory(name="G885")
+    project = make_failed_project()
+    Project.objects.filter(pk=project.pk).update(shuttle=shuttle, project_id="OVRD")
+    project = Project.objects.get(pk=project.pk)
+    project.override_submit(UserFactory(is_staff=True), REASON)
+    slot = ShuttleSlot.objects.create(
+        shuttle=shuttle,
+        project=project,
+        status=ShuttleSlot.Status.RESERVED,
+    )
+    readme = tmp_path / "README.md"
+
+    write_readme(readme, shuttle, [slot])
+
+    lines = readme.read_text().splitlines()
+    row = next(line for line in lines if line.startswith("| OVRD |"))
+    assert "not_manufacturable (staff override)" in row
