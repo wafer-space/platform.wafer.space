@@ -2692,6 +2692,63 @@ Precheck successfully completed."""
 
     STREAM_FAILURE_MSG = "connection reset while streaming archive"
 
+    @staticmethod
+    def _analyze_with_runs_archive_api_error(check: ManufacturabilityCheck) -> None:
+        """do_analyzing where get_archive() itself fails for the runs archive.
+
+        Since #352 such a Docker error propagates from stream_archive_to_file
+        instead of reading as "absent"; #231's best-effort diagnostics must
+        still turn it into a warning. The container holds a real layout.
+        """
+
+        def get_archive(path: str) -> tuple:
+            if path == "/workspace/runs":
+                msg = "daemon hiccup"
+                raise docker.errors.APIError(msg)
+            return _container_with_layout_only(path)
+
+        mock_container = MagicMock()
+        mock_container.status = "exited"
+        mock_container.get_archive.side_effect = get_archive
+        mock_client = MagicMock()
+        mock_client.containers.get.return_value = mock_container
+        with patch(
+            "wafer_space.projects.tasks_checks.get_docker_client",
+            return_value=mock_client,
+        ):
+            do_analyzing(check.id)
+
+    @pytest.mark.django_db
+    def test_design_failure_survives_runs_archive_api_error(self) -> None:
+        """A failing design keeps its DRC verdict when Docker hiccups."""
+        check = self._analyzing_check(PRECHECK_DRC_FAILURE_LOGS, exit_code=1)
+
+        self._analyze_with_runs_archive_api_error(check)
+
+        check.refresh_from_db()
+        assert (check.status, check.is_manufacturable) == (
+            ManufacturabilityCheck.Status.FINISHED,
+            False,
+        )
+
+    @pytest.mark.django_db
+    def test_pass_survives_runs_archive_api_error(self) -> None:
+        """A pass with its layout stays a pass; the lost archive is a warning."""
+        check = self._analyzing_check(PRECHECK_SUCCESS_LOGS, exit_code=0)
+
+        self._analyze_with_runs_archive_api_error(check)
+
+        check.refresh_from_db()
+        warned = any(
+            w.startswith("Diagnostic output not saved: runs archive")
+            for w in check.warnings
+        )
+        assert (check.status, check.is_manufacturable, warned) == (
+            ManufacturabilityCheck.Status.FINISHED,
+            True,
+            True,
+        )
+
     @classmethod
     def _analyze_with_stream_failure(
         cls,
@@ -2703,7 +2760,9 @@ Precheck successfully completed."""
 
         The Docker SDK raises from the archive iterator, after get_archive()
         has returned; that is the failure stream_archive_to_file does not
-        catch. Every other path is absent from the container.
+        catch. The container holds the precheck output layout (a passing
+        run always writes it, #352) unless that is the failing path; every
+        other path is absent.
         """
 
         def broken_stream():
@@ -2713,8 +2772,7 @@ Precheck successfully completed."""
         def get_archive(path: str) -> tuple:
             if path == failing_path:
                 return broken_stream(), {}
-            msg = "no such path"
-            raise docker.errors.NotFound(msg)
+            return _container_with_layout_only(path)
 
         mock_container = MagicMock()
         mock_container.status = "exited"
