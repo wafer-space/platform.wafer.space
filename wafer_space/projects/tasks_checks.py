@@ -23,9 +23,11 @@ from django.conf import settings
 from django.core.files import File
 from django.core.files.base import ContentFile
 from django.db import IntegrityError
+from django.db import transaction
 from django.db.models import Exists
 from django.db.models import F
 from django.db.models import OuterRef
+from django.db.models import Q
 from django.db.models import Subquery
 from django.utils import timezone
 
@@ -57,6 +59,8 @@ from .verification import is_check_task_actively_running
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from django.db.models import QuerySet
 
 T = TypeVar("T")
 
@@ -193,10 +197,10 @@ def queued_check_task(
 __all__ = [
     "checks_analyzing",
     "checks_cancelling",
-    "checks_cleanup",
     "checks_cleanup_orphaned_docker",
     "checks_cleanup_stale_files",
     "checks_cleanup_stale_pending_tasks",
+    "checks_cleanup_superseded",
     "checks_create",
     "checks_dispatching",
     "checks_drc_update_requeue",
@@ -1955,68 +1959,65 @@ def checks_cleanup_stale_files() -> dict:
     return {"cancelled": cancelled}
 
 
-def _cancel_superseded_checks() -> int:
-    """Cancel in-progress checks that have been superseded by newer checks.
+def superseded_checks() -> "QuerySet[ManufacturabilityCheck]":
+    """In-progress checks that a newer, still-viable check for the file supersedes.
 
-    Returns:
-        Number of checks marked for cancellation.
+    "Newer" is ordered by (created_at, id), so checks created in the same
+    instant never hide each other. A newer check that is CANCELLING, CANCELLED
+    or ERROR never finishes, so it does not supersede: cancelling the older
+    check would leave the file with no verdict. (An ERROR check's retry is a
+    new PENDING check, which does supersede.) Checks already CANCELLING are
+    excluded; CANCELLING -> CANCELLING is not a valid transition, and the
+    checks_cancelling task completes them.
     """
-    logger = logging.getLogger(__name__)
-
-    # Subquery: does a newer check exist for the same file?
+    status = ManufacturabilityCheck.Status
     newer_exists = ManufacturabilityCheck.objects.filter(
+        Q(created_at__gt=OuterRef("created_at"))
+        | Q(created_at=OuterRef("created_at"), id__gt=OuterRef("id")),
         project_file=OuterRef("project_file"),
-        created_at__gt=OuterRef("created_at"),
+    ).exclude(status__in=[status.CANCELLING, status.CANCELLED, status.ERROR])
+    return (
+        ManufacturabilityCheck.objects.filter(status__in=status.in_progress())
+        .exclude(status=status.CANCELLING)
+        .filter(Exists(newer_exists))
     )
-
-    # Find all superseded in-progress checks
-    superseded = ManufacturabilityCheck.objects.filter(
-        status__in=ManufacturabilityCheck.Status.in_progress(),
-    ).filter(Exists(newer_exists))
-
-    cancelled = 0
-    for check in superseded:
-        try:
-            check.mark_cancelling(reason="Superseded by newer check")
-            logger.info(
-                "Marked check %s as cancelling (superseded)",
-                check.id,
-            )
-            cancelled += 1
-        except Exception:
-            logger.exception("Failed to cancel superseded check %s", check.id)
-
-    return cancelled
 
 
 @checks_task()
-def checks_cleanup() -> dict:
-    """Cleanup task that performs all periodic cleanup operations.
+def checks_cleanup_superseded() -> dict:
+    """Cancel in-progress checks that have been superseded by newer checks.
 
-    This task combines multiple cleanup operations:
-    - Cancel checks superseded by newer checks
-    - Cancel checks on inactive project files
-    - Remove orphaned pending task records
+    A check is "superseded" when a newer check exists for the same project
+    file while the older one is still in progress. This happens via the manual
+    DRC-update requeue view (``check_drc_update_requeue``), which can create a
+    fresh check for a file whose latest check is still running. The older,
+    now-redundant in-progress check is marked for cancellation here.
+
+    The scheduled ``checks_drc_update_requeue`` beat task does not produce this
+    situation, because it only requeues FINISHED checks.
+
+    Each candidate is re-read under a row lock before it is marked, so a check
+    that finished, errored or was cancelled after the candidates were listed
+    keeps its new status.
 
     Returns:
-        Dict with counts of cleanup operations performed.
+        Dict with 'cancelled' count of checks marked for cancellation.
     """
-    # Cancel superseded checks
-    superseded_cancelled = _cancel_superseded_checks()
+    logger = logging.getLogger(__name__)
 
-    # Cancel checks on stale files
-    stale_files_result = checks_cleanup_stale_files()
-    stale_files_cancelled = stale_files_result.get("cancelled", 0)
+    candidate_ids = list(superseded_checks().values_list("id", flat=True))
+    cancelled = 0
+    for check_id in candidate_ids:
+        with transaction.atomic():
+            check = superseded_checks().select_for_update().filter(pk=check_id).first()
+            if check is None:
+                # Finished, errored or cancelled since the candidates were listed.
+                continue
+            check.mark_cancelling(reason="Superseded by newer check")
+        logger.info("Marked check %s as cancelling (superseded)", check_id)
+        cancelled += 1
 
-    # Clean up orphaned pending tasks
-    pending_tasks_result = checks_cleanup_stale_pending_tasks()
-    pending_tasks_deleted = pending_tasks_result.get("deleted", 0)
-
-    return {
-        "superseded_cancelled": superseded_cancelled,
-        "stale_files_cancelled": stale_files_cancelled,
-        "pending_tasks_deleted": pending_tasks_deleted,
-    }
+    return {"cancelled": cancelled}
 
 
 @checks_task()

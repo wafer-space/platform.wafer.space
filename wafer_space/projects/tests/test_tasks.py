@@ -17,6 +17,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from tempfile import mkdtemp
 from typing import IO
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 from unittest.mock import Mock
 from unittest.mock import patch
@@ -28,6 +29,7 @@ from django.core.cache import cache
 from django.test import TestCase
 from django.utils import timezone
 
+from wafer_space.projects import tasks_checks
 from wafer_space.projects.file_type_utils import GDS_SIGNATURE
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
@@ -56,8 +58,8 @@ from wafer_space.projects.tasks import do_running
 from wafer_space.projects.tasks import do_starting
 from wafer_space.projects.tasks import download_project_file
 from wafer_space.projects.tasks_checks import _save_output_gds
-from wafer_space.projects.tasks_checks import checks_cleanup
 from wafer_space.projects.tasks_checks import checks_cleanup_stale_pending_tasks
+from wafer_space.projects.tasks_checks import checks_cleanup_superseded
 from wafer_space.projects.tasks_checks import checks_drc_update_requeue
 from wafer_space.projects.tasks_download import _apply_post_download_processing
 from wafer_space.projects.tasks_download import _initialize_hash_calculators
@@ -67,6 +69,9 @@ from wafer_space.projects.tests.factories import ProjectFileFactory
 from wafer_space.projects.tests.read_instrumentation import RecordingPath
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.tests.factories import ShuttleFactory
+
+if TYPE_CHECKING:
+    from django.db.models import QuerySet
 
 User = get_user_model()
 TEST_PASSWORD = "testpass123"  # noqa: S105 - Test password constant
@@ -2609,7 +2614,7 @@ class TestChecksCleanupStalePendingTasks:
 
 
 class TestCancelSupersededChecks:
-    """Tests for cancel_superseded_checks functionality."""
+    """Tests for the checks_cleanup_superseded task."""
 
     @pytest.mark.django_db
     def test_cancels_older_in_progress_check_when_newer_exists(self) -> None:
@@ -2626,7 +2631,7 @@ class TestCancelSupersededChecks:
             status=ManufacturabilityCheck.Status.PENDING,
         )
 
-        checks_cleanup()
+        checks_cleanup_superseded()
 
         old_check.refresh_from_db()
         assert old_check.status == ManufacturabilityCheck.Status.CANCELLING
@@ -2641,7 +2646,7 @@ class TestCancelSupersededChecks:
             status=ManufacturabilityCheck.Status.RUNNING,
         )
 
-        checks_cleanup()
+        checks_cleanup_superseded()
 
         check.refresh_from_db()
         assert check.status == ManufacturabilityCheck.Status.RUNNING
@@ -2661,10 +2666,147 @@ class TestCancelSupersededChecks:
             status=ManufacturabilityCheck.Status.PENDING,
         )
 
-        checks_cleanup()
+        checks_cleanup_superseded()
 
         old_check.refresh_from_db()
         assert old_check.status == ManufacturabilityCheck.Status.FINISHED
+
+    @pytest.mark.django_db
+    def test_cancels_older_check_with_identical_created_at(self) -> None:
+        """A timestamp tie is broken by id, so the older row is still cancelled."""
+        project_file = ProjectFileFactory()
+        old_check = ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        new_check = ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        ManufacturabilityCheck.objects.filter(pk=new_check.pk).update(
+            created_at=old_check.created_at,
+        )
+
+        checks_cleanup_superseded()
+
+        old_check.refresh_from_db()
+        new_check.refresh_from_db()
+        assert (old_check.status, new_check.status) == (
+            ManufacturabilityCheck.Status.CANCELLING,
+            ManufacturabilityCheck.Status.PENDING,
+        )
+
+    @pytest.mark.django_db
+    @pytest.mark.parametrize(
+        "newer_status",
+        [
+            ManufacturabilityCheck.Status.CANCELLING,
+            ManufacturabilityCheck.Status.CANCELLED,
+            ManufacturabilityCheck.Status.ERROR,
+        ],
+    )
+    def test_dead_newer_check_does_not_supersede(self, newer_status: str) -> None:
+        """A newer check that will never finish leaves the running one alone.
+
+        Otherwise a failed manual requeue would cancel the only check that
+        could still produce a verdict for the file.
+        """
+        project_file = ProjectFileFactory()
+        old_check = ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=newer_status,
+        )
+
+        checks_cleanup_superseded()
+
+        old_check.refresh_from_db()
+        assert old_check.status == ManufacturabilityCheck.Status.RUNNING
+
+    @pytest.mark.django_db
+    def test_check_that_finished_after_listing_is_not_overwritten(self) -> None:
+        """A check that finishes between listing and locking keeps FINISHED.
+
+        The candidate is re-read under a row lock; a stale in-memory RUNNING
+        status must not let CANCELLING overwrite the finished result.
+        """
+        project_file = ProjectFileFactory()
+        old_check = ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        real_superseded_checks = tasks_checks.superseded_checks
+        calls: list[None] = []
+
+        def finish_after_listing() -> "QuerySet[ManufacturabilityCheck]":
+            if calls:
+                ManufacturabilityCheck.objects.filter(pk=old_check.pk).update(
+                    status=ManufacturabilityCheck.Status.FINISHED,
+                )
+            calls.append(None)
+            return real_superseded_checks()
+
+        with patch.object(
+            tasks_checks, "superseded_checks", side_effect=finish_after_listing
+        ):
+            result = checks_cleanup_superseded()
+
+        old_check.refresh_from_db()
+        assert (result, old_check.status) == (
+            {"cancelled": 0},
+            ManufacturabilityCheck.Status.FINISHED,
+        )
+
+    @staticmethod
+    def _cancelling_check_with_newer_sibling() -> ManufacturabilityCheck:
+        """An already-CANCELLING check that a newer check supersedes."""
+        project_file = ProjectFileFactory()
+        old_check = ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.CANCELLING,
+        )
+        ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        return old_check
+
+    @pytest.mark.django_db
+    def test_skips_checks_already_cancelling_without_error_logs(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Checks already in CANCELLING are skipped, not re-cancelled with errors."""
+        self._cancelling_check_with_newer_sibling()
+
+        with caplog.at_level(logging.ERROR, logger="wafer_space.projects.tasks_checks"):
+            result = checks_cleanup_superseded()
+
+        assert (result, caplog.records) == ({"cancelled": 0}, [])
+
+    @pytest.mark.django_db
+    def test_already_cancelling_check_keeps_its_status(self) -> None:
+        """The skipped CANCELLING check is left for checks_cancelling."""
+        old_check = self._cancelling_check_with_newer_sibling()
+
+        checks_cleanup_superseded()
+
+        old_check.refresh_from_db()
+        assert old_check.status == ManufacturabilityCheck.Status.CANCELLING
 
 
 @pytest.mark.django_db

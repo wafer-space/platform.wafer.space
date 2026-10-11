@@ -49,8 +49,8 @@ These tasks run periodically via Celery Beat to poll for checks needing action.
 | `checks_retry`                       | `none:ro:checks-orch` | 60s      | Create retry checks for ERROR state   |
 | `checks_cleanup_stale_files`         | `none:ro:checks-orch` | 60s      | Cancel checks on inactive files       |
 | `checks_cleanup_stale_pending_tasks` | `none:ro:checks-orch` | 60s      | Remove orphaned task tracking records |
+| `checks_cleanup_superseded`          | `none:ro:checks-orch` | 60s      | Cancel checks superseded by newer ones |
 | `checks_drc_update_requeue`          | `none:ro:checks-orch` | 60s      | Create DRC_UPDATE checks for outdated versions |
-| `checks_cleanup`                     | `none:ro:checks-orch` | -        | Combined cleanup operations           |
 
 ### Work Tasks
 
@@ -128,4 +128,4 @@ All periodic tasks are defined in `CELERY_BEAT_SCHEDULE` in `config/settings/bas
 | Interval   | Tasks                                                                                     |
 |------------|-------------------------------------------------------------------------------------------|
 | 15 seconds | Check lifecycle (create, pending, dispatching, starting, running, analyzing, cancelling) |
-| 60 seconds | Cleanup (retry, orphaned docker, stale files, stale pending tasks), download recovery    |
+| 60 seconds | Cleanup (retry, orphaned docker, stale files, stale pending tasks, superseded checks), DRC-update requeue, download recovery |
