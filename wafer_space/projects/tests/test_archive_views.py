@@ -16,7 +16,7 @@ from .constants import HTTP_FORBIDDEN
 from .constants import HTTP_FOUND
 from .constants import HTTP_METHOD_NOT_ALLOWED
 from .factories import ProjectFactory
-from .factories import ProjectFileFactory
+from .factories import make_downloaded_file
 
 if TYPE_CHECKING:
     from django.test import Client
@@ -52,7 +52,7 @@ def test_owner_unarchives_project(client: Client) -> None:
 def test_owner_refused_with_submitted_file(client: Client) -> None:
     project = ProjectFactory()
     Project.objects.filter(pk=project.pk).update(
-        submitted_file=ProjectFileFactory(project=project),
+        submitted_file=make_downloaded_file(project),
     )
     client.force_login(project.user)
     response = client.post(archive_url(project), follow=True)

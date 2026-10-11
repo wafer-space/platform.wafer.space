@@ -7,6 +7,7 @@ from factory import Sequence
 from factory import SubFactory
 from factory.django import DjangoModelFactory
 
+from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
@@ -51,3 +52,18 @@ class ManufacturabilityCheckFactory(DjangoModelFactory[ManufacturabilityCheck]):
 
     class Meta:
         model = ManufacturabilityCheck
+
+
+def make_downloaded_file(project: Project) -> ProjectFile:
+    """An active file whose download has completed (no work in progress)."""
+    project_file = ProjectFileFactory(
+        project=project,
+        is_active=True,
+        download_task_id="completed-task",
+    )
+    DownloadAttempt.objects.create(
+        project_file=project_file,
+        attempt_number=1,
+        status=DownloadAttempt.Status.COMPLETED,
+    )
+    return project_file

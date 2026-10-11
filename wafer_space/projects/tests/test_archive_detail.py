@@ -16,7 +16,7 @@ from wafer_space.projects.models import Project
 
 from .factories import ManufacturabilityCheckFactory
 from .factories import ProjectFactory
-from .factories import ProjectFileFactory
+from .factories import make_downloaded_file
 
 if TYPE_CHECKING:
     from django.test import Client
@@ -97,7 +97,7 @@ def test_archive_button_disabled_with_reason_for_owner_with_submitted_file(
 ) -> None:
     project = ProjectFactory()
     Project.objects.filter(pk=project.pk).update(
-        submitted_file=ProjectFileFactory(project=project),
+        submitted_file=make_downloaded_file(project),
     )
     content = detail_page(client, project)
     assert reverse("projects:archive", args=[project.pk]) not in content

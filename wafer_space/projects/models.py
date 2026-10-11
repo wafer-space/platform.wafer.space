@@ -708,7 +708,7 @@ class Project(models.Model):
             return False, (
                 "A file download or manufacturability check is still in "
                 "progress. Wait for it to finish, or cancel the check, then "
-                "archive."
+                "archive. Contact staff if it is stuck."
             )
         if self.submitted_file_id is not None:
             return False, (
@@ -724,13 +724,15 @@ class Project(models.Model):
         must let it finish first. Staff may archive anyway (for example a
         stuck download nobody can cancel); the running work then finishes.
         """
-        in_progress = [
-            ManufacturabilityCheck.Status.PENDING,
-            *ManufacturabilityCheck.Status.active(),
-        ]
-        if self.manufacturability_checks.filter(status__in=in_progress).exists():
+        checks = self.manufacturability_checks.filter(
+            status__in=ManufacturabilityCheck.Status.in_progress(),
+        )
+        if checks.exists():
             return True
+        # PENDING counts: ensure_download_tasks_queued() queues a download for
+        # every active PENDING file within a minute.
         downloading = {
+            ProjectFile.DownloadStatus.PENDING,
             ProjectFile.DownloadStatus.QUEUED,
             ProjectFile.DownloadStatus.DOWNLOADING,
         }

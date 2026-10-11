@@ -17,6 +17,7 @@ from wafer_space.users.tests.factories import UserFactory
 from .factories import ManufacturabilityCheckFactory
 from .factories import ProjectFactory
 from .factories import ProjectFileFactory
+from .factories import make_downloaded_file
 
 pytestmark = pytest.mark.django_db
 
@@ -37,7 +38,7 @@ def make_slot_holding(project: Project) -> ShuttleSlot:
 
 def give_submitted_file(project: Project) -> Project:
     Project.objects.filter(pk=project.pk).update(
-        submitted_file=ProjectFileFactory(project=project),
+        submitted_file=make_downloaded_file(project),
     )
     return Project.objects.get(pk=project.pk)
 
@@ -168,6 +169,21 @@ def test_owner_cannot_archive_while_check_in_progress(status: str) -> None:
     allowed, reason = project.can_be_archived_by(project.user)
     assert allowed is False
     assert "still in progress" in reason
+
+
+def test_owner_cannot_archive_while_download_pending() -> None:
+    """A PENDING active file is picked up by the recovery scanner shortly."""
+    project = make_project()
+    ProjectFileFactory(project=project, is_active=True)
+    allowed, reason = project.can_be_archived_by(project.user)
+    assert allowed is False
+    assert "still in progress" in reason
+
+
+def test_inactive_pending_file_does_not_block_archiving() -> None:
+    project = make_project()
+    ProjectFileFactory(project=project, is_active=False)
+    assert project.can_be_archived_by(project.user) == (True, "")
 
 
 def test_owner_cannot_archive_while_download_queued() -> None:
