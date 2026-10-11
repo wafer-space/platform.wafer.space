@@ -265,15 +265,17 @@
         {# Submit New File Button #}
         <div class="card mb-3">
           <div class="card-body text-center">
-            <p class="mb-3">
-              {% if in_progress_file %}
-                <i class="bi bi-info-circle text-primary"></i>
-                Submitting a new file will replace the current file in progress.
-              {% else %}
-                <i class="bi bi-info-circle text-primary"></i>
-                Upload a design file to get started.
-              {% endif %}
-            </p>
+            {% if not shuttle_closed_reason %}
+              <p class="mb-3">
+                {% if in_progress_file %}
+                  <i class="bi bi-info-circle text-primary"></i>
+                  Submitting a new file will replace the current file in progress.
+                {% else %}
+                  <i class="bi bi-info-circle text-primary"></i>
+                  Upload a design file to get started.
+                {% endif %}
+              </p>
+            {% endif %}
             {% if project.is_archived %}
               <button type="button"
                       class="btn btn-primary btn-lg"

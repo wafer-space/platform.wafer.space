@@ -177,3 +177,15 @@ def test_detail_disables_submit_button_on_closed_shuttle(
 
     submit_url = reverse("projects:submit", args=[closed_project.pk])
     assert (f'title="{REASON}"' in content, submit_url in content) == (True, False)
+
+
+def test_detail_drops_upload_prompt_on_closed_shuttle(
+    client: Client, closed_project: Project
+) -> None:
+    client.force_login(closed_project.user)
+
+    content = client.get(
+        reverse("projects:detail", args=[closed_project.pk])
+    ).content.decode()
+
+    assert "Upload a design file to get started." not in content
