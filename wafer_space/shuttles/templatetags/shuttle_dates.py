@@ -18,21 +18,27 @@ register = template.Library()
 AOE = datetime.timezone(datetime.timedelta(hours=-12), "AoE")
 
 
-def _require_aware(value: datetime.datetime) -> None:
+def _require_aware(value: datetime.datetime | None) -> datetime.datetime:
+    # Templates guard optional dates with {% if %}; reaching a filter without
+    # one is a template bug, so fail loudly rather than print a placeholder.
+    if value is None:
+        msg = "Shuttle date filter got no date; guard it with {% if %}"
+        raise ValueError(msg)
     if value.tzinfo is None or value.utcoffset() is None:
         msg = f"Shuttle date must be timezone-aware, got {value!r}"
         raise ValueError(msg)
+    return value
 
 
 @register.filter
-def aoe_deadline(value: datetime.datetime) -> str:
+def aoe_deadline(value: datetime.datetime | None) -> str:
     """Format a deadline like wafer.space: '16 December 2026 @ 11:59 PM AoE'."""
-    _require_aware(value)
-    return dateformat.format(value.astimezone(AOE), r"j F Y \@ h:i A \A\o\E")
+    deadline = _require_aware(value)
+    return dateformat.format(deadline.astimezone(AOE), r"j F Y \@ h:i A \A\o\E")
 
 
 @register.filter
-def milestone_date(value: datetime.datetime) -> str:
+def milestone_date(value: datetime.datetime | None) -> str:
     """Format a milestone stored as midnight UTC: '8 January 2026'."""
-    _require_aware(value)
-    return dateformat.format(value.astimezone(datetime.UTC), "j F Y")
+    milestone = _require_aware(value)
+    return dateformat.format(milestone.astimezone(datetime.UTC), "j F Y")
