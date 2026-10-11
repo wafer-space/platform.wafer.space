@@ -23,6 +23,7 @@ from django.conf import settings
 from django.core.files import File
 from django.core.files.base import ContentFile
 from django.db import IntegrityError
+from django.db import transaction
 from django.db.models import Exists
 from django.db.models import F
 from django.db.models import OuterRef
@@ -58,6 +59,8 @@ from .verification import is_check_task_actively_running
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from django.db.models import QuerySet
 
 T = TypeVar("T")
 
@@ -1956,6 +1959,30 @@ def checks_cleanup_stale_files() -> dict:
     return {"cancelled": cancelled}
 
 
+def superseded_checks() -> "QuerySet[ManufacturabilityCheck]":
+    """In-progress checks that a newer, still-viable check for the file supersedes.
+
+    "Newer" is ordered by (created_at, id), so checks created in the same
+    instant never hide each other. A newer check that is CANCELLING, CANCELLED
+    or ERROR never finishes, so it does not supersede: cancelling the older
+    check would leave the file with no verdict. (An ERROR check's retry is a
+    new PENDING check, which does supersede.) Checks already CANCELLING are
+    excluded; CANCELLING -> CANCELLING is not a valid transition, and the
+    checks_cancelling task completes them.
+    """
+    status = ManufacturabilityCheck.Status
+    newer_exists = ManufacturabilityCheck.objects.filter(
+        Q(created_at__gt=OuterRef("created_at"))
+        | Q(created_at=OuterRef("created_at"), id__gt=OuterRef("id")),
+        project_file=OuterRef("project_file"),
+    ).exclude(status__in=[status.CANCELLING, status.CANCELLED, status.ERROR])
+    return (
+        ManufacturabilityCheck.objects.filter(status__in=status.in_progress())
+        .exclude(status=status.CANCELLING)
+        .filter(Exists(newer_exists))
+    )
+
+
 @checks_task()
 def checks_cleanup_superseded() -> dict:
     """Cancel in-progress checks that have been superseded by newer checks.
@@ -1969,41 +1996,26 @@ def checks_cleanup_superseded() -> dict:
     The scheduled ``checks_drc_update_requeue`` beat task does not produce this
     situation, because it only requeues FINISHED checks.
 
+    Each candidate is re-read under a row lock before it is marked, so a check
+    that finished, errored or was cancelled after the candidates were listed
+    keeps its new status.
+
     Returns:
         Dict with 'cancelled' count of checks marked for cancellation.
     """
     logger = logging.getLogger(__name__)
 
-    # Subquery: does a newer check exist for the same file? Checks created
-    # in the same instant are ordered by id, so a tie never hides one.
-    newer_exists = ManufacturabilityCheck.objects.filter(
-        Q(created_at__gt=OuterRef("created_at"))
-        | Q(created_at=OuterRef("created_at"), id__gt=OuterRef("id")),
-        project_file=OuterRef("project_file"),
-    )
-
-    # Find all superseded in-progress checks. Checks already in CANCELLING
-    # are excluded: CANCELLING -> CANCELLING is not a valid transition, and
-    # the checks_cancelling task completes them.
-    superseded = (
-        ManufacturabilityCheck.objects.filter(
-            status__in=ManufacturabilityCheck.Status.in_progress(),
-        )
-        .exclude(status=ManufacturabilityCheck.Status.CANCELLING)
-        .filter(Exists(newer_exists))
-    )
-
+    candidate_ids = list(superseded_checks().values_list("id", flat=True))
     cancelled = 0
-    for check in superseded:
-        try:
+    for check_id in candidate_ids:
+        with transaction.atomic():
+            check = superseded_checks().select_for_update().filter(pk=check_id).first()
+            if check is None:
+                # Finished, errored or cancelled since the candidates were listed.
+                continue
             check.mark_cancelling(reason="Superseded by newer check")
-            logger.info(
-                "Marked check %s as cancelling (superseded)",
-                check.id,
-            )
-            cancelled += 1
-        except InvalidStateTransitionError:
-            logger.exception("Failed to cancel superseded check %s", check.id)
+        logger.info("Marked check %s as cancelling (superseded)", check_id)
+        cancelled += 1
 
     return {"cancelled": cancelled}
 

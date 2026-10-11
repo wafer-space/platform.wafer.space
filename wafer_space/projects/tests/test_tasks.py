@@ -17,6 +17,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from tempfile import mkdtemp
 from typing import IO
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 from unittest.mock import Mock
 from unittest.mock import patch
@@ -28,6 +29,7 @@ from django.core.cache import cache
 from django.test import TestCase
 from django.utils import timezone
 
+from wafer_space.projects import tasks_checks
 from wafer_space.projects.file_type_utils import GDS_SIGNATURE
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
@@ -67,6 +69,9 @@ from wafer_space.projects.tests.factories import ProjectFileFactory
 from wafer_space.projects.tests.read_instrumentation import RecordingPath
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.tests.factories import ShuttleFactory
+
+if TYPE_CHECKING:
+    from django.db.models import QuerySet
 
 User = get_user_model()
 TEST_PASSWORD = "testpass123"  # noqa: S105 - Test password constant
@@ -2691,6 +2696,78 @@ class TestCancelSupersededChecks:
         assert (old_check.status, new_check.status) == (
             ManufacturabilityCheck.Status.CANCELLING,
             ManufacturabilityCheck.Status.PENDING,
+        )
+
+    @pytest.mark.django_db
+    @pytest.mark.parametrize(
+        "newer_status",
+        [
+            ManufacturabilityCheck.Status.CANCELLING,
+            ManufacturabilityCheck.Status.CANCELLED,
+            ManufacturabilityCheck.Status.ERROR,
+        ],
+    )
+    def test_dead_newer_check_does_not_supersede(self, newer_status: str) -> None:
+        """A newer check that will never finish leaves the running one alone.
+
+        Otherwise a failed manual requeue would cancel the only check that
+        could still produce a verdict for the file.
+        """
+        project_file = ProjectFileFactory()
+        old_check = ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=newer_status,
+        )
+
+        checks_cleanup_superseded()
+
+        old_check.refresh_from_db()
+        assert old_check.status == ManufacturabilityCheck.Status.RUNNING
+
+    @pytest.mark.django_db
+    def test_check_that_finished_after_listing_is_not_overwritten(self) -> None:
+        """A check that finishes between listing and locking keeps FINISHED.
+
+        The candidate is re-read under a row lock; a stale in-memory RUNNING
+        status must not let CANCELLING overwrite the finished result.
+        """
+        project_file = ProjectFileFactory()
+        old_check = ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        real_superseded_checks = tasks_checks.superseded_checks
+        calls: list[None] = []
+
+        def finish_after_listing() -> "QuerySet[ManufacturabilityCheck]":
+            if calls:
+                ManufacturabilityCheck.objects.filter(pk=old_check.pk).update(
+                    status=ManufacturabilityCheck.Status.FINISHED,
+                )
+            calls.append(None)
+            return real_superseded_checks()
+
+        with patch.object(
+            tasks_checks, "superseded_checks", side_effect=finish_after_listing
+        ):
+            result = checks_cleanup_superseded()
+
+        old_check.refresh_from_db()
+        assert (result, old_check.status) == (
+            {"cancelled": 0},
+            ManufacturabilityCheck.Status.FINISHED,
         )
 
     @staticmethod
