@@ -356,14 +356,17 @@
                     </button>
                   </form>
                 {% else %}
-                  <button type="button"
-                          class="btn btn-success"
-                          disabled
-                          data-bs-toggle="tooltip"
-                          data-bs-placement="top"
-                          title="{{ project.can_submit.1 }}">
-                    <i class="bi bi-send"></i> Submit for Manufacturing
-                  </button>
+                  {# Disabled buttons fire no mouse events: the wrapper carries the tooltip #}
+                  <span class="d-inline-block"
+                        tabindex="0"
+                        data-submit-disabled-reason
+                        data-bs-toggle="tooltip"
+                        data-bs-placement="top"
+                        title="{{ project.can_submit.1 }}">
+                    <button type="button" class="btn btn-success" disabled>
+                      <i class="bi bi-send"></i> Submit for Manufacturing
+                    </button>
+                  </span>
                 {% endif %}
               </div>
             </div>
