@@ -3,6 +3,7 @@
 import pytest
 from django.contrib.auth import get_user_model
 from django.test import Client
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions
 
@@ -497,3 +498,40 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
         # Grid should have slot cells
         slot_cells = grid_in_modal.find_elements(By.CSS_SELECTOR, "td[data-slot-id]")
         assert len(slot_cells) > 0
+
+    @pytest.mark.parametrize("is_test_only", [False, True])
+    def test_hovering_a_project_row_without_grid_raises_no_js_error(
+        self, driver, wait, staff_user, is_test_only
+    ):
+        """A shuttle with no slots has no grid; the page's JS must cope (#221).
+
+        A shuttle before generate_shuttle_grid, and a test-only shuttle
+        (which never gets a grid), both render no grid-table.
+        """
+        gridless = Shuttle.objects.create(
+            name="G899",
+            description="No grid",
+            status=Shuttle.Status.OPEN,
+            is_test_only=is_test_only,
+        )
+        Project.objects.create(
+            user=staff_user,
+            name="Gridless Project",
+            shuttle=gridless,
+            project_id="GRID",
+            slot_size=SlotSize.FULL,
+        )
+        self.perform_login(driver, staff_user.username, TEST_PASSWORD)
+        driver.get(f"{self.live_server_url}/shuttles/G899/assign/")
+        row = wait.until(
+            expected_conditions.presence_of_element_located(
+                (By.CSS_SELECTOR, "#projects-table tbody tr")
+            )
+        )
+        driver.get_log("browser")  # Drop anything logged while loading.
+
+        ActionChains(driver).move_to_element(row).perform()
+        ActionChains(driver).move_by_offset(0, 400).perform()
+
+        severe = [e for e in driver.get_log("browser") if e["level"] == "SEVERE"]
+        assert severe == []
