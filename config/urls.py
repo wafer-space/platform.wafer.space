@@ -1,5 +1,4 @@
 from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include
 from django.urls import path
@@ -32,8 +31,9 @@ urlpatterns = [
         include("wafer_space.notifications.urls", namespace="notifications"),
     ),
     # ...
-    # Media files
-    *static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT),
+    # User files under MEDIA_ROOT are private: nothing serves MEDIA_URL, not
+    # even in development. Views send them after a permission check
+    # (wafer_space/projects/file_serving.py).
 ]
 
 

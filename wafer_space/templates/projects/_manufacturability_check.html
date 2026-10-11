@@ -112,12 +112,12 @@
   <h6>
     <i class="bi bi-folder2-open"></i> Output Files
   </h6>
+  {# User files are private: every link goes through a permission-checked view, never MEDIA_URL. #}
   <table class="table table-sm table-borderless mb-0">
     <tbody>
       <tr>
         <td style="width: 180px;">
           {% if check.pk %}
-            {# Through the view, never /media/: that alias has no access control. #}
             <a href="{% url 'projects:check_log' pk=check.project_id check_id=check.pk %}"
                class="btn btn-sm btn-outline-secondary"
                data-full-log-link>
@@ -151,7 +151,7 @@
       <tr>
         <td style="width: 180px;">
           {% if check.runs_archive|stored_size is not None %}
-            <a href="{{ check.runs_archive.url }}"
+            <a href="{% url 'projects:check_artifact' pk=check.project_id check_id=check.pk artifact='runs-archive' %}"
                class="btn btn-sm btn-outline-primary"
                download>
               <i class="bi bi-file-zip"></i> Runs Archive
@@ -184,7 +184,7 @@
       <tr>
         <td style="width: 180px;">
           {% if check.output_gds|stored_size is not None %}
-            <a href="{{ check.output_gds.url }}"
+            <a href="{% url 'projects:check_artifact' pk=check.project_id check_id=check.pk artifact='output-layout' %}"
                class="btn btn-sm btn-outline-success"
                download>
               <i class="bi bi-file-earmark-binary"></i> Output OAS
@@ -217,7 +217,7 @@
       <tr>
         <td style="width: 180px;">
           {% if check.docker_layer_export|stored_size is not None %}
-            <a href="{{ check.docker_layer_export.url }}"
+            <a href="{% url 'projects:check_artifact' pk=check.project_id check_id=check.pk artifact='docker-layer' %}"
                class="btn btn-sm btn-outline-warning"
                download>
               <i class="bi bi-archive"></i> Docker Layer

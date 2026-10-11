@@ -88,6 +88,9 @@ INSTALLED_APPS += [
 # MEDIA
 # ------------------------------------------------------------------------------
 # MEDIA_URL: uses base.py default (/media/)
+# nginx serves user files from this `internal` location after a view has
+# checked permission (deployment/nginx/*.conf).
+MEDIA_X_ACCEL_REDIRECT_PREFIX = "/protected-media/"
 
 # CELERY
 # ------------------------------------------------------------------------------

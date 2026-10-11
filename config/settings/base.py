@@ -227,7 +227,13 @@ STATICFILES_FINDERS = [
 # https://docs.djangoproject.com/en/dev/ref/settings/#media-root
 MEDIA_ROOT = str(APPS_DIR / "media")
 # https://docs.djangoproject.com/en/dev/ref/settings/#media-url
+# Nothing serves MEDIA_URL: user files are private and are downloaded only
+# through permission-checked views (wafer_space/projects/file_serving.py).
 MEDIA_URL = "/media/"
+# When set, those views answer with an X-Accel-Redirect to this nginx
+# `internal` location (an alias of MEDIA_ROOT) and nginx sends the file.
+# When None, Django streams the file itself (dev and tests, no nginx).
+MEDIA_X_ACCEL_REDIRECT_PREFIX: str | None = None
 
 # TEMPLATES
 # ------------------------------------------------------------------------------
