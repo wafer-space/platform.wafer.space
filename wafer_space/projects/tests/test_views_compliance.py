@@ -7,11 +7,11 @@ from django.test import RequestFactory
 from django.test import TestCase
 from django.urls import reverse
 
+from wafer_space.core.utils import get_client_ip
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectComplianceCertification
 from wafer_space.projects.models import ProjectFile
-from wafer_space.projects.views_compliance import get_client_ip
 from wafer_space.users.models import User
 
 from .constants import HTTP_FOUND

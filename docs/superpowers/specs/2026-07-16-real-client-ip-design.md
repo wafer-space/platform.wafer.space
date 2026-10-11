@@ -252,6 +252,10 @@ Baseline before changes: 79 passed.
   `REMOTE_ADDR` left as-is. Never fall back to spoofable `X-Forwarded-For`.
   Behind gunicorn's unix socket that leaves `REMOTE_ADDR` as `""`, which the
   helper normalises to `None` (see §3) so the `inet` column accepts it.
+  allauth's rate limiter cannot key on `None`, so `AccountAdapter.get_client_ip`
+  raises `PermissionDenied` (and logs an error) instead: a login, signup or
+  password reset with no resolvable IP fails loudly rather than every anonymous
+  visitor sharing one rate-limit bucket.
 - **IPv6 direct to VM** → nginx sets `X-Real-IP` to the real client; flows
   through unchanged.
 - **Malformed `X-Real-IP`** → ipware returns `None`; `REMOTE_ADDR` untouched.
@@ -261,32 +265,40 @@ Baseline before changes: 79 passed.
 
 ## Assumptions to verify before trusting in prod
 
-All four verified on 2026-08-17 during implementation: (1) the platform nginx
-template sets `proxy_set_header X-Real-IP $remote_addr` at *server* level
-(hetzner-ansible#144), so it is overwritten on every proxied location;
-(2) hetzner-ansible#132 (2026-06-25) and #133 (2026-08-02) are merged and
-the nginx role was re-rendered live on stage and prod on 2026-08-17;
-(3) `django-ipware==7.0.1` is the latest release, imports as
-`from ipware import get_client_ip`, and `request_header_order=("HTTP_X_REAL_IP",)`
-consults only that header (probed against the installed package: XFF-only ->
-`None`, malformed -> `None`, private/IPv6 returned); (4) baseline in the new
-worktree was 84 passed across the affected test files (not 79).
+Recorded as verified on 2026-08-17 during implementation:
 
-1. **nginx overwrites `X-Real-IP`** (`proxy_set_header X-Real-IP
-   $remote_addr`) rather than passing a client-supplied value through. The
-   whole trust model depends on this; confirm against the #133 config.
-2. hetzner-ansible #132 + #133 are deployed to `doc` before
-   `TRUST_X_REAL_IP=True` is relied upon (until then the middleware is
-   harmless: no `X-Real-IP` means no rewrite).
-3. `django-ipware` 7.0.1 — verify **against the installed package**, not
-   docs: the pinned version resolves, the import path is
-   `from ipware import get_client_ip`, and `request_header_order` is accepted
-   with the semantics assumed in §2 (restricting lookup to that header only).
-4. Re-establish the test baseline in the worktree before making changes
-   rather than trusting the number recorded above.
+1. **nginx overwrites `X-Real-IP`.** The platform nginx template sets
+   `proxy_set_header X-Real-IP $remote_addr` at *server* level
+   (hetzner-ansible#144), so it is overwritten on every proxied location
+   rather than passing a client-supplied value through. The whole trust
+   model depends on this.
+2. hetzner-ansible#132 (2026-06-25) and #133 (2026-08-02) are merged, and the
+   nginx role was re-rendered live on stage and prod on 2026-08-17.
+3. `django-ipware==7.0.1` is the latest release and imports as
+   `from ipware import get_client_ip`. `request_header_order=("HTTP_X_REAL_IP",)`
+   consults only that header; this was probed against the installed package:
+   XFF-only gives `None`, malformed gives `None`, private and IPv6 values are
+   returned.
+4. The baseline in the new worktree was 84 passed across the affected test
+   files.
+
+Found on 2026-10-11 and still to be confirmed on both hosts before merge (the
+PR's "Deployment precondition" lists these):
+
+5. **The hypervisor transparent bind (hetzner-ansible#72) is live.** The nginx
+   template's Cloudflare `real_ip` only takes effect once the peer is a
+   Cloudflare edge address. Without #72 the peer is the hypervisor bridge, so
+   `$remote_addr`, and with it every recorded IP, is `192.168.27.1`. That is
+   wrong but not forgeable. The nginx access log showing real visitor IPs is
+   the end-to-end proof.
+6. nginx is the sole ingress and gunicorn listens only on its unix socket.
 
 ## Out of scope
 
 - Consuming the IP for new features (rate limiting, geolocation) — #274 only
-  requires the IP be *correct and available*.
+  requires the IP be *correct and available*. Existing consumers are in
+  scope: django-allauth's `DefaultAccountAdapter.get_client_ip` (the key for its
+  login, signup and password-reset rate limits, user sessions and the `ip` in
+  its emails) also took the first X-Forwarded-For entry. `AccountAdapter`
+  overrides it to use the shared helper (found in review, 2026-10-11).
 - The nginx/hypervisor changes themselves (hetzner-ansible #132/#133).
