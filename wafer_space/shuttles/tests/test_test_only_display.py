@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 from typing import TYPE_CHECKING
 
 import pytest
@@ -95,3 +96,24 @@ def test_assignment_page_offers_no_assign_button(
     ).content.decode()
 
     assert "data-assign-project" not in content
+
+
+@pytest.mark.parametrize(
+    ("url_name", "with_pk"), [("projects:detail", True), ("projects:list", False)]
+)
+def test_test_only_shuttle_shows_no_deadline(
+    client: Client, test_shuttle: Shuttle, url_name: str, *, with_pk: bool
+) -> None:
+    # A test-only shuttle never closes, so a deadline set by mistake in the
+    # admin must not show a countdown (#221 spec: "no deadline text").
+    test_shuttle.submission_deadline = datetime.datetime(
+        2099, 12, 17, 11, 59, 59, tzinfo=datetime.UTC
+    )
+    test_shuttle.save()
+    project = ProjectFactory(shuttle=test_shuttle)
+    client.force_login(project.user)
+    args = [project.pk] if with_pk else []
+
+    content = client.get(reverse(url_name, args=args)).content.decode()
+
+    assert "data-shuttle-deadline" not in content

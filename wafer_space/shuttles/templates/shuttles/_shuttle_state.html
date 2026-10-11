@@ -13,7 +13,7 @@
             title="Designs are checked but never manufactured"><i class="bi bi-clipboard2-check" aria-hidden="true"></i> Test only</span>
       <span class="visually-hidden">Designs are checked but never manufactured</span>
     {% endif %}
-    {% if shuttle.submission_deadline %}
+    {% if shuttle.submission_deadline and not shuttle.is_test_only %}
       <span class="small">{% shuttle_deadline shuttle.submission_deadline label="GDS submission deadline" %}</span>
     {% endif %}
   {% endif %}
