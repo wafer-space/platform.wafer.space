@@ -7,6 +7,7 @@ import uuid
 from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING
+from typing import Any
 from typing import ClassVar
 from typing import cast
 
@@ -30,6 +31,7 @@ from django.shortcuts import get_object_or_404
 from django.shortcuts import redirect
 from django.shortcuts import render
 from django.urls import reverse_lazy
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 from django.views.generic import CreateView
 from django.views.generic import DetailView
@@ -40,6 +42,10 @@ from django.views.generic import View
 from wafer_space.core.enums import SlotSize
 from wafer_space.shuttles.models import Shuttle
 
+from .deadline_warning import WARNING_WINDOW
+from .deadline_warning import deadline_warning
+from .deadline_warning import deadline_warning_for
+from .deadline_warning import next_step
 from .exceptions import InvalidStateTransitionError
 from .forms import ProjectFileURLSubmitForm
 from .forms import ProjectForm
@@ -68,8 +74,11 @@ if TYPE_CHECKING:
 
     from django.http import HttpRequest
     from django.http import HttpResponse
+    from django_stubs_ext import WithAnnotations
 
     from wafer_space.users.models import User
+
+    from .list_state import ListStateAnnotations
 
 
 class ProjectListView(LoginRequiredMixin, ListView):
@@ -109,6 +118,32 @@ class ProjectListView(LoginRequiredMixin, ListView):
             "-created_at",
         )
 
+    def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
+        """Add the user's own projects that are near their GDS deadline."""
+        context = super().get_context_data(**kwargs)
+        user = cast("User", self.request.user)
+        now = timezone.now()
+        candidates = annotate_list_state(
+            Project.objects.filter(
+                user=user,
+                archived_at__isnull=True,
+                shuttle__submission_deadline__gt=now,
+                shuttle__submission_deadline__lte=now + WARNING_WINDOW,
+            ).select_related("shuttle"),
+        ).order_by("shuttle__submission_deadline", "name")
+        warned = []
+        for candidate in candidates:
+            # annotate_list_state adds state_submitted_verdict (#321).
+            project = cast("WithAnnotations[Project, ListStateAnnotations]", candidate)
+            level = deadline_warning_for(
+                project,
+                submitted_verdict=project.state_submitted_verdict,
+            )
+            if level:
+                warned.append((project, level))
+        context["deadline_warned_projects"] = warned
+        return context
+
 
 class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView):
     """View a single project with its files."""
@@ -130,13 +165,7 @@ class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView
         # Why this user may not upload or submit (closed shuttle, #320)
         context["shuttle_closed_reason"] = shuttle_closed_reason_for(project, user)
 
-        # Archive controls and read-only state (issue #307)
-        context["can_archive"] = project.can_be_archived_by(user)
-        context["archived_read_only_message"] = ARCHIVED_READ_ONLY_MESSAGE
-
-        # Staff override of the precheck when submitting (issue #252)
-        context["can_override_submit"] = project.can_override_submit(user)
-        context["override_form"] = SubmitOverrideForm()
+        context.update(self._action_context(project, user))
 
         # Get submitted file (file that was submitted for manufacturing)
         submitted_file = project.submitted_file
@@ -226,6 +255,22 @@ class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView
         context["check"] = check
 
         return context
+
+    @staticmethod
+    def _action_context(project: Project, user: Any) -> dict[str, Any]:
+        """Archive, deadline-warning and override state for the page."""
+        warning = deadline_warning(project)
+        return {
+            # Archive controls and read-only state (issue #307)
+            "can_archive": project.can_be_archived_by(user),
+            "archived_read_only_message": ARCHIVED_READ_ONLY_MESSAGE,
+            # Warning near the shuttle's GDS deadline (issue #347)
+            "deadline_warning": warning,
+            "deadline_next_step": next_step(project) if warning else "",
+            # Staff override of the precheck when submitting (issue #252)
+            "can_override_submit": project.can_override_submit(user),
+            "override_form": SubmitOverrideForm(),
+        }
 
 
 class ProjectCreateView(LoginRequiredMixin, CreateView):

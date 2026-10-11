@@ -31,6 +31,22 @@
             </a>
           {% endif %}
         </div>
+        {% if deadline_warned_projects %}
+          <div class="alert alert-warning" role="alert" data-deadline-alert>
+            <i class="bi bi-alarm me-1" aria-hidden="true"></i>
+            <strong>GDS submission deadlines are close for these projects:</strong>
+            <ul class="mb-0 mt-1">
+              {% for warned, level in deadline_warned_projects %}
+                <li data-warned-project="{{ warned.pk }}">
+                  <a href="{% url 'projects:detail' pk=warned.pk %}">{{ warned.name }}</a>
+                  ({{ warned.shuttle.name }})
+                  {% shuttle_deadline warned.shuttle.submission_deadline compact=True %}
+                  {% if level == "urgent" %}<span class="badge bg-danger">Urgent</span>{% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+          </div>
+        {% endif %}
         {% if projects %}
           <div class="list-group">
             {% for project in projects %}
