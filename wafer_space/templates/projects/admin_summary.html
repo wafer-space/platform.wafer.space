@@ -462,9 +462,9 @@
               <td class="text-nowrap">{{ project.user.username }}</td>
               <td class="text-nowrap">{{ project.user.email }}</td>
               {% with active_file=project.active_files.0 %}
-                {% if active_file and active_file.latest_manufacturability_check %}
+                {% if active_file and active_file.newest_checks.0 %}
                   <td class="text-nowrap">
-                    {% badge_check_status_and_version active_file.latest_manufacturability_check %}
+                    {% badge_check_status_and_version active_file.newest_checks.0 %}
                     {% if project.is_submission_override %}
                       <span class="badge bg-danger"
                             data-submission-override-badge

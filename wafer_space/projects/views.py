@@ -1133,9 +1133,19 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
             .prefetch_related(
                 Prefetch(
                     "files",
+                    # Each file's checks newest first, without their logs:
+                    # the page reads only the latest one (issue #308).
                     queryset=ProjectFile.objects.filter(
                         is_active=True
-                    ).prefetch_related("manufacturability_checks"),
+                    ).prefetch_related(
+                        Prefetch(
+                            "manufacturability_checks",
+                            queryset=ManufacturabilityCheck.objects.defer(
+                                "processing_logs"
+                            ).order_by("-created_at"),
+                            to_attr="newest_checks",
+                        )
+                    ),
                     to_attr="active_files",
                 )
             )
@@ -1199,7 +1209,11 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
         for project in projects:
             size = project.slot_size
             active_file = project.active_files[0] if project.active_files else None
-            check = active_file.latest_manufacturability_check if active_file else None
+            check = (
+                active_file.newest_checks[0]
+                if active_file and active_file.newest_checks
+                else None
+            )
 
             if check:
                 status_counts[check.status] += 1

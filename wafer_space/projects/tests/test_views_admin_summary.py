@@ -1,6 +1,8 @@
 """Tests for ProjectAdminSummaryView."""
 
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -10,6 +12,7 @@ from wafer_space.users.tests.factories import UserFactory
 from .constants import HTTP_FORBIDDEN
 from .constants import HTTP_FOUND
 from .constants import HTTP_OK
+from .factories import ManufacturabilityCheckFactory
 from .factories import ProjectFactory
 from .factories import ProjectFileFactory
 
@@ -365,3 +368,48 @@ def test_summary_marks_archived_project(client):
 
     assert "Archived one" in content
     assert content.count("data-archived-badge") == 1
+
+
+@pytest.mark.django_db
+class TestAdminSummaryLoadsNoLogs:
+    """The summary needs each project's latest check, never its logs (#308).
+
+    It used to prefetch every check with its full log and then query each
+    project's latest check again: a 5.4 GB gunicorn worker.
+    """
+
+    @staticmethod
+    def _projects_with_checks(checks_per_project: int) -> None:
+        for _ in range(3):
+            project_file = ProjectFileFactory(is_active=True)
+            for _ in range(checks_per_project):
+                ManufacturabilityCheckFactory(
+                    project=project_file.project,
+                    project_file=project_file,
+                    status=ManufacturabilityCheck.Status.FINISHED,
+                    processing_logs="log line\n" * 1000,
+                )
+
+    @staticmethod
+    def _render(client) -> list[str]:
+        client.force_login(UserFactory(is_staff=True))
+        with CaptureQueriesContext(connection) as queries:
+            response = client.get(reverse("projects:admin_summary"))
+        assert response.status_code == HTTP_OK
+        return [q["sql"] for q in queries]
+
+    def test_no_query_reads_the_logs(self, client) -> None:
+        """processing_logs is never selected for the summary."""
+        self._projects_with_checks(3)
+
+        sqls = self._render(client)
+
+        assert not [sql for sql in sqls if "processing_logs" in sql]
+
+    def test_query_count_does_not_grow_with_checks(self, client) -> None:
+        """The latest check comes from the prefetch, not a query per project."""
+        self._projects_with_checks(1)
+        few = len(self._render(client))
+        self._projects_with_checks(10)
+
+        assert len(self._render(client)) == few
