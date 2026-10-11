@@ -72,6 +72,7 @@ def next_step(project: Project) -> str:
         newer_passes = (
             latest is not None
             and latest.pk != project.submitted_file_id
+            and latest.hash_verified
             and project.latest_file_manufacturable is True
         )
         if newer_passes:
@@ -92,7 +93,7 @@ def _latest_revision_step(project: Project, latest: ProjectFile) -> str:
     if download != latest.DownloadStatus.COMPLETED:
         return "Wait for the file download and the check to finish, then submit."
     verdict = project.latest_file_manufacturable
-    if verdict is True:
+    if verdict is True and latest.hash_verified:
         return "Your latest revision passed its check: Submit for Manufacturing."
     if verdict is False:
         return (

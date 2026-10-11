@@ -29,6 +29,10 @@ from .factories import make_downloaded_file
 
 pytestmark = pytest.mark.django_db
 
+# Warned projects created before and between the two list requests.
+FIRST_BATCH = 1
+SECOND_BATCH = 4
+
 
 def project_due_in(
     delta: datetime.timedelta | None,
@@ -281,10 +285,11 @@ def test_list_alert_query_count_does_not_grow_with_projects(client) -> None:
             )
             ProjectFactory(user=owner, shuttle=shuttle)
 
-    warned_projects(1, offset=0)
+    warned_projects(FIRST_BATCH, offset=0)
     with CaptureQueriesContext(connection) as one:
         client.get(reverse("projects:list"))
-    warned_projects(4, offset=1)
+    warned_projects(SECOND_BATCH, offset=FIRST_BATCH)
     with CaptureQueriesContext(connection) as five:
-        client.get(reverse("projects:list"))
+        html = client.get(reverse("projects:list")).content.decode()
+    assert html.count("data-warned-project=") == FIRST_BATCH + SECOND_BATCH
     assert len(five) == len(one)
