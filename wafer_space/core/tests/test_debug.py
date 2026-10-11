@@ -9,6 +9,8 @@ import pytest
 from django.conf import settings
 from django.core import mail
 from django.core.cache import cache
+from django.core.mail import EmailMultiAlternatives
+from django.test import RequestFactory
 from django.test import override_settings
 from django.views.debug import get_default_exception_reporter_filter
 
@@ -127,8 +129,59 @@ class TestCredentialScrubbingReporterFilter:
         assert frame_vars["broker_url"].endswith("@/platform?host=/var/run/pg")
 
 
-def _fail_holding_broker_url() -> None:
+class TestAdminEmailScrubbing:
+    """The rendered admin email is scrubbed, not only the settings dump."""
+
+    def _emit_error_about_broker_url(self, *, include_html: bool) -> None:
+        """Log an error whose message, exception and a frame local carry the URL.
+
+        Only server-side text matters: a secret can reach the request URL
+        only if the client already has it, so the request here is plain.
+        """
+        handler = RateLimitedAdminEmailHandler(include_html=include_html)
+        request = RequestFactory().get("/accounts/login/")
+        with pytest.raises(RuntimeError) as excinfo:
+            _fail_holding_broker_url(echo_url=True)
+        record = logging.LogRecord(
+            name="wafer_space.test",
+            level=logging.ERROR,
+            pathname=__file__,
+            lineno=1,
+            msg="broker connection failed: %s",
+            args=(BROKER_URL,),
+            exc_info=(excinfo.type, excinfo.value, excinfo.tb),
+        )
+        record.request = request
+
+        handler.emit(record)
+
+    def test_subject_and_text_body_are_scrubbed(self) -> None:
+        """Neither the exception text nor the log message leaks it."""
+        self._emit_error_about_broker_url(include_html=False)
+
+        assert len(mail.outbox) == 1
+        email = mail.outbox[0]
+        assert SENTINEL not in email.subject
+        assert SENTINEL not in email.body
+        assert "@/platform?host=/var/run/pg" in email.body
+
+    def test_html_body_is_scrubbed(self) -> None:
+        """With include_html the HTML alternative is scrubbed as well."""
+        self._emit_error_about_broker_url(include_html=True)
+
+        assert len(mail.outbox) == 1
+        email = mail.outbox[0]
+        assert isinstance(email, EmailMultiAlternatives)
+        alternatives = email.alternatives
+        assert len(alternatives) == 1
+        html = str(alternatives[0][0])
+        assert "broker_url" in html
+        assert SENTINEL not in html
+
+
+def _fail_holding_broker_url(*, echo_url: bool = False) -> None:
     """Raise while a local variable holds the credential-bearing URL."""
     broker_url = BROKER_URL
-    msg = f"cannot connect to {broker_url.split('://', 1)[0]}"
+    scheme = broker_url.split("://", 1)[0]
+    msg = f"cannot connect to {broker_url if echo_url else scheme}"
     raise RuntimeError(msg)

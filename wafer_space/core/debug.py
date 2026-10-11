@@ -12,6 +12,11 @@ out of every string value, recursing through dicts/lists/tuples via the
 parent implementation. String local variables shown in the traceback
 section are scrubbed the same way. Only the password is replaced, so the
 host and scheme stay readable in the report.
+
+The filter cannot reach the exception message, the log message or the
+request URL, which the report prints verbatim. :func:`scrub_url_credentials`
+is therefore also applied to the finished email by
+:class:`wafer_space.core.log.RateLimitedAdminEmailHandler`.
 """
 
 from __future__ import annotations
@@ -47,7 +52,15 @@ class CredentialScrubbingReporterFilter(SafeExceptionReporterFilter):
 
     def scrub_url_credentials(self, value: str) -> str:
         """Replace the password in any ``scheme://user:password@`` with stars."""
-        return _URL_CREDENTIALS.sub(
-            lambda m: f"{m.group('prefix')}{self.cleansed_substitute}@",
-            value,
-        )
+        return scrub_url_credentials(value, self.cleansed_substitute)
+
+
+def scrub_url_credentials(
+    value: str,
+    substitute: str = SafeExceptionReporterFilter.cleansed_substitute,
+) -> str:
+    """Replace the password in any ``scheme://user:password@`` in ``value``."""
+    return _URL_CREDENTIALS.sub(
+        lambda m: f"{m.group('prefix')}{substitute}@",
+        value,
+    )
