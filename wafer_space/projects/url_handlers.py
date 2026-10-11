@@ -15,7 +15,7 @@ Example:
     >>> if handler:
     ...     result = handler.process_url(url)
     ...     # Download from result["url"]
-    ...     handler.post_download_file(downloaded_path, result["metadata"])
+    ...     content_path = handler.post_download_file(downloaded_path, meta)
 """
 
 import base64
@@ -107,21 +107,23 @@ class URLHandler(ABC):
                 - metadata: Handler-specific metadata to pass to post_download_file
         """
 
-    def post_download_file(self, path: Path, metadata: dict[str, Any]) -> bool:
-        """Transform the downloaded file in place, without reading it whole.
+    def post_download_file(self, path: Path, metadata: dict[str, Any]) -> Path:
+        """Return the file holding the content to process, without reading it whole.
 
-        The default leaves the file unchanged. Handlers that need to
-        transform content (e.g. base64 decode) override this and must
-        process the file in bounded chunks (issue #139).
+        The default returns ``path`` itself. Handlers that transform content
+        (e.g. base64 decode) write a new sibling file in bounded chunks and
+        return it, leaving the download byte-exact: a retry resumes the
+        download with an HTTP Range request against the original stream, so
+        the download must never be rewritten in place (issue #139).
 
         Args:
-            path: The downloaded file on disk
+            path: The downloaded file on disk (not modified)
             metadata: Metadata from process_url
 
         Returns:
-            bool: True if the file was changed
+            Path: The file the content pipeline should process
         """
-        return False
+        return path
 
 
 class GoogleSourceHandler(URLHandler):
@@ -177,33 +179,32 @@ class GoogleSourceHandler(URLHandler):
             },
         }
 
-    def post_download_file(self, path: Path, metadata: dict[str, Any]) -> bool:
-        """Base64 decode the downloaded file in place, in bounded chunks.
+    def post_download_file(self, path: Path, metadata: dict[str, Any]) -> Path:
+        """Base64 decode the download into a sibling file, in bounded chunks.
 
         Google Source returns file content as base64-encoded text when
-        format=TEXT is used. The decoded bytes go to a sibling file that
-        atomically replaces the original, so a failure never leaves a
-        half-decoded file behind.
+        format=TEXT is used. The decoded bytes go to ``<path>.decoded``; the
+        download itself stays byte-exact so a retry can resume it.
 
         Args:
-            path: Base64-encoded download from Google Source
+            path: Base64-encoded download from Google Source (not modified)
             metadata: Metadata from process_url (unused but required by interface)
 
         Returns:
-            bool: Always True (the file is replaced by its decoded content)
+            Path: The decoded file
 
         Raises:
             ValueError: If the content is not valid base64
+            OSError: If the decoded file cannot be written
         """
         decoded_path = Path(os.fspath(path) + ".decoded")
         try:
             with path.open("rb") as src, decoded_path.open("wb") as dst:
                 _stream_b64decode(src, dst)
-        except ValueError:
+        except (ValueError, OSError):
             decoded_path.unlink(missing_ok=True)
             raise
-        decoded_path.replace(path)
-        return True
+        return decoded_path
 
 
 class GitHubArtifactHandler(URLHandler):

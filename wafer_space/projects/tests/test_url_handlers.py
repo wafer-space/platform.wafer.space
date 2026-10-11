@@ -24,8 +24,7 @@ def _post_process(
     """Run a handler's file hook on ``content``; return the resulting bytes."""
     path = tmp_path / "download.bin"
     path.write_bytes(content)
-    handler.post_download_file(path, metadata)
-    return path.read_bytes()
+    return handler.post_download_file(path, metadata).read_bytes()
 
 
 class TestURLHandler:
@@ -724,8 +723,7 @@ class TestGoogleSourceStreamingDecode:
     def _decode(tmp_path: Path, encoded: bytes) -> Path:
         path = tmp_path / "download.b64"
         path.write_bytes(encoded)
-        GoogleSourceHandler().post_download_file(path, {"base64_encoded": True})
-        return path
+        return GoogleSourceHandler().post_download_file(path, {"base64_encoded": True})
 
     def test_round_trip_matches_b64decode(self, tmp_path: Path) -> None:
         """Output equals base64.b64decode for a file spanning several chunks."""
@@ -744,6 +742,27 @@ class TestGoogleSourceStreamingDecode:
         encoded = b"\n" * (DECODE_CHUNK_SIZE - 2) + base64.b64encode(b"abcdef")
         path = self._decode(tmp_path, encoded)
         assert path.read_bytes() == b"abcdef"
+
+    def test_download_stays_byte_exact(self, tmp_path: Path) -> None:
+        """The download is never rewritten, so a retry can still resume it.
+
+        A retry sends Range: bytes=<size>- for the encoded stream; a
+        decoded-in-place file would get encoded bytes appended to it.
+        """
+        encoded = base64.b64encode(b"layout" * 1000)
+        decoded_path = self._decode(tmp_path, encoded)
+
+        assert ((tmp_path / "download.b64").read_bytes(), decoded_path.name) == (
+            encoded,
+            "download.b64.decoded",
+        )
+
+    def test_default_handler_returns_the_download(self, tmp_path: Path) -> None:
+        """Handlers without a transform hand the download on unchanged."""
+        path = tmp_path / "artifact.zip"
+        path.write_bytes(b"PK")
+
+        assert GitHubArtifactHandler().post_download_file(path, {}) == path
 
     def test_reads_are_bounded(self, tmp_path: Path) -> None:
         """The encoded file is never read whole (no read(-1))."""

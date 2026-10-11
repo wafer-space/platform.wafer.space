@@ -90,7 +90,7 @@ The project submission system allows users to submit their chip design files (GD
 - Abstract `URLHandler` base class
 - `can_handle(url)` - URL pattern matching
 - `process_url(url)` - Pre-download URL transformation
-- `post_download(content, metadata)` - Post-download content processing
+- `post_download_file(path, metadata) -> Path` - Post-download processing on disk; returns the file to process (default: `path` unchanged). Transforms must stream in bounded chunks and leave the download byte-exact for resume (issue #139)
 - `URLHandlerRegistry` - Handler registration and lookup
 
 **GoogleSourceHandler**
@@ -467,7 +467,7 @@ Infrastructure exists but not fully connected:
 ### Adding New URL Handlers
 
 1. Create handler class inheriting from `URLHandler`
-2. Implement required methods: `can_handle()`, `process_url()`, `post_download()`
+2. Implement required methods: `can_handle()`, `process_url()`; override `post_download_file()` only if the content needs transforming
 3. Register in `_url_handler_registry` (services.py and tasks.py)
 4. Add comprehensive tests
 5. Update documentation

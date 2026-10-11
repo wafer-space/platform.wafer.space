@@ -1295,41 +1295,37 @@ def _handle_download_task_error(
 def _apply_post_download_processing(
     project_file: ProjectFile,
     temp_path: Path,
-) -> None:
-    """Apply URL handler post-download processing in place, if applicable.
+) -> Path:
+    """Apply URL handler post-download processing; return the file to process.
 
-    The handler transforms the file on disk in bounded chunks (e.g. the
-    googlesource base64 decode), so the download is never read whole into
-    memory (issue #139).
+    A transforming handler (e.g. the googlesource base64 decode) writes a new
+    sibling file in bounded chunks and leaves the download byte-exact, so a
+    retry can still resume it with an HTTP Range request; nothing is read
+    whole into memory (issue #139).
 
     Args:
         project_file: The project file with handler_metadata
-        temp_path: Path to the downloaded file, rewritten in place when
-            a handler transforms the content
+        temp_path: Path to the downloaded file (not modified)
+
+    Returns:
+        Path: The file the content pipeline should process
     """
-    # Check if handler metadata exists
     if not project_file.handler_metadata:
-        return
+        return temp_path
 
     handler_name = project_file.handler_metadata.get("handler")
-    if not handler_name:
-        return
-
-    # Get the appropriate handler from registry
     # We use the handler name to recreate the handler instance
-    handler = None
-    if handler_name == "GoogleSourceHandler":
-        handler = GoogleSourceHandler()
-
-    if not handler:
-        return
+    if handler_name != "GoogleSourceHandler":
+        return temp_path
 
     logger = logging.getLogger(__name__)
-    original_size = temp_path.stat().st_size
-    if handler.post_download_file(temp_path, project_file.handler_metadata):
-        logger.info("  Content was transformed by handler")
-        logger.info("  Original size: %s", _format_bytes(original_size))
-        logger.info("  Processed size: %s", _format_bytes(temp_path.stat().st_size))
+    processed_path = GoogleSourceHandler().post_download_file(
+        temp_path, project_file.handler_metadata
+    )
+    logger.info("  Content was transformed by handler")
+    logger.info("  Original size: %s", _format_bytes(temp_path.stat().st_size))
+    logger.info("  Processed size: %s", _format_bytes(processed_path.stat().st_size))
+    return processed_path
 
 
 def _apply_content_pipeline(
@@ -1447,7 +1443,7 @@ def _process_and_save_content(
     logger.info("Step 6: Checking for post-download processing...")
     if project_file.handler_metadata:
         logger.info("  Handler metadata found: %s", project_file.handler_metadata)
-    _apply_post_download_processing(project_file, temp_path)
+    content_path = _apply_post_download_processing(project_file, temp_path)
 
     # Apply content extraction pipeline
     # This extracts GDS/OASIS from archives and calculates hashes on final file
@@ -1456,7 +1452,7 @@ def _process_and_save_content(
     try:
         try:
             output_path, output_size, final_md5, final_sha1, final_sha256 = (
-                _apply_content_pipeline(project_file, temp_path, pipeline_temp_dir)
+                _apply_content_pipeline(project_file, content_path, pipeline_temp_dir)
             )
         except ValueError as e:
             logger.exception("Pipeline processing failed")
@@ -1471,7 +1467,7 @@ def _process_and_save_content(
                     "traceback": traceback.format_exc(),
                     "original_filename": project_file.original_filename,
                     "file_size": (
-                        temp_path.stat().st_size if temp_path.exists() else None
+                        content_path.stat().st_size if content_path.exists() else None
                     ),
                 },
             )
