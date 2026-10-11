@@ -42,7 +42,9 @@ from .forms import ProjectFileURLSubmitForm
 from .forms import ProjectForm
 from .mixins import ProjectOwnerOrStaffMixin
 from .mixins import RefuseArchivedProjectMixin
+from .mixins import RefuseClosedShuttleMixin
 from .mixins import refuse_if_archived
+from .mixins import shuttle_closed_reason_for
 from .models import ARCHIVED_READ_ONLY_MESSAGE
 from .models import PROJECT_ID_LENGTH
 from .models import DownloadAttempt
@@ -116,6 +118,8 @@ class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView
         context["viewing_as_admin"] = (
             user.is_authenticated and user.is_staff and project.user != user
         )
+        # Why this user may not upload or submit (closed shuttle, #320)
+        context["shuttle_closed_reason"] = shuttle_closed_reason_for(project, user)
 
         # Archive controls and read-only state (issue #307)
         context["can_archive"] = project.can_be_archived_by(user)
@@ -332,6 +336,7 @@ class ProjectFileSubmitURLView(
     LoginRequiredMixin,
     ProjectOwnerOrStaffMixin,
     RefuseArchivedProjectMixin,
+    RefuseClosedShuttleMixin,
     View,
 ):
     """Submit a file URL for background download."""
@@ -662,6 +667,7 @@ class ProjectSubmitView(
     LoginRequiredMixin,
     ProjectOwnerOrStaffMixin,
     RefuseArchivedProjectMixin,
+    RefuseClosedShuttleMixin,
     View,
 ):
     """Submit a project for manufacturing (POST-only)."""

@@ -17,11 +17,10 @@
     </nav>
     <div class="d-flex justify-content-between align-items-center mb-4">
       <h1>{{ shuttle.name }}</h1>
-      <span class="badge bg-{% if shuttle.status == 'open' %}success{% elif shuttle.status == 'completed' or shuttle.status == 'cancelled' %}secondary{% else %}info{% endif %} fs-6">
-        {{ shuttle.get_status_display }}
-      </span>
+      <span class="badge bg-light text-dark border fs-6">Status: {{ shuttle.get_status_display }}</span>
     </div>
     <p class="lead">{{ shuttle.description }}</p>
+    <p>{% include "shuttles/_shuttle_state.html" with shuttle=shuttle %}</p>
     <div class="row">
       <!-- Capacity Card -->
       <div class="col-md-6 mb-4">

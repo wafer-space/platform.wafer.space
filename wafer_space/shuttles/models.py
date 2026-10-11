@@ -5,12 +5,15 @@ from typing import TYPE_CHECKING
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Q
 from django.utils import timezone
 
 from wafer_space.core.enums import SlotSize
 from wafer_space.projects.models import Project
 
 if TYPE_CHECKING:
+    import datetime
+
     from wafer_space.users.models import User
 
 # Shuttle ID format constants
@@ -56,6 +59,20 @@ def validate_shuttle_id(value: str) -> None:
     except ValueError as e:
         msg = "Shuttle ID must end with valid two-digit number"
         raise ValidationError(msg) from e
+
+
+class ShuttleQuerySet(models.QuerySet["Shuttle"]):
+    """Shuttle queries."""
+
+    def open_to_users(self, now: datetime.datetime | None = None) -> ShuttleQuerySet:
+        """Shuttles users may create projects on and submit to (#320).
+
+        Must agree with Shuttle.is_open_to_users.
+        """
+        moment = now or timezone.now()
+        return self.filter(status=Shuttle.Status.OPEN).filter(
+            Q(submission_deadline__isnull=True) | Q(submission_deadline__gt=moment)
+        )
 
 
 class Shuttle(models.Model):
@@ -109,6 +126,15 @@ class Shuttle(models.Model):
         default="",
         verbose_name="CrowdSupply URL",
         help_text="CrowdSupply campaign page for this shuttle run (optional).",
+    )
+    website_url = models.URLField(
+        blank=True,
+        default="",
+        verbose_name="wafer.space run page",
+        help_text=(
+            "This run's page on wafer.space, e.g. https://wafer.space/ws-run1/ "
+            "(optional)."
+        ),
     )
 
     # Important dates
@@ -165,6 +191,8 @@ class Shuttle(models.Model):
         blank=True,
     )
 
+    objects = ShuttleQuerySet.as_manager()
+
     class Meta:
         verbose_name = "Shuttle"
         verbose_name_plural = "Shuttles"
@@ -181,6 +209,32 @@ class Shuttle(models.Model):
         """Save with validation - ensures shuttle ID format is always enforced."""
         self.full_clean()
         super().save(*args, **kwargs)
+
+    def is_open_to_users(self, now: datetime.datetime | None = None) -> bool:
+        """Open = status open and the GDS deadline, if set, not yet reached.
+
+        The one definition of a closed shuttle (#320; Tim, issues-09:
+        "Computed: closed after deadline or status not open").
+        ShuttleQuerySet.open_to_users must agree with it.
+        """
+        moment = now or timezone.now()
+        return self.status == self.Status.OPEN and (
+            self.submission_deadline is None or moment < self.submission_deadline
+        )
+
+    @property
+    def is_closed(self) -> bool:
+        """True when users may no longer create, upload or submit."""
+        return not self.is_open_to_users()
+
+    @property
+    def closed_reason(self) -> str | None:
+        """Why the shuttle is closed, in plain words; None when open."""
+        if self.is_open_to_users():
+            return None
+        if self.status == self.Status.OPEN:
+            return f"Shuttle {self.name} is closed: its GDS deadline has passed"
+        return f"Shuttle {self.name} is closed ({self.get_status_display()})"
 
     @property
     def max_slots(self) -> int:

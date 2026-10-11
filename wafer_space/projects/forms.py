@@ -308,7 +308,12 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
         # edit at all (issue #297).
         shuttle_field = self.fields["shuttle"]
         if isinstance(shuttle_field, forms.ModelChoiceField):
-            shuttles = Shuttle.objects.filter(status=Shuttle.Status.OPEN)
+            # Users see only shuttles open to users (#320): status open and
+            # GDS deadline not passed. Staff are never blocked (dates-03).
+            if self.user is not None and self.user.is_staff:
+                shuttles = Shuttle.objects.all()
+            else:
+                shuttles = Shuttle.objects.open_to_users()
             if self.instance.shuttle_id:
                 shuttles = shuttles | Shuttle.objects.filter(
                     pk=self.instance.shuttle_id,
@@ -413,18 +418,21 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
                 # Disable for non-staff editing existing project
                 self.fields[field_name].disabled = True
 
+        # A closed shuttle freezes the design: owners may no longer change
+        # the packaging, which re-runs the manufacturability check (#320;
+        # dates-02 default). Staff still can.
+        shuttle = self.instance.shuttle if self.instance.shuttle_id else None
+        if not is_new and not is_staff and shuttle is not None and shuttle.is_closed:
+            self.fields["chip_on_board"].disabled = True
+
     def _set_defaults(self):
         """Set default values for new projects."""
         # Use _state.adding instead of pk is None (Project uses UUID pk)
         if not self.instance._state.adding:  # noqa: SLF001
             return
 
-        # Set default shuttle to oldest open shuttle (by created_at)
-        default_shuttle = (
-            Shuttle.objects.filter(status=Shuttle.Status.OPEN)
-            .order_by("created_at")
-            .first()
-        )
+        # Set default shuttle to oldest shuttle open to users (by created_at)
+        default_shuttle = Shuttle.objects.open_to_users().order_by("created_at").first()
         if default_shuttle:
             self.fields["shuttle"].initial = default_shuttle
 
