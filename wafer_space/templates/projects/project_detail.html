@@ -280,6 +280,17 @@
                       title="{{ archived_read_only_message }}">
                 <i class="bi bi-link"></i> Submit New File URL
               </button>
+            {% elif shuttle_closed_reason %}
+              <div class="alert alert-secondary" role="status">
+                <i class="bi bi-lock-fill" aria-hidden="true"></i>
+                {{ shuttle_closed_reason }}. New design files can no longer be submitted.
+              </div>
+              <button type="button"
+                      class="btn btn-primary btn-lg"
+                      disabled
+                      title="{{ shuttle_closed_reason }}">
+                <i class="bi bi-link"></i> Submit New File URL
+              </button>
             {% else %}
               <a class="btn btn-primary btn-lg"
                  href="{% url 'projects:submit_url' pk=project.pk %}"
@@ -311,6 +322,13 @@
                           class="btn btn-warning"
                           disabled
                           title="{{ archived_read_only_message }}">
+                    <i class="bi bi-arrow-clockwise"></i> Retry Download
+                  </button>
+                {% elif shuttle_closed_reason %}
+                  <button type="button"
+                          class="btn btn-warning"
+                          disabled
+                          title="{{ shuttle_closed_reason }}">
                     <i class="bi bi-arrow-clockwise"></i> Retry Download
                   </button>
                 {% else %}
@@ -345,7 +363,16 @@
                 <i class="bi bi-file-earmark"></i> File In Progress
               </h5>
               <div>
-                {% if project.can_submit.0 %}
+                {% if shuttle_closed_reason %}
+                  <button type="button"
+                          class="btn btn-success"
+                          disabled
+                          data-bs-toggle="tooltip"
+                          data-bs-placement="top"
+                          title="{{ shuttle_closed_reason }}">
+                    <i class="bi bi-send"></i> Submit for Manufacturing
+                  </button>
+                {% elif project.can_submit.0 %}
                   <form action="{% url 'projects:submit' pk=project.pk %}"
                         method="post"
                         style="display: inline"

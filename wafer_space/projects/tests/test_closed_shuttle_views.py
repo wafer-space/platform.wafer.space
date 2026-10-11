@@ -18,6 +18,7 @@ from .constants import HTTP_FORBIDDEN
 from .constants import HTTP_FOUND
 from .constants import HTTP_OK
 from .factories import ProjectFactory
+from .factories import ProjectFileFactory
 
 if TYPE_CHECKING:
     from django.test import Client
@@ -125,3 +126,54 @@ def test_stranger_still_gets_403(client: Client, closed_project: Project) -> Non
     response = client.get(reverse("projects:submit_url", args=[closed_project.pk]))
 
     assert response.status_code == HTTP_FORBIDDEN
+
+
+def test_detail_explains_closed_shuttle_to_owner(
+    client: Client, closed_project: Project
+) -> None:
+    client.force_login(closed_project.user)
+
+    content = client.get(
+        reverse("projects:detail", args=[closed_project.pk])
+    ).content.decode()
+
+    upload_url = reverse("projects:submit_url", args=[closed_project.pk])
+    assert (REASON in content, upload_url in content) == (True, False)
+
+
+def test_detail_keeps_upload_link_for_staff(
+    client: Client, closed_project: Project
+) -> None:
+    client.force_login(UserFactory(is_staff=True))
+
+    content = client.get(
+        reverse("projects:detail", args=[closed_project.pk])
+    ).content.decode()
+
+    assert reverse("projects:submit_url", args=[closed_project.pk]) in content
+
+
+def test_detail_keeps_upload_link_on_open_shuttle(client: Client) -> None:
+    shuttle = Shuttle.objects.create(
+        name="G895", description="Open run", status=Shuttle.Status.OPEN
+    )
+    project = ProjectFactory(shuttle=shuttle)
+    client.force_login(project.user)
+
+    content = client.get(reverse("projects:detail", args=[project.pk])).content.decode()
+
+    assert reverse("projects:submit_url", args=[project.pk]) in content
+
+
+def test_detail_disables_submit_button_on_closed_shuttle(
+    client: Client, closed_project: Project
+) -> None:
+    ProjectFileFactory(project=closed_project, is_active=True)
+    client.force_login(closed_project.user)
+
+    content = client.get(
+        reverse("projects:detail", args=[closed_project.pk])
+    ).content.decode()
+
+    submit_url = reverse("projects:submit", args=[closed_project.pk])
+    assert (f'title="{REASON}"' in content, submit_url in content) == (True, False)
