@@ -9,7 +9,7 @@ update-only data migrations (`Shuttle.objects.filter(name=...).update(...)`;
 see `wafer_space/shuttles/migrations/0009_update_g801_g802_schedule.py`).
 
 G803 (Run #3) was created this way on 7 Aug 2026 (commit bb0d89e added its layout; the row was created by hand on each environment). This page is the runbook for
-G804 (Run #4).
+G804 (Run #4) and for G800, the permanent test shuttle.
 
 ## G804: GF180MCU Run #4
 
@@ -141,3 +141,123 @@ data migration that sets `submission_deadline` to 23:59:59 AoE (UTC-12) of the
 published GDS deadline, sets `crowd_supply_url`, and sets `status` to `open`
 when submissions should start. Pages show the deadline in AoE (the
 `aoe_deadline` filter in `wafer_space/shuttles/templatetags/shuttle_dates.py`).
+
+## G800: permanent test shuttle
+
+Tim, 11 Oct 2026 (issues-10, on #221): "Yes, create G800 (a permanent open
+shuttle with all slot sizes, marked "test only", excluded from manifests and
+slot assignment)".
+
+What `is_test_only` does (the code reads only the flag, never the name):
+
+- The shuttle is always open to users, whatever its status or deadline, so
+  anyone can create a project on it, upload GDS, see the manufacturability
+  check run, and submit.
+- It is never the new-project form's default; its choice reads
+  "G800 - ... (test only, not manufactured)". Every page that names it shows
+  a "Test only" badge.
+- Slot assignment (`ShuttleSlot.reserve`), the manifest, the reticle package
+  and `generate_shuttle_grid` all refuse it with an error naming it as test
+  only. Its assignment page shows a notice instead of a grid.
+- The admin project summary lists its projects, labelled "Test only", but
+  leaves them out of the counts.
+
+| Field | Value | Why |
+|---|---|---|
+| `name` | `G800` | the convention for the test shuttle |
+| `description` | `Test shuttle: designs are checked, never manufactured` | says what it is wherever the name appears |
+| `status` | `open` | users can always use it (the flag keeps it open anyway) |
+| `is_test_only` | `True` | |
+| dates, `crowd_supply_url`, `website_url` | empty | nothing is made, sold or published |
+| `technology_node`, `foundry`, `wafer_size` | copied from G803 | checks run against the current process |
+| grid | none | slot assignment refuses it; slots that could never be assigned would mislead. Every slot size is offered regardless (the form offers all of `SlotSize` for every shuttle). |
+
+### Order
+
+Deploy the code with migration `shuttles.0013_shuttle_is_test_only` first,
+then on test-platform.wafer.space (restored from a fresh production backup)
+and then platform.wafer.space, run A and then C. There is no step B: G800 has
+no grid. Same conditions as for G804: from the application checkout, as the
+application user, with the environment's `.env` loaded.
+
+### A. Create the row
+
+Pipe this into `manage.py shell`. Running it again is safe: it refuses if
+`G800` exists. It fails if `G803` does not, and `Shuttle.save()` runs
+`full_clean()`.
+
+```python
+from wafer_space.shuttles.models import Shuttle
+
+if Shuttle.objects.filter(name="G800").exists():
+    raise SystemExit("G800 already exists; not creating it again")
+
+run3 = Shuttle.objects.get(name="G803")
+shuttle = Shuttle(
+    name="G800",
+    description="Test shuttle: designs are checked, never manufactured",
+    status=Shuttle.Status.OPEN,
+    is_test_only=True,
+    technology_node=run3.technology_node,
+    foundry=run3.foundry,
+    wafer_size=run3.wafer_size,
+)
+shuttle.save()
+print("created", shuttle.pk, shuttle.name, shuttle.status, shuttle.is_test_only)
+```
+
+### C. Check
+
+Pipe this into `manage.py shell`:
+
+```python
+from wafer_space.shuttles.models import Shuttle
+
+s = Shuttle.objects.get(name="G800")
+print(s.name, s.status, "test_only:", s.is_test_only, "open:", s.is_open_to_users())
+print(s.description)
+run3 = Shuttle.objects.get(name="G803")
+for field in ("technology_node", "foundry", "wafer_size"):
+    print(field, getattr(run3, field) == getattr(s, field))
+print("dates:", s.submission_deadline, s.production_start_date,
+      s.estimated_completion_date, s.actual_completion_date)
+print("urls:", repr(s.crowd_supply_url), repr(s.website_url))
+print("slots:", s.slots.count())
+print("default pick is G800:",
+      Shuttle.objects.open_to_users().filter(is_test_only=False)
+      .order_by("created_at").first() == s)
+```
+
+Expected output:
+
+```text
+G800 open test_only: True open: True
+Test shuttle: designs are checked, never manufactured
+technology_node True
+foundry True
+wafer_size True
+dates: None None None None
+urls: '' ''
+slots: 0
+default pick is G800: False
+```
+
+Then, in a browser:
+
+- As a user, the new-project form offers
+  "G800 - Test shuttle: designs are checked, never manufactured (test only,
+  not manufactured)", and it is not pre-selected while a real run is open.
+- As staff, `/shuttles/` shows G800 with "Open" and "Test only", and
+  `/shuttles/G800/assign/` shows "G800 is test only: no slot assignment".
+
+### Undo (before any project uses it)
+
+```python
+from wafer_space.projects.models import Project
+from wafer_space.shuttles.models import Shuttle
+
+s = Shuttle.objects.get(name="G800")
+if Project.objects.filter(shuttle=s).exists():
+    raise SystemExit("projects use G800; not deleting")
+print(s.delete())
+```
