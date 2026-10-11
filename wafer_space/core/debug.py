@@ -9,8 +9,9 @@ was mailed to ADMINS in every error report (issue #339).
 :class:`CredentialScrubbingReporterFilter` keeps Django's name-based
 rules and additionally scrubs ``scheme://user:password@`` credentials
 out of every string value, recursing through dicts/lists/tuples via the
-parent implementation. Only the password is replaced, so the host and
-scheme stay readable in the report.
+parent implementation. String local variables shown in the traceback
+section are scrubbed the same way. Only the password is replaced, so the
+host and scheme stay readable in the report.
 """
 
 from __future__ import annotations
@@ -34,6 +35,12 @@ class CredentialScrubbingReporterFilter(SafeExceptionReporterFilter):
 
     def cleanse_setting(self, key: Any, value: Any) -> Any:
         cleansed = super().cleanse_setting(key, value)
+        if isinstance(cleansed, str):
+            return self.scrub_url_credentials(cleansed)
+        return cleansed
+
+    def cleanse_special_types(self, request: Any, value: Any) -> Any:
+        cleansed = super().cleanse_special_types(request, value)
         if isinstance(cleansed, str):
             return self.scrub_url_credentials(cleansed)
         return cleansed
