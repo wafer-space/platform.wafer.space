@@ -4,6 +4,7 @@ from http import HTTPStatus
 
 import pytest
 from django.urls import reverse
+from django.utils import timezone
 
 from wafer_space.core.enums import SlotSize
 from wafer_space.projects.models import ManufacturabilityCheck
@@ -759,3 +760,23 @@ class TestShuttleDatesDisplay:
         )
 
         assert "8 January 2026" in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_assignment_page_omits_archived_projects(client) -> None:
+    """Archived projects are not listed, counted or offered (issue #307)."""
+    client.force_login(UserFactory(is_staff=True))
+    shuttle = Shuttle.objects.create(name="G882", description="Archive test")
+    active = ProjectFactory(shuttle=shuttle, name="Active one")
+    ProjectFactory(
+        shuttle=shuttle,
+        name="Archived one",
+        archived_at=timezone.now(),
+    )
+    response = client.get(reverse("shuttles:assignment", args=[shuttle.name]))
+    listed = {p.pk for p in response.context["projects"]}
+    offered = {d["pk"] for d in response.context["projects_data"]}
+    counted = sum(s["projects_count"] for s in response.context["stats"].values())
+    assert listed == {active.pk}
+    assert offered == {active.pk}
+    assert counted == 1
