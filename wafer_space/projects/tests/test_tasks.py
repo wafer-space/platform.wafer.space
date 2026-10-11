@@ -2734,6 +2734,44 @@ class TestChecksDrcUpdateRequeue:
         ).exists()
         assert drc_update_exists is bool(expected_created)
 
+    def test_older_terminal_candidate_does_not_block_eligible_one(self):
+        """The one-per-run throttle picks the eligible design (issue #270).
+
+        The terminal-shuttle design's check is older, so without the
+        exclusion it would be chosen first and the open-shuttle design
+        would wait.
+        """
+        done = ShuttleFactory(status=Shuttle.Status.COMPLETED, name="G871")
+        open_shuttle = ShuttleFactory(status=Shuttle.Status.OPEN, name="G872")
+        candidates = {}
+        for shuttle, age_hours in ((done, 3), (open_shuttle, 2)):
+            project_file = ProjectFileFactory(
+                project=ProjectFactory(shuttle=shuttle), is_active=True
+            )
+            ManufacturabilityCheckFactory(
+                project=project_file.project,
+                project_file=project_file,
+                status=ManufacturabilityCheck.Status.FINISHED,
+                docker_image_digest="sha256:old123456789012345678901234567890123456789012345678901234567",
+                container_started_at=timezone.now() - timedelta(hours=age_hours),
+            )
+            candidates[shuttle.status] = project_file
+        ManufacturabilityCheckFactory(
+            project_file=ProjectFileFactory(),
+            status=ManufacturabilityCheck.Status.FINISHED,
+            docker_image_digest="sha256:new456789012345678901234567890123456789012345678901234567890",
+            container_started_at=timezone.now(),
+        )
+        cache.clear()
+
+        result = checks_drc_update_requeue()
+
+        assert result["created"] == 1
+        requeued = ManufacturabilityCheck.objects.filter(
+            trigger_reason=ManufacturabilityCheck.TriggerReason.DRC_UPDATE,
+        ).values_list("project_file", flat=True)
+        assert list(requeued) == [candidates[Shuttle.Status.OPEN].pk]
+
     def test_skips_when_no_latest_digest(self):
         """Task returns early when no checks exist to determine latest digest."""
         result = checks_drc_update_requeue()
