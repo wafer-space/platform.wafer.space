@@ -27,12 +27,6 @@
                 <dd class="col-sm-6">
                   {{ shuttle.reserved_slots }}/{{ shuttle.max_slots }}
                 </dd>
-                {% if shuttle.submission_deadline %}
-                  <dt class="col-sm-6">Deadline</dt>
-                  <dd class="col-sm-6">
-                    {% shuttle_deadline shuttle.submission_deadline %}
-                  </dd>
-                {% endif %}
               </dl>
             </div>
             <div class="card-footer">

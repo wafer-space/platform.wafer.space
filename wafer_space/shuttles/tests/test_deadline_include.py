@@ -47,3 +47,25 @@ def test_past_deadline_rendered_as_passed_without_countdown() -> None:
     html = render(timezone.now() - datetime.timedelta(minutes=1))
     assert "Deadline passed" in html
     assert "data-countdown" not in html
+
+
+COMPACT = Template(
+    "{% load shuttle_dates %}{% shuttle_deadline deadline compact=True %}",
+)
+
+
+def test_compact_form_counts_down_with_aoe_date_in_title() -> None:
+    deadline = future(days=12)
+    html = COMPACT.render(Context({"deadline": deadline}))
+    expected = deadline.astimezone(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    assert f'data-countdown="{expected}"' in html
+    assert "data-countdown-compact" in html
+    assert "12 d left" in html
+    assert 'title="GDS submission deadline:' in html
+
+
+def test_compact_form_past_deadline() -> None:
+    past = timezone.now() - datetime.timedelta(hours=1)
+    html = COMPACT.render(Context({"deadline": past}))
+    assert "Deadline passed" in html
+    assert "data-countdown" not in html

@@ -149,3 +149,24 @@ def test_project_detail_closed_shuttle_has_no_countdown(
     client.force_login(project.user)
     content = client.get(reverse("projects:detail", args=[project.pk])).content
     assert b"data-shuttle-deadline" not in content
+
+
+def test_projects_list_counts_down_to_open_deadline(
+    client: Client,
+    open_shuttle: Shuttle,
+) -> None:
+    """#349: the projects list's shuttle column shows the countdown."""
+    project = ProjectFactory(shuttle=open_shuttle)
+    client.force_login(project.user)
+    html = client.get(reverse("projects:list")).content.decode()
+    assert 'data-countdown="2099-12-17T11:59:59Z"' in html
+
+
+def test_projects_list_closed_shuttle_has_no_countdown(
+    client: Client,
+    closed: Shuttle,
+) -> None:
+    project = ProjectFactory(shuttle=closed)
+    client.force_login(project.user)
+    html = client.get(reverse("projects:list")).content.decode()
+    assert "data-countdown" not in html

@@ -108,6 +108,14 @@ class TestShuttleDeadlineCountdown(BaseBrowserTest):
             lambda d: d.find_element(*COUNTDOWN).text != first,
         )
 
+        # The projects list shows the compact countdown in the shuttle column.
+        self.navigate_to(self.driver, "/projects/")
+        compact = self.wait_for_text(
+            (By.CSS_SELECTOR, "[data-countdown-compact]"),
+            " h left",
+        )
+        assert compact == "3 d 5 h left", compact
+
         severe = [
             log
             for log in self.get_console_logs(self.driver)

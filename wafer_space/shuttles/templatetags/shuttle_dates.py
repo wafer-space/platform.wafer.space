@@ -75,6 +75,8 @@ def timeanddate_url(value: datetime.datetime | None) -> str:
 def shuttle_deadline(
     deadline: datetime.datetime | None,
     label: str = "",
+    *,
+    compact: bool = False,
 ) -> dict[str, object]:
     """A deadline as wafer.space shows it: AoE, local time, countdown (#349).
 
@@ -85,6 +87,7 @@ def shuttle_deadline(
     instant = _require_aware(deadline)
     remaining = instant - timezone.now()
     return {
+        "compact": compact,
         "label": label,
         "aoe_date": dateformat.format(instant.astimezone(AOE), r"j F Y \@ h:i A"),
         "iso_utc": iso_utc(instant),

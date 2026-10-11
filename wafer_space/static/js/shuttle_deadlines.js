@@ -29,10 +29,17 @@
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
+      hourCycle: 'h23',  // never "24:00" for midnight
     }).formatToParts(date);
     const get = (type) => dayFirst.find((p) => p.type === type).value;
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     return `${get('day')} ${get('month')} ${get('year')}, ${get('hour')}:${get('minute')} ${zoneName(date)} (${tz})`;
+  }
+
+  function compactText(msLeft) {
+    const totalHours = Math.floor(msLeft / 3600000);
+    const days = Math.floor(totalHours / 24);
+    return days > 0 ? `${days} d ${totalHours % 24} h left` : `${totalHours} h ${Math.floor((msLeft % 3600000) / 60000)} m left`;
   }
 
   function countdownText(msLeft) {
@@ -67,6 +74,8 @@
         el.setAttribute('data-deadline-passed', '');
         el.classList.remove('bg-warning', 'text-dark');
         el.classList.add('bg-secondary');
+      } else if (el.hasAttribute('data-countdown-compact')) {
+        el.textContent = compactText(left);
       } else {
         el.textContent = countdownText(left);
       }
