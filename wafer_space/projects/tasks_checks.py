@@ -1212,6 +1212,36 @@ def _get_container(
         raise TaskExecutionError(reason=str(e), message=msg) from e
 
 
+def _drop_refetched_lines(
+    lines: list[tuple[float, str]],
+    already_until: float | None,
+    stored_logs: str,
+) -> list[str]:
+    """Drop the lines Docker returned again because ``since`` is inclusive.
+
+    Docker re-sends lines stamped exactly at ``since`` (issue #251). Only the
+    leading lines carrying that stamp *and* repeating the tail of the stored
+    logs are dropped. Anything else is kept, so nothing is ever lost: two
+    lines whose stamps collide as floats (within ~240 ns), and a partial
+    line Docker later returns completed under its first stamp, both survive.
+    """
+    raw_lines = [line for _timestamp, line in lines]
+    if already_until is None:
+        return raw_lines
+    leading = 0
+    while leading < len(lines) and lines[leading][0] == already_until:
+        leading += 1
+    if leading == 0:
+        return raw_lines
+    refetched = strip_docker_timestamps("\n".join(raw_lines[:leading])).split("\n")
+    stored_tail = stored_logs.split("\n")[-leading:]
+    # The longest run of leading lines equal to the end of the stored logs.
+    for count in range(leading, 0, -1):
+        if refetched[:count] == stored_tail[-count:]:
+            return raw_lines[count:]
+    return raw_lines
+
+
 def _fetch_and_process_logs(
     container: "docker.models.containers.Container",
     check: ManufacturabilityCheck,
@@ -1223,26 +1253,34 @@ def _fetch_and_process_logs(
         Tuple of (latest_timestamp, raw_logs).
     """
     logs_kwargs: dict[str, Any] = {"timestamps": True}
-    if check.logs_downloaded_until:
-        logs_kwargs["since"] = check.logs_downloaded_until
+    already_until = check.logs_downloaded_until
+    if already_until is not None:
+        logs_kwargs["since"] = already_until
 
     raw_logs = container.logs(**logs_kwargs).decode("utf-8", errors="replace")
 
     latest_timestamp = None
-    if raw_logs:
-        for line in raw_logs.split("\n"):
-            timestamp = parse_docker_timestamp_float(line)
-            if timestamp:
-                latest_timestamp = timestamp
+    lines = []
+    for line in raw_logs.split("\n"):
+        timestamp = parse_docker_timestamp_float(line)
+        if timestamp is None:
+            continue
+        latest_timestamp = timestamp
+        lines.append((timestamp, line))
+    check.refresh_from_db(fields=["processing_logs"])
+    new_lines = _drop_refetched_lines(lines, already_until, check.processing_logs)
 
-        clean_logs = strip_docker_timestamps(raw_logs)
-        if clean_logs.strip():
-            check.append_to_processing_logs(clean_logs)
-            logger.info(
-                "Downloaded %d bytes of logs for check %s",
-                len(clean_logs),
-                check.id,
-            )
+    clean_logs = strip_docker_timestamps("\n".join(new_lines))
+    if clean_logs.strip():
+        # The first container output starts its own section; later fetches
+        # continue it line by line.
+        separator = "\n" if already_until is not None else "\n\n"
+        check.append_to_processing_logs(clean_logs, separator=separator)
+        logger.info(
+            "Downloaded %d bytes of logs for check %s",
+            len(clean_logs),
+            check.id,
+        )
 
     return latest_timestamp, raw_logs
 
