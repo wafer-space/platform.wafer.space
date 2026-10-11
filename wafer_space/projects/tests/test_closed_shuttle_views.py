@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from unittest.mock import Mock
+from unittest.mock import patch
 
 import pytest
 from django.urls import URLPattern
@@ -19,6 +21,7 @@ from .constants import HTTP_FOUND
 from .constants import HTTP_OK
 from .factories import ProjectFactory
 from .factories import ProjectFileFactory
+from .test_models_submit_override import add_checked_revision
 
 if TYPE_CHECKING:
     from django.test import Client
@@ -47,6 +50,12 @@ ALLOWED_ON_CLOSED = {
 REFUSED_ON_CLOSED = {"submit", "submit_url"}
 PROJECT_KWARGS = ("<uuid:pk>", "<int:check_id>")
 REASON = "Shuttle G889 is closed (In Production)"
+URL_VALIDATION_RESULT = {
+    "file_size": 1024 * 1024,
+    "content_type": "application/octet-stream",
+    "etag": '"abc123"',
+    "supports_range": True,
+}
 
 
 def project_url_names() -> set[str]:
@@ -99,6 +108,45 @@ def test_staff_is_not_refused(client: Client, closed_project: Project) -> None:
     response = client.get(reverse("projects:submit_url", args=[closed_project.pk]))
 
     assert response.status_code == HTTP_OK
+
+
+@patch("wafer_space.projects.tasks.download_project_file.delay")
+@patch("wafer_space.projects.services.URLValidator.validate_url")
+def test_staff_late_upload_is_saved(
+    mock_validate: Mock,
+    mock_task: Mock,
+    client: Client,
+    closed_project: Project,
+) -> None:
+    """Late GDS uploads are staff only (Tim, dates-03): staff's is kept."""
+    mock_validate.return_value = URL_VALIDATION_RESULT
+    mock_task.return_value = Mock(id="task-123")
+    client.force_login(UserFactory(is_staff=True))
+
+    client.post(
+        reverse("projects:submit_url", args=[closed_project.pk]),
+        {
+            "url": "https://example.com/design.gds",
+            "expected_hash_md5": "abc123def456789012345678901234ab",
+        },
+    )
+
+    assert list(
+        ProjectFile.objects.filter(project=closed_project).values_list(
+            "original_url", "is_active"
+        )
+    ) == [("https://example.com/design.gds", True)]
+
+
+def test_staff_late_submit_is_recorded(client: Client, closed_project: Project) -> None:
+    """Staff may submit on a closed shuttle (dates-03); submitted_file is set."""
+    revision = add_checked_revision(closed_project, passed=True)
+    client.force_login(UserFactory(is_staff=True))
+
+    client.post(reverse("projects:submit", args=[closed_project.pk]))
+
+    closed_project.refresh_from_db()
+    assert closed_project.submitted_file == revision
 
 
 def test_project_without_shuttle_is_not_refused(client: Client) -> None:
