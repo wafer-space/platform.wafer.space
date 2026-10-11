@@ -706,13 +706,15 @@ class Project(models.Model):
 
         Call only after _latest_file_problem() found no problem.
         """
-        if self.can_submit()[0]:
-            return "The latest revision passed its precheck; use Submit"
         latest = self.latest_file
         assert latest is not None  # _latest_file_problem() checked it
         check = latest.output_check
-        if check.pk is None:
+        if check.pk is None or check.is_manufacturable is None:
             return "No finished precheck to override yet"
+        if check.is_manufacturable:
+            return "The latest revision passed its precheck; use Submit"
+        if self.submitted_file_id == latest.pk:
+            return "The latest revision is already submitted for manufacturing"
         if not check.output_gds:
             return (
                 "The precheck produced no processed layout, so there is "

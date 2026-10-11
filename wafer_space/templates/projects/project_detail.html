@@ -426,7 +426,7 @@
                         class="collapse mt-2"
                         method="post"
                         action="{% url 'projects:submit_override' pk=project.pk %}"
-                        onsubmit="return confirm('Submit despite the failed precheck? This is recorded with your name and reason.');">
+                        onsubmit="return confirm('The latest revision\'s precheck result is Not Manufacturable. Submit it for manufacturing anyway? This is recorded with your name and reason.');">
                     {% csrf_token %}
                     <label class="form-label" for="{{ override_form.reason.id_for_label }}">{{ override_form.reason.label }}</label>
                     {{ override_form.reason }}

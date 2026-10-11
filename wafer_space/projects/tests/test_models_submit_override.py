@@ -175,3 +175,31 @@ def test_normal_submit_clears_override_and_history_keeps_it(staff) -> None:
     assert project.submission_override_reason == ""
     reasons = set(project.history.values_list("submission_override_reason", flat=True))
     assert REASON in reasons
+
+
+def test_refused_for_passing_revision_already_submitted(staff) -> None:
+    """A passing, normally submitted revision is no override case."""
+    project = make_failed_project(passed=True)
+    project.submit()
+    project = Project.objects.get(pk=project.pk)
+    allowed, reason = project.can_override_submit(staff)
+    assert allowed is False
+    assert "passed its precheck" in reason
+
+
+def test_refused_when_revision_already_submitted_by_override(staff) -> None:
+    project = make_failed_project()
+    project.override_submit(staff, REASON)
+    project = Project.objects.get(pk=project.pk)
+    allowed, reason = project.can_override_submit(staff)
+    assert allowed is False
+    assert "already submitted" in reason
+
+
+def test_new_failing_revision_after_override_may_be_overridden(staff) -> None:
+    """Rule 3: a newer revision may replace the submitted one."""
+    project = make_failed_project()
+    project.override_submit(staff, REASON)
+    add_checked_revision(project)
+    project = Project.objects.get(pk=project.pk)
+    assert project.can_override_submit(staff) == (True, "")
