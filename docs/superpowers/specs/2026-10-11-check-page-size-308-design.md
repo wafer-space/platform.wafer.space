@@ -3,7 +3,7 @@
 **Date:** 2026-10-11
 **Issue:** [#308](https://github.com/wafer-space/platform.wafer.space/issues/308) (check-status and project pages render 16-25 MB of HTML, ballooning gunicorn workers to ~5 GB and OOM-killing prod)
 **Priority:** P2 (Run #3 traffic risk, coordinator, 11 Oct)
-**Status:** Draft, for review by the coordinator
+**Status:** Approved by the coordinator 2026-10-11, with the amendment in section 4 (stream the saved log, never redirect to /media/)
 
 ## What makes the responses that large (main b3f868f)
 
@@ -65,9 +65,9 @@ New `projects:check_log` (`/projects/<pk>/checks/<check_id>/log/`):
 - the same permission as the detail page (`ProjectOwnerOrStaffMixin`);
 - it streams `processing_logs` as `text/plain; charset=utf-8` with `Content-Disposition: attachment; filename="check_<id>.log"`.
 
-When the check has a saved `log_file` (written at analysis by the `dock:rw:checks-save` worker), it redirects to that file, which is served by nginx, not Python.
+When the check has a saved `log_file` (written at analysis by the `dock:rw:checks-save` worker), the view streams that file itself (`FileResponse` on the opened stored file, read-only).
 
-While a check is still running, `log_file` does not exist yet. The view then reads `processing_logs` from the database in fixed-size slices (`Substr` in a loop of 1 MiB), as a `StreamingHttpResponse`, so no single Python string holds the whole log.
+It must **not** redirect to `log_file.url`. On production `/media/` is a public nginx alias with no access control (coordinator, 11 Oct; private item coord-10), so a redirect would bypass the permission check the view just made. A later X-Accel-Redirect change can replace the Python streaming with an internal nginx location.
 
 The view only reads, so it fits the read-only web process (CLAUDE.md).
 
@@ -91,7 +91,7 @@ The view only reads, so it fits the read-only web process (CLAUDE.md).
 - **Admin summary:** the query count does not grow with the number of checks per project (1 versus 10 checks).
 - **check_log:**
   - the owner gets the full text, streamed and identical to the field;
-  - a check with `log_file` redirects to `log_file.url`;
+  - a check with `log_file` streams that file's bytes through the view and never redirects (no `Location` header, no `/media/` URL in the response);
   - a non-owner gets 403;
   - another project's check gets 404;
   - the response is a `StreamingHttpResponse`.

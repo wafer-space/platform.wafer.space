@@ -13,6 +13,9 @@ from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.db import transaction
+from django.db.models.functions import Length
+from django.db.models.functions import Right
+from django.db.models.lookups import GreaterThan
 from django.utils import timezone
 from django.utils.formats import date_format
 from django.utils.functional import cached_property
@@ -1781,6 +1784,30 @@ def manufacturability_check_docker_layer_path(instance, filename):
     return f"projects/{instance.project.id}/{filename}"
 
 
+def log_tail_expressions() -> dict[str, Any]:
+    """SQL expressions for a check's log tail, length and truncation (#308).
+
+    Logs grow to megabytes; rendering or polling them whole OOM-killed
+    gunicorn. These compute the last LOG_TAIL_CHARS characters in the
+    database, so Python never holds the whole log. Use with .annotate()
+    (templates) or .values() (Python callers, typed as a dict).
+    """
+    length = Length("processing_logs")
+    return {
+        "processing_logs_tail": Right("processing_logs", settings.LOG_TAIL_CHARS),
+        "processing_logs_length": length,
+        "processing_logs_truncated": GreaterThan(length, settings.LOG_TAIL_CHARS),
+    }
+
+
+class ManufacturabilityCheckQuerySet(models.QuerySet["ManufacturabilityCheck"]):
+    """Queryset helpers for ManufacturabilityCheck."""
+
+    def with_log_tail(self) -> "ManufacturabilityCheckQuerySet":
+        """Defer the full log and annotate its tail (see log_tail_expressions)."""
+        return self.defer("processing_logs").annotate(**log_tail_expressions())
+
+
 class ManufacturabilityCheck(models.Model):
     """Track manufacturability checking process for projects."""
 
@@ -2175,6 +2202,8 @@ class ManufacturabilityCheck(models.Model):
         default="",
         help_text="Why this check was re-run (e.g., 'Updated DRC rules')",
     )
+
+    objects = ManufacturabilityCheckQuerySet.as_manager()
 
     class Meta:
         verbose_name = "Manufacturability Check"
