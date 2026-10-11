@@ -88,6 +88,17 @@ def test_no_warning_without_deadline() -> None:
     assert deadline_warning(project_due_in(None)) is None
 
 
+def test_no_warning_on_test_only_shuttle() -> None:
+    # A test-only shuttle never closes (#221), so a deadline set on it by
+    # mistake must not warn its owners, even inside the urgent window.
+    project = project_due_in(datetime.timedelta(days=2))
+    shuttle = project.shuttle
+    assert shuttle is not None
+    shuttle.is_test_only = True
+    shuttle.save()
+    assert deadline_warning(project) is None
+
+
 def test_no_warning_on_closed_shuttle() -> None:
     project = project_due_in(
         datetime.timedelta(days=2),

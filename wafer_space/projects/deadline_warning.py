@@ -45,7 +45,13 @@ def deadline_warning_for(
     check). The projects list passes its annotation, so no query is made.
     """
     shuttle = project.shuttle
-    if shuttle is None or shuttle.is_closed or project.is_archived:
+    # A test-only shuttle never closes (#221), so its deadline never applies.
+    if (
+        shuttle is None
+        or shuttle.is_closed
+        or shuttle.is_test_only
+        or project.is_archived
+    ):
         return None
     deadline = shuttle.submission_deadline
     if deadline is None:
