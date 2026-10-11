@@ -2398,7 +2398,7 @@ class ManufacturabilityCheck(models.Model):
             ]
         )
 
-    def append_to_processing_logs(self, text: str) -> None:
+    def append_to_processing_logs(self, text: str, *, separator: str = "\n\n") -> None:
         """Append text to processing logs (thread-safe, never overwrites).
 
         This helper ensures logs are only ever appended to, never replaced.
@@ -2406,6 +2406,9 @@ class ManufacturabilityCheck(models.Model):
 
         Args:
             text: Text to append to logs
+            separator: Placed between existing logs and ``text``. The default
+                blank line starts a new section; continuing container output
+                uses a single newline (issue #251).
         """
         if not text:
             return
@@ -2414,7 +2417,7 @@ class ManufacturabilityCheck(models.Model):
         self.refresh_from_db(fields=["processing_logs"])
 
         if self.processing_logs:
-            self.processing_logs += f"\n\n{text}"
+            self.processing_logs += f"{separator}{text}"
         else:
             self.processing_logs = text
 
