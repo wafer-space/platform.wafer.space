@@ -8,7 +8,7 @@ collide with test data. Each environment creates the row by hand in
 update-only data migrations (`Shuttle.objects.filter(name=...).update(...)`;
 see `wafer_space/shuttles/migrations/0009_update_g801_g802_schedule.py`).
 
-G803 (Run #3) was created this way on 7 Aug 2026. This page is the runbook for
+G803 (Run #3) was created this way on 7 Aug 2026 (commit bb0d89e added its layout; the row was created by hand on each environment). This page is the runbook for
 G804 (Run #4).
 
 ## G804: GF180MCU Run #4
@@ -23,8 +23,7 @@ entry in the platform with the same config as Run #3."
 | `status` | `planning` | not open: the project form offers only `open` shuttles, so owners cannot pick G804 yet. Staff can already duplicate projects onto it (the admin's duplicate action accepts `planning`). |
 | `submission_deadline`, `production_start_date`, `estimated_completion_date`, `actual_completion_date` | empty | no published dates yet |
 | `crowd_supply_url` | empty | no CrowdSupply campaign page yet |
-| `technology_node`, `foundry`, `wafer_size` | copied from G803 | "same config as Run #3"; the script copies whatever the G803 row holds |
-| `total_cost`, `cost_per_slot` | empty | Run #4 pricing is not published |
+| `technology_node`, `foundry`, `wafer_size`, `total_cost`, `cost_per_slot` | copied from G803 | "same config as Run #3": the script copies whatever the G803 row holds (the production read of 11 Oct 2026 did not include these columns). If Run #4's pricing differs, update the cost fields when it is published. |
 | grid | `shuttles/G804-layout.yaml` | identical to G803's: 6 x 9 = 54 slots (18 full, 18 half-height, 9 half-width, 9 quarter) |
 
 ### Order
@@ -61,11 +60,11 @@ shuttle = Shuttle(
     technology_node=run3.technology_node,
     foundry=run3.foundry,
     wafer_size=run3.wafer_size,
+    total_cost=run3.total_cost,
+    cost_per_slot=run3.cost_per_slot,
 )
 shuttle.save()
 print("created", shuttle.pk, shuttle.name, shuttle.status)
-print("copied from G803:", repr(shuttle.technology_node), repr(shuttle.foundry),
-      repr(shuttle.wafer_size))
 ```
 
 ### B. Generate the grid
@@ -89,21 +88,25 @@ from wafer_space.shuttles.models import Shuttle
 s = Shuttle.objects.get(name="G804")
 print(s.name, s.description, s.status, s.grid_config_file)
 run3 = Shuttle.objects.get(name="G803")
-print("same as G803:", (s.technology_node, s.foundry, s.wafer_size)
-      == (run3.technology_node, run3.foundry, run3.wafer_size))
-print("costs:", s.total_cost, s.cost_per_slot)
+for field in ("technology_node", "foundry", "wafer_size", "total_cost",
+              "cost_per_slot"):
+    print(field, repr(getattr(run3, field)), repr(getattr(s, field)),
+          getattr(run3, field) == getattr(s, field))
 print("dates:", s.submission_deadline, s.production_start_date,
       s.estimated_completion_date, s.actual_completion_date)
 print("crowd_supply_url:", repr(s.crowd_supply_url))
 print("slots:", sorted(Counter(s.slots.values_list("slot_size", flat=True)).items()))
 ```
 
-Expected output:
+Expected output (each copied field prints G803's value, G804's value and `True`):
 
 ```text
 G804 GF180MCU Shuttle Run 4 planning shuttles/G804-layout.yaml
-same as G803: True
-costs: None None
+technology_node <G803 value> <same value> True
+foundry <G803 value> <same value> True
+wafer_size <G803 value> <same value> True
+total_cost <G803 value> <same value> True
+cost_per_slot <G803 value> <same value> True
 dates: None None None None
 crowd_supply_url: ''
 slots: [('0p5x0p5', 9), ('0p5x1', 9), ('1x0p5', 18), ('1x1', 18)]
