@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from collections import Counter
 from typing import TYPE_CHECKING
 from typing import ClassVar
@@ -753,12 +754,28 @@ class ProjectUnarchiveView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
 class ProjectIDCheckView(LoginRequiredMixin, View):
     """AJAX endpoint to check if project ID is available within a shuttle."""
 
+    @staticmethod
+    def _format_error(project_id_raw: str) -> str:
+        """Why ``project_id_raw`` is not a valid project ID, or "" if it is."""
+        project_id = project_id_raw.upper()
+        if len(project_id) != PROJECT_ID_LENGTH:
+            return f"Project ID must be {PROJECT_ID_LENGTH} characters"
+        if not project_id.isalnum():
+            return "Project ID must be alphanumeric"
+        # Uppercase requirement (matches model validator)
+        if project_id != project_id_raw:
+            return "Project ID must be uppercase"
+        return ""
+
     def get(self, request):
         """Check if project_id is available for the given shuttle.
 
         Query parameters:
             shuttle: Shuttle primary key
             project_id: 4-character project ID to check
+            exclude: optional UUID of the project being edited, whose own
+                ID must not count as taken (issue #306), mirroring
+                ProjectForm.clean_project_id
 
         Returns:
             JSON response with availability status and message
@@ -773,25 +790,9 @@ class ProjectIDCheckView(LoginRequiredMixin, View):
                 status=400,
             )
 
-        # Validate project_id format
-        if len(project_id) != PROJECT_ID_LENGTH:
-            return JsonResponse(
-                {
-                    "available": False,
-                    "message": f"Project ID must be {PROJECT_ID_LENGTH} characters",
-                },
-            )
-
-        if not project_id.isalnum():
-            return JsonResponse(
-                {"available": False, "message": "Project ID must be alphanumeric"},
-            )
-
-        # Check uppercase requirement (matches model validator)
-        if project_id != project_id_raw:
-            return JsonResponse(
-                {"available": False, "message": "Project ID must be uppercase"},
-            )
+        format_error = self._format_error(project_id_raw)
+        if format_error:
+            return JsonResponse({"available": False, "message": format_error})
 
         # Validate shuttle exists
         try:
@@ -803,10 +804,20 @@ class ProjectIDCheckView(LoginRequiredMixin, View):
             )
 
         # Check if already exists for this shuttle
-        exists = Project.objects.filter(
+        projects = Project.objects.filter(
             shuttle_id=shuttle_id,
             project_id=project_id,
-        ).exists()
+        )
+        exclude = request.GET.get("exclude", "").strip()
+        if exclude:
+            try:
+                projects = projects.exclude(pk=uuid.UUID(exclude))
+            except ValueError:
+                return JsonResponse(
+                    {"available": False, "message": "Invalid project to exclude"},
+                    status=400,
+                )
+        exists = projects.exists()
 
         return JsonResponse(
             {
