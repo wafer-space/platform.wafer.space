@@ -32,6 +32,7 @@ project - IDs should not be changing or reused."
 | Who archives | Project owner, and staff on any project | Tim, mole99-01 ("Archive button") |
 | Owner archiving a project with a submitted file | Refused; staff may | Tim, mole99-03 |
 | Project holding a shuttle slot | Nobody may archive it until the slot assignment is removed | follows from "don't appear in slot allocation" |
+| Check queued/running or download under way | Owner must wait (or cancel the check); staff may archive anyway, and the running work finishes | review of PR #353 |
 | Who unarchives | Project owner, and staff on any project | Tim did not say; coordinator: keep both |
 | `/projects/` list | Archived projects stay, **sorted last**, with an "Archived" badge | Tim, mole99-01 |
 | While archived | Read-only: no edit, no new file, no re-check, no submit, no compliance change. Unarchive is the only write | Tim, mole99-01 |
@@ -120,9 +121,10 @@ archived projects can never reach it.
   `compliance_certification_create`. The mixin calls this function, so the
   rule and message live in one place.
 - Allowed on an archived project: detail, progress and check-status (read
-  only), `ProjectUnarchiveView`, staff-only `ManufacturabilityCheckCancelView`
-  (stopping a check that is already running is clean-up, not a change to the
-  design), and the delete page (#344 decides its fate).
+  only), `ProjectUnarchiveView`, and `ManufacturabilityCheckCancelView` for
+  staff only (stopping a check that was running when staff archived the
+  project is clean-up); owners are refused. The delete page refuses archived
+  projects (and #344 removes it).
 - **Guard test:** a test walks every URL pattern in `projects/urls.py` that
   takes a project `pk`, and fails unless the pattern is in an explicit
   allow-list of read-only/allowed views, or a POST to it for an archived

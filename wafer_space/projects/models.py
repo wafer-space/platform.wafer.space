@@ -702,12 +702,42 @@ class Project(models.Model):
                 "This project holds a shuttle slot. Staff must remove the "
                 "slot assignment before it can be archived."
             )
-        if self.submitted_file_id is not None and not user.is_staff:
+        if user.is_staff:
+            return True, ""
+        if self._has_work_in_progress():
+            return False, (
+                "A file download or manufacturability check is still in "
+                "progress. Wait for it to finish, or cancel the check, then "
+                "archive."
+            )
+        if self.submitted_file_id is not None:
             return False, (
                 "This project has a file submitted for manufacturing. "
                 "Contact staff to archive it."
             )
         return True, ""
+
+    def _has_work_in_progress(self) -> bool:
+        """Whether a check is queued or running, or a download is under way.
+
+        Background work would keep changing an archived project, so owners
+        must let it finish first. Staff may archive anyway (for example a
+        stuck download nobody can cancel); the running work then finishes.
+        """
+        in_progress = [
+            ManufacturabilityCheck.Status.PENDING,
+            *ManufacturabilityCheck.Status.active(),
+        ]
+        if self.manufacturability_checks.filter(status__in=in_progress).exists():
+            return True
+        downloading = {
+            ProjectFile.DownloadStatus.QUEUED,
+            ProjectFile.DownloadStatus.DOWNLOADING,
+        }
+        return any(
+            project_file.download_status in downloading
+            for project_file in self.files.filter(is_active=True)
+        )
 
     def archive(self) -> None:
         """Mark the project archived now. Permission checks are the caller's."""

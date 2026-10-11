@@ -35,7 +35,7 @@ ALLOWED_ON_ARCHIVED = {
     "detail",  # read only
     "progress",  # read only (AJAX polling)
     "check_status",  # read only (AJAX polling)
-    "cancel_check",  # staff stopping a check already running: clean-up
+    "cancel_check",  # staff only on archived projects; owners are refused
     "unarchive",  # the owner's one write on an archived project
 }
 REFUSED_ON_ARCHIVED = {
@@ -135,6 +135,38 @@ def test_delete_post_keeps_archived_project(
 ) -> None:
     owner_client.post(reverse("projects:delete", args=[archived_project.pk]))
     assert Project.objects.filter(pk=archived_project.pk).exists()
+
+
+def test_owner_cannot_cancel_check_on_archived_project(
+    owner_client: Client,
+    archived_project: Project,
+) -> None:
+    check = ManufacturabilityCheckFactory(
+        project=archived_project,
+        project_file__project=archived_project,
+        status=ManufacturabilityCheck.Status.RUNNING,
+    )
+    url = reverse("projects:cancel_check", args=[archived_project.pk, check.pk])
+    response = owner_client.post(url, follow=True)
+    assert ARCHIVED_READ_ONLY_MESSAGE in response.content.decode()
+    check.refresh_from_db()
+    assert check.status == ManufacturabilityCheck.Status.RUNNING
+
+
+def test_staff_can_cancel_check_on_archived_project(
+    client: Client,
+    archived_project: Project,
+) -> None:
+    check = ManufacturabilityCheckFactory(
+        project=archived_project,
+        project_file__project=archived_project,
+        status=ManufacturabilityCheck.Status.RUNNING,
+    )
+    client.force_login(UserFactory(is_staff=True))
+    url = reverse("projects:cancel_check", args=[archived_project.pk, check.pk])
+    client.post(url)
+    check.refresh_from_db()
+    assert check.status == ManufacturabilityCheck.Status.CANCELLING
 
 
 def test_stranger_gets_403_not_archive_redirect(

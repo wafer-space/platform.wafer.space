@@ -780,3 +780,21 @@ def test_assignment_page_omits_archived_projects(client) -> None:
     assert listed == {active.pk}
     assert offered == {active.pk}
     assert counted == 1
+
+
+@pytest.mark.django_db
+def test_assign_project_view_refuses_archived_project(client) -> None:
+    """The assign endpoint answers 400 and leaves the slot free (issue #307)."""
+    client.force_login(UserFactory(is_staff=True))
+    shuttle = Shuttle.objects.create(name="G883", description="Archive test")
+    slot = ShuttleSlot.objects.create(shuttle=shuttle)
+    project = ProjectFactory(shuttle=shuttle, archived_at=timezone.now())
+    response = client.post(
+        reverse("shuttles:assign_project", args=[shuttle.name]),
+        data=json.dumps({"project_pk": str(project.pk), "slot_id": slot.pk}),
+        content_type="application/json",
+    )
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert "archived" in response.json()["error"]
+    slot.refresh_from_db()
+    assert slot.project is None

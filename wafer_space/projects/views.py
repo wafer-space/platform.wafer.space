@@ -589,6 +589,13 @@ class ManufacturabilityCheckCancelView(LoginRequiredMixin, UserPassesTestMixin, 
         """Handle check cancellation."""
         project = get_object_or_404(Project, pk=pk)
 
+        # Owners cannot change an archived project; staff may still stop a
+        # check that was running when it was archived (issue #307).
+        if not request.user.is_staff:
+            refusal = refuse_if_archived(request, project)
+            if refusal is not None:
+                return refusal
+
         # Get the specific check by ID
         check = get_object_or_404(
             ManufacturabilityCheck,

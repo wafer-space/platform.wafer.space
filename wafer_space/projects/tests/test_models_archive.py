@@ -7,11 +7,14 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from wafer_space.projects.models import ARCHIVED_READ_ONLY_MESSAGE
+from wafer_space.projects.models import DownloadAttempt
+from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.models import ShuttleSlot
 from wafer_space.users.tests.factories import UserFactory
 
+from .factories import ManufacturabilityCheckFactory
 from .factories import ProjectFactory
 from .factories import ProjectFileFactory
 
@@ -149,3 +152,68 @@ def test_full_save_still_validates_every_field() -> None:
     project = make_project_with_stale_invalid_data()
     with pytest.raises(ValidationError):
         project.save()
+
+
+@pytest.mark.parametrize(
+    "status",
+    [ManufacturabilityCheck.Status.PENDING, *ManufacturabilityCheck.Status.active()],
+)
+def test_owner_cannot_archive_while_check_in_progress(status: str) -> None:
+    project = make_project()
+    ManufacturabilityCheckFactory(
+        project=project,
+        project_file__project=project,
+        status=status,
+    )
+    allowed, reason = project.can_be_archived_by(project.user)
+    assert allowed is False
+    assert "still in progress" in reason
+
+
+def test_owner_cannot_archive_while_download_queued() -> None:
+    project = make_project()
+    ProjectFileFactory(project=project, is_active=True, download_task_id="task-1")
+    allowed, reason = project.can_be_archived_by(project.user)
+    assert allowed is False
+    assert "still in progress" in reason
+
+
+def test_owner_cannot_archive_while_downloading() -> None:
+    project = make_project()
+    project_file = ProjectFileFactory(project=project, is_active=True)
+    DownloadAttempt.objects.create(
+        project_file=project_file,
+        attempt_number=1,
+        status=DownloadAttempt.Status.DOWNLOADING,
+    )
+    allowed, reason = project.can_be_archived_by(project.user)
+    assert allowed is False
+    assert "still in progress" in reason
+
+
+def test_staff_can_archive_while_check_in_progress() -> None:
+    """Staff may archive anyway (e.g. a stuck check); running work finishes."""
+    project = make_project()
+    ManufacturabilityCheckFactory(
+        project=project,
+        project_file__project=project,
+        status=ManufacturabilityCheck.Status.RUNNING,
+    )
+    assert project.can_be_archived_by(UserFactory(is_staff=True)) == (True, "")
+
+
+def test_owner_can_archive_after_check_finished_and_download_failed() -> None:
+    project = make_project()
+    check = ManufacturabilityCheckFactory(
+        project=project,
+        project_file__project=project,
+        project_file__is_active=True,
+        project_file__download_task_id="task-1",
+        status=ManufacturabilityCheck.Status.FINISHED,
+    )
+    DownloadAttempt.objects.create(
+        project_file=check.project_file,
+        attempt_number=1,
+        status=DownloadAttempt.Status.FAILED,
+    )
+    assert project.can_be_archived_by(project.user) == (True, "")
