@@ -1,0 +1,33 @@
+{# A shuttle deadline as wafer.space shows it (#349). Rendered by the shuttle_deadline tag. #}
+{% if compact %}
+  {# Narrow columns (the projects list): the countdown, with the dates in the title. #}
+  <span class="d-block small"
+        data-shuttle-deadline
+        title="GDS submission deadline: {{ aoe_date }} AoE">
+    {% if passed %}
+      <span class="badge bg-secondary" data-deadline-passed>Deadline passed</span>
+    {% else %}
+      <span class="badge bg-warning text-dark"
+            data-countdown="{{ iso_utc }}"
+            data-countdown-compact>{{ days_left }} d left</span>
+    {% endif %}
+  </span>
+{% else %}
+  <span class="shuttle-deadline d-inline-block" data-shuttle-deadline>
+    {% if label %}<span class="fw-semibold">{{ label }}:</span>{% endif %}
+    {{ aoe_date }}
+    <a href="https://en.wikipedia.org/wiki/Anywhere_on_Earth"
+       target="_blank"
+       rel="noopener"
+       title="Anywhere on Earth (UTC-12)">AoE</a>
+    <span class="text-muted small">
+      (your time:
+      <time datetime="{{ iso_utc }}" data-local-time><a href="{{ timeanddate_url }}" target="_blank" rel="noopener">see in your timezone</a></time>)
+    </span>
+    {% if passed %}
+      <span class="badge bg-secondary" data-deadline-passed>Deadline passed</span>
+    {% else %}
+      <span class="badge bg-warning text-dark" data-countdown="{{ iso_utc }}">{{ days_left }} day{{ days_left|pluralize }} left</span>
+    {% endif %}
+  </span>
+{% endif %}

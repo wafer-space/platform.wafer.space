@@ -8,7 +8,7 @@
   {% else %}
     <span class="badge bg-success">Open</span>
     {% if shuttle.submission_deadline %}
-      <span class="small">GDS due {{ shuttle.submission_deadline|aoe_deadline }}</span>
+      <span class="small">{% shuttle_deadline shuttle.submission_deadline label="GDS submission deadline" %}</span>
     {% endif %}
   {% endif %}
   {% if shuttle.website_url %}

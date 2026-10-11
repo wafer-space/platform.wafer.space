@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% load project_list_tags %}
+{% load shuttle_dates %}
 {% load static %}
 
 {% block title %}
@@ -38,6 +39,9 @@
                      data-project-row="{{ project.pk }}">
                   <div class="flex-shrink-0 pe-2" style="width: 4.5rem">
                     <span class="fw-semibold">{{ project.shuttle.name }}</span>
+                    {% if project.shuttle and not project.shuttle.is_closed and project.shuttle.submission_deadline %}
+                      {% shuttle_deadline project.shuttle.submission_deadline compact=True %}
+                    {% endif %}
                   </div>
                   <div class="flex-shrink-0 pe-3" style="width: 10rem">
                     <span class="badge text-wrap {{ state.css }}"

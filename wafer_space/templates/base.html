@@ -65,6 +65,8 @@
       <!-- Your stuff: Third-party javascript libraries go here -->
       <!-- place project specific Javascript in this file -->
       <script defer src="{% static 'js/project.js' %}"></script>
+      <!-- Shuttle deadline local times and countdowns (#349) -->
+      <script defer src="{% static 'js/shuttle_deadlines.js' %}"></script>
     {% endblock javascript %}
   </head>
   <body class="{% block bodyclass %}{% endblock bodyclass %}">
