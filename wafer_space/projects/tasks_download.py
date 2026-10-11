@@ -2,7 +2,6 @@
 Background tasks for project file downloads and processing.
 """
 
-import contextlib
 import hashlib
 import logging
 import os
@@ -30,6 +29,7 @@ from wafer_space.notifications.services import NotificationService
 
 from .content_pipeline import ContentPipeline
 from .content_pipeline import cleanup_temp_dir
+from .content_pipeline import download_dir_path
 from .content_pipeline import get_download_dir_for_file
 from .content_pipeline import get_temp_dir_for_file
 from .content_processors import _processor_registry
@@ -1213,12 +1213,10 @@ def _handle_download_failure(
                 project_file=project_file,
                 error_message=str(exc),
             )
+            # No retry is coming: remove the partial download (#139).
+            _remove_download_staging(project_file.id)
     except Project.DoesNotExist:
         pass
-
-    if temp_path and temp_path.exists():
-        with contextlib.suppress(OSError):
-            temp_path.unlink()
 
     return {
         "status": "failed",
@@ -1646,6 +1644,24 @@ def _log_download_start(project_id: str, project_file: ProjectFile) -> None:
     logger.info("  ✓ Source URL: %s", project_file.source_url)
 
 
+def _remove_download_staging(project_file_id: int) -> None:
+    """Remove a file's download staging directory, loudly on failure.
+
+    Called on completion and on final failure; a retryable failure keeps
+    the partial file so the next attempt can resume. A directory left on
+    user storage is a disk leak, so a failure is logged at ERROR (admin
+    email) rather than suppressed.
+    """
+    logger = logging.getLogger(__name__)
+    download_dir = download_dir_path(project_file_id)
+    try:
+        cleanup_temp_dir(download_dir)
+    except OSError:
+        logger.exception("Failed to remove download staging dir %s", download_dir)
+    else:
+        logger.info("  ✓ Staging directory removed: %s", download_dir)
+
+
 def _download_temp_path(project_file: ProjectFile) -> Path:
     """The download's temp file: its original name in the file's staging dir."""
     return get_download_dir_for_file(project_file.id) / project_file.original_filename
@@ -1868,11 +1884,8 @@ def download_project_file(self, project_id):  # noqa: PLR0915
         attempt.save()
         logger.info("  ✓ Attempt #%d marked as COMPLETED", attempt.attempt_number)
 
-        # Clean up temp file
         logger.info("Step 9: Cleaning up temporary files...")
-        with contextlib.suppress(OSError):
-            temp_path.unlink()
-        logger.info("  ✓ Temp file removed")
+        _remove_download_staging(project_file.id)
 
         # Log completion
         _log_download_completion(project_id, project_file, hash_verified=hash_verified)

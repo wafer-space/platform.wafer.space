@@ -65,7 +65,9 @@ from wafer_space.projects.tasks_checks import checks_cleanup_stale_pending_tasks
 from wafer_space.projects.tasks_checks import checks_cleanup_superseded
 from wafer_space.projects.tasks_checks import checks_drc_update_requeue
 from wafer_space.projects.tasks_download import _apply_post_download_processing
+from wafer_space.projects.tasks_download import _handle_download_failure
 from wafer_space.projects.tasks_download import _initialize_hash_calculators
+from wafer_space.projects.tasks_download import _remove_download_staging
 from wafer_space.projects.tasks_download import _setup_download_temp_path
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.projects.tests.factories import ProjectFactory
@@ -3710,6 +3712,56 @@ class TestDownloadStreaming:
         _apply_post_download_processing(project_file, encoded_file)
 
         assert encoded_file.read_bytes() == content
+
+    @pytest.mark.django_db
+    def test_staging_removal_deletes_the_file_dir(
+        self, settings, tmp_path: Path
+    ) -> None:
+        """Completion removes the whole staging dir, not just the file."""
+        settings.MEDIA_ROOT = str(tmp_path)
+        project_file = ProjectFileFactory()
+        temp_path = _setup_download_temp_path(project_file)
+        temp_path.write_bytes(b"partial")
+
+        _remove_download_staging(project_file.id)
+
+        assert not temp_path.parent.exists()
+
+    @pytest.mark.django_db
+    def test_staging_removal_failure_is_logged_at_error(
+        self, settings, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A dir left on user storage is a disk leak someone must see."""
+        settings.MEDIA_ROOT = str(tmp_path)
+        project_file = ProjectFileFactory()
+        _setup_download_temp_path(project_file)
+
+        with (
+            patch(
+                "wafer_space.projects.tasks_download.cleanup_temp_dir",
+                side_effect=OSError("busy"),
+            ),
+            caplog.at_level(logging.ERROR, logger=tasks_download.__name__),
+        ):
+            _remove_download_staging(project_file.id)
+
+        assert any(f"file_{project_file.id}" in r.getMessage() for r in caplog.records)
+
+    @pytest.mark.django_db
+    def test_final_failure_removes_the_staging_dir(
+        self, settings, tmp_path: Path
+    ) -> None:
+        """No retry is coming, so the partial download is removed."""
+        settings.MEDIA_ROOT = str(tmp_path)
+        project_file = ProjectFileFactory(is_active=True)
+        temp_path = _setup_download_temp_path(project_file)
+        temp_path.write_bytes(b"partial")
+
+        _handle_download_failure(
+            str(project_file.project.id), RuntimeError("gone"), temp_path
+        )
+
+        assert not temp_path.parent.exists()
 
     def test_download_task_does_not_stage_in_system_temp(self) -> None:
         """Downloads stage under MEDIA_ROOT, never the system temp dir (#139).

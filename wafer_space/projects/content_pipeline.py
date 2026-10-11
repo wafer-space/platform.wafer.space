@@ -180,11 +180,14 @@ def get_download_dir_for_file(project_file_id: int) -> Path:
     Returns:
         Path to the staging directory (created if it doesn't exist)
     """
-    download_dir = (
-        Path(settings.MEDIA_ROOT) / "temp" / "downloads" / f"file_{project_file_id}"
-    )
+    download_dir = download_dir_path(project_file_id)
     download_dir.mkdir(parents=True, exist_ok=True)
     return download_dir
+
+
+def download_dir_path(project_file_id: int) -> Path:
+    """Path of a ProjectFile's download staging directory, without creating it."""
+    return Path(settings.MEDIA_ROOT) / "temp" / "downloads" / f"file_{project_file_id}"
 
 
 def cleanup_temp_dir(temp_dir: Path) -> None:
