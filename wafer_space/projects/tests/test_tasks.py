@@ -24,6 +24,7 @@ from unittest.mock import patch
 
 import docker
 import pytest
+import requests
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.test import TestCase
@@ -2070,6 +2071,10 @@ class TestDoRunning:
 class TestDoAnalyzing:
     """Test do_analyzing work task."""
 
+    SUCCESS_LOGS = """Check for Magic DRC errors clear.
+Check for KLayout DRC errors clear.
+Precheck successfully completed."""
+
     @pytest.mark.django_db
     def test_parses_logs_and_transitions_to_finished(self) -> None:
         """Parses logs successfully and transitions to FINISHED."""
@@ -2504,6 +2509,147 @@ Precheck successfully completed."""
 
         assert result["status"] == "error"
         assert "missing_container_info" in result.get("reason", "")
+
+    @staticmethod
+    def _analyzing_check(logs: str, exit_code: int) -> ManufacturabilityCheck:
+        """An ANALYZING check with its do_analyzing task record."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            docker_exit_code=exit_code,
+            processing_logs=logs,
+            docker_server_id="test-local",
+            docker_container_id="test-container-id",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_analyzing"
+        )
+        return check
+
+    STREAM_FAILURE_MSG = "connection reset while streaming archive"
+
+    @classmethod
+    def _analyze_with_stream_failure(
+        cls,
+        check: ManufacturabilityCheck,
+        failing_path: str,
+        error_type: type[Exception] = docker.errors.APIError,
+    ) -> dict:
+        """Run do_analyzing where streaming ``failing_path`` breaks midway.
+
+        The Docker SDK raises from the archive iterator, after get_archive()
+        has returned; that is the failure stream_archive_to_file does not
+        catch. Every other path is absent from the container.
+        """
+
+        def broken_stream():
+            yield b"partial"
+            raise error_type(cls.STREAM_FAILURE_MSG)
+
+        def get_archive(path: str) -> tuple:
+            if path == failing_path:
+                return broken_stream(), {}
+            msg = "no such path"
+            raise docker.errors.NotFound(msg)
+
+        mock_container = MagicMock()
+        mock_container.status = "exited"
+        mock_container.get_archive.side_effect = get_archive
+        mock_client = MagicMock()
+        mock_client.containers.get.return_value = mock_container
+        with patch(
+            "wafer_space.projects.tasks_checks.get_docker_client",
+            return_value=mock_client,
+        ):
+            return do_analyzing(check.id)
+
+    @pytest.mark.django_db
+    def test_runs_archive_failure_still_finishes_with_verdict(self) -> None:
+        """A broken runs-archive stream does not stop the DRC verdict."""
+        check = self._analyzing_check(self.SUCCESS_LOGS, exit_code=0)
+
+        self._analyze_with_stream_failure(check, "/workspace/runs")
+
+        check.refresh_from_db()
+        assert (check.status, check.is_manufacturable) == (
+            ManufacturabilityCheck.Status.FINISHED,
+            True,
+        )
+
+    @pytest.mark.django_db
+    @pytest.mark.parametrize(
+        "error_type",
+        [
+            requests.exceptions.ChunkedEncodingError,
+            requests.exceptions.ConnectionError,
+            OSError,
+        ],
+    )
+    def test_runs_archive_transport_and_disk_failures_are_best_effort(
+        self, error_type: type[Exception]
+    ) -> None:
+        """HTTP-transport and filesystem failures are treated like Docker ones."""
+        check = self._analyzing_check(self.SUCCESS_LOGS, exit_code=0)
+
+        self._analyze_with_stream_failure(check, "/workspace/runs", error_type)
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
+
+    @pytest.mark.django_db
+    def test_runs_archive_failure_is_recorded_on_the_check(self) -> None:
+        """The owner and staff see that a diagnostic output was not kept."""
+        check = self._analyzing_check(self.SUCCESS_LOGS, exit_code=0)
+
+        self._analyze_with_stream_failure(check, "/workspace/runs")
+
+        check.refresh_from_db()
+        assert any(
+            w.startswith("Diagnostic output not saved: runs archive")
+            for w in check.warnings
+        )
+
+    @pytest.mark.django_db
+    def test_diagnostic_warning_hides_exception_detail(self) -> None:
+        """Docker error text (internal hosts) is never shown to the owner."""
+        check = self._analyzing_check(self.SUCCESS_LOGS, exit_code=0)
+
+        self._analyze_with_stream_failure(check, "/workspace/runs")
+
+        check.refresh_from_db()
+        assert not any(self.STREAM_FAILURE_MSG in w for w in check.warnings)
+
+    @pytest.mark.django_db
+    def test_output_layout_failure_errors_the_check(self) -> None:
+        """No manufacturable verdict without the layout the reticle needs.
+
+        The check goes to ERROR, where checks_retry runs it again, instead of
+        FINISHED with an empty output_gds.
+        """
+        check = self._analyzing_check(self.SUCCESS_LOGS, exit_code=0)
+
+        self._analyze_with_stream_failure(check, "/output/design.oas")
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.ERROR
+
+    @pytest.mark.django_db
+    def test_drc_errors_reported_when_diagnostics_fail(self) -> None:
+        """A design failure is still reported when its runs archive is lost."""
+        drc_error_logs = """Error: 5 Magic DRC errors found.
+Error: 3 KLayout DRC errors found.
+Check for Magic DRC errors NOT clear.
+Check for KLayout DRC errors NOT clear.
+"""
+        check = self._analyzing_check(drc_error_logs, exit_code=1)
+
+        self._analyze_with_stream_failure(check, "/workspace/runs")
+
+        check.refresh_from_db()
+        assert (check.status, check.is_manufacturable, bool(check.errors)) == (
+            ManufacturabilityCheck.Status.FINISHED,
+            False,
+            True,
+        )
 
 
 class TestChecksCleanupStalePendingTasks:

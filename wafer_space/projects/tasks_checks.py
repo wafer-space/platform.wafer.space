@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 
 import docker
 import docker.errors
+import requests
 from celery import shared_task
 from celery.utils.log import get_task_logger
 from django.conf import settings
@@ -1723,6 +1724,71 @@ def _resolve_check_versions(
     return dict(revision.tool_versions)
 
 
+# Failures that can happen while copying a diagnostic output out of the
+# container or onto disk: the Docker API (also raised mid-stream), the HTTP
+# transport underneath it, and the filesystem.
+_DIAGNOSTIC_EXTRACTION_ERRORS = (
+    docker.errors.DockerException,
+    requests.exceptions.RequestException,
+    OSError,
+)
+# Shown to the owner on the check. The exception detail (which can name
+# internal Docker hosts) goes to the log only; the admin error email for it
+# is rate-limited, so the owner is not promised that staff were told.
+_DIAGNOSTIC_NOT_SAVED = (
+    "Diagnostic output not saved: {output}. The precheck result is unaffected."
+)
+
+
+def _extract_container_outputs(
+    check: ManufacturabilityCheck,
+    container: "docker.models.containers.Container",
+    logger: logging.Logger,
+) -> list[str]:
+    """Extract outputs from the container; diagnostics are best-effort.
+
+    The log file and the runs archive are diagnostics: if saving one fails,
+    the other is still attempted and the analysis still produces its DRC
+    verdict, so a design error is reported even when its artefacts could not
+    be kept. Each failure is returned as a warning that is stored on the
+    check, where the owner and staff see it; the exception detail goes only to
+    the log (and the rate-limited admin error email).
+
+    The output layout is not a diagnostic: it is the file the reticle package
+    manufactures. A failure saving it propagates, so the check goes to ERROR
+    and checks_retry runs it again, rather than finishing without a layout.
+
+    Args:
+        check: The manufacturability check.
+        container: Docker container to extract from.
+        logger: Logger for messages.
+
+    Returns:
+        Warning messages for diagnostic outputs that could not be saved.
+    """
+    warnings: list[str] = []
+
+    log_size = len(check.processing_logs) if check.processing_logs else 0
+    logger.info("[do_analyzing] Step 1/5: Saving logs (%d bytes)...", log_size)
+    try:
+        _save_log_file(check, logger)
+    except _DIAGNOSTIC_EXTRACTION_ERRORS:
+        logger.exception("[do_analyzing] Failed to save log file")
+        warnings.append(_DIAGNOSTIC_NOT_SAVED.format(output="log file"))
+
+    logger.info("[do_analyzing] Steps 2-4: Extracting container outputs...")
+    try:
+        _save_runs_archive(check, container, logger)
+    except _DIAGNOSTIC_EXTRACTION_ERRORS:
+        logger.exception("[do_analyzing] Failed to save runs archive")
+        warnings.append(_DIAGNOSTIC_NOT_SAVED.format(output="runs archive"))
+
+    _save_output_gds(check, container, logger)
+    logger.info("[do_analyzing] Skipping layer export (disabled)")
+
+    return warnings
+
+
 def _finalize_analyzing(
     check: ManufacturabilityCheck,
     failure_type: str,
@@ -1855,17 +1921,7 @@ def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
     )
 
     try:
-        # 1. Save processing logs to log_file
-        log_size = len(check.processing_logs) if check.processing_logs else 0
-        logger.info("[do_analyzing] Step 1/5: Saving logs (%d bytes)...", log_size)
-        _save_log_file(check, logger)
-
-        # 2-4. Extract outputs from container
-        logger.info("[do_analyzing] Steps 2-4: Extracting container outputs...")
-        _save_runs_archive(check, container, logger)
-        _save_output_gds(check, container, logger)
-        logger.info("[do_analyzing] Skipping layer export (disabled)")
-
+        extraction_warnings = _extract_container_outputs(check, container, logger)
     finally:
         _cleanup_temp_dir(check)
 
@@ -1885,6 +1941,7 @@ def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
     # Extract errors and warnings
     error_messages = [e["message"] for e in parse_result["errors"]]
     warning_messages = [w.get("message", str(w)) for w in parse_result["warnings"]]
+    warning_messages.extend(extraction_warnings)
 
     # Classify the failure type: 'success', 'design', or 'system'
     failure_type = classify_failure(logs, exit_code)
