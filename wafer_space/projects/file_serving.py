@@ -36,7 +36,10 @@ DEFAULT_CONTENT_TYPE = "application/octet-stream"
 
 def stored_file_exists(field_file: FieldFile) -> bool:
     """Whether the field names a file that is present in its storage."""
-    return bool(field_file) and field_file.storage.exists(field_file.name)
+    name = field_file.name
+    if not name:
+        return False
+    return field_file.storage.exists(name)
 
 
 def protected_file_response(
@@ -54,7 +57,8 @@ def protected_file_response(
     from the host's mime.types differs between machines (it calls an OASIS
     layout "application/vnd.fujitsu.oasys").
     """
-    if not stored_file_exists(field_file):
+    name = field_file.name
+    if not name or not field_file.storage.exists(name):
         msg = "This file is not stored on the platform"
         raise Http404(msg)
 
@@ -67,17 +71,22 @@ def protected_file_response(
             content_type=content_type,
         )
     else:
+        disposition = content_disposition_header(as_attachment=True, filename=filename)
+        if disposition is None:
+            # Django returns None only for an inline response with no name.
+            msg = f"No Content-Disposition for {filename!r}"
+            raise ValueError(msg)
         response = HttpResponse(content_type=content_type)
-        response["X-Accel-Redirect"] = prefix + quote(_media_relative_name(field_file))
-        response["Content-Disposition"] = content_disposition_header(
-            as_attachment=True, filename=filename
+        response["X-Accel-Redirect"] = prefix + quote(
+            _media_relative_name(field_file, name)
         )
+        response["Content-Disposition"] = disposition
     # Private data: no shared cache may keep a copy.
     response["Cache-Control"] = "private, no-store"
     return response
 
 
-def _media_relative_name(field_file: FieldFile) -> str:
+def _media_relative_name(field_file: FieldFile, name: str) -> str:
     """The file's path relative to MEDIA_ROOT, which nginx aliases.
 
     The nginx location maps onto MEDIA_ROOT, so a storage rooted anywhere
@@ -89,8 +98,8 @@ def _media_relative_name(field_file: FieldFile) -> str:
     location = getattr(storage, "location", None)
     if location is None or Path(location) != media_root:
         msg = (
-            f"{type(storage).__name__} for {field_file.name!r} is not rooted at "
+            f"{type(storage).__name__} for {name!r} is not rooted at "
             "MEDIA_ROOT, so nginx's protected-media alias cannot serve it"
         )
         raise ImproperlyConfigured(msg)
-    return Path(storage.path(field_file.name)).relative_to(media_root).as_posix()
+    return Path(storage.path(name)).relative_to(media_root).as_posix()

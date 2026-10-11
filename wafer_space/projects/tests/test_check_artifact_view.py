@@ -73,16 +73,12 @@ def test_owner_downloads_each_artifact(client: Client, artifact: str) -> None:
 
 
 @pytest.mark.parametrize("artifact", list(ARTIFACTS))
-def test_download_is_named_after_the_stored_file(
-    client: Client, artifact: str
-) -> None:
+def test_download_is_named_after_the_stored_file(client: Client, artifact: str) -> None:
     check = check_with_artifacts()
     client.force_login(check.project.user)
     response = client.get(artifact_url(check, artifact))
     stored_name = Path(getattr(check, ARTIFACTS[artifact][0]).name).name
-    assert response["Content-Disposition"] == (
-        f'attachment; filename="{stored_name}"'
-    )
+    assert response["Content-Disposition"] == (f'attachment; filename="{stored_name}"')
 
 
 def test_staff_downloads_other_users_artifact(client: Client) -> None:
@@ -163,9 +159,7 @@ def test_behind_nginx_answers_with_x_accel_redirect(
     check = check_with_artifacts()
     client.force_login(check.project.user)
     response = client.get(artifact_url(check, "output-layout"))
-    assert response["X-Accel-Redirect"] == (
-        "/protected-media/" + check.output_gds.name
-    )
+    assert response["X-Accel-Redirect"] == ("/protected-media/" + check.output_gds.name)
 
 
 class TestProjectPage:

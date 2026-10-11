@@ -17,6 +17,7 @@ from django.core.files.base import ContentFile
 from django.core.files.storage import FileSystemStorage
 from django.http import FileResponse
 from django.http import Http404
+from django.http import HttpResponse
 from django.test import override_settings
 from django.urls import clear_url_caches
 from django.views.static import serve
@@ -43,13 +44,23 @@ def stored(name: str = "chip_top.gds") -> FieldFile:
     return revision.file
 
 
+def name_of(field_file: FieldFile) -> str:
+    """The stored name of a field the test has just saved."""
+    assert field_file.name is not None
+    return field_file.name
+
+
+def body(response) -> bytes:
+    return b"".join(response.streaming_content)
+
+
 class TestWithoutNginx:
     """MEDIA_X_ACCEL_REDIRECT_PREFIX unset (dev, tests): Django streams."""
 
     def test_streams_the_file(self) -> None:
         response = protected_file_response(stored(), filename="chip_top.gds")
         assert isinstance(response, FileResponse)
-        assert b"".join(response.streaming_content) == CONTENT
+        assert body(response) == CONTENT
 
     def test_is_an_attachment_with_the_given_name(self) -> None:
         response = protected_file_response(stored(), filename="out.gds")
@@ -70,11 +81,12 @@ class TestBehindNginx:
     def test_redirects_to_the_file_under_the_internal_location(self) -> None:
         field_file = stored()
         response = protected_file_response(field_file, filename="chip_top.gds")
-        assert response["X-Accel-Redirect"] == PREFIX + field_file.name
+        assert response["X-Accel-Redirect"] == PREFIX + name_of(field_file)
 
     def test_django_sends_no_body(self) -> None:
         response = protected_file_response(stored(), filename="chip_top.gds")
-        assert (response.streaming, response.content) == (False, b"")
+        assert isinstance(response, HttpResponse)
+        assert response.content == b""
 
     def test_keeps_attachment_name_and_type(self) -> None:
         response = protected_file_response(
@@ -101,7 +113,7 @@ class TestBehindNginx:
         corrupt it.
         """
         field_file = stored()
-        unsafe = Path(field_file.name).parent / "my chip?#%ü.gds"
+        unsafe = Path(name_of(field_file)).parent / "my chip?#%ü.gds"
         field_file.storage.save(str(unsafe), ContentFile(CONTENT))
         field_file.name = str(unsafe)
         response = protected_file_response(field_file, filename="x.gds")
@@ -116,9 +128,7 @@ class TestBehindNginx:
         response = protected_file_response(stored(), filename="puce_ü.gds")
         assert "filename*=utf-8''puce_%C3%BC.gds" in response["Content-Disposition"]
 
-    def test_storage_outside_media_root_is_refused_loudly(
-        self, tmp_path: Path
-    ) -> None:
+    def test_storage_outside_media_root_is_refused_loudly(self, tmp_path: Path) -> None:
         """nginx aliases MEDIA_ROOT, so another root would send the wrong file."""
         elsewhere = FileSystemStorage(location=tmp_path / "elsewhere")
         elsewhere.save("chip_top.gds", ContentFile(CONTENT))
@@ -147,7 +157,7 @@ class TestMissingFiles:
     ) -> None:
         settings.MEDIA_X_ACCEL_REDIRECT_PREFIX = prefix
         field_file = stored()
-        field_file.storage.delete(field_file.name)
+        field_file.storage.delete(name_of(field_file))
         with pytest.raises(Http404):
             protected_file_response(field_file, filename="chip_top.gds")
 
