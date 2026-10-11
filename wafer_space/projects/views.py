@@ -43,6 +43,7 @@ from .forms import ProjectForm
 from .mixins import ProjectOwnerOrStaffMixin
 from .mixins import RefuseArchivedProjectMixin
 from .mixins import refuse_if_archived
+from .models import ARCHIVED_READ_ONLY_MESSAGE
 from .models import PROJECT_ID_LENGTH
 from .models import DownloadAttempt
 from .models import ManufacturabilityCheck
@@ -115,6 +116,10 @@ class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView
         context["viewing_as_admin"] = (
             user.is_authenticated and user.is_staff and project.user != user
         )
+
+        # Archive controls and read-only state (issue #307)
+        context["can_archive"] = project.can_be_archived_by(user)
+        context["archived_read_only_message"] = ARCHIVED_READ_ONLY_MESSAGE
 
         # Get submitted file (file that was submitted for manufacturing)
         submitted_file = project.submitted_file
