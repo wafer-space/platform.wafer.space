@@ -58,6 +58,7 @@ from wafer_space.projects.tasks import do_dispatching
 from wafer_space.projects.tasks import do_running
 from wafer_space.projects.tasks import do_starting
 from wafer_space.projects.tasks import download_project_file
+from wafer_space.projects.tasks_checks import MISSING_LAYOUT_ERROR
 from wafer_space.projects.tasks_checks import _save_output_gds
 from wafer_space.projects.tasks_checks import checks_cleanup_stale_pending_tasks
 from wafer_space.projects.tasks_checks import checks_cleanup_superseded
@@ -2349,6 +2350,27 @@ Precheck successfully completed."""
             ManufacturabilityCheck.Status.ERROR,
             None,
         )
+
+    @pytest.mark.django_db
+    def test_passing_check_without_layout_alerts_staff(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The lost layout is logged at ERROR, which mails the admins."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            docker_exit_code=0,
+            processing_logs=PRECHECK_SUCCESS_LOGS,
+            docker_server_id="test-local",
+            docker_container_id="test-container-id",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_analyzing"
+        )
+
+        with caplog.at_level(logging.ERROR, logger="wafer_space.projects.tasks_checks"):
+            self._analyze_with_layout_archive(check, b"this is not a tar archive")
+
+        assert any(MISSING_LAYOUT_ERROR in r.getMessage() for r in caplog.records)
 
     @staticmethod
     def _analyze_with_layout_archive(

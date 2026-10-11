@@ -1587,6 +1587,11 @@ def _save_output_gds(
     which may include added QR codes or other modifications. It is stored as
     OASIS (.oas) to save disk space (#272), kept in the ``output_gds`` field.
 
+    An absent, unreadable or .oas-less archive leaves ``output_gds`` empty
+    (the last two are logged at ERROR); ``_finalize_analyzing`` then refuses a
+    passing verdict without it (#352). Docker errors other than NotFound
+    propagate and error the check.
+
     Args:
         check: The manufacturability check.
         container: Docker container to extract from.
@@ -1817,6 +1822,7 @@ def _finalize_analyzing(
         # reticle package is built from it: a pass without it means the layout
         # was lost, so error the check (checks_retry re-runs it) instead of
         # recording a manufacturable verdict nothing can be built from (#352).
+        logger.error("[do_analyzing] Check %s: %s", check.id, MISSING_LAYOUT_ERROR)
         failure_type = "system"
         error_messages = [*error_messages, MISSING_LAYOUT_ERROR]
     outputs_saved = {
@@ -1885,7 +1891,7 @@ def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
     This function:
     1. Saves processing logs to log_file field
     2. Extracts /workspace/runs/ directory as compressed tarball
-    3. Extracts output layout from /output/design.oas if it exists
+    3. Extracts output layout from /output/design.oas (required for a pass)
     4. Exports container filesystem changes for debugging
     5. Parses logs to determine manufacturability
     6. Transitions to FINISHED
