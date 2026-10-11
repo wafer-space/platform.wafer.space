@@ -5,7 +5,7 @@ processing and content transformations. Each handler can:
 
 1. Recognize URLs it can handle (via can_handle)
 2. Pre-process URLs before download (via process_url)
-3. Post-process downloaded content (via post_download)
+3. Post-process the downloaded file on disk (via post_download_file)
 
 Example:
     >>> registry = URLHandlerRegistry()
@@ -15,14 +15,61 @@ Example:
     >>> if handler:
     ...     result = handler.process_url(url)
     ...     # Download from result["url"]
-    ...     content = handler.post_download(downloaded_bytes, result["metadata"])
+    ...     handler.post_download_file(downloaded_path, result["metadata"])
 """
 
 import base64
+import binascii
+import os
 import re
 from abc import ABC
 from abc import abstractmethod
+from pathlib import Path
+from typing import IO
 from typing import Any
+
+# Read size for streaming post-download transforms (issue #139).
+DECODE_CHUNK_SIZE = 1024 * 1024
+_B64_ALPHABET = frozenset(
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
+)
+# Bytes base64.b64decode(validate=False) would skip (googlesource's line breaks).
+_NON_B64 = bytes(b for b in range(256) if b not in _B64_ALPHABET)
+
+
+def _stream_b64decode(src: IO[bytes], dst: IO[bytes]) -> None:
+    """Decode base64 from src to dst in DECODE_CHUNK_SIZE reads.
+
+    Non-alphabet bytes are dropped, as base64.b64decode(validate=False)
+    does. Padding ('=') may only end the stream: b64decode(validate=True)
+    rejects it within a block, and seen_padding rejects data after a block
+    that ended in padding.
+    """
+    carry = b""
+    seen_padding = False
+    while chunk := src.read(DECODE_CHUNK_SIZE):
+        data = carry + chunk.translate(None, _NON_B64)
+        if seen_padding and data:
+            msg = "Invalid base64 in googlesource download: data after padding"
+            raise ValueError(msg)
+        usable = len(data) - len(data) % 4
+        block = data[:usable]
+        dst.write(_b64decode_strict(block))
+        if block:
+            seen_padding = block.endswith(b"=")
+        carry = data[usable:]
+    if carry:
+        msg = "Invalid base64 in googlesource download: truncated final group"
+        raise ValueError(msg)
+
+
+def _b64decode_strict(data: bytes) -> bytes:
+    """Decode whole 4-byte groups, rejecting padding before their end."""
+    try:
+        return base64.b64decode(data, validate=True)
+    except binascii.Error as exc:
+        msg = f"Invalid base64 in googlesource download: {exc}"
+        raise ValueError(msg) from exc
 
 
 class URLHandler(ABC):
@@ -57,23 +104,24 @@ class URLHandler(ABC):
         Returns:
             dict: Contains:
                 - url: The processed URL to download from
-                - metadata: Handler-specific metadata to pass to post_download
+                - metadata: Handler-specific metadata to pass to post_download_file
         """
 
-    @abstractmethod
-    def post_download(self, content: bytes, metadata: dict[str, Any]) -> bytes:
-        """Post-process downloaded content.
+    def post_download_file(self, path: Path, metadata: dict[str, Any]) -> bool:
+        """Transform the downloaded file in place, without reading it whole.
 
-        This method can transform downloaded content (e.g., base64 decode,
-        decompress, extract from archive).
+        The default leaves the file unchanged. Handlers that need to
+        transform content (e.g. base64 decode) override this and must
+        process the file in bounded chunks (issue #139).
 
         Args:
-            content: The raw downloaded content
+            path: The downloaded file on disk
             metadata: Metadata from process_url
 
         Returns:
-            bytes: The processed content
+            bool: True if the file was changed
         """
+        return False
 
 
 class GoogleSourceHandler(URLHandler):
@@ -129,20 +177,33 @@ class GoogleSourceHandler(URLHandler):
             },
         }
 
-    def post_download(self, content: bytes, metadata: dict[str, Any]) -> bytes:
-        """Base64 decode the downloaded content.
+    def post_download_file(self, path: Path, metadata: dict[str, Any]) -> bool:
+        """Base64 decode the downloaded file in place, in bounded chunks.
 
         Google Source returns file content as base64-encoded text when
-        format=TEXT is used. This method decodes it back to original bytes.
+        format=TEXT is used. The decoded bytes go to a sibling file that
+        atomically replaces the original, so a failure never leaves a
+        half-decoded file behind.
 
         Args:
-            content: Base64-encoded content from Google Source
+            path: Base64-encoded download from Google Source
             metadata: Metadata from process_url (unused but required by interface)
 
         Returns:
-            bytes: Decoded file content
+            bool: Always True (the file is replaced by its decoded content)
+
+        Raises:
+            ValueError: If the content is not valid base64
         """
-        return base64.b64decode(content)
+        decoded_path = Path(os.fspath(path) + ".decoded")
+        try:
+            with path.open("rb") as src, decoded_path.open("wb") as dst:
+                _stream_b64decode(src, dst)
+        except ValueError:
+            decoded_path.unlink(missing_ok=True)
+            raise
+        decoded_path.replace(path)
+        return True
 
 
 class GitHubArtifactHandler(URLHandler):
@@ -232,21 +293,6 @@ class GitHubArtifactHandler(URLHandler):
             "url": url,  # Keep original URL, download task will use API
             "metadata": metadata,
         }
-
-    def post_download(self, content: bytes, metadata: dict[str, Any]) -> bytes:
-        """Pass through artifact ZIP content without transformation.
-
-        GitHub artifacts are downloaded as ZIP files and don't need
-        any post-processing (unlike Google Source which needs base64 decode).
-
-        Args:
-            content: Downloaded artifact ZIP content
-            metadata: Metadata from process_url (unused but required by interface)
-
-        Returns:
-            bytes: Unmodified ZIP content
-        """
-        return content
 
 
 class URLHandlerRegistry:

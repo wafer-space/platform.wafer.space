@@ -69,6 +69,7 @@ from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.projects.tests.factories import ProjectFileFactory
 from wafer_space.projects.tests.read_instrumentation import RecordingPath
+from wafer_space.projects.url_handlers import DECODE_CHUNK_SIZE
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.tests.factories import ShuttleFactory
 
@@ -3707,6 +3708,27 @@ class TestDownloadStreaming:
         _apply_post_download_processing(project_file, encoded_file)
 
         assert encoded_file.read_bytes() == content
+
+    @pytest.mark.django_db
+    def test_post_download_processing_reads_bounded_chunks(
+        self, tmp_path: Path
+    ) -> None:
+        """The googlesource decode never reads the download whole (#139)."""
+        real = tmp_path / "download.b64"
+        real.write_bytes(base64.b64encode(b"y" * (3 * DECODE_CHUNK_SIZE)))
+        path = RecordingPath(real)
+        path.read_sizes = []
+        project_file = ProjectFileFactory(
+            handler_metadata={
+                "handler": "GoogleSourceHandler",
+                "base64_encoded": True,
+            }
+        )
+
+        _apply_post_download_processing(project_file, path)
+
+        assert path.read_sizes
+        assert -1 not in path.read_sizes
 
     @pytest.mark.django_db
     def test_download_task_reads_bounded_chunks_only(self, tmp_path: Path) -> None:

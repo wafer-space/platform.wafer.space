@@ -1307,9 +1307,9 @@ def _apply_post_download_processing(
 ) -> None:
     """Apply URL handler post-download processing in place, if applicable.
 
-    The downloaded file is only read into memory when a transforming
-    handler (e.g. base64 decode) is configured; the common direct-URL
-    and GitHub-artifact paths never read it here.
+    The handler transforms the file on disk in bounded chunks (e.g. the
+    googlesource base64 decode), so the download is never read whole into
+    memory (issue #139).
 
     Args:
         project_file: The project file with handler_metadata
@@ -1334,13 +1334,11 @@ def _apply_post_download_processing(
         return
 
     logger = logging.getLogger(__name__)
-    content = temp_path.read_bytes()
-    processed_content = handler.post_download(content, project_file.handler_metadata)
-    if processed_content != content:
+    original_size = temp_path.stat().st_size
+    if handler.post_download_file(temp_path, project_file.handler_metadata):
         logger.info("  Content was transformed by handler")
-        logger.info("  Original size: %s", _format_bytes(len(content)))
-        logger.info("  Processed size: %s", _format_bytes(len(processed_content)))
-        temp_path.write_bytes(processed_content)
+        logger.info("  Original size: %s", _format_bytes(original_size))
+        logger.info("  Processed size: %s", _format_bytes(temp_path.stat().st_size))
 
 
 def _apply_content_pipeline(
