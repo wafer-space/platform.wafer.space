@@ -16,6 +16,7 @@ from django.utils import timezone
 
 if TYPE_CHECKING:
     from .models import Project
+    from .models import ProjectFile
 
 WARNING = "warning"
 URGENT = "urgent"
@@ -61,19 +62,47 @@ def deadline_warning_for(
 
 
 def next_step(project: Project) -> str:
-    """What the owner should do now, to show beside the warning."""
+    """What the owner should do now, to show beside the warning.
+
+    Read from the latest revision's own state (download, latest check,
+    finished verdict), never from Project.status (#354).
+    """
+    latest = project.latest_file
     if project.submitted_file_id is not None:
+        newer_passes = (
+            latest is not None
+            and latest.pk != project.submitted_file_id
+            and project.latest_file_manufacturable is True
+        )
+        if newer_passes:
+            return "A newer revision passed its check: submit it for manufacturing."
         return (
             "The submitted revision no longer passes its manufacturability "
             "check: upload a fixed revision and submit it."
         )
-    if project.latest_file is None:
+    if latest is None:
         return "Submit a file URL for your design."
-    if project.can_submit()[0]:
+    return _latest_revision_step(project, latest)
+
+
+def _latest_revision_step(project: Project, latest: ProjectFile) -> str:
+    download = latest.download_status
+    if download == latest.DownloadStatus.FAILED:
+        return "The file download failed: submit the file URL again."
+    if download != latest.DownloadStatus.COMPLETED:
+        return "Wait for the file download and the check to finish, then submit."
+    verdict = project.latest_file_manufacturable
+    if verdict is True:
         return "Your latest revision passed its check: Submit for Manufacturing."
-    if project.latest_file_manufacturable is False:
+    if verdict is False:
         return (
             "Your latest revision failed its manufacturability check: upload "
             "a fixed revision."
+        )
+    check = latest.latest_manufacturability_check
+    if check is not None and check.status in check.Status.terminal():
+        return (
+            "The manufacturability check ended with an error: upload the "
+            "file again or contact staff."
         )
     return "Wait for the manufacturability check to finish, then submit."

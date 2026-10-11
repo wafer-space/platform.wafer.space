@@ -11,7 +11,7 @@ is **on-site only**, shown in the pages themselves, and leaves the
 notifications system alone.
 **Builds on:** #349 (`shuttle_deadline` tag: AoE date, local time,
 countdown), #320/#350 (`Shuttle.is_closed`).
-**Status:** Draft for the coordinator's review.
+**Status:** Approved by the coordinator 2026-10-12, with the defaults below and one addition (a submitted revision that now fails counts as warned).
 
 ## Who is warned, and when
 
@@ -20,7 +20,7 @@ A project needs the warning when all of these hold:
 - it is on a shuttle that is open (`not shuttle.is_closed`) and has a
   `submission_deadline`;
 - the deadline is in the future and **within 14 days**;
-- it has **no file submitted for manufacturing** (`submitted_file is None`);
+- it still needs its owner to act: **no file submitted for manufacturing** (`submitted_file is None`), **or** the submitted revision's latest finished check no longer passes (the "Submitted, now failing" list state, #321; the coordinator's addition);
 - it is not archived (#307).
 
 There are two levels:
@@ -30,9 +30,11 @@ There are two levels:
 Both thresholds are module constants in one place, so they can be retuned.
 Default: 14 days and 3 days (open question 1).
 
-The rule is one model method, `Project.deadline_warning() -> str | None`. It
-returns `"warning"`, `"urgent"` or `None`, so every page asks the same
-question.
+The rule is one module function, `deadline_warning(project)` in
+`wafer_space/projects/deadline_warning.py`, returning `"warning"`, `"urgent"`
+or `None`. The projects list calls `deadline_warning_for(project,
+submitted_verdict=...)` with #321's annotation, so it costs no query per
+project.
 
 ## Where it is shown
 
@@ -58,8 +60,9 @@ question.
 - `deadline_warning()` uses the project's `shuttle` (already
   `select_related` on the list) and `submitted_file_id`, so it adds no
   queries per row.
-- The list alert reuses the list's queryset filtered to the user's own
-  projects, so it adds no query beyond the page's own.
+- The list alert adds one annotated query for the user's own projects in the
+  deadline window; its query count does not grow with the number of warned
+  projects (tested).
 
 ## Testing
 
@@ -76,9 +79,8 @@ question.
   with a running countdown on the project page, and the alert on
   `/projects/`.
 
-## Open questions for the coordinator (defaults in brackets)
+## Decided (coordinator, 2026-10-12)
 
-1. Thresholds [14 days warning, 3 days urgent].
-2. Also warn when a file *is* submitted but a newer revision is waiting to be
-   submitted [no: submitted means the owner has acted; #285 and later items
-   can revisit].
+1. Thresholds: 14 days warning, 3 days urgent.
+2. No warning when a file is submitted and its check passes, even if a newer
+   revision exists; a submitted revision that now fails is warned.

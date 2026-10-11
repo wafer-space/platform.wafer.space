@@ -5,6 +5,8 @@ from __future__ import annotations
 import datetime
 
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -12,13 +14,17 @@ from wafer_space.projects.deadline_warning import URGENT
 from wafer_space.projects.deadline_warning import WARNING
 from wafer_space.projects.deadline_warning import deadline_warning
 from wafer_space.projects.deadline_warning import deadline_warning_for
+from wafer_space.projects.deadline_warning import next_step
+from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
+from wafer_space.projects.models import ProjectFile
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.users.tests.factories import UserFactory
 
 from .factories import ManufacturabilityCheckFactory
 from .factories import ProjectFactory
+from .factories import ProjectFileFactory
 from .factories import make_downloaded_file
 
 pytestmark = pytest.mark.django_db
@@ -174,3 +180,111 @@ def test_no_list_alert_when_nothing_is_warned(client) -> None:
     client.force_login(project.user)
     html = client.get(reverse("projects:list")).content.decode()
     assert "data-deadline-alert" not in html
+
+
+def with_revision(
+    project: Project,
+    *,
+    download: str | None = DownloadAttempt.Status.COMPLETED,
+    check_status: str | None = None,
+    manufacturable: bool | None = None,
+) -> ProjectFile:
+    """Give the project an active revision in a chosen state."""
+    revision = ProjectFileFactory(
+        project=project,
+        is_active=True,
+        download_task_id="task",
+        hash_verified=True,
+    )
+    if download is not None:
+        DownloadAttempt.objects.create(
+            project_file=revision,
+            attempt_number=1,
+            status=download,
+        )
+    if check_status is not None:
+        ManufacturabilityCheckFactory(
+            project=project,
+            project_file=revision,
+            status=check_status,
+            is_manufacturable=manufacturable,
+        )
+    return revision
+
+
+@pytest.mark.parametrize(
+    ("state", "expected"),
+    [
+        ({"download": DownloadAttempt.Status.FAILED}, "download failed"),
+        ({"download": DownloadAttempt.Status.DOWNLOADING}, "Wait for the file"),
+        (
+            {"check_status": ManufacturabilityCheck.Status.RUNNING},
+            "Wait for the manufacturability check",
+        ),
+        (
+            {"check_status": ManufacturabilityCheck.Status.ERROR},
+            "ended with an error",
+        ),
+        (
+            {
+                "check_status": ManufacturabilityCheck.Status.FINISHED,
+                "manufacturable": False,
+            },
+            "failed its manufacturability check",
+        ),
+        (
+            {
+                "check_status": ManufacturabilityCheck.Status.FINISHED,
+                "manufacturable": True,
+            },
+            "Submit for Manufacturing",
+        ),
+    ],
+)
+def test_next_step_for_each_state(state, expected) -> None:
+    project = project_due_in(datetime.timedelta(days=2))
+    with_revision(project, **state)
+    assert expected in next_step(reload(project))
+
+
+def test_next_step_failing_submission_with_newer_passing_revision() -> None:
+    project = project_due_in(datetime.timedelta(days=2))
+    submit_with_verdict(project, manufacturable=False)
+    ProjectFile.objects.filter(project=project).update(is_active=False)
+    with_revision(
+        project,
+        check_status=ManufacturabilityCheck.Status.FINISHED,
+        manufacturable=True,
+    )
+    assert "newer revision passed" in next_step(reload(project))
+
+
+def test_list_alert_includes_submitted_now_failing(client) -> None:
+    project = project_due_in(datetime.timedelta(days=2))
+    submit_with_verdict(project, manufacturable=False)
+    client.force_login(project.user)
+    html = client.get(reverse("projects:list")).content.decode()
+    assert f'data-warned-project="{project.pk}"' in html
+
+
+def test_list_alert_query_count_does_not_grow_with_projects(client) -> None:
+    owner = UserFactory()
+    client.force_login(owner)
+
+    def warned_projects(count: int, offset: int) -> None:
+        for i in range(count):
+            shuttle = Shuttle.objects.create(
+                name=f"G8{50 + offset + i}",
+                description="Run",
+                status=Shuttle.Status.OPEN,
+                submission_deadline=timezone.now() + datetime.timedelta(days=2),
+            )
+            ProjectFactory(user=owner, shuttle=shuttle)
+
+    warned_projects(1, offset=0)
+    with CaptureQueriesContext(connection) as one:
+        client.get(reverse("projects:list"))
+    warned_projects(4, offset=1)
+    with CaptureQueriesContext(connection) as five:
+        client.get(reverse("projects:list"))
+    assert len(five) == len(one)
