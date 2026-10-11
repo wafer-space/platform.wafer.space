@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections import Counter
+from pathlib import Path
 from typing import TYPE_CHECKING
 from typing import ClassVar
 from typing import cast
@@ -22,6 +23,8 @@ from django.db.models import OuterRef
 from django.db.models import Prefetch
 from django.db.models import Q
 from django.db.models import Subquery
+from django.http import FileResponse
+from django.http import Http404
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.shortcuts import redirect
@@ -761,6 +764,36 @@ class ProjectOverrideSubmitView(
             f"Project '{project.name}' submitted for manufacturing by staff override.",
         )
         return redirect("projects:detail", pk=pk)
+
+
+class ProjectFileDownloadView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
+    """Download the layout stored on the platform for one revision (#254).
+
+    The original URL is external and may break; this serves the copy the
+    platform downloaded. Read-only, so it is allowed on archived projects.
+    Large files are streamed through the web process (FileResponse).
+    """
+
+    http_method_names = ["get"]
+
+    def get_object(self) -> Project:
+        """Get the project object for permission checking."""
+        return get_object_or_404(Project, pk=self.kwargs["pk"])
+
+    def get(self, request: HttpRequest, pk: UUID, file_pk: int) -> FileResponse:
+        """Stream the stored file as an attachment."""
+        revision = get_object_or_404(ProjectFile, pk=file_pk, project_id=pk)
+        if not revision.file or not revision.file.storage.exists(revision.file.name):
+            msg = "This revision has no stored file"
+            raise Http404(msg)
+        # The stored copy is the processed file (archives and encodings are
+        # unpacked), so name it after what it contains, not the source URL.
+        filename = revision.processed_filename or Path(revision.file.name).name
+        return FileResponse(
+            revision.file.open("rb"),
+            as_attachment=True,
+            filename=filename,
+        )
 
 
 class ProjectArchiveView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):

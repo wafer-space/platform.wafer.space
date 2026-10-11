@@ -57,6 +57,15 @@
           <div class="flex-shrink-0">{% include "projects/_file_badges.html" with file=file %}</div>
         </div>
         {# File details #}
+        {% if file.file %}
+          <p class="mb-2">
+            <strong>Stored file:</strong>
+            <a href="{% url 'projects:file_download' file.project_id file.pk %}"
+               data-stored-file-download>
+              <i class="bi bi-download"></i> Download the copy stored on the platform
+            </a>
+          </p>
+        {% endif %}
         {% if file.original_url %}
           <p class="mb-2">
             <strong>Original URL:</strong>

@@ -28,6 +28,11 @@ urlpatterns = [
         views.ProjectOverrideSubmitView.as_view(),
         name="submit_override",
     ),
+    path(
+        "<uuid:pk>/files/<int:file_pk>/",
+        views.ProjectFileDownloadView.as_view(),
+        name="file_download",
+    ),
     # Archiving (issue #307)
     path("<uuid:pk>/archive/", views.ProjectArchiveView.as_view(), name="archive"),
     path(
