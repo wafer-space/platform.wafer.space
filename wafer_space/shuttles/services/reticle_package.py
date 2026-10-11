@@ -127,7 +127,7 @@ def get_slots(shuttle: Shuttle) -> list[ShuttleSlot]:
     """Get all slots for a shuttle, including empty ones."""
     return list(
         ShuttleSlot.objects.filter(shuttle=shuttle)
-        .select_related("project", "project__submitted_file")
+        .select_related("project", "project__shuttle", "project__submitted_file")
         .order_by("row", "column")
     )
 
@@ -217,7 +217,7 @@ def write_summary(path: Path, slots: list[ShuttleSlot]) -> None:
                 [
                     prj.project_id,
                     prj.name,
-                    f"{settings.SITE_URL}/projects/{prj.id}/",
+                    f"{settings.SITE_URL}{prj.get_absolute_url()}",
                     slot.slot_size,
                     prj.status,
                     prj_file.top_cell,

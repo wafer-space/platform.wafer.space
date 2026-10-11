@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING
 
 from .base import BasePage
@@ -10,8 +9,9 @@ from .base import BasePage
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
-# The list links each project by pk (UUID): /projects/<uuid>/
-_PROJECT_HREF = re.compile(r"^/projects/([0-9a-fA-F-]{36})/$")
+# Each list row names its project's pk (UUID) in data-project-row. The row's
+# link is the canonical URL, which is the full_id once a shuttle is assigned.
+_PROJECT_ROW = "[data-project-row]"
 
 
 class ProjectListPage(BasePage):
@@ -30,11 +30,10 @@ class ProjectListPage(BasePage):
         page_num = 1
         while True:
             self.navigate(f"/projects/?page={page_num}")
-            hrefs = self.page.eval_on_selector_all(
-                "a[href^='/projects/']",
-                "els => els.map(e => e.getAttribute('href'))",
+            found = self.page.eval_on_selector_all(
+                _PROJECT_ROW,
+                "els => els.map(e => e.getAttribute('data-project-row'))",
             )
-            found = [m.group(1) for h in hrefs if (m := _PROJECT_HREF.match(h or ""))]
             new = [pid for pid in found if pid not in ids]
             if not new:
                 return ids

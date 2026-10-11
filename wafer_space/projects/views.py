@@ -824,6 +824,7 @@ class ManufacturabilityCheckAdminStatusView(
             .select_related(
                 "project",
                 "project__user",
+                "project__shuttle",
                 "project_file",
             )
             .order_by("-id")[:50]
@@ -843,6 +844,7 @@ class ManufacturabilityCheckAdminStatusView(
                 .select_related(
                     "project",
                     "project__user",
+                    "project__shuttle",
                     "project_file",
                 )
                 .order_by("-created_at")

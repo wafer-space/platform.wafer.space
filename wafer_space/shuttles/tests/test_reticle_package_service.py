@@ -310,7 +310,7 @@ class TestGeneratePackage:
         oas = oas_dir / "output.oas"
         oas.write_text("OAS")
 
-        project = ProjectFactory(project_id="SUMM", slot_size="1x1")
+        project = ProjectFactory(project_id="SUMM", shuttle=shuttle, slot_size="1x1")
         pf = ProjectFileFactory(project=project, top_cell="SUMM_TOP")
         ManufacturabilityCheckFactory(
             project=project,
@@ -334,7 +334,7 @@ class TestGeneratePackage:
             summary = {row["CODE"]: row for row in csv.DictReader(f)}
         row = summary["SUMM"]
         assert row["PROJECT_NAME"] == project.name
-        assert row["PROJECT_URL"].endswith(f"/projects/{project.id}/")
+        assert row["PROJECT_URL"].endswith(f"/projects/{project.full_id}/")
         assert row["STATUS"] == project.status
         assert row["TOP_CELL"] == "SUMM_TOP"
 
