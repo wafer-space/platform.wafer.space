@@ -6,11 +6,13 @@ import logging
 import typing
 
 import pytest
+from allauth.account.adapter import get_adapter
 from allauth.socialaccount.providers.base import AuthError
 from allauth.socialaccount.providers.oauth2.client import OAuth2Error
 from django.contrib.messages import get_messages
 from django.contrib.messages.middleware import MessageMiddleware
 from django.contrib.sessions.middleware import SessionMiddleware
+from django.core.exceptions import PermissionDenied
 from django.http import HttpResponse
 from django.test import RequestFactory
 
@@ -186,3 +188,24 @@ class TestOnAuthenticationError:
             )
         [record] = caplog.records
         assert "google" in record.getMessage()
+
+
+class TestAccountAdapterClientIP:
+    """allauth's rate limits, user sessions and emails use the trusted IP."""
+
+    def test_forged_x_forwarded_for_is_ignored(self) -> None:
+        """allauth's default takes the client-controlled first XFF entry."""
+        request = RequestFactory().post(
+            "/accounts/login/",
+            REMOTE_ADDR="203.0.113.9",
+            HTTP_X_FORWARDED_FOR="198.51.100.66, 203.0.113.9",
+        )
+
+        assert get_adapter(request).get_client_ip(request) == "203.0.113.9"
+
+    def test_missing_client_ip_fails_loudly(self) -> None:
+        """No IP means a proxy misconfiguration; never share one bucket."""
+        request = RequestFactory().post("/accounts/login/", REMOTE_ADDR="")
+
+        with pytest.raises(PermissionDenied):
+            get_adapter(request).get_client_ip(request)

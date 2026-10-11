@@ -8,6 +8,9 @@ from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from allauth.socialaccount.providers.base import AuthError
 from django.conf import settings
 from django.contrib import messages
+from django.core.exceptions import PermissionDenied
+
+from wafer_space.core.utils import get_client_ip
 
 if typing.TYPE_CHECKING:
     from allauth.socialaccount.models import SocialLogin
@@ -22,6 +25,22 @@ logger = logging.getLogger(__name__)
 class AccountAdapter(DefaultAccountAdapter):
     def is_open_for_signup(self, request: HttpRequest) -> bool:
         return getattr(settings, "ACCOUNT_ALLOW_REGISTRATION", True)
+
+    def get_client_ip(self, request: HttpRequest) -> str:
+        """Return the IP resolved by RealClientIPMiddleware (issue #274).
+
+        allauth's default prefers the first X-Forwarded-For entry, which the
+        client controls, so its per-IP rate limits (login, signup, password
+        reset) could be dodged by rotating a forged header. With no IP at
+        all every anonymous visitor would share one rate-limit bucket, which
+        only happens when the proxy is misconfigured: fail loudly instead.
+        """
+        client_ip = get_client_ip(request)
+        if client_ip is None:
+            logger.error("Cannot determine the client IP for %s", request.path)
+            msg = "Unable to determine the client IP address."
+            raise PermissionDenied(msg)
+        return client_ip
 
 
 class SocialAccountAdapter(DefaultSocialAccountAdapter):
