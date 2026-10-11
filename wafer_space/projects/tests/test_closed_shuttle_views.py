@@ -36,7 +36,6 @@ ALLOWED_ON_CLOSED = {
     "check_status",
     "cancel_check",
     "update",  # other fields stay editable; the form locks chip-on-board
-    "delete",
     "archive",
     "unarchive",
     "compliance_certify",
