@@ -99,6 +99,18 @@ class ProjectAdmin(StaffReadOnlyAdminMixin, SimpleHistoryAdmin):
     ]
     readonly_fields = ["created_at", "updated_at", "archived_at"]
 
+    def revert_disabled(
+        self,
+        request: HttpRequest,
+        obj: Project | None = None,
+    ) -> bool:
+        """Never offer simple_history's "Revert" button for projects.
+
+        Tim, issue #345: reverting a project from its history is removed
+        for everyone; history versions stay readable.
+        """
+        return True
+
     def history_form_view(
         self,
         request: HttpRequest,
@@ -106,15 +118,13 @@ class ProjectAdmin(StaffReadOnlyAdminMixin, SimpleHistoryAdmin):
         version_id: str,
         extra_context: dict[str, Any] | None = None,
     ) -> HttpResponse:
-        """Refuse history reverts (POST) without change-history permission.
+        """Show a history version read-only; refuse every revert POST.
 
-        simple_history only checks view-or-change permission before saving
-        a POST to this view, so staff with read-only access
-        (StaffReadOnlyAdminMixin) could otherwise revert a project.
+        simple_history saves the historical version on POST after checking
+        only view-or-change permission, so the POST is refused here for all
+        users, superusers included (issue #345; #343 for read-only staff).
         """
-        if request.method == "POST" and not self.has_change_history_permission(
-            request,
-        ):
+        if request.method == "POST":
             raise PermissionDenied
         return super().history_form_view(
             request,
