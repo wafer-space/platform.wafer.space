@@ -8,7 +8,6 @@ These tests verify that:
 """
 
 import logging
-import tempfile
 from datetime import UTC
 from datetime import datetime
 from pathlib import Path
@@ -329,8 +328,23 @@ class ProgressLoggingFrequencyTests(TestCase):
         assert should_log_50mb  # At/after 50MB boundary
 
 
+class PerTestTempDirMixin:
+    """Give each test its own download directory.
+
+    A fixed directory under the system temp dir is shared by every
+    worktree, so two test runs at once delete each other's files.
+    pytest's ``tmp_path`` is unique per test.
+    """
+
+    temp_dir: Path
+
+    @pytest.fixture(autouse=True)
+    def _per_test_temp_dir(self, tmp_path: Path) -> None:
+        self.temp_dir = tmp_path
+
+
 @pytest.mark.django_db
-class DownloadChunksIntegrationTests(TestCase):
+class DownloadChunksIntegrationTests(PerTestTempDirMixin, TestCase):
     """Integration tests for _download_chunks() function."""
 
     def setUp(self):
@@ -375,8 +389,7 @@ class DownloadChunksIntegrationTests(TestCase):
         mock_task.update_state = Mock()
 
         # Create temp file path in project directory
-        temp_dir = Path(tempfile.gettempdir()) / "wafer_space_test_downloads"
-        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_dir = self.temp_dir
         temp_path = temp_dir / "test_download.gds"
         temp_path.unlink(missing_ok=True)
 
@@ -435,8 +448,7 @@ class DownloadChunksIntegrationTests(TestCase):
         mock_task.update_state = Mock()
 
         # Create temp file with existing data in project directory
-        temp_dir = Path(tempfile.gettempdir()) / "wafer_space_test_downloads"
-        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_dir = self.temp_dir
         temp_path = temp_dir / "test_resume_download.gds"
         temp_path.write_bytes(b"x" * resume_pos)
 
@@ -490,8 +502,7 @@ class DownloadChunksIntegrationTests(TestCase):
         mock_task = Mock()
         mock_task.update_state = Mock()
 
-        temp_dir = Path(tempfile.gettempdir()) / "wafer_space_test_downloads"
-        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_dir = self.temp_dir
         temp_path = temp_dir / "test_checkpoint_data.gds"
         temp_path.unlink(missing_ok=True)
 
@@ -533,7 +544,7 @@ class DownloadChunksIntegrationTests(TestCase):
 
 
 @pytest.mark.django_db
-class KnownSizeCheckpointTests(TestCase):
+class KnownSizeCheckpointTests(PerTestTempDirMixin, TestCase):
     """Tests for checkpoint creation with known file size."""
 
     def setUp(self):
@@ -581,8 +592,7 @@ class KnownSizeCheckpointTests(TestCase):
         mock_task = Mock()
         mock_task.update_state = Mock()
 
-        temp_dir = Path(tempfile.gettempdir()) / "wafer_space_test_downloads"
-        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_dir = self.temp_dir
         temp_path = temp_dir / "test_known_size_checkpoint.gds"
         temp_path.unlink(missing_ok=True)
 
@@ -643,7 +653,7 @@ class KnownSizeCheckpointTests(TestCase):
 
 
 @pytest.mark.django_db
-class ProgressLoggingIntegrationTests(TestCase):
+class ProgressLoggingIntegrationTests(PerTestTempDirMixin, TestCase):
     """Integration tests for progress logging during downloads."""
 
     def setUp(self):
@@ -684,8 +694,7 @@ class ProgressLoggingIntegrationTests(TestCase):
         mock_task = Mock()
         mock_task.update_state = Mock()
 
-        temp_dir = Path(tempfile.gettempdir()) / "wafer_space_test_downloads"
-        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_dir = self.temp_dir
         temp_path = temp_dir / "test_progress_logs.gds"
         temp_path.unlink(missing_ok=True)
 
@@ -732,7 +741,7 @@ class ProgressLoggingIntegrationTests(TestCase):
 
 
 @pytest.mark.django_db
-class DownloadSizeLimitTests(TestCase):
+class DownloadSizeLimitTests(PerTestTempDirMixin, TestCase):
     """Tests for MAX_DOWNLOAD_SIZE enforcement during chunked download.
 
     The pre-download URL validation cannot always determine the file size
@@ -794,8 +803,7 @@ class DownloadSizeLimitTests(TestCase):
         chunks = _gds_chunks(10)
         mock_response.iter_content.return_value = iter(chunks)
 
-        temp_dir = Path(tempfile.gettempdir()) / "wafer_space_test_downloads"
-        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_dir = self.temp_dir
         temp_path = temp_dir / "test_size_limit.gds"
         temp_path.unlink(missing_ok=True)
 
@@ -825,8 +833,7 @@ class DownloadSizeLimitTests(TestCase):
         chunks = _gds_chunks(3)
         mock_response.iter_content.return_value = iter(chunks)
 
-        temp_dir = Path(tempfile.gettempdir()) / "wafer_space_test_downloads"
-        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_dir = self.temp_dir
         temp_path = temp_dir / "test_size_ok.gds"
         temp_path.unlink(missing_ok=True)
 
@@ -882,7 +889,7 @@ class DownloadSizeLimitTests(TestCase):
 
 
 @pytest.mark.django_db
-class EarlyContentValidationTests(TestCase):
+class EarlyContentValidationTests(PerTestTempDirMixin, TestCase):
     """Tests for first-chunk content validation during download.
 
     Rejecting unsupported content (e.g. an HTML error page served instead
@@ -913,8 +920,6 @@ class EarlyContentValidationTests(TestCase):
             attempt_number=1,
             status=DownloadAttempt.Status.DOWNLOADING,
         )
-        self.temp_dir = Path(tempfile.gettempdir()) / "wafer_space_test_downloads"
-        self.temp_dir.mkdir(parents=True, exist_ok=True)
 
     def _make_state(self, chunks, temp_path, *, resume_byte_pos=0):
         """Build a _ChunkDownloadState streaming the given chunks."""
