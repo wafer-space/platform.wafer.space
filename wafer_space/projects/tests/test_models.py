@@ -21,6 +21,7 @@ from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.models import log_tail_expressions
 from wafer_space.projects.models import validate_crowd_supply_order_id
+from wafer_space.projects.models import whole_log_lines
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.projects.tests.factories import ProjectFileFactory
@@ -3609,6 +3610,20 @@ class TestCheckLogTail:
         values = self._tail_values("ab✓✓✓✓")
 
         assert values["processing_logs_tail"] == "✓✓✓✓"
+
+    @pytest.mark.parametrize(
+        ("tail", "kind", "shown"),
+        [
+            ("45\nline 46\nline 47\n", "cut", "line 46\nline 47\n"),
+            ("line 1\nline 2\n", "whole", "line 1\nline 2\n"),
+            ("no newline at all", "cut", "no newline at all"),
+        ],
+    )
+    def test_cut_tail_starts_at_a_whole_line(
+        self, tail: str, kind: str, shown: str
+    ) -> None:
+        """A cut tail drops its partial first line; a whole log is unchanged."""
+        assert whole_log_lines(tail, truncated=kind == "cut") == shown
 
     def test_with_log_tail_defers_the_full_log(self) -> None:
         """Checks loaded for templates carry the tail, never the whole log."""

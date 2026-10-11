@@ -1808,6 +1808,18 @@ def log_tail_expressions() -> dict[str, Any]:
     }
 
 
+def whole_log_lines(tail: str, *, truncated: bool) -> str:
+    """Drop a cut tail's partial first line, so the display starts on a line.
+
+    A tail that is the whole log is returned unchanged, and so is a cut
+    tail with no line break at all (one very long line).
+    """
+    if not truncated:
+        return tail
+    _partial, newline, rest = tail.partition("\n")
+    return rest if newline else tail
+
+
 class ManufacturabilityCheckQuerySet(models.QuerySet["ManufacturabilityCheck"]):
     """Queryset helpers for ManufacturabilityCheck."""
 

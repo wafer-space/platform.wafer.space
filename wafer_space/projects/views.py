@@ -70,6 +70,7 @@ from .models import Project
 from .models import ProjectAccessLog
 from .models import ProjectFile
 from .models import log_tail_expressions
+from .models import whole_log_lines
 from .security import SecurityValidationError
 from .services import ProjectFileService
 
@@ -615,7 +616,10 @@ class ManufacturabilityCheckStatusView(LoginRequiredMixin, UserPassesTestMixin, 
         return JsonResponse(
             {
                 "status": check["status"],
-                "processing_logs_tail": check["processing_logs_tail"] or "",
+                "processing_logs_tail": whole_log_lines(
+                    check["processing_logs_tail"] or "",
+                    truncated=bool(check["processing_logs_truncated"]),
+                ),
                 "processing_logs_length": check["processing_logs_length"] or 0,
                 "processing_logs_truncated": bool(check["processing_logs_truncated"]),
                 "is_manufacturable": check["is_manufacturable"],

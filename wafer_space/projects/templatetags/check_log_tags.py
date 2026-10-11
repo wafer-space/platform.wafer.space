@@ -8,6 +8,7 @@ from django import template
 
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import log_tail_expressions
+from wafer_space.projects.models import whole_log_lines
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -30,8 +31,21 @@ def check_log_tail(check: ManufacturabilityCheck) -> Mapping[str, object]:
             "processing_logs_length": 0,
             "processing_logs_truncated": False,
         }
-    return (
+    tail = log_tail_expressions()
+    values = (
         ManufacturabilityCheck.objects.filter(pk=check.pk)
-        .values(**log_tail_expressions())
+        .values(
+            processing_logs_tail=tail["processing_logs_tail"],
+            processing_logs_length=tail["processing_logs_length"],
+            processing_logs_truncated=tail["processing_logs_truncated"],
+        )
         .get()
     )
+    truncated = bool(values["processing_logs_truncated"])
+    return {
+        "processing_logs_tail": whole_log_lines(
+            str(values["processing_logs_tail"] or ""), truncated=truncated
+        ),
+        "processing_logs_length": values["processing_logs_length"],
+        "processing_logs_truncated": truncated,
+    }
