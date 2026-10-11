@@ -210,7 +210,7 @@ def refuse_if_archived(
     if not project.is_archived:
         return None
     messages.error(request, ARCHIVED_READ_ONLY_MESSAGE)
-    return redirect("projects:detail", pk=project.pk)
+    return redirect(project.get_absolute_url())
 
 
 class RefuseArchivedProjectMixin(View):
@@ -266,7 +266,7 @@ def refuse_if_shuttle_closed(
     if reason is None:
         return None
     messages.error(request, reason)
-    return redirect("projects:detail", pk=project.pk)
+    return redirect(project.get_absolute_url())
 
 
 class RefuseClosedShuttleMixin(View):

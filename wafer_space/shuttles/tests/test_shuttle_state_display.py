@@ -84,7 +84,7 @@ def test_project_detail_shows_closed_and_run_page(
     project = ProjectFactory(shuttle=closed)
     client.force_login(project.user)
 
-    content = client.get(reverse("projects:detail", args=[project.pk])).content.decode()
+    content = client.get(project.get_absolute_url()).content.decode()
 
     assert (CLOSED_BADGE in content, RUN_PAGE in content) == (True, True)
 
@@ -95,7 +95,7 @@ def test_project_detail_shows_open_deadline(
     project = ProjectFactory(shuttle=open_shuttle)
     client.force_login(project.user)
 
-    content = client.get(reverse("projects:detail", args=[project.pk])).content.decode()
+    content = client.get(project.get_absolute_url()).content.decode()
 
     assert OPEN_TEXT in visible_text(content)
 
@@ -135,7 +135,7 @@ def test_project_detail_counts_down_to_open_deadline(
     """#349: the open shuttle's deadline carries the countdown markers."""
     project = ProjectFactory(shuttle=open_shuttle)
     client.force_login(project.user)
-    content = client.get(reverse("projects:detail", args=[project.pk])).content
+    content = client.get(project.get_absolute_url()).content
     html = content.decode()
     assert 'data-countdown="2099-12-17T11:59:59Z"' in html
     assert '<time datetime="2099-12-17T11:59:59Z" data-local-time>' in html
@@ -147,7 +147,7 @@ def test_project_detail_closed_shuttle_has_no_countdown(
 ) -> None:
     project = ProjectFactory(shuttle=closed)
     client.force_login(project.user)
-    content = client.get(reverse("projects:detail", args=[project.pk])).content
+    content = client.get(project.get_absolute_url()).content
     assert b"data-shuttle-deadline" not in content
 
 

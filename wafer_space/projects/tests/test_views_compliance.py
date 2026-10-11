@@ -287,7 +287,7 @@ class TestComplianceCertificationCreateView(TestCase):
 
         # Should redirect to project detail
         assert response.status_code == HTTP_FOUND
-        expected_url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+        expected_url = self.project.get_absolute_url()
         assert response["Location"] == expected_url
 
         # Check success message

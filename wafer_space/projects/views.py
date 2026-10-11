@@ -34,7 +34,6 @@ from django.http import StreamingHttpResponse
 from django.shortcuts import get_object_or_404
 from django.shortcuts import redirect
 from django.shortcuts import render
-from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 from django.views.generic import CreateView
@@ -530,7 +529,7 @@ class ProjectFileSubmitURLView(
                     "same time and its file has been kept. Check the project "
                     "page and resubmit if you need a different file.",
                 )
-                return redirect("projects:detail", pk=pk)
+                return redirect(project.get_absolute_url())
 
         return self.render_form(request, project, form)
 
@@ -958,13 +957,13 @@ class ProjectOverrideSubmitView(
         if not form.is_valid():
             for error in form.errors["reason"]:
                 messages.error(request, f"Cannot override: {error}")
-            return redirect("projects:detail", pk=pk)
+            return redirect(project.get_absolute_url())
         reason = form.cleaned_data["reason"]
         try:
             project.override_submit(user, reason)
         except ValidationError as exc:
             messages.error(request, f"Cannot override: {exc.message}")
-            return redirect("projects:detail", pk=pk)
+            return redirect(project.get_absolute_url())
         self._create_audit_log(
             project,
             user,
@@ -976,7 +975,7 @@ class ProjectOverrideSubmitView(
             request,
             f"Project '{project.name}' submitted for manufacturing by staff override.",
         )
-        return redirect("projects:detail", pk=pk)
+        return redirect(project.get_absolute_url())
 
 
 class ProjectFileDownloadView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
@@ -1031,7 +1030,7 @@ class ProjectArchiveView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
                 f"Project '{project.name}' archived. It is read-only and "
                 "listed last on your projects page.",
             )
-        return redirect("projects:detail", pk=pk)
+        return redirect(project.get_absolute_url())
 
 
 class ProjectUnarchiveView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
@@ -1051,7 +1050,7 @@ class ProjectUnarchiveView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
         else:
             project.unarchive()
             messages.success(request, f"Project '{project.name}' unarchived.")
-        return redirect("projects:detail", pk=pk)
+        return redirect(project.get_absolute_url())
 
 
 class ProjectIDCheckView(LoginRequiredMixin, View):

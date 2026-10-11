@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
-from django.urls import reverse
 
 from wafer_space.users.tests.factories import UserFactory
 
@@ -21,7 +20,7 @@ def owner_line(client: Client, *, name: str, username: str) -> str:
     owner = UserFactory(name=name, username=username)
     project = ProjectFactory(user=owner)
     client.force_login(owner)
-    content = client.get(reverse("projects:detail", args=[project.pk])).content
+    content = client.get(project.get_absolute_url()).content
     text = content.decode()
     start = text.index("<strong>Owner:</strong>")
     return " ".join(text[start : text.index("</p>", start)].split())

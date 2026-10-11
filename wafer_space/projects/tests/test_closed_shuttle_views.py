@@ -83,7 +83,7 @@ def test_owner_is_refused(
         url, {"url": "https://example.com/design.gds"}, follow=True
     )
 
-    detail_url = reverse("projects:detail", args=[closed_project.pk])
+    detail_url = closed_project.get_absolute_url()
     closed_project.refresh_from_db()
     assert (
         response.redirect_chain,
@@ -135,9 +135,7 @@ def test_detail_explains_closed_shuttle_to_owner(
 ) -> None:
     client.force_login(closed_project.user)
 
-    content = client.get(
-        reverse("projects:detail", args=[closed_project.pk])
-    ).content.decode()
+    content = client.get(closed_project.get_absolute_url()).content.decode()
 
     upload_url = reverse("projects:submit_url", args=[closed_project.pk])
     assert (REASON in content, upload_url in content) == (True, False)
@@ -148,9 +146,7 @@ def test_detail_keeps_upload_link_for_staff(
 ) -> None:
     client.force_login(UserFactory(is_staff=True))
 
-    content = client.get(
-        reverse("projects:detail", args=[closed_project.pk])
-    ).content.decode()
+    content = client.get(closed_project.get_absolute_url()).content.decode()
 
     assert reverse("projects:submit_url", args=[closed_project.pk]) in content
 
@@ -162,7 +158,7 @@ def test_detail_keeps_upload_link_on_open_shuttle(client: Client) -> None:
     project = ProjectFactory(shuttle=shuttle)
     client.force_login(project.user)
 
-    content = client.get(reverse("projects:detail", args=[project.pk])).content.decode()
+    content = client.get(project.get_absolute_url()).content.decode()
 
     assert reverse("projects:submit_url", args=[project.pk]) in content
 
@@ -173,9 +169,7 @@ def test_detail_disables_submit_button_on_closed_shuttle(
     ProjectFileFactory(project=closed_project, is_active=True)
     client.force_login(closed_project.user)
 
-    content = client.get(
-        reverse("projects:detail", args=[closed_project.pk])
-    ).content.decode()
+    content = client.get(closed_project.get_absolute_url()).content.decode()
 
     submit_url = reverse("projects:submit", args=[closed_project.pk])
     assert (f'title="{REASON}"' in content, submit_url in content) == (True, False)
@@ -186,8 +180,6 @@ def test_detail_drops_upload_prompt_on_closed_shuttle(
 ) -> None:
     client.force_login(closed_project.user)
 
-    content = client.get(
-        reverse("projects:detail", args=[closed_project.pk])
-    ).content.decode()
+    content = client.get(closed_project.get_absolute_url()).content.decode()
 
     assert "Upload a design file to get started." not in content

@@ -40,7 +40,7 @@ def test_staff_override_submits_and_logs_reason(staff_client: Client) -> None:
     project = make_failed_project()
     response = staff_client.post(override_url(project), {"reason": REASON})
     assert response.status_code == HTTP_FOUND
-    assert response["Location"] == reverse("projects:detail", args=[project.pk])
+    assert response["Location"] == project.get_absolute_url()
     project.refresh_from_db()
     assert project.submitted_file is not None
     assert project.submission_override_reason == REASON

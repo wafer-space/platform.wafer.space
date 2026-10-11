@@ -143,7 +143,7 @@ def test_list_annotation_gives_same_answer_without_queries(
 
 def detail(client, user, project: Project) -> str:
     client.force_login(user)
-    return client.get(reverse("projects:detail", args=[project.pk])).content.decode()
+    return client.get(project.get_absolute_url()).content.decode()
 
 
 def test_project_page_shows_urgent_banner_with_next_step(client) -> None:

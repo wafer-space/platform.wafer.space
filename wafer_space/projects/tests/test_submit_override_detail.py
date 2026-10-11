@@ -24,7 +24,7 @@ OVERRIDE_BUTTON = "Submit anyway (staff override)"
 
 def page(client: Client, user, project: Project) -> str:
     client.force_login(user)
-    return client.get(reverse("projects:detail", args=[project.pk])).content.decode()
+    return client.get(project.get_absolute_url()).content.decode()
 
 
 def test_staff_see_override_form(client: Client) -> None:

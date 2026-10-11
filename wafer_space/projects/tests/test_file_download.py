@@ -106,7 +106,7 @@ def test_revision_of_another_project_is_404(client: Client) -> None:
 def test_project_page_links_stored_file(client: Client) -> None:
     revision = stored_revision(is_active=True)
     client.force_login(revision.project.user)
-    detail = reverse("projects:detail", args=[revision.project.pk])
+    detail = revision.project.get_absolute_url()
     content = client.get(detail).content.decode()
     assert download_url(revision) in content
 
@@ -114,7 +114,7 @@ def test_project_page_links_stored_file(client: Client) -> None:
 def test_project_page_has_no_link_without_stored_file(client: Client) -> None:
     revision = ProjectFileFactory(file=None, is_active=True)
     client.force_login(revision.project.user)
-    detail = reverse("projects:detail", args=[revision.project.pk])
+    detail = revision.project.get_absolute_url()
     content = client.get(detail).content.decode()
     assert download_url(revision) not in content
 
