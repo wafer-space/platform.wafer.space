@@ -80,6 +80,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from uuid import UUID
 
+    from django.db.models import QuerySet
     from django.http import HttpRequest
     from django.http import HttpResponse
     from django.http.response import HttpResponseBase
@@ -168,7 +169,9 @@ class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView
     template_name = "projects/project_detail.html"
     context_object_name = "project"
 
-    def dispatch(self, request, *args, **kwargs):
+    def dispatch(
+        self, request: HttpRequest, *args: Any, **kwargs: Any
+    ) -> HttpResponseBase:
         """Redirect to the canonical full_id URL when accessed by pk.
 
         Only authenticated, authorised users are redirected. Everyone else
@@ -320,7 +323,7 @@ class ProjectDetailByFullIdView(ProjectDetailView):
     does not trigger here because the URL provides ``full_id``, not ``pk``.
     """
 
-    def get_object(self, queryset=None):
+    def get_object(self, queryset: QuerySet[Project] | None = None) -> Project:
         """Look up project by full_id from URL."""
         if queryset is None:
             queryset = self.get_queryset()
