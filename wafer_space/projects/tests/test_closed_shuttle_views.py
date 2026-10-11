@@ -41,6 +41,7 @@ ALLOWED_ON_CLOSED = {
     "compliance_certify",
     "check_drc_update_requeue",  # re-checks a revision; submission stays frozen
     "submit_override",  # staff only (#252); staff are never refused here
+    "file_download",  # read only: the stored layout (#254)
 }
 REFUSED_ON_CLOSED = {"submit", "submit_url"}
 PROJECT_KWARGS = ("<uuid:pk>", "<int:check_id>")
