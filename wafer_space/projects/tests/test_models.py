@@ -21,10 +21,12 @@ from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.models import log_tail_expressions
 from wafer_space.projects.models import validate_crowd_supply_order_id
+from wafer_space.projects.models import validate_project_id
 from wafer_space.projects.models import whole_log_lines
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.projects.tests.factories import ProjectFileFactory
+from wafer_space.projects.tests.factories import factory_project_id
 from wafer_space.projects.tests.read_instrumentation import ReadSizeRecorder
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.tests.factories import ShuttleFactory
@@ -3632,3 +3634,12 @@ class TestCheckLogTail:
         loaded = ManufacturabilityCheck.objects.with_log_tail().get(pk=check.pk)
 
         assert "processing_logs" in loaded.get_deferred_fields()
+
+
+class TestFactoryProjectIds:
+    """The test factory's project IDs stay valid however many are made."""
+
+    @pytest.mark.parametrize("n", [0, 999, 1000, 46_655, 46_656, 10**7])
+    def test_ids_are_always_valid(self, n: int) -> None:
+        """1000 used to give 'T1000' (5 characters), failing later tests."""
+        validate_project_id(factory_project_id(n))

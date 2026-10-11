@@ -13,6 +13,24 @@ from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
 from wafer_space.users.tests.factories import UserFactory
 
+_BASE36 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+_ID_DIGITS = 3
+
+
+def factory_project_id(n: int) -> str:
+    """'T' plus ``n`` as three base-36 digits: always a valid 4-character ID.
+
+    The old ``f"T{n:03d}"`` became 5 characters once a test run had made
+    1000 projects, failing whichever test came next on project_id
+    validation. Base 36 gives 46,656 distinct IDs before wrapping.
+    """
+    n %= len(_BASE36) ** _ID_DIGITS
+    digits = ""
+    for _ in range(_ID_DIGITS):
+        n, digit = divmod(n, len(_BASE36))
+        digits = _BASE36[digit] + digits
+    return f"T{digits}"
+
 
 class ProjectFactory(DjangoModelFactory[Project]):
     """Factory for creating test Project instances."""
@@ -22,7 +40,7 @@ class ProjectFactory(DjangoModelFactory[Project]):
     description = Faker("text", max_nb_chars=200)
     slot_size = "1x1"
     status = Project.Status.DRAFT
-    project_id = Sequence(lambda n: f"T{n:03d}")
+    project_id = Sequence(factory_project_id)
 
     class Meta:
         model = Project
