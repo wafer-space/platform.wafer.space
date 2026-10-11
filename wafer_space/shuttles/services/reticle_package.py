@@ -308,6 +308,8 @@ def write_readme(path: Path, shuttle: Shuttle, slots: list[ShuttleSlot]) -> None
             status = check.finished_status.value
         else:
             status = "no_check"
+        if prj.is_submission_override:
+            status = f"{status} (staff override)"
         top = prj.output_file.top_cell
         projects_rows.append(
             f"| {prj.project_id} | {prj.name} | {status} | {slot.slot_size} | {top} |"

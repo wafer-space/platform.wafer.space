@@ -132,7 +132,13 @@ class ProjectOwnerOrStaffMixin(UserPassesTestMixin):
         return super().handle_no_permission()
 
     def _create_audit_log(
-        self, project: Project, admin_user: User, request: HttpRequest
+        self,
+        project: Project,
+        admin_user: User,
+        request: HttpRequest,
+        *,
+        action: str | None = None,
+        details: str = "",
     ) -> None:
         """Create audit log entry for admin access.
 
@@ -140,17 +146,20 @@ class ProjectOwnerOrStaffMixin(UserPassesTestMixin):
             project: Project being accessed
             admin_user: Staff user accessing the project
             request: HTTP request object
+            action: Explicit action; by default derived from the HTTP method
+            details: Extra detail, e.g. the reason for a submit override
         """
-        # Determine action based on request method
-        action_map = {
-            "GET": ProjectAccessLog.Action.VIEW,
-            "POST": ProjectAccessLog.Action.EDIT,
-            "PUT": ProjectAccessLog.Action.EDIT,
-            "PATCH": ProjectAccessLog.Action.EDIT,
-            "DELETE": ProjectAccessLog.Action.DELETE,
-        }
-        method = request.method or "GET"
-        action = action_map.get(method, ProjectAccessLog.Action.VIEW)
+        if action is None:
+            # Determine action based on request method
+            action_map = {
+                "GET": ProjectAccessLog.Action.VIEW,
+                "POST": ProjectAccessLog.Action.EDIT,
+                "PUT": ProjectAccessLog.Action.EDIT,
+                "PATCH": ProjectAccessLog.Action.EDIT,
+                "DELETE": ProjectAccessLog.Action.DELETE,
+            }
+            method = request.method or "GET"
+            action = action_map.get(method, ProjectAccessLog.Action.VIEW)
 
         ip_address = get_client_ip(request)
 
@@ -162,6 +171,7 @@ class ProjectOwnerOrStaffMixin(UserPassesTestMixin):
             ip_address=ip_address,
             user_agent=request.headers.get("user-agent", ""),
             view_name=self.__class__.__name__,
+            details=details,
         )
 
     def _create_denied_access_log(

@@ -354,6 +354,17 @@
               </h5>
             </div>
             <div class="card-body">
+              {% if project.is_submission_override %}
+                <div class="alert alert-warning"
+                     role="status"
+                     data-submission-override-banner>
+                  <i class="bi bi-exclamation-triangle-fill me-1" aria-hidden="true"></i>
+                  <strong>Submitted by staff override</strong>:
+                  {{ project.submission_override_by.username }} on {{ project.submitted_at|date:"Y-m-d H:i" }}.
+                  Reason: {{ project.submission_override_reason }}
+                  <div class="small mt-1">This revision did not pass its manufacturability check; the result is shown below.</div>
+                </div>
+              {% endif %}
               {% include "projects/_file_display.html" with file=submitted_file download_attempts=submitted_file.download_attempts.all show_attempts=True first_open=True %}
             </div>
           </div>
@@ -401,6 +412,29 @@
               </div>
             </div>
             <div class="card-body">
+              {% if can_override_submit.0 %}
+                <div class="border border-danger rounded p-2 mb-3" data-submit-override>
+                  <button class="btn btn-outline-danger btn-sm"
+                          type="button"
+                          data-bs-toggle="collapse"
+                          data-bs-target="#submit-override-form"
+                          aria-expanded="false"
+                          aria-controls="submit-override-form">
+                    <i class="bi bi-shield-exclamation"></i> Submit anyway (staff override)
+                  </button>
+                  <form id="submit-override-form"
+                        class="collapse mt-2"
+                        method="post"
+                        action="{% url 'projects:submit_override' pk=project.pk %}"
+                        onsubmit="return confirm('The latest revision\'s precheck result is Not Manufacturable. Submit it for manufacturing anyway? This is recorded with your name and reason.');">
+                    {% csrf_token %}
+                    <label class="form-label" for="{{ override_form.reason.id_for_label }}">{{ override_form.reason.label }}</label>
+                    {{ override_form.reason }}
+                    <div class="form-text">At least 20 characters. Shown on this page to the owner and recorded in the audit log.</div>
+                    <button type="submit" class="btn btn-danger btn-sm mt-2">Submit for manufacturing by override</button>
+                  </form>
+                </div>
+              {% endif %}
               {# Progress Bar for downloading files #}
               {% if show_progress %}
                 <div id="progress-container" class="mb-3">

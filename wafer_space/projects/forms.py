@@ -11,6 +11,7 @@ from wafer_space.core.enums import SlotSize
 from wafer_space.shuttles.models import Shuttle
 
 from .models import PROJECT_ID_LENGTH
+from .models import SUBMIT_OVERRIDE_REASON_MIN_LENGTH
 from .models import LicenseType
 from .models import Project
 from .models import ProjectComplianceCertification
@@ -780,3 +781,24 @@ class ComplianceCertificationForm(forms.ModelForm):
             )
             raise ValidationError(msg)
         return value
+
+
+class SubmitOverrideForm(forms.Form):
+    """Reason staff give when submitting despite a failed precheck (#252)."""
+
+    reason = forms.CharField(
+        label="Reason for the override",
+        min_length=SUBMIT_OVERRIDE_REASON_MIN_LENGTH,
+        strip=True,
+        widget=forms.Textarea(attrs={"rows": 3, "class": "form-control"}),
+        error_messages={
+            "min_length": (
+                "Give a reason of at least "
+                f"{SUBMIT_OVERRIDE_REASON_MIN_LENGTH} characters."
+            ),
+            "required": (
+                "Give a reason of at least "
+                f"{SUBMIT_OVERRIDE_REASON_MIN_LENGTH} characters."
+            ),
+        },
+    )

@@ -23,6 +23,11 @@ urlpatterns = [
     path("<uuid:pk>/update/", views.ProjectUpdateView.as_view(), name="update"),
     # Project submission
     path("<uuid:pk>/submit/", views.ProjectSubmitView.as_view(), name="submit"),
+    path(
+        "<uuid:pk>/submit-override/",
+        views.ProjectOverrideSubmitView.as_view(),
+        name="submit_override",
+    ),
     # Archiving (issue #307)
     path("<uuid:pk>/archive/", views.ProjectArchiveView.as_view(), name="archive"),
     path(

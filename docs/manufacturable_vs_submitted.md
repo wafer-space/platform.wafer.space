@@ -51,6 +51,20 @@ user clicks "Submit for Manufacturing" (`Project.submit()`).
    revision"* are routinely **different revisions**. This is a normal,
    expected state — not an error.
 
+### Staff override (the one exception to rule 1)
+
+When the precheck itself is wrong, a **staff** user may submit the latest
+revision although its check failed (`Project.override_submit()`, issue #252).
+Everything else is still required: an active, downloaded and hash-verified
+revision whose latest finished check produced a processed layout, and a
+project that is not archived. The override records who
+(`Project.submission_override_by`) and a reason of at least 20 characters
+(`Project.submission_override_reason`), writes a `SUBMIT_OVERRIDE` entry with
+the reason to `ProjectAccessLog`, and is shown on the project page. The
+revision's own check verdict is unchanged: it is still *not manufacturable*.
+A later normal submission clears the override fields; the project's history
+keeps them.
+
 ## Mapping to Code
 
 | Concept | Code |

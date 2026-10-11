@@ -7,6 +7,7 @@ from django import forms
 from django.contrib import admin
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
+from django.db.models import QuerySet
 from django.http import HttpRequest
 from django.http import HttpResponse
 from django.shortcuts import redirect
@@ -59,6 +60,31 @@ class DuplicateProjectForm(forms.Form):
             target_shuttle_field.queryset = queryset
 
 
+class SubmissionOverrideFilter(admin.SimpleListFilter):
+    """Filter projects by whether staff submitted them by override (#252)."""
+
+    title = "submitted by override"
+    parameter_name = "submission_override"
+
+    def lookups(
+        self,
+        request: HttpRequest,
+        model_admin: "admin.ModelAdmin[Project]",
+    ) -> list[tuple[str, str]]:
+        return [("yes", "Yes"), ("no", "No")]
+
+    def queryset(
+        self,
+        request: HttpRequest,
+        queryset: QuerySet[Project],
+    ) -> QuerySet[Project]:
+        if self.value() == "yes":
+            return queryset.filter(submission_override_by__isnull=False)
+        if self.value() == "no":
+            return queryset.filter(submission_override_by__isnull=True)
+        return queryset
+
+
 @admin.register(Project)
 class ProjectAdmin(StaffReadOnlyAdminMixin, SimpleHistoryAdmin):
     """Admin interface for Project model."""
@@ -86,6 +112,7 @@ class ProjectAdmin(StaffReadOnlyAdminMixin, SimpleHistoryAdmin):
         "created_at",
         "updated_at",
         "archived_at",
+        SubmissionOverrideFilter,
     ]
     search_fields = [
         "name",
@@ -97,7 +124,13 @@ class ProjectAdmin(StaffReadOnlyAdminMixin, SimpleHistoryAdmin):
         "repository_url",
         "other_license_spdx_id",
     ]
-    readonly_fields = ["created_at", "updated_at", "archived_at"]
+    readonly_fields = [
+        "created_at",
+        "updated_at",
+        "archived_at",
+        "submission_override_by",
+        "submission_override_reason",
+    ]
 
     def revert_disabled(
         self,
@@ -246,6 +279,7 @@ class ProjectAccessLogAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
         "ip_address",
         "user_agent",
         "view_name",
+        "details",
     ]
 
     def has_add_permission(self, request):
