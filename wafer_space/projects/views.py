@@ -42,6 +42,7 @@ from .forms import ProjectFileURLSubmitForm
 from .forms import ProjectForm
 from .mixins import ProjectOwnerOrStaffMixin
 from .mixins import RefuseArchivedProjectMixin
+from .mixins import RefuseClosedShuttleMixin
 from .mixins import refuse_if_archived
 from .models import ARCHIVED_READ_ONLY_MESSAGE
 from .models import PROJECT_ID_LENGTH
@@ -332,6 +333,7 @@ class ProjectFileSubmitURLView(
     LoginRequiredMixin,
     ProjectOwnerOrStaffMixin,
     RefuseArchivedProjectMixin,
+    RefuseClosedShuttleMixin,
     View,
 ):
     """Submit a file URL for background download."""
@@ -662,6 +664,7 @@ class ProjectSubmitView(
     LoginRequiredMixin,
     ProjectOwnerOrStaffMixin,
     RefuseArchivedProjectMixin,
+    RefuseClosedShuttleMixin,
     View,
 ):
     """Submit a project for manufacturing (POST-only)."""

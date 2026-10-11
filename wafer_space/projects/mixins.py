@@ -18,6 +18,7 @@ from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectAccessLog
 
 if TYPE_CHECKING:
+    from django.contrib.auth.models import AnonymousUser
     from django.http import HttpRequest
     from django.http import HttpResponseBase
     from django.http import HttpResponseRedirect
@@ -219,6 +220,62 @@ class RefuseArchivedProjectMixin(View):
         """Redirect with the read-only message if the project is archived."""
         project = get_object_or_404(Project, pk=kwargs["pk"])
         refusal = refuse_if_archived(request, project)
+        if refusal is not None:
+            return refusal
+        return super().dispatch(request, *args, **kwargs)
+
+
+def shuttle_closed_reason_for(
+    project: Project,
+    user: User | AnonymousUser,
+) -> str | None:
+    """Why ``user`` may not change this project's design, or None (#320).
+
+    Staff are never blocked (dates-03 default), and a project without a
+    shuttle is not blocked. Whether a shuttle is closed is decided only by
+    Shuttle.is_open_to_users.
+    """
+    if user.is_authenticated and user.is_staff:
+        return None
+    shuttle = project.shuttle
+    if shuttle is None:
+        return None
+    return shuttle.closed_reason
+
+
+def refuse_if_shuttle_closed(
+    request: HttpRequest,
+    project: Project,
+) -> HttpResponseRedirect | None:
+    """Refuse an upload or a submission on a closed shuttle (#320).
+
+    Returns a redirect to the project page with the reason, or None when the
+    caller may proceed. RefuseClosedShuttleMixin calls it.
+    """
+    reason = shuttle_closed_reason_for(project, request.user)
+    if reason is None:
+        return None
+    messages.error(request, reason)
+    return redirect("projects:detail", pk=project.pk)
+
+
+class RefuseClosedShuttleMixin(View):
+    """Refuse every request to a design-changing view on a closed shuttle.
+
+    List it after ProjectOwnerOrStaffMixin (and RefuseArchivedProjectMixin)
+    in the view's bases, so strangers still get a 403. The view's URL must
+    carry the project's ``pk``.
+    """
+
+    def dispatch(
+        self,
+        request: HttpRequest,
+        *args: Any,
+        **kwargs: Any,
+    ) -> HttpResponseBase:
+        """Redirect with the reason if the project's shuttle is closed."""
+        project = get_object_or_404(Project, pk=kwargs["pk"])
+        refusal = refuse_if_shuttle_closed(request, project)
         if refusal is not None:
             return refusal
         return super().dispatch(request, *args, **kwargs)
