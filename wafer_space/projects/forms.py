@@ -138,6 +138,16 @@ class LicenseValidationMixin:
             instance.proprietary_terms_cached_at = None
 
 
+class ShuttleChoiceField(forms.ModelChoiceField):
+    """Shuttle choices; a test-only shuttle says so in its label (#221)."""
+
+    def label_from_instance(self, obj: Shuttle) -> str:
+        label = str(obj)
+        if obj.is_test_only:
+            return f"{label} (test only, not manufactured)"
+        return label
+
+
 class ProjectForm(LicenseValidationMixin, forms.ModelForm):
     """Unified form for creating and editing projects.
 
@@ -162,7 +172,7 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
         help_text="License under which this project is released",
     )
 
-    shuttle = forms.ModelChoiceField(
+    shuttle = ShuttleChoiceField(
         # Use callable so queryset is evaluated fresh each time, not at class definition
         queryset=Shuttle.objects.none(),  # Overridden in __init__
         widget=forms.Select(attrs={"class": "form-control", "id": "id_shuttle"}),
@@ -432,8 +442,14 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
         if not self.instance._state.adding:  # noqa: SLF001
             return
 
-        # Set default shuttle to oldest shuttle open to users (by created_at)
-        default_shuttle = Shuttle.objects.open_to_users().order_by("created_at").first()
+        # Default to the oldest shuttle open to users (by created_at), never a
+        # test-only one: users pick that knowingly (#221).
+        default_shuttle = (
+            Shuttle.objects.open_to_users()
+            .filter(is_test_only=False)
+            .order_by("created_at")
+            .first()
+        )
         if default_shuttle:
             self.fields["shuttle"].initial = default_shuttle
 
