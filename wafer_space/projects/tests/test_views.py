@@ -1,6 +1,7 @@
 """Tests for project views."""
 
 from datetime import timedelta
+from pathlib import Path
 from unittest.mock import Mock
 from unittest.mock import patch
 
@@ -3000,3 +3001,117 @@ class TestDetailPageLogsAreBounded:
         html = client.get(reverse("projects:detail", args=[project.pk])).content
 
         assert check.log_file.url.encode() not in html
+
+
+@pytest.mark.django_db
+class TestOtherWebPathsLoadNoWholeLogs:
+    """Review of #308: every web path that touches checks skips the log."""
+
+    BIG_LOG = "first line of a long run\n" + "z" * (2 * 1024 * 1024) + "\nlast\n"
+
+    @staticmethod
+    def _selects_logs(queries) -> list[str]:
+        return [
+            q["sql"]
+            for q in queries
+            if q["sql"].lstrip().upper().startswith("SELECT")
+            and "processing_logs" in q["sql"]
+            and "RIGHT(" not in q["sql"].upper()
+            and "LENGTH(" not in q["sql"].upper()
+        ]
+
+    def test_admin_check_status_page(self, client) -> None:
+        """projects:admin_check_status lists checks without their logs."""
+        ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING, processing_logs=self.BIG_LOG
+        )
+        client.force_login(UserFactory(is_staff=True))
+
+        with CaptureQueriesContext(connection) as queries:
+            response = client.get(reverse("projects:admin_check_status"))
+
+        assert (response.status_code, self._selects_logs(queries)) == (HTTP_OK, [])
+
+    def test_cancel_reads_and_rewrites_no_log(self, client) -> None:
+        """Cancelling appends its note in SQL; the log never enters Python."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.RUNNING, processing_logs=self.BIG_LOG
+        )
+        client.force_login(check.project.user)
+
+        with CaptureQueriesContext(connection) as queries:
+            client.post(
+                reverse(
+                    "projects:cancel_check",
+                    kwargs={"pk": check.project_id, "check_id": check.pk},
+                )
+            )
+
+        check.refresh_from_db()
+        assert (
+            self._selects_logs(queries),
+            check.status,
+            check.processing_logs.startswith("first line of a long run"),
+        ) == ([], ManufacturabilityCheck.Status.CANCELLING, True)
+
+    def test_staff_can_poll_a_project_they_view(self, client) -> None:
+        """Staff see the project page, so its polling must not 403 forever."""
+        project = ProjectFactory()
+        project_file = ProjectFileFactory(project=project, is_active=True)
+        ManufacturabilityCheckFactory(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            processing_logs="x\n",
+        )
+        client.force_login(UserFactory(is_staff=True))
+
+        response = client.get(reverse("projects:check_status", args=[project.pk]))
+
+        assert response.status_code == HTTP_OK
+
+    def test_missing_saved_log_file_falls_back_to_the_db(
+        self, client, settings, tmp_path
+    ) -> None:
+        """A row naming a deleted file still serves the log, not a 500."""
+        settings.MEDIA_ROOT = str(tmp_path)
+        check = ManufacturabilityCheckFactory(processing_logs="db copy\n")
+        check.log_file.save("check.log", ContentFile(b"saved\n"), save=True)
+        Path(check.log_file.path).unlink()
+        client.force_login(check.project.user)
+
+        response = client.get(
+            reverse(
+                "projects:check_log",
+                kwargs={"pk": check.project_id, "check_id": check.pk},
+            )
+        )
+
+        assert b"".join(response.streaming_content) == b"db copy\n"
+
+    def test_django_admin_change_view_shows_only_the_tail(self, client) -> None:
+        """The admin's check page links the full log instead of inlining it."""
+        check = ManufacturabilityCheckFactory(processing_logs=self.BIG_LOG)
+        client.force_login(UserFactory(is_staff=True, is_superuser=True))
+
+        html = client.get(
+            reverse("admin:projects_manufacturabilitycheck_change", args=[check.pk])
+        ).content
+
+        assert (
+            len(html) < 300 * 1024,
+            b"first line of a long run" in html,
+            f"/checks/{check.pk}/log/".encode() in html,
+        ) == (True, False, True)
+
+    def test_django_admin_changelist_loads_no_logs(self, client) -> None:
+        """The admin's check list never selects the log column."""
+        ManufacturabilityCheckFactory(processing_logs=self.BIG_LOG)
+        client.force_login(UserFactory(is_staff=True, is_superuser=True))
+
+        with CaptureQueriesContext(connection) as queries:
+            response = client.get(
+                reverse("admin:projects_manufacturabilitycheck_changelist")
+            )
+
+        assert (response.status_code, self._selects_logs(queries)) == (HTTP_OK, [])

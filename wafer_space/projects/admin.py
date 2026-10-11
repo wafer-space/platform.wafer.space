@@ -15,6 +15,7 @@ from django.template.response import TemplateResponse
 from django.urls import URLPattern
 from django.urls import path
 from django.urls import reverse
+from django.utils.html import format_html
 from simple_history.admin import SimpleHistoryAdmin
 
 from wafer_space.contrib.admin_mixins import StaffReadOnlyAdminMixin
@@ -28,6 +29,8 @@ from wafer_space.projects.models import PrecheckImageRevision
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectAccessLog
 from wafer_space.projects.models import ProjectFileChunk
+from wafer_space.projects.models import log_tail_expressions
+from wafer_space.projects.models import whole_log_lines
 from wafer_space.projects.services import ELIGIBLE_TARGET_SHUTTLE_STATUSES
 from wafer_space.projects.services import duplicate_project_task
 from wafer_space.projects.services import validate_duplication
@@ -340,7 +343,7 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
         "errors",
         "warnings",
         "error_message",
-        "processing_logs",
+        "processing_logs_tail_display",
         "docker_server_id",
         "docker_container_id",
         "docker_image",
@@ -404,7 +407,7 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
             "Processing Logs",
             {
                 "fields": [
-                    "processing_logs",
+                    "processing_logs_tail_display",
                     "last_activity",
                 ],
                 "classes": ["collapse"],
@@ -421,6 +424,40 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
             },
         ),
     ]
+
+    def get_queryset(self, request: HttpRequest) -> QuerySet[ManufacturabilityCheck]:
+        """Never load whole logs: they reach megabytes (issue #308)."""
+        return super().get_queryset(request).defer("processing_logs")
+
+    @admin.display(description="Processing logs (end)")
+    def processing_logs_tail_display(self, obj: ManufacturabilityCheck) -> str:
+        """The log's tail, computed in SQL, with a link to the whole log."""
+        if not obj.pk:
+            return "-"
+        tail = log_tail_expressions()
+        values = (
+            ManufacturabilityCheck.objects.filter(pk=obj.pk)
+            .values(
+                processing_logs_tail=tail["processing_logs_tail"],
+                processing_logs_truncated=tail["processing_logs_truncated"],
+            )
+            .get()
+        )
+        truncated = bool(values["processing_logs_truncated"])
+        shown = whole_log_lines(
+            str(values["processing_logs_tail"] or ""), truncated=truncated
+        )
+        url = reverse(
+            "projects:check_log",
+            kwargs={"pk": obj.project_id, "check_id": obj.pk},
+        )
+        return format_html(
+            '<a href="{}">Full log</a>{}<pre style="max-height: 400px; '
+            'overflow-y: auto">{}</pre>',
+            url,
+            " (showing the end)" if truncated else "",
+            shown,
+        )
 
 
 @admin.register(PrecheckImageRevision)

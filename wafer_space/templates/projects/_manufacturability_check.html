@@ -527,7 +527,7 @@
       <p class="small text-muted mb-1"
          id="processing-logs-truncated"
          {% if not log.processing_logs_truncated %}hidden{% endif %}>
-        Showing the end of a {{ log.processing_logs_length|floatformat:"g" }}-character log.
+        Showing the end of a <span id="processing-logs-length">{{ log.processing_logs_length|floatformat:"g" }}</span>-character log.
         <a href="{% url 'projects:check_log' pk=check.project_id check_id=check.pk %}"
            data-full-log-link>Full log</a>
       </p>

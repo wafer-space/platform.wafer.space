@@ -698,6 +698,10 @@
                 if (note) {
                   note.hidden = !data.processing_logs_truncated;
                 }
+                const length = document.getElementById('processing-logs-length');
+                if (length) {
+                  length.textContent = data.processing_logs_length.toLocaleString('en');
+                }
                 // Auto-scroll to bottom if user was already at the bottom
                 if (wasAtBottom) {
                   logsElement.scrollTop = logsElement.scrollHeight;

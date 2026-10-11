@@ -554,9 +554,10 @@ class ManufacturabilityCheckStatusView(LoginRequiredMixin, UserPassesTestMixin, 
     """Get manufacturability check status (AJAX endpoint)."""
 
     def test_func(self):
-        """Only allow the owner to view check status."""
+        """Allow the owner and staff, as the project page that polls this."""
         project = get_object_or_404(Project, pk=self.kwargs["pk"])
-        return project.user == self.request.user
+        user = self.request.user
+        return project.user == user or (user.is_authenticated and user.is_staff)
 
     def get(self, request, pk):
         """Return check status as JSON.
@@ -576,10 +577,6 @@ class ManufacturabilityCheckStatusView(LoginRequiredMixin, UserPassesTestMixin, 
                 - error_message: Error message if error occurred
         """
         project = get_object_or_404(Project, pk=pk)
-
-        # Check if user owns the project
-        if project.user != request.user:
-            return JsonResponse({"error": "Permission denied"}, status=403)
 
         # Get active file's manufacturability check
         active_file = ProjectFile.objects.filter(
@@ -655,12 +652,21 @@ class CheckLogView(
         )
         filename = f"check_{check.pk}.log"
         if check.log_file:
-            return FileResponse(
-                check.log_file.open("rb"),
-                as_attachment=True,
-                filename=filename,
-                content_type="text/plain; charset=utf-8",
-            )
+            try:
+                saved = check.log_file.open("rb")
+            except FileNotFoundError:
+                # The row names a file that is gone; the database copy is
+                # the same log, so serve that (and say so in the log).
+                logger.warning(
+                    "Saved log for check %s is missing; streaming from DB", check.pk
+                )
+            else:
+                return FileResponse(
+                    saved,
+                    as_attachment=True,
+                    filename=filename,
+                    content_type="text/plain; charset=utf-8",
+                )
         response = StreamingHttpResponse(
             _stream_log_from_db(check.pk),
             content_type="text/plain; charset=utf-8",
@@ -705,7 +711,7 @@ class ManufacturabilityCheckCancelView(LoginRequiredMixin, UserPassesTestMixin, 
 
         # Get the specific check by ID
         check = get_object_or_404(
-            ManufacturabilityCheck,
+            ManufacturabilityCheck.objects.without_logs(),
             pk=check_id,
             project=project,
         )
@@ -748,11 +754,16 @@ class ManufacturabilityCheckAdminStatusView(
             }
 
         # Get recent checks (last 50)
-        recent_checks = ManufacturabilityCheck.objects.select_related(
-            "project",
-            "project__user",
-            "project_file",
-        ).order_by("-id")[:50]
+        # Logs are deferred: this page lists checks and shows none (#308).
+        recent_checks = (
+            ManufacturabilityCheck.objects.without_logs()
+            .select_related(
+                "project",
+                "project__user",
+                "project_file",
+            )
+            .order_by("-id")[:50]
+        )
 
         # Build active sections for all non-terminal statuses
         active_sections = []
@@ -763,7 +774,8 @@ class ManufacturabilityCheckAdminStatusView(
             # Get checks for this status (ordered newest first)
             # Evaluate to list to avoid double query (count + iteration)
             checks = list(
-                ManufacturabilityCheck.objects.filter(status=status)
+                ManufacturabilityCheck.objects.without_logs()
+                .filter(status=status)
                 .select_related(
                     "project",
                     "project__user",
@@ -1327,7 +1339,9 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
 @require_POST
 def check_drc_update_requeue(request, check_id):
     """Manually trigger a DRC_UPDATE check for outdated precheck version."""
-    check = get_object_or_404(ManufacturabilityCheck, pk=check_id)
+    check = get_object_or_404(
+        ManufacturabilityCheck.objects.without_logs(), pk=check_id
+    )
 
     # Permission: must own the project or be staff
     if check.project.user != request.user and not request.user.is_staff:

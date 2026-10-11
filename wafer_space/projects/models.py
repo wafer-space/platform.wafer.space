@@ -13,6 +13,11 @@ from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.db import transaction
+from django.db.models import Case
+from django.db.models import F
+from django.db.models import Value
+from django.db.models import When
+from django.db.models.functions import Concat
 from django.db.models.functions import Length
 from django.db.models.functions import Right
 from django.db.models.lookups import GreaterThan
@@ -1823,6 +1828,10 @@ def whole_log_lines(tail: str, *, truncated: bool) -> str:
 class ManufacturabilityCheckQuerySet(models.QuerySet["ManufacturabilityCheck"]):
     """Queryset helpers for ManufacturabilityCheck."""
 
+    def without_logs(self) -> "ManufacturabilityCheckQuerySet":
+        """Defer the full log, for pages that list checks but show no log."""
+        return self.defer("processing_logs")
+
     def with_log_tail(self) -> "ManufacturabilityCheckQuerySet":
         """Defer the full log and annotate its tail (see log_tail_expressions)."""
         return self.defer("processing_logs").annotate(**log_tail_expressions())
@@ -2564,16 +2573,23 @@ class ManufacturabilityCheck(models.Model):
         if not text:
             return
 
-        # Refresh from DB to get current logs (prevent overwrite race conditions)
-        self.refresh_from_db(fields=["processing_logs"])
-
-        if self.processing_logs:
-            self.processing_logs += f"{separator}{text}"
-        else:
-            self.processing_logs = text
-
-        self.last_activity = timezone.now()
-        self.save(update_fields=["processing_logs", "last_activity"])
+        # Append in SQL: the log reaches megabytes, and reading it into
+        # Python to add a line held it whole in the web or worker process
+        # (issue #308). The UPDATE is atomic, so concurrent appends cannot
+        # overwrite each other.
+        now = timezone.now()
+        ManufacturabilityCheck.objects.filter(pk=self.pk).update(
+            processing_logs=Case(
+                When(processing_logs="", then=Value(text)),
+                default=Concat(F("processing_logs"), Value(f"{separator}{text}")),
+                output_field=models.TextField(),
+            ),
+            last_activity=now,
+        )
+        self.last_activity = now
+        # A loaded copy is now stale; drop it so the next read fetches it.
+        if "processing_logs" not in self.get_deferred_fields():
+            del self.processing_logs
 
     def update_processing_logs(self, logs: str) -> None:
         """Update processing logs during RUNNING state.
