@@ -19,7 +19,10 @@ Manufacturability is always evaluated per file revision, never per project:
   updates, re-runs).
 - A revision's manufacturability can be in one of three states:
   - **Unknown** (`None`) — the revision has no finished check at all.
-  - **Manufacturable** (`True`) — latest finished check passed.
+  - **Manufacturable** (`True`) — latest finished check passed. A check
+    can only pass with its output layout saved (`output_gds`, the file the
+    reticle package is built from); a pass without one is recorded as a
+    system error and retried (issue #352).
   - **Not manufacturable** (`False`) — latest finished check failed.
 - The verdict comes from the latest **finished** check: a newer check that
   is still pending/running does not reset an existing verdict; when it

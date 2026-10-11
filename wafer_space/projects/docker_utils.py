@@ -226,14 +226,17 @@ def stream_archive_to_file(
 
     Returns:
         Tuple of (bytes_written, checksums_dict) or None if path doesn't exist.
+
+    Raises:
+        docker.errors.DockerException: Any Docker failure other than NotFound.
     """
+    # Only NotFound means "absent". Any other Docker error propagates: reading
+    # it as "absent" made a transient failure look like precheck had written
+    # no output layout (issue #352).
     try:
         bits, _stat = container.get_archive(container_path)
     except docker.errors.NotFound:
         logger.info("Path %s not found in container", container_path)
-        return None
-    except docker.errors.DockerException as e:
-        logger.warning("Failed to extract %s: %s", container_path, e)
         return None
 
     hasher = MultiHasher(algorithms=["sha256"])

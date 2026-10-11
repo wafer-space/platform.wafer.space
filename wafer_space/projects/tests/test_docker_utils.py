@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import docker
+import pytest
 
 from wafer_space.projects.docker_utils import create_tar_archive
 from wafer_space.projects.docker_utils import parse_docker_timestamp_float
@@ -246,6 +247,23 @@ class TestStreamArchiveToFile:
 
         assert result is None
         assert not output_path.exists()
+
+    def test_docker_api_error_is_not_read_as_missing_path(self, tmp_path: Path) -> None:
+        """Only NotFound means "absent"; other Docker errors propagate (#352).
+
+        Returning None for every DockerException made a transient Docker
+        failure look like "precheck wrote no output layout".
+        """
+        mock_container = MagicMock()
+        mock_container.get_archive.side_effect = docker.errors.APIError("boom")
+
+        with pytest.raises(docker.errors.APIError):
+            stream_archive_to_file(
+                mock_container,
+                "/output/design.oas",
+                tmp_path / "output.tar",
+                logging.getLogger(__name__),
+            )
 
     def test_cleans_up_temp_file_on_failure(self, tmp_path: Path) -> None:
         """Cleans up temp file if extraction fails mid-stream."""

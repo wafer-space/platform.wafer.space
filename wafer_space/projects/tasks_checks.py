@@ -1587,6 +1587,11 @@ def _save_output_gds(
     which may include added QR codes or other modifications. It is stored as
     OASIS (.oas) to save disk space (#272), kept in the ``output_gds`` field.
 
+    An absent, unreadable or .oas-less archive leaves ``output_gds`` empty
+    (the last two are logged at ERROR); ``_finalize_analyzing`` then refuses a
+    passing verdict without it (#352). Docker errors other than NotFound
+    propagate and error the check.
+
     Args:
         check: The manufacturability check.
         container: Docker container to extract from.
@@ -1618,18 +1623,16 @@ def _save_output_gds(
                                 extracted_file, out_f, length=1024 * 1024
                             )
                     break
-    except tarfile.TarError as e:
-        logger.warning(
-            "Failed to extract layout from tar for check %s: %s", check.id, e
-        )
+    # An unusable archive leaves output_gds empty; _finalize_analyzing then
+    # refuses a passing verdict without it (#352), while a design failure still
+    # reports its DRC errors. Logged at ERROR so staff are alerted.
+    except tarfile.TarError:
+        logger.exception("Output layout archive for check %s is unreadable", check.id)
         tar_path.unlink(missing_ok=True)
         return
 
     if not layout_path.exists():
-        logger.warning(
-            "No OAS file found in /output/design.oas archive for check %s",
-            check.id,
-        )
+        logger.error("Output layout archive for check %s holds no .oas file", check.id)
         tar_path.unlink(missing_ok=True)
         return
 
@@ -1789,6 +1792,11 @@ def _extract_container_outputs(
     return warnings
 
 
+MISSING_LAYOUT_ERROR = (
+    "Precheck passed but no output layout (/output/design.oas) was saved"
+)
+
+
 def _finalize_analyzing(
     check: ManufacturabilityCheck,
     failure_type: str,
@@ -1809,6 +1817,14 @@ def _finalize_analyzing(
         Result dict with status and details.
     """
     logger = logging.getLogger(__name__)
+    if failure_type == "success" and not check.output_gds:
+        # Every precheck run is asked for --output /output/design.oas, and the
+        # reticle package is built from it: a pass without it means the layout
+        # was lost, so error the check (checks_retry re-runs it) instead of
+        # recording a manufacturable verdict nothing can be built from (#352).
+        logger.error("[do_analyzing] Check %s: %s", check.id, MISSING_LAYOUT_ERROR)
+        failure_type = "system"
+        error_messages = [*error_messages, MISSING_LAYOUT_ERROR]
     outputs_saved = {
         "log_file": bool(check.log_file),
         "runs_archive": bool(check.runs_archive),
@@ -1875,7 +1891,7 @@ def do_analyzing(check: ManufacturabilityCheck) -> dict[str, Any]:
     This function:
     1. Saves processing logs to log_file field
     2. Extracts /workspace/runs/ directory as compressed tarball
-    3. Extracts output layout from /output/design.oas if it exists
+    3. Extracts output layout from /output/design.oas (required for a pass)
     4. Exports container filesystem changes for debugging
     5. Parses logs to determine manufacturability
     6. Transitions to FINISHED

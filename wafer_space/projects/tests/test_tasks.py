@@ -58,6 +58,7 @@ from wafer_space.projects.tasks import do_dispatching
 from wafer_space.projects.tasks import do_running
 from wafer_space.projects.tasks import do_starting
 from wafer_space.projects.tasks import download_project_file
+from wafer_space.projects.tasks_checks import MISSING_LAYOUT_ERROR
 from wafer_space.projects.tasks_checks import _save_output_gds
 from wafer_space.projects.tasks_checks import checks_cleanup_stale_pending_tasks
 from wafer_space.projects.tasks_checks import checks_cleanup_superseded
@@ -2068,6 +2069,43 @@ class TestDoRunning:
         assert result["status"] == "skipped"
 
 
+PRECHECK_SUCCESS_LOGS = """Check for Magic DRC errors clear.
+Check for KLayout DRC errors clear.
+Precheck successfully completed."""
+
+
+PRECHECK_DRC_FAILURE_LOGS = """Error: 5 Magic DRC errors found.
+Error: 3 KLayout DRC errors found.
+Check for Magic DRC errors NOT clear.
+Check for KLayout DRC errors NOT clear.
+"""
+
+
+def _tar_with(members: dict[str, bytes]) -> bytes:
+    """A tar archive, as container.get_archive() streams it."""
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w") as tar:
+        for name, content in members.items():
+            info = tarfile.TarInfo(name=name)
+            info.size = len(content)
+            tar.addfile(info, io.BytesIO(content))
+    return buffer.getvalue()
+
+
+def _container_with_layout_only(path: str) -> tuple:
+    """get_archive() for a container holding only the precheck output layout."""
+    if path == "/output/design.oas":
+        return iter([_tar_with({"design.oas": b"fake-oasis-layout"})]), {}
+    msg = "no archive"
+    raise docker.errors.NotFound(msg)
+
+
+UNUSABLE_LAYOUT_ARCHIVES = [
+    pytest.param(b"this is not a tar archive", id="corrupt-tar"),
+    pytest.param(_tar_with({"notes.txt": b"no layout here"}), id="no-oas"),
+]
+
+
 class TestDoAnalyzing:
     """Test do_analyzing work task."""
 
@@ -2096,7 +2134,7 @@ Precheck successfully completed."""
         # Mock container that has no outputs
         mock_container = MagicMock()
         mock_container.status = "exited"
-        mock_container.get_archive.side_effect = docker.errors.NotFound("no archive")
+        mock_container.get_archive.side_effect = _container_with_layout_only
         mock_client = MagicMock()
         mock_client.containers.get.return_value = mock_container
 
@@ -2182,7 +2220,7 @@ Precheck successfully completed."""
         # Mock container that has no outputs
         mock_container = MagicMock()
         mock_container.status = "exited"
-        mock_container.get_archive.side_effect = docker.errors.NotFound("no archive")
+        mock_container.get_archive.side_effect = _container_with_layout_only
         mock_client = MagicMock()
         mock_client.containers.get.return_value = mock_container
 
@@ -2276,6 +2314,133 @@ Precheck successfully completed."""
         with check.output_gds.open("rb") as f:
             assert f.read() == oas_content
         assert check.output_gds_sha256 == hashlib.sha256(oas_content).hexdigest()
+
+    @pytest.mark.django_db
+    def test_passing_check_without_layout_errors(self) -> None:
+        """No manufacturable verdict without the layout the reticle needs (#352).
+
+        Every precheck run is asked for --output /output/design.oas, so a
+        pass with no layout means the layout was lost: the check goes to
+        ERROR, where checks_retry runs it again.
+        """
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            docker_exit_code=0,
+            processing_logs=PRECHECK_SUCCESS_LOGS,
+            docker_server_id="test-local",
+            docker_container_id="test-container-id",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_analyzing"
+        )
+        mock_container = MagicMock()
+        mock_container.status = "exited"
+        mock_container.get_archive.side_effect = docker.errors.NotFound("no archive")
+        mock_client = MagicMock()
+        mock_client.containers.get.return_value = mock_container
+
+        with patch(
+            "wafer_space.projects.tasks_checks.get_docker_client",
+            return_value=mock_client,
+        ):
+            do_analyzing(check.id)
+
+        check.refresh_from_db()
+        assert (check.status, check.is_manufacturable) == (
+            ManufacturabilityCheck.Status.ERROR,
+            None,
+        )
+
+    @pytest.mark.django_db
+    def test_passing_check_without_layout_alerts_staff(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The lost layout is logged at ERROR, which mails the admins."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            docker_exit_code=0,
+            processing_logs=PRECHECK_SUCCESS_LOGS,
+            docker_server_id="test-local",
+            docker_container_id="test-container-id",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_analyzing"
+        )
+
+        with caplog.at_level(logging.ERROR, logger="wafer_space.projects.tasks_checks"):
+            self._analyze_with_layout_archive(check, b"this is not a tar archive")
+
+        assert any(MISSING_LAYOUT_ERROR in r.getMessage() for r in caplog.records)
+
+    @staticmethod
+    def _analyze_with_layout_archive(
+        check: ManufacturabilityCheck, layout_archive: bytes
+    ) -> None:
+        """Run do_analyzing where /output/design.oas streams ``layout_archive``."""
+
+        def get_archive(path: str) -> tuple:
+            if path == "/output/design.oas":
+                return iter([layout_archive]), {}
+            msg = "no archive"
+            raise docker.errors.NotFound(msg)
+
+        mock_container = MagicMock()
+        mock_container.status = "exited"
+        mock_container.get_archive.side_effect = get_archive
+        mock_client = MagicMock()
+        mock_client.containers.get.return_value = mock_container
+        with patch(
+            "wafer_space.projects.tasks_checks.get_docker_client",
+            return_value=mock_client,
+        ):
+            do_analyzing(check.id)
+
+    @pytest.mark.django_db
+    @pytest.mark.parametrize("layout_archive", UNUSABLE_LAYOUT_ARCHIVES)
+    def test_passing_check_with_unusable_layout_archive_errors(
+        self, layout_archive: bytes
+    ) -> None:
+        """A corrupt or .oas-less archive cannot back a pass (#352)."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            docker_exit_code=0,
+            processing_logs=PRECHECK_SUCCESS_LOGS,
+            docker_server_id="test-local",
+            docker_container_id="test-container-id",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_analyzing"
+        )
+
+        self._analyze_with_layout_archive(check, layout_archive)
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.ERROR
+
+    @pytest.mark.django_db
+    @pytest.mark.parametrize("layout_archive", UNUSABLE_LAYOUT_ARCHIVES)
+    def test_design_failure_with_unusable_layout_archive_still_reported(
+        self, layout_archive: bytes
+    ) -> None:
+        """A design failure keeps its DRC verdict when the layout is unusable."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            docker_exit_code=1,
+            processing_logs=PRECHECK_DRC_FAILURE_LOGS,
+            docker_server_id="test-local",
+            docker_container_id="test-container-id",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_analyzing"
+        )
+
+        self._analyze_with_layout_archive(check, layout_archive)
+
+        check.refresh_from_db()
+        assert (check.status, check.is_manufacturable) == (
+            ManufacturabilityCheck.Status.FINISHED,
+            False,
+        )
 
     @pytest.mark.django_db
     def test_save_output_skips_non_file_members(self) -> None:
@@ -2527,6 +2692,63 @@ Precheck successfully completed."""
 
     STREAM_FAILURE_MSG = "connection reset while streaming archive"
 
+    @staticmethod
+    def _analyze_with_runs_archive_api_error(check: ManufacturabilityCheck) -> None:
+        """do_analyzing where get_archive() itself fails for the runs archive.
+
+        Since #352 such a Docker error propagates from stream_archive_to_file
+        instead of reading as "absent"; #231's best-effort diagnostics must
+        still turn it into a warning. The container holds a real layout.
+        """
+
+        def get_archive(path: str) -> tuple:
+            if path == "/workspace/runs":
+                msg = "daemon hiccup"
+                raise docker.errors.APIError(msg)
+            return _container_with_layout_only(path)
+
+        mock_container = MagicMock()
+        mock_container.status = "exited"
+        mock_container.get_archive.side_effect = get_archive
+        mock_client = MagicMock()
+        mock_client.containers.get.return_value = mock_container
+        with patch(
+            "wafer_space.projects.tasks_checks.get_docker_client",
+            return_value=mock_client,
+        ):
+            do_analyzing(check.id)
+
+    @pytest.mark.django_db
+    def test_design_failure_survives_runs_archive_api_error(self) -> None:
+        """A failing design keeps its DRC verdict when Docker hiccups."""
+        check = self._analyzing_check(PRECHECK_DRC_FAILURE_LOGS, exit_code=1)
+
+        self._analyze_with_runs_archive_api_error(check)
+
+        check.refresh_from_db()
+        assert (check.status, check.is_manufacturable) == (
+            ManufacturabilityCheck.Status.FINISHED,
+            False,
+        )
+
+    @pytest.mark.django_db
+    def test_pass_survives_runs_archive_api_error(self) -> None:
+        """A pass with its layout stays a pass; the lost archive is a warning."""
+        check = self._analyzing_check(PRECHECK_SUCCESS_LOGS, exit_code=0)
+
+        self._analyze_with_runs_archive_api_error(check)
+
+        check.refresh_from_db()
+        warned = any(
+            w.startswith("Diagnostic output not saved: runs archive")
+            for w in check.warnings
+        )
+        assert (check.status, check.is_manufacturable, warned) == (
+            ManufacturabilityCheck.Status.FINISHED,
+            True,
+            True,
+        )
+
     @classmethod
     def _analyze_with_stream_failure(
         cls,
@@ -2538,7 +2760,9 @@ Precheck successfully completed."""
 
         The Docker SDK raises from the archive iterator, after get_archive()
         has returned; that is the failure stream_archive_to_file does not
-        catch. Every other path is absent from the container.
+        catch. The container holds the precheck output layout (a passing
+        run always writes it, #352) unless that is the failing path; every
+        other path is absent.
         """
 
         def broken_stream():
@@ -2548,8 +2772,7 @@ Precheck successfully completed."""
         def get_archive(path: str) -> tuple:
             if path == failing_path:
                 return broken_stream(), {}
-            msg = "no such path"
-            raise docker.errors.NotFound(msg)
+            return _container_with_layout_only(path)
 
         mock_container = MagicMock()
         mock_container.status = "exited"
