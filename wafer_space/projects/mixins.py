@@ -11,7 +11,6 @@ from django.contrib.auth.mixins import UserPassesTestMixin
 from django.shortcuts import get_object_or_404
 from django.shortcuts import redirect
 from django.views.generic import View
-from django.views.generic.edit import DeleteView
 
 from wafer_space.core.utils import get_client_ip
 from wafer_space.projects.models import ARCHIVED_READ_ONLY_MESSAGE
@@ -92,29 +91,19 @@ class ProjectOwnerOrStaffMixin(UserPassesTestMixin):
         self, request: HttpRequest, *args: Any, **kwargs: Any
     ) -> HttpResponseBase:
         """Dispatch request and create audit log for staff access."""
-        # Get project BEFORE dispatch (DeleteView will delete it)
         project: Project = self.get_object()  # type: ignore[attr-defined]
         user = request.user
-
-        # Check if this is a delete operation (POST to DeleteView)
-        is_delete_view = isinstance(self, DeleteView)
-        is_delete_operation = is_delete_view and request.method == "POST"
 
         # Get response from parent
         response = super().dispatch(request, *args, **kwargs)
 
         # Only log if access was granted (status < 400)
-        # Note: DELETE operations via DeleteView POST are NOT logged because:
-        # 1. The project is deleted, so FK constraint would fail if logged after
-        # 2. Creating log before delete causes orphaned FK (CASCADE timing issue)
-        # 3. A proper fix requires making project FK nullable (SET_NULL)
-        # TODO: Fix DELETE audit logging (see issue #74)
         if response.status_code < HTTP_SUCCESS_THRESHOLD:
-            # Only log staff access to OTHER users' projects (non-DELETE)
+            # Only log staff access to OTHER users' projects
             is_admin_access = (
                 user.is_authenticated and user.is_staff and project.user != user
             )
-            if is_admin_access and not is_delete_operation:
+            if is_admin_access:
                 # Cast is safe: is_admin_access check confirms user.is_authenticated
                 self._create_audit_log(project, cast("User", user), request)
 

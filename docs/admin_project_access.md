@@ -17,7 +17,7 @@ Regular users (without `is_staff=True`) can only access their own projects.
 Staff users can:
 - **View** any project's details, files, and status
 - **Edit** project name, description, and metadata
-- **Delete** projects
+- **Archive and unarchive** projects (projects are never deleted outside the Django admin; see #344)
 - **Submit** projects for manufacturing
 - **Upload/manage** project files
 
@@ -50,8 +50,6 @@ All actions will be logged for audit purposes.
 - IP address
 - User agent
 - View name
-
-**Note:** DELETE operations are currently **not logged** due to database constraint limitations. See issue #74 for tracking.
 
 **Owner access is NOT logged** (normal operation).
 
@@ -96,7 +94,6 @@ Audit logs are created automatically in mixin's `dispatch()` method when:
 - User is authenticated staff user
 - Project owner is different from current user
 - Access is granted (status < 400)
-- Operation is NOT a delete (see issue #74)
 
 ### Context Variables
 
