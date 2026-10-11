@@ -3,6 +3,7 @@ from typing import Any
 
 from allauth.account.models import EmailAddress
 from factory import Faker
+from factory import Sequence as SequenceDeclaration
 from factory import post_generation
 from factory.django import DjangoModelFactory
 
@@ -10,8 +11,12 @@ from wafer_space.users.models import User
 
 
 class UserFactory(DjangoModelFactory[User]):
-    username = Faker("user_name")
-    email = Faker("email")
+    # Unique by construction: Faker("user_name") repeats now and then, and
+    # with django_get_or_create a repeat silently returned an existing user.
+    username = SequenceDeclaration(lambda n: f"factory-user-{n}")
+    # Unique too: allauth's unique verified-email constraint fails on a
+    # repeated Faker("email") just as the primary-address one did.
+    email = SequenceDeclaration(lambda n: f"factory-user-{n}@example.com")
     name = Faker("name")
 
     @post_generation
@@ -37,7 +42,10 @@ class UserFactory(DjangoModelFactory[User]):
         This is required for browser tests to avoid allauth redirecting to email
         confirmation page during login.
         """
-        if create:
+        if create and not EmailAddress.objects.filter(user=self, primary=True).exists():
+            # get_or_create may return an existing user (an explicit, reused
+            # username), which already has its primary address: adding a
+            # second one breaks the (user_id, primary) unique constraint.
             EmailAddress.objects.create(
                 user=self,
                 email=self.email,
