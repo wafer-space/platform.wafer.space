@@ -1,0 +1,49 @@
+"""The deadline display include: AoE, local time, countdown (#349)."""
+
+from __future__ import annotations
+
+import datetime
+
+from django.template import Context
+from django.template import Template
+from django.utils import timezone
+
+TEMPLATE = Template(
+    '{% load shuttle_dates %}{% shuttle_deadline deadline label="GDS due" %}',
+)
+G803_DEADLINE = datetime.datetime(2026, 12, 17, 11, 59, 59, tzinfo=datetime.UTC)
+
+
+def render(deadline: datetime.datetime) -> str:
+    return TEMPLATE.render(Context({"deadline": deadline}))
+
+
+def future(days: int) -> datetime.datetime:
+    return timezone.now() + datetime.timedelta(days=days, hours=1)
+
+
+def test_shows_label_and_aoe_date_with_zone_linked() -> None:
+    html = render(G803_DEADLINE)
+    assert "GDS due" in html
+    assert "16 December 2026 @ 11:59 PM" in html
+    assert 'href="https://en.wikipedia.org/wiki/Anywhere_on_Earth"' in html
+
+
+def test_local_time_element_carries_utc_instant_and_fallback_link() -> None:
+    html = render(G803_DEADLINE)
+    assert '<time datetime="2026-12-17T11:59:59Z" data-local-time>' in html
+    assert "fixedtime.html?iso=20261216T2359&amp;p1=3399" in html
+
+
+def test_future_deadline_counts_down_from_utc_instant() -> None:
+    deadline = future(days=10)
+    html = render(deadline)
+    expected = deadline.astimezone(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    assert f'data-countdown="{expected}"' in html
+    assert "10 days left" in html
+
+
+def test_past_deadline_rendered_as_passed_without_countdown() -> None:
+    html = render(timezone.now() - datetime.timedelta(minutes=1))
+    assert "Deadline passed" in html
+    assert "data-countdown" not in html

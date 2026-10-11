@@ -30,7 +30,7 @@
                 {% if shuttle.submission_deadline %}
                   <dt class="col-sm-6">Deadline</dt>
                   <dd class="col-sm-6">
-                    {{ shuttle.submission_deadline|aoe_deadline }}
+                    {% shuttle_deadline shuttle.submission_deadline %}
                   </dd>
                 {% endif %}
               </dl>

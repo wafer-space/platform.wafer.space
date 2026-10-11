@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import re
 from typing import TYPE_CHECKING
 
 import pytest
@@ -20,7 +21,14 @@ pytestmark = pytest.mark.django_db
 RUN_PAGE = "https://wafer.space/ws-run1/"
 # 16 Dec 2099 23:59:59 AoE.
 FUTURE_DEADLINE = datetime.datetime(2099, 12, 17, 11, 59, 59, tzinfo=datetime.UTC)
-OPEN_TEXT = "GDS due 16 December 2099 @ 11:59 PM AoE"
+OPEN_TEXT = "GDS submission deadline: 16 December 2099 @ 11:59 PM AoE"
+
+
+def visible_text(html: str) -> str:
+    """The page text a reader sees: tags dropped, whitespace collapsed."""
+    return " ".join(re.sub(r"<[^>]+>", " ", html).split()).replace(" :", ":")
+
+
 CLOSED_BADGE = '<i class="bi bi-lock-fill" aria-hidden="true"></i> Closed'
 
 
@@ -64,7 +72,10 @@ def test_shuttle_list_shows_closed_and_open(
 ) -> None:
     content = staff.get(reverse("shuttles:list")).content.decode()
 
-    assert (CLOSED_BADGE in content, OPEN_TEXT in content) == (True, True)
+    assert (CLOSED_BADGE in content, OPEN_TEXT in visible_text(content)) == (
+        True,
+        True,
+    )
 
 
 def test_project_detail_shows_closed_and_run_page(
@@ -86,7 +97,7 @@ def test_project_detail_shows_open_deadline(
 
     content = client.get(reverse("projects:detail", args=[project.pk])).content.decode()
 
-    assert OPEN_TEXT in content
+    assert OPEN_TEXT in visible_text(content)
 
 
 def test_project_form_locked_shuttle_shows_closed(
@@ -115,3 +126,26 @@ def test_lapsed_open_status_never_shows_green(staff: Client, url_name: str) -> N
     content = staff.get(reverse(url_name, kwargs=kwargs)).content.decode()
 
     assert (CLOSED_BADGE in content, "badge bg-success" in content) == (True, False)
+
+
+def test_project_detail_counts_down_to_open_deadline(
+    client: Client,
+    open_shuttle: Shuttle,
+) -> None:
+    """#349: the open shuttle's deadline carries the countdown markers."""
+    project = ProjectFactory(shuttle=open_shuttle)
+    client.force_login(project.user)
+    content = client.get(reverse("projects:detail", args=[project.pk])).content
+    html = content.decode()
+    assert 'data-countdown="2099-12-17T11:59:59Z"' in html
+    assert '<time datetime="2099-12-17T11:59:59Z" data-local-time>' in html
+
+
+def test_project_detail_closed_shuttle_has_no_countdown(
+    client: Client,
+    closed: Shuttle,
+) -> None:
+    project = ProjectFactory(shuttle=closed)
+    client.force_login(project.user)
+    content = client.get(reverse("projects:detail", args=[project.pk])).content
+    assert b"data-shuttle-deadline" not in content

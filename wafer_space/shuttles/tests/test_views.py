@@ -16,6 +16,8 @@ from wafer_space.shuttles.models import ShuttleSlot
 from wafer_space.shuttles.tests.factories import ShuttleFactory
 from wafer_space.users.tests.factories import UserFactory
 
+from .test_shuttle_state_display import visible_text
+
 SUBMITTED_ICON = 'aria-label="File submitted for manufacturing"'
 NOT_SUBMITTED_ICON = 'aria-label="No file submitted for manufacturing"'
 LATEST_LABEL = 'title="Latest file revision">L:'
@@ -740,14 +742,14 @@ class TestShuttleDatesDisplay:
             reverse("shuttles:detail", kwargs={"name": shuttle.name})
         )
 
-        assert self.PUBLISHED_DEADLINE in response.content.decode()
+        assert self.PUBLISHED_DEADLINE in visible_text(response.content.decode())
 
     def test_list_shows_deadline_in_aoe(self, client):
         ShuttleFactory(name="G861", submission_deadline=self.DEADLINE_UTC)
 
         response = self._staff_client(client).get(reverse("shuttles:list"))
 
-        assert self.PUBLISHED_DEADLINE in response.content.decode()
+        assert self.PUBLISHED_DEADLINE in visible_text(response.content.decode())
 
     def test_detail_shows_milestone_utc_day(self, client):
         shuttle = ShuttleFactory(
