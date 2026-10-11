@@ -6,7 +6,9 @@ for manufacturability checks, from PENDING to FINISHED state.
 
 from __future__ import annotations
 
+import io
 import logging
+import tarfile
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -28,6 +30,17 @@ from wafer_space.projects.tests.factories import ProjectFileFactory
 
 # Number of checks for multi-server tests
 EXPECTED_DISPATCHED_COUNT = 2
+
+
+def _archive_with_layout(_path: str) -> tuple:
+    """get_archive() result: a tar holding a precheck output layout."""
+    content = b"fake-oasis-layout"
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w") as tar:
+        info = tarfile.TarInfo(name="design.oas")
+        info.size = len(content)
+        tar.addfile(info, io.BytesIO(content))
+    return iter([buffer.getvalue()]), {"name": "design.oas"}
 
 
 @pytest.mark.django_db
@@ -181,11 +194,9 @@ Precheck successfully completed."""
             mock_container = MagicMock()
             mock_client.containers.get.return_value = mock_container
 
-            # get_archive returns (iterator_of_bytes, stat_dict)
-            mock_container.get_archive.return_value = (
-                iter([b"tar content"]),
-                {"name": "file.tar"},
-            )
+            # A real tar holding the precheck output layout: a passing check
+            # must have one (#352).
+            mock_container.get_archive.side_effect = _archive_with_layout
 
             result = do_analyzing(check.id)
 
@@ -791,10 +802,9 @@ Precheck successfully completed."""
             mock_get_docker_client.return_value = mock_client
             mock_container = MagicMock()
             mock_client.containers.get.return_value = mock_container
-            mock_container.get_archive.return_value = (
-                iter([b"tar content"]),
-                {"name": "file.tar"},
-            )
+            # A real tar holding the precheck output layout: a passing check
+            # must have one (#352).
+            mock_container.get_archive.side_effect = _archive_with_layout
 
             result = do_analyzing(check.id)
 

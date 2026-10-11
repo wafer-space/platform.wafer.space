@@ -31,7 +31,6 @@ from django.test import TestCase
 from django.utils import timezone
 
 from wafer_space.projects import tasks_checks
-from wafer_space.projects.exceptions import TaskExecutionError
 from wafer_space.projects.file_type_utils import GDS_SIGNATURE
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
@@ -2074,6 +2073,13 @@ Check for KLayout DRC errors clear.
 Precheck successfully completed."""
 
 
+PRECHECK_DRC_FAILURE_LOGS = """Error: 5 Magic DRC errors found.
+Error: 3 KLayout DRC errors found.
+Check for Magic DRC errors NOT clear.
+Check for KLayout DRC errors NOT clear.
+"""
+
+
 def _tar_with(members: dict[str, bytes]) -> bytes:
     """A tar archive, as container.get_archive() streams it."""
     buffer = io.BytesIO()
@@ -2091,6 +2097,12 @@ def _container_with_layout_only(path: str) -> tuple:
         return iter([_tar_with({"design.oas": b"fake-oasis-layout"})]), {}
     msg = "no archive"
     raise docker.errors.NotFound(msg)
+
+
+UNUSABLE_LAYOUT_ARCHIVES = [
+    pytest.param(b"this is not a tar archive", id="corrupt-tar"),
+    pytest.param(_tar_with({"notes.txt": b"no layout here"}), id="no-oas"),
+]
 
 
 class TestDoAnalyzing:
@@ -2338,29 +2350,75 @@ Precheck successfully completed."""
             None,
         )
 
-    @pytest.mark.django_db
-    @pytest.mark.parametrize(
-        "tar_bytes",
-        [
-            pytest.param(b"this is not a tar archive", id="corrupt-tar"),
-            pytest.param(_tar_with({"notes.txt": b"no layout here"}), id="no-oas"),
-        ],
-    )
-    def test_save_output_rejects_unusable_archive(self, tar_bytes: bytes) -> None:
-        """An archive that holds no readable layout raises (#352).
+    @staticmethod
+    def _analyze_with_layout_archive(
+        check: ManufacturabilityCheck, layout_archive: bytes
+    ) -> None:
+        """Run do_analyzing where /output/design.oas streams ``layout_archive``."""
 
-        It used to log a warning and return, so the check finished as if
-        precheck had written no layout at all.
-        """
+        def get_archive(path: str) -> tuple:
+            if path == "/output/design.oas":
+                return iter([layout_archive]), {}
+            msg = "no archive"
+            raise docker.errors.NotFound(msg)
+
         mock_container = MagicMock()
-        mock_container.get_archive.return_value = (iter([tar_bytes]), {})
+        mock_container.status = "exited"
+        mock_container.get_archive.side_effect = get_archive
+        mock_client = MagicMock()
+        mock_client.containers.get.return_value = mock_container
+        with patch(
+            "wafer_space.projects.tasks_checks.get_docker_client",
+            return_value=mock_client,
+        ):
+            do_analyzing(check.id)
+
+    @pytest.mark.django_db
+    @pytest.mark.parametrize("layout_archive", UNUSABLE_LAYOUT_ARCHIVES)
+    def test_passing_check_with_unusable_layout_archive_errors(
+        self, layout_archive: bytes
+    ) -> None:
+        """A corrupt or .oas-less archive cannot back a pass (#352)."""
         check = ManufacturabilityCheckFactory(
             status=ManufacturabilityCheck.Status.ANALYZING,
+            docker_exit_code=0,
+            processing_logs=PRECHECK_SUCCESS_LOGS,
             docker_server_id="test-local",
+            docker_container_id="test-container-id",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_analyzing"
         )
 
-        with pytest.raises(TaskExecutionError):
-            _save_output_gds(check, mock_container, logging.getLogger("test"))
+        self._analyze_with_layout_archive(check, layout_archive)
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.ERROR
+
+    @pytest.mark.django_db
+    @pytest.mark.parametrize("layout_archive", UNUSABLE_LAYOUT_ARCHIVES)
+    def test_design_failure_with_unusable_layout_archive_still_reported(
+        self, layout_archive: bytes
+    ) -> None:
+        """A design failure keeps its DRC verdict when the layout is unusable."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            docker_exit_code=1,
+            processing_logs=PRECHECK_DRC_FAILURE_LOGS,
+            docker_server_id="test-local",
+            docker_container_id="test-container-id",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_analyzing"
+        )
+
+        self._analyze_with_layout_archive(check, layout_archive)
+
+        check.refresh_from_db()
+        assert (check.status, check.is_manufacturable) == (
+            ManufacturabilityCheck.Status.FINISHED,
+            False,
+        )
 
     @pytest.mark.django_db
     def test_save_output_skips_non_file_members(self) -> None:

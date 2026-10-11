@@ -1618,15 +1618,18 @@ def _save_output_gds(
                                 extracted_file, out_f, length=1024 * 1024
                             )
                     break
-    except tarfile.TarError as e:
+    # An unusable archive leaves output_gds empty; _finalize_analyzing then
+    # refuses a passing verdict without it (#352), while a design failure still
+    # reports its DRC errors. Logged at ERROR so staff are alerted.
+    except tarfile.TarError:
+        logger.exception("Output layout archive for check %s is unreadable", check.id)
         tar_path.unlink(missing_ok=True)
-        msg = f"Output layout archive for check {check.id} is unreadable: {e}"
-        raise TaskExecutionError(reason="output_layout_unreadable", message=msg) from e
+        return
 
     if not layout_path.exists():
+        logger.error("Output layout archive for check %s holds no .oas file", check.id)
         tar_path.unlink(missing_ok=True)
-        msg = f"Output layout archive for check {check.id} holds no .oas file"
-        raise TaskExecutionError(reason="output_layout_missing_oas", message=msg)
+        return
 
     # Calculate checksum of actual OAS file
     hasher = MultiHasher.from_file(layout_path, algorithms=["sha256"])
