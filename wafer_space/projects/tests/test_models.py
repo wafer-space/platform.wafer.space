@@ -1,6 +1,7 @@
 """Tests for project models."""
 
 import hashlib
+from collections.abc import Mapping
 from datetime import timedelta
 
 import pytest
@@ -18,10 +19,14 @@ from wafer_space.projects.models import LicenseType
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
+from wafer_space.projects.models import log_tail_expressions
 from wafer_space.projects.models import validate_crowd_supply_order_id
+from wafer_space.projects.models import validate_project_id
+from wafer_space.projects.models import whole_log_lines
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.projects.tests.factories import ProjectFileFactory
+from wafer_space.projects.tests.factories import factory_project_id
 from wafer_space.projects.tests.read_instrumentation import ReadSizeRecorder
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.tests.factories import ShuttleFactory
@@ -3561,3 +3566,80 @@ class TestCrowdSupplyOrderId:
         project = ProjectFactory(crowd_supply_order_id="314421")
         project.refresh_from_db()
         assert project.crowd_supply_order_id == "314421"
+
+
+@pytest.mark.django_db
+class TestCheckLogTail:
+    """The log tail is computed in SQL; the whole log is never loaded (#308)."""
+
+    @staticmethod
+    def _tail_values(logs: str) -> Mapping[str, object]:
+        check = ManufacturabilityCheckFactory(processing_logs=logs)
+        return (
+            ManufacturabilityCheck.objects.filter(pk=check.pk)
+            .values(**log_tail_expressions())
+            .get()
+        )
+
+    def test_long_log_is_cut_to_the_tail(self, settings) -> None:
+        """Only the last LOG_TAIL_CHARS characters come back, ending at the end."""
+        settings.LOG_TAIL_CHARS = 1000
+        logs = "".join(f"line {i}\n" for i in range(5000))
+
+        values = self._tail_values(logs)
+
+        assert values == {
+            "processing_logs_tail": logs[-1000:],
+            "processing_logs_length": len(logs),
+            "processing_logs_truncated": True,
+        }
+
+    def test_short_log_is_whole_and_not_truncated(self, settings) -> None:
+        """A log under the limit is shown whole, with no truncation note."""
+        settings.LOG_TAIL_CHARS = 1000
+
+        values = self._tail_values("all done\n")
+
+        assert (
+            values["processing_logs_tail"],
+            values["processing_logs_truncated"],
+        ) == ("all done\n", False)
+
+    def test_multibyte_characters_survive_the_cut(self, settings) -> None:
+        """The cut counts characters, so no character is split."""
+        settings.LOG_TAIL_CHARS = 4
+
+        values = self._tail_values("ab✓✓✓✓")
+
+        assert values["processing_logs_tail"] == "✓✓✓✓"
+
+    @pytest.mark.parametrize(
+        ("tail", "kind", "shown"),
+        [
+            ("45\nline 46\nline 47\n", "cut", "line 46\nline 47\n"),
+            ("line 1\nline 2\n", "whole", "line 1\nline 2\n"),
+            ("no newline at all", "cut", "no newline at all"),
+        ],
+    )
+    def test_cut_tail_starts_at_a_whole_line(
+        self, tail: str, kind: str, shown: str
+    ) -> None:
+        """A cut tail drops its partial first line; a whole log is unchanged."""
+        assert whole_log_lines(tail, truncated=kind == "cut") == shown
+
+    def test_with_log_tail_defers_the_full_log(self) -> None:
+        """Checks loaded for templates carry the tail, never the whole log."""
+        check = ManufacturabilityCheckFactory(processing_logs="x" * 10)
+
+        loaded = ManufacturabilityCheck.objects.with_log_tail().get(pk=check.pk)
+
+        assert "processing_logs" in loaded.get_deferred_fields()
+
+
+class TestFactoryProjectIds:
+    """The test factory's project IDs stay valid however many are made."""
+
+    @pytest.mark.parametrize("n", [0, 999, 1000, 46_655, 46_656, 10**7])
+    def test_ids_are_always_valid(self, n: int) -> None:
+        """1000 used to give 'T1000' (5 characters), failing later tests."""
+        validate_project_id(factory_project_id(n))

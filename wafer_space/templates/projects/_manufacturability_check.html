@@ -1,3 +1,4 @@
+{% load check_log_tags %}
 {% load duration_filters %}
 {% load precheck_tags %}
 
@@ -113,10 +114,11 @@
     <tbody>
       <tr>
         <td style="width: 180px;">
-          {% if check.log_file %}
-            <a href="{{ check.log_file.url }}"
+          {% if check.pk %}
+            {# Through the view, never /media/: that alias has no access control. #}
+            <a href="{% url 'projects:check_log' pk=check.project_id check_id=check.pk %}"
                class="btn btn-sm btn-outline-secondary"
-               download>
+               data-full-log-link>
               <i class="bi bi-file-text"></i> Processing Log
             </a>
           {% else %}
@@ -513,14 +515,30 @@
   <h6>
     <i class="bi bi-terminal"></i> Processing Logs
   </h6>
-  {% if check.processing_logs %}
-    <pre id="processing-logs"
-         class="bg-dark text-light p-3 rounded"
-         style="max-height: 400px;
-                overflow-y: auto;
-                font-size: 0.85rem">{{ check.processing_logs }}</pre>
+  {% if show_log is False %}
+    {# History checks: no log body, only the link (issue #308). #}
+    <p class="small mb-0">
+      <a href="{% url 'projects:check_log' pk=check.project_id check_id=check.pk %}"
+         data-full-log-link>Full log</a>
+    </p>
   {% else %}
-    <p class="text-muted small mb-0">-</p>
+    {% check_log_tail check as log %}
+    {% if log.processing_logs_length %}
+      <p class="small text-muted mb-1"
+         id="processing-logs-truncated"
+         {% if not log.processing_logs_truncated %}hidden{% endif %}>
+        Showing the end of a <span id="processing-logs-length">{{ log.processing_logs_length|floatformat:"g" }}</span>-character log.
+        <a href="{% url 'projects:check_log' pk=check.project_id check_id=check.pk %}"
+           data-full-log-link>Full log</a>
+      </p>
+      <pre id="processing-logs"
+           class="bg-dark text-light p-3 rounded"
+           style="max-height: 400px;
+                  overflow-y: auto;
+                  font-size: 0.85rem">{{ log.processing_logs_tail }}</pre>
+    {% else %}
+      <p class="text-muted small mb-0">-</p>
+    {% endif %}
   {% endif %}
 </div>
 {# Docker command for reproducibility - collapsible #}

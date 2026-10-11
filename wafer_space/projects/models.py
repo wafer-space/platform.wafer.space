@@ -13,6 +13,14 @@ from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.db import transaction
+from django.db.models import Case
+from django.db.models import F
+from django.db.models import Value
+from django.db.models import When
+from django.db.models.functions import Concat
+from django.db.models.functions import Length
+from django.db.models.functions import Right
+from django.db.models.lookups import GreaterThan
 from django.utils import timezone
 from django.utils.formats import date_format
 from django.utils.functional import cached_property
@@ -1414,22 +1422,30 @@ class ProjectFile(models.Model):
         """Get the most recent manufacturability check.
 
         Returns None if no checks exist yet.
-        Ordered by -created_at (newest first).
+        Ordered by -created_at (newest first). The processing log is deferred
+        (loaded only if read): pages and lists use this, and logs reach
+        megabytes (issue #308).
         """
-        return self.manufacturability_checks.order_by("-created_at").first()
+        return (
+            self.manufacturability_checks.defer("processing_logs")
+            .order_by("-created_at")
+            .first()
+        )
 
     @property
     def output_check(self) -> "ManufacturabilityCheck":
         """Return latest finished check, or dummy if none exists.
 
         Always returns a ManufacturabilityCheck for consistent interface.
-        Check if pk is set to determine if it's a real check.
+        Check if pk is set to determine if it's a real check. The processing
+        log is deferred (loaded only if read; issue #308).
         """
         if self.pk:  # Real file, not dummy
             check = (
                 self.manufacturability_checks.filter(
                     status=ManufacturabilityCheck.Status.FINISHED
                 )
+                .defer("processing_logs")
                 .order_by("-created_at")
                 .first()
             )
@@ -1779,6 +1795,46 @@ def manufacturability_check_docker_layer_path(instance, filename):
     gds_name, top_cell, timestamp_str = _get_check_file_prefix(instance)
     filename = f"{gds_name}.{top_cell}.precheck.{timestamp_str}.layer.tar.gz"
     return f"projects/{instance.project.id}/{filename}"
+
+
+def log_tail_expressions() -> dict[str, Any]:
+    """SQL expressions for a check's log tail, length and truncation (#308).
+
+    Logs grow to megabytes; rendering or polling them whole OOM-killed
+    gunicorn. These compute the last LOG_TAIL_CHARS characters in the
+    database, so Python never holds the whole log. Use with .annotate()
+    (templates) or .values() (Python callers, typed as a dict).
+    """
+    length = Length("processing_logs")
+    return {
+        "processing_logs_tail": Right("processing_logs", settings.LOG_TAIL_CHARS),
+        "processing_logs_length": length,
+        "processing_logs_truncated": GreaterThan(length, settings.LOG_TAIL_CHARS),
+    }
+
+
+def whole_log_lines(tail: str, *, truncated: bool) -> str:
+    """Drop a cut tail's partial first line, so the display starts on a line.
+
+    A tail that is the whole log is returned unchanged, and so is a cut
+    tail with no line break at all (one very long line).
+    """
+    if not truncated:
+        return tail
+    _partial, newline, rest = tail.partition("\n")
+    return rest if newline else tail
+
+
+class ManufacturabilityCheckQuerySet(models.QuerySet["ManufacturabilityCheck"]):
+    """Queryset helpers for ManufacturabilityCheck."""
+
+    def without_logs(self) -> "ManufacturabilityCheckQuerySet":
+        """Defer the full log, for pages that list checks but show no log."""
+        return self.defer("processing_logs")
+
+    def with_log_tail(self) -> "ManufacturabilityCheckQuerySet":
+        """Defer the full log and annotate its tail (see log_tail_expressions)."""
+        return self.defer("processing_logs").annotate(**log_tail_expressions())
 
 
 class ManufacturabilityCheck(models.Model):
@@ -2176,6 +2232,8 @@ class ManufacturabilityCheck(models.Model):
         help_text="Why this check was re-run (e.g., 'Updated DRC rules')",
     )
 
+    objects = ManufacturabilityCheckQuerySet.as_manager()
+
     class Meta:
         verbose_name = "Manufacturability Check"
         verbose_name_plural = "Manufacturability Checks"
@@ -2515,16 +2573,23 @@ class ManufacturabilityCheck(models.Model):
         if not text:
             return
 
-        # Refresh from DB to get current logs (prevent overwrite race conditions)
-        self.refresh_from_db(fields=["processing_logs"])
-
-        if self.processing_logs:
-            self.processing_logs += f"{separator}{text}"
-        else:
-            self.processing_logs = text
-
-        self.last_activity = timezone.now()
-        self.save(update_fields=["processing_logs", "last_activity"])
+        # Append in SQL: the log reaches megabytes, and reading it into
+        # Python to add a line held it whole in the web or worker process
+        # (issue #308). The UPDATE is atomic, so concurrent appends cannot
+        # overwrite each other.
+        now = timezone.now()
+        ManufacturabilityCheck.objects.filter(pk=self.pk).update(
+            processing_logs=Case(
+                When(processing_logs="", then=Value(text)),
+                default=Concat(F("processing_logs"), Value(f"{separator}{text}")),
+                output_field=models.TextField(),
+            ),
+            last_activity=now,
+        )
+        self.last_activity = now
+        # A loaded copy is now stale; drop it so the next read fetches it.
+        if "processing_logs" not in self.get_deferred_fields():
+            del self.processing_logs
 
     def update_processing_logs(self, logs: str) -> None:
         """Update processing logs during RUNNING state.

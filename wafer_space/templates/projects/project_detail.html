@@ -690,9 +690,18 @@
             .then(response => response.json())
             .then(data => {
               // Update logs, preserving scroll position
-              if (logsElement && data.processing_logs) {
+              // Only the log's tail is polled (#308); the full log is a link.
+              if (logsElement && data.processing_logs_tail) {
                 const wasAtBottom = logsElement.scrollHeight - logsElement.scrollTop <= logsElement.clientHeight + 50;
-                logsElement.textContent = data.processing_logs;
+                logsElement.textContent = data.processing_logs_tail;
+                const note = document.getElementById('processing-logs-truncated');
+                if (note) {
+                  note.hidden = !data.processing_logs_truncated;
+                }
+                const length = document.getElementById('processing-logs-length');
+                if (length) {
+                  length.textContent = data.processing_logs_length.toLocaleString('en');
+                }
                 // Auto-scroll to bottom if user was already at the bottom
                 if (wasAtBottom) {
                   logsElement.scrollTop = logsElement.scrollHeight;
