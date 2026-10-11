@@ -235,16 +235,18 @@
                   {% endif %}
                 </td>
                 <td>
-                  <button class="btn btn-sm btn-primary"
-                          data-assign-project="{{ project.pk }}"
-                          data-project-name="{{ project.full_id|default:project.project_id|escapejs }}"
-                          data-project-size="{{ project.slot_size|escapejs }}">
-                    {% if project.shuttle_slots.exists %}
-                      Edit
-                    {% else %}
-                      Assign
-                    {% endif %}
-                  </button>
+                  {% if not shuttle.is_test_only %}
+                    <button class="btn btn-sm btn-primary"
+                            data-assign-project="{{ project.pk }}"
+                            data-project-name="{{ project.full_id|default:project.project_id|escapejs }}"
+                            data-project-size="{{ project.slot_size|escapejs }}">
+                      {% if project.shuttle_slots.exists %}
+                        Edit
+                      {% else %}
+                        Assign
+                      {% endif %}
+                    </button>
+                  {% endif %}
                 </td>
               </tr>
             {% endfor %}

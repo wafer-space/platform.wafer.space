@@ -83,3 +83,15 @@ def test_assignment_page_shows_notice_instead_of_grid(
     ).content.decode()
 
     assert (NOTICE in content, 'id="grid-table"' in content) == (True, False)
+
+
+def test_assignment_page_offers_no_assign_button(
+    staff: Client, test_shuttle: Shuttle
+) -> None:
+    ProjectFactory(shuttle=test_shuttle)
+
+    content = staff.get(
+        reverse("shuttles:assignment", kwargs={"name": "G895"})
+    ).content.decode()
+
+    assert "data-assign-project" not in content
