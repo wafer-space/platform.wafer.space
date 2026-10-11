@@ -52,6 +52,11 @@ from .services import ProjectFileService
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from uuid import UUID
+
+    from django.http import HttpRequest
+    from django.http import HttpResponse
+
     from wafer_space.users.models import User
 
 
@@ -702,6 +707,51 @@ class ProjectSubmitView(
             )
 
         # Always redirect back to project detail page
+        return redirect("projects:detail", pk=pk)
+
+
+class ProjectArchiveView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
+    """Archive a project (POST-only). Nothing is deleted (issue #307)."""
+
+    http_method_names = ["post"]
+
+    def get_object(self) -> Project:
+        """Get the project object for permission checking."""
+        return get_object_or_404(Project, pk=self.kwargs["pk"])
+
+    def post(self, request: HttpRequest, pk: UUID) -> HttpResponse:
+        """Archive the project if the archive rules allow it."""
+        project = self.get_object()
+        allowed, reason = project.can_be_archived_by(request.user)
+        if not allowed:
+            messages.error(request, f"Cannot archive project: {reason}")
+        else:
+            project.archive()
+            messages.success(
+                request,
+                f"Project '{project.name}' archived. It is read-only and "
+                "listed last on your projects page.",
+            )
+        return redirect("projects:detail", pk=pk)
+
+
+class ProjectUnarchiveView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
+    """Unarchive a project (POST-only) (issue #307)."""
+
+    http_method_names = ["post"]
+
+    def get_object(self) -> Project:
+        """Get the project object for permission checking."""
+        return get_object_or_404(Project, pk=self.kwargs["pk"])
+
+    def post(self, request: HttpRequest, pk: UUID) -> HttpResponse:
+        """Make the project active again."""
+        project = self.get_object()
+        if not project.is_archived:
+            messages.info(request, "Project is not archived.")
+        else:
+            project.unarchive()
+            messages.success(request, f"Project '{project.name}' unarchived.")
         return redirect("projects:detail", pk=pk)
 
 

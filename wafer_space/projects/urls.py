@@ -24,6 +24,13 @@ urlpatterns = [
     path("<uuid:pk>/delete/", views.ProjectDeleteView.as_view(), name="delete"),
     # Project submission
     path("<uuid:pk>/submit/", views.ProjectSubmitView.as_view(), name="submit"),
+    # Archiving (issue #307)
+    path("<uuid:pk>/archive/", views.ProjectArchiveView.as_view(), name="archive"),
+    path(
+        "<uuid:pk>/unarchive/",
+        views.ProjectUnarchiveView.as_view(),
+        name="unarchive",
+    ),
     # File submission
     path(
         "<uuid:pk>/submit-url/",

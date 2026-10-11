@@ -17,6 +17,7 @@ from wafer_space.users.tests.factories import UserFactory
 
 from .constants import HTTP_FORBIDDEN
 from .constants import HTTP_FOUND
+from .constants import HTTP_METHOD_NOT_ALLOWED
 from .constants import HTTP_OK
 from .factories import ManufacturabilityCheckFactory
 from .factories import ProjectFactory
@@ -46,12 +47,6 @@ REFUSED_ON_ARCHIVED = {
 }
 
 
-ARCHIVE_VIEWS_PENDING_CLASSIFY = pytest.mark.xfail(
-    strict=True,
-    reason="archive and unarchive URLs are added in the next commit",
-)
-
-
 def pk_url_names() -> set[str]:
     return {
         p.name
@@ -60,7 +55,6 @@ def pk_url_names() -> set[str]:
     }
 
 
-@ARCHIVE_VIEWS_PENDING_CLASSIFY
 def test_every_project_pk_url_is_classified() -> None:
     assert pk_url_names() == ALLOWED_ON_ARCHIVED | REFUSED_ON_ARCHIVED
 
@@ -77,20 +71,7 @@ def owner_client(client: Client, archived_project: Project) -> Client:
     return client
 
 
-ARCHIVE_VIEWS_PENDING = pytest.mark.xfail(
-    strict=True,
-    reason="archive and unarchive views are added in the next commit",
-)
-
-
-def refused_params() -> list[object]:
-    return [
-        pytest.param(name, marks=ARCHIVE_VIEWS_PENDING) if name == "archive" else name
-        for name in sorted(REFUSED_ON_ARCHIVED)
-    ]
-
-
-@pytest.mark.parametrize("name", refused_params())
+@pytest.mark.parametrize("name", sorted(REFUSED_ON_ARCHIVED))
 @pytest.mark.parametrize("method", ["get", "post"])
 def test_write_views_refuse_archived_project(
     owner_client: Client,
@@ -102,14 +83,18 @@ def test_write_views_refuse_archived_project(
     before = archived_project.updated_at
     url = reverse(f"projects:{name}", args=[archived_project.pk])
     response = getattr(owner_client, method)(url, {"name": "Changed"}, follow=True)
-    detail_url = reverse("projects:detail", args=[archived_project.pk])
-    assert response.redirect_chain == [(detail_url, HTTP_FOUND)]
-    expected = (
-        "Project is already archived"
-        if name == "archive"
-        else ARCHIVED_READ_ONLY_MESSAGE
-    )
-    assert expected in response.content.decode()
+    if name == "archive" and method == "get":
+        # The archive view is POST-only; GET is refused before any rule.
+        assert response.status_code == HTTP_METHOD_NOT_ALLOWED
+    else:
+        detail_url = reverse("projects:detail", args=[archived_project.pk])
+        assert response.redirect_chain == [(detail_url, HTTP_FOUND)]
+        expected = (
+            "Project is already archived"
+            if name == "archive"
+            else ARCHIVED_READ_ONLY_MESSAGE
+        )
+        assert expected in response.content.decode()
     archived_project.refresh_from_db()
     assert archived_project.updated_at == before
     assert archived_project.name == "Archived name"
