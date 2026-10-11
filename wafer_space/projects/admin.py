@@ -98,6 +98,30 @@ class ProjectAdmin(StaffReadOnlyAdminMixin, SimpleHistoryAdmin):
     ]
     readonly_fields = ["created_at", "updated_at"]
 
+    def history_form_view(
+        self,
+        request: HttpRequest,
+        object_id: str,
+        version_id: str,
+        extra_context: dict[str, Any] | None = None,
+    ) -> HttpResponse:
+        """Refuse history reverts (POST) without change-history permission.
+
+        simple_history only checks view-or-change permission before saving
+        a POST to this view, so staff with read-only access
+        (StaffReadOnlyAdminMixin) could otherwise revert a project.
+        """
+        if request.method == "POST" and not self.has_change_history_permission(
+            request,
+        ):
+            raise PermissionDenied
+        return super().history_form_view(
+            request,
+            object_id,
+            version_id,
+            extra_context,
+        )
+
     def get_urls(self) -> list[URLPattern]:
         urls = super().get_urls()
         custom_urls = [
