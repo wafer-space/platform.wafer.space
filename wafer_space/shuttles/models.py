@@ -298,6 +298,9 @@ class Shuttle(models.Model):
 
     def generate_manifest(self) -> dict[str, str | int | list[dict[str, str | None]]]:
         """Generate manifest data for production."""
+        if self.is_test_only:
+            msg = f"{self.name} is a test-only shuttle; it has no manifest"
+            raise ValueError(msg)
         slots = self.slots.filter(status=ShuttleSlot.Status.RESERVED).select_related(
             "project",
         )
@@ -446,6 +449,14 @@ class ShuttleSlot(models.Model):
         shuttle status and deadline never block it - they only add warnings.
         """
         warnings = []
+
+        # Test-only shuttles are checked, never manufactured (#221).
+        if self.shuttle.is_test_only:
+            msg = (
+                f"{self.shuttle.name} is a test-only shuttle; "
+                "its projects are never placed in slots"
+            )
+            raise ValueError(msg)
 
         # Archived projects are excluded from slot allocation (issue #307).
         if project.is_archived:
