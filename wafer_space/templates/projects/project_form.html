@@ -210,7 +210,7 @@
         // Check availability with AJAX
         if (shuttleId && projectId.length === 4) {
           validationTimeout = setTimeout(() => {
-            fetch(`{% url 'projects:check_project_id' %}?shuttle=${shuttleId}&project_id=${projectId}`)
+            fetch(`{% url 'projects:check_project_id' %}?shuttle=${shuttleId}&project_id=${projectId}{% if not is_new %}&exclude={{ object.pk }}{% endif %}`)
               .then(response => response.json())
               .then(data => {
                 // Clear any existing feedback before adding new

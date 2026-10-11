@@ -74,6 +74,72 @@ class TestProjectIDCheckView(TestCase):
         assert data["available"] is False
         assert "taken" in data["message"].lower()
 
+    def test_own_project_id_available_when_excluded(self):
+        """The edit page excludes the project being edited (issue #306)."""
+        project = Project.objects.create(
+            user=self.user,
+            name="Edited Project",
+            shuttle=self.shuttle,
+            project_id="ABCD",
+        )
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+
+        response = self.client.get(
+            self.url,
+            {
+                "shuttle": str(self.shuttle.pk),
+                "project_id": "ABCD",
+                "exclude": str(project.pk),
+            },
+        )
+
+        data = json.loads(response.content)
+        assert data["available"] is True
+        assert data["message"] == "ID ABCD is available"
+
+    def test_other_projects_id_still_taken_when_excluding(self):
+        """Excluding one project does not hide another project's ID."""
+        Project.objects.create(
+            user=self.user,
+            name="Holder",
+            shuttle=self.shuttle,
+            project_id="ABCD",
+        )
+        edited = Project.objects.create(
+            user=self.user,
+            name="Edited Project",
+            shuttle=self.shuttle,
+            project_id="WXYZ",
+        )
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+
+        response = self.client.get(
+            self.url,
+            {
+                "shuttle": str(self.shuttle.pk),
+                "project_id": "ABCD",
+                "exclude": str(edited.pk),
+            },
+        )
+
+        data = json.loads(response.content)
+        assert data["available"] is False
+
+    def test_invalid_exclude_rejected(self):
+        """A malformed exclude value is a 400, not silently ignored."""
+        self.client.login(username="testuser", password=TEST_PASSWORD)
+
+        response = self.client.get(
+            self.url,
+            {
+                "shuttle": str(self.shuttle.pk),
+                "project_id": "ABCD",
+                "exclude": "not-a-uuid",
+            },
+        )
+
+        assert response.status_code == HTTP_BAD_REQUEST
+
     def test_lowercase_project_id_rejected(self):
         """Test that lowercase project IDs are rejected with validation error."""
         self.client.login(username="testuser", password=TEST_PASSWORD)
