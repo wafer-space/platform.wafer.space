@@ -1417,22 +1417,30 @@ class ProjectFile(models.Model):
         """Get the most recent manufacturability check.
 
         Returns None if no checks exist yet.
-        Ordered by -created_at (newest first).
+        Ordered by -created_at (newest first). The processing log is deferred
+        (loaded only if read): pages and lists use this, and logs reach
+        megabytes (issue #308).
         """
-        return self.manufacturability_checks.order_by("-created_at").first()
+        return (
+            self.manufacturability_checks.defer("processing_logs")
+            .order_by("-created_at")
+            .first()
+        )
 
     @property
     def output_check(self) -> "ManufacturabilityCheck":
         """Return latest finished check, or dummy if none exists.
 
         Always returns a ManufacturabilityCheck for consistent interface.
-        Check if pk is set to determine if it's a real check.
+        Check if pk is set to determine if it's a real check. The processing
+        log is deferred (loaded only if read; issue #308).
         """
         if self.pk:  # Real file, not dummy
             check = (
                 self.manufacturability_checks.filter(
                     status=ManufacturabilityCheck.Status.FINISHED
                 )
+                .defer("processing_logs")
                 .order_by("-created_at")
                 .first()
             )

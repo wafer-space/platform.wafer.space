@@ -36,6 +36,7 @@ ALLOWED_ON_ARCHIVED = {
     "progress",  # read only (AJAX polling)
     "check_status",  # read only (AJAX polling)
     "file_download",  # read only: the stored layout (issue #254)
+    "check_log",  # read only (full processing log download, #308)
     "cancel_check",  # staff only on archived projects; owners are refused
     "unarchive",  # the owner's one write on an archived project
 }

@@ -34,6 +34,7 @@ ALLOWED_ON_CLOSED = {
     "detail",
     "progress",
     "check_status",
+    "check_log",  # read only (full processing log download, #308)
     "cancel_check",
     "update",  # other fields stay editable; the form locks chip-on-board
     "archive",

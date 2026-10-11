@@ -587,6 +587,9 @@ MAX_EXTRACTED_SIZE = 10 * 1024 * 1024 * 1024  # 10GB after extraction/decompress
 # Characters of a check's processing log that pages and the polling JSON show;
 # the full log is behind projects:check_log (issue #308).
 LOG_TAIL_CHARS = 64 * 1024
+# Characters per database read when projects:check_log streams a log that has
+# no saved file yet (a running check).
+CHECK_LOG_STREAM_CHARS = 1024 * 1024
 
 # GitHub API Configuration
 # ------------------------------------------------------------------------------

@@ -58,6 +58,11 @@ urlpatterns = [
         name="check_status",
     ),
     path(
+        "<uuid:pk>/checks/<int:check_id>/log/",
+        views.CheckLogView.as_view(),
+        name="check_log",
+    ),
+    path(
         "<uuid:pk>/cancel-check/<int:check_id>/",
         views.ManufacturabilityCheckCancelView.as_view(),
         name="cancel_check",

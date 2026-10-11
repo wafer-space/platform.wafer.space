@@ -11,6 +11,7 @@ from typing import Any
 from typing import ClassVar
 from typing import cast
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -24,9 +25,12 @@ from django.db.models import OuterRef
 from django.db.models import Prefetch
 from django.db.models import Q
 from django.db.models import Subquery
+from django.db.models.functions import Length
+from django.db.models.functions import Substr
 from django.http import FileResponse
 from django.http import Http404
 from django.http import JsonResponse
+from django.http import StreamingHttpResponse
 from django.shortcuts import get_object_or_404
 from django.shortcuts import redirect
 from django.shortcuts import render
@@ -38,6 +42,7 @@ from django.views.generic import DetailView
 from django.views.generic import ListView
 from django.views.generic import UpdateView
 from django.views.generic import View
+from django.views.generic.detail import SingleObjectMixin
 
 from wafer_space.core.enums import SlotSize
 from wafer_space.shuttles.models import Shuttle
@@ -64,16 +69,19 @@ from .models import PrecheckImageRevision
 from .models import Project
 from .models import ProjectAccessLog
 from .models import ProjectFile
+from .models import log_tail_expressions
 from .security import SecurityValidationError
 from .services import ProjectFileService
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from uuid import UUID
 
     from django.http import HttpRequest
     from django.http import HttpResponse
+    from django.http.response import HttpResponseBase
     from django_stubs_ext import WithAnnotations
 
     from wafer_space.users.models import User
@@ -552,10 +560,17 @@ class ManufacturabilityCheckStatusView(LoginRequiredMixin, UserPassesTestMixin, 
     def get(self, request, pk):
         """Return check status as JSON.
 
+        Polled every 5 seconds while a check runs, so it carries only the
+        log's last LOG_TAIL_CHARS characters, computed in the database: the
+        whole log made this a 16 MB response and OOM-killed gunicorn (#308).
+        The full log is behind projects:check_log.
+
         Returns:
             JsonResponse: Check status data containing:
                 - status: Current check status (pending, running, finished, error)
-                - processing_logs: Raw logs from the check
+                - processing_logs_tail: The log's last LOG_TAIL_CHARS characters
+                - processing_logs_length: The whole log's length in characters
+                - processing_logs_truncated: Whether the tail is not the whole log
                 - is_manufacturable: Boolean or null
                 - error_message: Error message if error occurred
         """
@@ -574,33 +589,92 @@ class ManufacturabilityCheckStatusView(LoginRequiredMixin, UserPassesTestMixin, 
         if not active_file:
             return JsonResponse({"error": "No active file found"}, status=404)
 
-        check = active_file.latest_manufacturability_check
+        # Same check as latest_manufacturability_check, without the whole log.
+        tail = log_tail_expressions()
+        check = (
+            active_file.manufacturability_checks.order_by("-created_at")
+            .values(
+                "status",
+                "is_manufacturable",
+                "error_message",
+                "container_started_at",
+                "analysis_completed_at",
+                processing_logs_tail=tail["processing_logs_tail"],
+                processing_logs_length=tail["processing_logs_length"],
+                processing_logs_truncated=tail["processing_logs_truncated"],
+            )
+            .first()
+        )
         if not check:
             return JsonResponse(
                 {"error": "No manufacturability check found"}, status=404
             )
 
-        started = (
-            check.container_started_at.isoformat()
-            if check.container_started_at
-            else None
-        )
-        finished = (
-            check.analysis_completed_at.isoformat()
-            if check.analysis_completed_at
-            else None
-        )
-
+        started = check["container_started_at"]
+        finished = check["analysis_completed_at"]
         return JsonResponse(
             {
-                "status": check.status,
-                "processing_logs": check.processing_logs or "",
-                "is_manufacturable": check.is_manufacturable,
-                "error_message": check.error_message or "",
-                "started_at": started,
-                "completed_at": finished,
+                "status": check["status"],
+                "processing_logs_tail": check["processing_logs_tail"] or "",
+                "processing_logs_length": check["processing_logs_length"] or 0,
+                "processing_logs_truncated": bool(check["processing_logs_truncated"]),
+                "is_manufacturable": check["is_manufacturable"],
+                "error_message": check["error_message"] or "",
+                "started_at": started.isoformat() if started else None,
+                "completed_at": finished.isoformat() if finished else None,
             }
         )
+
+
+class CheckLogView(
+    LoginRequiredMixin, ProjectOwnerOrStaffMixin, SingleObjectMixin, View
+):
+    """Serve one check's full processing log (issue #308).
+
+    Pages and the polling JSON show only the log's tail; this is the link
+    to the rest, with the same permission as the project detail page. A
+    saved log file is streamed through this view and never redirected to:
+    /media/ is served without access control. A running check's log (no
+    file yet) is streamed from the database in CHECK_LOG_STREAM_CHARS
+    slices, so no single string holds the whole log. Read-only, as the web
+    process must be.
+    """
+
+    model = Project
+
+    def get(self, request: HttpRequest, pk: str, check_id: int) -> HttpResponseBase:
+        """Stream the log as a text attachment."""
+        check = get_object_or_404(
+            ManufacturabilityCheck.objects.defer("processing_logs"),
+            pk=check_id,
+            project=self.get_object(),
+        )
+        filename = f"check_{check.pk}.log"
+        if check.log_file:
+            return FileResponse(
+                check.log_file.open("rb"),
+                as_attachment=True,
+                filename=filename,
+                content_type="text/plain; charset=utf-8",
+            )
+        response = StreamingHttpResponse(
+            _stream_log_from_db(check.pk),
+            content_type="text/plain; charset=utf-8",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+
+def _stream_log_from_db(check_id: int) -> Iterator[bytes]:
+    """Yield a check's processing_logs in CHECK_LOG_STREAM_CHARS slices."""
+    step = settings.CHECK_LOG_STREAM_CHARS
+    checks = ManufacturabilityCheck.objects.filter(pk=check_id)
+    length = checks.values_list(Length("processing_logs"), flat=True).get()
+    for start in range(1, length + 1, step):
+        piece = checks.values_list(
+            Substr("processing_logs", start, step), flat=True
+        ).get()
+        yield piece.encode("utf-8")
 
 
 class ManufacturabilityCheckCancelView(LoginRequiredMixin, UserPassesTestMixin, View):

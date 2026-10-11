@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 from django.contrib.messages import get_messages
 from django.core.cache import cache
+from django.core.files.base import ContentFile
 from django.db import connection
 from django.template.loader import render_to_string
 from django.test import Client
@@ -2795,3 +2796,207 @@ class TestManufacturabilityCheckPartialVersionInfo:
 
         assert "precheck: unknown" not in html
         assert "klayout: 0.29.1" in html
+
+
+@pytest.mark.django_db
+class TestCheckStatusJsonIsBounded:
+    """The 5-second polling JSON carries only the log tail (#308)."""
+
+    @staticmethod
+    def _poll(client, logs: str) -> dict:
+        user = UserFactory()
+        project = ProjectFactory(user=user)
+        project_file = ProjectFileFactory(project=project, is_active=True)
+        ManufacturabilityCheckFactory(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+            processing_logs=logs,
+        )
+        client.force_login(user)
+        response = client.get(reverse("projects:check_status", args=[project.pk]))
+        assert response.status_code == HTTP_OK
+        return {"size": len(response.content), "data": response.json()}
+
+    def test_large_log_response_is_bounded(self, client) -> None:
+        """A 5 MB log polls as at most about 64 KiB, newest lines included."""
+        logs = "".join(f"line {i:07d}\n" for i in range(400_000))
+
+        polled = self._poll(client, logs)
+
+        tail = polled["data"]["processing_logs_tail"]
+        assert (
+            polled["size"] < 70 * 1024,
+            tail.endswith("line 0399999\n"),
+            "line 0000000" in tail,
+        ) == (True, True, False)
+
+    def test_reports_length_and_truncation(self, client) -> None:
+        """The page can say how much of the log it is showing."""
+        logs = "x" * (100 * 1024)
+
+        data = self._poll(client, logs)["data"]
+
+        assert (
+            data["processing_logs_length"],
+            data["processing_logs_truncated"],
+            "processing_logs" in data,
+        ) == (len(logs), True, False)
+
+    def test_short_log_is_whole(self, client) -> None:
+        """A small log comes back entire, not marked truncated."""
+        data = self._poll(client, "started\n")["data"]
+
+        assert (data["processing_logs_tail"], data["processing_logs_truncated"]) == (
+            "started\n",
+            False,
+        )
+
+
+@pytest.mark.django_db
+class TestCheckLogView:
+    """projects:check_log serves the full log behind the project permission."""
+
+    @staticmethod
+    def _url(check: ManufacturabilityCheck) -> str:
+        return reverse(
+            "projects:check_log",
+            kwargs={"pk": check.project_id, "check_id": check.pk},
+        )
+
+    @staticmethod
+    def _body(response) -> bytes:
+        return b"".join(response.streaming_content)
+
+    def test_owner_gets_the_whole_log_streamed_from_the_db(
+        self, client, settings
+    ) -> None:
+        """A running check (no saved file) streams the field in slices."""
+        settings.CHECK_LOG_STREAM_CHARS = 1000
+        logs = "".join(f"line {i}\n" for i in range(2000))
+        check = ManufacturabilityCheckFactory(processing_logs=logs)
+        client.force_login(check.project.user)
+
+        response = client.get(self._url(check))
+
+        assert (response.streaming, self._body(response).decode()) == (True, logs)
+
+    def test_saved_log_file_is_streamed_not_redirected(
+        self, client, settings, tmp_path
+    ) -> None:
+        """/media/ has no access control, so the view never redirects there."""
+        settings.MEDIA_ROOT = str(tmp_path)
+        check = ManufacturabilityCheckFactory(processing_logs="db copy\n")
+        check.log_file.save("check.log", ContentFile(b"saved log\n"), save=True)
+        client.force_login(check.project.user)
+
+        response = client.get(self._url(check))
+
+        assert (
+            response.status_code,
+            response.has_header("Location"),
+            self._body(response),
+        ) == (HTTP_OK, False, b"saved log\n")
+
+    def test_other_users_are_refused(self, client) -> None:
+        """Someone who cannot see the project cannot read its logs."""
+        check = ManufacturabilityCheckFactory(processing_logs="secret\n")
+        client.force_login(UserFactory())
+
+        assert client.get(self._url(check)).status_code == HTTP_FORBIDDEN
+
+    def test_check_of_another_project_is_not_found(self, client) -> None:
+        """A check id is only valid under its own project."""
+        check = ManufacturabilityCheckFactory(processing_logs="x\n")
+        other = ProjectFactory(user=check.project.user)
+        client.force_login(check.project.user)
+        url = reverse(
+            "projects:check_log", kwargs={"pk": other.pk, "check_id": check.pk}
+        )
+
+        assert client.get(url).status_code == HTTP_NOT_FOUND
+
+    def test_anonymous_is_sent_to_login(self, client) -> None:
+        """No log for visitors who are not logged in."""
+        check = ManufacturabilityCheckFactory(processing_logs="x\n")
+
+        response = client.get(self._url(check))
+
+        assert (response.status_code, "login" in response["Location"]) == (
+            HTTP_FOUND,
+            True,
+        )
+
+
+@pytest.mark.django_db
+class TestDetailPageLogsAreBounded:
+    """The project page never ships whole logs (#308: a 25 MB page)."""
+
+    MB = 1024 * 1024
+    CHECKS = 11  # the latest plus ten previous checks
+
+    def _detail_with_history(self, client) -> tuple[str, ManufacturabilityCheck]:
+        user = UserFactory()
+        project = ProjectFactory(user=user)
+        project_file = ProjectFileFactory(project=project, is_active=True)
+        start = timezone.now()
+        checks = []
+        for offset in range(self.CHECKS):
+            check = ManufacturabilityCheckFactory(
+                project=project,
+                project_file=project_file,
+                status=ManufacturabilityCheck.Status.FINISHED,
+                is_manufacturable=True,
+                processing_logs=f"run {offset} start\n"
+                + "y" * (2 * self.MB)
+                + f"\nrun {offset} end\n",
+            )
+            ManufacturabilityCheck.objects.filter(pk=check.pk).update(
+                created_at=start + timedelta(seconds=offset)
+            )
+            checks.append(check)
+        client.force_login(user)
+        html = client.get(reverse("projects:detail", args=[project.pk])).content
+        return html.decode(), checks[-1]
+
+    def test_page_with_ten_large_previous_checks_stays_small(self, client) -> None:
+        """Eleven 2 MB logs render well under 200 KiB in total."""
+        html, _latest = self._detail_with_history(client)
+
+        assert len(html) < 200 * 1024
+
+    def test_latest_tail_shown_and_no_history_log_body(self, client) -> None:
+        """The newest lines of the latest check show; older runs' logs do not."""
+        html, _latest = self._detail_with_history(client)
+
+        assert ("run 10 end" in html, "run 3 end" in html) == (True, False)
+
+    def test_every_check_links_its_full_log(self, client) -> None:
+        """The latest and every previous check offer the full-log link."""
+        html, latest = self._detail_with_history(client)
+
+        assert (
+            html.count("data-full-log-link") >= self.CHECKS,
+            f"/checks/{latest.pk}/log/" in html,
+        ) == (True, True)
+
+    def test_saved_log_file_is_not_linked_on_media(
+        self, client, settings, tmp_path
+    ) -> None:
+        """/media/ has no access control, so the page never links a log there."""
+        settings.MEDIA_ROOT = str(tmp_path)
+        user = UserFactory()
+        project = ProjectFactory(user=user)
+        project_file = ProjectFileFactory(project=project, is_active=True)
+        check = ManufacturabilityCheckFactory(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            processing_logs="done\n",
+        )
+        check.log_file.save("check.log", ContentFile(b"done\n"), save=True)
+        client.force_login(user)
+
+        html = client.get(reverse("projects:detail", args=[project.pk])).content
+
+        assert check.log_file.url.encode() not in html
