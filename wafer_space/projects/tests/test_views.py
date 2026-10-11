@@ -7,9 +7,11 @@ from unittest.mock import patch
 import pytest
 from django.contrib.messages import get_messages
 from django.core.cache import cache
+from django.db import connection
 from django.template.loader import render_to_string
 from django.test import Client
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -2205,6 +2207,147 @@ class TestProjectDetailSlotVisibility:
 
 
 @pytest.mark.django_db
+@pytest.mark.django_db
+class TestProjectListStateColumn:
+    """The projects list's shuttle and state columns (PR #321, Tim 11 Oct).
+
+    The state is derived from Project.submitted_file and the file revisions'
+    checks (docs/manufacturable_vs_submitted.md), never from Project.status,
+    which later check completions overwrite (issue #354).
+    """
+
+    @staticmethod
+    def _row(client, user, project: Project) -> str:
+        """The rendered list row for ``project``."""
+        client.force_login(user)
+        html = client.get(reverse("projects:list")).content.decode()
+        marker = f'data-project-row="{project.pk}"'
+        assert marker in html
+        return html.split(marker, 1)[1].split("data-project-row=", 1)[0]
+
+    @staticmethod
+    def _revision(project: Project, *checks: tuple[str, bool | None]) -> ProjectFile:
+        """An active revision of ``project`` with checks (status, verdict)."""
+        revision = ProjectFileFactory(project=project, is_active=True)
+        start = timezone.now()
+        for offset, (status, verdict) in enumerate(checks):
+            check = ManufacturabilityCheckFactory(
+                project=project,
+                project_file=revision,
+                status=status,
+                is_manufacturable=verdict,
+            )
+            # created_at is auto_now_add: order the checks explicitly.
+            ManufacturabilityCheck.objects.filter(pk=check.pk).update(
+                created_at=start + timedelta(seconds=offset),
+            )
+        return revision
+
+    def test_shows_shuttle_name(self, client) -> None:
+        """The first column names the project's shuttle."""
+        user = UserFactory()
+        project = ProjectFactory(user=user, shuttle=ShuttleFactory(name="G850"))
+
+        assert "G850" in self._row(client, user, project)
+
+    def test_submitted_even_when_status_was_overwritten(self, client) -> None:
+        """A submitted project reads Submitted, whatever Project.status says.
+
+        mark_finished() overwrites SUBMITTED with MANUFACTURABLE whenever a
+        check finishes, so the raw status would say "Manufacturable".
+        """
+        user = UserFactory()
+        project = ProjectFactory(user=user)
+        finished = ManufacturabilityCheck.Status.FINISHED
+        project.submitted_file = self._revision(project, (finished, True))
+        project.status = Project.Status.MANUFACTURABLE
+        project.save()
+
+        row = self._row(client, user, project)
+
+        assert 'data-project-state="submitted"' in row
+
+    def test_submitted_revision_now_failing_is_flagged(self, client) -> None:
+        """A submitted revision whose latest finished check failed is flagged."""
+        user = UserFactory()
+        project = ProjectFactory(user=user)
+        finished = ManufacturabilityCheck.Status.FINISHED
+        project.submitted_file = self._revision(
+            project, (finished, True), (finished, False)
+        )
+        project.save()
+
+        row = self._row(client, user, project)
+
+        assert 'data-project-state="submitted-failing"' in row
+
+    @pytest.mark.parametrize(
+        ("checks", "state"),
+        [
+            ([("finished", True)], "manufacturable"),
+            ([("finished", False)], "not-manufacturable"),
+            ([("finished", True), ("running", None)], "manufacturable"),
+            ([("pending", None)], "checking"),
+            ([("error", None)], "check-error"),
+            ([], "not-checked"),
+        ],
+    )
+    def test_unsubmitted_state_comes_from_latest_revision(
+        self, client, checks: list[tuple[str, bool | None]], state: str
+    ) -> None:
+        """Verdict of the latest finished check; else the latest check's state.
+
+        An in-flight re-check does not reset an existing verdict.
+        """
+        user = UserFactory()
+        project = ProjectFactory(user=user)
+        self._revision(project, *checks)
+
+        row = self._row(client, user, project)
+
+        assert f'data-project-state="{state}"' in row
+
+    def test_state_says_which_revision_it_describes(self, client) -> None:
+        """CLAUDE.md: a precheck status must name the revision it belongs to."""
+        user = UserFactory()
+        project = ProjectFactory(user=user)
+        self._revision(project, (ManufacturabilityCheck.Status.FINISHED, True))
+
+        row = self._row(client, user, project)
+
+        assert 'data-state-basis="latest revision"' in row
+
+    def test_project_without_file(self, client) -> None:
+        """No revision yet reads No file, even if Project.status says otherwise."""
+        user = UserFactory()
+        project = ProjectFactory(user=user, status=Project.Status.CHECKING)
+
+        row = self._row(client, user, project)
+
+        assert ('data-project-state="no-file"' in row, "Checking" in row) == (
+            True,
+            False,
+        )
+
+    def _list_query_count(self, client, user) -> int:
+        """Number of queries one render of the list takes."""
+        client.force_login(user)
+        with CaptureQueriesContext(connection) as queries:
+            client.get(reverse("projects:list"))
+        return len(queries)
+
+    def test_query_count_does_not_grow_with_projects(self, client) -> None:
+        """The state is annotated, not computed per row (no N+1)."""
+        user = UserFactory()
+        finished = ManufacturabilityCheck.Status.FINISHED
+        self._revision(ProjectFactory(user=user), (finished, True))
+        one_project = self._list_query_count(client, user)
+        for _ in range(14):
+            self._revision(ProjectFactory(user=user), (finished, True))
+
+        assert self._list_query_count(client, user) == one_project
+
+
 class TestProjectListViewStaff(TestCase):
     """Test ProjectListView with staff user access."""
 
