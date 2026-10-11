@@ -71,7 +71,7 @@ def get_download_dir_for_file(project_file_id: int) -> Path:
     """MEDIA_ROOT/temp/downloads/file_<id>/ (created if missing)."""
 ```
 
-- It is keyed by `ProjectFile.id` only, **not** by Celery task id (unlike the pipeline dir). A retry is a new task, and it must find the partial file to resume. One `ProjectFile` has at most one download in flight: `download_task_id` and the attempt row ensure it.
+- It is keyed by `ProjectFile.id` only, **not** by Celery task id (unlike the pipeline dir). A retry is a new task, and it must find the partial file to resume. Like today's fixed `/tmp` path, this assumes at most one download of a given `ProjectFile` runs at a time. The code serialises attempt *numbering* (`_create_download_attempt_atomic`, `select_for_update`), but nothing shown here prevents two concurrent downloads of one file. This change neither adds nor removes that exposure; it can be its own issue if it is ever seen.
 - The temp file inside is `<original_filename>`, so the directory is the per-download namespace. The old `<id>_<name>` prefix is no longer needed.
 - `_setup_temp_directory()` and the duplicate path computation in `_log_download_start` are removed. `_setup_download_temp_path` uses the new helper, and `_log_download_start` logs the same path.
 - Cleanup:
