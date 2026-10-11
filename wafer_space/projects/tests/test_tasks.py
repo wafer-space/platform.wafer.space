@@ -2070,6 +2070,10 @@ class TestDoRunning:
 class TestDoAnalyzing:
     """Test do_analyzing work task."""
 
+    SUCCESS_LOGS = """Check for Magic DRC errors clear.
+Check for KLayout DRC errors clear.
+Precheck successfully completed."""
+
     @pytest.mark.django_db
     def test_parses_logs_and_transitions_to_finished(self) -> None:
         """Parses logs successfully and transitions to FINISHED."""
@@ -2505,150 +2509,122 @@ Precheck successfully completed."""
         assert result["status"] == "error"
         assert "missing_container_info" in result.get("reason", "")
 
-    @pytest.mark.django_db
-    def test_continues_extraction_when_runs_archive_fails(self) -> None:
-        """Continues extracting other outputs when runs archive extraction fails.
-
-        Even if _save_runs_archive fails, we should still try to extract the
-        output GDS and continue with log parsing and state transitions.
-        """
-        success_logs = """Check for Magic DRC errors clear.
-Check for KLayout DRC errors clear.
-Precheck successfully completed."""
+    @staticmethod
+    def _analyzing_check(logs: str, exit_code: int) -> ManufacturabilityCheck:
+        """An ANALYZING check with its do_analyzing task record."""
         check = ManufacturabilityCheckFactory(
             status=ManufacturabilityCheck.Status.ANALYZING,
-            docker_exit_code=0,
-            processing_logs=success_logs,
+            docker_exit_code=exit_code,
+            processing_logs=logs,
             docker_server_id="test-local",
             docker_container_id="test-container-id",
         )
         ManufacturabilityCheckTask.objects.create(
             manufacturability_check=check, task_id="test", task_name="do_analyzing"
         )
+        return check
 
-        # Mock container where runs archive extraction fails but GDS works
+    @staticmethod
+    def _analyze_with_stream_failure(
+        check: ManufacturabilityCheck, failing_path: str
+    ) -> dict:
+        """Run do_analyzing where streaming ``failing_path`` breaks midway.
+
+        The Docker SDK raises from the archive iterator, after get_archive()
+        has returned; that is the failure stream_archive_to_file does not
+        catch. Every other path is absent from the container.
+        """
+
+        def broken_stream():
+            yield b"partial"
+            msg = "connection reset while streaming archive"
+            raise docker.errors.APIError(msg)
+
+        def get_archive(path: str) -> tuple:
+            if path == failing_path:
+                return broken_stream(), {}
+            msg = "no such path"
+            raise docker.errors.NotFound(msg)
+
         mock_container = MagicMock()
         mock_container.status = "exited"
-
-        not_found_msg = "no archive"
-
-        def mock_get_archive(path: str) -> tuple:
-            if "/workspace/runs" in path:
-                msg = "Simulated runs extraction failure"
-                raise RuntimeError(msg)
-            # Return empty for other paths
-            raise docker.errors.NotFound(not_found_msg)
-
-        mock_container.get_archive.side_effect = mock_get_archive
+        mock_container.get_archive.side_effect = get_archive
         mock_client = MagicMock()
         mock_client.containers.get.return_value = mock_container
-
         with patch(
             "wafer_space.projects.tasks_checks.get_docker_client",
             return_value=mock_client,
         ):
-            result = do_analyzing(check.id)
-
-        # Should still complete analysis despite extraction failure
-        assert result["status"] == "success"
-        check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.FINISHED
-        assert check.is_manufacturable is True
+            return do_analyzing(check.id)
 
     @pytest.mark.django_db
-    def test_continues_extraction_when_output_gds_fails(self) -> None:
-        """Continues analysis when output GDS extraction fails.
+    def test_runs_archive_failure_still_finishes_with_verdict(self) -> None:
+        """A broken runs-archive stream does not stop the DRC verdict."""
+        check = self._analyzing_check(self.SUCCESS_LOGS, exit_code=0)
 
-        Even if _save_output_gds fails, we should still complete log parsing
-        and state transitions. The runs archive may have been saved.
-        """
-        success_logs = """Check for Magic DRC errors clear.
-Check for KLayout DRC errors clear.
-Precheck successfully completed."""
-        check = ManufacturabilityCheckFactory(
-            status=ManufacturabilityCheck.Status.ANALYZING,
-            docker_exit_code=0,
-            processing_logs=success_logs,
-            docker_server_id="test-local",
-            docker_container_id="test-container-id",
-        )
-        ManufacturabilityCheckTask.objects.create(
-            manufacturability_check=check, task_id="test", task_name="do_analyzing"
-        )
+        self._analyze_with_stream_failure(check, "/workspace/runs")
 
-        # Mock container where GDS extraction fails
-        mock_container = MagicMock()
-        mock_container.status = "exited"
-        not_found_msg = "no archive"
-
-        def mock_get_archive(path: str) -> tuple:
-            if "/output/design.gds" in path:
-                msg = "Simulated GDS extraction failure"
-                raise RuntimeError(msg)
-            # Return not found for other paths
-            raise docker.errors.NotFound(not_found_msg)
-
-        mock_container.get_archive.side_effect = mock_get_archive
-        mock_client = MagicMock()
-        mock_client.containers.get.return_value = mock_container
-
-        with patch(
-            "wafer_space.projects.tasks_checks.get_docker_client",
-            return_value=mock_client,
-        ):
-            result = do_analyzing(check.id)
-
-        # Should still complete analysis despite extraction failure
-        assert result["status"] == "success"
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.FINISHED
-        assert check.is_manufacturable is True
+        assert (check.status, check.is_manufacturable) == (
+            ManufacturabilityCheck.Status.FINISHED,
+            True,
+        )
 
     @pytest.mark.django_db
-    def test_continues_analysis_on_drc_errors_with_extraction_failures(self) -> None:
-        """Analysis completes for DRC errors even if file extraction fails.
+    def test_runs_archive_failure_is_recorded_on_the_check(self) -> None:
+        """The owner and staff see that a diagnostic output was not kept."""
+        check = self._analyzing_check(self.SUCCESS_LOGS, exit_code=0)
 
-        When a design has DRC errors (design failure), we should still:
-        1. Try to extract all outputs (even if they fail)
-        2. Parse logs and transition to FINISHED with is_manufacturable=False
-        3. Store the DRC errors for the user to see
+        self._analyze_with_stream_failure(check, "/workspace/runs")
+
+        check.refresh_from_db()
+        assert any(
+            w.startswith("Diagnostic output not saved: runs archive")
+            for w in check.warnings
+        )
+
+    @pytest.mark.django_db
+    def test_diagnostic_warning_hides_exception_detail(self) -> None:
+        """Docker error text (internal hosts) is never shown to the owner."""
+        check = self._analyzing_check(self.SUCCESS_LOGS, exit_code=0)
+
+        self._analyze_with_stream_failure(check, "/workspace/runs")
+
+        check.refresh_from_db()
+        assert not any("connection reset" in w for w in check.warnings)
+
+    @pytest.mark.django_db
+    def test_output_layout_failure_errors_the_check(self) -> None:
+        """No manufacturable verdict without the layout the reticle needs.
+
+        The check goes to ERROR, where checks_retry runs it again, instead of
+        FINISHED with an empty output_gds.
         """
+        check = self._analyzing_check(self.SUCCESS_LOGS, exit_code=0)
+
+        self._analyze_with_stream_failure(check, "/output/design.oas")
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.ERROR
+
+    @pytest.mark.django_db
+    def test_drc_errors_reported_when_diagnostics_fail(self) -> None:
+        """A design failure is still reported when its runs archive is lost."""
         drc_error_logs = """Error: 5 Magic DRC errors found.
 Error: 3 KLayout DRC errors found.
 Check for Magic DRC errors NOT clear.
 Check for KLayout DRC errors NOT clear.
 """
-        check = ManufacturabilityCheckFactory(
-            status=ManufacturabilityCheck.Status.ANALYZING,
-            docker_exit_code=1,
-            processing_logs=drc_error_logs,
-            docker_server_id="test-local",
-            docker_container_id="test-container-id",
-        )
-        ManufacturabilityCheckTask.objects.create(
-            manufacturability_check=check, task_id="test", task_name="do_analyzing"
-        )
+        check = self._analyzing_check(drc_error_logs, exit_code=1)
 
-        # Mock container where all extractions fail
-        mock_container = MagicMock()
-        mock_container.status = "exited"
-        mock_container.get_archive.side_effect = RuntimeError("Simulated failure")
-        mock_client = MagicMock()
-        mock_client.containers.get.return_value = mock_container
+        self._analyze_with_stream_failure(check, "/workspace/runs")
 
-        with patch(
-            "wafer_space.projects.tasks_checks.get_docker_client",
-            return_value=mock_client,
-        ):
-            result = do_analyzing(check.id)
-
-        # Should complete analysis and report design errors
-        assert result["status"] == "success"
         check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.FINISHED
-        assert check.is_manufacturable is False
-        # Should have extracted DRC errors from logs
-        assert len(check.errors) > 0
+        assert (check.status, check.is_manufacturable, bool(check.errors)) == (
+            ManufacturabilityCheck.Status.FINISHED,
+            False,
+            True,
+        )
 
 
 class TestChecksCleanupStalePendingTasks:
