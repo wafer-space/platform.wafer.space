@@ -273,3 +273,41 @@ class TestNoAdminAccessForNonStaff:
         project = ProjectFactory()
         url = reverse("admin:projects_project_history", args=[project.pk])
         self.assert_redirected_to_admin_login(non_staff_client.get(url))
+
+    @pytest.mark.parametrize("model", ADMIN_MODELS)
+    @pytest.mark.parametrize("anonymous", [True, False])
+    def test_non_staff_add_and_delete_redirect_to_login(
+        self,
+        client: Client,
+        staff_user: User,
+        model: str,
+        *,
+        anonymous: bool,
+    ) -> None:
+        if not anonymous:
+            client.force_login(UserFactory(is_staff=False, is_superuser=False))
+        obj = make_object(model, staff_user)
+        for url in (
+            reverse(f"admin:projects_{model}_add"),
+            reverse(f"admin:projects_{model}_delete", args=[obj.pk]),
+        ):
+            self.assert_redirected_to_admin_login(client.post(url, {"post": "yes"}))
+        assert type(obj).objects.filter(pk=obj.pk).exists()
+
+    @pytest.mark.parametrize("anonymous", [True, False])
+    def test_non_staff_project_history_version_redirects_to_login(
+        self,
+        client: Client,
+        *,
+        anonymous: bool,
+    ) -> None:
+        if not anonymous:
+            client.force_login(UserFactory(is_staff=False, is_superuser=False))
+        project = ProjectFactory()
+        version = project.history.get()
+        url = reverse(
+            "admin:projects_project_simple_history",
+            args=[project.pk, version.history_id],
+        )
+        self.assert_redirected_to_admin_login(client.get(url))
+        self.assert_redirected_to_admin_login(client.post(url, {}))
