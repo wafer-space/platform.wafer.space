@@ -5,7 +5,9 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
+from django.test import RequestFactory
 
+from wafer_space.core.utils import get_client_ip
 from wafer_space.core.utils import is_production_environment
 
 
@@ -127,3 +129,34 @@ class TestIsProductionEnvironment:
             mock_settings.DATABASES = {"default": {}}
 
             assert is_production_environment() is False
+
+
+class TestGetClientIp:
+    """Tests for get_client_ip: the single source of truth for the client IP.
+
+    Resolution from the trusted proxy header happens in
+    RealClientIPMiddleware; this helper just reads the result.
+    """
+
+    def test_returns_remote_addr(self):
+        """REMOTE_ADDR (as set by the middleware) is returned as-is."""
+        request = RequestFactory().get("/")
+        request.META["REMOTE_ADDR"] = "198.51.100.23"
+
+        assert get_client_ip(request) == "198.51.100.23"
+
+    def test_returns_none_when_remote_addr_absent(self):
+        """A request with no REMOTE_ADDR at all yields None."""
+        request = RequestFactory().get("/")
+        del request.META["REMOTE_ADDR"]
+
+        assert get_client_ip(request) is None
+
+    def test_returns_none_for_empty_remote_addr(self):
+        """gunicorn on a unix socket leaves REMOTE_ADDR == ""; that must become
+        None so it can be stored in a GenericIPAddressField (Postgres inet).
+        """
+        request = RequestFactory().get("/")
+        request.META["REMOTE_ADDR"] = ""
+
+        assert get_client_ip(request) is None

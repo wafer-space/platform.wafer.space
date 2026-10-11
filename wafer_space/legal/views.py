@@ -7,6 +7,8 @@ from django.shortcuts import redirect
 from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 
+from wafer_space.core.utils import get_client_ip
+
 from .models import TermsOfService
 from .models import TermsOfServiceAcceptance
 
@@ -44,12 +46,7 @@ def tos_accept(request):
     if request.method == "POST":
         # Check if user agreed
         if request.POST.get("agree") == "on":
-            # Get IP address from request
-            x_forwarded_for = request.headers.get("x-forwarded-for")
-            if x_forwarded_for:
-                ip_address = x_forwarded_for.split(",")[0].strip()
-            else:
-                ip_address = request.META.get("REMOTE_ADDR")
+            ip_address = get_client_ip(request)
 
             # Get user agent
             user_agent = request.headers.get("user-agent", "")
