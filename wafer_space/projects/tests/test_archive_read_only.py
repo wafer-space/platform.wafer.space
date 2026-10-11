@@ -40,7 +40,6 @@ ALLOWED_ON_ARCHIVED = {
 }
 REFUSED_ON_ARCHIVED = {
     "update",
-    "delete",  # archiving keeps the project and its ID (issue #307)
     "submit",
     "submit_url",
     "archive",
@@ -127,14 +126,6 @@ def test_staff_is_refused_on_archived_project(
     assert ARCHIVED_READ_ONLY_MESSAGE in response.content.decode()
     archived_project.refresh_from_db()
     assert archived_project.name == "Archived name"
-
-
-def test_delete_post_keeps_archived_project(
-    owner_client: Client,
-    archived_project: Project,
-) -> None:
-    owner_client.post(reverse("projects:delete", args=[archived_project.pk]))
-    assert Project.objects.filter(pk=archived_project.pk).exists()
 
 
 def test_owner_cannot_cancel_check_on_archived_project(

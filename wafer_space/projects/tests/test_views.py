@@ -926,56 +926,6 @@ class TestProjectUpdateView(TestCase):
 
 
 @pytest.mark.django_db
-class TestProjectDeleteView(TestCase):
-    """Test ProjectDeleteView."""
-
-    def setUp(self):
-        """Set up test fixtures."""
-        self.client = Client()
-        self.user = User.objects.create_user(
-            username="testuser", email="test@example.com", password=TEST_PASSWORD
-        )
-        self.other_user = User.objects.create_user(
-            username="otheruser", email="other@example.com", password=TEST_PASSWORD
-        )
-        self.project = Project.objects.create(
-            user=self.user, name="Test Project", description="Test project"
-        )
-
-    def test_requires_login(self):
-        """Test that view requires login."""
-        url = reverse("projects:delete", kwargs={"pk": self.project.pk})
-        response = self.client.get(url)
-
-        # Should redirect to login
-        assert response.status_code == HTTP_FOUND
-        # Check redirect location (use Location header for type safety)
-        assert "/accounts/login/" in response["Location"]
-
-    def test_owner_can_delete(self):
-        """Test that owner can delete project."""
-        self.client.login(username="testuser", password=TEST_PASSWORD)
-        url = reverse("projects:delete", kwargs={"pk": self.project.pk})
-
-        response = self.client.post(url)
-
-        # Should redirect to list page
-        assert response.status_code == HTTP_FOUND
-
-        # Verify project was deleted
-        assert Project.objects.count() == 0
-
-    def test_non_owner_cannot_delete(self):
-        """Test that non-owner cannot delete project."""
-        self.client.login(username="otheruser", password=TEST_PASSWORD)
-        url = reverse("projects:delete", kwargs={"pk": self.project.pk})
-        response = self.client.get(url)
-
-        # Should return 403 Forbidden
-        assert response.status_code == HTTP_FORBIDDEN
-
-
-@pytest.mark.django_db
 class TestProjectFileSubmitURLView(TestCase):
     """Test ProjectFileSubmitURLView."""
 
@@ -2341,69 +2291,6 @@ class TestProjectUpdateViewStaff(TestCase):
         )
         assert response.status_code == HTTP_OK
         assert response.context["viewing_as_admin"] is True
-
-
-@pytest.mark.django_db
-class TestProjectDeleteViewStaff(TestCase):
-    """Test ProjectDeleteView with staff user access."""
-
-    def setUp(self):
-        """Set up test fixtures."""
-        self.client = Client()
-        self.owner = User.objects.create_user(
-            username="owner", email="owner@example.com", password=TEST_PASSWORD
-        )
-        self.project = Project.objects.create(
-            user=self.owner, name="Test Project", description="Test description"
-        )
-
-    def test_project_delete_staff_access(self):
-        """Test that staff user can access delete view for any project."""
-        staff_user = User.objects.create_user(
-            username="staff",
-            email="staff@example.com",
-            password=TEST_PASSWORD,
-            is_staff=True,
-        )
-        self.client.force_login(staff_user)
-
-        response = self.client.get(
-            reverse("projects:delete", kwargs={"pk": self.project.pk})
-        )
-        assert response.status_code == HTTP_OK
-        assert response.context["viewing_as_admin"] is True
-
-    def test_staff_can_actually_delete_project(self):
-        """Test that staff user can POST to delete another user's project.
-
-        This tests the fix for the FK constraint issue where audit logging
-        would fail after the project was deleted (orphaned FK reference).
-
-        Note: DELETE operations are intentionally NOT logged because:
-        1. The project is deleted, so logging after fails (FK constraint)
-        2. Creating log before delete causes orphaned FK (CASCADE timing)
-        3. A proper fix requires making project FK nullable (SET_NULL)
-        """
-        staff_user = User.objects.create_user(
-            username="staff_delete",
-            email="staff_delete@example.com",
-            password=TEST_PASSWORD,
-            is_staff=True,
-        )
-        self.client.force_login(staff_user)
-
-        project_pk = self.project.pk
-
-        # POST to actually delete the project
-        response = self.client.post(
-            reverse("projects:delete", kwargs={"pk": project_pk})
-        )
-
-        # Should redirect on successful delete
-        assert response.status_code == HTTP_FOUND
-
-        # Verify project is actually deleted
-        assert not Project.objects.filter(pk=project_pk).exists()
 
 
 @pytest.mark.django_db

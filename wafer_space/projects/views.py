@@ -28,7 +28,6 @@ from django.shortcuts import render
 from django.urls import reverse_lazy
 from django.views.decorators.http import require_POST
 from django.views.generic import CreateView
-from django.views.generic import DeleteView
 from django.views.generic import DetailView
 from django.views.generic import ListView
 from django.views.generic import UpdateView
@@ -326,40 +325,6 @@ class ProjectUpdateView(
         # self.object is set after form_valid succeeds
         assert self.object is not None
         return reverse_lazy("projects:detail", kwargs={"pk": self.object.pk})
-
-
-class ProjectDeleteView(
-    LoginRequiredMixin,
-    ProjectOwnerOrStaffMixin,
-    RefuseArchivedProjectMixin,
-    DeleteView,
-):
-    """Delete a project."""
-
-    model = Project
-    template_name = "projects/project_confirm_delete.html"
-    success_url = reverse_lazy("projects:list")
-
-    def get_context_data(self, **kwargs):
-        """Add viewing_as_admin flag to context."""
-        context = super().get_context_data(**kwargs)
-        project = self.get_object()
-        user = self.request.user
-
-        context["viewing_as_admin"] = (
-            user.is_authenticated and user.is_staff and project.user != user
-        )
-
-        return context
-
-    def form_valid(self, form):
-        """Show success message."""
-        project_name = self.object.name
-        messages.success(
-            self.request,
-            f"Project '{project_name}' deleted successfully!",
-        )
-        return super().form_valid(form)
 
 
 class ProjectFileSubmitURLView(
