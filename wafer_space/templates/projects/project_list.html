@@ -55,7 +55,14 @@
                      data-project-row="{{ project.pk }}">
                   <div class="flex-shrink-0 pe-2" style="width: 4.5rem">
                     <span class="fw-semibold">{{ project.shuttle.name }}</span>
-                    {% if project.shuttle and not project.shuttle.is_closed and not project.shuttle.is_test_only and project.shuttle.submission_deadline %}
+                    {# Same rule as shuttles/_shuttle_state.html (#350, #221); no links in this narrow column. #}
+                    {% if project.shuttle.is_test_only %}
+                      <span class="d-block badge bg-info text-dark text-wrap"
+                            title="Designs are checked but never manufactured"><i class="bi bi-clipboard2-check" aria-hidden="true"></i> Test only</span>
+                    {% elif project.shuttle.is_closed %}
+                      <span class="d-block badge bg-secondary text-wrap"
+                            title="{{ project.shuttle.closed_reason }}"><i class="bi bi-lock-fill" aria-hidden="true"></i> Closed</span>
+                    {% elif project.shuttle.submission_deadline %}
                       {% shuttle_deadline project.shuttle.submission_deadline compact=True %}
                     {% endif %}
                   </div>
