@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from wafer_space.projects.models import ARCHIVED_READ_ONLY_MESSAGE
@@ -117,3 +118,34 @@ def test_background_status_update_saves_on_archived_project() -> None:
     project.save(update_fields=["status"])
     project.refresh_from_db()
     assert project.status == Project.Status.MANUFACTURABLE
+
+
+def make_project_with_stale_invalid_data(**kwargs: object) -> Project:
+    """A project whose stored data no longer passes validation."""
+    project = make_project(**kwargs)
+    Project.objects.filter(pk=project.pk).update(
+        name="",
+        repository_url="not a url",
+    )
+    return Project.objects.get(pk=project.pk)
+
+
+def test_archive_works_on_project_with_stale_invalid_data() -> None:
+    """Abandoned projects may hold old data; archiving must not 500."""
+    project = make_project_with_stale_invalid_data()
+    project.archive()
+    project.refresh_from_db()
+    assert project.is_archived
+
+
+def test_unarchive_works_on_project_with_stale_invalid_data() -> None:
+    project = make_project_with_stale_invalid_data(archived_at=timezone.now())
+    project.unarchive()
+    project.refresh_from_db()
+    assert not project.is_archived
+
+
+def test_full_save_still_validates_every_field() -> None:
+    project = make_project_with_stale_invalid_data()
+    with pytest.raises(ValidationError):
+        project.save()

@@ -328,7 +328,12 @@ class ProjectUpdateView(
         return reverse_lazy("projects:detail", kwargs={"pk": self.object.pk})
 
 
-class ProjectDeleteView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DeleteView):
+class ProjectDeleteView(
+    LoginRequiredMixin,
+    ProjectOwnerOrStaffMixin,
+    RefuseArchivedProjectMixin,
+    DeleteView,
+):
     """Delete a project."""
 
     model = Project

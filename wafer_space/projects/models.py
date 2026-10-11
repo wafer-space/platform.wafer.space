@@ -351,8 +351,24 @@ class Project(models.Model):
         return f"{self.name} ({self.user.username})"
 
     def save(self, *args, **kwargs):
-        """Save model, ensuring validation runs first."""
-        self.full_clean()
+        """Save model, ensuring validation runs first.
+
+        With ``update_fields``, only those fields are validated: the save
+        writes nothing else, and stale data in other columns (for example
+        on an abandoned project being archived) must not block it.
+        """
+        update_fields = kwargs.get("update_fields")
+        if update_fields is None:
+            self.full_clean()
+        else:
+            self.full_clean(
+                exclude=[
+                    field.name
+                    for field in self._meta.concrete_fields
+                    if field.name not in update_fields
+                    and field.attname not in update_fields
+                ],
+            )
         super().save(*args, **kwargs)
         # Capture current values for subsequent validation.
         # from_db() only runs when loading from database, but we also need

@@ -27,36 +27,43 @@ if TYPE_CHECKING:
 
 pytestmark = pytest.mark.django_db
 
-# Every projects URL that takes a project pk is either allowed on an
-# archived project or refused. A new pk URL must be added to one of these
-# sets, so a new write view cannot silently skip the read-only rule.
+# Every projects URL that names a project (by ``pk``) or one of its checks
+# (by ``check_id``) is either allowed on an archived project or refused. A
+# new such URL must be added to one of these sets, so a new write view
+# cannot silently skip the read-only rule.
 ALLOWED_ON_ARCHIVED = {
     "detail",  # read only
     "progress",  # read only (AJAX polling)
     "check_status",  # read only (AJAX polling)
-    "cancel_check",  # staff stopping a running check: clean-up
-    "unarchive",  # the one write allowed on an archived project
-    "delete",  # unlinked delete page; its fate is decided in #344
+    "cancel_check",  # staff stopping a check already running: clean-up
+    "unarchive",  # the owner's one write on an archived project
 }
 REFUSED_ON_ARCHIVED = {
     "update",
+    "delete",  # archiving keeps the project and its ID (issue #307)
     "submit",
     "submit_url",
     "archive",
     "compliance_certify",
 }
+REFUSED_ON_ARCHIVED_BY_CHECK = {"check_drc_update_requeue"}
+PROJECT_KWARGS = ("<uuid:pk>", "<int:check_id>")
 
 
-def pk_url_names() -> set[str]:
+def project_url_names() -> set[str]:
     return {
         p.name
         for p in project_urls.urlpatterns
-        if isinstance(p, URLPattern) and p.name and "<uuid:pk>" in str(p.pattern)
+        if isinstance(p, URLPattern)
+        and p.name
+        and any(kwarg in str(p.pattern) for kwarg in PROJECT_KWARGS)
     }
 
 
-def test_every_project_pk_url_is_classified() -> None:
-    assert pk_url_names() == ALLOWED_ON_ARCHIVED | REFUSED_ON_ARCHIVED
+def test_every_project_url_is_classified() -> None:
+    assert project_url_names() == (
+        ALLOWED_ON_ARCHIVED | REFUSED_ON_ARCHIVED | REFUSED_ON_ARCHIVED_BY_CHECK
+    )
 
 
 @pytest.fixture
@@ -107,6 +114,27 @@ def test_refusal_shows_read_only_message(
     url = reverse("projects:update", args=[archived_project.pk])
     response = owner_client.post(url, {"name": "Changed"}, follow=True)
     assert ARCHIVED_READ_ONLY_MESSAGE in response.content.decode()
+
+
+def test_staff_is_refused_on_archived_project(
+    client: Client,
+    archived_project: Project,
+) -> None:
+    """Staff get the same refusal; the Django admin is their only way in."""
+    client.force_login(UserFactory(is_staff=True))
+    url = reverse("projects:update", args=[archived_project.pk])
+    response = client.post(url, {"name": "Changed"}, follow=True)
+    assert ARCHIVED_READ_ONLY_MESSAGE in response.content.decode()
+    archived_project.refresh_from_db()
+    assert archived_project.name == "Archived name"
+
+
+def test_delete_post_keeps_archived_project(
+    owner_client: Client,
+    archived_project: Project,
+) -> None:
+    owner_client.post(reverse("projects:delete", args=[archived_project.pk]))
+    assert Project.objects.filter(pk=archived_project.pk).exists()
 
 
 def test_stranger_gets_403_not_archive_redirect(
