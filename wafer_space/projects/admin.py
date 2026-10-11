@@ -60,7 +60,7 @@ class DuplicateProjectForm(forms.Form):
 
 
 @admin.register(Project)
-class ProjectAdmin(SimpleHistoryAdmin):
+class ProjectAdmin(StaffReadOnlyAdminMixin, SimpleHistoryAdmin):
     """Admin interface for Project model."""
 
     list_display = [
@@ -179,7 +179,7 @@ class ProjectAdmin(SimpleHistoryAdmin):
 
 
 @admin.register(ProjectAccessLog)
-class ProjectAccessLogAdmin(admin.ModelAdmin):
+class ProjectAccessLogAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
     """Admin interface for ProjectAccessLog model.
 
     This admin is read-only to preserve audit log integrity.
@@ -355,7 +355,7 @@ class ManufacturabilityCheckAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
 
 
 @admin.register(PrecheckImageRevision)
-class PrecheckImageRevisionAdmin(admin.ModelAdmin):
+class PrecheckImageRevisionAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
     """Admin for PrecheckImageRevision."""
 
     list_display = [
