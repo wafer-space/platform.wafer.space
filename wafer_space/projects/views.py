@@ -38,6 +38,8 @@ from .exceptions import InvalidStateTransitionError
 from .forms import ProjectFileURLSubmitForm
 from .forms import ProjectForm
 from .mixins import ProjectOwnerOrStaffMixin
+from .mixins import RefuseArchivedProjectMixin
+from .mixins import refuse_if_archived
 from .models import PROJECT_ID_LENGTH
 from .models import DownloadAttempt
 from .models import ManufacturabilityCheck
@@ -221,7 +223,12 @@ class ProjectCreateView(LoginRequiredMixin, CreateView):
         return reverse_lazy("projects:detail", kwargs={"pk": self.object.pk})
 
 
-class ProjectUpdateView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, UpdateView):
+class ProjectUpdateView(
+    LoginRequiredMixin,
+    ProjectOwnerOrStaffMixin,
+    RefuseArchivedProjectMixin,
+    UpdateView,
+):
     """Update an existing project.
 
     Uses unified ProjectForm which adapts field editability:
@@ -327,7 +334,12 @@ class ProjectDeleteView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DeleteView
         return super().form_valid(form)
 
 
-class ProjectFileSubmitURLView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
+class ProjectFileSubmitURLView(
+    LoginRequiredMixin,
+    ProjectOwnerOrStaffMixin,
+    RefuseArchivedProjectMixin,
+    View,
+):
     """Submit a file URL for background download."""
 
     def get_object(self):
@@ -645,7 +657,12 @@ class ManufacturabilityCheckAdminStatusView(
         )
 
 
-class ProjectSubmitView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
+class ProjectSubmitView(
+    LoginRequiredMixin,
+    ProjectOwnerOrStaffMixin,
+    RefuseArchivedProjectMixin,
+    View,
+):
     """Submit a project for manufacturing (POST-only)."""
 
     def get_object(self):
@@ -1014,6 +1031,10 @@ def check_drc_update_requeue(request, check_id):
     # Permission: must own the project or be staff
     if check.project.user != request.user and not request.user.is_staff:
         raise PermissionDenied
+
+    refusal = refuse_if_archived(request, check.project)
+    if refusal is not None:
+        return refusal
 
     try:
         check.create_check_drc_update()

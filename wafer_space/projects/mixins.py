@@ -6,10 +6,15 @@ from typing import TYPE_CHECKING
 from typing import Any
 from typing import cast
 
+from django.contrib import messages
 from django.contrib.auth.mixins import UserPassesTestMixin
+from django.shortcuts import get_object_or_404
+from django.shortcuts import redirect
+from django.views.generic import View
 from django.views.generic.edit import DeleteView
 
 from wafer_space.core.utils import get_client_ip
+from wafer_space.projects.models import ARCHIVED_READ_ONLY_MESSAGE
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectAccessLog
 
@@ -190,3 +195,41 @@ class ProjectOwnerOrStaffMixin(UserPassesTestMixin):
             user_agent=request.headers.get("user-agent", ""),
             view_name=self.__class__.__name__,
         )
+
+
+def refuse_if_archived(
+    request: HttpRequest,
+    project: Project,
+) -> HttpResponseRedirect | None:
+    """Refuse a write to an archived project (issue #307).
+
+    Returns a redirect to the project page with an error message when the
+    project is archived, or None when the caller may proceed. This is the
+    one place the read-only rule lives; RefuseArchivedProjectMixin calls it.
+    """
+    if not project.is_archived:
+        return None
+    messages.error(request, ARCHIVED_READ_ONLY_MESSAGE)
+    return redirect("projects:detail", pk=project.pk)
+
+
+class RefuseArchivedProjectMixin(View):
+    """Refuse every request to a write view of an archived project.
+
+    List it after ProjectOwnerOrStaffMixin in the view's bases, so the
+    owner-or-staff check runs first and strangers still get a 403. The
+    view's URL must carry the project's ``pk``.
+    """
+
+    def dispatch(
+        self,
+        request: HttpRequest,
+        *args: Any,
+        **kwargs: Any,
+    ) -> HttpResponseBase:
+        """Redirect with the read-only message if the project is archived."""
+        project = get_object_or_404(Project, pk=kwargs["pk"])
+        refusal = refuse_if_archived(request, project)
+        if refusal is not None:
+            return refusal
+        return super().dispatch(request, *args, **kwargs)
