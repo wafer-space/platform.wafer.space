@@ -60,6 +60,7 @@ from wafer_space.projects.tasks import do_running
 from wafer_space.projects.tasks import do_starting
 from wafer_space.projects.tasks import download_project_file
 from wafer_space.projects.tasks_checks import MISSING_LAYOUT_ERROR
+from wafer_space.projects.tasks_checks import _container_exists_for_check
 from wafer_space.projects.tasks_checks import _save_output_gds
 from wafer_space.projects.tasks_checks import checks_cleanup_stale_pending_tasks
 from wafer_space.projects.tasks_checks import checks_cleanup_superseded
@@ -1295,8 +1296,86 @@ class TestDoDispatching:
         assert result["reason"] == "status_changed"
 
 
+class TestContainerExistsForCheck:
+    """_container_exists_for_check guards do_starting against duplicates (#189)."""
+
+    @pytest.mark.django_db
+    def test_existing_container_is_found(self) -> None:
+        """Any container labelled with the check's id counts, running or not."""
+        check = ManufacturabilityCheckFactory()
+        client = MagicMock()
+        stopped = MagicMock(short_id="abc", status="exited")
+        client.containers.list.return_value = [stopped]
+
+        found = _container_exists_for_check(client, check, logging.getLogger("t"))
+
+        client.containers.list.assert_called_once_with(
+            all=True, filters={"label": f"wafer.space.check_id={check.id}"}
+        )
+        assert found is True
+
+    @pytest.mark.django_db
+    def test_no_container(self) -> None:
+        """No labelled container means none exists."""
+        client = MagicMock()
+        client.containers.list.return_value = []
+
+        found = _container_exists_for_check(
+            client, ManufacturabilityCheckFactory(), logging.getLogger("t")
+        )
+
+        assert found is False
+
+    @pytest.mark.django_db
+    def test_docker_query_failure_propagates(self) -> None:
+        """Fail closed: an unanswered query must not let a duplicate start.
+
+        do_starting's decorator then errors the check and checks_retry
+        runs it again, instead of creating a container blind.
+        """
+        client = MagicMock()
+        client.containers.list.side_effect = docker.errors.APIError("boom")
+
+        with pytest.raises(docker.errors.APIError):
+            _container_exists_for_check(
+                client, ManufacturabilityCheckFactory(), logging.getLogger("t")
+            )
+
+
 class TestDoStarting:
     """Test do_starting work task."""
+
+    @pytest.mark.django_db
+    def test_existing_container_aborts_without_creating_another(self, settings) -> None:
+        """A second do_starting for a check never creates a second container.
+
+        The check goes to ERROR instead (checks_retry runs it again as a new
+        check); the orphan cleanup removes the old container (#189).
+        """
+        settings.DOCKER_SERVERS = [
+            {"id": "test-local", "url": "unix:///test.sock", "max_concurrent": 4},
+        ]
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.STARTING,
+            docker_server_id="test-local",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_starting"
+        )
+        mock_client = MagicMock()
+        mock_client.containers.list.return_value = [MagicMock(short_id="old")]
+
+        with patch(
+            "wafer_space.projects.tasks_checks.get_docker_client",
+            return_value=mock_client,
+        ):
+            do_starting(check.id)
+
+        check.refresh_from_db()
+        assert (check.status, mock_client.containers.create.called) == (
+            ManufacturabilityCheck.Status.ERROR,
+            False,
+        )
 
     @pytest.mark.django_db
     def test_creates_and_starts_container(self, tmp_path, settings) -> None:

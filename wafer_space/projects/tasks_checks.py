@@ -1011,20 +1011,16 @@ def _container_exists_for_check(
 
     Returns:
         True if any container labeled with this check's ID exists.
-        False if none found, or if the Docker query fails (fail-open:
-        container creation will surface any real Docker problems).
+
+    Raises:
+        docker.errors.DockerException: If the query fails. Fail closed: an
+            unanswered query must not let a duplicate start; do_starting's
+            decorator errors the check and checks_retry runs it again.
     """
-    try:
-        containers = client.containers.list(
-            all=True,  # Include stopped containers
-            filters={"label": f"wafer.space.check_id={check.id}"},
-        )
-    except docker.errors.DockerException:
-        logger.warning(
-            "[do_starting] Could not query existing containers for check %s",
-            check.id,
-        )
-        return False
+    containers = client.containers.list(
+        all=True,  # Include stopped containers
+        filters={"label": f"wafer.space.check_id={check.id}"},
+    )
 
     if containers:
         container_info = [(c.short_id, c.status) for c in containers]
