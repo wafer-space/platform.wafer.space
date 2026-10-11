@@ -697,10 +697,19 @@ class ProjectSubmitView(
             # Attempt to submit the project
             project.submit()
 
-            messages.success(
-                request,
-                f"Project '{project.name}' submitted successfully for manufacturing!",
-            )
+            if project.shuttle is not None and project.shuttle.is_test_only:
+                # #221: a test-only shuttle checks designs, never makes them.
+                messages.success(
+                    request,
+                    f"Submitted on {project.shuttle.name} (test only): "
+                    "checked, not manufactured",
+                )
+            else:
+                messages.success(
+                    request,
+                    f"Project '{project.name}' submitted successfully for "
+                    "manufacturing!",
+                )
 
         except ValidationError as e:
             # Handle validation errors with user-friendly messages
@@ -1039,9 +1048,14 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
             ).first()
         context["latest_precheck_revision"] = latest_revision
 
-        # Compute summary statistics from the projects list
+        # Compute summary statistics from the projects list. Projects on a
+        # test-only shuttle are listed but never counted (#221).
         projects = context["projects"]
-        context["summary"] = self._compute_summary_stats(projects, latest_digest)
+        counted = [
+            p for p in projects if p.shuttle is None or not p.shuttle.is_test_only
+        ]
+        context["test_only_count"] = len(projects) - len(counted)
+        context["summary"] = self._compute_summary_stats(counted, latest_digest)
 
         return context
 

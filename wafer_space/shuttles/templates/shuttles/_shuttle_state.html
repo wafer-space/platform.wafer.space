@@ -7,6 +7,12 @@
     <span class="badge bg-secondary"><i class="bi bi-lock-fill" aria-hidden="true"></i> Closed</span>
   {% else %}
     <span class="badge bg-success">Open</span>
+    {% if shuttle.is_test_only %}
+      {# #221: checked, never manufactured. #}
+      <span class="badge bg-info text-dark"
+            title="Designs are checked but never manufactured"><i class="bi bi-clipboard2-check" aria-hidden="true"></i> Test only</span>
+      <span class="visually-hidden">Designs are checked but never manufactured</span>
+    {% endif %}
     {% if shuttle.submission_deadline %}
       <span class="small">{% shuttle_deadline shuttle.submission_deadline label="GDS submission deadline" %}</span>
     {% endif %}
