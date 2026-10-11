@@ -3117,7 +3117,7 @@ class TestCheckLogView:
     def test_saved_log_file_is_streamed_not_redirected(
         self, client, settings, tmp_path
     ) -> None:
-        """/media/ has no access control, so the view never redirects there."""
+        """User files are private: the view never redirects to a public URL."""
         settings.MEDIA_ROOT = str(tmp_path)
         check = ManufacturabilityCheckFactory(processing_logs="db copy\n")
         check.log_file.save("check.log", ContentFile(b"saved log\n"), save=True)
@@ -3130,6 +3130,44 @@ class TestCheckLogView:
             response.has_header("Location"),
             self._body(response),
         ) == (HTTP_OK, False, b"saved log\n")
+
+    def test_saved_log_file_behind_nginx_is_an_x_accel_redirect(
+        self, client, settings
+    ) -> None:
+        """Deployed, nginx sends the saved log from its internal location."""
+        settings.MEDIA_X_ACCEL_REDIRECT_PREFIX = "/protected-media/"
+        check = ManufacturabilityCheckFactory(processing_logs="db copy\n")
+        check.log_file.save("check.log", ContentFile(b"saved log\n"), save=True)
+        client.force_login(check.project.user)
+
+        response = client.get(self._url(check))
+
+        assert (
+            response["X-Accel-Redirect"],
+            response["Content-Type"],
+            response["Content-Disposition"],
+        ) == (
+            "/protected-media/" + check.log_file.name,
+            "text/plain; charset=utf-8",
+            f'attachment; filename="check_{check.pk}.log"',
+        )
+
+    def test_missing_saved_log_falls_back_to_the_db_copy(
+        self, client, settings
+    ) -> None:
+        """A row naming a file that is gone still serves the log, never a 404."""
+        settings.MEDIA_X_ACCEL_REDIRECT_PREFIX = "/protected-media/"
+        check = ManufacturabilityCheckFactory(processing_logs="db copy\n")
+        check.log_file.save("check.log", ContentFile(b"saved log\n"), save=True)
+        check.log_file.storage.delete(check.log_file.name)
+        client.force_login(check.project.user)
+
+        response = client.get(self._url(check))
+
+        assert (response.has_header("X-Accel-Redirect"), self._body(response)) == (
+            False,
+            b"db copy\n",
+        )
 
     def test_other_users_are_refused(self, client) -> None:
         """Someone who cannot see the project cannot read its logs."""

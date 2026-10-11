@@ -19,6 +19,7 @@ from .factories import ProjectFileFactory
 
 if TYPE_CHECKING:
     from django.test import Client
+    from pytest_django.fixtures import SettingsWrapper
 
     from wafer_space.projects.models import ProjectFile
 
@@ -129,3 +130,30 @@ def test_extracted_archive_downloads_under_processed_name(client: Client) -> Non
     client.force_login(revision.project.user)
     response = client.get(download_url(revision))
     assert response["Content-Disposition"] == ('attachment; filename="chip_top.gds"')
+
+
+def test_behind_nginx_answers_with_x_accel_redirect(
+    client: Client, settings: SettingsWrapper
+) -> None:
+    """Deployed, nginx sends the layout; gunicorn does not stream it (coord-10)."""
+    settings.MEDIA_X_ACCEL_REDIRECT_PREFIX = "/protected-media/"
+    revision = stored_revision()
+    client.force_login(revision.project.user)
+    response = client.get(download_url(revision))
+    assert (response["X-Accel-Redirect"], response.content) == (
+        "/protected-media/" + revision.file.name,
+        b"",
+    )
+
+
+def test_behind_nginx_stranger_still_gets_403(
+    client: Client, settings: SettingsWrapper
+) -> None:
+    settings.MEDIA_X_ACCEL_REDIRECT_PREFIX = "/protected-media/"
+    revision = stored_revision()
+    client.force_login(UserFactory())
+    response = client.get(download_url(revision))
+    assert (response.status_code, response.has_header("X-Accel-Redirect")) == (
+        HTTP_FORBIDDEN,
+        False,
+    )

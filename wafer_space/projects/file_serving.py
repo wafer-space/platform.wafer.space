@@ -16,7 +16,6 @@ Read-only, as the web process must be.
 
 from __future__ import annotations
 
-import mimetypes
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import quote
@@ -44,19 +43,20 @@ def protected_file_response(
     field_file: FieldFile,
     *,
     filename: str,
-    content_type: str | None = None,
+    content_type: str = DEFAULT_CONTENT_TYPE,
 ) -> HttpResponseBase:
     """Return a response that downloads ``field_file`` as ``filename``.
 
     The caller must already have checked permission. Raises Http404 when
     the field is empty or its file is missing, so a stale row is a 404 and
     not a 500 (or an nginx 404 with no explanation in Django's log).
+    The type defaults to octet-stream: these are attachments, and guessing
+    from the host's mime.types differs between machines (it calls an OASIS
+    layout "application/vnd.fujitsu.oasys").
     """
     if not stored_file_exists(field_file):
         msg = "This file is not stored on the platform"
         raise Http404(msg)
-    if content_type is None:
-        content_type = mimetypes.guess_type(filename)[0] or DEFAULT_CONTENT_TYPE
 
     prefix = settings.MEDIA_X_ACCEL_REDIRECT_PREFIX
     if prefix is None:
