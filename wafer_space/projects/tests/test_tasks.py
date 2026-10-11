@@ -31,6 +31,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from wafer_space.projects import tasks_checks
+from wafer_space.projects.exceptions import TaskExecutionError
 from wafer_space.projects.file_type_utils import GDS_SIGNATURE
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
@@ -2068,6 +2069,30 @@ class TestDoRunning:
         assert result["status"] == "skipped"
 
 
+PRECHECK_SUCCESS_LOGS = """Check for Magic DRC errors clear.
+Check for KLayout DRC errors clear.
+Precheck successfully completed."""
+
+
+def _tar_with(members: dict[str, bytes]) -> bytes:
+    """A tar archive, as container.get_archive() streams it."""
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w") as tar:
+        for name, content in members.items():
+            info = tarfile.TarInfo(name=name)
+            info.size = len(content)
+            tar.addfile(info, io.BytesIO(content))
+    return buffer.getvalue()
+
+
+def _container_with_layout_only(path: str) -> tuple:
+    """get_archive() for a container holding only the precheck output layout."""
+    if path == "/output/design.oas":
+        return iter([_tar_with({"design.oas": b"fake-oasis-layout"})]), {}
+    msg = "no archive"
+    raise docker.errors.NotFound(msg)
+
+
 class TestDoAnalyzing:
     """Test do_analyzing work task."""
 
@@ -2096,7 +2121,7 @@ Precheck successfully completed."""
         # Mock container that has no outputs
         mock_container = MagicMock()
         mock_container.status = "exited"
-        mock_container.get_archive.side_effect = docker.errors.NotFound("no archive")
+        mock_container.get_archive.side_effect = _container_with_layout_only
         mock_client = MagicMock()
         mock_client.containers.get.return_value = mock_container
 
@@ -2182,7 +2207,7 @@ Precheck successfully completed."""
         # Mock container that has no outputs
         mock_container = MagicMock()
         mock_container.status = "exited"
-        mock_container.get_archive.side_effect = docker.errors.NotFound("no archive")
+        mock_container.get_archive.side_effect = _container_with_layout_only
         mock_client = MagicMock()
         mock_client.containers.get.return_value = mock_container
 
@@ -2276,6 +2301,66 @@ Precheck successfully completed."""
         with check.output_gds.open("rb") as f:
             assert f.read() == oas_content
         assert check.output_gds_sha256 == hashlib.sha256(oas_content).hexdigest()
+
+    @pytest.mark.django_db
+    def test_passing_check_without_layout_errors(self) -> None:
+        """No manufacturable verdict without the layout the reticle needs (#352).
+
+        Every precheck run is asked for --output /output/design.oas, so a
+        pass with no layout means the layout was lost: the check goes to
+        ERROR, where checks_retry runs it again.
+        """
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            docker_exit_code=0,
+            processing_logs=PRECHECK_SUCCESS_LOGS,
+            docker_server_id="test-local",
+            docker_container_id="test-container-id",
+        )
+        ManufacturabilityCheckTask.objects.create(
+            manufacturability_check=check, task_id="test", task_name="do_analyzing"
+        )
+        mock_container = MagicMock()
+        mock_container.status = "exited"
+        mock_container.get_archive.side_effect = docker.errors.NotFound("no archive")
+        mock_client = MagicMock()
+        mock_client.containers.get.return_value = mock_container
+
+        with patch(
+            "wafer_space.projects.tasks_checks.get_docker_client",
+            return_value=mock_client,
+        ):
+            do_analyzing(check.id)
+
+        check.refresh_from_db()
+        assert (check.status, check.is_manufacturable) == (
+            ManufacturabilityCheck.Status.ERROR,
+            None,
+        )
+
+    @pytest.mark.django_db
+    @pytest.mark.parametrize(
+        "tar_bytes",
+        [
+            pytest.param(b"this is not a tar archive", id="corrupt-tar"),
+            pytest.param(_tar_with({"notes.txt": b"no layout here"}), id="no-oas"),
+        ],
+    )
+    def test_save_output_rejects_unusable_archive(self, tar_bytes: bytes) -> None:
+        """An archive that holds no readable layout raises (#352).
+
+        It used to log a warning and return, so the check finished as if
+        precheck had written no layout at all.
+        """
+        mock_container = MagicMock()
+        mock_container.get_archive.return_value = (iter([tar_bytes]), {})
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.ANALYZING,
+            docker_server_id="test-local",
+        )
+
+        with pytest.raises(TaskExecutionError):
+            _save_output_gds(check, mock_container, logging.getLogger("test"))
 
     @pytest.mark.django_db
     def test_save_output_skips_non_file_members(self) -> None:

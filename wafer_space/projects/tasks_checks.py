@@ -1619,19 +1619,14 @@ def _save_output_gds(
                             )
                     break
     except tarfile.TarError as e:
-        logger.warning(
-            "Failed to extract layout from tar for check %s: %s", check.id, e
-        )
         tar_path.unlink(missing_ok=True)
-        return
+        msg = f"Output layout archive for check {check.id} is unreadable: {e}"
+        raise TaskExecutionError(reason="output_layout_unreadable", message=msg) from e
 
     if not layout_path.exists():
-        logger.warning(
-            "No OAS file found in /output/design.oas archive for check %s",
-            check.id,
-        )
         tar_path.unlink(missing_ok=True)
-        return
+        msg = f"Output layout archive for check {check.id} holds no .oas file"
+        raise TaskExecutionError(reason="output_layout_missing_oas", message=msg)
 
     # Calculate checksum of actual OAS file
     hasher = MultiHasher.from_file(layout_path, algorithms=["sha256"])
@@ -1789,6 +1784,11 @@ def _extract_container_outputs(
     return warnings
 
 
+MISSING_LAYOUT_ERROR = (
+    "Precheck passed but no output layout (/output/design.oas) was saved"
+)
+
+
 def _finalize_analyzing(
     check: ManufacturabilityCheck,
     failure_type: str,
@@ -1809,6 +1809,13 @@ def _finalize_analyzing(
         Result dict with status and details.
     """
     logger = logging.getLogger(__name__)
+    if failure_type == "success" and not check.output_gds:
+        # Every precheck run is asked for --output /output/design.oas, and the
+        # reticle package is built from it: a pass without it means the layout
+        # was lost, so error the check (checks_retry re-runs it) instead of
+        # recording a manufacturable verdict nothing can be built from (#352).
+        failure_type = "system"
+        error_messages = [*error_messages, MISSING_LAYOUT_ERROR]
     outputs_saved = {
         "log_file": bool(check.log_file),
         "runs_archive": bool(check.runs_archive),
