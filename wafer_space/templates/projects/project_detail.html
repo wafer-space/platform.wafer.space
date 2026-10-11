@@ -10,16 +10,56 @@
     <div class="row">
       <div class="col-sm-12">
         {% include "projects/_admin_warning_banner.html" %}
-        {# Page header with title and admin button #}
+        {% if project.is_archived %}
+          <div class="alert alert-secondary d-flex justify-content-between align-items-center"
+               role="status"
+               data-archived-banner>
+            <div>
+              <i class="bi bi-archive me-2" aria-hidden="true"></i>
+              This project was archived on {{ project.archived_at|date:"Y-m-d" }}. It is read-only.
+            </div>
+            <form action="{% url 'projects:unarchive' pk=project.pk %}" method="post">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-box-arrow-up"></i> Unarchive
+              </button>
+            </form>
+          </div>
+        {% endif %}
+        {# Page header with title, archive and admin buttons #}
         <div class="d-flex justify-content-between align-items-center mb-3">
           <h2>{{ project.name }}</h2>
-          {% if request.user.is_staff %}
-            <a class="btn btn-secondary"
-               href="{% url 'admin:projects_project_change' project.pk %}"
-               role="button">
-              <i class="bi bi-gear"></i> Admin
-            </a>
-          {% endif %}
+          <div class="d-flex gap-2">
+            {% if not project.is_archived %}
+              {% if can_archive.0 %}
+                <form action="{% url 'projects:archive' pk=project.pk %}"
+                      method="post"
+                      onsubmit="return confirm('Archive this project? It will move to the end of your project list and become read-only. Nothing is deleted and you can unarchive it at any time.');">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-outline-secondary">
+                    <i class="bi bi-archive"></i> Archive
+                  </button>
+                </form>
+              {% else %}
+                <span class="d-inline-block"
+                      tabindex="0"
+                      data-bs-toggle="tooltip"
+                      data-bs-placement="top"
+                      title="{{ can_archive.1 }}">
+                  <button type="button" class="btn btn-outline-secondary" disabled>
+                    <i class="bi bi-archive"></i> Archive
+                  </button>
+                </span>
+              {% endif %}
+            {% endif %}
+            {% if request.user.is_staff %}
+              <a class="btn btn-secondary"
+                 href="{% url 'admin:projects_project_change' project.pk %}"
+                 role="button">
+                <i class="bi bi-gear"></i> Admin
+              </a>
+            {% endif %}
+          </div>
         </div>
         {# Row 1: Project Info | Meta Info | Project Status (three columns) #}
         <div class="row mb-3">
@@ -106,11 +146,20 @@
         <div class="card mb-3">
           <div class="card-header d-flex justify-content-between align-items-center">
             <h6 class="mb-0">Project Details</h6>
-            <a class="btn btn-sm btn-primary"
-               href="{% url 'projects:update' pk=project.pk %}"
-               role="button">
-              <i class="bi bi-pencil"></i> Edit
-            </a>
+            {% if project.is_archived %}
+              <button type="button"
+                      class="btn btn-sm btn-primary"
+                      disabled
+                      title="{{ archived_read_only_message }}">
+                <i class="bi bi-pencil"></i> Edit
+              </button>
+            {% else %}
+              <a class="btn btn-sm btn-primary"
+                 href="{% url 'projects:update' pk=project.pk %}"
+                 role="button">
+                <i class="bi bi-pencil"></i> Edit
+              </a>
+            {% endif %}
           </div>
           <div class="card-body">
             {% if project.description %}
@@ -224,11 +273,20 @@
                 Upload a design file to get started.
               {% endif %}
             </p>
-            <a class="btn btn-primary btn-lg"
-               href="{% url 'projects:submit_url' pk=project.pk %}"
-               role="button">
-              <i class="bi bi-link"></i> Submit New File URL
-            </a>
+            {% if project.is_archived %}
+              <button type="button"
+                      class="btn btn-primary btn-lg"
+                      disabled
+                      title="{{ archived_read_only_message }}">
+                <i class="bi bi-link"></i> Submit New File URL
+              </button>
+            {% else %}
+              <a class="btn btn-primary btn-lg"
+                 href="{% url 'projects:submit_url' pk=project.pk %}"
+                 role="button">
+                <i class="bi bi-link"></i> Submit New File URL
+              </a>
+            {% endif %}
           </div>
         </div>
         {# Error Display Section #}
@@ -248,11 +306,20 @@
               </p>
               <p class="text-muted small">{{ active_file.original_url }}</p>
               <div class="mt-3">
-                <a class="btn btn-warning"
-                   href="{% url 'projects:submit_url' pk=project.pk %}"
-                   role="button">
-                  <i class="bi bi-arrow-clockwise"></i> Retry Download
-                </a>
+                {% if project.is_archived %}
+                  <button type="button"
+                          class="btn btn-warning"
+                          disabled
+                          title="{{ archived_read_only_message }}">
+                    <i class="bi bi-arrow-clockwise"></i> Retry Download
+                  </button>
+                {% else %}
+                  <a class="btn btn-warning"
+                     href="{% url 'projects:submit_url' pk=project.pk %}"
+                     role="button">
+                    <i class="bi bi-arrow-clockwise"></i> Retry Download
+                  </a>
+                {% endif %}
               </div>
             </div>
           </div>

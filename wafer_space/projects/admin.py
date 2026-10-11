@@ -85,6 +85,7 @@ class ProjectAdmin(StaffReadOnlyAdminMixin, SimpleHistoryAdmin):
         "license_type",
         "created_at",
         "updated_at",
+        "archived_at",
     ]
     search_fields = [
         "name",
@@ -96,7 +97,7 @@ class ProjectAdmin(StaffReadOnlyAdminMixin, SimpleHistoryAdmin):
         "repository_url",
         "other_license_spdx_id",
     ]
-    readonly_fields = ["created_at", "updated_at"]
+    readonly_fields = ["created_at", "updated_at", "archived_at"]
 
     def history_form_view(
         self,

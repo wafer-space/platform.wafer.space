@@ -15,8 +15,11 @@ from django.contrib.auth.mixins import UserPassesTestMixin
 from django.core.exceptions import PermissionDenied
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
+from django.db.models import BooleanField
+from django.db.models import ExpressionWrapper
 from django.db.models import OuterRef
 from django.db.models import Prefetch
+from django.db.models import Q
 from django.db.models import Subquery
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
@@ -38,6 +41,9 @@ from .exceptions import InvalidStateTransitionError
 from .forms import ProjectFileURLSubmitForm
 from .forms import ProjectForm
 from .mixins import ProjectOwnerOrStaffMixin
+from .mixins import RefuseArchivedProjectMixin
+from .mixins import refuse_if_archived
+from .models import ARCHIVED_READ_ONLY_MESSAGE
 from .models import PROJECT_ID_LENGTH
 from .models import DownloadAttempt
 from .models import ManufacturabilityCheck
@@ -50,6 +56,11 @@ from .services import ProjectFileService
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from uuid import UUID
+
+    from django.http import HttpRequest
+    from django.http import HttpResponse
+
     from wafer_space.users.models import User
 
 
@@ -72,10 +83,20 @@ class ProjectListView(LoginRequiredMixin, ListView):
 
         if user.is_staff:
             # Staff users see all projects
-            return Project.objects.all().select_related("user").order_by("-created_at")
+            projects = Project.objects.all().select_related("user")
+        else:
+            # Regular users see only their own projects
+            projects = Project.objects.filter(user=user)
 
-        # Regular users see only their own projects
-        return Project.objects.filter(user=user).order_by("-created_at")
+        # Archived projects come last, each group newest first (issue #307).
+        is_archived = ExpressionWrapper(
+            Q(archived_at__isnull=False),
+            output_field=BooleanField(),
+        )
+        return projects.annotate(is_archived_sort=is_archived).order_by(
+            "is_archived_sort",
+            "-created_at",
+        )
 
 
 class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView):
@@ -95,6 +116,10 @@ class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView
         context["viewing_as_admin"] = (
             user.is_authenticated and user.is_staff and project.user != user
         )
+
+        # Archive controls and read-only state (issue #307)
+        context["can_archive"] = project.can_be_archived_by(user)
+        context["archived_read_only_message"] = ARCHIVED_READ_ONLY_MESSAGE
 
         # Get submitted file (file that was submitted for manufacturing)
         submitted_file = project.submitted_file
@@ -221,7 +246,12 @@ class ProjectCreateView(LoginRequiredMixin, CreateView):
         return reverse_lazy("projects:detail", kwargs={"pk": self.object.pk})
 
 
-class ProjectUpdateView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, UpdateView):
+class ProjectUpdateView(
+    LoginRequiredMixin,
+    ProjectOwnerOrStaffMixin,
+    RefuseArchivedProjectMixin,
+    UpdateView,
+):
     """Update an existing project.
 
     Uses unified ProjectForm which adapts field editability:
@@ -298,7 +328,12 @@ class ProjectUpdateView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, UpdateView
         return reverse_lazy("projects:detail", kwargs={"pk": self.object.pk})
 
 
-class ProjectDeleteView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DeleteView):
+class ProjectDeleteView(
+    LoginRequiredMixin,
+    ProjectOwnerOrStaffMixin,
+    RefuseArchivedProjectMixin,
+    DeleteView,
+):
     """Delete a project."""
 
     model = Project
@@ -327,7 +362,12 @@ class ProjectDeleteView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DeleteView
         return super().form_valid(form)
 
 
-class ProjectFileSubmitURLView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
+class ProjectFileSubmitURLView(
+    LoginRequiredMixin,
+    ProjectOwnerOrStaffMixin,
+    RefuseArchivedProjectMixin,
+    View,
+):
     """Submit a file URL for background download."""
 
     def get_object(self):
@@ -549,6 +589,13 @@ class ManufacturabilityCheckCancelView(LoginRequiredMixin, UserPassesTestMixin, 
         """Handle check cancellation."""
         project = get_object_or_404(Project, pk=pk)
 
+        # Owners cannot change an archived project; staff may still stop a
+        # check that was running when it was archived (issue #307).
+        if not request.user.is_staff:
+            refusal = refuse_if_archived(request, project)
+            if refusal is not None:
+                return refusal
+
         # Get the specific check by ID
         check = get_object_or_404(
             ManufacturabilityCheck,
@@ -645,7 +692,12 @@ class ManufacturabilityCheckAdminStatusView(
         )
 
 
-class ProjectSubmitView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
+class ProjectSubmitView(
+    LoginRequiredMixin,
+    ProjectOwnerOrStaffMixin,
+    RefuseArchivedProjectMixin,
+    View,
+):
     """Submit a project for manufacturing (POST-only)."""
 
     def get_object(self):
@@ -685,6 +737,51 @@ class ProjectSubmitView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
             )
 
         # Always redirect back to project detail page
+        return redirect("projects:detail", pk=pk)
+
+
+class ProjectArchiveView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
+    """Archive a project (POST-only). Nothing is deleted (issue #307)."""
+
+    http_method_names = ["post"]
+
+    def get_object(self) -> Project:
+        """Get the project object for permission checking."""
+        return get_object_or_404(Project, pk=self.kwargs["pk"])
+
+    def post(self, request: HttpRequest, pk: UUID) -> HttpResponse:
+        """Archive the project if the archive rules allow it."""
+        project = self.get_object()
+        allowed, reason = project.can_be_archived_by(request.user)
+        if not allowed:
+            messages.error(request, f"Cannot archive project: {reason}")
+        else:
+            project.archive()
+            messages.success(
+                request,
+                f"Project '{project.name}' archived. It is read-only and "
+                "listed last on your projects page.",
+            )
+        return redirect("projects:detail", pk=pk)
+
+
+class ProjectUnarchiveView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
+    """Unarchive a project (POST-only) (issue #307)."""
+
+    http_method_names = ["post"]
+
+    def get_object(self) -> Project:
+        """Get the project object for permission checking."""
+        return get_object_or_404(Project, pk=self.kwargs["pk"])
+
+    def post(self, request: HttpRequest, pk: UUID) -> HttpResponse:
+        """Make the project active again."""
+        project = self.get_object()
+        if not project.is_archived:
+            messages.info(request, "Project is not archived.")
+        else:
+            project.unarchive()
+            messages.success(request, f"Project '{project.name}' unarchived.")
         return redirect("projects:detail", pk=pk)
 
 
@@ -1014,6 +1111,10 @@ def check_drc_update_requeue(request, check_id):
     # Permission: must own the project or be staff
     if check.project.user != request.user and not request.user.is_staff:
         raise PermissionDenied
+
+    refusal = refuse_if_archived(request, check.project)
+    if refusal is not None:
+        return refusal
 
     try:
         check.create_check_drc_update()

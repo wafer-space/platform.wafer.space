@@ -200,3 +200,15 @@ class TestShuttleStatusDrcRecheckExcluded:
             Shuttle.Status.LOCKED,
         ):
             assert status not in excluded
+
+
+@pytest.mark.django_db
+def test_reserve_refuses_archived_project() -> None:
+    """Archived projects never get a slot (issue #307)."""
+    shuttle = Shuttle.objects.create(name="G881", description="Archive test")
+    slot = ShuttleSlot.objects.create(shuttle=shuttle)
+    project = ProjectFactory(shuttle=shuttle, archived_at=timezone.now())
+    with pytest.raises(ValueError, match="archived"):
+        slot.reserve(project, UserFactory(is_staff=True))
+    slot.refresh_from_db()
+    assert slot.project is None

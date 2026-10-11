@@ -14,6 +14,7 @@ from django.views.decorators.http import require_http_methods
 from wafer_space.core.utils import get_client_ip
 
 from .forms import ComplianceCertificationForm
+from .mixins import refuse_if_archived
 from .models import Project
 from .models import ProjectComplianceCertification
 
@@ -37,6 +38,9 @@ def compliance_certification_create(request: HttpRequest, pk: UUID) -> HttpRespo
         Rendered template or redirect to shuttle list
     """
     project = get_object_or_404(Project, pk=pk, user=request.user)
+    refusal = refuse_if_archived(request, project)
+    if refusal is not None:
+        return refusal
 
     # The latest file revision must be manufacturable (its latest finished
     # check passed) - see docs/manufacturable_vs_submitted.md. A check on an

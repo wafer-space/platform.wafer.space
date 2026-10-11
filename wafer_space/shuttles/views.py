@@ -71,7 +71,9 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
         # cached per-instance manufacturability properties are only
         # computed once per project.
         all_projects = list(
-            shuttle.projects.select_related("user").prefetch_related("shuttle_slots")
+            shuttle.projects.filter(archived_at__isnull=True)
+            .select_related("user")
+            .prefetch_related("shuttle_slots")
         )
         projects_by_pk = {p.pk: p for p in all_projects}
 

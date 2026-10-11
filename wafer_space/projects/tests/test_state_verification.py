@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.utils import timezone
 
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import Project
@@ -272,3 +273,35 @@ class DownloadStateVerificationTests(TestCase):
         assert first_attempt.worker_pid == TEST_WORKER_PID
         assert first_attempt.worker_hostname == TEST_WORKER_HOSTNAME
         assert first_attempt.task_started_at is not None
+
+
+@pytest.mark.django_db
+@patch("wafer_space.projects.tasks_download.is_download_task_actively_running")
+@patch("wafer_space.projects.tasks_download.is_download_task_queued")
+@patch("wafer_space.projects.tasks.download_project_file.delay")
+def test_no_download_started_for_archived_project(
+    mock_delay,
+    mock_is_queued,
+    mock_is_running,
+):
+    """Archived projects are read-only: the scanner skips them (issue #307)."""
+    user = User.objects.create_user(username="archiver", password=TEST_PASSWORD)
+    project = Project.objects.create(
+        user=user,
+        name="Archived",
+        archived_at=timezone.now(),
+    )
+    project_file = ProjectFile.objects.create(
+        project=project,
+        source_url="http://example.com/test.gds",
+        is_active=True,
+    )
+    mock_is_queued.return_value = True
+    mock_is_running.return_value = True
+
+    result = ensure_download_tasks_queued()
+
+    mock_delay.assert_not_called()
+    assert result["created_tasks"] == 0
+    project_file.refresh_from_db()
+    assert project_file.download_task_id in ("", None)

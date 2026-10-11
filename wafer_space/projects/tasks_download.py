@@ -1948,8 +1948,11 @@ def ensure_download_tasks_queued():
 
     # Find PENDING files: no task_id AND is_active
     # (download_status property returns PENDING when no task_id and no attempts)
+    # Archived projects are read-only: never start a new download for them
+    # (issue #307).
     pending_files = ProjectFile.objects.filter(
         is_active=True,
+        project__archived_at__isnull=True,
     ).filter(
         models.Q(download_task_id="") | models.Q(download_task_id__isnull=True),
     )

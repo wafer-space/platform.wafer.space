@@ -375,6 +375,11 @@ class ShuttleSlot(models.Model):
         """
         warnings = []
 
+        # Archived projects are excluded from slot allocation (issue #307).
+        if project.is_archived:
+            msg = "Project is archived and cannot be assigned to a slot"
+            raise ValueError(msg)
+
         # Handle reassignment case
         if self.status == self.Status.RESERVED:
             if self.project == project:

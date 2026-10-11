@@ -22,7 +22,7 @@
     </form>
   {% endif %}
   {# Requeue button for outdated precheck version #}
-  {% if check.is_using_latest_precheck is False %}
+  {% if check.is_using_latest_precheck is False and not check.project.is_archived %}
     <form method="post"
           action="{% url 'projects:check_drc_update_requeue' check_id=check.pk %}"
           class="d-inline ms-2">

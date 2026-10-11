@@ -48,6 +48,11 @@ _BYTES_PER_KB = 1024.0
 # Project ID validation constant
 PROJECT_ID_LENGTH = 4
 
+# Shown whenever a write to an archived project is refused (issue #307).
+ARCHIVED_READ_ONLY_MESSAGE = (
+    "This project is archived and cannot be changed. Unarchive it first."
+)
+
 
 def validate_project_id(value: str) -> None:
     """Validate project ID is 4 alphanumeric uppercase characters."""
@@ -165,6 +170,7 @@ class Project(models.Model):
             "updated_at",
             "submitted_at",
             "submitted_file",
+            "archived_at",
             "proprietary_terms_cached",
             "proprietary_terms_cached_at",
         }
@@ -247,6 +253,15 @@ class Project(models.Model):
         blank=True,
         related_name="submitted_for_project",
         help_text="The file that was submitted for manufacturing",
+    )
+
+    # Archiving (Issue #307): deletes nothing. An archived project sorts last
+    # on the project list, is read-only, and is excluded from slot allocation.
+    archived_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="When the project was archived; empty while active.",
     )
 
     # NOTE: Manufacturability is a property of a file revision, not of the
@@ -336,8 +351,24 @@ class Project(models.Model):
         return f"{self.name} ({self.user.username})"
 
     def save(self, *args, **kwargs):
-        """Save model, ensuring validation runs first."""
-        self.full_clean()
+        """Save model, ensuring validation runs first.
+
+        With ``update_fields``, only those fields are validated: the save
+        writes nothing else, and stale data in other columns (for example
+        on an abandoned project being archived) must not block it.
+        """
+        update_fields = kwargs.get("update_fields")
+        if update_fields is None:
+            self.full_clean()
+        else:
+            self.full_clean(
+                exclude=[
+                    field.name
+                    for field in self._meta.concrete_fields
+                    if field.name not in update_fields
+                    and field.attname not in update_fields
+                ],
+            )
         super().save(*args, **kwargs)
         # Capture current values for subsequent validation.
         # from_db() only runs when loading from database, but we also need
@@ -563,6 +594,24 @@ class Project(models.Model):
         """Check if project uses 'other' (custom SPDX) license."""
         return self.license_type == LicenseType.OTHER
 
+    def _latest_file_problem(self) -> str:
+        """Why the latest file revision cannot be submitted, or "" if it can.
+
+        Validates the same latest_file snapshot submit() will write, so a
+        concurrent file replacement cannot slip an unvalidated revision in
+        between the checks and the write (latest_file is cached per
+        instance).
+        """
+        active_file = self.latest_file
+        if active_file is None or not active_file.is_active:
+            return "Project has no active file"
+        if active_file.download_status != ProjectFile.DownloadStatus.COMPLETED:
+            status_display = active_file.get_download_status_display()
+            return f"File download is not completed (status: {status_display})"
+        if not active_file.hash_verified:
+            return "File hash has not been verified"
+        return ""
+
     def can_submit(self) -> tuple[bool, str]:
         """Check if project can be submitted.
 
@@ -571,21 +620,12 @@ class Project(models.Model):
                 - can_submit: True if project can be submitted
                 - reason_if_not: Empty string if can submit, error message otherwise
         """
-        # Validate the same latest_file snapshot submit() will write, so a
-        # concurrent file replacement cannot slip an unvalidated revision
-        # in between the checks and the write (latest_file is cached per
-        # instance).
-        active_file = self.latest_file
-        if active_file is None or not active_file.is_active:
-            return False, "Project has no active file"
+        if self.is_archived:
+            return False, ARCHIVED_READ_ONLY_MESSAGE
 
-        # Check file download and verification status
-        if active_file.download_status != ProjectFile.DownloadStatus.COMPLETED:
-            status_display = active_file.get_download_status_display()
-            return False, f"File download is not completed (status: {status_display})"
-
-        if not active_file.hash_verified:
-            return False, "File hash has not been verified"
+        file_problem = self._latest_file_problem()
+        if file_problem:
+            return False, file_problem
 
         # Check project status - only MANUFACTURABLE can be submitted
         if self.status != self.Status.MANUFACTURABLE:
@@ -643,6 +683,73 @@ class Project(models.Model):
 
         # Note: Manufacturability check has already been completed
         # (it was triggered automatically when file hash was verified)
+
+    @property
+    def is_archived(self) -> bool:
+        """Whether the project is archived (see archived_at)."""
+        return self.archived_at is not None
+
+    def can_be_archived_by(self, user: Any) -> tuple[bool, str]:
+        """Check whether ``user`` may archive this project.
+
+        The caller has already established that ``user`` is the owner or
+        staff. Returns (allowed, reason_if_not).
+        """
+        if self.is_archived:
+            return False, "Project is already archived"
+        if self.shuttle_slots.exists():
+            return False, (
+                "This project holds a shuttle slot. Staff must remove the "
+                "slot assignment before it can be archived."
+            )
+        if user.is_staff:
+            return True, ""
+        if self._has_work_in_progress():
+            return False, (
+                "A file download or manufacturability check is still in "
+                "progress. Wait for it to finish, or cancel the check, then "
+                "archive. Contact staff if it is stuck."
+            )
+        if self.submitted_file_id is not None:
+            return False, (
+                "This project has a file submitted for manufacturing. "
+                "Contact staff to archive it."
+            )
+        return True, ""
+
+    def _has_work_in_progress(self) -> bool:
+        """Whether a check is queued or running, or a download is under way.
+
+        Background work would keep changing an archived project, so owners
+        must let it finish first. Staff may archive anyway (for example a
+        stuck download nobody can cancel); the running work then finishes.
+        """
+        checks = self.manufacturability_checks.filter(
+            status__in=ManufacturabilityCheck.Status.in_progress(),
+        )
+        if checks.exists():
+            return True
+        # PENDING counts: ensure_download_tasks_queued() queues a download for
+        # every active PENDING file within a minute.
+        downloading = {
+            ProjectFile.DownloadStatus.PENDING,
+            ProjectFile.DownloadStatus.QUEUED,
+            ProjectFile.DownloadStatus.DOWNLOADING,
+        }
+        return any(
+            project_file.download_status in downloading
+            for project_file in self.files.filter(is_active=True)
+        )
+
+    def archive(self) -> None:
+        """Mark the project archived now. Permission checks are the caller's."""
+        self.archived_at = timezone.now()
+        self.save(update_fields=["archived_at", "updated_at"])
+
+    def unarchive(self) -> None:
+        """Make the project active again. Permission checks are the caller's."""
+        self.archived_at = None
+        self.save(update_fields=["archived_at", "updated_at"])
 
 
 class ProjectAccessLog(models.Model):
