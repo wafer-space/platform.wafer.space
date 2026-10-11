@@ -26,6 +26,7 @@ from django.db import IntegrityError
 from django.db.models import Exists
 from django.db.models import F
 from django.db.models import OuterRef
+from django.db.models import Q
 from django.db.models import Subquery
 from django.utils import timezone
 
@@ -1973,10 +1974,12 @@ def checks_cleanup_superseded() -> dict:
     """
     logger = logging.getLogger(__name__)
 
-    # Subquery: does a newer check exist for the same file?
+    # Subquery: does a newer check exist for the same file? Checks created
+    # in the same instant are ordered by id, so a tie never hides one.
     newer_exists = ManufacturabilityCheck.objects.filter(
+        Q(created_at__gt=OuterRef("created_at"))
+        | Q(created_at=OuterRef("created_at"), id__gt=OuterRef("id")),
         project_file=OuterRef("project_file"),
-        created_at__gt=OuterRef("created_at"),
     )
 
     # Find all superseded in-progress checks. Checks already in CANCELLING

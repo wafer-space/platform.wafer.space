@@ -2667,10 +2667,35 @@ class TestCancelSupersededChecks:
         assert old_check.status == ManufacturabilityCheck.Status.FINISHED
 
     @pytest.mark.django_db
-    def test_skips_checks_already_cancelling_without_error_logs(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """Checks already in CANCELLING are skipped, not re-cancelled with errors."""
+    def test_cancels_older_check_with_identical_created_at(self) -> None:
+        """A timestamp tie is broken by id, so the older row is still cancelled."""
+        project_file = ProjectFileFactory()
+        old_check = ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+        new_check = ManufacturabilityCheckFactory(
+            project=project_file.project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.PENDING,
+        )
+        ManufacturabilityCheck.objects.filter(pk=new_check.pk).update(
+            created_at=old_check.created_at,
+        )
+
+        checks_cleanup_superseded()
+
+        old_check.refresh_from_db()
+        new_check.refresh_from_db()
+        assert (old_check.status, new_check.status) == (
+            ManufacturabilityCheck.Status.CANCELLING,
+            ManufacturabilityCheck.Status.PENDING,
+        )
+
+    @staticmethod
+    def _cancelling_check_with_newer_sibling() -> ManufacturabilityCheck:
+        """An already-CANCELLING check that a newer check supersedes."""
         project_file = ProjectFileFactory()
         old_check = ManufacturabilityCheckFactory(
             project=project_file.project,
@@ -2682,12 +2707,27 @@ class TestCancelSupersededChecks:
             project_file=project_file,
             status=ManufacturabilityCheck.Status.PENDING,
         )
+        return old_check
+
+    @pytest.mark.django_db
+    def test_skips_checks_already_cancelling_without_error_logs(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Checks already in CANCELLING are skipped, not re-cancelled with errors."""
+        self._cancelling_check_with_newer_sibling()
 
         with caplog.at_level(logging.ERROR, logger="wafer_space.projects.tasks_checks"):
             result = checks_cleanup_superseded()
 
-        assert result == {"cancelled": 0}
-        assert not caplog.records
+        assert (result, caplog.records) == ({"cancelled": 0}, [])
+
+    @pytest.mark.django_db
+    def test_already_cancelling_check_keeps_its_status(self) -> None:
+        """The skipped CANCELLING check is left for checks_cancelling."""
+        old_check = self._cancelling_check_with_newer_sibling()
+
+        checks_cleanup_superseded()
+
         old_check.refresh_from_db()
         assert old_check.status == ManufacturabilityCheck.Status.CANCELLING
 
