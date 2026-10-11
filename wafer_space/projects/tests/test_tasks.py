@@ -65,6 +65,7 @@ from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.projects.tests.factories import ProjectFileFactory
 from wafer_space.projects.tests.read_instrumentation import RecordingPath
+from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.tests.factories import ShuttleFactory
 
 User = get_user_model()
@@ -2675,6 +2676,101 @@ class TestChecksDrcUpdateRequeue:
         cache.clear()
         self.project = ProjectFactory()
         self.project_file = ProjectFileFactory(project=self.project, is_active=True)
+
+    @pytest.mark.parametrize(
+        ("shuttle_status", "expected_created"),
+        [
+            (None, 1),
+            (Shuttle.Status.PLANNING, 1),
+            (Shuttle.Status.OPEN, 1),
+            (Shuttle.Status.FULL, 1),
+            (Shuttle.Status.LOCKED, 1),
+            (Shuttle.Status.IN_PRODUCTION, 0),
+            (Shuttle.Status.COMPLETED, 0),
+            (Shuttle.Status.CANCELLED, 0),
+        ],
+    )
+    def test_scopes_by_shuttle_status(self, shuttle_status, expected_created):
+        """Automatic requeue skips production/completed/cancelled shuttles only.
+
+        Drives the task with exactly one outdated candidate so the
+        one-check-per-run throttle cannot hide which design was chosen
+        (issue #270).
+        """
+        # Explicit name avoids colliding with the migration-seeded "G801"
+        # shuttle (ShuttleFactory's auto name sequence would hit it).
+        shuttle = (
+            ShuttleFactory(status=shuttle_status, name="G870")
+            if shuttle_status is not None
+            else None
+        )
+        project = ProjectFactory(shuttle=shuttle)
+        project_file = ProjectFileFactory(project=project, is_active=True)
+        ManufacturabilityCheckFactory(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            docker_image_digest="sha256:old123456789012345678901234567890123456789012345678901234567",
+            container_started_at=timezone.now() - timedelta(hours=2),
+        )
+        # Establish a newer latest digest via an unrelated design so the
+        # design under test is outdated. This establisher uses the latest
+        # digest, so it is never itself a candidate.
+        establisher_file = ProjectFileFactory()
+        ManufacturabilityCheckFactory(
+            project_file=establisher_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            docker_image_digest="sha256:new456789012345678901234567890123456789012345678901234567890",
+            container_started_at=timezone.now(),
+        )
+        cache.clear()
+
+        result = checks_drc_update_requeue()
+
+        assert result["created"] == expected_created
+        drc_update_exists = ManufacturabilityCheck.objects.filter(
+            project_file=project_file,
+            trigger_reason=ManufacturabilityCheck.TriggerReason.DRC_UPDATE,
+        ).exists()
+        assert drc_update_exists is bool(expected_created)
+
+    def test_older_terminal_candidate_does_not_block_eligible_one(self):
+        """The one-per-run throttle picks the eligible design (issue #270).
+
+        The terminal-shuttle design's check is older, so without the
+        exclusion it would be chosen first and the open-shuttle design
+        would wait.
+        """
+        done = ShuttleFactory(status=Shuttle.Status.COMPLETED, name="G871")
+        open_shuttle = ShuttleFactory(status=Shuttle.Status.OPEN, name="G872")
+        candidates = {}
+        for shuttle, age_hours in ((done, 3), (open_shuttle, 2)):
+            project_file = ProjectFileFactory(
+                project=ProjectFactory(shuttle=shuttle), is_active=True
+            )
+            ManufacturabilityCheckFactory(
+                project=project_file.project,
+                project_file=project_file,
+                status=ManufacturabilityCheck.Status.FINISHED,
+                docker_image_digest="sha256:old123456789012345678901234567890123456789012345678901234567",
+                container_started_at=timezone.now() - timedelta(hours=age_hours),
+            )
+            candidates[shuttle.status] = project_file
+        ManufacturabilityCheckFactory(
+            project_file=ProjectFileFactory(),
+            status=ManufacturabilityCheck.Status.FINISHED,
+            docker_image_digest="sha256:new456789012345678901234567890123456789012345678901234567890",
+            container_started_at=timezone.now(),
+        )
+        cache.clear()
+
+        result = checks_drc_update_requeue()
+
+        assert result["created"] == 1
+        requeued = ManufacturabilityCheck.objects.filter(
+            trigger_reason=ManufacturabilityCheck.TriggerReason.DRC_UPDATE,
+        ).values_list("project_file", flat=True)
+        assert list(requeued) == [candidates[Shuttle.Status.OPEN].pk]
 
     def test_skips_when_no_latest_digest(self):
         """Task returns early when no checks exist to determine latest digest."""

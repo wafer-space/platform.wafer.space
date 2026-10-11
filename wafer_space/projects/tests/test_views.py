@@ -25,6 +25,7 @@ from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.projects.tests.factories import ProjectFileFactory
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.models import ShuttleSlot
+from wafer_space.shuttles.tests.factories import ShuttleFactory
 from wafer_space.users.models import User
 from wafer_space.users.tests.factories import UserFactory
 
@@ -2451,6 +2452,51 @@ class TestCheckDrcUpdateRequeue:
             trigger_reason=ManufacturabilityCheck.TriggerReason.DRC_UPDATE,
         ).first()
         assert new_check is not None
+
+    @pytest.mark.parametrize(
+        "shuttle_status",
+        [
+            Shuttle.Status.IN_PRODUCTION,
+            Shuttle.Status.COMPLETED,
+            Shuttle.Status.CANCELLED,
+        ],
+    )
+    @pytest.mark.parametrize("as_staff", [False, True])
+    def test_requeue_allowed_in_terminal_shuttle(
+        self, client, shuttle_status, as_staff
+    ):
+        """The manual button works in any shuttle state (issue #270, Tim)."""
+        # Explicit name avoids colliding with the migration-seeded "G801".
+        shuttle = ShuttleFactory(status=shuttle_status, name="G870")
+        project = ProjectFactory(user=self.user, shuttle=shuttle)
+        project_file = ProjectFileFactory(project=project, is_active=True)
+        check = ManufacturabilityCheckFactory(
+            project=project,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            docker_image_digest=(
+                "sha256:old123456789012345678901234567890123456789012345678901234567"
+            ),
+            container_started_at=timezone.now() - timedelta(hours=2),
+        )
+        ManufacturabilityCheckFactory(
+            docker_image_digest=(
+                "sha256:new456789012345678901234567890123456789012345678901234567890"
+            ),
+            container_started_at=timezone.now(),
+        )
+        cache.clear()
+
+        client.force_login(UserFactory(is_staff=True) if as_staff else self.user)
+        response = client.post(
+            reverse("projects:check_drc_update_requeue", args=[check.id])
+        )
+
+        assert response.status_code == HTTP_FOUND
+        assert ManufacturabilityCheck.objects.filter(
+            parent_check=check,
+            trigger_reason=ManufacturabilityCheck.TriggerReason.DRC_UPDATE,
+        ).exists()
 
     def test_requeue_permission_denied_other_user(self, client):
         """Non-owner non-staff cannot requeue."""
