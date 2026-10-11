@@ -1,8 +1,10 @@
 """The computed open/closed rule on Shuttle (#320; Tim, issues-09)."""
 
 import datetime
+import importlib
 
 import pytest
+from django.apps import apps as django_apps
 
 from wafer_space.shuttles.models import Shuttle
 
@@ -73,3 +75,36 @@ def test_open_shuttle_has_no_reason():
     shuttle = Shuttle(name="G884", status=Shuttle.Status.OPEN)
 
     assert (shuttle.is_closed, shuttle.closed_reason) == (False, None)
+
+
+RUN_PAGES_MODULE = "wafer_space.shuttles.migrations.0012_set_run_page_urls"
+
+
+@pytest.mark.django_db
+def test_run_page_migration_sets_g801_g802_only():
+    for name in ("G801", "G802", "G803"):
+        Shuttle.objects.update_or_create(
+            name=name, defaults={"description": name, "website_url": ""}
+        )
+
+    importlib.import_module(RUN_PAGES_MODULE).set_run_page_urls(django_apps, None)
+
+    urls = dict(
+        Shuttle.objects.filter(name__in=["G801", "G802", "G803"]).values_list(
+            "name", "website_url"
+        )
+    )
+    assert urls == {
+        "G801": "https://wafer.space/ws-run1/",
+        "G802": "https://wafer.space/ws-run2/",
+        "G803": "",
+    }
+
+
+@pytest.mark.django_db
+def test_run_page_migration_creates_nothing():
+    Shuttle.objects.filter(name__in=["G801", "G802"]).delete()
+
+    importlib.import_module(RUN_PAGES_MODULE).set_run_page_urls(django_apps, None)
+
+    assert not Shuttle.objects.filter(name__in=["G801", "G802"]).exists()

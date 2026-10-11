@@ -127,6 +127,15 @@ class Shuttle(models.Model):
         verbose_name="CrowdSupply URL",
         help_text="CrowdSupply campaign page for this shuttle run (optional).",
     )
+    website_url = models.URLField(
+        blank=True,
+        default="",
+        verbose_name="wafer.space run page",
+        help_text=(
+            "This run's page on wafer.space, e.g. https://wafer.space/ws-run1/ "
+            "(optional)."
+        ),
+    )
 
     # Important dates
     created_at = models.DateTimeField(auto_now_add=True)
