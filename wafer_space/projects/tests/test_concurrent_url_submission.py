@@ -201,7 +201,7 @@ class SubmitURLViewConflictFallbackTest(TestCase):
                 },
             )
 
-        detail_url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+        detail_url = self.project.get_absolute_url()
         self.assertRedirects(response, detail_url, fetch_redirect_response=False)
         messages = [str(m) for m in self.client.get(detail_url).context["messages"]]
         assert any("another submission" in m.lower() for m in messages)

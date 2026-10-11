@@ -96,7 +96,7 @@ def test_write_views_refuse_archived_project(
         # The archive view is POST-only; GET is refused before any rule.
         assert response.status_code == HTTP_METHOD_NOT_ALLOWED
     else:
-        detail_url = reverse("projects:detail", args=[archived_project.pk])
+        detail_url = archived_project.get_absolute_url()
         assert response.redirect_chain == [(detail_url, HTTP_FOUND)]
         expected = (
             "Project is already archived"

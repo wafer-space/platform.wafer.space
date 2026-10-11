@@ -7,7 +7,7 @@
   {{ project.name }}
 {% endblock title %}
 {% block content %}
-  <div class="container">
+  <div class="container" data-project-pk="{{ project.pk }}">
     <div class="row">
       <div class="col-sm-12">
         {% include "projects/_admin_warning_banner.html" %}

@@ -134,7 +134,7 @@ certutil -hashfile your_design.gds SHA256  # SHA256</code></pre>
               <i class="bi bi-download"></i> Submit for Download
             </button>
             <a class="btn btn-secondary"
-               href="{% url 'projects:detail' pk=project.pk %}"
+               href="{{ project.get_absolute_url }}"
                role="button">
               <i class="bi bi-x-circle"></i> Cancel
             </a>

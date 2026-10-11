@@ -34,7 +34,6 @@ from django.http import StreamingHttpResponse
 from django.shortcuts import get_object_or_404
 from django.shortcuts import redirect
 from django.shortcuts import render
-from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 from django.views.generic import CreateView
@@ -45,6 +44,7 @@ from django.views.generic import View
 from django.views.generic.detail import SingleObjectMixin
 
 from wafer_space.core.enums import SlotSize
+from wafer_space.shuttles.models import SHUTTLE_ID_LENGTH
 from wafer_space.shuttles.models import Shuttle
 
 from .deadline_warning import WARNING_WINDOW
@@ -80,6 +80,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from uuid import UUID
 
+    from django.db.models import QuerySet
     from django.http import HttpRequest
     from django.http import HttpResponse
     from django.http.response import HttpResponseBase
@@ -103,6 +104,9 @@ class ProjectListView(LoginRequiredMixin, ListView):
 
         - Regular users: only their own projects
         - Staff users: all projects from all users
+
+        Selects the shuttle: every row links via get_absolute_url(), which
+        reads full_id and so touches the shuttle, one query per project.
         """
         # Cast user since LoginRequiredMixin ensures authentication
         user = cast("User", self.request.user)
@@ -155,11 +159,39 @@ class ProjectListView(LoginRequiredMixin, ListView):
 
 
 class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView):
-    """View a single project with its files."""
+    """View a single project with its files.
+
+    When accessed by UUID pk, redirects to the canonical full_id URL
+    if the project has been assigned to a shuttle.
+    """
 
     model = Project
     template_name = "projects/project_detail.html"
     context_object_name = "project"
+
+    def dispatch(
+        self, request: HttpRequest, *args: Any, **kwargs: Any
+    ) -> HttpResponseBase:
+        """Redirect to the canonical full_id URL when accessed by pk.
+
+        Only authenticated, authorised users are redirected. Everyone else
+        falls through to ``super()`` and gets the response they would have
+        got without this view: anonymous users the login redirect, and
+        unauthorised users a 403. Redirecting them instead would disclose
+        the project's existence and its manufacturing ID to someone who is
+        not allowed to see it, which the permission mixin exists to prevent.
+        """
+        if "pk" in kwargs and request.user.is_authenticated:
+            project = self.get_object()
+            if project.full_id and self.test_func():
+                # Carry the query string over: the canonical URL should answer
+                # the same request the pk URL was asked, not a truncated one.
+                url = project.get_absolute_url()
+                query_string = request.META.get("QUERY_STRING", "")
+                if query_string:
+                    url = f"{url}?{query_string}"
+                return redirect(url)
+        return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         """Add project files and status to context."""
@@ -282,6 +314,41 @@ class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView
         }
 
 
+class ProjectDetailByFullIdView(ProjectDetailView):
+    """View a project by its 8-character manufacturing ID (e.g., G801ABCD).
+
+    This is the canonical URL for projects that have been assigned to a shuttle.
+    Inherits all functionality from ProjectDetailView, including login,
+    permission checks, and audit logging. The parent's pk-redirect logic
+    does not trigger here because the URL provides ``full_id``, not ``pk``.
+    """
+
+    def get_object(self, queryset: QuerySet[Project] | None = None) -> Project:
+        """Look up project by full_id from URL."""
+        if queryset is None:
+            queryset = self.get_queryset()
+
+        full_id = self.kwargs.get("full_id")
+        if not full_id:
+            msg = "No project ID provided"
+            raise Http404(msg)
+
+        # Parse full_id into shuttle name and project_id
+        expected_length = SHUTTLE_ID_LENGTH + PROJECT_ID_LENGTH
+        if len(full_id) != expected_length:
+            msg = f"Invalid project ID format: expected {expected_length} characters"
+            raise Http404(msg)
+
+        shuttle_name = full_id[:SHUTTLE_ID_LENGTH]
+        project_id = full_id[SHUTTLE_ID_LENGTH:]
+
+        return get_object_or_404(
+            queryset,
+            shuttle__name=shuttle_name,
+            project_id=project_id,
+        )
+
+
 class ProjectCreateView(LoginRequiredMixin, CreateView):
     """Create a new project."""
 
@@ -314,7 +381,7 @@ class ProjectCreateView(LoginRequiredMixin, CreateView):
         """Redirect to project detail page."""
         # self.object is set after form_valid succeeds
         assert self.object is not None
-        return reverse_lazy("projects:detail", kwargs={"pk": self.object.pk})
+        return self.object.get_absolute_url()
 
 
 class ProjectUpdateView(
@@ -396,7 +463,7 @@ class ProjectUpdateView(
         """Redirect to project detail page."""
         # self.object is set after form_valid succeeds
         assert self.object is not None
-        return reverse_lazy("projects:detail", kwargs={"pk": self.object.pk})
+        return self.object.get_absolute_url()
 
 
 class ProjectFileSubmitURLView(
@@ -443,7 +510,7 @@ class ProjectFileSubmitURLView(
                     msg += f" (URL rewritten: {metadata['rewrite_reason']})"
 
                 messages.success(request, msg)
-                return redirect("projects:detail", pk=pk)
+                return redirect(project.get_absolute_url())
 
             except SecurityValidationError as e:
                 messages.error(request, f"Security validation failed: {e}")
@@ -465,7 +532,7 @@ class ProjectFileSubmitURLView(
                     "same time and its file has been kept. Check the project "
                     "page and resubmit if you need a different file.",
                 )
-                return redirect("projects:detail", pk=pk)
+                return redirect(project.get_absolute_url())
 
         return self.render_form(request, project, form)
 
@@ -728,7 +795,7 @@ class ManufacturabilityCheckCancelView(LoginRequiredMixin, UserPassesTestMixin, 
             msg = "Check could not be cancelled (already finished or in error state)."
             messages.warning(request, msg)
 
-        return redirect("projects:detail", pk=pk)
+        return redirect(project.get_absolute_url())
 
 
 class ManufacturabilityCheckAdminStatusView(
@@ -760,6 +827,7 @@ class ManufacturabilityCheckAdminStatusView(
             .select_related(
                 "project",
                 "project__user",
+                "project__shuttle",
                 "project_file",
             )
             .order_by("-id")[:50]
@@ -779,6 +847,7 @@ class ManufacturabilityCheckAdminStatusView(
                 .select_related(
                     "project",
                     "project__user",
+                    "project__shuttle",
                     "project_file",
                 )
                 .order_by("-created_at")
@@ -866,7 +935,7 @@ class ProjectSubmitView(
             )
 
         # Always redirect back to project detail page
-        return redirect("projects:detail", pk=pk)
+        return redirect(project.get_absolute_url())
 
 
 class ProjectOverrideSubmitView(
@@ -893,13 +962,13 @@ class ProjectOverrideSubmitView(
         if not form.is_valid():
             for error in form.errors["reason"]:
                 messages.error(request, f"Cannot override: {error}")
-            return redirect("projects:detail", pk=pk)
+            return redirect(project.get_absolute_url())
         reason = form.cleaned_data["reason"]
         try:
             project.override_submit(user, reason)
         except ValidationError as exc:
             messages.error(request, f"Cannot override: {exc.message}")
-            return redirect("projects:detail", pk=pk)
+            return redirect(project.get_absolute_url())
         self._create_audit_log(
             project,
             user,
@@ -911,7 +980,7 @@ class ProjectOverrideSubmitView(
             request,
             f"Project '{project.name}' submitted for manufacturing by staff override.",
         )
-        return redirect("projects:detail", pk=pk)
+        return redirect(project.get_absolute_url())
 
 
 class ProjectFileDownloadView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
@@ -966,7 +1035,7 @@ class ProjectArchiveView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
                 f"Project '{project.name}' archived. It is read-only and "
                 "listed last on your projects page.",
             )
-        return redirect("projects:detail", pk=pk)
+        return redirect(project.get_absolute_url())
 
 
 class ProjectUnarchiveView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
@@ -986,7 +1055,7 @@ class ProjectUnarchiveView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
         else:
             project.unarchive()
             messages.success(request, f"Project '{project.name}' unarchived.")
-        return redirect("projects:detail", pk=pk)
+        return redirect(project.get_absolute_url())
 
 
 class ProjectIDCheckView(LoginRequiredMixin, View):
@@ -1357,4 +1426,4 @@ def check_drc_update_requeue(request, check_id):
     except ValueError as e:
         messages.error(request, str(e))
 
-    return redirect("projects:detail", pk=check.project.pk)
+    return redirect(check.project.get_absolute_url())

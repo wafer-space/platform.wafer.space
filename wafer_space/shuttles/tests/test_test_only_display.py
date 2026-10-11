@@ -15,11 +15,23 @@ from wafer_space.users.tests.factories import UserFactory
 if TYPE_CHECKING:
     from django.test import Client
 
+    from wafer_space.projects.models import Project
+
 pytestmark = pytest.mark.django_db
 
 TEST_ONLY_BADGE = '<i class="bi bi-clipboard2-check" aria-hidden="true"></i> Test only'
 MEANING = "Designs are checked but never manufactured"
 NOTICE = "G895 is test only: no slot assignment"
+HTTP_OK = 200
+
+
+def project_page_url(page: str, project: Project) -> str:
+    """The URL a user lands on for ``page``: the detail page is canonical."""
+    if page == "detail":
+        return project.get_absolute_url()
+    if page == "update":
+        return reverse("projects:update", args=[project.pk])
+    return reverse("projects:list")
 
 
 @pytest.fixture
@@ -54,14 +66,14 @@ def test_staff_shuttle_pages_say_test_only(
     assert (TEST_ONLY_BADGE in content, MEANING in content) == (True, True)
 
 
-@pytest.mark.parametrize("url_name", ["projects:detail", "projects:update"])
+@pytest.mark.parametrize("page", ["detail", "update"])
 def test_owner_project_pages_say_test_only(
-    client: Client, test_shuttle: Shuttle, url_name: str
+    client: Client, test_shuttle: Shuttle, page: str
 ) -> None:
     project = ProjectFactory(shuttle=test_shuttle)
     client.force_login(project.user)
 
-    content = client.get(reverse(url_name, args=[project.pk])).content.decode()
+    content = client.get(project_page_url(page, project)).content.decode()
 
     assert TEST_ONLY_BADGE in content
 
@@ -98,11 +110,9 @@ def test_assignment_page_offers_no_assign_button(
     assert "data-assign-project" not in content
 
 
-@pytest.mark.parametrize(
-    ("url_name", "with_pk"), [("projects:detail", True), ("projects:list", False)]
-)
+@pytest.mark.parametrize("page", ["detail", "list"])
 def test_test_only_shuttle_shows_no_deadline(
-    client: Client, test_shuttle: Shuttle, url_name: str, *, with_pk: bool
+    client: Client, test_shuttle: Shuttle, page: str
 ) -> None:
     # A test-only shuttle never closes, so a deadline set by mistake in the
     # admin must not show a countdown (#221 spec: "no deadline text").
@@ -112,8 +122,9 @@ def test_test_only_shuttle_shows_no_deadline(
     test_shuttle.save()
     project = ProjectFactory(shuttle=test_shuttle)
     client.force_login(project.user)
-    args = [project.pk] if with_pk else []
 
-    content = client.get(reverse(url_name, args=args)).content.decode()
+    response = client.get(project_page_url(page, project))
 
-    assert "data-shuttle-deadline" not in content
+    # The status check keeps a redirect's empty body from passing vacuously.
+    shows_deadline = "data-shuttle-deadline" in response.content.decode()
+    assert (response.status_code, shows_deadline) == (HTTP_OK, False)

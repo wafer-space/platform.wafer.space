@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 from typing import TYPE_CHECKING
 from typing import cast
 
@@ -68,16 +67,10 @@ def mark_notification_read(request, notification_id):
     # Mark as read
     notification.mark_as_read()
 
-    # Try to redirect to related object if it exists
-    if notification.content_object:
-        # Try to get URL for the related object
-        with contextlib.suppress(Exception):
-            # For ProjectFile, redirect to the project detail page
-            if hasattr(notification.content_object, "project"):
-                return redirect(
-                    "projects:detail",
-                    pk=notification.content_object.project.pk,
-                )
+    # A notification about a project file goes to its project's page.
+    related = notification.content_object
+    if related is not None and hasattr(related, "project"):
+        return redirect(related.project.get_absolute_url())
 
     # Default: redirect back to notifications list
     return redirect("notifications:list")

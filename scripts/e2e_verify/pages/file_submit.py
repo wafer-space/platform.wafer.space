@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING
 
 from playwright.sync_api import expect
@@ -44,10 +43,11 @@ class FileSubmitPage(BasePage):
         # Submit form
         self.page.click('button[type="submit"]')
 
-        # Wait for the redirect to the project detail page. The negative
-        # lookahead excludes the submit-url page we were on, so a validation
-        # failure (which re-renders submit-url) surfaces here instead of
-        # passing because the URL still shares the /projects/<id>/ prefix.
-        expect(self.page).to_have_url(
-            re.compile(rf"/projects/{self.project_id}/(?!submit-url)")
-        )
+        # Wait for the redirect to the project detail page, which is the
+        # canonical URL (the full_id once a shuttle is assigned) and so need
+        # not contain the pk. Match on the page instead: a validation failure
+        # re-renders submit-url, which carries no data-project-pk, and so
+        # surfaces here as a timeout.
+        expect(
+            self.page.locator(f'[data-project-pk="{self.project_id}"]')
+        ).to_be_attached()

@@ -26,7 +26,7 @@ pytestmark = pytest.mark.django_db
 
 def detail_page(client: Client, project: Project) -> str:
     client.force_login(project.user)
-    response = client.get(reverse("projects:detail", args=[project.pk]))
+    response = client.get(project.get_absolute_url())
     return response.content.decode()
 
 

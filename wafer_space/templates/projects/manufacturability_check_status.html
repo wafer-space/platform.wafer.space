@@ -94,7 +94,7 @@
                     </td>
                     <td>
                       {% if check.project.full_id %}<span class="badge bg-secondary me-1">{{ check.project.full_id }}</span>{% endif %}
-                      <a href="{% url 'projects:detail' pk=check.project.pk %}">{{ check.project.name }}</a>
+                      <a href="{{ check.project.get_absolute_url }}">{{ check.project.name }}</a>
                       <span class="text-muted">({{ check.project.user.username }})</span>
                     </td>
                   </tr>
@@ -175,7 +175,7 @@
                     </td>
                     <td>
                       {% if check.project.full_id %}<span class="badge bg-secondary me-1">{{ check.project.full_id }}</span>{% endif %}
-                      <a href="{% url 'projects:detail' pk=check.project.pk %}">{{ check.project.name|truncatechars:30 }}</a>
+                      <a href="{{ check.project.get_absolute_url }}">{{ check.project.name|truncatechars:30 }}</a>
                       <span class="text-muted">({{ check.project.user.username }})</span>
                     </td>
                     <td>{% badge_check_status_and_version check %}</td>

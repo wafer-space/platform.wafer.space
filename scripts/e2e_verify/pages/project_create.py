@@ -43,7 +43,9 @@ class ProjectCreatePage(BasePage):
                 proprietary-terms URL is not required.
 
         Returns:
-            The project's UUID (pk) from the redirect URL ``/projects/<uuid>/``.
+            The project's UUID (pk), read from the detail page's
+            ``data-project-pk``. The redirect URL is the canonical one, which
+            is the full_id once a shuttle is assigned, so it is not the pk.
         """
         if project_id is None:
             alphabet = string.ascii_uppercase + string.digits
@@ -69,9 +71,8 @@ class ProjectCreatePage(BasePage):
         # the create page) surfaces as a timeout instead of a bogus "create" id.
         expect(self.page).to_have_url(re.compile(r"/projects/(?!create/)[\w-]+/$"))
 
-        # Extract the project's full id from the URL
-        match = re.search(r"/projects/([\w-]+)/", self.page.url)
-        if match:
-            return match.group(1)
-        msg = f"Could not extract project ID from URL: {self.page.url}"
+        pk = self.page.get_attribute("[data-project-pk]", "data-project-pk")
+        if pk:
+            return pk
+        msg = f"Could not read the project pk from the page at {self.page.url}"
         raise ValueError(msg)
