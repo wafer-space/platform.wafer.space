@@ -64,6 +64,7 @@ only, not manufactured)" (see Display).
 | Slot assignment | `ShuttleSlot.reserve(project, user)` | `ValueError("G800 is a test-only shuttle; its projects are never placed in slots")`. `AssignProjectView` already turns `ValueError` into a 400 with the message. |
 | Manifest | `Shuttle.generate_manifest()` (no caller today) | raises `ValueError` with the same wording |
 | Reticle package | `services.reticle_package.generate_package` | raises `ReticlePackageError` before writing anything; the management command shows it |
+| Grid generation | `generate_shuttle_grid` command | raises `CommandError`, so no slots are ever made for it |
 | Assignment dashboard | `ShuttleAssignmentView` | renders a notice ("G800 is test only: no slot assignment") in place of the grid controls; the page still loads |
 
 G800 gets **no grid**. Every slot size is offered for every shuttle already
@@ -71,6 +72,17 @@ G800 gets **no grid**. Every slot size is offered for every shuttle already
 `SlotSize.full_label`), so "all slot sizes" holds without slots. Slots that
 could never be assigned would mislead. The grid-preview page shows its
 existing "no grid" state.
+
+### Statistics (coordinator, 11 Oct 2026: "test projects never inflate Run numbers")
+
+- `ProjectAdminSummaryView._compute_summary_stats` counts only projects
+  whose shuttle is not test only. The table still lists G800 projects,
+  labelled "Test only", so staff can see them.
+- The assignment dashboard's per-size statistics only ever cover the
+  page's own shuttle, so a real shuttle never counts G800 projects. On
+  G800's own dashboard the statistics block gives way to the test-only
+  notice.
+- Test: with one G803 and one G800 project, the summary counts one.
 
 ### Display
 
