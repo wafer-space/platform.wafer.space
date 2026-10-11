@@ -60,7 +60,7 @@ from wafer_space.projects.tasks import do_running
 from wafer_space.projects.tasks import do_starting
 from wafer_space.projects.tasks import download_project_file
 from wafer_space.projects.tasks_checks import MISSING_LAYOUT_ERROR
-from wafer_space.projects.tasks_checks import _container_exists_for_check
+from wafer_space.projects.tasks_checks import _existing_check_containers
 from wafer_space.projects.tasks_checks import _save_output_gds
 from wafer_space.projects.tasks_checks import checks_cleanup_stale_pending_tasks
 from wafer_space.projects.tasks_checks import checks_cleanup_superseded
@@ -1296,35 +1296,44 @@ class TestDoDispatching:
         assert result["reason"] == "status_changed"
 
 
-class TestContainerExistsForCheck:
-    """_container_exists_for_check guards do_starting against duplicates (#189)."""
+class TestExistingCheckContainers:
+    """_existing_check_containers guards do_starting against duplicates (#189)."""
 
     @pytest.mark.django_db
-    def test_existing_container_is_found(self) -> None:
-        """Any container labelled with the check's id counts, running or not."""
+    def test_existing_container_is_found(self, settings) -> None:
+        """A stopped container with this site's label and check id counts."""
+        settings.SITE_URL = "https://platform.example"
         check = ManufacturabilityCheckFactory()
         client = MagicMock()
         stopped = MagicMock(short_id="abc", status="exited")
         client.containers.list.return_value = [stopped]
 
-        found = _container_exists_for_check(client, check, logging.getLogger("t"))
+        found = _existing_check_containers(client, check)
 
-        client.containers.list.assert_called_once_with(
-            all=True, filters={"label": f"wafer.space.check_id={check.id}"}
-        )
-        assert found is True
+        assert found == ["abc (exited)"]
 
     @pytest.mark.django_db
-    def test_no_container(self) -> None:
-        """No labelled container means none exists."""
+    def test_filter_is_scoped_to_this_site(self, settings) -> None:
+        """Another site's check with the same id is a different check.
+
+        Prod and staging share Docker servers and check ids are per-database.
+        """
+        settings.SITE_URL = "https://platform.example"
+        check = ManufacturabilityCheckFactory()
         client = MagicMock()
         client.containers.list.return_value = []
 
-        found = _container_exists_for_check(
-            client, ManufacturabilityCheckFactory(), logging.getLogger("t")
-        )
+        _existing_check_containers(client, check)
 
-        assert found is False
+        client.containers.list.assert_called_once_with(
+            all=True,
+            filters={
+                "label": [
+                    f"wafer.space.check_id={check.id}",
+                    "wafer.space.site=platform.example",
+                ]
+            },
+        )
 
     @pytest.mark.django_db
     def test_docker_query_failure_propagates(self) -> None:
@@ -1337,9 +1346,7 @@ class TestContainerExistsForCheck:
         client.containers.list.side_effect = docker.errors.APIError("boom")
 
         with pytest.raises(docker.errors.APIError):
-            _container_exists_for_check(
-                client, ManufacturabilityCheckFactory(), logging.getLogger("t")
-            )
+            _existing_check_containers(client, ManufacturabilityCheckFactory())
 
 
 class TestDoStarting:
@@ -1372,10 +1379,13 @@ class TestDoStarting:
             do_starting(check.id)
 
         check.refresh_from_db()
-        assert (check.status, mock_client.containers.create.called) == (
-            ManufacturabilityCheck.Status.ERROR,
-            False,
-        )
+        # The error must come from the guard, not from a later step (the
+        # factory check has no file on disk, which would also error it).
+        assert (
+            check.status,
+            "Container already exists" in check.error_message,
+            mock_client.containers.create.called,
+        ) == (ManufacturabilityCheck.Status.ERROR, True, False)
 
     @pytest.mark.django_db
     def test_creates_and_starts_container(self, tmp_path, settings) -> None:

@@ -318,7 +318,7 @@ def checks_cleanup_orphaned_docker() -> dict:
     server_results: dict[str, dict] = {}
 
     active_states = list(ManufacturabilityCheck.Status.active())
-    our_site = urlparse(settings.SITE_URL).netloc if settings.SITE_URL else "unknown"
+    our_site = _site_label()
     logger.info("Filtering for containers with wafer.space.site=%s", our_site)
 
     for server in settings.DOCKER_SERVERS:
@@ -992,25 +992,37 @@ def _get_project_file_path(
     return gds_path
 
 
-def _container_exists_for_check(
+def _site_label() -> str:
+    """This site's ``wafer.space.site`` container label value.
+
+    Prod and staging share Docker servers, and check ids are per-database,
+    so every container is labelled with the site it belongs to.
+    """
+    return urlparse(settings.SITE_URL).netloc if settings.SITE_URL else "unknown"
+
+
+def _existing_check_containers(
     client: docker.DockerClient,
     check: ManufacturabilityCheck,
-    logger: logging.Logger,
-) -> bool:
-    """Check if any container exists for this check (running or stopped).
+) -> list[str]:
+    """Containers (running or stopped) this site already has for ``check``.
 
     Prevents creating duplicate containers when do_starting runs more than
-    once for the same check (e.g., a worker crash after container creation
+    once for the same check: a worker that dies after creating the container
     leaves the check in STARTING, the stale pending-task cleanup removes the
-    task lock, and the beat task re-queues do_starting).
+    task row, and checks_starting re-queues do_starting. Only do_starting
+    creates check containers, and the unique task row stops two queued runs,
+    so this re-run is the case to guard.
+
+    The filter includes the site label: another site's check with the same
+    id is a different check.
 
     Args:
         client: Docker client for the check's assigned server.
         check: ManufacturabilityCheck to look up by container label.
-        logger: Logger for diagnostics.
 
     Returns:
-        True if any container labeled with this check's ID exists.
+        "short_id (status)" for each existing container; empty if none.
 
     Raises:
         docker.errors.DockerException: If the query fails. Fail closed: an
@@ -1019,19 +1031,14 @@ def _container_exists_for_check(
     """
     containers = client.containers.list(
         all=True,  # Include stopped containers
-        filters={"label": f"wafer.space.check_id={check.id}"},
+        filters={
+            "label": [
+                f"wafer.space.check_id={check.id}",
+                f"wafer.space.site={_site_label()}",
+            ]
+        },
     )
-
-    if containers:
-        container_info = [(c.short_id, c.status) for c in containers]
-        logger.warning(
-            "[do_starting] Check %s already has container(s): %s",
-            check.id,
-            container_info,
-        )
-        return True
-
-    return False
+    return [f"{c.short_id} ({c.status})" for c in containers]
 
 
 def _wait_for_container_running(
@@ -1120,8 +1127,9 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
     logger.info("[do_starting] Connected to Docker server")
 
     # Safety check: prevent duplicate containers for this check
-    if _container_exists_for_check(client, check, logger):
-        msg = f"Container already exists for check {check.id}"
+    existing = _existing_check_containers(client, check)
+    if existing:
+        msg = f"Container already exists for check {check.id}: {', '.join(existing)}"
         raise TaskExecutionError(reason="container_already_exists", message=msg)
 
     logger.info("[do_starting] Validating project file path...")
@@ -1150,8 +1158,8 @@ def do_starting(check: ManufacturabilityCheck) -> dict[str, Any]:
         mem_soft_gb,
         mem_hard_gb,
     )
-    # Extract site hostname for container labeling (prevents cross-environment cleanup)
-    site_host = urlparse(settings.SITE_URL).netloc if settings.SITE_URL else "unknown"
+    # Site label: prod and staging share Docker servers (see the orphan cleanup).
+    site_host = _site_label()
     container = client.containers.create(
         check.docker_image,
         command=command,
