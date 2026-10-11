@@ -24,6 +24,7 @@ from unittest.mock import patch
 
 import docker
 import pytest
+import requests
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.test import TestCase
@@ -2524,9 +2525,14 @@ Precheck successfully completed."""
         )
         return check
 
-    @staticmethod
+    STREAM_FAILURE_MSG = "connection reset while streaming archive"
+
+    @classmethod
     def _analyze_with_stream_failure(
-        check: ManufacturabilityCheck, failing_path: str
+        cls,
+        check: ManufacturabilityCheck,
+        failing_path: str,
+        error_type: type[Exception] = docker.errors.APIError,
     ) -> dict:
         """Run do_analyzing where streaming ``failing_path`` breaks midway.
 
@@ -2537,8 +2543,7 @@ Precheck successfully completed."""
 
         def broken_stream():
             yield b"partial"
-            msg = "connection reset while streaming archive"
-            raise docker.errors.APIError(msg)
+            raise error_type(cls.STREAM_FAILURE_MSG)
 
         def get_archive(path: str) -> tuple:
             if path == failing_path:
@@ -2571,6 +2576,26 @@ Precheck successfully completed."""
         )
 
     @pytest.mark.django_db
+    @pytest.mark.parametrize(
+        "error_type",
+        [
+            requests.exceptions.ChunkedEncodingError,
+            requests.exceptions.ConnectionError,
+            OSError,
+        ],
+    )
+    def test_runs_archive_transport_and_disk_failures_are_best_effort(
+        self, error_type: type[Exception]
+    ) -> None:
+        """HTTP-transport and filesystem failures are treated like Docker ones."""
+        check = self._analyzing_check(self.SUCCESS_LOGS, exit_code=0)
+
+        self._analyze_with_stream_failure(check, "/workspace/runs", error_type)
+
+        check.refresh_from_db()
+        assert check.status == ManufacturabilityCheck.Status.FINISHED
+
+    @pytest.mark.django_db
     def test_runs_archive_failure_is_recorded_on_the_check(self) -> None:
         """The owner and staff see that a diagnostic output was not kept."""
         check = self._analyzing_check(self.SUCCESS_LOGS, exit_code=0)
@@ -2591,7 +2616,7 @@ Precheck successfully completed."""
         self._analyze_with_stream_failure(check, "/workspace/runs")
 
         check.refresh_from_db()
-        assert not any("connection reset" in w for w in check.warnings)
+        assert not any(self.STREAM_FAILURE_MSG in w for w in check.warnings)
 
     @pytest.mark.django_db
     def test_output_layout_failure_errors_the_check(self) -> None:

@@ -1733,10 +1733,10 @@ _DIAGNOSTIC_EXTRACTION_ERRORS = (
     OSError,
 )
 # Shown to the owner on the check. The exception detail (which can name
-# internal Docker hosts) goes to the log and the admin error email only.
+# internal Docker hosts) goes to the log only; the admin error email for it
+# is rate-limited, so the owner is not promised that staff were told.
 _DIAGNOSTIC_NOT_SAVED = (
-    "Diagnostic output not saved: {output}. The precheck result is unaffected; "
-    "staff have been notified."
+    "Diagnostic output not saved: {output}. The precheck result is unaffected."
 )
 
 
@@ -1752,7 +1752,7 @@ def _extract_container_outputs(
     verdict, so a design error is reported even when its artefacts could not
     be kept. Each failure is returned as a warning that is stored on the
     check, where the owner and staff see it; the exception detail goes only to
-    the log, which mails the admins.
+    the log (and the rate-limited admin error email).
 
     The output layout is not a diagnostic: it is the file the reticle package
     manufactures. A failure saving it propagates, so the check goes to ERROR
