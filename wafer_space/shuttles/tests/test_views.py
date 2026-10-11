@@ -1,3 +1,4 @@
+import datetime
 import json
 from http import HTTPStatus
 
@@ -717,3 +718,44 @@ class TestRemoveAssignmentView:
         assert slot.project is None
         assert slot.reserved_by is None
         assert slot.status == ShuttleSlot.Status.AVAILABLE
+
+
+@pytest.mark.django_db
+class TestShuttleDatesDisplay:
+    """Shuttle pages show dates as wafer.space publishes them."""
+
+    # 16 Dec 2026 23:59:59 AoE (UTC-12), stored as 17 Dec 11:59:59 UTC.
+    DEADLINE_UTC = datetime.datetime(2026, 12, 17, 11, 59, 59, tzinfo=datetime.UTC)
+    PUBLISHED_DEADLINE = "16 December 2026 @ 11:59 PM AoE"
+
+    def _staff_client(self, client):
+        client.force_login(UserFactory(is_staff=True))
+        return client
+
+    def test_detail_shows_deadline_in_aoe(self, client):
+        shuttle = ShuttleFactory(name="G860", submission_deadline=self.DEADLINE_UTC)
+
+        response = self._staff_client(client).get(
+            reverse("shuttles:detail", kwargs={"name": shuttle.name})
+        )
+
+        assert self.PUBLISHED_DEADLINE in response.content.decode()
+
+    def test_list_shows_deadline_in_aoe(self, client):
+        ShuttleFactory(name="G861", submission_deadline=self.DEADLINE_UTC)
+
+        response = self._staff_client(client).get(reverse("shuttles:list"))
+
+        assert self.PUBLISHED_DEADLINE in response.content.decode()
+
+    def test_detail_shows_milestone_utc_day(self, client):
+        shuttle = ShuttleFactory(
+            name="G862",
+            production_start_date=datetime.datetime(2026, 1, 8, tzinfo=datetime.UTC),
+        )
+
+        response = self._staff_client(client).get(
+            reverse("shuttles:detail", kwargs={"name": shuttle.name})
+        )
+
+        assert "8 January 2026" in response.content.decode()

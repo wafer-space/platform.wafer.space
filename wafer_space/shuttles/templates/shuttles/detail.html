@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 
+{% load shuttle_dates %}
+
 {% block title %}
   {{ shuttle.name }} - Shuttle Details
 {% endblock title %}
@@ -64,30 +66,30 @@
               {% if shuttle.submission_deadline %}
                 <dt class="col-sm-6">Submission Deadline</dt>
                 <dd class="col-sm-6">
-                  {{ shuttle.submission_deadline|date:"Y-m-d" }}
+                  {{ shuttle.submission_deadline|aoe_deadline }}
                 </dd>
               {% endif %}
               {% if shuttle.production_start_date %}
                 <dt class="col-sm-6">Production Start</dt>
                 <dd class="col-sm-6">
-                  {{ shuttle.production_start_date|date:"Y-m-d" }}
+                  {{ shuttle.production_start_date|milestone_date }}
                 </dd>
               {% endif %}
               {% if shuttle.estimated_completion_date %}
                 <dt class="col-sm-6">Est. Completion</dt>
                 <dd class="col-sm-6">
-                  {{ shuttle.estimated_completion_date|date:"Y-m-d" }}
+                  {{ shuttle.estimated_completion_date|milestone_date }}
                 </dd>
               {% endif %}
               {% if shuttle.actual_completion_date %}
                 <dt class="col-sm-6">Actual Completion</dt>
                 <dd class="col-sm-6">
-                  {{ shuttle.actual_completion_date|date:"Y-m-d" }}
+                  {{ shuttle.actual_completion_date|milestone_date }}
                 </dd>
               {% endif %}
               <dt class="col-sm-6">Created</dt>
               <dd class="col-sm-6">
-                {{ shuttle.created_at|date:"Y-m-d" }}
+                {{ shuttle.created_at|date:"j F Y" }}
               </dd>
             </dl>
           </div>
