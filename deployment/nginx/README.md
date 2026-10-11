@@ -14,7 +14,10 @@ Nginx serves as a reverse proxy to Gunicorn.
 - HTTP/2 enabled
 - Security headers (HSTS, X-Frame-Options, CSP, etc.)
 - Proxies to Gunicorn Unix socket
-- Serves media files directly from `/home/django/platform.wafer.space/wafer_space/media/`
+- Serves no user files publicly: `/media/` returns 404. Django views check
+  permission and answer with `X-Accel-Redirect` to the `internal` location
+  `/protected-media/`, which aliases `/home/django/platform.wafer.space/wafer_space/media/`
+  (see `wafer_space/projects/file_serving.py`)
 
 ## Configuration Files
 
