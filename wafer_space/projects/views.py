@@ -15,8 +15,11 @@ from django.contrib.auth.mixins import UserPassesTestMixin
 from django.core.exceptions import PermissionDenied
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
+from django.db.models import BooleanField
+from django.db.models import ExpressionWrapper
 from django.db.models import OuterRef
 from django.db.models import Prefetch
+from django.db.models import Q
 from django.db.models import Subquery
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
@@ -79,10 +82,20 @@ class ProjectListView(LoginRequiredMixin, ListView):
 
         if user.is_staff:
             # Staff users see all projects
-            return Project.objects.all().select_related("user").order_by("-created_at")
+            projects = Project.objects.all().select_related("user")
+        else:
+            # Regular users see only their own projects
+            projects = Project.objects.filter(user=user)
 
-        # Regular users see only their own projects
-        return Project.objects.filter(user=user).order_by("-created_at")
+        # Archived projects come last, each group newest first (issue #307).
+        is_archived = ExpressionWrapper(
+            Q(archived_at__isnull=False),
+            output_field=BooleanField(),
+        )
+        return projects.annotate(is_archived_sort=is_archived).order_by(
+            "is_archived_sort",
+            "-created_at",
+        )
 
 
 class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView):

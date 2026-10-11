@@ -32,7 +32,7 @@
         {% if projects %}
           <div class="list-group">
             {% for project in projects %}
-              <div class="list-group-item list-group-item-action position-relative">
+              <div class="list-group-item list-group-item-action position-relative{% if project.is_archived %} text-muted{% endif %}">
                 <div class="d-flex w-100 justify-content-between">
                   <h5 class="mb-1">
                     <a href="{% url 'projects:detail' pk=project.pk %}"
@@ -48,6 +48,11 @@
                     {% else %}
                       <span class="badge bg-light text-muted border"
                             title="Not submitted for manufacturing">Draft</span>
+                    {% endif %}
+                    {% if project.is_archived %}
+                      <span class="badge bg-secondary"
+                            data-archived-badge
+                            title="Archived: read-only"><i class="bi bi-archive"></i> Archived</span>
                     {% endif %}
                   </h5>
                   <div class="text-end ms-3 text-nowrap">
