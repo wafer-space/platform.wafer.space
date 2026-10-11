@@ -57,17 +57,13 @@ class TOSAcceptanceMiddleware:
             "/__debug__/",
         ]
 
-        # Add static and media URLs if configured
-        # Handle both path and full URL formats
+        # Add the static URL if configured (handles path and full URL formats).
+        # MEDIA_URL is not exempt: nothing serves it, and user files are sent
+        # only by views that need a logged-in user who accepted the ToS.
         if settings.STATIC_URL:
             static_path = urlparse(settings.STATIC_URL).path or settings.STATIC_URL
             # Only add if it's a meaningful path (not just "/")
             if static_path and static_path != "/":
                 exempt_patterns.append(static_path)
-        if settings.MEDIA_URL:
-            media_path = urlparse(settings.MEDIA_URL).path or settings.MEDIA_URL
-            # Only add if it's a meaningful path (not just "/")
-            if media_path and media_path != "/":
-                exempt_patterns.append(media_path)
 
         return any(pattern and path.startswith(pattern) for pattern in exempt_patterns)

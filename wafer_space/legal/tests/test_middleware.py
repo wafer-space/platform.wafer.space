@@ -75,8 +75,6 @@ class TestTOSAcceptanceMiddleware:
             "/legal/tos/accept/",
             "/admin/",
             "/static/css/style.css",
-            # Note: /media/ URLs are not exempt when MEDIA_URL is a full URL like
-            # "http://media.testserver/" as the path component is just "/"
         ]
 
         for url in exempt_urls:
@@ -99,6 +97,19 @@ class TestTOSAcceptanceMiddleware:
 
         # User has not accepted, should return False
         assert not TermsOfServiceAcceptance.has_accepted_active(user)
+
+    def test_media_url_is_not_exempt(self, middleware, rf, settings):
+        """User files are private, so MEDIA_URL gets no ToS exemption."""
+        settings.MEDIA_URL = "/media/"
+        user = UserFactory()
+        TermsOfServiceFactory(is_active=True)
+        request = rf.get("/media/projects/x/chip.gds")
+        request.user = user
+        request.session = {}
+
+        response = middleware(request)
+
+        assert response.status_code == HTTPStatus.FOUND
 
     def test_user_with_acceptance_allowed(self, middleware, rf):
         """Test that user with TOS acceptance is allowed through."""

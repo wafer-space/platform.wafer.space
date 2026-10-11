@@ -163,9 +163,13 @@ class TestMissingFiles:
 
 
 def test_media_url_is_not_served_even_in_debug() -> None:
-    """Dev must not hide a link that would 404 (or leak) once deployed."""
+    """Dev must not hide a link that would 404 (or leak) once deployed.
+
+    static() adds nothing for a MEDIA_URL with a host (pytest's), so use
+    the relative MEDIA_URL that dev and the deployed sites use.
+    """
     try:
-        with override_settings(DEBUG=True):
+        with override_settings(DEBUG=True, MEDIA_URL="/media/"):
             clear_url_caches()
             importlib.reload(root_urls)
             callbacks = [getattr(p, "callback", None) for p in root_urls.urlpatterns]
