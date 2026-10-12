@@ -126,7 +126,7 @@ Each rewriter returns:
 #### Forms (`forms.py`)
 
 **ProjectForm**
-- Name and description fields
+- Name and description fields (the description is Markdown, rendered and sanitised by `projects/markdown_render.py`)
 - Bootstrap styling
 
 **ProjectFileURLSubmitForm**
@@ -316,7 +316,7 @@ Infrastructure exists but not fully connected:
 - `id` (UUID, PK)
 - `user_id` (FK to users)
 - `name` (CharField)
-- `description` (TextField)
+- `description` (TextField, Markdown; shown through the sanitising `|markdown` template filter)
 - `status` (CharField with choices)
 - `created_at` (DateTimeField)
 - `updated_at` (DateTimeField)

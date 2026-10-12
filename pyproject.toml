@@ -209,4 +209,5 @@ dependencies = [
     "django-simple-history>=3.10.1",
     "requests>=2.32.0", # GHCR/GitHub API calls (revision tracking + e2e script)
     "django-ipware==7.0.1",
+    "nh3==0.3.0", # Sanitizes HTML rendered from user markdown (#285)
 ]
