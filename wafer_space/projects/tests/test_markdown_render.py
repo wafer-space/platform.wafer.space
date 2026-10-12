@@ -12,6 +12,7 @@ from django.template import Context
 from django.template import Template
 from django.utils.safestring import SafeString
 
+from wafer_space.projects import markdown_render
 from wafer_space.projects.markdown_render import ALLOWED_TAGS
 from wafer_space.projects.markdown_render import render_markdown
 
@@ -60,11 +61,11 @@ class TestRawHtmlIsNotPassedThrough:
 
     def test_script_block_is_escaped(self) -> None:
         html = render_markdown("<script>alert(1)</script>")
-        assert (("<script" in html), ("&lt;script&gt;" in html)) == (False, True)
+        assert html == "<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>"
 
     def test_inline_script_is_escaped(self) -> None:
         html = render_markdown("hi <script>alert(1)</script> there")
-        assert (("<script" in html), ("&lt;script&gt;" in html)) == (False, True)
+        assert html == "<p>hi &lt;script&gt;alert(1)&lt;/script&gt; there</p>"
 
     def test_harmless_looking_tag_is_escaped_too(self) -> None:
         assert render_markdown("<b>x</b>") == "<p>&lt;b&gt;x&lt;/b&gt;</p>"
@@ -75,6 +76,48 @@ class TestRawHtmlIsNotPassedThrough:
 
     def test_html_comment_is_escaped(self) -> None:
         assert "<!--" not in render_markdown("<!-- hidden -->")
+
+
+class TestSanitiserHoldsOnItsOwn:
+    """nh3 cleans whatever markdown emits, even if raw HTML got through.
+
+    Markdown's escaping already stops typed HTML, so the tests above would
+    pass without nh3. Here the converter is replaced by one that passes
+    hostile HTML straight through, to prove the second layer by itself.
+    """
+
+    HOSTILE = (
+        "<script>alert(1)</script>"
+        '<img src=x onerror="alert(1)">'
+        '<a href="javascript:alert(1)" onclick="alert(1)">x</a>'
+        '<p style="color:red" class="c">y</p>'
+    )
+
+    @pytest.fixture
+    def html(self, monkeypatch: pytest.MonkeyPatch) -> str:
+        monkeypatch.setattr(
+            markdown_render.markdown.Markdown, "convert", lambda _self, text: text
+        )
+        return render_markdown(self.HOSTILE)
+
+    def test_converter_was_bypassed(self) -> None:
+        """Guard: without the patch the hostile HTML would be escaped text."""
+        assert "&lt;script&gt;" in render_markdown(self.HOSTILE)
+
+    def test_no_event_handlers(self, html: str) -> None:
+        assert parse_html(html).event_handlers() == []
+
+    def test_only_allowlisted_tags(self, html: str) -> None:
+        assert {tag for tag, _ in parse_html(html).elements} <= ALLOWED_TAGS
+
+    def test_no_script_body(self, html: str) -> None:
+        assert "alert(1)</script>" not in html
+
+    def test_javascript_href_dropped(self, html: str) -> None:
+        assert parse_html(html).hrefs() == []
+
+    def test_style_and_class_dropped(self, html: str) -> None:
+        assert "<p>y</p>" in html
 
 
 @pytest.mark.parametrize(

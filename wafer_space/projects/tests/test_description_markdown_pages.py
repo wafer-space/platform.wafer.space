@@ -69,7 +69,10 @@ class TestDetailPage:
         self, client: Client, project: Project
     ) -> None:
         client.force_login(UserFactory(is_staff=True))
-        assert not payload_reaches_the_page(detail_page(client, project))
+        content = detail_page(client, project)
+        # Guard: staff really see this description, so the check is not vacuous.
+        assert "<strong>ring oscillator</strong>" in content
+        assert not payload_reaches_the_page(content)
 
     def test_typed_html_is_shown_as_text(
         self, client: Client, project: Project
@@ -87,8 +90,10 @@ class TestListPage:
         client.force_login(project.user)
         return client.get(reverse("projects:list")).content.decode()
 
-    def test_excerpt_has_no_markdown_syntax(self, content: str) -> None:
-        assert ("A ring oscillator." in content, "**ring" in content) == (True, False)
+    def test_excerpt_is_the_text_without_markdown_syntax(self, content: str) -> None:
+        assert '<p class="mb-1">A ring oscillator. see docs' in content
 
     def test_excerpt_carries_no_script(self, content: str) -> None:
+        # Guard: the excerpt is on the page, so the check is not vacuous.
+        assert "A ring oscillator." in content
         assert not payload_reaches_the_page(content)

@@ -6,8 +6,9 @@ project page, so the output is an XSS surface. Two layers keep it safe:
 1. Python-Markdown runs with its raw-HTML handling removed, so HTML typed
    into a description is escaped and shown as text, never passed through.
 2. nh3 then cleans the result against a small allowlist of tags and
-   attributes, and allows links only to http, https and mailto URLs. It
-   is the layer that holds if markdown ever emits something unexpected.
+   attributes. A link's scheme must be http, https or mailto; relative
+   links (no scheme) pass, as nh3 allows them. It is the layer that holds
+   if markdown ever emits something unexpected.
 """
 
 from __future__ import annotations
