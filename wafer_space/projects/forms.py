@@ -275,7 +275,10 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
         }
         help_texts = {
             "name": "A descriptive name for your project",
-            "description": "Optional details about your design",
+            "description": (
+                "Optional details about your design. Markdown is supported: "
+                "**bold**, *italic*, lists, headings, `code` and links."
+            ),
             "slot_size": "Select the die slot size for your design",
             "is_public": "Make this design publicly visible on the platform",
             # chip_on_board: help_text inherited from the model field

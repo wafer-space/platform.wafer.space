@@ -1,7 +1,7 @@
 """Render user-written markdown (project descriptions) to safe HTML (#285).
 
-Descriptions are written by any user and shown to others on public
-projects, so the output is an XSS surface. Two layers keep it safe:
+Descriptions are written by any user and read by staff on that user's
+project page, so the output is an XSS surface. Two layers keep it safe:
 
 1. Python-Markdown runs with its raw-HTML handling removed, so HTML typed
    into a description is escaped and shown as text, never passed through.

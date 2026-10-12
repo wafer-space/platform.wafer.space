@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% load static %}
+{% load markdown_tags %}
 {% load shuttle_dates %}
 
 {% block title %}
@@ -178,9 +179,11 @@
           </div>
           <div class="card-body">
             {% if project.description %}
-              <p class="mb-2">
-                <strong>Description:</strong> {{ project.description }}
-              </p>
+              <div class="mb-2">
+                <strong>Description:</strong>
+                {# Markdown, sanitised to an allowlist (no raw HTML, no scripts). #}
+                <div>{{ project.description|markdown }}</div>
+              </div>
             {% endif %}
             <p class="mb-2">
               <strong>Visibility:</strong>

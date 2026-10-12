@@ -1,13 +1,11 @@
 """Project descriptions render as markdown, sanitised (#285).
 
-Any user writes a description and public projects show it to everyone, so
+Any user writes a description and staff open other users' projects, so
 the rendered HTML must never carry script, event handlers, raw HTML or
 links to anything but http, https and mailto.
 """
 
 from __future__ import annotations
-
-from html.parser import HTMLParser
 
 import pytest
 from django.template import Context
@@ -16,6 +14,8 @@ from django.utils.safestring import SafeString
 
 from wafer_space.projects.markdown_render import ALLOWED_TAGS
 from wafer_space.projects.markdown_render import render_markdown
+
+from .html_elements import parse_html
 
 
 class TestFormatting:
@@ -77,24 +77,6 @@ class TestRawHtmlIsNotPassedThrough:
         assert "<!--" not in render_markdown("<!-- hidden -->")
 
 
-class _Elements(HTMLParser):
-    """Every start tag the browser would build, with its decoded attributes."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.found: list[tuple[str, dict[str, str | None]]] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        self.found.append((tag, dict(attrs)))
-
-
-def elements(html: str) -> list[tuple[str, dict[str, str | None]]]:
-    parser = _Elements()
-    parser.feed(html)
-    parser.close()
-    return parser.found
-
-
 @pytest.mark.parametrize(
     "source",
     [
@@ -109,13 +91,7 @@ def elements(html: str) -> list[tuple[str, dict[str, str | None]]]:
     ],
 )
 def test_no_event_handler_attribute_survives(source: str) -> None:
-    handlers = [
-        (tag, name)
-        for tag, attrs in elements(render_markdown(source))
-        for name in attrs
-        if name.startswith("on")
-    ]
-    assert handlers == []
+    assert parse_html(render_markdown(source)).event_handlers() == []
 
 
 @pytest.mark.parametrize(
@@ -131,7 +107,7 @@ def test_no_event_handler_attribute_survives(source: str) -> None:
     ],
 )
 def test_only_allowlisted_tags_are_emitted(source: str) -> None:
-    tags = {tag for tag, _ in elements(render_markdown(source))}
+    tags = {tag for tag, _ in parse_html(render_markdown(source)).elements}
     assert tags <= ALLOWED_TAGS
 
 
@@ -151,14 +127,9 @@ def test_only_allowlisted_tags_are_emitted(source: str) -> None:
     ],
 )
 def test_links_only_to_http_https_or_mailto(source: str) -> None:
-    hrefs = [
-        attrs["href"] or ""
-        for _, attrs in elements(render_markdown(source))
-        if "href" in attrs
-    ]
     unsafe = [
         href
-        for href in hrefs
+        for href in parse_html(render_markdown(source)).hrefs()
         if not href.strip().lower().startswith(("http://", "https://", "mailto:"))
     ]
     assert unsafe == []

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 
+{% load markdown_tags %}
 {% load project_list_tags %}
 {% load shuttle_dates %}
 {% load static %}
@@ -116,7 +117,9 @@
                         {% endif %}
                       </div>
                     </div>
-                    {% if project.description %}<p class="mb-1">{{ project.description|truncatewords:30 }}</p>{% endif %}
+                    {% if project.description %}
+                      <p class="mb-1">{{ project.description|markdown|striptags|truncatewords:30 }}</p>
+                    {% endif %}
                   </div>
                 </div>
               {% endwith %}
