@@ -388,13 +388,16 @@ class TestResolveVersionFromTags:
         assert result == ""
 
     @patch("wafer_space.projects.tasks_revisions.requests.get")
-    def test_returns_empty_on_request_exception(self, mock_get):
-        """Returns empty string when GHCR request fails."""
+    def test_raises_on_request_exception(self, mock_get):
+        """A GHCR failure propagates; the caller records it as a problem (#293).
+
+        It used to be swallowed into "", so the version silently stayed as
+        a branch name such as "main".
+        """
         mock_get.side_effect = requests.RequestException("Network error")
 
-        result = _resolve_version_from_tags("sha256:any")
-
-        assert result == ""
+        with pytest.raises(requests.RequestException):
+            _resolve_version_from_tags("sha256:any")
 
     @patch("wafer_space.projects.tasks_revisions.requests.head")
     @patch("wafer_space.projects.tasks_revisions.requests.get")

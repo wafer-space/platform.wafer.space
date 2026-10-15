@@ -15,16 +15,11 @@ from celery import shared_task
 from django.db.models import Q
 from django.utils import timezone
 
+from .models import MAX_METADATA_FETCH_ATTEMPTS
 from .models import ManufacturabilityCheck
 from .models import PrecheckImageRevision
 
 logger = logging.getLogger(__name__)
-
-# Stop requeueing a digest after this many failed fetch attempts. Each beat
-# scan requeues an unfetched digest and every task execution (including each
-# celery retry) counts as one attempt, so this bounds a permanently-broken
-# digest to a finite number of fetches instead of one every 5 minutes forever.
-MAX_METADATA_FETCH_ATTEMPTS = 50
 
 
 @shared_task(queue="none:ro:default")
@@ -112,10 +107,17 @@ def do_revision_fetch(self, digest: str) -> dict[str, Any]:
         retry_countdown = 60 * (2**self.request.retries)
         raise self.retry(exc=exc, countdown=retry_countdown) from exc
     except ValueError as exc:
+        # Malformed registry data for an immutable digest will not fix
+        # itself: give up now instead of requeueing it up to the cap.
         revision.metadata_fetch_last_error = str(exc)[:255]
-        revision.save(update_fields=["metadata_fetch_last_error"])
-        logger.exception("Validation error for %s", digest[:20])
-        return {"error": str(exc), "digest": digest}
+        revision.metadata_fetch_attempts = MAX_METADATA_FETCH_ATTEMPTS
+        revision.save(
+            update_fields=["metadata_fetch_last_error", "metadata_fetch_attempts"]
+        )
+        logger.exception(
+            "Giving up fetching metadata for %s: invalid registry data", digest[:20]
+        )
+        return {"error": str(exc), "digest": digest, "gave_up": True}
 
     revision.image_created_at = metadata.get("image_created_at")
     revision.git_commit_sha = metadata.get("git_commit_sha", "")
@@ -125,18 +127,34 @@ def do_revision_fetch(self, digest: str) -> dict[str, Any]:
     revision.commit_message = metadata.get("commit_message", "")
     revision.commit_date = metadata.get("commit_date")
     revision.metadata_fetched_at = timezone.now()
-    revision.metadata_fetch_last_error = ""
+    problems = _metadata_problems(metadata)
+    revision.metadata_fetch_last_error = "; ".join(problems)[:255]
     revision.save()
 
-    if not revision.pdk_version:
-        logger.warning(
-            "Saved partial metadata for %s (pdk_version unresolved)",
+    if problems:
+        # ERROR, not WARNING: this is the failure class that went unseen
+        # for a month in 2026 (#293). The row is marked fetched, so this
+        # is logged once per digest, and ADMINS get it by email.
+        logger.error(
+            "Saved partial precheck metadata for %s: %s",
             digest[:20],
+            revision.metadata_fetch_last_error,
         )
         return {"status": "partial", "digest": digest}
 
     logger.info("Fetched metadata for revision: %s", digest[:20])
     return {"status": "success", "digest": digest}
+
+
+def _metadata_problems(metadata: dict[str, Any]) -> list[str]:
+    """What the fetched metadata failed to determine, for the record and log."""
+    problems = list(metadata.get("problems", []))
+    precheck_version = metadata.get("precheck_version", "")
+    if not _is_semver_tag(precheck_version):
+        problems.append(f"precheck_version unresolved ({precheck_version!r})")
+    if not metadata.get("pdk_version"):
+        problems.append("pdk_version unresolved")
+    return problems
 
 
 def _fetch_ghcr_metadata(digest: str) -> dict[str, Any]:
@@ -147,17 +165,24 @@ def _fetch_ghcr_metadata(digest: str) -> dict[str, Any]:
 
     Returns:
         Dict with image_created_at, git_commit_sha, precheck_version,
-        pdk_version, tool_versions, commit info, and raw labels. Fields
-        that cannot be determined are left empty rather than failing the
-        whole fetch (see #293: discarding good metadata over one missing
-        field caused weeks of raw digests on the status pages).
+        pdk_version, tool_versions, commit info, raw labels, and
+        "problems": failures on the way that the caller must report.
+        Fields that cannot be determined are left empty rather than
+        failing the whole fetch (see #293: discarding good metadata over
+        one missing field caused weeks of raw digests on the status pages).
     """
     labels = _fetch_container_labels(digest)
     result = _parse_container_labels(labels)
+    problems: list[str] = []
+    result["problems"] = problems
 
     # If precheck_version is not semver-like (e.g., "main"), try to resolve from tags
     if not _is_semver_tag(result["precheck_version"]):
-        resolved_version = _resolve_version_from_tags(digest)
+        try:
+            resolved_version = _resolve_version_from_tags(digest)
+        except (requests.RequestException, KeyError) as exc:
+            problems.append(f"tag lookup failed: {exc}")
+            resolved_version = ""
         if resolved_version:
             result["precheck_version"] = resolved_version
 
@@ -171,13 +196,6 @@ def _fetch_ghcr_metadata(digest: str) -> dict[str, Any]:
             result["pdk_version"] = github_info.get("pdk_version", "")
         if not result["tool_versions"]:
             result["tool_versions"] = github_info.get("tool_versions", {})
-
-    if not result["pdk_version"]:
-        logger.warning(
-            "Could not determine PDK version for digest %s; "
-            "continuing with partial metadata",
-            digest[:20],
-        )
 
     return result
 
@@ -282,49 +300,47 @@ def _resolve_version_from_tags(digest: str) -> str:
 
     Returns:
         Semver-style version string, or empty string if none found.
+
+    Raises:
+        requests.RequestException, KeyError: the registry could not be
+        queried. _fetch_ghcr_metadata records this as a problem instead
+        of silently keeping a version like "main" (#293).
     """
-    try:
-        # Get anonymous token
-        token_resp = requests.get(
-            "https://ghcr.io/token?scope=repository:wafer-space/gf180mcu-precheck:pull",
-            timeout=30,
-        )
-        token_resp.raise_for_status()
-        token = token_resp.json()["token"]
+    # Get anonymous token
+    token_resp = requests.get(
+        "https://ghcr.io/token?scope=repository:wafer-space/gf180mcu-precheck:pull",
+        timeout=30,
+    )
+    token_resp.raise_for_status()
+    token = token_resp.json()["token"]
 
-        base_url = "https://ghcr.io/v2/wafer-space/gf180mcu-precheck"
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.oci.image.index.v1+json",
-        }
+    base_url = "https://ghcr.io/v2/wafer-space/gf180mcu-precheck"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.oci.image.index.v1+json",
+    }
 
-        tags = _list_all_tags(base_url, headers)
+    tags = _list_all_tags(base_url, headers)
 
-        # Find semver-style tags that point to this digest
-        matching_tags: list[str] = []
-        for tag in tags:
-            # Only consider semver-style tags (e.g., "1.5.2", "1.5.2-2-gf5c1b34")
-            if not _is_semver_tag(tag):
-                continue
+    # Find semver-style tags that point to this digest
+    matching_tags: list[str] = []
+    for tag in tags:
+        # Only consider semver-style tags (e.g., "1.5.2", "1.5.2-2-gf5c1b34")
+        if not _is_semver_tag(tag):
+            continue
 
-            resp = requests.head(
-                f"{base_url}/manifests/{tag}", headers=headers, timeout=10
-            )
-            if resp.status_code == http.HTTPStatus.OK:
-                tag_digest = resp.headers.get("Docker-Content-Digest")
-                if tag_digest == digest:
-                    matching_tags.append(tag)
+        resp = requests.head(f"{base_url}/manifests/{tag}", headers=headers, timeout=10)
+        if resp.status_code == http.HTTPStatus.OK:
+            tag_digest = resp.headers.get("Docker-Content-Digest")
+            if tag_digest == digest:
+                matching_tags.append(tag)
 
-        if not matching_tags:
-            return ""
-
-        # Sort alphabetically and return first (will prefer shorter/earlier versions)
-        matching_tags.sort()
-        return matching_tags[0]
-
-    except (requests.RequestException, KeyError):
-        logger.warning("Failed to resolve version from tags for %s", digest[:20])
+    if not matching_tags:
         return ""
+
+    # Sort alphabetically and return first (will prefer shorter/earlier versions)
+    matching_tags.sort()
+    return matching_tags[0]
 
 
 def _list_all_tags(base_url: str, headers: dict[str, str]) -> list[str]:

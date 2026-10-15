@@ -37,6 +37,12 @@ logger = logging.getLogger(__name__)
 
 PRECHECK_GITHUB_REPO = "wafer-space/gf180mcu-precheck"
 
+# Stop requeueing a digest after this many failed fetch attempts. Each beat
+# scan requeues an unfetched digest and every task execution (including each
+# celery retry) counts as one attempt, so this bounds a permanently-broken
+# digest to a finite number of fetches instead of one every 5 minutes forever.
+MAX_METADATA_FETCH_ATTEMPTS = 50
+
 
 @dataclass
 class CheckExecutionContext:
