@@ -421,10 +421,12 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
 
         # Wait for sort to apply - first row should contain "Alpha" after sorting
         wait.until(
-            lambda d: "Alpha"
-            in d.find_element(
-                By.CSS_SELECTOR, "#projects-table tbody tr:first-child"
-            ).text
+            lambda d: (
+                "Alpha"
+                in d.find_element(
+                    By.CSS_SELECTOR, "#projects-table tbody tr:first-child"
+                ).text
+            )
         )
 
     def test_grid_uses_template_partial(self, driver, wait, staff_user, shuttle):

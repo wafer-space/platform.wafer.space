@@ -69,6 +69,7 @@ All checks must pass. **NO SHORTCUTS** - not even for "small" changes or "just c
 # ❌ FORBIDDEN - models.py importing tasks
 from .tasks import process_model  # NEVER do this in models
 
+
 # ❌ FORBIDDEN - using local imports to "fix" circular imports
 def some_method(self):
     from .tasks import some_task  # This hides the problem, doesn't fix it

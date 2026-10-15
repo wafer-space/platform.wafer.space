@@ -51,7 +51,7 @@ SOCIALACCOUNT_PROVIDERS = {
     "github": {
         "APP": {
             "client_id": None,  # Must be set in environment file
-            "secret": None,     # Must be set in environment file
+            "secret": None,  # Must be set in environment file
         },
     },
 }

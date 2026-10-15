@@ -329,6 +329,7 @@ deployed web process cannot write files:
 ```python
 # wafer_space/projects/tasks_download.py
 
+
 @shared_task(
     bind=True,
     queue="http:rw:downloads",
@@ -356,7 +357,7 @@ URLValidator.MAX_FILE_SIZE = 100 * 1024 * 1024 * 1024  # 100GB
 
 ```python
 # wafer_space/projects/tasks.py
-_download_with_progress(task, project_file, temp_path, chunk_size=1024*1024)  # 1MB
+_download_with_progress(task, project_file, temp_path, chunk_size=1024 * 1024)  # 1MB
 ```
 
 ## Future Enhancements
@@ -390,7 +391,7 @@ from datetime import timedelta
 
 stalled = ProjectFile.objects.filter(
     download_status=ProjectFile.DownloadStatus.DOWNLOADING,
-    last_activity__lt=timezone.now() - timedelta(minutes=30)
+    last_activity__lt=timezone.now() - timedelta(minutes=30),
 )
 ```
 

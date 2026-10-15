@@ -48,10 +48,7 @@ You are a PostgreSQL database optimization specialist focused on Django ORM perf
 ```python
 # config/settings/base.py
 DATABASES = {
-    "default": env.db(
-        "DATABASE_URL",
-        default="postgres://localhost/wafer_space"
-    )
+    "default": env.db("DATABASE_URL", default="postgres://localhost/wafer_space")
 }
 
 # PostgreSQL 17 Configuration
@@ -84,7 +81,7 @@ for project in projects:
 **Solution:**
 ```python
 # ✅ Optimized with select_related (2 queries total)
-projects = Project.objects.select_related('user').prefetch_related('files').all()
+projects = Project.objects.select_related("user").prefetch_related("files").all()
 for project in projects:
     print(project.user.email)  # No extra query
     print(project.files.count())  # No extra query
@@ -103,21 +100,20 @@ for project in projects:
     user_email = project.user.email  # New query each iteration
 
 # ✅ Good: Single JOIN query
-projects = Project.objects.select_related('user').all()
+projects = Project.objects.select_related("user").all()
 for project in projects:
     user_email = project.user.email  # No extra query
 
 # ✅ Chain multiple relationships
 projects = Project.objects.select_related(
-    'user',
-    'shuttle',
-    'shuttle__wafer'  # Follow relationships with __
+    "user",
+    "shuttle",
+    "shuttle__wafer",  # Follow relationships with __
 ).all()
 
 # ✅ Combine with filtering
-active_projects = Project.objects.select_related('user').filter(
-    status='active',
-    user__is_active=True
+active_projects = Project.objects.select_related("user").filter(
+    status="active", user__is_active=True
 )
 ```
 
@@ -132,23 +128,23 @@ for user in users:
     project_count = user.projects.count()  # New query each iteration
 
 # ✅ Good: Separate query with IN clause
-users = User.objects.prefetch_related('projects').all()
+users = User.objects.prefetch_related("projects").all()
 for user in users:
     project_count = user.projects.count()  # No extra query
 
 # ✅ Prefetch with filtering
 users = User.objects.prefetch_related(
     Prefetch(
-        'projects',
-        queryset=Project.objects.filter(status='active').order_by('-created')
+        "projects",
+        queryset=Project.objects.filter(status="active").order_by("-created"),
     )
 ).all()
 
 # ✅ Multiple prefetches
 users = User.objects.prefetch_related(
-    'projects',
-    'projects__files',  # Nested prefetch
-    'referrals'
+    "projects",
+    "projects__files",  # Nested prefetch
+    "referrals",
 ).all()
 
 # ✅ Prefetch with annotations
@@ -156,10 +152,10 @@ from django.db.models import Count, Prefetch
 
 users = User.objects.prefetch_related(
     Prefetch(
-        'projects',
-        queryset=Project.objects.annotate(
-            file_count=Count('files')
-        ).filter(status='active')
+        "projects",
+        queryset=Project.objects.annotate(file_count=Count("files")).filter(
+            status="active"
+        ),
     )
 )
 ```
@@ -172,12 +168,13 @@ from django.db.models import Prefetch, Q, Count
 # ✅ Prefetch only specific related objects
 users = User.objects.prefetch_related(
     Prefetch(
-        'projects',
+        "projects",
         queryset=Project.objects.filter(
-            status='active',
-            created__gte=timezone.now() - timedelta(days=30)
-        ).select_related('shuttle').order_by('-created')[:10],
-        to_attr='recent_active_projects'  # Custom attribute name
+            status="active", created__gte=timezone.now() - timedelta(days=30)
+        )
+        .select_related("shuttle")
+        .order_by("-created")[:10],
+        to_attr="recent_active_projects",  # Custom attribute name
     )
 )
 
@@ -189,27 +186,22 @@ for user in users:
 # ✅ Multiple conditional prefetches
 projects = Project.objects.prefetch_related(
     Prefetch(
-        'files',
-        queryset=ProjectFile.objects.filter(file_type='gerber'),
-        to_attr='gerber_files'
+        "files",
+        queryset=ProjectFile.objects.filter(file_type="gerber"),
+        to_attr="gerber_files",
     ),
     Prefetch(
-        'files',
-        queryset=ProjectFile.objects.filter(file_type='pdf'),
-        to_attr='pdf_files'
-    )
+        "files",
+        queryset=ProjectFile.objects.filter(file_type="pdf"),
+        to_attr="pdf_files",
+    ),
 )
 
 # ✅ Prefetch with aggregation
 from django.db.models import Sum
 
 projects = Project.objects.prefetch_related(
-    Prefetch(
-        'files',
-        queryset=ProjectFile.objects.annotate(
-            total_size=Sum('size')
-        )
-    )
+    Prefetch("files", queryset=ProjectFile.objects.annotate(total_size=Sum("size")))
 )
 ```
 
@@ -219,49 +211,43 @@ projects = Project.objects.prefetch_related(
 from django.db.models import Count, Sum, Avg, Max, Min, F, Q, Case, When
 
 # ✅ Simple annotation
-users = User.objects.annotate(
-    project_count=Count('projects')
-).filter(project_count__gt=0)
+users = User.objects.annotate(project_count=Count("projects")).filter(
+    project_count__gt=0
+)
 
 # ✅ Conditional annotation
 users = User.objects.annotate(
-    active_project_count=Count(
-        'projects',
-        filter=Q(projects__status='active')
-    ),
+    active_project_count=Count("projects", filter=Q(projects__status="active")),
     total_file_size=Sum(
-        'projects__files__size',
-        filter=Q(projects__files__file_type='gerber')
-    )
+        "projects__files__size", filter=Q(projects__files__file_type="gerber")
+    ),
 )
 
 # ✅ Case/When for conditional logic
 projects = Project.objects.annotate(
     priority=Case(
-        When(status='urgent', then=1),
-        When(status='high', then=2),
-        When(status='normal', then=3),
+        When(status="urgent", then=1),
+        When(status="high", then=2),
+        When(status="normal", then=3),
         default=4,
-        output_field=models.IntegerField()
+        output_field=models.IntegerField(),
     )
-).order_by('priority')
+).order_by("priority")
 
 # ✅ F expressions for field comparisons
-projects = Project.objects.filter(
-    files_processed__lt=F('total_files')
-).annotate(
-    completion_percentage=F('files_processed') * 100 / F('total_files')
+projects = Project.objects.filter(files_processed__lt=F("total_files")).annotate(
+    completion_percentage=F("files_processed") * 100 / F("total_files")
 )
 
 # ✅ Complex aggregation
 from django.db.models import Subquery, OuterRef
 
-latest_file = ProjectFile.objects.filter(
-    project=OuterRef('pk')
-).order_by('-created')[:1]
+latest_file = ProjectFile.objects.filter(project=OuterRef("pk")).order_by("-created")[
+    :1
+]
 
 projects = Project.objects.annotate(
-    latest_file_name=Subquery(latest_file.values('filename'))
+    latest_file_name=Subquery(latest_file.values("filename"))
 )
 ```
 
@@ -270,6 +256,7 @@ projects = Project.objects.annotate(
 ```python
 # ✅ Use raw SQL for complex queries ORM can't handle
 from django.db import connection
+
 
 def get_project_statistics():
     """Get complex statistics requiring raw SQL."""
@@ -299,10 +286,8 @@ def get_project_statistics():
         """)
 
         columns = [col[0] for col in cursor.description]
-        return [
-            dict(zip(columns, row))
-            for row in cursor.fetchall()
-        ]
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
 
 # ✅ Or use raw() for model instances
 projects = Project.objects.raw("""
@@ -322,22 +307,21 @@ projects = Project.objects.raw("""
 ```python
 # ✅ Bulk create (single INSERT with multiple values)
 projects = [
-    Project(name=f"Project {i}", user=user, status='draft')
-    for i in range(1000)
+    Project(name=f"Project {i}", user=user, status="draft") for i in range(1000)
 ]
 Project.objects.bulk_create(projects, batch_size=500)
 
 # ✅ Bulk update (single UPDATE)
-projects = Project.objects.filter(status='draft')
+projects = Project.objects.filter(status="draft")
 for project in projects:
-    project.status = 'active'
-Project.objects.bulk_update(projects, ['status'], batch_size=500)
+    project.status = "active"
+Project.objects.bulk_update(projects, ["status"], batch_size=500)
 
 # ✅ Bulk update with single query (no fetching)
-Project.objects.filter(status='draft').update(status='active')
+Project.objects.filter(status="draft").update(status="active")
 
 # ✅ Bulk delete (single DELETE)
-Project.objects.filter(status='archived').delete()
+Project.objects.filter(status="archived").delete()
 
 # ⚠️ Note: bulk operations skip signals and save() methods
 # Use transaction.atomic() for consistency
@@ -345,8 +329,8 @@ from django.db import transaction
 
 with transaction.atomic():
     Project.objects.bulk_create(projects, batch_size=500)
-    user.project_count = F('project_count') + len(projects)
-    user.save(update_fields=['project_count'])
+    user.project_count = F("project_count") + len(projects)
+    user.save(update_fields=["project_count"])
 ```
 
 ## Index Optimization
@@ -418,51 +402,54 @@ WHERE
 ```python
 from django.db import models
 
+
 class Project(models.Model):
     """Project model with optimized indexes."""
 
     name = models.CharField(max_length=200)
     status = models.CharField(max_length=20)
-    user = models.ForeignKey('users.User', on_delete=models.CASCADE)
+    user = models.ForeignKey("users.User", on_delete=models.CASCADE)
     created = models.DateTimeField(auto_now_add=True)
     updated = models.DateTimeField(auto_now=True)
 
     class Meta:
         # Simple indexes
         indexes = [
-            models.Index(fields=['status']),  # Single column
-            models.Index(fields=['user', '-created']),  # Composite
-            models.Index(fields=['-created']),  # Descending
+            models.Index(fields=["status"]),  # Single column
+            models.Index(fields=["user", "-created"]),  # Composite
+            models.Index(fields=["-created"]),  # Descending
         ]
 
         # Unique constraints (also creates index)
         constraints = [
             models.UniqueConstraint(
-                fields=['user', 'name'],
-                name='unique_user_project_name'
+                fields=["user", "name"], name="unique_user_project_name"
             )
         ]
+
 
 # ✅ Partial index (PostgreSQL specific)
 class Project(models.Model):
     class Meta:
         indexes = [
             models.Index(
-                fields=['created'],
-                name='active_projects_created_idx',
-                condition=models.Q(status='active')  # Only index active
+                fields=["created"],
+                name="active_projects_created_idx",
+                condition=models.Q(status="active"),  # Only index active
             )
         ]
 
+
 # ✅ Expression index (PostgreSQL specific)
 from django.contrib.postgres.indexes import OpClass
+
 
 class Project(models.Model):
     class Meta:
         indexes = [
             models.Index(
-                OpClass(Lower('name'), name='varchar_pattern_ops'),
-                name='project_name_lower_idx'
+                OpClass(Lower("name"), name="varchar_pattern_ops"),
+                name="project_name_lower_idx",
             )
         ]
 ```
@@ -485,11 +472,11 @@ class Project(models.Model):
 **Composite Index Order:**
 ```python
 # ✅ Good: Most selective column first
-models.Index(fields=['user', 'status', 'created'])
+models.Index(fields=["user", "status", "created"])
 # Use case: WHERE user_id = ? AND status = ? ORDER BY created
 
 # ❌ Bad: Least selective first
-models.Index(fields=['status', 'created', 'user'])
+models.Index(fields=["status", "created", "user"])
 # Can't use index for WHERE user_id = ?
 ```
 
@@ -502,13 +489,16 @@ models.Index(fields=['status', 'created', 'user'])
 from django.core.management.base import BaseCommand
 from django.db import connection
 
+
 class Command(BaseCommand):
     """Analyze query performance with EXPLAIN ANALYZE."""
 
     def handle(self, *args, **options):
-        query = Project.objects.select_related('user').filter(
-            status='active'
-        ).order_by('-created')[:100]
+        query = (
+            Project.objects.select_related("user")
+            .filter(status="active")
+            .order_by("-created")[:100]
+        )
 
         # Get SQL query
         sql = str(query.query)
@@ -549,14 +539,15 @@ Execution Time: 1.678 ms
 
 ```python
 # config/settings/local.py
-INSTALLED_APPS += ['debug_toolbar']
-MIDDLEWARE += ['debug_toolbar.middleware.DebugToolbarMiddleware']
-INTERNAL_IPS = ['127.0.0.1']
+INSTALLED_APPS += ["debug_toolbar"]
+MIDDLEWARE += ["debug_toolbar.middleware.DebugToolbarMiddleware"]
+INTERNAL_IPS = ["127.0.0.1"]
 
 # config/urls.py (local development)
 if settings.DEBUG:
     import debug_toolbar
-    urlpatterns += [path('__debug__/', include(debug_toolbar.urls))]
+
+    urlpatterns += [path("__debug__/", include(debug_toolbar.urls))]
 ```
 
 **Usage:**
@@ -579,12 +570,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class QueryLoggerMiddleware(MiddlewareMixin):
     """Log slow queries and query counts."""
 
     def process_response(self, request, response):
         queries = connection.queries
-        total_time = sum(float(q['time']) for q in queries)
+        total_time = sum(float(q["time"]) for q in queries)
 
         if len(queries) > 50:
             logger.warning(
@@ -593,11 +585,9 @@ class QueryLoggerMiddleware(MiddlewareMixin):
             )
 
         for query in queries:
-            time = float(query['time'])
+            time = float(query["time"])
             if time > 0.1:  # 100ms threshold
-                logger.warning(
-                    f"Slow query ({time:.3f}s): {query['sql'][:200]}"
-                )
+                logger.warning(f"Slow query ({time:.3f}s): {query['sql'][:200]}")
 
         return response
 ```
@@ -610,9 +600,10 @@ class QueryLoggerMiddleware(MiddlewareMixin):
 # migrations/0005_add_indexes.py
 from django.db import migrations, models
 
+
 class Migration(migrations.Migration):
     dependencies = [
-        ('projects', '0004_previous_migration'),
+        ("projects", "0004_previous_migration"),
     ]
 
     operations = [
@@ -621,13 +612,12 @@ class Migration(migrations.Migration):
             sql="CREATE INDEX CONCURRENTLY projects_status_idx ON projects_project (status);",
             reverse_sql="DROP INDEX CONCURRENTLY IF EXISTS projects_status_idx;",
         ),
-
         # ✅ Or use Django 5.2+ index with concurrent creation
         migrations.AddIndex(
-            model_name='project',
+            model_name="project",
             index=models.Index(
-                fields=['status'],
-                name='projects_status_idx',
+                fields=["status"],
+                name="projects_status_idx",
             ),
         ),
     ]
@@ -639,47 +629,47 @@ class Migration(migrations.Migration):
 # migrations/0006_add_column_with_default.py
 from django.db import migrations, models
 
+
 class Migration(migrations.Migration):
     """Add column to large table without locking."""
 
     operations = [
         # Step 1: Add nullable column (fast, no default)
         migrations.AddField(
-            model_name='project',
-            name='priority',
+            model_name="project",
+            name="priority",
             field=models.IntegerField(null=True),
         ),
-
         # Step 2: Backfill in batches (separate data migration)
         # See migrations/0007_backfill_priority.py
-
         # Step 3: Set NOT NULL constraint (after backfill)
         # See migrations/0008_set_priority_not_null.py
     ]
 
+
 # migrations/0007_backfill_priority.py
 from django.db import migrations
 
+
 def backfill_priority(apps, schema_editor):
     """Backfill priority in batches to avoid long locks."""
-    Project = apps.get_model('projects', 'Project')
+    Project = apps.get_model("projects", "Project")
 
     batch_size = 1000
     while True:
         # Process in batches
-        projects = list(
-            Project.objects.filter(priority__isnull=True)[:batch_size]
-        )
+        projects = list(Project.objects.filter(priority__isnull=True)[:batch_size])
         if not projects:
             break
 
         for project in projects:
             project.priority = 3  # Default priority
-        Project.objects.bulk_update(projects, ['priority'], batch_size=500)
+        Project.objects.bulk_update(projects, ["priority"], batch_size=500)
+
 
 class Migration(migrations.Migration):
     dependencies = [
-        ('projects', '0006_add_column_with_default'),
+        ("projects", "0006_add_column_with_default"),
     ]
 
     operations = [
@@ -700,7 +690,7 @@ DATABASES = {
         "OPTIONS": {
             "connect_timeout": 10,
             "options": "-c statement_timeout=30000",  # 30 second timeout
-        }
+        },
     }
 }
 

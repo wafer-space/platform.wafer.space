@@ -106,9 +106,7 @@ def get_context_data(self, **kwargs):
     user = self.request.user
 
     context["viewing_as_admin"] = (
-        user.is_authenticated
-        and user.is_staff
-        and project.user != user
+        user.is_authenticated and user.is_staff and project.user != user
     )
 
     return context
