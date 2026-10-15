@@ -17,9 +17,11 @@ from django.http import HttpRequest
 from django.http import HttpResponse
 from django.test import Client
 from django.test import RequestFactory
+from django.urls import reverse
 
 from wafer_space.core.middleware import PLATFORM_USER_HEADER
 from wafer_space.core.middleware import PlatformUserHeaderMiddleware
+from wafer_space.legal.tests.factories import TermsOfServiceFactory
 from wafer_space.users.tests.factories import UserFactory
 
 if TYPE_CHECKING:
@@ -51,6 +53,24 @@ def test_anonymous_response_has_no_header(client: Client) -> None:
     response = client.get("/")
 
     assert PLATFORM_USER_HEADER not in response.headers
+
+
+@pytest.mark.django_db
+def test_terms_redirect_carries_the_user_pk(client: Client) -> None:
+    """A later middleware's short-circuit response is wrapped too."""
+    TermsOfServiceFactory(is_active=True)
+    user = UserFactory()
+    client.force_login(user)
+
+    response = client.get(reverse("projects:list"))
+
+    assert (
+        response.headers["Location"],
+        response.headers[PLATFORM_USER_HEADER],
+    ) == (
+        reverse("legal:tos_accept"),
+        str(user.pk),
+    )
 
 
 def _run(
