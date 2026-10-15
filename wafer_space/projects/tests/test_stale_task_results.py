@@ -96,7 +96,9 @@ def test_started_task_within_the_limit_is_running() -> None:
     assert is_check_task_actively_running(task_id) is True
 
 
-def test_started_task_past_the_limit_is_not_running(caplog) -> None:
+def test_started_task_past_the_limit_is_not_running(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     task_id = started_result(started_ago=hard_limit() + timedelta(minutes=1))
     with caplog.at_level(logging.ERROR, logger="wafer_space.projects.verification"):
         running = is_check_task_actively_running(task_id)
@@ -106,7 +108,7 @@ def test_started_task_past_the_limit_is_not_running(caplog) -> None:
 
 def test_cleanup_frees_the_lock_of_a_dead_worker_only() -> None:
     """End to end: the lock left by a dead worker goes, a live one stays."""
-    dead = locked_check(started_result(started_ago=hard_limit() + timedelta(1)))
+    dead = locked_check(started_result(started_ago=hard_limit() + timedelta(days=1)))
     live = locked_check(started_result(started_ago=timedelta(minutes=5)))
 
     result = checks_cleanup_stale_pending_tasks.run()
