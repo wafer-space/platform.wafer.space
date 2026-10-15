@@ -193,6 +193,23 @@ class TestManufacturabilityCheckLatestDigest:
 
         assert ManufacturabilityCheck.get_latest_precheck_digest() == "sha256:valid"
 
+    def test_get_latest_precheck_digest_ignores_unknown(self):
+        """A check that stored do_dispatching's "unknown" is not the latest (#421).
+
+        Otherwise every real image would look older than it.
+        """
+        now = timezone.now()
+        ManufacturabilityCheckFactory(
+            docker_image_digest="sha256:valid",
+            container_started_at=now - timedelta(hours=2),
+        )
+        ManufacturabilityCheckFactory(
+            docker_image_digest="unknown",
+            container_started_at=now - timedelta(hours=1),
+        )
+
+        assert ManufacturabilityCheck.get_latest_precheck_digest() == "sha256:valid"
+
     def test_get_latest_precheck_digest_returns_none_when_no_checks(self):
         """get_latest_precheck_digest returns None when no checks exist."""
         assert ManufacturabilityCheck.get_latest_precheck_digest() is None
