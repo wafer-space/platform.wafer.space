@@ -109,60 +109,63 @@ The two existing tests assert the old `submitted_at`-derived badge markup (`titl
 In `wafer_space/projects/tests/test_views.py`, replace `test_shows_submitted_indicator` (lines 138–149) and `test_shows_not_submitted_indicator` (lines 151–159) with:
 
 ```python
-    def test_shows_submitted_status_badge(self):
-        """Submitted projects show the Submitted status badge column."""
-        self.project1.status = Project.Status.SUBMITTED
-        self.project1.submitted_at = timezone.now()
-        self.project1.save()
-        self.client.login(username="testuser", password=TEST_PASSWORD)
+def test_shows_submitted_status_badge(self):
+    """Submitted projects show the Submitted status badge column."""
+    self.project1.status = Project.Status.SUBMITTED
+    self.project1.submitted_at = timezone.now()
+    self.project1.save()
+    self.client.login(username="testuser", password=TEST_PASSWORD)
 
-        response = self.client.get(reverse("projects:list"))
+    response = self.client.get(reverse("projects:list"))
 
-        assert response.status_code == HTTP_OK
-        content = response.content.decode()
-        assert "Submitted" in content
-        assert "bg-primary" in content
+    assert response.status_code == HTTP_OK
+    content = response.content.decode()
+    assert "Submitted" in content
+    assert "bg-primary" in content
 
-    def test_shows_draft_status_badge(self):
-        """Draft projects show the Draft status badge column."""
-        self.client.login(username="testuser", password=TEST_PASSWORD)
 
-        response = self.client.get(reverse("projects:list"))
+def test_shows_draft_status_badge(self):
+    """Draft projects show the Draft status badge column."""
+    self.client.login(username="testuser", password=TEST_PASSWORD)
 
-        assert response.status_code == HTTP_OK
-        content = response.content.decode()
-        assert "Draft" in content
-        assert 'title="Not submitted for manufacturing"' not in content
+    response = self.client.get(reverse("projects:list"))
 
-    def test_shows_full_status_display_name(self):
-        """The status column uses the full status field, not just Draft/Submitted."""
-        self.project1.status = Project.Status.MANUFACTURABLE
-        self.project1.save()
-        self.client.login(username="testuser", password=TEST_PASSWORD)
+    assert response.status_code == HTTP_OK
+    content = response.content.decode()
+    assert "Draft" in content
+    assert 'title="Not submitted for manufacturing"' not in content
 
-        response = self.client.get(reverse("projects:list"))
 
-        assert response.status_code == HTTP_OK
-        content = response.content.decode()
-        assert "Manufacturable" in content
-        assert "bg-success" in content
+def test_shows_full_status_display_name(self):
+    """The status column uses the full status field, not just Draft/Submitted."""
+    self.project1.status = Project.Status.MANUFACTURABLE
+    self.project1.save()
+    self.client.login(username="testuser", password=TEST_PASSWORD)
 
-    def test_shows_shuttle_name_when_assigned(self):
-        """Projects assigned to a shuttle show the shuttle name column."""
-        shuttle = ShuttleFactory(name="G850")
-        ProjectFactory(
-            user=self.user,
-            name="Shuttle Project",
-            shuttle=shuttle,
-            project_id="TST1",
-        )
-        self.client.login(username="testuser", password=TEST_PASSWORD)
+    response = self.client.get(reverse("projects:list"))
 
-        response = self.client.get(reverse("projects:list"))
+    assert response.status_code == HTTP_OK
+    content = response.content.decode()
+    assert "Manufacturable" in content
+    assert "bg-success" in content
 
-        assert response.status_code == HTTP_OK
-        content = response.content.decode()
-        assert "G850" in content
+
+def test_shows_shuttle_name_when_assigned(self):
+    """Projects assigned to a shuttle show the shuttle name column."""
+    shuttle = ShuttleFactory(name="G850")
+    ProjectFactory(
+        user=self.user,
+        name="Shuttle Project",
+        shuttle=shuttle,
+        project_id="TST1",
+    )
+    self.client.login(username="testuser", password=TEST_PASSWORD)
+
+    response = self.client.get(reverse("projects:list"))
+
+    assert response.status_code == HTTP_OK
+    content = response.content.decode()
+    assert "G850" in content
 ```
 
 Add the import to the top-of-file import block (its sorted position is after `from wafer_space.shuttles.models import ShuttleSlot`, line 25; `make lint-fix` will fix placement if needed):
@@ -201,20 +204,18 @@ git commit -m "test(projects): expect shuttle and status columns in project list
 In `wafer_space/projects/views.py`, `ProjectListView.get_queryset`, change both return statements:
 
 ```python
-        if user.is_staff:
-            # Staff users see all projects
-            return (
-                Project.objects.all()
-                .select_related("user", "shuttle")
-                .order_by("-created_at")
-            )
+if user.is_staff:
+    # Staff users see all projects
+    return (
+        Project.objects.all().select_related("user", "shuttle").order_by("-created_at")
+    )
 
-        # Regular users see only their own projects
-        return (
-            Project.objects.filter(user=user)
-            .select_related("user", "shuttle")
-            .order_by("-created_at")
-        )
+# Regular users see only their own projects
+return (
+    Project.objects.filter(user=user)
+    .select_related("user", "shuttle")
+    .order_by("-created_at")
+)
 ```
 
 (`user` is added to the regular branch too: the template compares `project.user == request.user` per row, which otherwise triggers one query per project.)

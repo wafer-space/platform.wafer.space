@@ -124,10 +124,12 @@ _B64_ALPHABET = frozenset(
 )
 _NON_B64 = bytes(b for b in range(256) if b not in _B64_ALPHABET)
 
+
 class URLHandler:
     def post_download_file(self, path: Path, metadata: dict[str, Any]) -> bool:
         """Transform the downloaded file in place; True if it changed."""
         return False
+
 
 class GoogleSourceHandler(URLHandler):
     def post_download_file(self, path: Path, metadata: dict[str, Any]) -> bool:
@@ -243,10 +245,12 @@ def test_download_dir_is_per_file_under_media_temp(settings, tmp_path):
     assert path == tmp_path / "temp" / "downloads" / "file_42"
     assert path.is_dir()
 
+
 def test_download_dir_is_stable_across_calls(settings, tmp_path):
     """A retry is a new Celery task and must find the partial file."""
     settings.MEDIA_ROOT = str(tmp_path)
     assert get_download_dir_for_file(7) == get_download_dir_for_file(7)
+
 
 def test_download_task_no_longer_uses_system_temp():
     source = Path(tasks_download.__file__).read_text()

@@ -552,9 +552,7 @@ class TestDuplicationCopy(TestCase):
         fresh = new_file.manufacturability_checks.get(
             status=ManufacturabilityCheck.Status.PENDING,
         )
-        assert (
-            fresh.trigger_reason == ManufacturabilityCheck.TriggerReason.DUPLICATED
-        )
+        assert fresh.trigger_reason == ManufacturabilityCheck.TriggerReason.DUPLICATED
         assert fresh.parent_check is not None
         assert fresh.parent_check.status == ManufacturabilityCheck.Status.FINISHED
 
@@ -914,8 +912,6 @@ User = get_user_model()
 there and define any missing one locally as a module constant.)
 
 ```python
-
-
 @pytest.mark.django_db
 class TestAdminDuplicateView(TestCase):
     """The duplicate view: permissions, form, POST behaviour."""
@@ -1080,89 +1076,90 @@ class DuplicateProjectForm(forms.Form):
 Extend `ProjectAdmin`:
 
 ```python
-    def get_urls(self):
-        urls = super().get_urls()
-        custom_urls = [
-            path(
-                "<uuid:object_id>/duplicate/",
-                self.admin_site.admin_view(self.duplicate_view),
-                name="projects_project_duplicate",
-            ),
-        ]
-        return custom_urls + urls
+def get_urls(self):
+    urls = super().get_urls()
+    custom_urls = [
+        path(
+            "<uuid:object_id>/duplicate/",
+            self.admin_site.admin_view(self.duplicate_view),
+            name="projects_project_duplicate",
+        ),
+    ]
+    return custom_urls + urls
 
-    def duplicate_view(
-        self,
-        request: HttpRequest,
-        object_id: object,
-    ) -> HttpResponse:
-        """Intermediate page: pick a target shuttle, then duplicate."""
-        project = self.get_object(request, str(object_id))
-        if project is None:
-            return self._get_obj_does_not_exist_redirect(
-                request,
-                self.opts,
-                str(object_id),
-            )
-        if not self.has_add_permission(request):
-            raise PermissionDenied
 
-        form = DuplicateProjectForm(
-            request.POST if request.method == "POST" else None,
-            source_shuttle=project.shuttle,
-        )
-        if request.method == "POST" and form.is_valid():
-            target_shuttle = form.cleaned_data["target_shuttle"]
-            try:
-                # cast: django-stubs types request.user as AbstractBaseUser |
-                # AnonymousUser; admin_view guarantees an authenticated staff
-                # user (same pattern as projects/views.py:70).
-                duplicate = duplicate_project_to_shuttle(
-                    project=project,
-                    target_shuttle=target_shuttle,
-                    admin_user=cast("User", request.user),
-                )
-            except ProjectDuplicationError as exc:
-                messages.error(request, str(exc))
-            else:
-                self.log_addition(
-                    request,
-                    duplicate,
-                    f"Duplicated from project {project.pk} "
-                    f"(shuttle {project.shuttle.name})",
-                )
-                self.log_change(
-                    request,
-                    project,
-                    f"Duplicated to shuttle {target_shuttle.name} "
-                    f"as project {duplicate.pk}",
-                )
-                messages.success(
-                    request,
-                    f"Project duplicated onto shuttle {target_shuttle.name}. "
-                    "A fresh manufacturability check has been queued.",
-                )
-                return redirect(
-                    reverse(
-                        "admin:projects_project_change",
-                        args=[duplicate.pk],
-                    ),
-                )
-
-        source_file = project.files.filter(is_active=True).first()
-        context = {
-            **self.admin_site.each_context(request),
-            "title": f"Duplicate {project.name}",
-            "opts": self.opts,
-            "project": project,
-            "source_file": source_file,
-            "form": form,
-        }
-        return TemplateResponse(
+def duplicate_view(
+    self,
+    request: HttpRequest,
+    object_id: object,
+) -> HttpResponse:
+    """Intermediate page: pick a target shuttle, then duplicate."""
+    project = self.get_object(request, str(object_id))
+    if project is None:
+        return self._get_obj_does_not_exist_redirect(
             request,
-            "admin/projects/project/duplicate_confirm.html",
-            context,
+            self.opts,
+            str(object_id),
         )
+    if not self.has_add_permission(request):
+        raise PermissionDenied
+
+    form = DuplicateProjectForm(
+        request.POST if request.method == "POST" else None,
+        source_shuttle=project.shuttle,
+    )
+    if request.method == "POST" and form.is_valid():
+        target_shuttle = form.cleaned_data["target_shuttle"]
+        try:
+            # cast: django-stubs types request.user as AbstractBaseUser |
+            # AnonymousUser; admin_view guarantees an authenticated staff
+            # user (same pattern as projects/views.py:70).
+            duplicate = duplicate_project_to_shuttle(
+                project=project,
+                target_shuttle=target_shuttle,
+                admin_user=cast("User", request.user),
+            )
+        except ProjectDuplicationError as exc:
+            messages.error(request, str(exc))
+        else:
+            self.log_addition(
+                request,
+                duplicate,
+                f"Duplicated from project {project.pk} "
+                f"(shuttle {project.shuttle.name})",
+            )
+            self.log_change(
+                request,
+                project,
+                f"Duplicated to shuttle {target_shuttle.name} "
+                f"as project {duplicate.pk}",
+            )
+            messages.success(
+                request,
+                f"Project duplicated onto shuttle {target_shuttle.name}. "
+                "A fresh manufacturability check has been queued.",
+            )
+            return redirect(
+                reverse(
+                    "admin:projects_project_change",
+                    args=[duplicate.pk],
+                ),
+            )
+
+    source_file = project.files.filter(is_active=True).first()
+    context = {
+        **self.admin_site.each_context(request),
+        "title": f"Duplicate {project.name}",
+        "opts": self.opts,
+        "project": project,
+        "source_file": source_file,
+        "form": form,
+    }
+    return TemplateResponse(
+        request,
+        "admin/projects/project/duplicate_confirm.html",
+        context,
+    )
 ```
 
 Implementation notes:

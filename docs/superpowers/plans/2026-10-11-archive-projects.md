@@ -197,40 +197,43 @@ At the top of `can_submit()` (before `active_file = self.latest_file`):
 After `submit()`:
 
 ```python
-    @property
-    def is_archived(self) -> bool:
-        """Whether the project is archived (see archived_at)."""
-        return self.archived_at is not None
+@property
+def is_archived(self) -> bool:
+    """Whether the project is archived (see archived_at)."""
+    return self.archived_at is not None
 
-    def can_be_archived_by(self, user: Any) -> tuple[bool, str]:
-        """Check whether ``user`` may archive this project.
 
-        The caller has already established that ``user`` is the owner or
-        staff. Returns (allowed, reason_if_not).
-        """
-        if self.is_archived:
-            return False, "Project is already archived"
-        if self.shuttle_slots.exists():
-            return False, (
-                "This project holds a shuttle slot. Staff must remove the "
-                "slot assignment before it can be archived."
-            )
-        if self.submitted_file_id is not None and not user.is_staff:
-            return False, (
-                "This project has a file submitted for manufacturing. "
-                "Contact staff to archive it."
-            )
-        return True, ""
+def can_be_archived_by(self, user: Any) -> tuple[bool, str]:
+    """Check whether ``user`` may archive this project.
 
-    def archive(self) -> None:
-        """Mark the project archived now. Permission checks are the caller's."""
-        self.archived_at = timezone.now()
-        self.save(update_fields=["archived_at", "updated_at"])
+    The caller has already established that ``user`` is the owner or
+    staff. Returns (allowed, reason_if_not).
+    """
+    if self.is_archived:
+        return False, "Project is already archived"
+    if self.shuttle_slots.exists():
+        return False, (
+            "This project holds a shuttle slot. Staff must remove the "
+            "slot assignment before it can be archived."
+        )
+    if self.submitted_file_id is not None and not user.is_staff:
+        return False, (
+            "This project has a file submitted for manufacturing. "
+            "Contact staff to archive it."
+        )
+    return True, ""
 
-    def unarchive(self) -> None:
-        """Make the project active again. Permission checks are the caller's."""
-        self.archived_at = None
-        self.save(update_fields=["archived_at", "updated_at"])
+
+def archive(self) -> None:
+    """Mark the project archived now. Permission checks are the caller's."""
+    self.archived_at = timezone.now()
+    self.save(update_fields=["archived_at", "updated_at"])
+
+
+def unarchive(self) -> None:
+    """Make the project active again. Permission checks are the caller's."""
+    self.archived_at = None
+    self.save(update_fields=["archived_at", "updated_at"])
 ```
 
 (`shuttle_slots` is the reverse name of `ShuttleSlot.project`; `Any` and `timezone` are already imported in models.py. Check with `grep -n "^from\|^import" wafer_space/projects/models.py`.)
@@ -389,7 +392,13 @@ ALLOWED_ON_ARCHIVED = {
     "unarchive",  # the one write allowed
     "delete",  # decided in #344
 }
-REFUSED_ON_ARCHIVED = {"update", "submit", "submit_url", "archive", "compliance_certify"}
+REFUSED_ON_ARCHIVED = {
+    "update",
+    "submit",
+    "submit_url",
+    "archive",
+    "compliance_certify",
+}
 
 
 def pk_url_names() -> set[str]:
@@ -720,12 +729,14 @@ Check which of `ClassVar`, `UUID`, `HttpRequest` and `HttpResponse` views.py alr
 In `urls.py`, after the submit path:
 
 ```python
-    path("<uuid:pk>/archive/", views.ProjectArchiveView.as_view(), name="archive"),
+(path("<uuid:pk>/archive/", views.ProjectArchiveView.as_view(), name="archive"),)
+(
     path(
         "<uuid:pk>/unarchive/",
         views.ProjectUnarchiveView.as_view(),
         name="unarchive",
     ),
+)
 ```
 
 Remove the Task 3 `xfail` markers.
@@ -787,7 +798,9 @@ def make_projects(user) -> tuple[Project, Project, Project]:
     new_active = ProjectFactory(user=user, name="New active")
     # created_at is auto_now_add; set explicit order.
     Project.objects.filter(pk=old_active.pk).update(created_at=now - timedelta(days=3))
-    Project.objects.filter(pk=new_archived.pk).update(created_at=now - timedelta(days=1))
+    Project.objects.filter(pk=new_archived.pk).update(
+        created_at=now - timedelta(days=1)
+    )
     Project.objects.filter(pk=new_active.pk).update(created_at=now - timedelta(days=2))
     return old_active, new_archived, new_active
 
@@ -814,7 +827,7 @@ def test_archived_row_has_badge(client: Client) -> None:
     make_projects(user)
     client.force_login(user)
     content = client.get(reverse("projects:list")).content.decode()
-    assert content.count('data-archived-badge') == 1
+    assert content.count("data-archived-badge") == 1
 
 
 def test_archived_projects_after_all_active_across_pages(client: Client) -> None:
@@ -1072,53 +1085,55 @@ git commit -m "feat(projects): archived filter in admin and badge on summary (#3
 - [ ] **Step 1: Write the test.** Follow `tests/browser/test_projects/test_crowdsupply_campaign_link.py` for setup: user, verified EmailAddress, ToS acceptance, a `login()` helper, `@pytest.mark.browser`, and `@pytest.mark.django_db(transaction=True)`. Then:
 
 ```python
-    def test_archive_round_trip(self):
-        """Archive moves the project last and locks it; unarchive restores it."""
-        newer = Project.objects.create(user=self.user, name="Keep me")
-        older = Project.objects.create(user=self.user, name="Abandon me")
-        Project.objects.filter(pk=older.pk).update(
-            created_at=timezone.now() - timedelta(days=1)
-        )
-        Project.objects.filter(pk=newer.pk).update(created_at=timezone.now())
-        self.login()
+def test_archive_round_trip(self):
+    """Archive moves the project last and locks it; unarchive restores it."""
+    newer = Project.objects.create(user=self.user, name="Keep me")
+    older = Project.objects.create(user=self.user, name="Abandon me")
+    Project.objects.filter(pk=older.pk).update(
+        created_at=timezone.now() - timedelta(days=1)
+    )
+    Project.objects.filter(pk=newer.pk).update(created_at=timezone.now())
+    self.login()
 
-        # Archive "Keep me" (the newest) so the order change is visible.
-        self.navigate_to(self.driver, f"/projects/{newer.pk}/")
-        self.wait_for_page_load(self.driver)
-        self.driver.execute_script("window.confirm = () => true;")
-        self.driver.find_element(
-            By.CSS_SELECTOR, f'form[action="/projects/{newer.pk}/archive/"] button'
-        ).click()
-        self.wait_for_element(self.driver, (By.CSS_SELECTOR, ".alert-secondary"))
+    # Archive "Keep me" (the newest) so the order change is visible.
+    self.navigate_to(self.driver, f"/projects/{newer.pk}/")
+    self.wait_for_page_load(self.driver)
+    self.driver.execute_script("window.confirm = () => true;")
+    self.driver.find_element(
+        By.CSS_SELECTOR, f'form[action="/projects/{newer.pk}/archive/"] button'
+    ).click()
+    self.wait_for_element(self.driver, (By.CSS_SELECTOR, ".alert-secondary"))
 
-        # The Edit control is disabled.
-        edit = self.driver.find_element(By.XPATH, "//button[contains(., 'Edit')]")
-        assert edit.get_attribute("disabled") is not None
+    # The Edit control is disabled.
+    edit = self.driver.find_element(By.XPATH, "//button[contains(., 'Edit')]")
+    assert edit.get_attribute("disabled") is not None
 
-        # On /projects/ it is now last, with the badge.
-        self.navigate_to(self.driver, "/projects/")
-        self.wait_for_page_load(self.driver)
-        titles = [
-            e.text for e in self.driver.find_elements(By.CSS_SELECTOR, ".list-group-item h5 a")
-        ]
-        assert titles == ["Abandon me", "Keep me"]
-        assert len(self.driver.find_elements(By.CSS_SELECTOR, "[data-archived-badge]")) == 1
+    # On /projects/ it is now last, with the badge.
+    self.navigate_to(self.driver, "/projects/")
+    self.wait_for_page_load(self.driver)
+    titles = [
+        e.text
+        for e in self.driver.find_elements(By.CSS_SELECTOR, ".list-group-item h5 a")
+    ]
+    assert titles == ["Abandon me", "Keep me"]
+    assert len(self.driver.find_elements(By.CSS_SELECTOR, "[data-archived-badge]")) == 1
 
-        # Unarchive from its page; it returns to first place.
-        self.navigate_to(self.driver, f"/projects/{newer.pk}/")
-        self.wait_for_page_load(self.driver)
-        self.driver.find_element(
-            By.CSS_SELECTOR, f'form[action="/projects/{newer.pk}/unarchive/"] button'
-        ).click()
-        WebDriverWait(self.driver, 10).until(
-            lambda d: not d.find_elements(By.CSS_SELECTOR, ".alert-secondary")
-        )
-        self.navigate_to(self.driver, "/projects/")
-        self.wait_for_page_load(self.driver)
-        titles = [
-            e.text for e in self.driver.find_elements(By.CSS_SELECTOR, ".list-group-item h5 a")
-        ]
-        assert titles == ["Keep me", "Abandon me"]
+    # Unarchive from its page; it returns to first place.
+    self.navigate_to(self.driver, f"/projects/{newer.pk}/")
+    self.wait_for_page_load(self.driver)
+    self.driver.find_element(
+        By.CSS_SELECTOR, f'form[action="/projects/{newer.pk}/unarchive/"] button'
+    ).click()
+    WebDriverWait(self.driver, 10).until(
+        lambda d: not d.find_elements(By.CSS_SELECTOR, ".alert-secondary")
+    )
+    self.navigate_to(self.driver, "/projects/")
+    self.wait_for_page_load(self.driver)
+    titles = [
+        e.text
+        for e in self.driver.find_elements(By.CSS_SELECTOR, ".list-group-item h5 a")
+    ]
+    assert titles == ["Keep me", "Abandon me"]
 ```
 
 Use the real project-name link selector from `project_list.html` (`a.stretched-link`). Make sure the archived banner selector cannot match the success message's alert: give the banner `data-archived-banner` and select on that instead of `.alert-secondary`.
