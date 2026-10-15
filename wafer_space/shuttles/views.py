@@ -34,6 +34,8 @@ SHOW_FILTER_CHOICES = (
     ("unassigned-cs", "Unassigned with CS order"),
     ("unassigned-mfg", "Unassigned and manufacturable"),
     ("unassigned-ready", "Unassigned, CS order and manufacturable"),
+    # Passed, but on an outdated precheck version: may need re-checking (#203)
+    ("outdated", "Manufacturable on an outdated precheck version"),
 )
 
 

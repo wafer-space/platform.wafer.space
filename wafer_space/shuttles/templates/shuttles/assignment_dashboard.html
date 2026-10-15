@@ -187,7 +187,8 @@
               <tr data-size="{{ project.slot_size }}"
                   data-assigned="{% if project.shuttle_slots.all %}true{% else %}false{% endif %}"
                   data-cs-order="{% if project.crowd_supply_order_id %}true{% else %}false{% endif %}"
-                  data-manufacturable="{% if project.latest_file_manufacturable %}true{% else %}false{% endif %}">
+                  data-manufacturable="{% if project.latest_file_manufacturable %}true{% else %}false{% endif %}"
+                  data-precheck-outdated="{% if project.latest_file_manufacturable and project.latest_file_finished_check.is_using_latest_precheck is False %}true{% else %}false{% endif %}">
                 <td class="font-monospace">{{ project.full_id|default:project.project_id }}</td>
                 <td class="font-monospace"
                     data-sort-value="{{ project.crowd_supply_order_id }}">

@@ -878,6 +878,7 @@ class TestAssignmentShowFilter:
             "unassigned-cs",
             "unassigned-mfg",
             "unassigned-ready",
+            "outdated",
         ]
 
     def test_rows_carry_assigned_cs_order_and_manufacturable(self, client):
@@ -1035,6 +1036,25 @@ class TestAssignmentPrecheckVersion:
             "2026-10-03",
             "Check finished 2026-10-03 09:04:05 UTC",
         )
+
+    def test_rows_say_whether_they_passed_on_an_outdated_version(self, client):
+        """The "outdated" show filter reads data-precheck-outdated."""
+        shuttle = ShuttleFactory(name="G835")
+        current = self.checked_project(shuttle, digest=CURRENT_DIGEST)
+        outdated = self.checked_project(shuttle, digest=OUTDATED_DIGEST)
+        failed = self.checked_project(shuttle, digest=OUTDATED_DIGEST, passed=False)
+
+        content = self.get(client, shuttle).content.decode()
+        flags = {
+            text.split()[0]: attrs["data-precheck-outdated"]
+            for attrs, text in marked(content, "data-precheck-outdated")
+        }
+
+        assert flags == {
+            current.full_id: "false",
+            outdated.full_id: "true",
+            failed.full_id: "false",
+        }
 
     def test_a_check_still_running_shows_no_date(self, client):
         shuttle = ShuttleFactory(name="G834")

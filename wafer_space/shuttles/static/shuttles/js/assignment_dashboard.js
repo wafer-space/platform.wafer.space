@@ -332,6 +332,7 @@
     const assigned = row.dataset.assigned === 'true';
     const csOrder = row.dataset.csOrder === 'true';
     const manufacturable = row.dataset.manufacturable === 'true';
+    const precheckOutdated = row.dataset.precheckOutdated === 'true';
     switch (showFilter) {
       case 'all': return true;
       case 'assigned': return assigned;
@@ -339,6 +340,7 @@
       case 'unassigned-cs': return !assigned && csOrder;
       case 'unassigned-mfg': return !assigned && manufacturable;
       case 'unassigned-ready': return !assigned && csOrder && manufacturable;
+      case 'outdated': return precheckOutdated;
       default: throw new Error('Unknown show filter: ' + showFilter);
     }
   }
