@@ -10,6 +10,9 @@ check completions overwrite (issue #354):
    latest *finished* check (an in-flight re-check does not reset it); with no
    finished check, the state of its latest check.
 
+Each verdict also says which precheck version gave it, and whether that is
+the latest version (issue #235).
+
 ``annotate_list_state`` adds the inputs as queryset annotations, so the list
 costs a fixed number of queries however many projects it shows.
 """
@@ -28,6 +31,7 @@ from django.db.models.functions import Coalesce
 
 from .models import DownloadAttempt
 from .models import ManufacturabilityCheck
+from .models import PrecheckImageRevision
 from .models import ProjectFile
 
 if TYPE_CHECKING:
@@ -49,6 +53,26 @@ class ListStateAnnotations(TypedDict):
     state_latest_check_status: str | None
     state_submitted_verdict: bool | None
     state_latest_download_status: str | None
+    state_latest_digest: str | None
+    state_latest_precheck_version: str | None
+    state_latest_git_commit_sha: str | None
+    state_submitted_digest: str | None
+    state_submitted_precheck_version: str | None
+    state_submitted_git_commit_sha: str | None
+    state_newest_precheck_digest: str | None
+
+
+@dataclass(frozen=True)
+class PrecheckVersion:
+    """The precheck version that gave a verdict, against the latest one."""
+
+    key: str
+    label: str
+    icon: str
+    css: str
+    title: str
+    # For screen readers: the icon and colour say it only visually.
+    status: str
 
 
 @dataclass(frozen=True)
@@ -62,6 +86,8 @@ class ListState:
     basis: str
     # Set on a submitted project whose latest revision is a newer one.
     newer_revision: ListState | None = None
+    # Set on a verdict: the precheck version of the check that gave it.
+    precheck: PrecheckVersion | None = None
 
 
 def annotate_list_state(projects: QuerySet[Project]) -> QuerySet[Project]:
@@ -80,24 +106,53 @@ def annotate_list_state(projects: QuerySet[Project]) -> QuerySet[Project]:
         project_file=OuterRef("submitted_file"),
         status=finished,
     ).order_by("-created_at")
-    return projects.annotate(state_latest_file_id=latest_file_id).annotate(
-        state_has_file=Exists(files),
-        state_latest_verdict=Subquery(
-            latest_file_checks.filter(status=finished).values("is_manufacturable")[:1]
-        ),
-        state_latest_check_status=Subquery(latest_file_checks.values("status")[:1]),
-        state_submitted_verdict=Subquery(
-            submitted_checks.values("is_manufacturable")[:1]
-        ),
-        # Same ordering as ProjectFile.latest_attempt (-attempt_number).
-        state_latest_download_status=Subquery(
-            DownloadAttempt.objects.filter(
-                project_file=OuterRef("state_latest_file_id")
-            )
-            .order_by("-attempt_number")
-            .values("status")[:1]
-        ),
+    latest_verdict_checks = latest_file_checks.filter(status=finished)
+    return (
+        projects.annotate(state_latest_file_id=latest_file_id)
+        .annotate(
+            state_has_file=Exists(files),
+            state_latest_verdict=Subquery(
+                latest_verdict_checks.values("is_manufacturable")[:1]
+            ),
+            state_latest_check_status=Subquery(latest_file_checks.values("status")[:1]),
+            state_submitted_verdict=Subquery(
+                submitted_checks.values("is_manufacturable")[:1]
+            ),
+            # Same ordering as ProjectFile.latest_attempt (-attempt_number).
+            state_latest_download_status=Subquery(
+                DownloadAttempt.objects.filter(
+                    project_file=OuterRef("state_latest_file_id")
+                )
+                .order_by("-attempt_number")
+                .values("status")[:1]
+            ),
+            state_latest_digest=Subquery(
+                latest_verdict_checks.values("docker_image_digest")[:1]
+            ),
+            state_submitted_digest=Subquery(
+                submitted_checks.values("docker_image_digest")[:1]
+            ),
+            # Uncorrelated: the database evaluates it once for the whole list.
+            state_newest_precheck_digest=Subquery(
+                ManufacturabilityCheck.latest_precheck_digest_queryset()[:1]
+            ),
+        )
+        .annotate(
+            **_revision_fields("state_latest"),
+            **_revision_fields("state_submitted"),
+        )
     )
+
+
+def _revision_fields(prefix: str) -> dict[str, Subquery]:
+    """The catalogued version fields of the digest annotated as ``prefix``."""
+    revision = PrecheckImageRevision.objects.filter(
+        digest=OuterRef(f"{prefix}_digest"),
+    )
+    return {
+        f"{prefix}_{field}": Subquery(revision.values(field)[:1])
+        for field in ("precheck_version", "git_commit_sha")
+    }
 
 
 NOT_SUBMITTED = "Not submitted for manufacturing"
@@ -150,6 +205,15 @@ def list_state(project: WithAnnotations[Project, ListStateAnnotations]) -> ListS
     if project.submitted_file_id is None:
         return _latest_revision_state(project)
     state = SUBMITTED_FAILING if project.state_submitted_verdict is False else SUBMITTED
+    state = replace(
+        state,
+        precheck=_precheck_version(
+            project.state_submitted_digest,
+            project.state_submitted_precheck_version,
+            project.state_submitted_git_commit_sha,
+            newest=project.state_newest_precheck_digest,
+        ),
+    )
     if project.state_latest_file_id != project.submitted_file_id:
         # Routine: a newer revision was uploaded after submission.
         state = replace(state, newer_revision=_latest_revision_state(project))
@@ -164,7 +228,15 @@ def _latest_revision_state(
         return NO_FILE
     verdict = project.state_latest_verdict
     if verdict is not None:
-        return _BY_VERDICT[verdict]
+        return replace(
+            _BY_VERDICT[verdict],
+            precheck=_precheck_version(
+                project.state_latest_digest,
+                project.state_latest_precheck_version,
+                project.state_latest_git_commit_sha,
+                newest=project.state_newest_precheck_digest,
+            ),
+        )
     # No finished check yet: describe the latest check instead.
     status = project.state_latest_check_status
     if status is None:
@@ -185,3 +257,51 @@ def _download_state(download_status: str | None) -> ListState:
     if download_status == DownloadAttempt.Status.COMPLETED:
         return NOT_CHECKED
     return DOWNLOAD_PENDING
+
+
+def _precheck_version(
+    digest: str | None,
+    precheck_version: str | None,
+    git_commit_sha: str | None,
+    *,
+    newest: str | None,
+) -> PrecheckVersion | None:
+    """The precheck version of a verdict's check, or None if it has no digest.
+
+    Labelled as on the check pages (``PrecheckImageRevision.version_display``)
+    and marked against the most recently started check's digest, the rule of
+    ``ManufacturabilityCheck.is_using_latest_precheck``.
+    """
+    if not digest:
+        return None
+    label = PrecheckImageRevision(
+        digest=digest,
+        precheck_version=precheck_version or "",
+        git_commit_sha=git_commit_sha or "",
+    ).version_display
+    if newest is None:
+        return PrecheckVersion(
+            key="unknown",
+            label=label,
+            icon="cloud",
+            css="text-muted",
+            title="Precheck version used; the latest version is not known",
+            status="latest version unknown",
+        )
+    if digest == newest:
+        return PrecheckVersion(
+            key="latest",
+            label=label,
+            icon="cloud-check-fill",
+            css="text-success",
+            title="Checked with the latest precheck version",
+            status="latest",
+        )
+    return PrecheckVersion(
+        key="outdated",
+        label=label,
+        icon="cloud-arrow-up-fill",
+        css="text-warning",
+        title="Checked with an older precheck version than the latest",
+        status="older version",
+    )
