@@ -214,8 +214,8 @@ export DJANGO_SETTINGS_MODULE=config.settings.prod
 | `CELERY_CACHE_BACKEND` | `django-cache` | `django-cache` | `django-cache` | `django-cache` | Universal: Django cache |
 | `CELERY_TASK_ALWAYS_EAGER` | `False` | `True` | `False` | `False` | Synchronous for tests only |
 | `CELERY_TASK_EAGER_PROPAGATES` | `True` | `True` | `True` | `True` | Universal |
-| `CELERY_TASK_ROUTES` | projects→manufacturability, referrals→referrals | projects→manufacturability, referrals→referrals | projects→manufacturability, referrals→referrals | projects→manufacturability, referrals→referrals | Universal queue routing |
-| `CELERY_RESULT_EXPIRES` | `3600` (1 hour) | `3600` (1 hour) | `3600` (1 hour) | `3600` (1 hour) | Universal |
+| `CELERY_TASK_DEFAULT_QUEUE` | `none:ro:default` | `none:ro:default` | `none:ro:default` | `none:ro:default` | Universal: queue for tasks without `queue=`, including `celery.backend_cleanup` (#382); there is no `CELERY_TASK_ROUTES`, tasks name their queue in `@shared_task(queue=...)` |
+| `CELERY_RESULT_EXPIRES` | `3600` (1 hour) | `3600` (1 hour) | `3600` (1 hour) | `3600` (1 hour) | Universal; enforced by `celery.backend_cleanup` daily at 04:00 UTC; must exceed `CELERY_TASK_TIME_LIMIT` |
 | `CELERY_TASK_TIME_LIMIT` | `1800` (30 min) | `1800` (30 min) | `1800` (30 min) | `1800` (30 min) | Universal hard limit |
 | `CELERY_TASK_SOFT_TIME_LIMIT` | `1500` (25 min) | `1500` (25 min) | `1500` (25 min) | `1500` (25 min) | Universal soft limit |
 

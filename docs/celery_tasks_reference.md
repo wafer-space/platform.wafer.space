@@ -12,7 +12,7 @@ For architecture details, see [Celery Architecture](celery_architecture.md).
 
 | Task                           | Queue              | Description                                                    | Retry                              |
 |--------------------------------|--------------------|----------------------------------------------------------------|------------------------------------|
-| `cleanup_old_task_results`     | `none:ro:default`  | Remove task results older than 24 hours                        | No                                 |
+| `cleanup_old_task_results`     | `none:ro:default`  | Remove task results older than 24 hours (not in the beat schedule; `celery.backend_cleanup` enforces `CELERY_RESULT_EXPIRES`) | No |
 | `download_project_file`        | `http:rw:downloads`| Download file with chunking, hash verification, resume support | Yes (2 retries, 60s base, 2x backoff)|
 | `ensure_download_tasks_queued` | `none:ro:default`  | Recovery: detect orphaned downloads and requeue                | No                                 |
 

@@ -243,6 +243,7 @@ CELERY_RESULT_BACKEND = "django-db"          # Django ORM results
 CELERY_TASK_TIME_LIMIT = 30 * 60             # 30 min hard limit
 CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60        # 25 min soft limit
 CELERY_RESULT_EXPIRES = 3600                 # 1 hour result retention
+CELERY_TASK_DEFAULT_QUEUE = "none:ro:default"  # tasks without queue=, e.g. backend_cleanup
 ```
 
 ---
