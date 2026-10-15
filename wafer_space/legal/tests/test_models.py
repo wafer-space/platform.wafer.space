@@ -1,5 +1,6 @@
 """Tests for legal app models."""
 
+import frontmatter
 import pytest
 from django.contrib.auth.models import AnonymousUser
 from django.db import IntegrityError
@@ -237,3 +238,26 @@ class TestTermsOfServiceSyncFromFiles:
             TermsOfService.sync_from_files()
 
         assert not TermsOfService.objects.filter(version="2.0").exists()
+
+
+@pytest.mark.django_db
+class TestTermsOfServiceActivationRewritesFrontMatter:
+    """Activating a TOS writes a real bool is_active into every version file."""
+
+    @pytest.mark.parametrize(
+        ("version", "raw_value", "expected"),
+        [("1.0", "1", True), ("0.9", '"true"', False)],
+    )
+    def test_non_bool_is_active_is_rewritten_as_bool(
+        self, mock_tos_directory, version, raw_value, expected
+    ):
+        """A non-bool value is replaced, even when it is truthy-equal."""
+        (mock_tos_directory / "1.0.md").write_text("---\nis_active: false\n---\nT\n")
+        (mock_tos_directory / f"{version}.md").write_text(
+            f"---\nis_active: {raw_value}\n---\nTerms\n"
+        )
+
+        TermsOfService(version="1.0", is_active=True).save()
+
+        written = frontmatter.loads((mock_tos_directory / f"{version}.md").read_text())
+        assert written.metadata["is_active"] is expected
