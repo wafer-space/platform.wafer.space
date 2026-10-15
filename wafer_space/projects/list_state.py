@@ -71,6 +71,8 @@ class PrecheckVersion:
     icon: str
     css: str
     title: str
+    # For screen readers: the icon and colour say it only visually.
+    status: str
 
 
 @dataclass(frozen=True)
@@ -284,6 +286,7 @@ def _precheck_version(
             icon="cloud",
             css="text-muted",
             title="Precheck version used; the latest version is not known",
+            status="latest version unknown",
         )
     if digest == newest:
         return PrecheckVersion(
@@ -292,6 +295,7 @@ def _precheck_version(
             icon="cloud-check-fill",
             css="text-success",
             title="Checked with the latest precheck version",
+            status="latest",
         )
     return PrecheckVersion(
         key="outdated",
@@ -299,4 +303,5 @@ def _precheck_version(
         icon="cloud-arrow-up-fill",
         css="text-warning",
         title="Checked with an older precheck version than the latest",
+        status="older version",
     )

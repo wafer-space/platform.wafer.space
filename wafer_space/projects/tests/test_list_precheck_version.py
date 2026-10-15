@@ -106,7 +106,9 @@ def test_latest_version_is_marked_latest(client: Client) -> None:
     PrecheckImageRevision.objects.create(digest=NEW, precheck_version="1.6.0")
     checked_revision(project, NEW, verdict=True)
 
-    assert version_lines(client, user, project) == [("latest", "precheck 1.6.0")]
+    assert version_lines(client, user, project) == [
+        ("latest", "precheck 1.6.0 (latest)"),
+    ]
 
 
 def test_older_version_is_marked_outdated(client: Client) -> None:
@@ -116,7 +118,9 @@ def test_older_version_is_marked_outdated(client: Client) -> None:
     checked_revision(project, OLD, verdict=False)
     newer_check_elsewhere(NEW)
 
-    assert version_lines(client, user, project) == [("outdated", "precheck 1.5.2")]
+    assert version_lines(client, user, project) == [
+        ("outdated", "precheck 1.5.2 (older version)"),
+    ]
 
 
 def test_uncatalogued_digest_shows_the_short_digest(client: Client) -> None:
@@ -126,7 +130,7 @@ def test_uncatalogued_digest_shows_the_short_digest(client: Client) -> None:
     checked_revision(project, NEW, verdict=True)
 
     assert version_lines(client, user, project) == [
-        ("latest", "precheck sha256:bbbbbbbbbbbb..."),
+        ("latest", "precheck sha256:bbbbbbbbbbbb... (latest)"),
     ]
 
 
@@ -136,7 +140,21 @@ def test_commit_sha_when_no_version_is_catalogued(client: Client) -> None:
     PrecheckImageRevision.objects.create(digest=NEW, git_commit_sha="0123456789ab")
     checked_revision(project, NEW, verdict=True)
 
-    assert version_lines(client, user, project) == [("latest", "precheck 0123456")]
+    assert version_lines(client, user, project) == [
+        ("latest", "precheck 0123456 (latest)"),
+    ]
+
+
+def test_latest_unknown_when_no_check_has_started(client: Client) -> None:
+    """A digest without any started check (a duplicated check, say)."""
+    user = UserFactory()
+    project = ProjectFactory(user=user)
+    revision = checked_revision(project, NEW, verdict=True)
+    revision.manufacturability_checks.update(container_started_at=None)
+
+    assert version_lines(client, user, project) == [
+        ("unknown", "precheck sha256:bbbbbbbbbbbb... (latest version unknown)"),
+    ]
 
 
 def test_check_without_a_digest_shows_no_version(client: Client) -> None:
@@ -172,8 +190,8 @@ def test_submitted_and_newer_revision_each_show_their_own(client: Client) -> Non
     checked_revision(project, NEW, verdict=True)
 
     assert version_lines(client, user, project) == [
-        ("outdated", "precheck sha256:aaaaaaaaaaaa..."),
-        ("latest", "precheck sha256:bbbbbbbbbbbb..."),
+        ("outdated", "precheck sha256:aaaaaaaaaaaa... (older version)"),
+        ("latest", "precheck sha256:bbbbbbbbbbbb... (latest)"),
     ]
 
 
