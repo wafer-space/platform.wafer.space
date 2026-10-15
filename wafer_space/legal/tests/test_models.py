@@ -1,5 +1,6 @@
 """Tests for legal app models."""
 
+import frontmatter
 import pytest
 from django.contrib.auth.models import AnonymousUser
 from django.db import IntegrityError
@@ -212,3 +213,51 @@ class TestTermsOfServiceNotification:
         assert TermsOfServiceNotification.Status.PENDING == "pending"
         assert TermsOfServiceNotification.Status.SENT == "sent"
         assert TermsOfServiceNotification.Status.FAILED == "failed"
+
+
+@pytest.mark.django_db
+class TestTermsOfServiceSyncFromFiles:
+    """sync_from_files reads is_active from each version file's front matter."""
+
+    def test_bool_is_active_is_synced(self, mock_tos_directory):
+        """A boolean is_active in front matter becomes the database value."""
+        (mock_tos_directory / "2.0.md").write_text("---\nis_active: true\n---\nTerms\n")
+
+        TermsOfService.sync_from_files()
+
+        assert TermsOfService.objects.get(version="2.0").is_active is True
+
+    @pytest.mark.parametrize("raw_value", ["1", '"true"', '"false"'])
+    def test_non_bool_is_active_raises(self, mock_tos_directory, raw_value):
+        """A non-boolean is_active fails loudly instead of activating a TOS."""
+        (mock_tos_directory / "2.0.md").write_text(
+            f"---\nis_active: {raw_value}\n---\nTerms\n"
+        )
+
+        with pytest.raises(TypeError, match="is_active must be true or false"):
+            TermsOfService.sync_from_files()
+
+        assert not TermsOfService.objects.filter(version="2.0").exists()
+
+
+@pytest.mark.django_db
+class TestTermsOfServiceActivationRewritesFrontMatter:
+    """Activating a TOS writes a real bool is_active into every version file."""
+
+    @pytest.mark.parametrize(
+        ("version", "raw_value", "expected"),
+        [("1.0", "1", True), ("0.9", '"true"', False)],
+    )
+    def test_non_bool_is_active_is_rewritten_as_bool(
+        self, mock_tos_directory, version, raw_value, expected
+    ):
+        """A non-bool value is replaced, even when it is truthy-equal."""
+        (mock_tos_directory / "1.0.md").write_text("---\nis_active: false\n---\nT\n")
+        (mock_tos_directory / f"{version}.md").write_text(
+            f"---\nis_active: {raw_value}\n---\nTerms\n"
+        )
+
+        TermsOfService(version="1.0", is_active=True).save()
+
+        written = frontmatter.loads((mock_tos_directory / f"{version}.md").read_text())
+        assert written.metadata["is_active"] is expected

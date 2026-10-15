@@ -115,8 +115,13 @@ class TermsOfService(models.Model):
                 should_be_active = file_path.stem == self.version
                 current_is_active = post.metadata.get("is_active", False)
 
-                # Only update if status actually changed
-                if current_is_active != should_be_active:
+                # Only update if status actually changed. A non-bool value
+                # ("1", "true") is rewritten as the bool the database holds,
+                # since sync_from_files rejects anything but true/false.
+                if (
+                    not isinstance(current_is_active, bool)
+                    or current_is_active != should_be_active
+                ):
                     post.metadata["is_active"] = should_be_active
                     # Write back to file (with consistent formatting)
                     write_frontmatter_file(file_path, post)
@@ -160,6 +165,14 @@ class TermsOfService(models.Model):
 
                 version = file_path.stem
                 is_active = post.metadata.get("is_active", False)
+                # Front matter is untyped YAML: "is_active: yes" or "1" must
+                # not silently become a truthy TOS activation.
+                if not isinstance(is_active, bool):
+                    msg = (
+                        f"{file_path}: front matter is_active must be true or "
+                        f"false, got {is_active!r}"
+                    )
+                    raise TypeError(msg)
 
                 # Create or update database entry
                 tos, created = cls.objects.get_or_create(
