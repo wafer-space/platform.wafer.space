@@ -14,6 +14,7 @@ import ast
 import io
 import logging
 import logging.config
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -31,9 +32,15 @@ if TYPE_CHECKING:
 SETTINGS_DIR = Path(__file__).resolve().parents[1] / "settings"
 
 
-@pytest.fixture
-def console() -> Iterator[io.StringIO]:
-    """Apply the deployed LOGGING; yield what its console handler writes."""
+@contextmanager
+def deployed_logging_applied() -> Iterator[io.StringIO]:
+    """Apply the deployed LOGGING; yield what its console handler writes.
+
+    On the way out the test LOGGING comes back. It names only root, and
+    dictConfig leaves loggers it doesn't name as they are, so the loggers
+    the deployed LOGGING set are reset too: otherwise wafer_space would keep
+    mailing ADMINS in every later test.
+    """
     cache.clear()  # RateLimitedAdminEmailHandler's keys
     logging.config.dictConfig(deployed_logging())
     stream = io.StringIO()
@@ -42,9 +49,31 @@ def console() -> Iterator[io.StringIO]:
     handler = handlers[0]
     assert isinstance(handler, logging.StreamHandler)
     handler.setStream(stream)
-    yield stream
-    configure_logging(settings.LOGGING_CONFIG, settings.LOGGING)
-    cache.clear()
+    try:
+        yield stream
+    finally:
+        configure_logging(settings.LOGGING_CONFIG, settings.LOGGING)
+        for name in deployed_logging()["loggers"]:
+            named = logging.getLogger(name)
+            named.handlers.clear()
+            named.setLevel(logging.NOTSET)
+            named.propagate = True
+        cache.clear()
+
+
+@pytest.fixture
+def console() -> Iterator[io.StringIO]:
+    with deployed_logging_applied() as stream:
+        yield stream
+
+
+def test_the_test_logging_comes_back_afterwards() -> None:
+    """No later test inherits the deployed loggers or their ADMINS email."""
+    with deployed_logging_applied():
+        pass
+
+    app_logger = logging.getLogger("wafer_space")
+    assert (app_logger.handlers, app_logger.level) == ([], logging.NOTSET)
 
 
 @pytest.mark.parametrize("level", [logging.INFO, logging.WARNING, logging.ERROR])
