@@ -38,7 +38,7 @@ pytestmark = pytest.mark.django_db
 
 OLD = "sha256:" + "a" * 64
 NEW = "sha256:" + "b" * 64
-SHORT_NEW = "sha256:bbbbbbbbbbbb..."
+SHORT_NEW = "sha256:bbbbbbbbbbbb"
 IMAGE_LINE = re.compile(r"<small[^>]*data-precheck-image[^>]*><code>([^<]*)</code>")
 FINISHED = ManufacturabilityCheck.Status.FINISHED
 

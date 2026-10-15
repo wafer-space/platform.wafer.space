@@ -76,8 +76,8 @@ class PrecheckVersion:
     title: str
     # For screen readers: the icon and colour say it only visually.
     status: str
-    # Set when the image is recorded but its version is not known yet: its
-    # short digest, which staff see on a line of its own.
+    # Set when the image is recorded but its version is not known yet: the
+    # start of its digest, which staff see on a line of its own.
     image: str = ""
 
 
@@ -316,7 +316,9 @@ def _precheck_version(
         marked,
         label=VERSION_NOT_YET_KNOWN,
         title=f"{marked.title}; its version is not known yet: image {digest}",
-        image=PrecheckImageRevision(digest=digest).short_digest,
+        # short_digest's 12 hex digits, without the "..." that would wrap
+        # onto a line of its own in the list's narrow state column.
+        image=digest[: len(PRECHECK_DIGEST_PREFIX) + 12],
     )
 
 
