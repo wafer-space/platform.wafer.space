@@ -86,6 +86,7 @@ class RequestLog(models.Model):
             models.Index(fields=["-created_at"]),
             models.Index(fields=["request_id"]),
             models.Index(fields=["view_name", "-created_at"]),
+            models.Index(fields=["status", "-created_at"]),
             models.Index(fields=["user", "-created_at"]),
             models.Index(fields=["client_ip", "-created_at"]),
         ]

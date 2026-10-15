@@ -21,6 +21,7 @@ pytestmark = pytest.mark.django_db
 
 HTTP_OK = 200
 HTTP_FORBIDDEN = 403
+TWO_4XX_ROWS = 2
 
 
 def _row(**fields: object) -> RequestLog:
@@ -36,17 +37,46 @@ def _row(**fields: object) -> RequestLog:
     return RequestLog.objects.create(**defaults)
 
 
-def test_staff_can_search_the_log_by_path(client: Client) -> None:
+def _changelist_count(client: Client, params: dict[str, str]) -> int:
+    client.force_login(UserFactory(is_staff=True))
+    response = client.get(reverse("admin:analytics_requestlog_changelist"), params)
+    assert response.status_code == HTTP_OK
+    return response.context["cl"].result_count
+
+
+def test_search_matches_a_path_by_its_beginning(client: Client) -> None:
     _row(path="/projects/abc/files/7/")
     _row(path="/projects/")
-    client.force_login(UserFactory(is_staff=True))
 
-    response = client.get(
-        reverse("admin:analytics_requestlog_changelist"), {"q": "/files/7/"}
-    )
+    assert _changelist_count(client, {"q": "/projects/abc/"}) == 1
 
-    assert response.status_code == HTTP_OK
-    assert response.context["cl"].result_count == 1
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("request_id", "a" * 32), ("client_ip", "203.0.113.9"), ("username", "ada")],
+)
+def test_search_matches_id_ip_and_username_exactly(
+    client: Client, field: str, value: str
+) -> None:
+    _row(**{field: value})
+    _row()
+
+    assert _changelist_count(client, {"q": value}) == 1
+
+
+def test_status_class_filter(client: Client) -> None:
+    _row(status=404)
+    _row(status=403)
+    _row(status=200)
+
+    assert _changelist_count(client, {"status_class": "4"}) == TWO_4XX_ROWS
+
+
+def test_file_view_filter(client: Client) -> None:
+    _row(view_name="projects:file_download")
+    _row(view_name="projects:list")
+
+    assert _changelist_count(client, {"file_view": "projects:file_download"}) == 1
 
 
 @pytest.mark.parametrize("action", ["add", "change", "delete"])
