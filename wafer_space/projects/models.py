@@ -314,8 +314,12 @@ class Project(models.Model):
         related_name="+",
         help_text="Staff user who submitted despite a failed precheck.",
     )
+    # db_default: workers still on older code insert without this column
+    # during a deploy's rolling restart (issue #433).
     submission_override_reason = models.TextField(
         blank=True,
+        default="",
+        db_default="",
         help_text="Why staff overrode the precheck when submitting.",
     )
 
@@ -996,8 +1000,12 @@ class ProjectAccessLog(models.Model):
         blank=True,
         help_text="Name of the view that was accessed",
     )
+    # db_default: workers still on older code insert without this column
+    # during a deploy's rolling restart (issue #433).
     details = models.TextField(
         blank=True,
+        default="",
+        db_default="",
         help_text="Extra detail, e.g. the reason for a submit override",
     )
 
