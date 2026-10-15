@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+from typing import Any
+
 from django import forms
 from django.core.exceptions import ValidationError
 from django.utils import timezone
@@ -10,6 +13,8 @@ from django.utils.html import format_html
 from wafer_space.core.enums import SlotSize
 from wafer_space.shuttles.models import Shuttle
 
+from .duplication import clone_target_refusal
+from .duplication import clone_target_shuttles
 from .models import PROJECT_ID_LENGTH
 from .models import SUBMIT_OVERRIDE_REASON_MIN_LENGTH
 from .models import LicenseType
@@ -20,6 +25,9 @@ from .security import URLValidator
 from .services.license_service import LicenseValidationError
 from .services.license_service import fetch_url_content
 from .services.license_service import validate_spdx_id
+
+if TYPE_CHECKING:
+    import uuid
 
 # Hash length constants
 MD5_HASH_LENGTH = 32
@@ -172,7 +180,7 @@ def clean_new_project_id(
     value: str,
     shuttle: Shuttle | None,
     *,
-    exclude_pk: object = None,
+    exclude_pk: uuid.UUID | None = None,
 ) -> str:
     """Normalise a project ID and check it is free on ``shuttle``.
 
@@ -205,10 +213,7 @@ def clean_new_project_id(
         if exclude_pk is not None:
             queryset = queryset.exclude(pk=exclude_pk)
         if queryset.exists():
-            msg = (
-                f"Project ID '{project_id}' is already used in "
-                f"shuttle {shuttle.name}"
-            )
+            msg = f"Project ID '{project_id}' is already used in shuttle {shuttle.name}"
             raise ValidationError(msg)
 
     return project_id
@@ -538,6 +543,64 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
         if commit:
             instance.save()
         return instance
+
+
+class CloneProjectForm(forms.Form):
+    """Clone a project to a shuttle open to users (#355).
+
+    The owner picks the target shuttle (only those open to users, the
+    #320 rule, test-only G800 included and labelled, #374) and the new
+    project's ID and slot size, which are per shuttle. The copy itself
+    runs in the duplication task (projects.duplication).
+    """
+
+    target_shuttle = ShuttleChoiceField(
+        label="Shuttle",
+        queryset=Shuttle.objects.none(),  # Set in __init__
+        empty_label="Choose a shuttle",
+        widget=forms.Select(attrs={"class": "form-control"}),
+    )
+    project_id = project_id_field()
+    slot_size = forms.ChoiceField(
+        label="Slot size",
+        choices=(),  # Set in __init__
+        widget=forms.Select(attrs={"class": "form-control"}),
+    )
+
+    def __init__(self, *args: Any, project: Project, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.project = project
+        shuttles = clone_target_shuttles()
+        if project.shuttle_id is not None:
+            shuttles = shuttles.exclude(pk=project.shuttle_id)
+        shuttle_field = self.fields["target_shuttle"]
+        if isinstance(shuttle_field, forms.ModelChoiceField):
+            shuttle_field.queryset = shuttles
+        # Preselect the oldest real run open to users; never a test-only
+        # shuttle, which users pick knowingly (as on project creation).
+        self.fields["target_shuttle"].initial = (
+            shuttles.filter(is_test_only=False).order_by("created_at").first()
+        )
+        slot_size_field = self.fields["slot_size"]
+        if isinstance(slot_size_field, forms.ChoiceField):
+            slot_size_field.choices = [
+                (size.value, size.full_label) for size in SlotSize
+            ]
+        self.fields["slot_size"].initial = project.slot_size
+        self.fields["project_id"].initial = project.project_id
+
+    def clean_target_shuttle(self) -> Shuttle:
+        shuttle: Shuttle = self.cleaned_data["target_shuttle"]
+        refusal = clone_target_refusal(shuttle)
+        if refusal is not None:
+            raise ValidationError(refusal)
+        return shuttle
+
+    def clean_project_id(self) -> str:
+        return clean_new_project_id(
+            self.cleaned_data.get("project_id", ""),
+            self.cleaned_data.get("target_shuttle"),
+        )
 
 
 class ProjectFileURLSubmitForm(forms.Form):
