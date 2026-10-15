@@ -319,18 +319,31 @@ uv run pytest wafer_space/projects/tests/ -v
 
 ## Configuration
 
-### Celery Settings
+### Celery Queue
+
+There is no `CELERY_TASK_ROUTES`: each task names its queue in its decorator.
+Downloads run on `http:rw:downloads`, the only queue whose worker has both
+internet access (`http`) and write access under `MEDIA_ROOT` (`rw`); the
+deployed web process cannot write files:
 
 ```python
-# config/settings/base.py
+# wafer_space/projects/tasks_download.py
 
-CELERY_TASK_ROUTES = {
-    "wafer_space.projects.tasks.download_project_file": {"queue": "downloads"},
-}
-
-# Separate queue for downloads (2 workers recommended)
-# celery -A config worker -Q downloads --concurrency=2
+@shared_task(
+    bind=True,
+    queue="http:rw:downloads",
+    max_retries=settings.DOWNLOAD_TASK_MAX_RETRIES,
+    default_retry_delay=settings.DOWNLOAD_TASK_RETRY_BASE_DELAY_SECONDS,
+)
+def download_project_file(self, project_id): ...
 ```
+
+Tasks that name no queue go to `CELERY_TASK_DEFAULT_QUEUE`
+(`none:ro:default`, issue #382). In development, `make runserver` (Honcho) runs the
+Procfile's `worker-slow`, which consumes `http:rw:downloads`; `make celery`
+runs one worker on all eight queues. In production the `http-rw-downloads`
+worker consumes it (see [systemd-services.md](systemd-services.md) and
+[celery_architecture.md](celery_architecture.md)).
 
 ### File Size Limit
 
