@@ -496,6 +496,12 @@ CELERY_TASK_EAGER_PROPAGATES = True
 # The deployed workers run the default prefork pool, which enforces the time
 # limit; the Procfile's solo/threads pools (development only) do not.
 CELERY_RESULT_EXPIRES = 3600
+# Store each result's task name (and args, kwargs and worker) on its
+# TaskResult row. checks_orch_stalled finds checks_running's results by
+# task_name, which django-celery-results writes only when this is on
+# (issue #426). The arguments are database ids, an image digest and a slot
+# size: no secrets or personal data, and they already sit in kombu_message.
+CELERY_RESULT_EXTENDED = True
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes hard time limit
 CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes soft time limit
@@ -510,6 +516,28 @@ CELERY_WORKER_MAX_TASKS_PER_CHILD = 100
 # child whose task transiently spiked past the limit is recycled even if
 # the memory was since freed.
 CELERY_WORKER_MAX_MEMORY_PER_CHILD = 1024 * 1024  # kB (~1GiB peak RSS)
+
+# Broker watchdog (issue #426, wafer_space/core/broker_watchdog.py)
+# A worker whose consumer stops taking messages stays alive, so systemd
+# shows it running. Every worker's main process polls the broker, and exits
+# (CRITICAL to ADMINS, then exit code 70 for systemd to restart it) once a
+# message has waited this long with nothing taken and no task running.
+# A running task never counts, however long it runs; this is how long an
+# idle worker may leave a message waiting. From checks-orch's log on
+# 16 Oct 2026 (hetzner-ansible NOTE 28 B2): after deploy 1's kombu purge,
+# messages reached the worker within 5.5 s of being sent (p99 2.3 s), and
+# the longest any checks_* task ran was 24.3 s, even in the queue-bloat
+# era (#382). 5 minutes is about 12 times that.
+WORKER_WEDGE_EXIT_SECONDS = 5 * 60
+WORKER_WEDGE_POLL_SECONDS = 30
+# checks_orch_stalled (issue #426) emails ADMINS once checks_running, which
+# checks-orch runs every 15 s, has recorded no result for this long. Gaps
+# between checks_running completions on 16 Oct 2026 (hetzner-ansible NOTE
+# 28 B2): after deploy 1's kombu purge, n=2869, p50 13.3 s, p99 19.6 s and
+# max 27.7 s. Before it, the worst were 384 s (the queue-bloat era, #382)
+# and 626 s (the purge, workers stopped). 10 minutes stays quiet in normal
+# running and fires in real outages like those.
+CHECKS_ORCH_STALL_ALERT_SECONDS = 10 * 60
 
 # Download task configuration
 # Celery retry settings for download tasks (built-in retry mechanism)
@@ -596,6 +624,11 @@ CELERY_BEAT_SCHEDULE = {
     "checks-cancelling": {
         "task": "wafer_space.projects.tasks_checks.checks_cancelling",
         "schedule": 15.0,
+    },
+    # Alerts when checks-orch stops running the dispatchers above (issue #426)
+    "checks-orch-stalled": {
+        "task": "wafer_space.projects.tasks_checks.checks_orch_stalled",
+        "schedule": 60.0,
     },
     # Cleanup and retry tasks (60s intervals)
     "checks-retry": {

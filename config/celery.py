@@ -10,11 +10,14 @@ import os
 from celery import Celery
 from celery.signals import task_failure
 
+from wafer_space.core.broker_watchdog import install_broker_watchdog
 from wafer_space.core.sqlalchemy_fork import install_fork_guard
 
 # A prefork child must not publish over its parent's broker connection
 # (issue #426); installed before kombu opens any broker connection.
 install_fork_guard()
+# A worker whose consumer stops taking messages exits (issue #426).
+install_broker_watchdog()
 
 # Set the default Django settings module for the 'celery' program.
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.dev")
