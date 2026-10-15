@@ -112,15 +112,12 @@ def duplicate_project_to_shuttle(
     (queue ``http:rw:downloads``) — never in the web process. Use
     ``tasks_duplication.duplicate_project_task`` from views.
     """
-    if clone is not None:
-        refusal = clone_target_refusal(target_shuttle)
-        if refusal is not None:
-            raise ProjectDuplicationError(refusal)
     new_project_id = project.project_id if clone is None else clone.project_id
     source_file = validate_duplication(
         project,
         target_shuttle,
         project_id=new_project_id,
+        clone=clone is not None,
     )
     new_file: ProjectFile | None = None
     try:
@@ -168,6 +165,7 @@ def validate_duplication(
     target_shuttle: Shuttle,
     *,
     project_id: str | None = None,
+    clone: bool = False,
 ) -> ProjectFile:
     """Validate the duplication request, returning the source's active file.
 
@@ -175,6 +173,11 @@ def validate_duplication(
     enqueueing the task; the task re-validates because state can change
     between enqueue and execution. ``project_id`` is the new project's
     ID on the target shuttle, by default the source's.
+
+    The target's rule depends on who asks: the admin action accepts any
+    status in ELIGIBLE_TARGET_SHUTTLE_STATUSES; a clone (``clone``,
+    "Clone to open shuttle") accepts exactly the shuttles open to users
+    (clone_target_refusal), which is what the clone page offers.
     """
     new_project_id = project.project_id if project_id is None else project_id
     if project.shuttle_id is None:
@@ -185,7 +188,11 @@ def validate_duplication(
         msg = "Target shuttle is the same shuttle the project is already on."
         raise ProjectDuplicationError(msg)
 
-    if target_shuttle.status not in ELIGIBLE_TARGET_SHUTTLE_STATUSES:
+    if clone:
+        refusal = clone_target_refusal(target_shuttle)
+        if refusal is not None:
+            raise ProjectDuplicationError(refusal)
+    elif target_shuttle.status not in ELIGIBLE_TARGET_SHUTTLE_STATUSES:
         msg = (
             f"Shuttle {target_shuttle.name} cannot accept duplicated projects "
             f"(status: {target_shuttle.get_status_display()})."

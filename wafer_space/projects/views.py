@@ -1195,7 +1195,12 @@ class ProjectCloneView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
         try:
             # Immediate feedback; the task re-validates, and the database's
             # unique (shuttle, project_id) constraint stops a second clone.
-            validate_duplication(project, target_shuttle, project_id=project_id)
+            validate_duplication(
+                project,
+                target_shuttle,
+                project_id=project_id,
+                clone=True,
+            )
         except ProjectDuplicationError as exc:
             form.add_error(None, str(exc))
             return self._render(request, project, form)

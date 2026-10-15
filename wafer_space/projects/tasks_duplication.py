@@ -66,6 +66,11 @@ def duplicate_project_task(
         return {"status": "failed", "error": str(exc)}
     source_shuttle_name = project.shuttle.name if project.shuttle else "(none)"
     source_queryset = Project.objects.filter(pk=project.pk)
+    if (clone_project_id is None) != (clone_slot_size is None):
+        # A clone needs both; one alone is a caller bug, never a silent
+        # plain duplication.
+        msg = "A clone needs both clone_project_id and clone_slot_size"
+        raise ValueError(msg)
     clone = None
     if clone_project_id is not None and clone_slot_size is not None:
         clone = CloneRequest(project_id=clone_project_id, slot_size=clone_slot_size)

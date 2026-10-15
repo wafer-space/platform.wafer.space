@@ -239,6 +239,24 @@ class TestWhichShuttles:
             False,
         )
 
+    def test_test_shuttle_is_a_target_whatever_its_status(
+        self,
+        client: Client,
+        source: Project,
+    ) -> None:
+        """#374: a test-only shuttle is open whatever its status."""
+        g800 = Shuttle.objects.create(
+            name="G800",
+            description="Test",
+            is_test_only=True,
+            status=Shuttle.Status.COMPLETED,
+        )
+        client.force_login(source.user)
+
+        post_clone(client, source, g800)
+
+        assert len(clones(g800)) == 1
+
     def test_owner_clones_to_the_test_shuttle(
         self,
         client: Client,
@@ -257,17 +275,24 @@ class TestWhichShuttles:
 
 
 class TestClosedShuttleRefused:
+    @pytest.mark.parametrize("closed_by", ["status", "deadline"])
     def test_post_to_a_closed_shuttle_is_refused(
         self,
         client: Client,
         source: Project,
+        closed_by: str,
     ) -> None:
-        locked = make_shuttle("G805", status=Shuttle.Status.LOCKED)
+        if closed_by == "status":
+            closed = make_shuttle("G805", status=Shuttle.Status.LOCKED)
+        else:
+            closed = make_shuttle("G805")
+            closed.submission_deadline = timezone.now() - timedelta(minutes=1)
+            closed.save()
         client.force_login(source.user)
 
-        response = post_clone(client, source, locked)
+        response = post_clone(client, source, closed)
 
-        assert (response.status_code, clones(locked)) == (HTTPStatus.OK, [])
+        assert (response.status_code, clones(closed)) == (HTTPStatus.OK, [])
         assert "target_shuttle" in response.context["form"].errors
 
     def test_task_refuses_a_shuttle_that_closed_after_enqueue(
@@ -288,6 +313,21 @@ class TestClosedShuttleRefused:
 
         assert (result["status"], clones(open_shuttle)) == ("failed", [])
         assert "not open for submissions" in result["error"]
+
+    def test_task_refuses_half_a_clone_request(
+        self,
+        source: Project,
+        open_shuttle: Shuttle,
+    ) -> None:
+        """A project ID without a slot size is a caller bug, not a duplicate."""
+        with pytest.raises(ValueError, match="needs both"):
+            duplicate_project_task(
+                str(source.pk),
+                open_shuttle.pk,
+                source.user.pk,
+                "WXYZ",
+            )
+        assert clones(open_shuttle) == []
 
 
 class TestProjectIdAndSize:
@@ -355,6 +395,19 @@ class TestProjectIdAndSize:
 
         errors = response.context["form"].errors
         assert ("project_id" in errors, clones(open_shuttle)) == (True, [])
+
+    def test_an_unknown_slot_size_is_refused(
+        self,
+        client: Client,
+        source: Project,
+        open_shuttle: Shuttle,
+    ) -> None:
+        client.force_login(source.user)
+
+        response = post_clone(client, source, open_shuttle, slot_size="huge")
+
+        errors = response.context["form"].errors
+        assert ("slot_size" in errors, clones(open_shuttle)) == (True, [])
 
 
 class TestSourceProjects:
