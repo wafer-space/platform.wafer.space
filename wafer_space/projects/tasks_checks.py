@@ -131,7 +131,7 @@ def holds_check_lock(check_id: int, task_id: str) -> bool:
 
 def current_task_id() -> str | None:
     """The running Celery message's task id, or None for a direct call."""
-    if current_task is None:
+    if not current_task:  # a Proxy: false when no task is running
         return None
     return current_task.request.id
 
@@ -582,7 +582,12 @@ def checks_pending() -> dict[str, int]:
             break
 
         # Assign check to this server
-        pending_check.mark_dispatching(server_id=server_id)
+        try:
+            pending_check.mark_dispatching(server_id=server_id)
+        except InvalidStateTransitionError as refused:
+            # Cancelled since it was picked: the row refused (issue #426)
+            logger.info("Not dispatching check %s: %s", pending_check.id, refused)
+            continue
         dispatched += 1
         logger.info(
             "Server %s: assigned check %s (%d/%d active)",
@@ -996,7 +1001,12 @@ def checks_cancelling() -> dict[str, int]:
 
     for check in cancelling_checks:
         logger.info("[checks_cancelling] Marking check %s as cancelled", check.id)
-        check.mark_cancelled()
+        try:
+            check.mark_cancelled()
+        except InvalidStateTransitionError as refused:
+            # An overlapping run cancelled it first: the row refused (issue #426)
+            logger.info("Check %s already moved on: %s", check.id, refused)
+            continue
         cancelled += 1
 
     return {"cancelled": cancelled}

@@ -2580,7 +2580,7 @@ class ManufacturabilityCheck(models.Model):
     ) -> None:
         """Mark check as errored due to system failure.
 
-        Pathways: PENDING/DISPATCHING/STARTING/RUNNING → ERROR
+        Pathways: PENDING/DISPATCHING/STARTING/RUNNING/ANALYZING → ERROR
 
         Preserves tracking fields (docker_container_id) for debugging.
 

@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 from datetime import timedelta
-from typing import TYPE_CHECKING
 from typing import Any
 from unittest.mock import patch
 
@@ -28,6 +27,7 @@ from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import ManufacturabilityCheckTask
 from wafer_space.projects.tasks_checks import DISPATCHER_TIME_LIMITS
 from wafer_space.projects.tasks_checks import checks_analyzing
+from wafer_space.projects.tasks_checks import checks_cancelling
 from wafer_space.projects.tasks_checks import checks_cleanup_stale_pending_tasks
 from wafer_space.projects.tasks_checks import checks_dispatching
 from wafer_space.projects.tasks_checks import checks_pending
@@ -37,9 +37,6 @@ from wafer_space.projects.tasks_checks import do_analyzing
 from wafer_space.projects.tasks_checks import queue_check_work
 from wafer_space.projects.tasks_checks import queued_check_task
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
-
-if TYPE_CHECKING:
-    from unittest.mock import MagicMock
 
 Status = ManufacturabilityCheck.Status
 LOCK_ID = "the-lock-holders-id"
@@ -313,7 +310,7 @@ class TestAFailureAfterTheCheckMovedOn:
         checks_analyzing,
     ],
 )
-def test_each_dispatcher_has_its_own_short_time_limits(dispatcher: MagicMock) -> None:
+def test_each_dispatcher_has_its_own_short_time_limits(dispatcher: Any) -> None:
     """Not the 30-minute default: a hung dispatcher held a child that long."""
     limits = {
         "soft_time_limit": dispatcher.soft_time_limit,
@@ -322,3 +319,64 @@ def test_each_dispatcher_has_its_own_short_time_limits(dispatcher: MagicMock) ->
 
     assert limits == DISPATCHER_TIME_LIMITS
     assert dispatcher.time_limit < settings.CELERY_TASK_TIME_LIMIT
+
+
+@pytest.mark.django_db
+class TestADispatcherMeetingAMovedRow:
+    """A refused transition skips that check; the run carries on with the rest."""
+
+    def test_checks_pending_skips_a_check_cancelled_after_it_was_picked(
+        self, settings: Any
+    ) -> None:
+        settings.DOCKER_SERVERS = [
+            {"id": server, "url": "unix:///x", "max_concurrent": 4, "priority": n}
+            for n, server in enumerate(["first", "second"])
+        ]
+        cancelled = ManufacturabilityCheckFactory(status=Status.PENDING)
+        picked_copy = ManufacturabilityCheck.objects.get(pk=cancelled.pk)
+        ManufacturabilityCheck.objects.filter(pk=cancelled.pk).update(
+            status=Status.CANCELLING
+        )
+        waiting = ManufacturabilityCheckFactory(status=Status.PENDING)
+
+        with patch(
+            "wafer_space.projects.tasks_checks._get_next_pending_check",
+            side_effect=[picked_copy, waiting],
+        ):
+            result = checks_pending()
+
+        statuses = [
+            ManufacturabilityCheck.objects.get(pk=c.pk).status
+            for c in (cancelled, waiting)
+        ]
+        assert (result, statuses) == (
+            {"dispatched": 1},
+            [Status.CANCELLING, Status.DISPATCHING],
+        )
+
+    def test_checks_cancelling_skips_a_check_an_overlapping_run_cancelled(
+        self,
+    ) -> None:
+        first, second = ManufacturabilityCheckFactory.create_batch(
+            2, status=Status.CANCELLING
+        )
+        real_mark_cancelled = ManufacturabilityCheck.mark_cancelled
+
+        def overlapping_run_cancels_the_other(
+            check: ManufacturabilityCheck,
+        ) -> None:
+            other = second if check.pk == first.pk else first
+            ManufacturabilityCheck.objects.filter(pk=other.pk).update(
+                status=Status.CANCELLED
+            )
+            real_mark_cancelled(check)
+
+        with patch.object(
+            ManufacturabilityCheck,
+            "mark_cancelled",
+            autospec=True,
+            side_effect=overlapping_run_cancels_the_other,
+        ):
+            result = checks_cancelling()
+
+        assert result == {"cancelled": 1}
