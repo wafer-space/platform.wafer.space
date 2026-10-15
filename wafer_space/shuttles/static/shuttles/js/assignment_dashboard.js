@@ -327,21 +327,37 @@
   }
 
   // Table filtering
+  // "Show" filter values come from SHOW_FILTER_CHOICES in shuttles/views.py
+  function matchesShowFilter(row, showFilter) {
+    const assigned = row.dataset.assigned === 'true';
+    const csOrder = row.dataset.csOrder === 'true';
+    const manufacturable = row.dataset.manufacturable === 'true';
+    switch (showFilter) {
+      case 'all': return true;
+      case 'assigned': return assigned;
+      case 'unassigned': return !assigned;
+      case 'unassigned-cs': return !assigned && csOrder;
+      case 'unassigned-mfg': return !assigned && manufacturable;
+      case 'unassigned-ready': return !assigned && csOrder && manufacturable;
+      default: throw new Error('Unknown show filter: ' + showFilter);
+    }
+  }
+
   function filterTable() {
     const sizeFilter = document.getElementById('size-filter').value;
-    const unassignedOnly = document.getElementById('unassigned-only').checked;
+    const showFilter = document.getElementById('show-filter').value;
     const rows = document.querySelectorAll('#projects-table tbody tr');
+    let shown = 0;
 
     rows.forEach(function(row) {
-      const size = row.dataset.size;
-      const assigned = row.dataset.assigned === 'true';
-
-      let show = true;
-      if (sizeFilter && size !== sizeFilter) show = false;
-      if (unassignedOnly && assigned) show = false;
-
+      const show = (!sizeFilter || row.dataset.size === sizeFilter) &&
+        matchesShowFilter(row, showFilter);
       row.style.display = show ? '' : 'none';
+      if (show) shown += 1;
     });
+
+    document.getElementById('shown-count').textContent =
+      shown + ' of ' + rows.length + ' shown';
   }
 
   // Select slot and submit assignment (used by grid picker in assign modal)
@@ -613,9 +629,13 @@
   function init() {
     // Table filtering
     const sizeFilter = document.getElementById('size-filter');
-    const unassignedOnly = document.getElementById('unassigned-only');
+    const showFilter = document.getElementById('show-filter');
     if (sizeFilter) sizeFilter.addEventListener('change', filterTable);
-    if (unassignedOnly) unassignedOnly.addEventListener('change', filterTable);
+    if (showFilter) {
+      showFilter.addEventListener('change', filterTable);
+      // Apply the server-chosen default (assigned only on a closed shuttle)
+      filterTable();
+    }
 
     // Column sorting
     document.querySelectorAll('#projects-table thead th[data-sortable]').forEach(function(header, index) {

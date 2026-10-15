@@ -25,6 +25,18 @@ if TYPE_CHECKING:
     from wafer_space.users.models import User
 
 
+# "Show" filter on the assignment page (#342): value, label. The values are
+# read by filterTable() in shuttles/js/assignment_dashboard.js.
+SHOW_FILTER_CHOICES = (
+    ("all", "All projects"),
+    ("assigned", "Assigned"),
+    ("unassigned", "Unassigned"),
+    ("unassigned-cs", "Unassigned with CS order"),
+    ("unassigned-mfg", "Unassigned and manufacturable"),
+    ("unassigned-ready", "Unassigned, CS order and manufacturable"),
+)
+
+
 class StaffRequiredMixin(UserPassesTestMixin):
     """Mixin to require staff access."""
 
@@ -130,6 +142,10 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
 
         projects = all_projects
         context["projects"] = projects
+
+        # A closed shuttle's useful view is what was assigned to it (#342)
+        context["show_filter_choices"] = SHOW_FILTER_CHOICES
+        context["show_filter_default"] = "assigned" if shuttle.is_closed else "all"
 
         # Build slots_by_project data for JavaScript
         slots_by_project = {}
