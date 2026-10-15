@@ -26,8 +26,9 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
     """Test the complete TOS acceptance flow.
 
     These are browser tests that verify user interactions with TOS.
-    The tests assume TOS data is pre-loaded via the setup_test_tos fixture.
-    No database objects should be created directly in these tests.
+    Most tests rely on the session-scoped ensure_test_tos_exists fixture,
+    whose row is flushed after the first live_server test (see #269).
+    test_tos_version_displayed creates its own active TOS instead.
     """
 
     def test_public_tos_display(self, driver, live_server_url):
