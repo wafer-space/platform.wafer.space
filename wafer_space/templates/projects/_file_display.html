@@ -152,9 +152,9 @@
 {% endwith %}
 {# Manufacturability Check Section #}
 {# Check is created immediately when download completes with verified hash #}
-{# Staff: queue a fresh check of this revision (#205) #}
-{% rerun_check_button file.project file %}
 {% with check=file.latest_manufacturability_check %}
+  {# Staff: queue a fresh check of this revision (#205) #}
+  {% rerun_check_button file.project file check %}
   {% if check %}
     {# Show current check using the shared partial, wrapped in card with blue border like download attempts #}
     <div class="card border-primary mb-3">
