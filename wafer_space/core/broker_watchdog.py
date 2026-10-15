@@ -267,8 +267,13 @@ def broker_engine(broker_url: str) -> Engine | None:
 WATCHDOGS: list[BrokerWatchdog] = []
 
 
-def start_watchdog(consumer: Any, **_kwargs: Any) -> None:
-    """worker_ready: start the watchdog for this worker's queues."""
+def start_watchdog(*, sender: Any, **_kwargs: Any) -> None:
+    """worker_ready: start the watchdog for this worker's queues.
+
+    Celery sends signals with keyword arguments only (sender=, signal=); for
+    worker_ready the sender is the worker's Consumer (celery/apps/worker.py).
+    """
+    consumer = sender
     engine = broker_engine(consumer.app.conf.broker_url or "")
     if engine is None:
         logger.info("Broker watchdog off: the broker is not SQLAlchemy")
