@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% load crispy_forms_tags %}
+
+{% block title %}
+  Clone to open shuttle - {{ project.name }}
+{% endblock title %}
+{% block content %}
+  <div class="container">
+    <div class="row">
+      <div class="col-sm-12 col-lg-8">
+        <h2>Clone to open shuttle</h2>
+        <p class="text-muted mb-4">
+          <i class="bi bi-folder-fill"></i> Project: <strong>{{ project.name }}</strong>
+          {% if project.full_id %}<span class="font-monospace">({{ project.full_id }})</span>{% endif %}
+        </p>
+        <div class="alert alert-info" role="alert">
+          <p class="mb-2">
+            The clone is a new draft project on the shuttle you choose, with this project's details and its current design file.
+            A fresh precheck runs on the copy.
+          </p>
+          <p class="mb-0">This project is not changed. The CrowdSupply order number is not copied.</p>
+        </div>
+        {% if form.fields.target_shuttle.queryset.exists %}
+          <form method="post" data-clone-form>
+            {% csrf_token %}
+            {% if form.non_field_errors %}
+              <div class="alert alert-danger" role="alert">
+                {% for error in form.non_field_errors %}<p class="mb-0">{{ error }}</p>{% endfor %}
+              </div>
+            {% endif %}
+            {{ form.target_shuttle|as_crispy_field }}
+            {{ form.project_id|as_crispy_field }}
+            {{ form.slot_size|as_crispy_field }}
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-copy"></i> Clone
+            </button>
+            <a href="{{ project.get_absolute_url }}" class="btn btn-secondary">Cancel</a>
+          </form>
+        {% else %}
+          <div class="alert alert-warning" role="alert" data-no-open-shuttle>
+            No other shuttle is open for submissions right now, so there is nowhere to clone this project to.
+          </div>
+          <a href="{{ project.get_absolute_url }}" class="btn btn-secondary">Back to the project</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endblock content %}

@@ -2,6 +2,9 @@ from celery.result import AsyncResult
 
 from wafer_space.projects.check_operations import create_retry_check
 from wafer_space.projects.duplication import ELIGIBLE_TARGET_SHUTTLE_STATUSES
+from wafer_space.projects.duplication import CloneRequest
+from wafer_space.projects.duplication import clone_target_refusal
+from wafer_space.projects.duplication import clone_target_shuttles
 from wafer_space.projects.duplication import duplicate_project_to_shuttle
 from wafer_space.projects.duplication import validate_duplication
 from wafer_space.projects.security import URLValidator
@@ -19,12 +22,15 @@ from .license_service import validate_spdx_id
 __all__ = [
     "ELIGIBLE_TARGET_SHUTTLE_STATUSES",
     "AsyncResult",
+    "CloneRequest",
     "FileCreationData",
     "LicenseValidationError",
     "ProjectFileService",
     "URLRewriter",
     "URLValidator",
     "cache_proprietary_terms",
+    "clone_target_refusal",
+    "clone_target_shuttles",
     "create_retry_check",
     "download_project_file",
     "duplicate_project_task",

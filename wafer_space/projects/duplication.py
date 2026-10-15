@@ -1,9 +1,15 @@
 """Duplicate a project from one shuttle onto another.
 
-Admin-triggered operation: copies the project metadata, the active
-design file (bytes included), and the latest FINISHED manufacturability
-check as provenance, then queues a fresh check. See the design spec:
+Copies the project metadata, the active design file (bytes included),
+and the latest FINISHED manufacturability check as provenance, then
+queues a fresh check. See the design spec:
 docs/superpowers/specs/2026-07-16-duplicate-project-shuttle-design.md
+
+Two entry points share this one copy path: staff use the admin action
+"Duplicate to another shuttle" (any eligible status), and owners and
+staff use "Clone to open shuttle" on the project page (#355), which
+only targets shuttles open to users and lets them pick the new project
+ID and slot size.
 
 This module imports models only (like ``check_operations``) so both the
 services layer and Celery tasks may use it. The actual copy MUST run in
@@ -16,6 +22,7 @@ fails with EROFS. Only the ``*:rw:*`` workers may write user files.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
@@ -32,6 +39,8 @@ from wafer_space.projects.models import ProjectFile
 from wafer_space.shuttles.models import Shuttle
 
 if TYPE_CHECKING:
+    from django.db.models import QuerySet
+
     from wafer_space.users.models import User
 
 logger = logging.getLogger(__name__)
@@ -46,11 +55,45 @@ ELIGIBLE_TARGET_SHUTTLE_STATUSES = (
 )
 
 
+@dataclass(frozen=True)
+class CloneRequest:
+    """What "Clone to open shuttle" (#355) asks for beyond a duplication.
+
+    The owner picks the new project's ID and slot size, since both are
+    per shuttle, and the target must be open to users
+    (clone_target_refusal).
+    """
+
+    project_id: str
+    slot_size: str
+
+
+def clone_target_refusal(target_shuttle: Shuttle) -> str | None:
+    """Why a project may not be cloned onto ``target_shuttle``, or None.
+
+    The one rule for "Clone to open shuttle" (#355): the shuttle must be
+    open to users, the same rule as creating a project there (#320,
+    Shuttle.is_open_to_users). That includes a test-only shuttle such as
+    G800, which is always open (#374). The project page offers exactly
+    these shuttles (clone_target_shuttles); the view and the task both
+    re-check, since a shuttle can close in between.
+    """
+    if not target_shuttle.is_open_to_users():
+        return f"Shuttle {target_shuttle.name} is not open for submissions."
+    return None
+
+
+def clone_target_shuttles() -> QuerySet[Shuttle]:
+    """The shuttles a project may be cloned onto; see clone_target_refusal."""
+    return Shuttle.objects.open_to_users().order_by("name")
+
+
 def duplicate_project_to_shuttle(
     *,
     project: Project,
     target_shuttle: Shuttle,
     admin_user: User,
+    clone: CloneRequest | None = None,
 ) -> Project:
     """Duplicate ``project`` onto ``target_shuttle``.
 
@@ -58,16 +101,33 @@ def duplicate_project_to_shuttle(
     user-facing message when validation fails; nothing is created in that
     case.
 
+    ``admin_user`` is the user who asked: staff from the admin, or the
+    owner or staff from "Clone to open shuttle". Without ``clone`` the
+    new project keeps the source's project ID and slot size (the admin
+    action); with it, they come from ``clone`` and the target must be
+    open to users (clone_target_refusal).
+
     Writes the copied file to user-file storage, so in deployed
     environments this must run inside a worker with write access
     (queue ``http:rw:downloads``) — never in the web process. Use
     ``tasks_duplication.duplicate_project_task`` from views.
     """
-    source_file = validate_duplication(project, target_shuttle)
+    new_project_id = project.project_id if clone is None else clone.project_id
+    source_file = validate_duplication(
+        project,
+        target_shuttle,
+        project_id=new_project_id,
+        clone=clone is not None,
+    )
     new_file: ProjectFile | None = None
     try:
         with transaction.atomic():
-            new_project = _copy_project(project, target_shuttle)
+            new_project = _copy_project(
+                project,
+                target_shuttle,
+                project_id=new_project_id,
+                slot_size=project.slot_size if clone is None else clone.slot_size,
+            )
             new_file = _copy_file(source_file, new_project)
             provenance = _copy_provenance_check(source_file, new_project, new_file)
             ManufacturabilityCheck.objects.create(
@@ -100,13 +160,26 @@ def duplicate_project_to_shuttle(
     return new_project
 
 
-def validate_duplication(project: Project, target_shuttle: Shuttle) -> ProjectFile:
+def validate_duplication(
+    project: Project,
+    target_shuttle: Shuttle,
+    *,
+    project_id: str | None = None,
+    clone: bool = False,
+) -> ProjectFile:
     """Validate the duplication request, returning the source's active file.
 
-    Public so the admin view can pre-flight the request synchronously
-    before enqueueing the task; the task re-validates because state can
-    change between enqueue and execution.
+    Public so the views can pre-flight the request synchronously before
+    enqueueing the task; the task re-validates because state can change
+    between enqueue and execution. ``project_id`` is the new project's
+    ID on the target shuttle, by default the source's.
+
+    The target's rule depends on who asks: the admin action accepts any
+    status in ELIGIBLE_TARGET_SHUTTLE_STATUSES; a clone (``clone``,
+    "Clone to open shuttle") accepts exactly the shuttles open to users
+    (clone_target_refusal), which is what the clone page offers.
     """
+    new_project_id = project.project_id if project_id is None else project_id
     if project.shuttle_id is None:
         msg = "Source project is not assigned to a shuttle."
         raise ProjectDuplicationError(msg)
@@ -115,7 +188,11 @@ def validate_duplication(project: Project, target_shuttle: Shuttle) -> ProjectFi
         msg = "Target shuttle is the same shuttle the project is already on."
         raise ProjectDuplicationError(msg)
 
-    if target_shuttle.status not in ELIGIBLE_TARGET_SHUTTLE_STATUSES:
+    if clone:
+        refusal = clone_target_refusal(target_shuttle)
+        if refusal is not None:
+            raise ProjectDuplicationError(refusal)
+    elif target_shuttle.status not in ELIGIBLE_TARGET_SHUTTLE_STATUSES:
         msg = (
             f"Shuttle {target_shuttle.name} cannot accept duplicated projects "
             f"(status: {target_shuttle.get_status_display()})."
@@ -124,11 +201,11 @@ def validate_duplication(project: Project, target_shuttle: Shuttle) -> ProjectFi
 
     collision = Project.objects.filter(
         shuttle=target_shuttle,
-        project_id=project.project_id,
+        project_id=new_project_id,
     ).exists()
     if collision:
         msg = (
-            f"Project ID {project.project_id!r} is already used on shuttle "
+            f"Project ID {new_project_id!r} is already used on shuttle "
             f"{target_shuttle.name}."
         )
         raise ProjectDuplicationError(msg)
@@ -153,13 +230,19 @@ def validate_duplication(project: Project, target_shuttle: Shuttle) -> ProjectFi
     return source_file
 
 
-def _copy_project(project: Project, target_shuttle: Shuttle) -> Project:
+def _copy_project(
+    project: Project,
+    target_shuttle: Shuttle,
+    *,
+    project_id: str,
+    slot_size: str,
+) -> Project:
     """Create the duplicate Project row (crowd_supply_order_id NOT copied)."""
     new_project = Project(
         user=project.user,
         name=project.name,
         description=project.description,
-        slot_size=project.slot_size,
+        slot_size=slot_size,
         is_public=project.is_public,
         chip_on_board=project.chip_on_board,
         repository_url=project.repository_url,
@@ -169,7 +252,7 @@ def _copy_project(project: Project, target_shuttle: Shuttle) -> Project:
         proprietary_terms_cached=project.proprietary_terms_cached,
         proprietary_terms_cached_at=project.proprietary_terms_cached_at,
         shuttle=target_shuttle,
-        project_id=project.project_id,
+        project_id=project_id,
         status=Project.Status.DRAFT,
     )
     new_project.save()

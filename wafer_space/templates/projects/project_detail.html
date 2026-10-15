@@ -47,6 +47,12 @@
         <div class="d-flex justify-content-between align-items-center mb-3">
           <h2>{{ project.name }}</h2>
           <div class="d-flex gap-2">
+            {# Owner and staff; archived projects and closed shuttles too (#355) #}
+            <a class="btn btn-outline-primary"
+               href="{% url 'projects:clone' pk=project.pk %}"
+               data-clone-link>
+              <i class="bi bi-copy"></i> Clone to open shuttle
+            </a>
             {% if not project.is_archived %}
               {% if can_archive.0 %}
                 <form action="{% url 'projects:archive' pk=project.pk %}"

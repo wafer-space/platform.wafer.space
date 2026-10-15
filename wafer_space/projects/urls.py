@@ -47,6 +47,8 @@ urlpatterns = [
         views.ProjectUnarchiveView.as_view(),
         name="unarchive",
     ),
+    # Clone to a shuttle open to users (issue #355)
+    path("<uuid:pk>/clone/", views.ProjectCloneView.as_view(), name="clone"),
     # File submission
     path(
         "<uuid:pk>/submit-url/",
