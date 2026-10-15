@@ -359,7 +359,7 @@ class TestStartingIt:
         assert (raised, "raised:" in caplog.text) == ([], False)
 
     def test_the_handler_takes_the_consumer_as_sender(self) -> None:
-        """The keyword Celery uses; a positional call is refused."""
+        """As Celery calls it: the consumer comes as the sender= keyword."""
         start_watchdog(sender=self.consumer("sqla+postgresql:///wafer_space"))
 
         assert [w.queues for w in WATCHDOGS] == [[QUEUE]]
