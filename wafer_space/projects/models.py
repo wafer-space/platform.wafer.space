@@ -3057,6 +3057,21 @@ Your GDS file should have:
         return f"https://github.com/wafer-space/gf180mcu-precheck/issues/new?{params}"
 
     @classmethod
+    def latest_precheck_digest_queryset(
+        cls,
+    ) -> "models.QuerySet[ManufacturabilityCheck, str]":
+        """Digests of started checks, most recently started first.
+
+        Its first row is the latest precheck digest; usable as a subquery.
+        """
+        return (
+            cls.objects.exclude(docker_image_digest="")
+            .exclude(container_started_at__isnull=True)
+            .order_by("-container_started_at")
+            .values_list("docker_image_digest", flat=True)
+        )
+
+    @classmethod
     def get_latest_precheck_digest(cls) -> str | None:
         """Get the digest of the most recently used precheck image.
 
@@ -3069,13 +3084,7 @@ Your GDS file should have:
         if cached is not None:
             return cached or None
 
-        digest = (
-            cls.objects.exclude(docker_image_digest="")
-            .exclude(container_started_at__isnull=True)
-            .order_by("-container_started_at")
-            .values_list("docker_image_digest", flat=True)
-            .first()
-        )
+        digest = cls.latest_precheck_digest_queryset().first()
 
         cache.set(cache_key, digest or "", 60)  # 1 minute TTL
         return digest
