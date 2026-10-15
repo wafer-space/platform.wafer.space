@@ -55,8 +55,10 @@ from .deadline_warning import deadline_warning
 from .deadline_warning import deadline_warning_for
 from .deadline_warning import next_step
 from .exceptions import InvalidStateTransitionError
+from .exceptions import ProjectDuplicationError
 from .file_serving import protected_file_response
 from .file_serving import stored_file_exists
+from .forms import CloneProjectForm
 from .forms import ProjectFileURLSubmitForm
 from .forms import ProjectForm
 from .forms import SubmitOverrideForm
@@ -78,6 +80,8 @@ from .models import log_tail_expressions
 from .models import whole_log_lines
 from .security import SecurityValidationError
 from .services import ProjectFileService
+from .services import duplicate_project_task
+from .services import validate_duplication
 
 logger = logging.getLogger(__name__)
 
@@ -1155,6 +1159,73 @@ class ProjectUnarchiveView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
             project.unarchive()
             messages.success(request, f"Project '{project.name}' unarchived.")
         return redirect(project.get_absolute_url())
+
+
+class ProjectCloneView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
+    """Clone a project to a shuttle open to users (owner or staff, #355).
+
+    Validates and enqueues only: the copy writes user-file storage, which
+    the deployed web process cannot (read-only mount), so it runs in
+    duplicate_project_task on the http:rw:downloads queue, the same path
+    as the admin "Duplicate to another shuttle". The original project is
+    not changed. Archived projects and projects on closed shuttles may be
+    cloned: that is what the clone is for.
+    """
+
+    http_method_names = ["get", "post"]
+    template_name = "projects/project_clone.html"
+
+    def get_object(self) -> Project:
+        """Get the project object for permission checking."""
+        return get_object_or_404(Project, pk=self.kwargs["pk"])
+
+    def get(self, request: HttpRequest, pk: UUID) -> HttpResponse:
+        """Show the clone form."""
+        project = self.get_object()
+        return self._render(request, project, CloneProjectForm(project=project))
+
+    def post(self, request: HttpRequest, pk: UUID) -> HttpResponse:
+        """Pre-flight the clone and queue it, or show the form's errors."""
+        project = self.get_object()
+        form = CloneProjectForm(request.POST, project=project)
+        if not form.is_valid():
+            return self._render(request, project, form)
+        target_shuttle = form.cleaned_data["target_shuttle"]
+        project_id = form.cleaned_data["project_id"]
+        try:
+            # Immediate feedback; the task re-validates, and the database's
+            # unique (shuttle, project_id) constraint stops a second clone.
+            validate_duplication(project, target_shuttle, project_id=project_id)
+        except ProjectDuplicationError as exc:
+            form.add_error(None, str(exc))
+            return self._render(request, project, form)
+        duplicate_project_task.delay(
+            str(project.pk),
+            target_shuttle.pk,
+            request.user.pk,
+            project_id,
+            form.cleaned_data["slot_size"],
+        )
+        messages.success(
+            request,
+            f"Cloning to shuttle {target_shuttle.name} as "
+            f"{target_shuttle.name}{project_id}. The new draft project "
+            "appears in your projects list in a moment; this project is "
+            "unchanged.",
+        )
+        return redirect(project.get_absolute_url())
+
+    def _render(
+        self,
+        request: HttpRequest,
+        project: Project,
+        form: CloneProjectForm,
+    ) -> HttpResponse:
+        return render(
+            request,
+            self.template_name,
+            {"project": project, "form": form},
+        )
 
 
 class ProjectIDCheckView(LoginRequiredMixin, View):
