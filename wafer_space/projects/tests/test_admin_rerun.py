@@ -16,8 +16,10 @@ from typing import Any
 
 import pytest
 from django.core.exceptions import PermissionDenied
+from django.db import connection
 from django.template import Context
 from django.test import RequestFactory
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -399,6 +401,41 @@ class TestButton:
         [form] = rerun_forms(client, UserFactory(is_staff=True), project)
 
         assert form["confirm"] is False
+
+    def test_submitted_latest_revision_is_named_submitted(
+        self,
+        client: Client,
+    ) -> None:
+        project = ProjectFactory()
+        revision = verified_file(project)
+        project.submitted_file = revision
+        project.save()
+
+        [form] = rerun_forms(client, UserFactory(is_staff=True), project)
+
+        assert form["text"] == "Run precheck (submitted revision)"
+
+    def test_project_queries_do_not_grow_with_revisions(
+        self,
+        client: Client,
+    ) -> None:
+        """The button takes the page's project, not one fetch per revision."""
+
+        def project_queries(revisions: int) -> int:
+            project = ProjectFactory()
+            for _ in range(revisions):
+                # One active (latest) revision per project; older ones are history.
+                ProjectFile.objects.filter(project=project).update(is_active=False)
+                verified_file(project)
+            client.force_login(UserFactory(is_staff=True))
+            url = project.get_absolute_url()
+            client.get(url, follow=True)  # Warm up redirects and sessions.
+            with CaptureQueriesContext(connection) as queries:
+                client.get(url, follow=True)
+            table = 'FROM "projects_project"'
+            return sum(table in query["sql"] for query in queries.captured_queries)
+
+        assert project_queries(4) == project_queries(1)
 
     def test_archived_project_has_no_button(self, client: Client) -> None:
         project = ProjectFactory(archived_at=timezone.now())

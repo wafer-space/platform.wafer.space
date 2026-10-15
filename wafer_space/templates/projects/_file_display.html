@@ -4,6 +4,7 @@
 {# Reusable file display partial - used for both submitted and in-progress files #}
 {# Parameters: #}
 {#   - file: ProjectFile instance to display #}
+{#   - project: the file's Project, from the page context (saves a query per revision) #}
 {#   - download_attempts: (optional) QuerySet of DownloadAttempt instances #}
 {#   - show_attempts: (optional, default=False) Show download attempts in foldable sections #}
 {#   - first_open: (optional, default=True) Keep first attempt section open #}
@@ -154,7 +155,7 @@
 {# Check is created immediately when download completes with verified hash #}
 {% with check=file.latest_manufacturability_check %}
   {# Staff: queue a fresh check of this revision (#205) #}
-  {% rerun_check_button file.project file check %}
+  {% rerun_check_button project file check %}
   {% if check %}
     {# Show current check using the shared partial, wrapped in card with blue border like download attempts #}
     <div class="card border-primary mb-3">
