@@ -51,16 +51,21 @@ DOWNLOAD_IN_PROGRESS = frozenset(
 )
 
 
+class TempSweepError(Exception):
+    """One or more orphaned directories could not be removed."""
+
+
 @dataclass
 class SweepResult:
-    """What one sweep removed and kept."""
+    """What one sweep removed, kept and failed to remove."""
 
     removed: list[Path] = field(default_factory=list)
     kept: list[Path] = field(default_factory=list)
+    failed: list[Path] = field(default_factory=list)
     reclaimed_bytes: int = 0
 
 
-def _tree_newest_mtime_and_size(path: Path) -> tuple[float, int]:
+def tree_newest_mtime_and_size(path: Path) -> tuple[float, int]:
     """Newest mtime of anything in the tree, and the total size of its files.
 
     Symlinks are not followed: their own lstat counts, never their target.
@@ -91,16 +96,28 @@ def _download_dir_orphan_reason(project_file_id: int) -> str | None:
     )
 
 
+@dataclass
+class _Candidate:
+    """A directory that matched a swept layout, and how to judge it."""
+
+    path: Path
+    reason: str
+    # Re-asked just before deleting: a download may have restarted while the
+    # tree was being walked. None for task_* directories (age alone decides).
+    project_file_id: int | None = None
+
+
 def _remove_if_stale(
-    path: Path, cutoff: float, reason: str, result: SweepResult
+    candidate: _Candidate, cutoff: float, now: float, result: SweepResult
 ) -> None:
-    """Remove ``path`` if nothing in it changed since ``cutoff``; log either way."""
+    """Remove the candidate if nothing in it changed since ``cutoff``."""
+    path = candidate.path
     if path.is_symlink() or not path.is_dir():
-        logger.warning("Temp sweep: leaving %s alone (not a directory)", path)
+        logger.info("Temp sweep: leaving %s alone (not a directory)", path)
         result.kept.append(path)
         return
     try:
-        newest, size = _tree_newest_mtime_and_size(path)
+        newest, size = tree_newest_mtime_and_size(path)
     except FileNotFoundError:
         # Its own task finished and removed it while we were looking.
         logger.info("Temp sweep: %s disappeared while being inspected", path)
@@ -108,26 +125,75 @@ def _remove_if_stale(
     if newest > cutoff:
         result.kept.append(path)
         return
-    shutil.rmtree(path)
+    if (
+        candidate.project_file_id is not None
+        and _download_dir_orphan_reason(candidate.project_file_id) is None
+    ):
+        # A download (re)started while the tree was being walked.
+        result.kept.append(path)
+        return
+    try:
+        shutil.rmtree(path)
+    except FileNotFoundError:
+        logger.info("Temp sweep: %s disappeared before it was removed", path)
+        return
+    except OSError:
+        logger.exception("Temp sweep: could not remove %s", path)
+        result.failed.append(path)
+        return
     result.removed.append(path)
     result.reclaimed_bytes += size
     logger.info(
         "Temp sweep: removed %s (%d bytes, idle %.1f h): %s",
         path,
         size,
-        (time.time() - newest) / 3600,
-        reason,
+        (now - newest) / 3600,
+        candidate.reason,
     )
+
+
+def _candidates(temp_root: Path) -> tuple[list[_Candidate], list[Path]]:
+    """Directories under temp/ whose layout this sweep knows, in path order.
+
+    Returns the candidates for removal, and the download staging
+    directories whose download is in progress or whose retry is pending
+    (never removed, whatever their age).
+    """
+    candidates = [
+        _Candidate(entry, "task staging directory")
+        for entry in sorted(temp_root.iterdir())
+        if TASK_DIR_NAME.match(entry.name)
+    ]
+    in_use: list[Path] = []
+    downloads = temp_root / "downloads"
+    if downloads.is_dir():
+        for entry in sorted(downloads.iterdir()):
+            match = DOWNLOAD_DIR_NAME.match(entry.name)
+            if match is None:
+                continue
+            project_file_id = int(match.group(1))
+            reason = _download_dir_orphan_reason(project_file_id)
+            if reason is None:
+                in_use.append(entry)
+                continue
+            candidates.append(_Candidate(entry, reason, project_file_id))
+    return candidates, in_use
 
 
 def sweep_temp_dirs(*, now: float | None = None) -> SweepResult:
     """Remove orphaned staging directories under MEDIA_ROOT/temp.
+
+    A directory that cannot be removed is logged at ERROR and the sweep goes
+    on with the others; ``TempSweepError`` is raised at the end listing them.
 
     Args:
         now: Current time as a Unix timestamp (tests pass it; default: now).
 
     Returns:
         What was removed and kept, and how many bytes were reclaimed.
+
+    Raises:
+        TempSweepError: If any orphaned directory could not be removed.
     """
     result = SweepResult()
     temp_root = Path(settings.MEDIA_ROOT) / "temp"
@@ -136,21 +202,10 @@ def sweep_temp_dirs(*, now: float | None = None) -> SweepResult:
     current = time.time() if now is None else now
     cutoff = current - settings.TEMP_SWEEP_MIN_AGE_SECONDS
 
-    for entry in sorted(temp_root.iterdir()):
-        if TASK_DIR_NAME.match(entry.name):
-            _remove_if_stale(entry, cutoff, "task staging directory", result)
-
-    downloads = temp_root / "downloads"
-    if downloads.is_dir():
-        for entry in sorted(downloads.iterdir()):
-            match = DOWNLOAD_DIR_NAME.match(entry.name)
-            if match is None:
-                continue
-            reason = _download_dir_orphan_reason(int(match.group(1)))
-            if reason is None:
-                result.kept.append(entry)
-                continue
-            _remove_if_stale(entry, cutoff, reason, result)
+    candidates, in_use = _candidates(temp_root)
+    result.kept.extend(in_use)
+    for candidate in candidates:
+        _remove_if_stale(candidate, cutoff, current, result)
 
     if result.reclaimed_bytes > settings.TEMP_SWEEP_ALERT_BYTES:
         logger.error(
@@ -160,4 +215,8 @@ def sweep_temp_dirs(*, now: float | None = None) -> SweepResult:
             len(result.removed),
             temp_root,
         )
+    if result.failed:
+        failed = ", ".join(str(path) for path in result.failed)
+        msg = f"Temp sweep could not remove {len(result.failed)} directories: {failed}"
+        raise TempSweepError(msg)
     return result

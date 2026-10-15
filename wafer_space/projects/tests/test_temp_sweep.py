@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -12,8 +13,11 @@ import pytest
 from django.conf import settings
 
 from config.celery import app
+from wafer_space.projects import temp_sweep
 from wafer_space.projects.content_pipeline import download_dir_path
 from wafer_space.projects.models import DownloadAttempt
+from wafer_space.projects.tasks_download import sweep_orphaned_temp_dirs
+from wafer_space.projects.temp_sweep import TempSweepError
 from wafer_space.projects.temp_sweep import sweep_temp_dirs
 from wafer_space.projects.tests.factories import ProjectFileFactory
 
@@ -215,3 +219,119 @@ def test_sweep_task_is_scheduled_by_beat() -> None:
         "wafer_space.projects.tasks_download.sweep_orphaned_temp_dirs"
     )
     assert entry["schedule"] == settings.TEMP_SWEEP_INTERVAL_SECONDS
+
+
+def test_symlink_inside_a_stale_tree_is_not_followed(tmp_path: Path) -> None:
+    """Removing a stale tree unlinks a symlink in it, never its target."""
+    target = _make_tree(tmp_path / "outside", age_seconds=_stale())
+    task_dir = _make_tree(_temp_root() / "task_withlink", age_seconds=_stale())
+    link = task_dir / "inner" / "escape"
+    link.symlink_to(target)
+    stamp = time.time() - _stale()
+    os.utime(link, (stamp, stamp), follow_symlinks=False)
+    os.utime(task_dir / "inner", (stamp, stamp))
+
+    sweep_temp_dirs()
+
+    assert not task_dir.exists()
+    assert (target / "inner" / "part.bin").read_bytes() == PAYLOAD
+
+
+@pytest.mark.django_db
+def test_download_dir_with_a_recent_file_is_kept() -> None:
+    """A recent write inside download staging keeps it, whatever the attempt says."""
+    project_file = ProjectFileFactory()
+    _attempt(project_file, DownloadAttempt.Status.FAILED)
+    staging = _make_tree(download_dir_path(project_file.pk), age_seconds=_stale())
+    now = time.time()
+    os.utime(staging / "inner" / "part.bin", (now, now))
+
+    sweep_temp_dirs()
+
+    assert staging.exists()
+
+
+@pytest.mark.django_db
+def test_download_restarted_during_the_walk_is_kept(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The status is asked again just before deleting (review of #392)."""
+    project_file = ProjectFileFactory()
+    _attempt(project_file, DownloadAttempt.Status.FAILED)
+    staging = _make_tree(download_dir_path(project_file.pk), age_seconds=_stale())
+    real_walk = temp_sweep.tree_newest_mtime_and_size
+
+    def walk_while_a_retry_starts(path: Path) -> tuple[float, int]:
+        DownloadAttempt.objects.create(
+            project_file=project_file,
+            attempt_number=2,
+            status=DownloadAttempt.Status.DOWNLOADING,
+        )
+        return real_walk(path)
+
+    monkeypatch.setattr(
+        temp_sweep, "tree_newest_mtime_and_size", walk_while_a_retry_starts
+    )
+
+    result = sweep_temp_dirs()
+
+    assert staging.exists()
+    assert result.kept == [staging]
+
+
+def test_directory_removed_by_its_task_mid_sweep_is_skipped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A FileNotFoundError from rmtree (its task cleaned up) is not an error."""
+    first = _make_tree(_temp_root() / "task_a", age_seconds=_stale())
+    second = _make_tree(_temp_root() / "task_b", age_seconds=_stale())
+    real_rmtree = shutil.rmtree
+
+    def rmtree_racing_the_task(path: Path) -> None:
+        if Path(path) == first:
+            real_rmtree(path)
+            raise FileNotFoundError(path)
+        real_rmtree(path)
+
+    monkeypatch.setattr(temp_sweep.shutil, "rmtree", rmtree_racing_the_task)
+
+    result = sweep_temp_dirs()
+
+    assert result.removed == [second]
+    assert result.failed == []
+
+
+def test_directory_that_cannot_be_removed_fails_loudly_after_the_rest(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """One bad directory is logged and raised, but does not stop the others."""
+    bad = _make_tree(_temp_root() / "task_bad", age_seconds=_stale())
+    good = _make_tree(_temp_root() / "task_good", age_seconds=_stale())
+    real_rmtree = shutil.rmtree
+
+    def rmtree_denied_for_bad(path: Path) -> None:
+        if Path(path) == bad:
+            raise PermissionError(path)
+        real_rmtree(path)
+
+    monkeypatch.setattr(temp_sweep.shutil, "rmtree", rmtree_denied_for_bad)
+
+    with (
+        caplog.at_level(logging.ERROR, logger="wafer_space.projects.temp_sweep"),
+        pytest.raises(TempSweepError, match="task_bad"),
+    ):
+        sweep_temp_dirs()
+
+    assert not good.exists()
+    assert bad.exists()
+    assert any("could not remove" in r.getMessage() for r in caplog.records)
+
+
+def test_sweep_task_returns_counts() -> None:
+    """The Celery task reports what it removed, kept and reclaimed."""
+    _make_tree(_temp_root() / "task_old", age_seconds=_stale())
+    _make_tree(_temp_root() / "task_young", age_seconds=60)
+
+    counts = sweep_orphaned_temp_dirs()
+
+    assert counts == {"removed": 1, "kept": 1, "reclaimed_bytes": len(PAYLOAD)}
