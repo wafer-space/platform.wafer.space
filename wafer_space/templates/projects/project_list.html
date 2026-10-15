@@ -77,11 +77,17 @@
                     {% if state.basis %}
                       <small class="d-block text-muted" data-state-basis="{{ state.basis }}">{{ state.basis }}</small>
                     {% endif %}
+                    {% if state.precheck %}
+                      {% include "projects/_precheck_version.html" with precheck=state.precheck %}
+                    {% endif %}
                     {% if state.newer_revision %}
                       <small class="d-block" data-state-latest="{{ state.newer_revision.key }}">
                         <span class="badge {{ state.newer_revision.css }}">{{ state.newer_revision.label }}</span>
                         <span class="text-muted">{{ state.newer_revision.basis }}</span>
                       </small>
+                      {% if state.newer_revision.precheck %}
+                        {% include "projects/_precheck_version.html" with precheck=state.newer_revision.precheck %}
+                      {% endif %}
                     {% endif %}
                   </div>
                   <div class="flex-grow-1">
