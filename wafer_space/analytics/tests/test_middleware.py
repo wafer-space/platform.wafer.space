@@ -227,7 +227,7 @@ def test_postgres_insert_does_not_wait_for_the_wal_flush(logged_in: Client) -> N
     Measured on PostgreSQL 17: a plain autocommit INSERT took ~9 ms, almost
     all of it the flush; with synchronous_commit off it took ~1.5 ms.
     """
-    fake_connection = MagicMock(vendor="postgresql")
+    fake_connection = MagicMock(vendor="postgresql", in_atomic_block=False)
     cursor = fake_connection.cursor.return_value.__enter__.return_value
 
     with patch("wafer_space.analytics.middleware.connection", fake_connection):
