@@ -20,6 +20,7 @@ from django.core.exceptions import PermissionDenied
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.db.models import BooleanField
+from django.db.models import Exists
 from django.db.models import ExpressionWrapper
 from django.db.models import OuterRef
 from django.db.models import Prefetch
@@ -34,6 +35,7 @@ from django.shortcuts import get_object_or_404
 from django.shortcuts import redirect
 from django.shortcuts import render
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 from django.views.generic import CreateView
 from django.views.generic import DetailView
@@ -46,6 +48,8 @@ from wafer_space.core.enums import SlotSize
 from wafer_space.shuttles.models import SHUTTLE_ID_LENGTH
 from wafer_space.shuttles.models import Shuttle
 
+from .check_operations import AdminRerunRefusedError
+from .check_operations import create_admin_rerun_check
 from .deadline_warning import WARNING_WINDOW
 from .deadline_warning import deadline_warning
 from .deadline_warning import deadline_warning_for
@@ -834,6 +838,42 @@ class ManufacturabilityCheckCancelView(LoginRequiredMixin, UserPassesTestMixin, 
         return redirect(project.get_absolute_url())
 
 
+class ProjectFileRerunCheckView(LoginRequiredMixin, UserPassesTestMixin, View):
+    """Queue a fresh precheck of one file revision (staff only, POST, #205)."""
+
+    def test_func(self) -> bool:
+        """Only staff may re-run a precheck; owners re-upload instead."""
+        return self.request.user.is_staff
+
+    def post(self, request: HttpRequest, pk: UUID, file_pk: int) -> HttpResponse:
+        """Create an ADMIN_RERUN check of the named revision, then go back."""
+        project = get_object_or_404(Project, pk=pk)
+        # Not filtered by project: the service refuses another project's
+        # file with a message rather than a bare 404.
+        project_file = get_object_or_404(ProjectFile, pk=file_pk)
+        try:
+            check = create_admin_rerun_check(
+                project,
+                project_file,
+                requested_by=cast("User", request.user),
+            )
+        except AdminRerunRefusedError as exc:
+            messages.error(request, f"Precheck not re-run: {exc}.")
+        else:
+            position = check.queue_position
+            queued = f" Queue position: {position}." if position else ""
+            queued_msg = f"Precheck re-run queued for this revision (check {check.pk})."
+            messages.success(request, queued_msg + queued)
+        next_url = request.POST.get("next", "")
+        if url_has_allowed_host_and_scheme(
+            next_url,
+            allowed_hosts={request.get_host()},
+            require_https=request.is_secure(),
+        ):
+            return redirect(next_url)
+        return redirect(project.get_absolute_url())
+
+
 class ManufacturabilityCheckAdminStatusView(
     LoginRequiredMixin, UserPassesTestMixin, View
 ):
@@ -858,16 +898,40 @@ class ManufacturabilityCheckAdminStatusView(
 
         # Get recent checks (last 50)
         # Logs are deferred: this page lists checks and shows none (#308).
-        recent_checks = (
+        # A staff re-run is offered on a failed or outdated check that is
+        # still its file's latest (#205); older rows of a file get none.
+        newer_check = ManufacturabilityCheck.objects.filter(
+            project_file=OuterRef("project_file"),
+            created_at__gt=OuterRef("created_at"),
+        )
+        recent_checks = list(
             ManufacturabilityCheck.objects.without_logs()
             .select_related(
                 "project",
                 "project__user",
                 "project__shuttle",
                 "project_file",
+                "project_file__project",
             )
             .order_by("-id")[:50]
         )
+        still_latest = set(
+            ManufacturabilityCheck.objects.filter(
+                pk__in=[check.pk for check in recent_checks],
+            )
+            .exclude(Exists(newer_check))
+            .values_list("pk", flat=True)
+        )
+        rerun_offered_ids = {
+            check.pk
+            for check in recent_checks
+            if check.pk in still_latest
+            and (
+                check.status == ManufacturabilityCheck.Status.ERROR
+                or check.is_manufacturable is False
+                or check.is_using_latest_precheck is False
+            )
+        }
 
         # Build active sections for all non-terminal statuses
         active_sections = []
@@ -911,6 +975,7 @@ class ManufacturabilityCheckAdminStatusView(
             {
                 "status_counts": status_counts,
                 "recent_checks": recent_checks,
+                "rerun_offered_ids": rerun_offered_ids,
                 "active_sections": active_sections,
             },
         )

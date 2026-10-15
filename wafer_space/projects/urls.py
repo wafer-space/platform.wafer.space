@@ -80,6 +80,11 @@ urlpatterns = [
         name="cancel_check",
     ),
     path(
+        "<uuid:pk>/files/<int:file_pk>/rerun-check/",
+        views.ProjectFileRerunCheckView.as_view(),
+        name="rerun_check",
+    ),
+    path(
         "check/<int:check_id>/requeue-drc-update/",
         views.check_drc_update_requeue,
         name="check_drc_update_requeue",
