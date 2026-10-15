@@ -51,7 +51,7 @@ def _request_id(request: HttpRequest) -> str:
     The header is trusted on the same terms as X-Real-IP: only where nginx
     is the sole ingress (TRUST_X_REAL_IP), and only in nginx's format.
     """
-    header = request.META.get("HTTP_X_REQUEST_ID", "")
+    header = request.headers.get("x-request-id", "")
     if settings.TRUST_X_REAL_IP and _REQUEST_ID_RE.fullmatch(header):
         return header
     return uuid.uuid4().hex
@@ -142,10 +142,10 @@ class RequestLogMiddleware:
                 status=response.status_code,
                 bytes=_response_bytes(response),
                 duration_ms=int((time.monotonic() - started) * 1000),
-                user_agent=request.META.get("HTTP_USER_AGENT", "")[
+                user_agent=request.headers.get("user-agent", "")[
                     : RequestLog.USER_AGENT_LENGTH
                 ],
-                referrer=_without_query(request.META.get("HTTP_REFERER", ""))[
+                referrer=_without_query(request.headers.get("referer", ""))[
                     : RequestLog.REFERRER_LENGTH
                 ],
             )
