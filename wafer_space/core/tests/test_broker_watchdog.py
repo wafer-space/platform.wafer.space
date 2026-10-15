@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import os
 import socket
+import sys
 import threading
 import time
 from types import SimpleNamespace
@@ -22,6 +23,7 @@ from unittest.mock import patch
 
 import pytest
 from celery.signals import task_received
+from celery.utils.log import LoggingProxy
 from celery.worker import state as worker_state
 from django.core import mail
 from django.core.cache import cache
@@ -164,14 +166,38 @@ class TestWhatItReportsBeforeExiting:
         assert "CRITICAL: Celery worker wedged" in admin_mail[0].subject
         assert f"has waited {int(LIMIT)} s on {QUEUE}" in admin_mail[0].body
 
-    def test_it_dumps_every_threads_stack(
-        self, capfd: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_it_logs_every_threads_stack(self, admin_mail: list[EmailMessage]) -> None:
+        """In the email too, so the stacks reach ADMINS with the alert."""
         exit_wedged([QUEUE], LIMIT, exit_process=MagicMock())
 
-        err = capfd.readouterr().err
-        assert "Stacks of the wedged worker's threads" in err
-        assert "most recent call first" in err
+        assert "Stacks of its threads:" in admin_mail[0].body
+        assert "most recent call first" in admin_mail[0].body
+
+    def test_it_works_under_celerys_redirected_stderr(
+        self, admin_mail: list[EmailMessage]
+    ) -> None:
+        """--detach --logfile makes sys.stderr a LoggingProxy, with no fileno()."""
+        exit_process = MagicMock()
+        proxy = LoggingProxy(logging.getLogger("celery.redirected"))
+
+        with patch.object(sys, "stderr", proxy):
+            exit_wedged([QUEUE], LIMIT, exit_process=exit_process)
+
+        exit_process.assert_called_once_with(WEDGED_EXIT_CODE)
+        assert "most recent call first" in admin_mail[0].body
+
+    def test_it_exits_even_if_the_report_fails(self) -> None:
+        exit_process = MagicMock()
+
+        with (
+            patch.object(
+                broker_watchdog, "thread_stacks", side_effect=OSError("no space")
+            ),
+            pytest.raises(OSError, match="no space"),
+        ):
+            exit_wedged([QUEUE], LIMIT, exit_process=exit_process)
+
+        exit_process.assert_called_once_with(WEDGED_EXIT_CODE)
 
     def test_it_logs_before_it_exits(self) -> None:
         order: list[str] = []

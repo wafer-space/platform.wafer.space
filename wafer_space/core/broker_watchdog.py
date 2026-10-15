@@ -34,7 +34,7 @@ from __future__ import annotations
 import faulthandler
 import logging
 import os
-import sys
+import tempfile
 import threading
 import time
 from dataclasses import dataclass
@@ -139,25 +139,43 @@ def flush_logs_and_exit(code: int) -> None:
     os._exit(code)
 
 
+def thread_stacks() -> str:
+    """Every thread's stack, as faulthandler prints it.
+
+    faulthandler writes only to a real file descriptor. A deployed worker
+    runs with --detach and --logfile, where sys.stderr is Celery's
+    LoggingProxy, which has none, so the dump goes to a temporary file and
+    comes back as text for the log.
+    """
+    with tempfile.TemporaryFile(mode="w+") as dump:
+        faulthandler.dump_traceback(file=dump, all_threads=True)
+        dump.seek(0)
+        return dump.read()
+
+
 def exit_wedged(
     queues: Iterable[str],
     waited: float,
     *,
     exit_process: Callable[[int], Any] = flush_logs_and_exit,
 ) -> None:
-    """Log the wedge loudly, dump every thread's stack, then exit the process."""
-    logger.critical(
-        "Celery worker wedged: a message has waited %d s on %s and nothing "
-        "was taken, with no task running. Exiting so systemd restarts it "
-        "(issue #426). Sockets: %s",
-        waited,
-        ",".join(sorted(queues)),
-        socket_inodes(),
-    )
-    sys.stderr.write("Stacks of the wedged worker's threads (issue #426):\n")
-    sys.stderr.flush()
-    faulthandler.dump_traceback(file=sys.stderr, all_threads=True)
-    exit_process(WEDGED_EXIT_CODE)
+    """Log the wedge loudly, with every thread's stack, then exit the process.
+
+    The exit is in a finally: if the report itself fails, the worker must
+    still not stay wedged.
+    """
+    try:
+        logger.critical(
+            "Celery worker wedged: a message has waited %d s on %s and nothing "
+            "was taken, with no task running. Exiting so systemd restarts it "
+            "(issue #426). Sockets: %s\nStacks of its threads:\n%s",
+            waited,
+            ",".join(sorted(queues)),
+            socket_inodes(),
+            thread_stacks(),
+        )
+    finally:
+        exit_process(WEDGED_EXIT_CODE)
 
 
 class BrokerWatchdog:
