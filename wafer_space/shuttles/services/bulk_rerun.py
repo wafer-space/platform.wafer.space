@@ -127,7 +127,8 @@ def queue_bulk_rerun(
 
     ``confirmed`` holds the projects the confirmation page listed. A project
     is checked only if it was confirmed and is still Old, so a project that
-    became Old after the page was shown is never queued unseen.
+    became Old after the page was shown is never queued unseen. Each project
+    not checked is in ``not_queued`` with the reason.
 
     Raises:
         PermissionDenied: ``requested_by`` is not staff; nothing is queued.
@@ -140,7 +141,8 @@ def queue_bulk_rerun(
     plan = plan_bulk_rerun(shuttle, revision)
     still_old = {p.project.pk for p in plan.to_queue + plan.skipped}
     queued: list[ManufacturabilityCheck] = []
-    not_queued = [p for p in plan.skipped if p.project.pk in confirmed_pks]
+    # A skip is reported whether or not the page listed it: it queues nothing
+    not_queued = list(plan.skipped)
     not_queued += [
         PlannedRerun(project, None, NO_LONGER_OLD)
         for project in shuttle.projects.filter(pk__in=confirmed_pks - still_old)
