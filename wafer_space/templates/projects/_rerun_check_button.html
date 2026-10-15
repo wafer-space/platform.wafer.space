@@ -1,0 +1,18 @@
+{# Staff "Run / Re-run precheck" for one file revision (#205); state from rerun_tags. #}
+{% if show %}
+  <div class="mb-2">
+    <form method="post"
+          action="{{ url }}"
+          class="d-inline"
+          data-rerun-check
+          {% if confirm %}onsubmit="return confirm('{{ confirm|escapejs }}');"{% endif %}>
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ next }}" />
+      <button type="submit"
+              class="btn btn-sm btn-outline-secondary"
+              {% if disabled %}disabled title="A check of this revision is in progress"{% endif %}>
+        <i class="bi bi-arrow-repeat" aria-hidden="true"></i> {{ action }} ({{ revision }})
+      </button>
+    </form>
+  </div>
+{% endif %}
