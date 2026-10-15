@@ -496,6 +496,12 @@ CELERY_TASK_EAGER_PROPAGATES = True
 # The deployed workers run the default prefork pool, which enforces the time
 # limit; the Procfile's solo/threads pools (development only) do not.
 CELERY_RESULT_EXPIRES = 3600
+# Store each result's task name (and args, kwargs and worker) on its
+# TaskResult row. checks_orch_stalled finds checks_running's results by
+# task_name, which django-celery-results writes only when this is on
+# (issue #426). The arguments are database ids, an image digest and a slot
+# size: no secrets or personal data, and they already sit in kombu_message.
+CELERY_RESULT_EXTENDED = True
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes hard time limit
 CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes soft time limit
@@ -519,6 +525,10 @@ CELERY_WORKER_MAX_MEMORY_PER_CHILD = 1024 * 1024  # kB (~1GiB peak RSS)
 # PLACEHOLDER until set from production's data before merge.
 WORKER_WEDGE_EXIT_SECONDS = 5 * 60
 WORKER_WEDGE_POLL_SECONDS = 30
+# checks_orch_stalled (issue #426) emails ADMINS once checks_running, which
+# checks-orch runs every 15 s, has recorded no result for this long.
+# PLACEHOLDER until set from production's data before merge.
+CHECKS_ORCH_STALL_ALERT_SECONDS = 10 * 60
 
 # Download task configuration
 # Celery retry settings for download tasks (built-in retry mechanism)
@@ -605,6 +615,11 @@ CELERY_BEAT_SCHEDULE = {
     "checks-cancelling": {
         "task": "wafer_space.projects.tasks_checks.checks_cancelling",
         "schedule": 15.0,
+    },
+    # Alerts when checks-orch stops running the dispatchers above (issue #426)
+    "checks-orch-stalled": {
+        "task": "wafer_space.projects.tasks_checks.checks_orch_stalled",
+        "schedule": 60.0,
     },
     # Cleanup and retry tasks (60s intervals)
     "checks-retry": {

@@ -34,6 +34,7 @@ from django.db.models import OuterRef
 from django.db.models import Q
 from django.db.models import Subquery
 from django.utils import timezone
+from django_celery_results.models import TaskResult
 
 from wafer_space.shuttles.models import Shuttle
 
@@ -287,6 +288,7 @@ __all__ = [
     "checks_create",
     "checks_dispatching",
     "checks_drc_update_requeue",
+    "checks_orch_stalled",
     "checks_pending",
     "checks_retry",
     "checks_running",
@@ -2392,3 +2394,46 @@ def checks_cleanup_stale_pending_tasks() -> dict:
         deleted += 1
 
     return {"deleted": deleted, "still_active": still_active}
+
+
+# The dispatcher whose results show checks-orch is consuming: it runs every
+# 15 s whether or not any check is running.
+CHECKS_RUNNING_TASK_NAME = "wafer_space.projects.tasks_checks.checks_running"
+
+
+@shared_task(queue="none:ro:default")
+def checks_orch_stalled() -> dict[str, Any]:
+    """Alert ADMINS when checks-orch has stopped running its dispatchers.
+
+    On 16 Oct 2026 the checks-orch worker wedged twice while systemd showed
+    it running, and nothing alerted (issue #426). checks_running runs every
+    15 s on checks-orch, so its latest result row's date_done says when
+    checks-orch last ran something. Once that is older than
+    CHECKS_ORCH_STALL_ALERT_SECONDS, this logs CRITICAL under wafer_space.*,
+    which emails ADMINS (at most once an hour, RateLimitedAdminEmailHandler).
+
+    It runs on none:ro:default, never on checks-orch: a wedged checks-orch
+    would never run it. Result rows are found by task_name, which is stored
+    only with CELERY_RESULT_EXTENDED; a row written without it has no
+    task_name, so it neither counts as a recent run nor breaks the query.
+    """
+    last_done = (
+        TaskResult.objects.filter(task_name=CHECKS_RUNNING_TASK_NAME)
+        .order_by("-date_done")
+        .values_list("date_done", flat=True)
+        .first()
+    )
+    limit = timedelta(seconds=settings.CHECKS_ORCH_STALL_ALERT_SECONDS)
+    if last_done is not None and timezone.now() - last_done <= limit:
+        return {"stalled": False, "last_done": last_done.isoformat()}
+    logging.getLogger(__name__).critical(
+        "checks-orch has stalled: checks_running last ran at %s, more than "
+        "%d s ago. The worker may be alive but not consuming (issue #426); "
+        "restart it.",
+        last_done.isoformat() if last_done else "no recorded time",
+        limit.total_seconds(),
+    )
+    return {
+        "stalled": True,
+        "last_done": last_done.isoformat() if last_done else None,
+    }
