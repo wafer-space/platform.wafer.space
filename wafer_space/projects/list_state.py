@@ -29,6 +29,7 @@ from django.db.models import OuterRef
 from django.db.models import Subquery
 from django.db.models.functions import Coalesce
 
+from .models import PRECHECK_DIGEST_PREFIX
 from .models import DownloadAttempt
 from .models import ManufacturabilityCheck
 from .models import PrecheckImageRevision
@@ -259,6 +260,16 @@ def _download_state(download_status: str | None) -> ListState:
     return DOWNLOAD_PENDING
 
 
+IMAGE_NOT_RECORDED = PrecheckVersion(
+    key="unrecorded",
+    label="image not recorded",
+    icon="question-circle",
+    css="text-muted",
+    title="The check did not record which precheck image it ran",
+    status="version unknown",
+)
+
+
 def _precheck_version(
     digest: str | None,
     precheck_version: str | None,
@@ -274,6 +285,11 @@ def _precheck_version(
     """
     if not digest:
         return None
+    if not digest.startswith(PRECHECK_DIGEST_PREFIX):
+        # do_dispatching stores "unknown" when the pulled image has no
+        # RepoDigests. It names no image, and short_digest asserts on it,
+        # which made the whole list a 500 (#421).
+        return IMAGE_NOT_RECORDED
     label = PrecheckImageRevision(
         digest=digest,
         precheck_version=precheck_version or "",

@@ -16,6 +16,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from .models import MAX_METADATA_FETCH_ATTEMPTS
+from .models import PRECHECK_DIGEST_PREFIX
 from .models import ManufacturabilityCheck
 from .models import PrecheckImageRevision
 
@@ -43,7 +44,11 @@ def revisions_needs_fetching() -> dict[str, int]:
     )
 
     new_digests = set(
-        ManufacturabilityCheck.objects.exclude(docker_image_digest="")
+        # Not "unknown" or any other non-digest (#421): it names no image,
+        # its fetch can only fail, and its stub row would reach short_digest.
+        ManufacturabilityCheck.objects.filter(
+            docker_image_digest__startswith=PRECHECK_DIGEST_PREFIX
+        )
         .exclude(docker_image_digest__in=known_digests)
         .order_by()  # Clear default ordering to avoid breaking distinct
         .values_list("docker_image_digest", flat=True)

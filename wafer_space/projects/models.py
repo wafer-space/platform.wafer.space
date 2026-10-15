@@ -38,6 +38,11 @@ logger = logging.getLogger(__name__)
 
 PRECHECK_GITHUB_REPO = "wafer-space/gf180mcu-precheck"
 
+# Only a value with this prefix names a precheck image. do_dispatching
+# stores "unknown" when the pulled image has no RepoDigests; that must
+# never be catalogued or looked up as an image (#421).
+PRECHECK_DIGEST_PREFIX = "sha256:"
+
 # Stop requeueing a digest after this many failed fetch attempts. Each beat
 # scan requeues an unfetched digest and every task execution (including each
 # celery retry) counts as one attempt, so this bounds a permanently-broken
@@ -3122,7 +3127,7 @@ Your GDS file should have:
     @property
     def precheck_revision(self) -> "PrecheckImageRevision | None":
         """Get the PrecheckImageRevision for this check, if cataloged."""
-        if not self.docker_image_digest:
+        if not self.docker_image_digest.startswith(PRECHECK_DIGEST_PREFIX):
             return None
         return PrecheckImageRevision.objects.filter(
             digest=self.docker_image_digest
@@ -3512,7 +3517,7 @@ class PrecheckImageRevision(models.Model):
     def short_digest(self) -> str:
         """Truncated digest for display."""
         assert self.digest
-        assert self.digest.startswith("sha256:")
+        assert self.digest.startswith(PRECHECK_DIGEST_PREFIX)
         return f"sha256:{self.digest[7:19]}..."
 
     @property
@@ -3571,7 +3576,9 @@ class PrecheckImageRevision(models.Model):
             digest = check_or_digest.docker_image_digest
             is_latest = check_or_digest.is_using_latest_precheck
 
-        if not digest:
+        if not digest.startswith(PRECHECK_DIGEST_PREFIX):
+            # No digest, or do_dispatching's "unknown": no image is named.
+            # A catalog row for "unknown" reached short_digest's assert (#421).
             return ("-", None)
 
         cache_key = f"precheck_display:{digest}"
