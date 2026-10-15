@@ -27,25 +27,25 @@
               {% endif %}
             {% else %}
               <h6 class="mb-0">
-                {% if status == 'downloading' %}
+                {% if status == "downloading" %}
                   <span class="spinner-border spinner-border-sm text-primary" role="status"></span>
-                {% elif status == 'failed' %}
+                {% elif status == "failed" %}
                   <i class="bi bi-file-earmark-x text-danger"></i>
                 {% else %}
                   <i class="bi bi-file-earmark text-muted"></i>
                 {% endif %}
-                {% if file.original_filename == 'download' and file.original_url %}
+                {% if file.original_filename == "download" and file.original_url %}
                   GitHub Artifact
                 {% else %}
                   {{ file.original_filename }}
                 {% endif %}
               </h6>
-              {% if status == 'downloading' or status == 'pending' %}
+              {% if status == "downloading" or status == "pending" %}
                 <small class="text-muted">
                   <i class="bi bi-hourglass-split"></i>
                   Processing <code>{{ file.original_filename }}</code>...
                 </small>
-              {% elif status == 'failed' %}
+              {% elif status == "failed" %}
                 <small class="text-danger">
                   <i class="bi bi-exclamation-circle"></i>
                   Download failed
@@ -160,13 +160,13 @@
           <strong>
             Check #{{ check.pk }}
             <span class="badge bg-primary ms-1">Latest</span>
-            {% if check.trigger_reason == 'retry' %}
+            {% if check.trigger_reason == "retry" %}
               <span class="badge bg-warning text-dark ms-1">Retry</span>
-            {% elif check.trigger_reason == 'drc_update' %}
+            {% elif check.trigger_reason == "drc_update" %}
               <span class="badge bg-info ms-1">DRC Update</span>
-            {% elif check.trigger_reason == 'admin_rerun' %}
+            {% elif check.trigger_reason == "admin_rerun" %}
               <span class="badge bg-secondary ms-1">Admin Re-run</span>
-            {% elif check.trigger_reason == 'cob_change' %}
+            {% elif check.trigger_reason == "cob_change" %}
               <span class="badge bg-dark ms-1">CoB Change</span>
             {% endif %}
           </strong>
@@ -196,15 +196,15 @@
                     <div class="d-flex justify-content-between align-items-center">
                       <strong>
                         Check #{{ hist_check.pk }}
-                        {% if hist_check.trigger_reason == 'initial' %}
+                        {% if hist_check.trigger_reason == "initial" %}
                           <span class="badge bg-primary ms-1">Initial</span>
-                        {% elif hist_check.trigger_reason == 'retry' %}
+                        {% elif hist_check.trigger_reason == "retry" %}
                           <span class="badge bg-warning text-dark ms-1">Retry</span>
-                        {% elif hist_check.trigger_reason == 'drc_update' %}
+                        {% elif hist_check.trigger_reason == "drc_update" %}
                           <span class="badge bg-info ms-1">DRC Update</span>
-                        {% elif hist_check.trigger_reason == 'admin_rerun' %}
+                        {% elif hist_check.trigger_reason == "admin_rerun" %}
                           <span class="badge bg-secondary ms-1">Admin Re-run</span>
-                        {% elif hist_check.trigger_reason == 'cob_change' %}
+                        {% elif hist_check.trigger_reason == "cob_change" %}
                           <span class="badge bg-dark ms-1">CoB Change</span>
                         {% endif %}
                       </strong>

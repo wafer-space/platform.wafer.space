@@ -57,15 +57,15 @@
                 {% for check in section.checks %}
                   <tr>
                     <td>
-                      {% if check.trigger_reason == 'initial' %}
+                      {% if check.trigger_reason == "initial" %}
                         <span class="badge bg-primary">Initial</span>
-                      {% elif check.trigger_reason == 'retry' %}
+                      {% elif check.trigger_reason == "retry" %}
                         <span class="badge bg-warning text-dark">Retry</span>
-                      {% elif check.trigger_reason == 'drc_update' %}
+                      {% elif check.trigger_reason == "drc_update" %}
                         <span class="badge bg-info text-dark">DRC Update</span>
-                      {% elif check.trigger_reason == 'admin_rerun' %}
+                      {% elif check.trigger_reason == "admin_rerun" %}
                         <span class="badge bg-secondary">Admin</span>
-                      {% elif check.trigger_reason == 'cob_change' %}
+                      {% elif check.trigger_reason == "cob_change" %}
                         <span class="badge bg-dark">CoB Change</span>
                       {% else %}
                         <span class="badge bg-light text-dark">{{ check.get_trigger_reason_display }}</span>
@@ -138,15 +138,15 @@
                 {% for check in recent_checks %}
                   <tr>
                     <td>
-                      {% if check.trigger_reason == 'initial' %}
+                      {% if check.trigger_reason == "initial" %}
                         <span class="badge bg-primary">Initial</span>
-                      {% elif check.trigger_reason == 'retry' %}
+                      {% elif check.trigger_reason == "retry" %}
                         <span class="badge bg-warning text-dark">Retry</span>
-                      {% elif check.trigger_reason == 'drc_update' %}
+                      {% elif check.trigger_reason == "drc_update" %}
                         <span class="badge bg-info text-dark">DRC Update</span>
-                      {% elif check.trigger_reason == 'admin_rerun' %}
+                      {% elif check.trigger_reason == "admin_rerun" %}
                         <span class="badge bg-secondary">Admin</span>
-                      {% elif check.trigger_reason == 'cob_change' %}
+                      {% elif check.trigger_reason == "cob_change" %}
                         <span class="badge bg-dark">CoB Change</span>
                       {% else %}
                         <span class="badge bg-light text-dark">{{ check.get_trigger_reason_display }}</span>

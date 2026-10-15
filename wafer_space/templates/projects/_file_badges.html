@@ -19,11 +19,11 @@
         <span class="badge bg-success">
           <i class="bi bi-shield-check"></i> Hash Verified
         </span>
-      {% elif status == 'completed' and file.has_hash_mismatch %}
+      {% elif status == "completed" and file.has_hash_mismatch %}
         <span class="badge bg-danger">
           <i class="bi bi-shield-x"></i> Hash Mismatch
         </span>
-      {% elif status == 'completed' and file.has_expected_hash and not file.hash_verified %}
+      {% elif status == "completed" and file.has_expected_hash and not file.hash_verified %}
         <span class="badge bg-warning text-dark">
           <i class="bi bi-shield-exclamation"></i> Hash Not Verified
         </span>
@@ -31,13 +31,13 @@
       {# Download status badge #}
       {% if show_download_status != False %}
         <span class="badge {% if status == 'completed' and file.has_hash_mismatch %}bg-danger{% elif status == 'completed' %}bg-success{% elif status == 'failed' %}bg-danger{% elif status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
-          {% if status == 'completed' and file.has_hash_mismatch %}
+          {% if status == "completed" and file.has_hash_mismatch %}
             <i class="bi bi-exclamation-triangle"></i> Hash Mismatch
-          {% elif status == 'completed' %}
+          {% elif status == "completed" %}
             <i class="bi bi-check-circle"></i> Downloaded
-          {% elif status == 'failed' %}
+          {% elif status == "failed" %}
             <i class="bi bi-exclamation-triangle"></i> Download Failed
-          {% elif status == 'downloading' %}
+          {% elif status == "downloading" %}
             <span class="spinner-border spinner-border-sm" role="status"></span> Downloading
           {% else %}
             <i class="bi bi-clock"></i> Pending

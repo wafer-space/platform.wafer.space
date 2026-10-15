@@ -44,15 +44,18 @@
                         <td class="py-1 px-1">{{ slot_size.label }}</td>
                         {# djlint:off H023 #}
                         <td class="py-1 px-1 text-end"
-                            title="{{ stat.assigned_count }} projects with slot allocated.&#10;{{ stat.projects_count }} projects of this size available for slot allocation.">
+                            title="{{ stat.assigned_count }} projects with slot allocated.
+{{ stat.projects_count }} projects of this size available for slot allocation.">
                           {{ stat.assigned_count }}/{{ stat.projects_count }}
                         </td>
                         <td class="py-1 px-1 text-end"
-                            title="{{ stat.manufacturable_assigned }} projects passing manufacturing precheck with slot allocated.&#10;{{ stat.manufacturable_total }} projects passing manufacturing precheck available for slot allocation.">
+                            title="{{ stat.manufacturable_assigned }} projects passing manufacturing precheck with slot allocated.
+{{ stat.manufacturable_total }} projects passing manufacturing precheck available for slot allocation.">
                           {{ stat.manufacturable_assigned }}/{{ stat.manufacturable_total }}
                         </td>
                         <td class="py-1 px-1 text-end"
-                            title="{{ stat.cs_order_assigned }} projects with a CrowdSupply order number with slot allocated.&#10;{{ stat.cs_order_total }} projects with a CrowdSupply order number.">
+                            title="{{ stat.cs_order_assigned }} projects with a CrowdSupply order number with slot allocated.
+{{ stat.cs_order_total }} projects with a CrowdSupply order number.">
                           {{ stat.cs_order_assigned }}/{{ stat.cs_order_total }}
                         </td>
                         <td class="py-1 px-1 text-end"
@@ -60,9 +63,8 @@
                           {{ stat.cob_count }}
                         </td>
                         <td class="py-1 px-1 text-end"
-                            title="{{ stat.available_slots }} slots available.&#10;{{ stat.total_slots }} slots of this size.">
-                          {{ stat.available_slots }}/{{ stat.total_slots }}
-                        </td>
+                            title="{{ stat.available_slots }} slots available.
+{{ stat.total_slots }} slots of this size.">{{ stat.available_slots }}/{{ stat.total_slots }}</td>
                         {# djlint:on #}
                       </tr>
                     {% endif %}
@@ -274,7 +276,9 @@
             <div class="alert alert-success">
               <strong>Currently assigned:</strong> <span id="modal-current-project-id"></span>
             </div>
-            <button type="button" class="btn btn-danger btn-sm" id="remove-assignment-btn">Remove Assignment</button>
+            <button type="button"
+                    class="btn btn-danger btn-sm"
+                    id="remove-assignment-btn">Remove Assignment</button>
           </div>
           <div id="modal-assign-section">
             <label for="project-search" class="form-label">Assign Project:</label>
