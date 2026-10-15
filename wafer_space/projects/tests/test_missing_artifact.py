@@ -9,11 +9,14 @@ whole project page returned 500.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 
 import pytest
 from django.core.files.base import ContentFile
+from django.urls import reverse
+from django.utils import timezone
 
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
@@ -99,3 +102,51 @@ def test_present_artifact_is_offered_as_a_download(client: Client, field: str):
     content = _project_page(client, check)
 
     assert getattr(check, field).url in content
+
+
+@pytest.mark.django_db
+def test_missing_artifact_on_an_older_check_in_history(client: Client):
+    """A missing file on a history card, not the latest check, still renders."""
+    older = _finished_check_with_artifact("runs_archive")
+    ManufacturabilityCheck.objects.filter(pk=older.pk).update(
+        created_at=timezone.now() - timedelta(hours=1)
+    )
+    ManufacturabilityCheckFactory(
+        project=older.project,
+        project_file=older.project_file,
+        status=ManufacturabilityCheck.Status.FINISHED,
+    )
+    older.runs_archive.storage.delete(older.runs_archive.name)
+
+    content = _project_page(client, older)
+
+    assert "This file has been checked 2 times" in content
+    assert 'data-artifact-missing="runs_archive"' in content
+
+
+@pytest.mark.django_db
+def test_missing_log_file_keeps_the_log_link(client: Client):
+    """The log link stays: projects:check_log falls back to the database copy."""
+    check = _finished_check_with_artifact("log_file")
+    check.log_file.storage.delete(check.log_file.name)
+
+    content = _project_page(client, check)
+
+    assert 'data-artifact-missing="log_file"' in content
+    assert (
+        reverse(
+            "projects:check_log", kwargs={"pk": check.project_id, "check_id": check.pk}
+        )
+        in content
+    )
+
+
+@pytest.mark.django_db
+def test_missing_artifact_says_file_missing(client: Client):
+    """The visible text tells the reader the file is gone."""
+    check = _finished_check_with_artifact("output_gds")
+    check.output_gds.storage.delete(check.output_gds.name)
+
+    content = _project_page(client, check)
+
+    assert ">File missing</span>" in content
