@@ -6,6 +6,8 @@ from pathlib import Path
 import environ
 from django.core.exceptions import ImproperlyConfigured
 
+from config import formats as date_formats
+
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent.parent
 # wafer_space/
 APPS_DIR = BASE_DIR / "wafer_space"
@@ -72,6 +74,19 @@ USE_TZ = True
 
 # https://docs.djangoproject.com/en/dev/ref/settings/#locale-paths
 LOCALE_PATHS = [str(BASE_DIR / "locale")]
+
+# Date formats: day first or ISO 8601, never month first (#412).
+# https://docs.djangoproject.com/en/dev/ref/settings/#format-module-path
+# Django's own en and ml formats are month first; config/formats replaces them.
+FORMAT_MODULE_PATH = ["config.formats"]
+# Locales with no format of their own fall back to these.
+DATE_FORMAT = date_formats.DATE_FORMAT
+DATETIME_FORMAT = date_formats.DATETIME_FORMAT
+TIME_FORMAT = date_formats.TIME_FORMAT
+YEAR_MONTH_FORMAT = date_formats.YEAR_MONTH_FORMAT
+MONTH_DAY_FORMAT = date_formats.MONTH_DAY_FORMAT
+SHORT_DATE_FORMAT = date_formats.SHORT_DATE_FORMAT
+SHORT_DATETIME_FORMAT = date_formats.SHORT_DATETIME_FORMAT
 
 # DATABASES
 # ------------------------------------------------------------------------------

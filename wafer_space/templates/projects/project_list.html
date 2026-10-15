@@ -108,7 +108,7 @@
                         {% endif %}
                       </h5>
                       <div class="text-end ms-3 text-nowrap">
-                        <small class="text-muted d-block">{{ project.created_at|date:"M d, Y" }}</small>
+                        <small class="text-muted d-block">{{ project.created_at|date }}</small>
                         {% if project.crowd_supply_order_id %}
                           <small>
                             <a href="{{ project.crowd_supply_order_url }}"
