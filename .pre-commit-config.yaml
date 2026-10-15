@@ -1,4 +1,3 @@
-exclude: '^docs/|/migrations/|devcontainer.json'
 default_stages: [pre-commit]
 minimum_pre_commit_version: "3.2.0"
 
@@ -10,27 +9,64 @@ repos:
     rev: v6.0.0
     hooks:
       - id: trailing-whitespace
+        # Every hook skips these but detect-secrets, which must see docs/
+        # and migrations too (#28).
+        exclude: &default-exclude '^docs/|/migrations/|devcontainer.json'
       - id: end-of-file-fixer
+        exclude: *default-exclude
       - id: check-json
+        exclude: *default-exclude
       - id: check-toml
+        exclude: *default-exclude
       - id: check-xml
+        exclude: *default-exclude
       - id: check-yaml
+        exclude: *default-exclude
       - id: debug-statements
+        exclude: *default-exclude
       - id: check-builtin-literals
+        exclude: *default-exclude
       - id: check-case-conflict
+        exclude: *default-exclude
       - id: check-docstring-first
+        exclude: *default-exclude
       - id: detect-private-key
+        exclude: *default-exclude
+
+  # Secret scanning (#28): fails on any secret that .secrets.baseline does
+  # not list. CI runs it through pre-commit on all files. No exclude: it
+  # scans every file, docs/, migrations and a force-added .env included.
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+
+  # A .env file holds real secrets and is gitignored. Whether detect-secrets
+  # finds an unquoted KEY=value in one depends on the file's other lines, so
+  # a committed .env fails whatever it holds (#105). .env.<anything> fails
+  # too; only the .example and .template files are committed.
+  - repo: local
+    hooks:
+      - id: no-dotenv
+        name: no committed .env file
+        language: fail
+        entry: '.env files hold secrets and are never committed; see .env.example'
+        files: '(^|/)\.env(\.[^/]+)?$'
+        exclude: '\.(example|template)$'
 
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.10.0.1
     hooks:
       - id: shellcheck
+        exclude: *default-exclude
         args: [--severity=warning]
 
   - repo: https://github.com/adamchainz/django-upgrade
     rev: '1.28.0'
     hooks:
       - id: django-upgrade
+        exclude: *default-exclude
         args: ['--target-version', '5.2']
 
   # Run the Ruff linter.
@@ -39,15 +75,19 @@ repos:
     hooks:
       # Linter
       - id: ruff-check
+        exclude: *default-exclude
         args: [--fix, --exit-non-zero-on-fix]
       # Formatter
       - id: ruff-format
+        exclude: *default-exclude
 
   - repo: https://github.com/Riverside-Healthcare/djLint
     rev: v1.46.4
     hooks:
       - id: djlint-reformat-django
+        exclude: *default-exclude
       - id: djlint-django
+        exclude: *default-exclude
 
 # sets up .pre-commit-ci.yaml to ensure pre-commit dependencies stay up to date
 ci:

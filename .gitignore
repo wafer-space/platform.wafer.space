@@ -64,6 +64,9 @@ target/
 
 # Environments
 .env
+.env.*
+!.env.example
+!.env.*.template
 .venv
 venv/
 ENV/
