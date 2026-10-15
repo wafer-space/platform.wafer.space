@@ -42,6 +42,19 @@ repos:
       - id: detect-secrets
         args: ['--baseline', '.secrets.baseline']
 
+  # A .env file holds real secrets and is gitignored. Whether detect-secrets
+  # finds an unquoted KEY=value in one depends on the file's other lines, so
+  # a committed .env fails whatever it holds (#105). .env.<anything> fails
+  # too; only the .example and .template files are committed.
+  - repo: local
+    hooks:
+      - id: no-dotenv
+        name: no committed .env file
+        language: fail
+        entry: '.env files hold secrets and are never committed; see .env.example'
+        files: '(^|/)\.env(\.[^/]+)?$'
+        exclude: '\.(example|template)$'
+
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.10.0.1
     hooks:

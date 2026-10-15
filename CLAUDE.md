@@ -262,16 +262,24 @@ See `deployment/README.md` for full deployment guide.
 The `detect-secrets` pre-commit hook fails on any secret that
 `.secrets.baseline` does not list. CI runs it through pre-commit and the
 `Secret scan` workflow, which also covers docs-only changes. It scans every
-file, `docs/`, migrations and a force-added `.env` included.
+file, `docs/`, migrations and a force-added `.env` included. The `no-dotenv`
+hook fails on any committed `.env` or `.env.<anything>` file except
+`.env.example` and `.env.*.template`, because detect-secrets can miss an
+unquoted `KEY=value` in one, depending on the file's other lines.
 
 - **The hook says "The baseline file was updated"**: a listed false positive
-  moved to another line. `git add .secrets.baseline` and commit again.
+  moved to another line. Check that `git diff .secrets.baseline` only changes
+  `line_number` (and `generated_at`), then `git add .secrets.baseline` and
+  commit again.
 - **The hook reports a new secret**: remove it. If it was ever pushed, treat
   it as leaked and rotate it.
-- **A true false positive** (a test fixture, a hash): add it with
-  `uvx --from detect-secrets==1.5.0 detect-secrets scan --baseline .secrets.baseline`,
-  mark it `"is_secret": false` (`detect-secrets audit .secrets.baseline`),
+- **A true false positive** (a test fixture, a hash): run
+  `uvx --from detect-secrets==1.5.0 detect-secrets scan --baseline .secrets.baseline`.
+  This adds *every* new finding, real secrets too, so read the baseline diff,
+  then mark each entry with `uvx --from detect-secrets==1.5.0 detect-secrets audit .secrets.baseline`
   and say why in the PR. Never exclude paths.
+- **`# pragma: allowlist secret`** silences one line, like `# noqa`: never add
+  it without explicit user permission.
 
 ---
 
