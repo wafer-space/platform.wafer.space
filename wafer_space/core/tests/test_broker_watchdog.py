@@ -25,6 +25,7 @@ from unittest.mock import patch
 
 import pytest
 from celery.signals import task_received
+from celery.signals import worker_ready
 from celery.utils.log import LoggingProxy
 from celery.worker import state as worker_state
 from django.core import mail
@@ -298,30 +299,70 @@ class TestItReadsTheBroker:
         assert (wedged, len(admin_mail)) == (False, 1)
 
 
+class FakeConsumer:
+    """The parts of a Celery Consumer the watchdog reads; hashable, as a sender."""
+
+    def __init__(self, broker_url: str) -> None:
+        self.app = SimpleNamespace(conf=SimpleNamespace(broker_url=broker_url))
+        self.task_consumer = SimpleNamespace(queues=[SimpleNamespace(name=QUEUE)])
+
+
 class TestStartingIt:
-    def consumer(self, broker_url: str) -> SimpleNamespace:
-        return SimpleNamespace(
-            app=SimpleNamespace(conf=SimpleNamespace(broker_url=broker_url)),
-            task_consumer=SimpleNamespace(queues=[SimpleNamespace(name=QUEUE)]),
-        )
+    """Through the real worker_ready signal, as Celery sends it.
+
+    Celery calls receivers with keyword arguments only (sender=, signal=)
+    and logs, then swallows, any error a receiver raises. The first version
+    took the consumer as a positional argument, so on test-platform every
+    worker logged a TypeError and ran unwatched, while tests that called the
+    handler directly passed.
+    """
+
+    def consumer(self, broker_url: str) -> FakeConsumer:
+        return FakeConsumer(broker_url)
 
     def test_worker_ready_starts_it_for_the_workers_queues(self) -> None:
-        start_watchdog(self.consumer("sqla+postgresql:///wafer_space"))
+        worker_ready.send(sender=self.consumer("sqla+postgresql:///wafer_space"))
 
         assert [w.queues for w in WATCHDOGS] == [[QUEUE]]
 
     def test_its_thread_is_a_daemon(self) -> None:
         """A normal shutdown is never held up by it."""
-        start_watchdog(self.consumer("sqla+postgresql:///wafer_space"))
+        worker_ready.send(sender=self.consumer("sqla+postgresql:///wafer_space"))
 
         threads = [t for t in threading.enumerate() if t.name == "broker-watchdog"]
         assert threads
         assert all(t.daemon for t in threads)
 
     def test_a_broker_that_is_not_sqlalchemy_gets_none(self) -> None:
-        start_watchdog(self.consumer("memory://"))
+        worker_ready.send(sender=self.consumer("memory://"))
 
         assert WATCHDOGS == []
+
+    def test_worker_ready_logs_that_it_is_on(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """test-platform had no such line: the handler raised instead."""
+        with caplog.at_level(logging.INFO):
+            worker_ready.send(sender=self.consumer("sqla+postgresql:///wafer_space"))
+
+        assert f"Broker watchdog on for {QUEUE}" in caplog.text
+
+    def test_no_receiver_of_worker_ready_raises(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Celery would log the error and carry on, leaving it unwatched."""
+        consumer = self.consumer("sqla+postgresql:///wafer_space")
+        with caplog.at_level(logging.ERROR):
+            responses = worker_ready.send(sender=consumer)
+
+        raised = [r for _, r in responses if isinstance(r, Exception)]
+        assert (raised, "raised:" in caplog.text) == ([], False)
+
+    def test_the_handler_takes_the_consumer_as_sender(self) -> None:
+        """The keyword Celery uses; a positional call is refused."""
+        start_watchdog(sender=self.consumer("sqla+postgresql:///wafer_space"))
+
+        assert [w.queues for w in WATCHDOGS] == [[QUEUE]]
 
     def test_its_engine_is_not_kombus(self) -> None:
         """Its own engine and pool, with no connection kept between polls."""
