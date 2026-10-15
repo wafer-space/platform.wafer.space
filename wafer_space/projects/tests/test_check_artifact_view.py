@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING
 import pytest
 from django.conf import settings
 from django.core.files.base import ContentFile
+from django.core.files.storage import FileSystemStorage
+from django.db.models.fields.files import FieldFile
 from django.urls import reverse
 
 from wafer_space.projects.models import ManufacturabilityCheck
@@ -28,7 +30,7 @@ from .factories import make_downloaded_file
 
 if TYPE_CHECKING:
     from django.test import Client
-    from pytest_django.fixtures import SettingsWrapper
+    from pytest_django.fixtures import Settings
 
 pytestmark = pytest.mark.django_db
 
@@ -153,7 +155,7 @@ def test_post_is_not_allowed(client: Client) -> None:
 
 
 def test_behind_nginx_answers_with_x_accel_redirect(
-    client: Client, settings: SettingsWrapper
+    client: Client, settings: Settings
 ) -> None:
     settings.MEDIA_X_ACCEL_REDIRECT_PREFIX = "/protected-media/"
     check = check_with_artifacts()
@@ -187,3 +189,79 @@ class TestProjectPage:
     ) -> None:
         _, content = page
         assert settings.MEDIA_URL not in content
+
+
+# Missing files (D-media-rebase): a stale row is a 404, never a 500.
+# ------------------------------------------------------------------------------
+
+
+def _break_into_dangling_symlink(field_file) -> None:
+    """Replace the stored file with a symlink whose target does not exist."""
+    stored = Path(field_file.path)
+    stored.unlink()
+    stored.symlink_to(stored.with_name("target-that-is-gone"))
+
+
+def test_artifact_that_is_a_dangling_symlink_is_404(client: Client) -> None:
+    """storage.exists() is os.path.lexists, so a dangling symlink once passed."""
+    check = check_with_artifacts()
+    _break_into_dangling_symlink(check.output_gds)
+    client.force_login(check.project.user)
+
+    response = client.get(artifact_url(check, "output-layout"))
+
+    assert response.status_code == HTTP_NOT_FOUND
+
+
+@pytest.mark.parametrize("breakage", ["deleted", "dangling-symlink"])
+def test_behind_nginx_a_missing_artifact_is_404_without_x_accel(
+    client: Client, settings: Settings, breakage: str
+) -> None:
+    """Django answers 404 itself; nginx is never sent a path to a missing file."""
+    settings.MEDIA_X_ACCEL_REDIRECT_PREFIX = "/protected-media/"
+    check = check_with_artifacts()
+    if breakage == "deleted":
+        check.output_gds.storage.delete(check.output_gds.name)
+    else:
+        _break_into_dangling_symlink(check.output_gds)
+    client.force_login(check.project.user)
+
+    response = client.get(artifact_url(check, "output-layout"))
+
+    assert (response.status_code, response.has_header("X-Accel-Redirect")) == (
+        HTTP_NOT_FOUND,
+        False,
+    )
+
+
+def test_artifact_removed_between_check_and_open_is_404(
+    client: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The file vanishing after the presence check is still a 404."""
+    check = check_with_artifacts()
+    client.force_login(check.project.user)
+
+    def open_after_it_vanished(self, mode: str = "rb"):
+        raise FileNotFoundError(self.name)
+
+    monkeypatch.setattr(FieldFile, "open", open_after_it_vanished)
+
+    response = client.get(artifact_url(check, "output-layout"))
+
+    assert response.status_code == HTTP_NOT_FOUND
+
+
+def test_unreadable_artifact_fails_loudly(
+    client: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only a missing file is a 404: a permission problem is a real error."""
+    check = check_with_artifacts()
+    client.force_login(check.project.user)
+
+    def size_denied(self, name: str) -> int:
+        raise PermissionError(name)
+
+    monkeypatch.setattr(FileSystemStorage, "size", size_denied)
+
+    with pytest.raises(PermissionError):
+        client.get(artifact_url(check, "output-layout"))

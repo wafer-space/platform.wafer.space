@@ -19,7 +19,7 @@ from .factories import ProjectFileFactory
 
 if TYPE_CHECKING:
     from django.test import Client
-    from pytest_django.fixtures import SettingsWrapper
+    from pytest_django.fixtures import Settings
 
     from wafer_space.projects.models import ProjectFile
 
@@ -133,7 +133,7 @@ def test_extracted_archive_downloads_under_processed_name(client: Client) -> Non
 
 
 def test_behind_nginx_answers_with_x_accel_redirect(
-    client: Client, settings: SettingsWrapper
+    client: Client, settings: Settings
 ) -> None:
     """Deployed, nginx sends the layout; gunicorn does not stream it (coord-10)."""
     settings.MEDIA_X_ACCEL_REDIRECT_PREFIX = "/protected-media/"
@@ -147,7 +147,7 @@ def test_behind_nginx_answers_with_x_accel_redirect(
 
 
 def test_behind_nginx_stranger_still_gets_403(
-    client: Client, settings: SettingsWrapper
+    client: Client, settings: Settings
 ) -> None:
     settings.MEDIA_X_ACCEL_REDIRECT_PREFIX = "/protected-media/"
     revision = stored_revision()

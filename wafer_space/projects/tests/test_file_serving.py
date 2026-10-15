@@ -29,7 +29,7 @@ from .factories import ProjectFileFactory
 
 if TYPE_CHECKING:
     from django.db.models.fields.files import FieldFile
-    from pytest_django.fixtures import SettingsWrapper
+    from pytest_django.fixtures import Settings
 
 pytestmark = pytest.mark.django_db
 
@@ -75,7 +75,7 @@ class TestBehindNginx:
     """Deployed: nginx sends the bytes from its internal location."""
 
     @pytest.fixture(autouse=True)
-    def _prefix(self, settings: SettingsWrapper) -> None:
+    def _prefix(self, settings: Settings) -> None:
         settings.MEDIA_X_ACCEL_REDIRECT_PREFIX = PREFIX
 
     def test_redirects_to_the_file_under_the_internal_location(self) -> None:
@@ -143,9 +143,7 @@ class TestMissingFiles:
     """A row that names no file, or a file that is gone, is a 404."""
 
     @pytest.mark.parametrize("prefix", [None, PREFIX])
-    def test_empty_field_is_404(
-        self, settings: SettingsWrapper, prefix: str | None
-    ) -> None:
+    def test_empty_field_is_404(self, settings: Settings, prefix: str | None) -> None:
         settings.MEDIA_X_ACCEL_REDIRECT_PREFIX = prefix
         revision = ProjectFileFactory(file=None)
         with pytest.raises(Http404):
@@ -153,7 +151,7 @@ class TestMissingFiles:
 
     @pytest.mark.parametrize("prefix", [None, PREFIX])
     def test_file_gone_from_disk_is_404(
-        self, settings: SettingsWrapper, prefix: str | None
+        self, settings: Settings, prefix: str | None
     ) -> None:
         settings.MEDIA_X_ACCEL_REDIRECT_PREFIX = prefix
         field_file = stored()

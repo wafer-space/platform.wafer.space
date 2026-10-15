@@ -32,14 +32,26 @@ if TYPE_CHECKING:
     from django.http.response import HttpResponseBase
 
 DEFAULT_CONTENT_TYPE = "application/octet-stream"
+MISSING_FILE_MESSAGE = "This file is not stored on the platform"
 
 
 def stored_file_exists(field_file: FieldFile) -> bool:
-    """Whether the field names a file that is present in its storage."""
+    """Whether the field names a file that is present in its storage.
+
+    Asks for the file's size, not ``storage.exists()``: FileSystemStorage
+    answers exists() with os.path.lexists, so a dangling symlink counts as
+    present there, while size() follows the link and raises
+    FileNotFoundError. Only that error means missing; any other OSError
+    (PermissionError, say) propagates, because it is a real fault.
+    """
     name = field_file.name
     if not name:
         return False
-    return field_file.storage.exists(name)
+    try:
+        field_file.storage.size(name)
+    except FileNotFoundError:
+        return False
+    return True
 
 
 def protected_file_response(
@@ -58,14 +70,18 @@ def protected_file_response(
     layout "application/vnd.fujitsu.oasys").
     """
     name = field_file.name
-    if not name or not field_file.storage.exists(name):
-        msg = "This file is not stored on the platform"
-        raise Http404(msg)
+    if not name or not stored_file_exists(field_file):
+        raise Http404(MISSING_FILE_MESSAGE)
 
     prefix = settings.MEDIA_X_ACCEL_REDIRECT_PREFIX
     if prefix is None:
+        try:
+            opened = field_file.open("rb")
+        except FileNotFoundError as exc:
+            # Removed between the presence check and here.
+            raise Http404(MISSING_FILE_MESSAGE) from exc
         response: HttpResponseBase = FileResponse(
-            field_file.open("rb"),
+            opened,
             as_attachment=True,
             filename=filename,
             content_type=content_type,
