@@ -153,7 +153,10 @@ class RequestLogAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
         except ValueError:
             pass
         else:
-            return queryset.filter(client_ip=str(address)), False
+            # A scoped IPv6 address (fe80::1%eth0) parses here but is not
+            # a valid inet value for PostgreSQL; treat it as a username.
+            if not getattr(address, "scope_id", None):
+                return queryset.filter(client_ip=str(address)), False
         if term.startswith("/"):
             return queryset.filter(path__startswith=term), False
         return queryset.filter(username=term), False

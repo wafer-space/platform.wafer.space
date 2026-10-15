@@ -6,11 +6,14 @@ import datetime
 from typing import TYPE_CHECKING
 
 import pytest
+from django.contrib.admin.sites import site
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.test import RequestFactory
 from django.urls import reverse
 from django.utils import timezone
 
+from wafer_space.analytics.admin import RequestLogAdmin
 from wafer_space.analytics.models import RequestLog
 from wafer_space.users.tests.factories import UserFactory
 
@@ -78,6 +81,17 @@ def test_search_is_never_a_substring_or_case_blind_match(
     _row(username="ada", path="/projects/abc/")
 
     assert _changelist_count(client, {"q": term}) == 0
+
+
+def test_scoped_ipv6_term_is_not_searched_as_an_address() -> None:
+    """Python accepts "fe80::1%eth0"; PostgreSQL's inet rejects it."""
+    model_admin = RequestLogAdmin(RequestLog, site)
+    queryset, _ = model_admin.get_search_results(
+        RequestFactory().get("/"), RequestLog.objects.all(), "fe80::1%eth0"
+    )
+
+    where = str(queryset.query).split(" WHERE ", 1)[1]
+    assert ('"client_ip"' in where, '"username"' in where) == (False, True)
 
 
 def test_status_class_filter(client: Client) -> None:
