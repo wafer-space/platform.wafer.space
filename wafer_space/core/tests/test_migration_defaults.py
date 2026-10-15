@@ -9,6 +9,12 @@ projects_historicalproject.submission_override_reason (migration 0062).
 
 Django's AddField uses a field's default only to fill the existing rows,
 then drops it, so a NOT NULL column needs db_default to keep one.
+
+Known limits: the check reads AddField only. It doesn't see an AlterField
+that makes a nullable column NOT NULL (old code may still insert NULL), or a
+column added by RunSQL or RunPython. It does flag an AddField on a model
+created earlier in the same migration, which no old code writes to; give
+that column a db_default too.
 """
 
 from __future__ import annotations
@@ -148,5 +154,7 @@ def test_0062s_columns_have_a_database_default(table: str, column: str) -> None:
     with connection.cursor() as cursor:
         description = connection.introspection.get_table_description(cursor, table)
 
-    defaults = {info.name: info.default for info in description}
-    assert defaults[column] == "''"
+    # SQLite reports the default as '', PostgreSQL as ''::text.
+    default = {info.name: info.default for info in description}[column]
+    assert default is not None
+    assert default.startswith("''")
