@@ -49,10 +49,13 @@
   {% endif %}
 </p>
 {# === CRITICAL: Errors and Warnings (for finished checks) === #}
+{# A section is red (errors) or yellow (warnings) only when it has at least #}
+{# one entry; an empty one is grey, so "None" never reads as a problem (#211). #}
 {% if check.status == "finished" %}
   <div class="mt-3">
-    <h6 class="text-danger">
-      <i class="bi bi-exclamation-triangle"></i> Errors
+    <h6 class="{% if check.errors %}text-danger{% else %}text-muted{% endif %}"
+        data-check-section="errors">
+      <i class="bi {% if check.errors %}bi-exclamation-triangle{% else %}bi-check-circle{% endif %}"></i> Errors
     </h6>
     {% if check.errors %}
       {% for error in check.errors %}<div class="alert alert-danger mb-2" role="alert">{{ error }}</div>{% endfor %}
@@ -61,8 +64,9 @@
     {% endif %}
   </div>
   <div class="mt-3">
-    <h6 class="text-warning">
-      <i class="bi bi-exclamation-circle"></i> Warnings
+    <h6 class="{% if check.warnings %}text-warning{% else %}text-muted{% endif %}"
+        data-check-section="warnings">
+      <i class="bi {% if check.warnings %}bi-exclamation-circle{% else %}bi-check-circle{% endif %}"></i> Warnings
     </h6>
     {% if check.warnings %}
       {% for warning in check.warnings %}<div class="alert alert-warning mb-2"
@@ -75,8 +79,9 @@
 {# System error message - important for debugging failures #}
 {% if request.user.is_staff %}
   <div class="mt-3">
-    <h6 class="text-danger">
-      <i class="bi bi-exclamation-triangle"></i> System Error (Staff Only)
+    <h6 class="{% if check.error_message %}text-danger{% else %}text-muted{% endif %}"
+        data-check-section="system-error">
+      <i class="bi {% if check.error_message %}bi-exclamation-triangle{% else %}bi-check-circle{% endif %}"></i> System Error (Staff Only)
     </h6>
     {% if check.error_message %}
       <div class="alert alert-danger mb-2" role="alert">
