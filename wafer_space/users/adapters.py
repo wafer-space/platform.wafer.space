@@ -22,6 +22,11 @@ if typing.TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _is_provider_response(request: HttpRequest) -> bool:
+    """Whether the request carries an OAuth provider's ``code`` or ``error``."""
+    return "code" in request.GET or "error" in request.GET
+
+
 class AccountAdapter(DefaultAccountAdapter):
     def is_open_for_signup(self, request: HttpRequest) -> bool:
         return getattr(settings, "ACCOUNT_ALLOW_REGISTRATION", True)
@@ -190,6 +195,19 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
                 provider_str,
                 extra=error_context,
             )
+        elif exception is None and not _is_provider_response(request):
+            # A GET with neither ``code`` nor ``error`` never came from the
+            # provider: crawlers fetch the bare callback URL they find in
+            # the login redirect (issue #338). Keep a trace, but don't email
+            # ADMINS. A real callback that fails (expired session, provider
+            # error, bad code) carries one of them and still logs an error.
+            logger.warning(
+                "Social login callback for %s without a provider response: %s",
+                provider_str,
+                error_code,
+                extra=error_context,
+            )
+            self._add_authentication_error_message(request, provider_str, exception)
         else:
             logger.error(
                 "Social authentication error for %s: %s",

@@ -1,0 +1,9 @@
+User-agent: *{# Served at /robots.txt (issue #338); only /, /about/ and /legal/tos/ are public. No blank lines: one ends a group. #}
+Disallow: /accounts/
+Disallow: /{{ admin_url }}{# Listing the admin path reveals it; drop this line if ADMIN_URL is ever made secret. #}
+Disallow: /users/
+Disallow: /projects/
+Disallow: /shuttles/
+Disallow: /notifications/
+Disallow: /health/
+Disallow: /legal/tos/accept/
