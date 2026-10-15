@@ -1261,6 +1261,11 @@ class ProjectAdminSummaryView(LoginRequiredMixin, UserPassesTestMixin, ListView)
                 digest=latest_digest
             ).first()
         context["latest_precheck_revision"] = latest_revision
+        # Metadata-fetch failures used to be visible only in worker logs
+        # (#293); list them for staff here.
+        context["revisions_with_fetch_problems"] = list(
+            PrecheckImageRevision.with_fetch_problems()
+        )
 
         # Compute summary statistics from the projects list. Projects on a
         # test-only shuttle are listed but never counted (#221).

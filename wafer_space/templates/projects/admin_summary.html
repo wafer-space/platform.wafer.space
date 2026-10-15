@@ -12,6 +12,21 @@
       {{ summary.total }} project{{ summary.total|pluralize }}
       {% if test_only_count %}(plus {{ test_only_count }} test only){% endif %}
     </p>
+    {% if revisions_with_fetch_problems %}
+      <div class="alert alert-warning"
+           role="alert"
+           data-precheck-metadata-problems>
+        <strong><i class="bi bi-exclamation-triangle"></i> Precheck image metadata problems</strong>
+        <ul class="mb-0 small">
+          {% for revision in revisions_with_fetch_problems %}
+            <li>
+              <a href="{% url 'admin:projects_precheckimagerevision_change' revision.pk %}"><code>{{ revision.short_digest }}</code></a>
+              {{ revision.metadata_fetch_problem }}: {{ revision.metadata_fetch_last_error }}
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
     <!-- Summary Statistics -->
     <div class="row mb-4">
       <!-- Manufacturability Summary -->

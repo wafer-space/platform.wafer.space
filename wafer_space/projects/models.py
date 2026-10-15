@@ -3453,6 +3453,28 @@ class PrecheckImageRevision(models.Model):
         return f"sha256:{self.digest[7:19]}..."
 
     @property
+    def metadata_fetch_problem(self) -> str:
+        """Staff-facing label for a metadata-fetch problem, or "" if none.
+
+        metadata_fetch_last_error holds the detail. A fetched row with an
+        error saved partial metadata; an unfetched one either gave up at
+        the attempt cap or is still being retried (#293).
+        """
+        if not self.metadata_fetch_last_error:
+            return ""
+        if self.metadata_fetched_at:
+            return "Partial metadata"
+        if self.metadata_fetch_attempts >= MAX_METADATA_FETCH_ATTEMPTS:
+            return "Gave up"
+        attempts = self.metadata_fetch_attempts
+        return f"Retrying ({attempts}/{MAX_METADATA_FETCH_ATTEMPTS})"
+
+    @classmethod
+    def with_fetch_problems(cls) -> "models.QuerySet[PrecheckImageRevision]":
+        """Revisions whose metadata fetch recorded a problem, newest first."""
+        return cls.objects.exclude(metadata_fetch_last_error="")
+
+    @property
     def version_display(self) -> str:
         """Human-readable version string for display."""
         if self.precheck_version:
