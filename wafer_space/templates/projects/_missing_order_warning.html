@@ -1,0 +1,8 @@
+{# Submitting without a CrowdSupply order number: warn, never block (#348) #}
+<div class="alert alert-warning" role="status" data-missing-order-number>
+  <i class="bi bi-exclamation-triangle-fill me-1" aria-hidden="true"></i>
+  {{ project.missing_order_number_warning }}
+  {% if not project.is_archived %}
+    <a href="{% url 'projects:update' pk=project.pk %}" class="alert-link">Edit project</a>
+  {% endif %}
+</div>

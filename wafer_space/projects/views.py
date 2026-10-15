@@ -914,6 +914,8 @@ class ProjectSubmitView(
                     f"Project '{project.name}' submitted successfully for "
                     "manufacturing!",
                 )
+            if project.missing_order_number_warning:
+                messages.warning(request, project.missing_order_number_warning)
 
         except ValidationError as e:
             # Handle validation errors with user-friendly messages
@@ -980,6 +982,8 @@ class ProjectOverrideSubmitView(
             request,
             f"Project '{project.name}' submitted for manufacturing by staff override.",
         )
+        if project.missing_order_number_warning:
+            messages.warning(request, project.missing_order_number_warning)
         return redirect(project.get_absolute_url())
 
 

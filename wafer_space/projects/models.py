@@ -68,6 +68,13 @@ ARCHIVED_READ_ONLY_MESSAGE = (
     "This project is archived and cannot be changed. Unarchive it first."
 )
 
+# Shown when a project is, or is about to be, submitted for manufacturing
+# without a CrowdSupply order number (#348).
+MISSING_ORDER_NUMBER_WARNING = (
+    "This project has no CrowdSupply order number. Staff need it to match "
+    "the design to a paid slot; add it on the Edit page."
+)
+
 # Minimum length of the reason staff give for a submit override (#252).
 SUBMIT_OVERRIDE_REASON_MIN_LENGTH = 20
 
@@ -615,6 +622,22 @@ class Project(models.Model):
         if not self.crowd_supply_order_id:
             return ""
         return f"https://www.crowdsupply.com/account/order/{self.crowd_supply_order_id}"
+
+    @property
+    def missing_order_number_warning(self) -> str:
+        """Warning for submitting without a CrowdSupply order number (#348).
+
+        Staff match a submitted design to a paid slot by its order number.
+        A warning, not a block: Tim asked for "warning about missing CS
+        order number when submitted to manufacturing" (dates-01). Empty
+        when the number is set, or on a test-only shuttle, whose designs
+        are never manufactured (#221).
+        """
+        if self.crowd_supply_order_id:
+            return ""
+        if self.shuttle is not None and self.shuttle.is_test_only:
+            return ""
+        return MISSING_ORDER_NUMBER_WARNING
 
     @property
     def shuttle_positions(self) -> models.QuerySet:
