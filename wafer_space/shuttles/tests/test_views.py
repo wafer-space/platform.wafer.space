@@ -1,8 +1,11 @@
 import datetime
+import html
 import json
+import re
 from http import HTTPStatus
 
 import pytest
+from django.core.cache import cache
 from django.urls import reverse
 from django.utils import timezone
 
@@ -875,6 +878,7 @@ class TestAssignmentShowFilter:
             "unassigned-cs",
             "unassigned-mfg",
             "unassigned-ready",
+            "outdated",
         ]
 
     def test_rows_carry_assigned_cs_order_and_manufacturable(self, client):
@@ -906,3 +910,161 @@ class TestAssignmentShowFilter:
         flags = self._row_flags(self._get(client, shuttle))
 
         assert sorted(flags) == [("false", "false", "false"), ("true", "true", "true")]
+
+
+CURRENT_DIGEST = "sha256:" + "a" * 64
+OUTDATED_DIGEST = "sha256:" + "b" * 64
+_ATTR = re.compile(r'([\w-]+)="([^"]*)"')
+
+
+def marked(content: str, marker: str) -> list[tuple[dict[str, str], str]]:
+    """(attributes, visible text) of each element carrying ``marker``."""
+    found = re.findall(
+        rf"<(\w+)([^>]*\s{marker}\b[^>]*)>(.*?)</\1>",
+        content,
+        re.DOTALL,
+    )
+    return [
+        (dict(_ATTR.findall(attrs)), visible_text(body)) for _, attrs, body in found
+    ]
+
+
+@pytest.mark.django_db
+class TestAssignmentPrecheckVersion:
+    """Which precheck version each project passed on, and when (#203)."""
+
+    @pytest.fixture(autouse=True)
+    def _fresh_latest_digest(self):
+        # The latest precheck digest is cached for a minute.
+        cache.clear()
+        yield
+        cache.clear()
+
+    @staticmethod
+    def checked_project(shuttle, *, digest, passed=True, completed_at=None):
+        project = ProjectFactory(shuttle=shuttle, slot_size=SlotSize.FULL)
+        started = timezone.now() - (
+            datetime.timedelta(0)
+            if digest == CURRENT_DIGEST
+            else datetime.timedelta(days=30)
+        )
+        ManufacturabilityCheckFactory(
+            project=project,
+            project_file=ProjectFileFactory(project=project),
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=passed,
+            docker_image_digest=digest,
+            container_started_at=started,
+            analysis_completed_at=completed_at or started,
+        )
+        return project
+
+    @staticmethod
+    def get(client, shuttle):
+        client.force_login(UserFactory(is_staff=True))
+        response = client.get(
+            reverse("shuttles:assignment", kwargs={"name": shuttle.name}),
+        )
+        assert response.status_code == HTTPStatus.OK
+        return response
+
+    def test_stats_count_projects_passed_on_an_outdated_version(self, client):
+        shuttle = ShuttleFactory(name="G830")
+        slot = ShuttleSlot.objects.create(
+            shuttle=shuttle,
+            row=0,
+            column=0,
+            slot_size=SlotSize.FULL,
+            status=ShuttleSlot.Status.RESERVED,
+        )
+        self.checked_project(shuttle, digest=CURRENT_DIGEST)
+        slot.project = self.checked_project(shuttle, digest=OUTDATED_DIGEST)
+        slot.save()
+        self.checked_project(shuttle, digest=OUTDATED_DIGEST)
+        # A failure on an outdated version is not manufacturable at all.
+        self.checked_project(shuttle, digest=OUTDATED_DIGEST, passed=False)
+
+        stats = self.get(client, shuttle).context["stats"][SlotSize.FULL]
+
+        assert (
+            stats["manufacturable_total"],
+            stats["outdated_assigned"],
+            stats["outdated_total"],
+        ) == (3, 1, 2)
+
+    def test_a_version_that_cannot_be_compared_is_not_outdated(self, client):
+        shuttle = ShuttleFactory(name="G831")
+        ShuttleSlot.objects.create(
+            shuttle=shuttle,
+            row=0,
+            column=0,
+            slot_size=SlotSize.FULL,
+            status=ShuttleSlot.Status.AVAILABLE,
+        )
+        self.checked_project(shuttle, digest="")
+
+        stats = self.get(client, shuttle).context["stats"][SlotSize.FULL]
+
+        assert (stats["manufacturable_total"], stats["outdated_total"]) == (1, 0)
+
+    def test_summary_shows_the_outdated_column(self, client):
+        shuttle = ShuttleFactory(name="G832")
+        ShuttleSlot.objects.create(
+            shuttle=shuttle,
+            row=0,
+            column=0,
+            slot_size=SlotSize.FULL,
+            status=ShuttleSlot.Status.AVAILABLE,
+        )
+        self.checked_project(shuttle, digest=CURRENT_DIGEST)
+        self.checked_project(shuttle, digest=OUTDATED_DIGEST)
+
+        content = self.get(client, shuttle).content.decode()
+        [(_, text)] = marked(content, "data-outdated")
+
+        assert text == "0/1"
+
+    def test_status_shows_when_the_check_finished(self, client):
+        shuttle = ShuttleFactory(name="G833")
+        finished = datetime.datetime(2026, 10, 3, 9, 4, 5, tzinfo=datetime.UTC)
+        self.checked_project(shuttle, digest=CURRENT_DIGEST, completed_at=finished)
+
+        content = self.get(client, shuttle).content.decode()
+        [(attrs, text)] = marked(content, "data-check-date")
+
+        assert (text, html.unescape(attrs["title"])) == (
+            "2026-10-03",
+            "Check finished 2026-10-03 09:04:05 UTC",
+        )
+
+    def test_rows_say_whether_they_passed_on_an_outdated_version(self, client):
+        """The "outdated" show filter reads data-precheck-outdated."""
+        shuttle = ShuttleFactory(name="G835")
+        current = self.checked_project(shuttle, digest=CURRENT_DIGEST)
+        outdated = self.checked_project(shuttle, digest=OUTDATED_DIGEST)
+        failed = self.checked_project(shuttle, digest=OUTDATED_DIGEST, passed=False)
+
+        content = self.get(client, shuttle).content.decode()
+        flags = {
+            text.split()[0]: attrs["data-precheck-outdated"]
+            for attrs, text in marked(content, "data-precheck-outdated")
+        }
+
+        assert flags == {
+            current.full_id: "false",
+            outdated.full_id: "true",
+            failed.full_id: "false",
+        }
+
+    def test_a_check_still_running_shows_no_date(self, client):
+        shuttle = ShuttleFactory(name="G834")
+        project = ProjectFactory(shuttle=shuttle)
+        ManufacturabilityCheckFactory(
+            project=project,
+            project_file=ProjectFileFactory(project=project),
+            status=ManufacturabilityCheck.Status.RUNNING,
+        )
+
+        content = self.get(client, shuttle).content.decode()
+
+        assert marked(content, "data-check-date") == []

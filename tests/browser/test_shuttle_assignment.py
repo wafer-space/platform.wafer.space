@@ -1,8 +1,12 @@
 """Browser tests for shuttle slot assignment functionality."""
 
+from datetime import timedelta
+
 import pytest
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.test import Client
+from django.utils import timezone
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions
@@ -614,3 +618,55 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
         Select(driver.find_element(By.ID, "show-filter")).select_by_value("all")
         assert visible_ids() == ["G898ASGN", "G898BARE", "G898CSNO", "G898REDY"]
         assert driver.find_element(By.ID, "shown-count").text == "4 of 4 shown"
+
+    def test_show_filter_lists_passes_on_an_outdated_precheck(
+        self, driver, wait, staff_user
+    ):
+        """The "outdated" choice keeps only passes on an old version (#203)."""
+        cache.clear()  # The latest precheck digest is cached for a minute.
+        shuttle = Shuttle.objects.create(name="G897", description="A shuttle")
+        now = timezone.now()
+        checks = (
+            ("CURR", "sha256:" + "a" * 64, now, True),
+            ("OLDP", "sha256:" + "b" * 64, now - timedelta(days=30), True),
+            ("OLDF", "sha256:" + "b" * 64, now - timedelta(days=30), False),
+        )
+        for project_id, digest, started, passed in checks:
+            project = Project.objects.create(
+                user=staff_user,
+                name=f"Project {project_id}",
+                shuttle=shuttle,
+                project_id=project_id,
+                slot_size=SlotSize.FULL,
+            )
+            ManufacturabilityCheckFactory(
+                project=project,
+                project_file=ProjectFileFactory(project=project),
+                status=ManufacturabilityCheck.Status.FINISHED,
+                is_manufacturable=passed,
+                docker_image_digest=digest,
+                container_started_at=started,
+            )
+        self.perform_login(driver, staff_user.username, TEST_PASSWORD)
+        driver.get(f"{self.live_server_url}/shuttles/G897/assign/")
+        wait.until(
+            expected_conditions.text_to_be_present_in_element(
+                (By.ID, "shown-count"), " of 3 shown"
+            )
+        )
+
+        Select(driver.find_element(By.ID, "show-filter")).select_by_value("outdated")
+
+        wait.until(
+            expected_conditions.text_to_be_present_in_element(
+                (By.ID, "shown-count"), "1 of 3 shown"
+            )
+        )
+        rows = driver.find_elements(By.CSS_SELECTOR, "#projects-table tbody tr")
+        visible = [
+            row.find_element(By.CSS_SELECTOR, "td").text
+            for row in rows
+            if row.is_displayed()
+        ]
+        assert visible == ["G897OLDP"]
+        cache.clear()
