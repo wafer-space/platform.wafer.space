@@ -50,7 +50,9 @@ def refuse_another_process_connection(
     Raising DisconnectionError at checkout makes the pool discard the record
     and connect again. The DBAPI connection is unhooked first, so discarding
     it doesn't close it: closing would send PostgreSQL's Terminate over the
-    socket the parent is still using.
+    socket the parent is still using. The child then frees it, which is
+    safe: measured with psycopg2 2.9.10, a forked child freeing an inherited
+    connection leaves the parent's session open; only close() ends it.
     """
     opened_by = connection_record.info.get(_PID_KEY)
     pid = os.getpid()

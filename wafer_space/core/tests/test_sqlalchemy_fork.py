@@ -20,6 +20,7 @@ from kombu import Connection
 from sqlalchemy import create_engine
 from sqlalchemy import event
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.pool import Pool
 from sqlalchemy.pool import QueuePool
 
@@ -37,6 +38,7 @@ if TYPE_CHECKING:
     from sqlalchemy import Engine
 
 ANOTHER_PID = os.getpid() + 1
+CHILD_REPORT_BYTES = 512
 
 
 @pytest.fixture
@@ -154,11 +156,13 @@ def test_a_forked_child_does_not_get_the_parents_broker_connection(
             child_dbapi_id = id(session.connection().connection.dbapi_connection)
             shared = child_dbapi_id == parent_dbapi_id
             os.write(write_end, b"shared" if shared else b"own")
+        except (SQLAlchemyError, OSError) as exc:  # shown in the parent's assert
+            os.write(write_end, repr(exc).encode()[:CHILD_REPORT_BYTES])
         finally:
             os._exit(0)
     os.close(write_end)
     os.waitpid(child, 0)
-    answer = os.read(read_end, 16)
+    answer = os.read(read_end, CHILD_REPORT_BYTES)
     os.close(read_end)
     parent.release()
 
