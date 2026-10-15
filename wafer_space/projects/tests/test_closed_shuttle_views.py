@@ -48,6 +48,7 @@ ALLOWED_ON_CLOSED = {
     "submit_override",  # staff only (#252); staff are never refused here
     "file_download",  # read only: the stored layout (#254)
     "rerun_check",  # staff only (#205); re-checks a revision, submission frozen
+    "clone",  # copies to an open shuttle; this project is unchanged (#355)
 }
 REFUSED_ON_CLOSED = {"submit", "submit_url"}
 PROJECT_KWARGS = ("<uuid:pk>", "<int:check_id>")
