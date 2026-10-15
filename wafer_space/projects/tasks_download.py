@@ -9,7 +9,6 @@ import socket
 import time
 import traceback
 from dataclasses import dataclass
-from datetime import timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -23,7 +22,6 @@ from django.core.files import File
 from django.db import models
 from django.db import transaction
 from django.utils import timezone
-from django_celery_results.models import TaskResult
 
 from wafer_space.notifications.services import NotificationService
 
@@ -61,7 +59,6 @@ __all__ = [
     "_safe_urlopen",
     "_should_log_progress",
     "_should_update_database",
-    "cleanup_old_task_results",
     "download_project_file",
     "ensure_download_tasks_queued",
 ]
@@ -144,22 +141,6 @@ def _verify_file_hashes(
             )
 
     return verified, errors
-
-
-@shared_task(queue="none:ro:default")
-def cleanup_old_task_results():
-    """
-    Periodic task to clean up old Celery task results.
-    """
-    # Delete task results older than 24 hours
-    cutoff_date = timezone.now() - timedelta(hours=24)
-    deleted_count = TaskResult.objects.filter(date_created__lt=cutoff_date).delete()[0]
-
-    return {
-        "status": "completed",
-        "deleted_count": deleted_count,
-        "cutoff_date": cutoff_date.isoformat(),
-    }
 
 
 def _safe_urlopen(url: str, headers: dict | None = None) -> tuple[bytes, dict]:

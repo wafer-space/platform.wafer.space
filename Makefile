@@ -325,21 +325,23 @@ shell-plus: ## Open Django shell_plus (requires django-extensions)
 
 # ==================== Celery ====================
 
+# Every queue a task routes to: the Procfile's two workers consume the same
+# eight, and production runs one worker per queue (hetzner-ansible
+# inventory/group_vars/platform_wafer_space.yml). config/tests/test_celery.py
+# checks these lists against the Procfile.
+CELERY_QUEUES_DOCKER := dock:ro:checks-fast,dock:ro:checks-slow,dock:rw:checks-save
+CELERY_QUEUES := none:ro:default,none:ro:checks-orch,mail:ro:email,http:ro:metadata,http:rw:downloads,$(CELERY_QUEUES_DOCKER)
+
 .PHONY: celery
-celery: ## Start Celery worker (all queues: celery, manufacturability, referrals)
+celery: ## Start Celery worker (all eight queues)
 	@echo "$(BLUE)Starting Celery worker (all queues)...$(NC)"
-	@$(CELERY) -A config worker -Q celery,manufacturability,referrals --loglevel=info --concurrency=1 --pool=solo
+	@$(CELERY) -A config worker -Q $(CELERY_QUEUES) --loglevel=info --concurrency=1 --pool=solo
 
 .PHONY: celery-manufacturability
-celery-manufacturability: ## Start Celery worker for manufacturability queue only
-	@echo "$(BLUE)Starting Celery worker (manufacturability queue only)...$(NC)"
+celery-manufacturability: ## Start Celery worker for the Docker check queues only
+	@echo "$(BLUE)Starting Celery worker (Docker check queues only)...$(NC)"
 	@echo "$(YELLOW)Note: This requires Docker access to run precheck containers$(NC)"
-	@$(CELERY) -A config worker -Q manufacturability --loglevel=info --concurrency=1 --pool=solo
-
-.PHONY: celery-referrals
-celery-referrals: ## Start Celery worker for referrals queue only
-	@echo "$(BLUE)Starting Celery worker (referrals queue only)...$(NC)"
-	@$(CELERY) -A config worker -Q referrals --loglevel=info --concurrency=1 --pool=solo
+	@$(CELERY) -A config worker -Q $(CELERY_QUEUES_DOCKER) --loglevel=info --concurrency=1 --pool=solo
 
 .PHONY: celery-purge
 celery-purge: ## Purge all Celery tasks
