@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import re
 import time
 import uuid
 from typing import TYPE_CHECKING
@@ -19,6 +18,8 @@ from django.urls import Resolver404
 from django.urls import resolve
 from django.utils import timezone
 
+from wafer_space.analytics.constants import FILE_VIEW_NAMES
+from wafer_space.analytics.constants import REQUEST_ID_RE
 from wafer_space.analytics.models import RequestLog
 from wafer_space.core.utils import get_client_ip
 
@@ -33,18 +34,7 @@ logger = logging.getLogger(__name__)
 
 REQUEST_ID_HEADER = "X-Request-ID"
 REDACTED = "<redacted>"
-_REQUEST_ID_RE = re.compile(r"[0-9a-f]{32}")
 _METHOD_LENGTH = 10
-
-# Logged for every visitor, logged in or not: a failed or redirected fetch
-# of a file is still an attempt to fetch it.
-FILE_VIEW_NAMES = frozenset(
-    {
-        "projects:check_artifact",
-        "projects:check_log",
-        "projects:file_download",
-    }
-)
 
 # URLs whose path carries a one-time secret (allauth's email-confirmation
 # and password-reset keys). For these the stored path is the URL pattern,
@@ -67,7 +57,7 @@ def _request_id(request: HttpRequest) -> str:
     is the sole ingress (TRUST_X_REAL_IP), and only in nginx's format.
     """
     header = request.headers.get("x-request-id", "")
-    if settings.TRUST_X_REAL_IP and _REQUEST_ID_RE.fullmatch(header):
+    if settings.TRUST_X_REAL_IP and REQUEST_ID_RE.fullmatch(header):
         return header
     return uuid.uuid4().hex
 
@@ -90,7 +80,7 @@ def _match(request: HttpRequest) -> ResolverMatch | None:
     Middleware that answers early (the ToS redirect, for one) returns
     before URL resolution, but the row must still say what was asked for.
     """
-    return request.resolver_match or _resolve(request.path)
+    return request.resolver_match or _resolve(request.path_info)
 
 
 def _stored_path(path: str, match: ResolverMatch | None) -> str:

@@ -1,17 +1,20 @@
 """Read-only admin for the request log (#379).
 
 The table grows without limit, so every filter offers a fixed set of
-choices (no SELECT DISTINCT over the table) and search uses exact or
-prefix matches that the indexes can serve.
+choices (no SELECT DISTINCT over the table), and search picks one exact,
+case-sensitive lookup that an index serves. The one exception is a path
+prefix, which scans the rows: narrow the date first.
 """
 
 from __future__ import annotations
 
+import ipaddress
 from typing import TYPE_CHECKING
 
 from django.contrib import admin
 
-from wafer_space.analytics.middleware import FILE_VIEW_NAMES
+from wafer_space.analytics.constants import FILE_VIEW_NAMES
+from wafer_space.analytics.constants import REQUEST_ID_RE
 from wafer_space.analytics.models import RequestLog
 from wafer_space.contrib.admin_mixins import StaffReadOnlyAdminMixin
 
@@ -21,7 +24,7 @@ if TYPE_CHECKING:
 
 _STATUS_CLASSES = ("2", "3", "4", "5")
 _STATUS_CLASS_WIDTH = 100
-_METHODS = ("GET", "HEAD", "POST")
+_METHODS = ("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
 
 
 class LoggedInFilter(admin.SimpleListFilter):
@@ -106,11 +109,7 @@ class MethodFilter(admin.SimpleListFilter):
 
 @admin.register(RequestLog)
 class RequestLogAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
-    """Who fetched what, from where. Staff can read; nobody can edit.
-
-    Search matches a request id, client IP or username exactly, or a path
-    by its beginning (for example /projects/<uuid>/).
-    """
+    """Who fetched what, from where. Staff can read; nobody can edit."""
 
     list_display = [
         "created_at",
@@ -124,9 +123,40 @@ class RequestLogAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
         "duration_ms",
     ]
     list_filter = [LoggedInFilter, FileViewFilter, StatusClassFilter, MethodFilter]
-    search_fields = ["=request_id", "=client_ip", "=username", "^path"]
+    # Shows the search box; get_search_results decides the lookup.
+    search_fields = ["request_id", "client_ip", "username", "path"]
+    search_help_text = (
+        "A request id, an IP address or a username (exact), or a path "
+        "beginning with / (prefix)."
+    )
     date_hierarchy = "created_at"
     show_full_result_count = False
+
+    def get_search_results(
+        self,
+        request: HttpRequest,
+        queryset: QuerySet[RequestLog],
+        search_term: str,
+    ) -> tuple[QuerySet[RequestLog], bool]:
+        """One exact lookup an index can serve, chosen by the term's shape.
+
+        Django's default search is UPPER(...) LIKE '%term%' on every field,
+        a full scan of a table that only grows.
+        """
+        term = search_term.strip()
+        if not term:
+            return queryset, False
+        if REQUEST_ID_RE.fullmatch(term):
+            return queryset.filter(request_id=term), False
+        try:
+            address = ipaddress.ip_address(term)
+        except ValueError:
+            pass
+        else:
+            return queryset.filter(client_ip=str(address)), False
+        if term.startswith("/"):
+            return queryset.filter(path__startswith=term), False
+        return queryset.filter(username=term), False
 
     def has_add_permission(self, request: HttpRequest) -> bool:
         return False

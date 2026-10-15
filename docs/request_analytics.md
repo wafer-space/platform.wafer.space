@@ -47,7 +47,7 @@ Staff, through the Django admin (Analytics → Request logs). It is read-only fo
 - filters for logged in or anonymous, URL name, status and method;
 - search: an exact request id, client IP or username, or a path by its beginning, for example `/projects/<uuid>/`.
 
-Every filter offers a fixed set of choices, so the page never scans the table for distinct values. A path search still scans the rows in the date range, so narrow the date first.
+Every filter offers a fixed set of choices, so the page never scans the table for distinct values. A request id, IP address or username search is one exact, case-sensitive lookup that an index answers (an IPv6 address matches in any spelling). A path search scans the rows in the date range, so narrow the date first.
 
 ## Retention
 

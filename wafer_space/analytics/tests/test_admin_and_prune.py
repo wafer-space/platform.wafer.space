@@ -64,6 +64,22 @@ def test_search_matches_id_ip_and_username_exactly(
     assert _changelist_count(client, {"q": value}) == 1
 
 
+def test_search_matches_an_ipv6_address_in_any_spelling(client: Client) -> None:
+    _row(client_ip="2001:db8::1")
+
+    assert _changelist_count(client, {"q": "2001:0db8:0:0:0:0:0:1"}) == 1
+
+
+@pytest.mark.parametrize("term", ["ADA", "projects/abc", "not-an-ip", "ad"])
+def test_search_is_never_a_substring_or_case_blind_match(
+    client: Client, term: str
+) -> None:
+    """Every search must be one an index can answer (except the path prefix)."""
+    _row(username="ada", path="/projects/abc/")
+
+    assert _changelist_count(client, {"q": term}) == 0
+
+
 def test_status_class_filter(client: Client) -> None:
     _row(status=404)
     _row(status=403)
