@@ -499,6 +499,16 @@ DOWNLOAD_TASK_RETRY_BACKOFF_MULTIPLIER = 2  # Exponential backoff: 60s, 120s
 # Fallback system to detect orphaned tasks and recover from queue loss
 DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS = 60.0  # Check every 1 minute
 
+# MEDIA_ROOT/temp sweep (issue #364): staging directories left by killed
+# workers are removed once nothing in them has changed for this long. It
+# must exceed the longest a task may run (CELERY_TASK_TIME_LIMIT, enforced
+# by the deployed prefork workers) so a live task's directory is never
+# taken; download staging also needs its file to have no download or retry
+# in progress. An ERROR is logged above the reclaim threshold.
+TEMP_SWEEP_INTERVAL_SECONDS = 60.0 * 60  # Hourly
+TEMP_SWEEP_MIN_AGE_SECONDS = 6 * 60 * 60  # 6 hours (time limit is 30 min)
+TEMP_SWEEP_ALERT_BYTES = 10 * 1024 * 1024 * 1024  # 10 GiB in one sweep
+
 # Docker client configuration
 # ------------------------------------------------------------------------------
 # Timeout for Docker SDK HTTP client (default 60s is too short for some operations)
@@ -528,6 +538,11 @@ CELERY_BEAT_SCHEDULE = {
     "ensure-download-tasks-queued": {
         "task": "wafer_space.projects.tasks_download.ensure_download_tasks_queued",
         "schedule": DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS,
+    },
+    # Orphaned MEDIA_ROOT/temp staging directories (issue #364)
+    "sweep-orphaned-temp-dirs": {
+        "task": "wafer_space.projects.tasks_download.sweep_orphaned_temp_dirs",
+        "schedule": TEMP_SWEEP_INTERVAL_SECONDS,
     },
     # Manufacturability check creation (creates checks for verified files)
     "checks-create": {

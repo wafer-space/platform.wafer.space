@@ -78,6 +78,7 @@ DOWNLOAD_TASK_RETRY_BACKOFF_MULTIPLIER = 2  # 10s, 20s
 
 # Download state verification (faster for development)
 DOWNLOAD_STATE_CHECK_INTERVAL_SECONDS = 30.0  # Check every 30s in dev
+# TEMP_SWEEP_*: uses base.py defaults (MEDIA_ROOT/temp sweep, issue #364)
 
 # Manufacturability check scanning (faster for development)
 PRECHECK_SCAN_INTERVAL_SECONDS = 15.0  # Scan every 15s in dev

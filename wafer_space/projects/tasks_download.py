@@ -41,6 +41,7 @@ from .models import Project
 from .models import ProjectFile
 from .models import ProjectFileChunk
 from .processors.top_cell_extractor import extract_top_cell
+from .temp_sweep import sweep_temp_dirs
 from .url_handlers import GitHubArtifactHandler
 from .url_handlers import GoogleSourceHandler
 from .url_handlers import URLHandlerRegistry
@@ -61,6 +62,7 @@ __all__ = [
     "_should_update_database",
     "download_project_file",
     "ensure_download_tasks_queued",
+    "sweep_orphaned_temp_dirs",
 ]
 
 # HTTP status codes
@@ -2057,4 +2059,20 @@ def ensure_download_tasks_queued():
         "orphaned": orphaned_count,
         "requeued": requeued_count,
         "verified": verified_count,
+    }
+
+
+@shared_task(queue="http:rw:downloads")
+def sweep_orphaned_temp_dirs() -> dict[str, int]:
+    """Remove MEDIA_ROOT/temp staging directories left by killed workers (#364).
+
+    Runs on http:rw:downloads: the worker that creates these directories and
+    the only one that may write (here, delete) under MEDIA_ROOT. See
+    temp_sweep.sweep_temp_dirs for what counts as orphaned.
+    """
+    result = sweep_temp_dirs()
+    return {
+        "removed": len(result.removed),
+        "kept": len(result.kept),
+        "reclaimed_bytes": result.reclaimed_bytes,
     }

@@ -95,6 +95,7 @@ INSTALLED_APPS += [
 # CELERY_TASK_ALWAYS_EAGER: uses base.py default (False)
 # CELERY_TASK_DEFAULT_QUEUE: uses base.py default (none:ro:default, issue #382)
 # DOWNLOAD_TASK_*: uses base.py defaults (Celery retry configuration)
+# TEMP_SWEEP_*: uses base.py defaults (MEDIA_ROOT/temp sweep, issue #364)
 # CELERY_BEAT_SCHEDULE: uses base.py defaults (all check lifecycle tasks)
 
 # Docker servers for manufacturability checks
