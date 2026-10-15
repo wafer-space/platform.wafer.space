@@ -364,3 +364,40 @@ def test_readme_marks_staff_override(tmp_path: Path) -> None:
     lines = readme.read_text().splitlines()
     row = next(line for line in lines if line.startswith("| OVRD |"))
     assert "not_manufacturable (staff override)" in row
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("allow_pending", [False, True])
+def test_layout_missing_from_disk_fails_loudly(tmp_path: Path, *, allow_pending: bool):
+    """A finished check whose saved layout is gone stops packaging (#390).
+
+    Not a "pending" item: the check saved the file and it was lost since, so
+    even allow_pending must not drop the project silently from the reticle.
+    """
+    shuttle = create_shuttle_with_config(tmp_path, "G894")
+    missing = tmp_path / "oas" / "gone.oas"
+    project = ProjectFactory(project_id="MISS", name="Lost Layout", slot_size="1x1")
+    project_file = ProjectFileFactory(project=project, top_cell="TOP")
+    check = ManufacturabilityCheckFactory(
+        project=project,
+        project_file=project_file,
+        status=ManufacturabilityCheck.Status.FINISHED,
+        is_manufacturable=True,
+        output_gds=str(missing),
+        output_gds_sha256="hash",
+    )
+    project.submitted_file = project_file
+    project.save()
+    ShuttleSlot.objects.create(
+        shuttle=shuttle, project=project, row=0, column=0, slot_size="1x1"
+    )
+
+    with pytest.raises(ReticlePackageError) as excinfo:
+        generate_package("G894", tmp_path / "output", allow_pending=allow_pending)
+
+    message = str(excinfo.value)
+    assert "MISS" in message
+    assert "Lost Layout" in message
+    assert f"check #{check.pk}" in message
+    assert str(missing) in message
+    assert "missing from disk" in message

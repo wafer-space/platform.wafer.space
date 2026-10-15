@@ -97,7 +97,17 @@ def write_manifest_and_copy_layout(
             prj_file = prj.output_file
 
             try:
-                src_file = Path(prj_file.output_check.output_gds.path).resolve()
+                output_check = prj_file.output_check
+                src_file = Path(output_check.output_gds.path).resolve()
+                # .path never touches disk. A finished check whose saved
+                # layout has since been lost is not "pending": stop, even
+                # with allow_pending, rather than drop the project (#390).
+                if not src_file.is_file():
+                    msg = (
+                        f"{code} ({prj.name}): layout of check "
+                        f"#{output_check.pk} is missing from disk: {src_file}"
+                    )
+                    raise ReticlePackageError(msg)
                 dst_file = f"{code}/{prj_file.top_cell}.oas"
 
                 dst_path = output_path / dst_file
@@ -110,7 +120,7 @@ def write_manifest_and_copy_layout(
                         prj.name,
                         slot.slot_size,
                         prj_file.top_cell,
-                        prj_file.output_check.output_gds_sha256,
+                        output_check.output_gds_sha256,
                         dst_file,
                         "Public" if prj.is_public else "Private",
                         prj.description,
