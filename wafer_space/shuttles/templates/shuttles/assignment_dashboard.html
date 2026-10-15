@@ -34,7 +34,7 @@
                     <th class="py-1 px-1 text-end">Proj</th>
                     <th class="py-1 px-1 text-end">Mfg</th>
                     <th class="py-1 px-1 text-end"
-                        title="Manufacturable, but passed on an outdated precheck version">Old</th>
+                        title="Latest revision manufacturable, but passed on an outdated precheck version">Old</th>
                     <th class="py-1 px-1 text-end">CS#</th>
                     <th class="py-1 px-1 text-end">CoB</th>
                     <th class="py-1 px-1 text-end">Slots</th>
@@ -58,8 +58,8 @@
                         </td>
                         <td class="py-1 px-1 text-end{% if stat.outdated_total %} text-warning{% endif %}"
                             data-outdated
-                            title="{{ stat.outdated_assigned }} of the projects passing manufacturing precheck with slot allocated passed on an outdated precheck version.
-{{ stat.outdated_total }} of all projects passing manufacturing precheck passed on an outdated precheck version and may need re-checking.">
+                            title="{{ stat.outdated_assigned }} projects with slot allocated whose latest revision passed manufacturing precheck on an outdated precheck version.
+{{ stat.outdated_total }} projects whose latest revision passed manufacturing precheck on an outdated precheck version and may need re-checking.">
                           {{ stat.outdated_assigned }}/{{ stat.outdated_total }}
                         </td>
                         <td class="py-1 px-1 text-end"
