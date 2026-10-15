@@ -38,6 +38,7 @@ ALLOWED_ON_CLOSED = {
     "progress",
     "check_status",
     "check_log",  # read only (full processing log download, #308)
+    "check_artifact",  # read only: a check's saved artifacts (coord-10)
     "cancel_check",
     "update",  # other fields stay editable; the form locks chip-on-board
     "archive",

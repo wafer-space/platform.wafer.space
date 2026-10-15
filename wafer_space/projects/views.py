@@ -27,7 +27,6 @@ from django.db.models import Q
 from django.db.models import Subquery
 from django.db.models.functions import Length
 from django.db.models.functions import Substr
-from django.http import FileResponse
 from django.http import Http404
 from django.http import JsonResponse
 from django.http import StreamingHttpResponse
@@ -52,6 +51,8 @@ from .deadline_warning import deadline_warning
 from .deadline_warning import deadline_warning_for
 from .deadline_warning import next_step
 from .exceptions import InvalidStateTransitionError
+from .file_serving import protected_file_response
+from .file_serving import stored_file_exists
 from .forms import ProjectFileURLSubmitForm
 from .forms import ProjectForm
 from .forms import SubmitOverrideForm
@@ -701,11 +702,10 @@ class CheckLogView(
 
     Pages and the polling JSON show only the log's tail; this is the link
     to the rest, with the same permission as the project detail page. A
-    saved log file is streamed through this view and never redirected to:
-    /media/ is served without access control. A running check's log (no
-    file yet) is streamed from the database in CHECK_LOG_STREAM_CHARS
-    slices, so no single string holds the whole log. Read-only, as the web
-    process must be.
+    saved log file is sent through protected_file_response (user files are
+    never public). A running check's log (no file yet) is streamed from the
+    database in CHECK_LOG_STREAM_CHARS slices, so no single string holds
+    the whole log. Read-only, as the web process must be.
     """
 
     model = Project
@@ -718,28 +718,64 @@ class CheckLogView(
             project=self.get_object(),
         )
         filename = f"check_{check.pk}.log"
+        if stored_file_exists(check.log_file):
+            return protected_file_response(
+                check.log_file,
+                filename=filename,
+                content_type="text/plain; charset=utf-8",
+            )
         if check.log_file:
-            try:
-                saved = check.log_file.open("rb")
-            except FileNotFoundError:
-                # The row names a file that is gone; the database copy is
-                # the same log, so serve that (and say so in the log).
-                logger.warning(
-                    "Saved log for check %s is missing; streaming from DB", check.pk
-                )
-            else:
-                return FileResponse(
-                    saved,
-                    as_attachment=True,
-                    filename=filename,
-                    content_type="text/plain; charset=utf-8",
-                )
+            # The row names a file that is gone; the database copy is the
+            # same log, so serve that (and say so in the log).
+            logger.warning(
+                "Saved log for check %s is missing; streaming from DB", check.pk
+            )
         response = StreamingHttpResponse(
             _stream_log_from_db(check.pk),
             content_type="text/plain; charset=utf-8",
         )
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
+
+
+class CheckArtifactView(
+    LoginRequiredMixin, ProjectOwnerOrStaffMixin, SingleObjectMixin, View
+):
+    """Download one of a check's saved artifacts (coord-10).
+
+    The runs archive, output layout and docker layer export are private to
+    the project, so they are sent only after the same permission check as
+    the project detail page, never from a public /media/ URL. Read-only,
+    so archived projects keep their downloads.
+    """
+
+    model = Project
+    http_method_names = ["get"]
+
+    # URL slug -> ManufacturabilityCheck FileField name.
+    ARTIFACT_FIELDS: ClassVar[dict[str, str]] = {
+        "runs-archive": "runs_archive",
+        "output-layout": "output_gds",
+        "docker-layer": "docker_layer_export",
+    }
+
+    def get(
+        self, request: HttpRequest, pk: UUID, check_id: int, artifact: str
+    ) -> HttpResponseBase:
+        """Send the artifact as an attachment named after its stored file."""
+        field_name = self.ARTIFACT_FIELDS.get(artifact)
+        if field_name is None:
+            msg = f"No check artifact called {artifact!r}"
+            raise Http404(msg)
+        check = get_object_or_404(
+            ManufacturabilityCheck.objects.without_logs(),
+            pk=check_id,
+            project=self.get_object(),
+        )
+        field_file = getattr(check, field_name)
+        return protected_file_response(
+            field_file, filename=Path(field_file.name or "").name
+        )
 
 
 def _stream_log_from_db(check_id: int) -> Iterator[bytes]:
@@ -992,7 +1028,8 @@ class ProjectFileDownloadView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View
 
     The original URL is external and may break; this serves the copy the
     platform downloaded. Read-only, so it is allowed on archived projects.
-    Large files are streamed through the web process (FileResponse).
+    Sent through protected_file_response (nginx sends the bytes when
+    deployed).
     """
 
     http_method_names = ["get"]
@@ -1001,20 +1038,13 @@ class ProjectFileDownloadView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View
         """Get the project object for permission checking."""
         return get_object_or_404(Project, pk=self.kwargs["pk"])
 
-    def get(self, request: HttpRequest, pk: UUID, file_pk: int) -> FileResponse:
-        """Stream the stored file as an attachment."""
+    def get(self, request: HttpRequest, pk: UUID, file_pk: int) -> HttpResponseBase:
+        """Send the stored file as an attachment."""
         revision = get_object_or_404(ProjectFile, pk=file_pk, project_id=pk)
-        if not revision.file or not revision.file.storage.exists(revision.file.name):
-            msg = "This revision has no stored file"
-            raise Http404(msg)
         # The stored copy is the processed file (archives and encodings are
         # unpacked), so name it after what it contains, not the source URL.
-        filename = revision.processed_filename or Path(revision.file.name).name
-        return FileResponse(
-            revision.file.open("rb"),
-            as_attachment=True,
-            filename=filename,
-        )
+        filename = revision.processed_filename or Path(revision.file.name or "").name
+        return protected_file_response(revision.file, filename=filename)
 
 
 class ProjectArchiveView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):

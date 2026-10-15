@@ -76,16 +76,33 @@ def test_present_artifact_shows_its_size(client: Client, field: str):
     assert f'data-artifact-missing="{field}"' not in content
 
 
-DOWNLOAD_FIELDS = ["runs_archive", "output_gds", "docker_layer_export"]
+# FileField -> check_artifact URL slug (links never use MEDIA_URL).
+DOWNLOAD_FIELDS = {
+    "runs_archive": "runs-archive",
+    "output_gds": "output-layout",
+    "docker_layer_export": "docker-layer",
+}
+
+
+def _download_url(check: ManufacturabilityCheck, field: str) -> str:
+    """The permission-checked download URL the page links to."""
+    return reverse(
+        "projects:check_artifact",
+        kwargs={
+            "pk": check.project_id,
+            "check_id": check.pk,
+            "artifact": DOWNLOAD_FIELDS[field],
+        },
+    )
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("field", DOWNLOAD_FIELDS)
+@pytest.mark.parametrize("field", list(DOWNLOAD_FIELDS))
 def test_missing_artifact_is_not_offered_as_a_download(client: Client, field: str):
     """A download link to a file that is gone would only 404, so none is shown."""
     check = _finished_check_with_artifact(field)
     artifact = getattr(check, field)
-    url = artifact.url
+    url = _download_url(check, field)
     artifact.storage.delete(artifact.name)
 
     content = _project_page(client, check)
@@ -94,14 +111,14 @@ def test_missing_artifact_is_not_offered_as_a_download(client: Client, field: st
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("field", DOWNLOAD_FIELDS)
+@pytest.mark.parametrize("field", list(DOWNLOAD_FIELDS))
 def test_present_artifact_is_offered_as_a_download(client: Client, field: str):
     """A file on disk keeps its download link."""
     check = _finished_check_with_artifact(field)
 
     content = _project_page(client, check)
 
-    assert getattr(check, field).url in content
+    assert _download_url(check, field) in content
 
 
 @pytest.mark.django_db

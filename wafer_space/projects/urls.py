@@ -70,6 +70,11 @@ urlpatterns = [
         name="check_log",
     ),
     path(
+        "<uuid:pk>/checks/<int:check_id>/files/<slug:artifact>/",
+        views.CheckArtifactView.as_view(),
+        name="check_artifact",
+    ),
+    path(
         "<uuid:pk>/cancel-check/<int:check_id>/",
         views.ManufacturabilityCheckCancelView.as_view(),
         name="cancel_check",
