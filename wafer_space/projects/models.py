@@ -3082,9 +3082,12 @@ Your GDS file should have:
         """Digests of started checks, most recently started first.
 
         Its first row is the latest precheck digest; usable as a subquery.
+        Only a sha256 digest names an image: a check that stored "unknown"
+        must not become the latest and make every real image look older
+        (#421).
         """
         return (
-            cls.objects.exclude(docker_image_digest="")
+            cls.objects.filter(docker_image_digest__startswith=PRECHECK_DIGEST_PREFIX)
             .exclude(container_started_at__isnull=True)
             .order_by("-container_started_at")
             .values_list("docker_image_digest", flat=True)

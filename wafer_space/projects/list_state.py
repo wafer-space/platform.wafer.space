@@ -57,9 +57,11 @@ class ListStateAnnotations(TypedDict):
     state_latest_digest: str | None
     state_latest_precheck_version: str | None
     state_latest_git_commit_sha: str | None
+    state_latest_stamped_version: str | None
     state_submitted_digest: str | None
     state_submitted_precheck_version: str | None
     state_submitted_git_commit_sha: str | None
+    state_submitted_stamped_version: str | None
     state_newest_precheck_digest: str | None
 
 
@@ -74,6 +76,9 @@ class PrecheckVersion:
     title: str
     # For screen readers: the icon and colour say it only visually.
     status: str
+    # Set when the image is recorded but its version is not known yet: the
+    # start of its digest, which staff see on a line of its own.
+    image: str = ""
 
 
 @dataclass(frozen=True)
@@ -132,6 +137,14 @@ def annotate_list_state(projects: QuerySet[Project]) -> QuerySet[Project]:
             ),
             state_submitted_digest=Subquery(
                 submitted_checks.values("docker_image_digest")[:1]
+            ),
+            # The version stamped on the check itself (do_analyzing), for an
+            # image the catalog has no version for (#421).
+            state_latest_stamped_version=Subquery(
+                latest_verdict_checks.values("precheck_version")[:1]
+            ),
+            state_submitted_stamped_version=Subquery(
+                submitted_checks.values("precheck_version")[:1]
             ),
             # Uncorrelated: the database evaluates it once for the whole list.
             state_newest_precheck_digest=Subquery(
@@ -212,6 +225,7 @@ def list_state(project: WithAnnotations[Project, ListStateAnnotations]) -> ListS
             project.state_submitted_digest,
             project.state_submitted_precheck_version,
             project.state_submitted_git_commit_sha,
+            project.state_submitted_stamped_version,
             newest=project.state_newest_precheck_digest,
         ),
     )
@@ -235,6 +249,7 @@ def _latest_revision_state(
                 project.state_latest_digest,
                 project.state_latest_precheck_version,
                 project.state_latest_git_commit_sha,
+                project.state_latest_stamped_version,
                 newest=project.state_newest_precheck_digest,
             ),
         )
@@ -268,37 +283,51 @@ IMAGE_NOT_RECORDED = PrecheckVersion(
     title="The check did not record which precheck image it ran",
     status="version unknown",
 )
+VERSION_NOT_YET_KNOWN = "version not yet known"
 
 
 def _precheck_version(
     digest: str | None,
-    precheck_version: str | None,
+    catalog_version: str | None,
     git_commit_sha: str | None,
+    stamped_version: str | None,
     *,
     newest: str | None,
-) -> PrecheckVersion | None:
-    """The precheck version of a verdict's check, or None if it has no digest.
+) -> PrecheckVersion:
+    """The precheck version of a verdict's check (#421).
 
-    Labelled as on the check pages (``PrecheckImageRevision.version_display``)
-    and marked against the most recently started check's digest, the rule of
-    ``ManufacturabilityCheck.is_using_latest_precheck``.
+    Labelled by the catalog's version, else the version stamped on the
+    check, else the catalog's commit; an image none of them describes yet
+    is "version not yet known", with its digest in the title. The verdict
+    is marked against the most recently started check's digest, the rule
+    of ``ManufacturabilityCheck.is_using_latest_precheck``.
     """
-    if not digest:
-        return None
-    if not digest.startswith(PRECHECK_DIGEST_PREFIX):
+    if not digest or not digest.startswith(PRECHECK_DIGEST_PREFIX):
+        # No digest: checks before 16 Nov 2025 did not record one.
         # do_dispatching stores "unknown" when the pulled image has no
-        # RepoDigests. It names no image, and short_digest asserts on it,
-        # which made the whole list a 500 (#421).
+        # RepoDigests. Neither names an image; short_digest asserts on
+        # "unknown", which made the whole list a 500 (#421).
         return IMAGE_NOT_RECORDED
-    label = PrecheckImageRevision(
-        digest=digest,
-        precheck_version=precheck_version or "",
-        git_commit_sha=git_commit_sha or "",
-    ).version_display
+    label = catalog_version or stamped_version or (git_commit_sha or "")[:7]
+    marked = _against_newest(digest, newest)
+    if label:
+        return replace(marked, label=label)
+    return replace(
+        marked,
+        label=VERSION_NOT_YET_KNOWN,
+        title=f"{marked.title}; its version is not known yet: image {digest}",
+        # short_digest's 12 hex digits, without the "..." that would wrap
+        # onto a line of its own in the list's narrow state column.
+        image=digest[: len(PRECHECK_DIGEST_PREFIX) + 12],
+    )
+
+
+def _against_newest(digest: str, newest: str | None) -> PrecheckVersion:
+    """Whether ``digest`` is the latest precheck image, without a label yet."""
     if newest is None:
         return PrecheckVersion(
             key="unknown",
-            label=label,
+            label="",
             icon="cloud",
             css="text-muted",
             title="Precheck version used; the latest version is not known",
@@ -307,7 +336,7 @@ def _precheck_version(
     if digest == newest:
         return PrecheckVersion(
             key="latest",
-            label=label,
+            label="",
             icon="cloud-check-fill",
             css="text-success",
             title="Checked with the latest precheck version",
@@ -315,7 +344,7 @@ def _precheck_version(
         )
     return PrecheckVersion(
         key="outdated",
-        label=label,
+        label="",
         icon="cloud-arrow-up-fill",
         css="text-warning",
         title="Checked with an older precheck version than the latest",

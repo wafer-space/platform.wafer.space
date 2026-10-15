@@ -7,6 +7,7 @@ the digest of the most recently started check, as on the check pages.
 
 from __future__ import annotations
 
+import re
 from datetime import timedelta
 from html.parser import HTMLParser
 from http import HTTPStatus
@@ -37,6 +38,8 @@ pytestmark = pytest.mark.django_db
 
 OLD = "sha256:" + "a" * 64
 NEW = "sha256:" + "b" * 64
+SHORT_NEW = "sha256:bbbbbbbbbbbb"
+IMAGE_LINE = re.compile(r"<small[^>]*data-precheck-image[^>]*><code>([^<]*)</code>")
 FINISHED = ManufacturabilityCheck.Status.FINISHED
 
 
@@ -76,8 +79,13 @@ def version_lines(client: Client, user: User, project: Project) -> list[tuple]:
     return [(key, text) for row, key, text in parser.lines if row == str(project.pk)]
 
 
-def checked_revision(project: Project, digest: str, *, verdict: bool) -> ProjectFile:
-    """A new active revision of ``project`` with one finished check."""
+def checked_revision(
+    project: Project, digest: str, *, verdict: bool, stamped: str = ""
+) -> ProjectFile:
+    """A new active revision of ``project`` with one finished check.
+
+    ``stamped`` is the precheck version do_analyzing stamped on the check.
+    """
     project.files.update(is_active=False)
     revision = make_downloaded_file(project)
     ManufacturabilityCheckFactory(
@@ -86,6 +94,7 @@ def checked_revision(project: Project, digest: str, *, verdict: bool) -> Project
         status=FINISHED,
         is_manufacturable=verdict,
         docker_image_digest=digest,
+        precheck_version=stamped,
         container_started_at=timezone.now(),
     )
     return revision
@@ -124,15 +133,94 @@ def test_older_version_is_marked_outdated(client: Client) -> None:
     ]
 
 
-def test_uncatalogued_digest_shows_the_short_digest(client: Client) -> None:
-    """As on the check pages, when no PrecheckImageRevision describes it."""
+def test_catalog_version_comes_before_the_stamped_one(client: Client) -> None:
+    """Rule 1 of #421: the catalog's version, whatever the check stamped."""
+    user = UserFactory()
+    project = ProjectFactory(user=user)
+    PrecheckImageRevision.objects.create(digest=NEW, precheck_version="1.6.0")
+    checked_revision(project, NEW, verdict=True, stamped="1.5.9")
+
+    assert version_lines(client, user, project) == [
+        ("latest", "precheck 1.6.0 (latest)"),
+    ]
+
+
+@pytest.mark.parametrize("catalogued", [False, True])
+def test_stamped_version_when_the_catalog_has_none(
+    client: Client, *, catalogued: bool
+) -> None:
+    """Rule 2 of #421: the check's own stamped version, before any commit."""
+    user = UserFactory()
+    project = ProjectFactory(user=user)
+    if catalogued:
+        PrecheckImageRevision.objects.create(digest=NEW, git_commit_sha="0123456789ab")
+    checked_revision(project, NEW, verdict=True, stamped="1.5.2")
+
+    assert version_lines(client, user, project) == [
+        ("latest", "precheck 1.5.2 (latest)"),
+    ]
+
+
+def test_uncatalogued_image_is_version_not_yet_known(client: Client) -> None:
+    """Rule 4 of #421: no raw digest as the version (the fetch is to come)."""
     user = UserFactory()
     project = ProjectFactory(user=user)
     checked_revision(project, NEW, verdict=True)
 
     assert version_lines(client, user, project) == [
-        ("latest", "precheck sha256:bbbbbbbbbbbb... (latest)"),
+        ("latest", "precheck version not yet known (latest)"),
     ]
+
+
+def test_catalog_row_without_metadata_is_version_not_yet_known(
+    client: Client,
+) -> None:
+    """A catalogued image whose metadata fetch has not succeeded yet."""
+    user = UserFactory()
+    project = ProjectFactory(user=user)
+    PrecheckImageRevision.objects.create(digest=NEW)
+    checked_revision(project, NEW, verdict=True)
+
+    assert version_lines(client, user, project) == [
+        ("latest", "precheck version not yet known (latest)"),
+    ]
+
+
+def test_version_not_yet_known_names_the_image_in_its_title(client: Client) -> None:
+    user = UserFactory()
+    project = ProjectFactory(user=user)
+    checked_revision(project, NEW, verdict=True)
+    client.force_login(user)
+
+    content = client.get(reverse("projects:list")).content.decode()
+
+    assert f'its version is not known yet: image {NEW}"' in content
+
+
+def image_lines(client: Client, user: User) -> list[str]:
+    """The staff-only digest lines on the list, as shown."""
+    client.force_login(user)
+    content = client.get(reverse("projects:list")).content.decode()
+    return IMAGE_LINE.findall(content)
+
+
+@pytest.mark.parametrize(("viewer", "shown"), [("owner", []), ("staff", [SHORT_NEW])])
+def test_only_staff_see_the_digest_line(
+    client: Client, viewer: str, shown: list[str]
+) -> None:
+    """Rule 4 of #421: owners have the digest only in the title."""
+    owner = UserFactory()
+    checked_revision(ProjectFactory(user=owner), NEW, verdict=True)
+    user = owner if viewer == "owner" else UserFactory(is_staff=True)
+
+    assert image_lines(client, user) == shown
+
+
+def test_no_digest_line_when_the_version_is_known(client: Client) -> None:
+    PrecheckImageRevision.objects.create(digest=NEW, precheck_version="1.6.0")
+    checked_revision(ProjectFactory(), NEW, verdict=True)
+
+    assert image_lines(client, UserFactory(is_staff=True)) == []
 
 
 def test_commit_sha_when_no_version_is_catalogued(client: Client) -> None:
@@ -154,16 +242,49 @@ def test_latest_unknown_when_no_check_has_started(client: Client) -> None:
     revision.manufacturability_checks.update(container_started_at=None)
 
     assert version_lines(client, user, project) == [
-        ("unknown", "precheck sha256:bbbbbbbbbbbb... (latest version unknown)"),
+        ("unknown", "precheck version not yet known (latest version unknown)"),
     ]
 
 
-def test_check_without_a_digest_shows_no_version(client: Client) -> None:
+def test_check_without_a_digest_shows_image_not_recorded(client: Client) -> None:
+    """Rule 6 of #421: checks before 16 Nov 2025 recorded no digest."""
     user = UserFactory()
     project = ProjectFactory(user=user)
     checked_revision(project, "", verdict=True)
 
-    assert version_lines(client, user, project) == []
+    assert version_lines(client, user, project) == [
+        ("unrecorded", "precheck image not recorded (version unknown)"),
+    ]
+
+
+def test_newer_revision_without_a_digest_shows_image_not_recorded(
+    client: Client,
+) -> None:
+    """Rule 6 of #421 under the newer-revision line too."""
+    user = UserFactory()
+    project = ProjectFactory(user=user)
+    PrecheckImageRevision.objects.create(digest=NEW, precheck_version="1.6.0")
+    project.submitted_file = checked_revision(project, NEW, verdict=True)
+    project.save()
+    checked_revision(project, "", verdict=True)
+
+    assert version_lines(client, user, project) == [
+        ("latest", "precheck 1.6.0 (latest)"),
+        ("unrecorded", "precheck image not recorded (version unknown)"),
+    ]
+
+
+def test_unknown_digest_never_becomes_the_latest(client: Client) -> None:
+    """A newest check that stored "unknown" leaves real images latest (#421)."""
+    user = UserFactory()
+    project = ProjectFactory(user=user)
+    PrecheckImageRevision.objects.create(digest=NEW, precheck_version="1.6.0")
+    checked_revision(project, NEW, verdict=True)
+    newer_check_elsewhere("unknown")
+
+    assert version_lines(client, user, project) == [
+        ("latest", "precheck 1.6.0 (latest)"),
+    ]
 
 
 @pytest.mark.parametrize("viewer", ["owner", "staff"])
@@ -224,8 +345,8 @@ def test_submitted_and_newer_revision_each_show_their_own(client: Client) -> Non
     checked_revision(project, NEW, verdict=True)
 
     assert version_lines(client, user, project) == [
-        ("outdated", "precheck sha256:aaaaaaaaaaaa... (older version)"),
-        ("latest", "precheck sha256:bbbbbbbbbbbb... (latest)"),
+        ("outdated", "precheck version not yet known (older version)"),
+        ("latest", "precheck version not yet known (latest)"),
     ]
 
 
