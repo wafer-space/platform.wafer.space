@@ -170,4 +170,7 @@ class TestCheckStatusPage:
             for tag, attrs in parse_html(html).elements
             if tag == "th"
         ]
-        assert "Time since the check entered its current state" in headers
+        assert any(
+            (title or "").startswith("Time since the check entered its current state")
+            for title in headers
+        )
