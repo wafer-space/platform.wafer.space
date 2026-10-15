@@ -68,6 +68,7 @@ MEDIA_URL = "http://media.testserver/"
 CELERY_TASK_ALWAYS_EAGER = True  # Execute tasks synchronously for testing
 CELERY_TASK_EAGER_PROPAGATES = True
 # CELERY_BROKER_URL: uses base.py default (PostgreSQL via SQLAlchemy)
+# CELERY_TASK_DEFAULT_QUEUE: uses base.py default (none:ro:default, issue #382)
 # DOWNLOAD_TASK_*: uses base.py defaults (Celery retry configuration)
 
 # Test Docker server configuration

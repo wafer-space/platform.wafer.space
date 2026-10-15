@@ -93,6 +93,7 @@ INSTALLED_APPS += [
 # ------------------------------------------------------------------------------
 # CELERY_BROKER_URL: uses base.py default (PostgreSQL via SQLAlchemy)
 # CELERY_TASK_ALWAYS_EAGER: uses base.py default (False)
+# CELERY_TASK_DEFAULT_QUEUE: uses base.py default (none:ro:default, issue #382)
 # DOWNLOAD_TASK_*: uses base.py defaults (Celery retry configuration)
 # CELERY_BEAT_SCHEDULE: uses base.py defaults (all check lifecycle tasks)
 

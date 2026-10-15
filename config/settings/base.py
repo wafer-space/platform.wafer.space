@@ -456,11 +456,24 @@ CELERY_TIMEZONE = TIME_ZONE
 CELERY_ENABLE_UTC = True
 
 # Task routing and execution
+# Tasks without an explicit queue, including Celery's built-in
+# celery.backend_cleanup that beat schedules daily at 04:00 to enforce
+# CELERY_RESULT_EXPIRES, go to this queue. Celery's own default ("celery")
+# has no deployed worker, so backend_cleanup never ran and the result table
+# grew without bound (issue #382). none:ro:default is the catch-all worker
+# (database only, read-only filesystem).
+CELERY_TASK_DEFAULT_QUEUE = "none:ro:default"
 CELERY_TASK_ALWAYS_EAGER = False  # Set to True for synchronous testing
 CELERY_TASK_EAGER_PROPAGATES = True
 
 # Task result configuration
-CELERY_RESULT_EXPIRES = 3600  # Results expire after 1 hour
+# Results expire after 1 hour; backend_cleanup deletes them daily, so a row
+# lives between 1 and 25 hours. This must stay above CELERY_TASK_TIME_LIMIT:
+# cleanup deletes by date_done regardless of state, and
+# checks_cleanup_stale_pending_tasks reads a STARTED row as "still running".
+# The deployed workers run the default prefork pool, which enforces the time
+# limit; the Procfile's solo/threads pools (development only) do not.
+CELERY_RESULT_EXPIRES = 3600
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes hard time limit
 CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes soft time limit

@@ -69,6 +69,7 @@ INSTALLED_APPS = [
 # CELERY
 # ------------------------------------------------------------------------------
 CELERY_BROKER_URL = f"sqla+sqlite:///{BASE_DIR / 'db.sqlite3'}"
+# CELERY_TASK_DEFAULT_QUEUE: uses base.py default (none:ro:default, issue #382)
 
 # Download task configuration overrides (faster for development)
 DOWNLOAD_TASK_MAX_RETRIES = 2  # Same as production

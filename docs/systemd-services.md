@@ -60,7 +60,9 @@ Systemd's `IPAddressAllow`/`IPAddressDeny` do not support port filtering. Port-l
 | `none:ro:checks-orch`  | `checks_cleanup_stale_files`      | Cleanup stale files                        |
 | `none:ro:checks-orch`  | `checks_cleanup_stale_pending_tasks` | Cleanup stale pending tasks             |
 | `none:ro:checks-orch`  | `checks_drc_update_requeue`       | Create DRC_UPDATE checks for outdated versions |
-| `none:ro:default`      | `cleanup_old_task_results`        | Remove old Celery TaskResult records       |
+| `none:ro:default`      | `celery.backend_cleanup`          | Delete results older than `CELERY_RESULT_EXPIRES` (beat, daily 04:00 UTC) |
+| `none:ro:default`      | `cleanup_old_task_results`        | Remove old Celery TaskResult records (not in the beat schedule) |
+| `none:ro:default`      | any task without `queue=`         | `CELERY_TASK_DEFAULT_QUEUE` (Celery built-ins, `debug_task`) |
 | `none:ro:default`      | `ensure_download_tasks_queued`    | Recover lost download tasks                |
 | `mail:ro:email`        | `send_tos_update_email`           | Send TOS notification email                |
 | `mail:ro:email`        | `send_bulk_tos_notifications`     | Queue bulk TOS notifications               |
