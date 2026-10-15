@@ -359,6 +359,32 @@ class TestStartingIt:
 
         assert watchdog.state.last_received > 0.0
 
+    def test_an_unexpected_error_that_stops_it_is_reported(
+        self, admin_mail: list[EmailMessage], settings: Settings
+    ) -> None:
+        """Else the worker would run on unwatched, and no one would know."""
+        settings.WORKER_WEDGE_POLL_SECONDS = 0
+        watchdog = BrokerWatchdog(MagicMock(), [QUEUE])
+
+        with (
+            patch.object(watchdog, "poll_once", side_effect=KeyError("surprise")),
+            pytest.raises(KeyError, match="surprise"),
+        ):
+            watchdog.run()
+
+        assert len(admin_mail) == 1
+        assert "CRITICAL: Broker watchdog stopped" in admin_mail[0].subject
+
+    def test_stopping_it_on_purpose_is_not_reported(
+        self, admin_mail: list[EmailMessage]
+    ) -> None:
+        watchdog = BrokerWatchdog(MagicMock(), [QUEUE])
+        watchdog.stop.set()
+
+        watchdog.run()
+
+        assert admin_mail == []
+
     def test_a_wedge_found_by_a_poll_exits(self, settings: Settings) -> None:
         settings.WORKER_WEDGE_POLL_SECONDS = 0
         watchdog = BrokerWatchdog(MagicMock(), [QUEUE])

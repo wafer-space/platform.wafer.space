@@ -522,12 +522,21 @@ CELERY_WORKER_MAX_MEMORY_PER_CHILD = 1024 * 1024  # kB (~1GiB peak RSS)
 # shows it running. Every worker's main process polls the broker, and exits
 # (CRITICAL to ADMINS, then exit code 70 for systemd to restart it) once a
 # message has waited this long with nothing taken and no task running.
-# PLACEHOLDER until set from production's data before merge.
+# A running task never counts, however long it runs; this is how long an
+# idle worker may leave a message waiting. From checks-orch's log on
+# 16 Oct 2026 (hetzner-ansible NOTE 28 B2): after deploy 1's kombu purge,
+# messages reached the worker within 5.5 s of being sent (p99 2.3 s), and
+# the longest any checks_* task ran was 24.3 s, even in the queue-bloat
+# era (#382). 5 minutes is about 12 times that.
 WORKER_WEDGE_EXIT_SECONDS = 5 * 60
 WORKER_WEDGE_POLL_SECONDS = 30
 # checks_orch_stalled (issue #426) emails ADMINS once checks_running, which
-# checks-orch runs every 15 s, has recorded no result for this long.
-# PLACEHOLDER until set from production's data before merge.
+# checks-orch runs every 15 s, has recorded no result for this long. Gaps
+# between checks_running completions on 16 Oct 2026 (hetzner-ansible NOTE
+# 28 B2): after deploy 1's kombu purge, n=2869, p50 13.3 s, p99 19.6 s and
+# max 27.7 s. Before it, the worst were 384 s (the queue-bloat era, #382)
+# and 626 s (the purge, workers stopped). 10 minutes stays quiet in normal
+# running and fires in real outages like those.
 CHECKS_ORCH_STALL_ALERT_SECONDS = 10 * 60
 
 # Download task configuration

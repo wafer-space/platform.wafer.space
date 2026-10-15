@@ -224,11 +224,25 @@ class BrokerWatchdog:
         )
 
     def run(self) -> None:
-        """Poll until the worker is wedged, then exit the process."""
-        while not self.stop.wait(settings.WORKER_WEDGE_POLL_SECONDS):
-            now = time.monotonic()
-            if self.poll_once(now):
-                exit_wedged(self.queues, now - self.state.oldest_waiting_since)
+        """Poll until the worker is wedged, then exit the process.
+
+        If anything ends the loop other than stop, the worker keeps running
+        unwatched, so that is reported as CRITICAL (ADMINS) on the way out;
+        the exception itself goes on to threading.excepthook with its
+        traceback.
+        """
+        try:
+            while not self.stop.wait(settings.WORKER_WEDGE_POLL_SECONDS):
+                now = time.monotonic()
+                if self.poll_once(now):
+                    exit_wedged(self.queues, now - self.state.oldest_waiting_since)
+        finally:
+            if not self.stop.is_set():
+                logger.critical(
+                    "Broker watchdog stopped: %s is no longer watched for a "
+                    "wedge (issue #426). Restart the worker to watch it again.",
+                    ",".join(self.queues),
+                )
 
 
 def broker_engine(broker_url: str) -> Engine | None:
