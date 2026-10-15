@@ -137,6 +137,17 @@ def test_prune_deletes_only_rows_older_than_the_cutoff() -> None:
     assert list(RequestLog.objects.all()) == [recent]
 
 
+@pytest.mark.parametrize("days", ["0", "-1"])
+def test_prune_refuses_an_age_that_would_delete_everything(days: str) -> None:
+    """A cutoff of now or in the future would delete every row."""
+    row = _row()
+
+    with pytest.raises(CommandError):
+        call_command("prune_request_logs", "--older-than", days)
+
+    assert list(RequestLog.objects.all()) == [row]
+
+
 def test_prune_requires_an_age() -> None:
     with pytest.raises(CommandError):
         call_command("prune_request_logs")

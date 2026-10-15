@@ -11,6 +11,7 @@ import logging
 from typing import Any
 
 from django.core.management.base import BaseCommand
+from django.core.management.base import CommandError
 from django.core.management.base import CommandParser
 from django.utils import timezone
 
@@ -33,6 +34,10 @@ class Command(BaseCommand):
 
     def handle(self, *args: Any, **options: Any) -> None:
         days: int = options["older_than"]
+        if days < 1:
+            # 0 or less puts the cutoff at or after now: every row would go.
+            msg = f"--older-than must be at least 1 day, not {days}"
+            raise CommandError(msg)
         cutoff = timezone.now() - datetime.timedelta(days=days)
         deleted, _ = RequestLog.objects.filter(created_at__lt=cutoff).delete()
         logger.info("Deleted %d request log rows older than %d days", deleted, days)
