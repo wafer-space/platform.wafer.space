@@ -7,7 +7,7 @@ The platform records who fetched what, from where, and whether they were logged 
 `RequestLogMiddleware` (`wafer_space/analytics/middleware.py`) writes one `RequestLog` row to PostgreSQL after the response for:
 
 - every request by a logged-in user;
-- every request to a file-serving view, whoever makes it and whatever the status: `projects:check_artifact`, `projects:check_log` and `projects:file_download`. A redirected or refused fetch is still an attempt.
+- every request to a file-serving view, whoever makes it and whatever the status: `projects:check_artifact`, `projects:check_log` and `projects:file_download`. A redirected or refused fetch is still an attempt. A fetch that the ToS check redirects before it reaches the view is still recorded under that view's name.
 
 Each row holds:
 
@@ -28,6 +28,8 @@ Each row holds:
 - Any header other than `User-Agent` and `Referer`, including cookies and `Authorization`.
 - Anonymous page views, `/static/` and `/health/`. The nginx access log has these.
 - The request log's own admin pages, so reading the log does not add to it.
+- One-time secrets in a URL path: allauth's email-confirmation key and password-reset key. For those pages the stored path is the URL pattern, and the key arguments are stored as `<redacted>`. The same applies to a referrer pointing at one of those pages.
+- Credentials in a referrer URL (`user:password@`), and NUL characters anywhere.
 
 ## Bytes behind nginx
 
@@ -35,7 +37,7 @@ A file served through `X-Accel-Redirect` has no body in Django, so its row has n
 
 ## Request id
 
-Every response carries an `X-Request-ID` header. Where nginx is the sole ingress (`TRUST_X_REAL_IP`, the same switch that trusts `X-Real-IP`), the application keeps nginx's `$request_id` if it is 32 hexadecimal characters. Otherwise it generates a new one, so a client cannot choose the id.
+Every response that reaches the middleware carries an `X-Request-ID` header. Responses from middleware earlier in the stack do not: WhiteNoise's static files and CommonMiddleware's `APPEND_SLASH` redirects. Where nginx is the sole ingress (`TRUST_X_REAL_IP`, the same switch that trusts `X-Real-IP`), the application keeps nginx's `$request_id` if it is 32 hexadecimal characters. Otherwise it generates a new one, so a client cannot choose the id.
 
 ## Who can read it
 
@@ -43,7 +45,9 @@ Staff, through the Django admin (Analytics → Request logs). It is read-only fo
 
 - a date hierarchy;
 - filters for logged in or anonymous, URL name, status and method;
-- search on path, username, client IP and request id.
+- search: an exact request id, client IP or username, or a path by its beginning, for example `/projects/<uuid>/`.
+
+Every filter offers a fixed set of choices, so the page never scans the table for distinct values. A path search still scans the rows in the date range, so narrow the date first.
 
 ## Retention
 
