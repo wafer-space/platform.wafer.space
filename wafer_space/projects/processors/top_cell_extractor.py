@@ -53,22 +53,37 @@ class MissingCellReferenceError(LayoutHierarchyError):
 def _children_by_cell(cells: list[gdstk.Cell]) -> dict[str, list[str]]:
     """Map each cell's name to the names of the cells it references.
 
-    Raises:
-        MissingCellReferenceError: If a reference names a cell that isn't
-            in `cells` (gdstk keeps such a reference as a plain str).
+    A reference to a cell that isn't in the file is kept by gdstk as the
+    plain name (a str), so it is listed by name too; _top_cells rejects it.
     """
-    names = {cell.name for cell in cells}
-    children: dict[str, list[str]] = {}
-    for cell in cells:
-        child_names: list[str] = []
-        for ref in cell.references:
-            child = ref.cell if isinstance(ref.cell, str) else ref.cell.name
-            if child not in names:
-                raise MissingCellReferenceError(cell.name, child)
-            if child not in child_names:
-                child_names.append(child)
-        children[cell.name] = child_names
-    return children
+    return {
+        cell.name: [
+            target if isinstance(target := ref.cell, str) else target.name
+            for ref in cell.references
+        ]
+        for cell in cells
+    }
+
+
+def _top_cells(children: dict[str, list[str]]) -> set[str]:
+    """Return the cells that no other cell references.
+
+    Raises:
+        MissingCellReferenceError: If a reference names a cell that isn't in
+            the file.
+    """
+    referenced: set[str] = set()
+    for names in children.values():
+        referenced.update(names)
+    if missing := referenced - children.keys():
+        parent, child = next(
+            (parent, child)
+            for parent, names in children.items()
+            for child in names
+            if child in missing
+        )
+        raise MissingCellReferenceError(parent, child)
+    return children.keys() - referenced
 
 
 def hierarchy_depths(children: dict[str, list[str]]) -> dict[str, int]:
@@ -76,7 +91,8 @@ def hierarchy_depths(children: dict[str, list[str]]) -> dict[str, int]:
 
     A depth-first walk with an explicit stack, so neither a deep hierarchy
     nor a cycle can exhaust Python's recursion limit. Every cell is
-    walked, including cells no top cell reaches.
+    walked, including cells no top cell reaches. Every name in `children`'s
+    lists must be one of its keys.
 
     Raises:
         CircularCellReferenceError: If any cell references itself, directly
@@ -86,27 +102,36 @@ def hierarchy_depths(children: dict[str, list[str]]) -> dict[str, int]:
     for root, root_children in children.items():
         if root in depths:
             continue
-        # The cells on the current path, with the position of each, and an
-        # iterator over the children each still has to visit.
+        # The cells on the current path, the position of each on it, an
+        # iterator over the children each has yet to visit, and the deepest
+        # child depth each has seen so far.
         path = [root]
         position = {root: 0}
         pending = [iter(root_children)]
+        deepest = [-1]
         while pending:
-            child = next(pending[-1], None)
-            if child is None:
-                done = path.pop()
-                pending.pop()
-                del position[done]
-                depths[done] = 1 + max(
-                    (depths[c] for c in children[done]),
-                    default=-1,
-                )
-            elif child in position:
-                raise CircularCellReferenceError([*path[position[child] :], child])
-            elif child not in depths:
+            for child in pending[-1]:
+                depth = depths.get(child)
+                if depth is not None:
+                    deepest[-1] = max(deepest[-1], depth)
+                    continue
+                if child in position:
+                    raise CircularCellReferenceError(
+                        [*path[position[child] :], child],
+                    )
                 position[child] = len(path)
                 path.append(child)
                 pending.append(iter(children[child]))
+                deepest.append(-1)
+                break
+            else:
+                # Every child visited: this cell's depth is final.
+                done = path.pop()
+                pending.pop()
+                del position[done]
+                depths[done] = deepest.pop() + 1
+                if deepest:
+                    deepest[-1] = max(deepest[-1], depths[done])
     return depths
 
 
@@ -174,27 +199,22 @@ class TopCellExtractor:
 
     def _select_top_cell(
         self,
-        children: dict[str, list[str]],
+        top_cells: list[str],
         depths: dict[str, int],
     ) -> str:
-        """Select the top-level cell: the one no other cell references.
+        """Select the best top-level cell when several exist.
 
-        Selection criteria when several exist:
+        Selection criteria:
         1. Cell with the deepest hierarchy (most nested instantiations)
         2. If tied, alphabetically first name
 
         Args:
-            children: Names of the cells each cell references
+            top_cells: Names of the cells no other cell references, sorted
             depths: Hierarchical depth of every cell
 
         Returns:
             Name of the selected top-level cell
         """
-        referenced = {child for names in children.values() for child in names}
-        # Never empty: hierarchy_depths has ruled out cycles, and a finite
-        # acyclic hierarchy always has a cell that nothing references.
-        top_cells = sorted(name for name in children if name not in referenced)
-
         if len(top_cells) == 1:
             return top_cells[0]
 
@@ -233,8 +253,11 @@ class TopCellExtractor:
             raise ValueError(msg)
 
         children = _children_by_cell(cells)
+        top_cells = sorted(_top_cells(children))
         depths = hierarchy_depths(children)
-        selected = self._select_top_cell(children, depths)
+        # Never empty once hierarchy_depths has ruled out cycles: a finite
+        # acyclic hierarchy always has a cell that nothing references.
+        selected = self._select_top_cell(top_cells, depths)
         logger.info("Top cell identified: %s", selected)
 
         return selected
