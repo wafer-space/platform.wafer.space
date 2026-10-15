@@ -91,11 +91,29 @@ def _is_task_in_broker_queue(task_id: str | None) -> bool:
         return False
 
 
+def longest_task_time_limit() -> float | None:
+    """The longest hard time limit any registered task may run under, in seconds.
+
+    CELERY_TASK_TIME_LIMIT, or a task's own time_limit where it is longer.
+    None when no limit is configured.
+    """
+    limits = [current_app.conf.task_time_limit]
+    limits += [task.time_limit for task in current_app.tasks.values()]
+    configured = [limit for limit in limits if limit is not None]
+    return max(configured) if configured else None
+
+
 def _is_task_in_results_unfinished(task_id: str | None) -> bool:
     """Check if a task exists in TaskResult with an unfinished status.
 
     This checks Django Celery Results for a task that has been picked up by a
     worker but hasn't finished yet (status is not SUCCESS, FAILURE, or REVOKED).
+
+    A STARTED row older than the longest hard time limit is not running
+    (issue #183): the deployed prefork workers kill a task at its limit,
+    so a row that old was left by a worker that died without recording
+    the end (machine loss, OOM kill of the whole worker, a hard restart).
+    Left as "unfinished", it would keep its check's lock forever.
 
     Args:
         task_id: The Celery task ID to search for
@@ -130,6 +148,22 @@ def _is_task_in_results_unfinished(task_id: str | None) -> bool:
                 task_result.date_created,
                 age_seconds or 0,
             )
+            # date_done is auto_now: when the row last changed state, so for a
+            # STARTED row the start of the current attempt (date_created is the
+            # first attempt's, and date_started needs extended results).
+            in_state_seconds = (timezone.now() - task_result.date_done).total_seconds()
+            time_limit = longest_task_time_limit()
+            if time_limit is not None and in_state_seconds > time_limit:
+                logger.error(
+                    "Task %s has been %s for %.0fs, longer than the %.0fs hard "
+                    "time limit: its worker died mid-task, so it is not running "
+                    "(issue #183)",
+                    task_id,
+                    task_result.status,
+                    in_state_seconds,
+                    time_limit,
+                )
+                is_unfinished = False
     except Exception:
         logger.exception("Error checking task result for task %s", task_id)
         # Err on the side of caution - assume still running
