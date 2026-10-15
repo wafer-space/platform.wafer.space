@@ -471,6 +471,8 @@ CELERY_TASK_EAGER_PROPAGATES = True
 # lives between 1 and 25 hours. This must stay above CELERY_TASK_TIME_LIMIT:
 # cleanup deletes by date_done regardless of state, and
 # checks_cleanup_stale_pending_tasks reads a STARTED row as "still running".
+# The deployed workers run the default prefork pool, which enforces the time
+# limit; the Procfile's solo/threads pools (development only) do not.
 CELERY_RESULT_EXPIRES = 3600
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes hard time limit

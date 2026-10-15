@@ -114,7 +114,10 @@ def test_result_expiry_outlives_task_time_limit(
 
     backend_cleanup deletes rows by date_done whatever their state, and
     checks_cleanup_stale_pending_tasks treats a STARTED row as "still
-    running", so a row must outlive the longest a task can run.
+    running", so a row must outlive the longest a task can run. The time
+    limit bounds that only where it is enforced: the deployed workers use
+    the default prefork pool (the hetzner-ansible unit passes no --pool),
+    which does; the Procfile's solo/threads pools for development do not.
     """
     limits = [app.conf.task_time_limit]
     limits += [
