@@ -3453,3 +3453,31 @@ class TestOtherWebPathsLoadNoWholeLogs:
             )
 
         assert (response.status_code, self._selects_logs(queries)) == (HTTP_OK, [])
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("viewer", ["owner", "staff"])
+def test_project_page_with_an_unknown_digest_and_its_stub(
+    client: Client, viewer: str
+) -> None:
+    """do_dispatching stores "unknown" when a pulled image has no RepoDigests.
+
+    Once a catalog row existed for it, the check's version panel reached
+    PrecheckImageRevision.short_digest's assert and the project page was a
+    500 (#421).
+    """
+    owner = UserFactory()
+    project = ProjectFactory(user=owner)
+    ManufacturabilityCheckFactory(
+        project=project,
+        project_file=make_downloaded_file(project),
+        status=ManufacturabilityCheck.Status.FINISHED,
+        is_manufacturable=True,
+        docker_image_digest="unknown",
+    )
+    PrecheckImageRevision.objects.create(digest="unknown")
+    client.force_login(owner if viewer == "owner" else UserFactory(is_staff=True))
+
+    response = client.get(project.get_absolute_url())
+
+    assert response.status_code == HTTP_OK

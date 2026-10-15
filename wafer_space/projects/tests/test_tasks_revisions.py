@@ -83,6 +83,22 @@ class TestRevisionsNeedsFetching:
         assert result["new_revisions_queued"] == 0
         mock_fetch.assert_not_called()
 
+    def test_ignores_unknown_digest(self):
+        """do_dispatching's "unknown" names no image: never catalogued (#421).
+
+        Its stub row reached short_digest's assert on the project page.
+        """
+        ManufacturabilityCheckFactory(docker_image_digest="unknown")
+
+        with patch(
+            "wafer_space.projects.tasks_revisions.do_revision_fetch.delay"
+        ) as mock_fetch:
+            result = revisions_needs_fetching()
+
+        assert result["new_revisions_queued"] == 0
+        mock_fetch.assert_not_called()
+        assert not PrecheckImageRevision.objects.filter(digest="unknown").exists()
+
     def test_ignores_digest_with_exhausted_fetch_attempts(self):
         """Task stops requeueing digests that hit the fetch-attempt cap."""
         digest = "sha256:gaveupdigest1234567890123456789012345678901234567890123"

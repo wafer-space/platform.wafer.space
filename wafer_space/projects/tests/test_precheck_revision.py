@@ -262,6 +262,18 @@ class TestManufacturabilityCheckLatestDigest:
 
         assert check.precheck_revision is None
 
+    def test_precheck_revision_none_for_a_non_digest(self):
+        """do_dispatching's "unknown" names no image, even if catalogued (#421).
+
+        A stub row for it (made before revisions_needs_fetching skipped it)
+        led precheck_version_display to short_digest's assert.
+        """
+        PrecheckImageRevision.objects.create(digest="unknown")
+        check = ManufacturabilityCheckFactory(docker_image_digest="unknown")
+
+        assert check.precheck_revision is None
+        assert check.precheck_version_display == ""
+
 
 @pytest.mark.django_db
 class TestPrecheckImageRevisionVersionDisplay:
@@ -392,6 +404,19 @@ class TestFormatVersionDisplay:
         version_str, is_latest = PrecheckImageRevision.format_version_display(check)
         assert version_str == "-"
         assert is_latest is None
+
+    @pytest.mark.parametrize("catalogued", [False, True])
+    def test_format_version_display_with_unknown_digest(self, *, catalogued: bool):
+        """do_dispatching's "unknown" names no image: a dash, as for none (#421).
+
+        With a catalog row for it, this reached short_digest's assert and
+        made the project page a 500.
+        """
+        if catalogued:
+            PrecheckImageRevision.objects.create(digest="unknown")
+        check = ManufacturabilityCheckFactory(docker_image_digest="unknown")
+
+        assert PrecheckImageRevision.format_version_display(check) == ("-", None)
 
 
 @pytest.mark.django_db

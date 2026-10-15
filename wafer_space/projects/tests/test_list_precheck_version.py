@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from html.parser import HTMLParser
+from http import HTTPStatus
 from typing import TYPE_CHECKING
 
 import pytest
@@ -163,6 +164,39 @@ def test_check_without_a_digest_shows_no_version(client: Client) -> None:
     checked_revision(project, "", verdict=True)
 
     assert version_lines(client, user, project) == []
+
+
+@pytest.mark.parametrize("viewer", ["owner", "staff"])
+def test_unknown_digest_does_not_break_the_list(client: Client, viewer: str) -> None:
+    """do_dispatching stores "unknown" when a pulled image has no RepoDigests.
+
+    That digest reached PrecheckImageRevision.short_digest, whose assert
+    failed and made the whole list a 500 (#421).
+    """
+    owner = UserFactory()
+    project = ProjectFactory(user=owner)
+    checked_revision(project, "unknown", verdict=True)
+    user = owner if viewer == "owner" else UserFactory(is_staff=True)
+    client.force_login(user)
+
+    response = client.get(reverse("projects:list"))
+
+    assert response.status_code == HTTPStatus.OK
+    assert version_lines(client, user, project) == [
+        ("unrecorded", "precheck image not recorded (version unknown)"),
+    ]
+
+
+def test_unknown_digest_with_its_catalog_stub(client: Client) -> None:
+    """revisions_needs_fetching catalogues "unknown" too, with no version."""
+    user = UserFactory()
+    project = ProjectFactory(user=user)
+    PrecheckImageRevision.objects.create(digest="unknown")
+    checked_revision(project, "unknown", verdict=True)
+
+    assert version_lines(client, user, project) == [
+        ("unrecorded", "precheck image not recorded (version unknown)"),
+    ]
 
 
 def test_unfinished_check_shows_no_version(client: Client) -> None:
