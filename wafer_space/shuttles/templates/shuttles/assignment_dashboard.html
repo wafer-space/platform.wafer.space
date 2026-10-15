@@ -33,6 +33,8 @@
                     <th class="py-1 px-1">Size</th>
                     <th class="py-1 px-1 text-end">Proj</th>
                     <th class="py-1 px-1 text-end">Mfg</th>
+                    <th class="py-1 px-1 text-end"
+                        title="Manufacturable, but passed on an outdated precheck version">Old</th>
                     <th class="py-1 px-1 text-end">CS#</th>
                     <th class="py-1 px-1 text-end">CoB</th>
                     <th class="py-1 px-1 text-end">Slots</th>
@@ -53,6 +55,12 @@
                             title="{{ stat.manufacturable_assigned }} projects passing manufacturing precheck with slot allocated.
 {{ stat.manufacturable_total }} projects passing manufacturing precheck available for slot allocation.">
                           {{ stat.manufacturable_assigned }}/{{ stat.manufacturable_total }}
+                        </td>
+                        <td class="py-1 px-1 text-end{% if stat.outdated_total %} text-warning{% endif %}"
+                            data-outdated
+                            title="{{ stat.outdated_assigned }} of the projects passing manufacturing precheck with slot allocated passed on an outdated precheck version.
+{{ stat.outdated_total }} of all projects passing manufacturing precheck passed on an outdated precheck version and may need re-checking.">
+                          {{ stat.outdated_assigned }}/{{ stat.outdated_total }}
                         </td>
                         <td class="py-1 px-1 text-end"
                             title="{{ stat.cs_order_assigned }} projects with a CrowdSupply order number with slot allocated.
@@ -228,13 +236,16 @@
                     <div class="text-nowrap">
                       <small class="text-muted" title="Latest file revision">L:</small>
                       {% badge_check_status_and_version project.latest_file_check %}
+                      {% include "shuttles/_check_date.html" with check=project.latest_file_check %}
                     </div>
                     <div class="text-nowrap">
                       <small class="text-muted" title="Submitted for manufacturing">S:</small>
                       {% badge_check_status_and_version project.submitted_file_check %}
+                      {% include "shuttles/_check_date.html" with check=project.submitted_file_check %}
                     </div>
                   {% else %}
                     {% badge_check_status_and_version project.latest_file_check %}
+                    {% include "shuttles/_check_date.html" with check=project.latest_file_check %}
                   {% endif %}
                   {# Staff re-run of the submitted revision only (#205); none if unsubmitted. #}
                   {% if project.submitted_file %}

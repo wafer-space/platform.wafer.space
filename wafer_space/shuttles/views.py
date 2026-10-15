@@ -111,6 +111,18 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
             manufacturable_assigned = sum(
                 1 for p in manufacturable_projects if p.shuttle_slots.all()
             )
+            # Of those, the ones whose passing check ran an outdated precheck
+            # version and may need re-checking (#203). A version that cannot
+            # be compared (no digest recorded) counts as neither.
+            outdated_projects = [
+                p
+                for p in manufacturable_projects
+                if p.latest_file_finished_check.is_using_latest_precheck is False
+            ]
+            outdated_total = len(outdated_projects)
+            outdated_assigned = sum(
+                1 for p in outdated_projects if p.shuttle_slots.all()
+            )
 
             # Count projects with a CrowdSupply order and CoB packaging
             cs_order_projects = [p for p in project_list if p.crowd_supply_order_id]
@@ -127,6 +139,8 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
                 "assigned_count": assigned_count,
                 "manufacturable_total": manufacturable_total,
                 "manufacturable_assigned": manufacturable_assigned,
+                "outdated_total": outdated_total,
+                "outdated_assigned": outdated_assigned,
                 "cs_order_total": cs_order_total,
                 "cs_order_assigned": cs_order_assigned,
                 "cob_count": cob_count,

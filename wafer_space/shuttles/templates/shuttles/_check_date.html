@@ -1,0 +1,7 @@
+{# When a check finished (#203): the date, with the full time on hover. #}
+{# Nothing for a check still running or never run. #}
+{% if check.analysis_completed_at %}
+  <small class="text-muted"
+         data-check-date
+         title="Check finished {{ check.analysis_completed_at|date:'Y-m-d H:i:s T' }}">{{ check.analysis_completed_at|date:"Y-m-d" }}</small>
+{% endif %}
