@@ -16,6 +16,16 @@ urlpatterns = [
         TemplateView.as_view(template_name="pages/about.html"),
         name="about",
     ),
+    # Keep crawlers off login and account URLs (issue #338)
+    path(
+        "robots.txt",
+        TemplateView.as_view(
+            template_name="robots.txt",
+            content_type="text/plain",
+            extra_context={"admin_url": settings.ADMIN_URL},
+        ),
+        name="robots_txt",
+    ),
     # Django Admin, use {% url 'admin:index' %}
     path(settings.ADMIN_URL, admin.site.urls),
     # User management
