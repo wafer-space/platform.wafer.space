@@ -1,6 +1,6 @@
 """Page Object Model for TOS pages."""
 
-from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
 
 from .base_page import BasePage
@@ -63,14 +63,23 @@ class TOSAcceptPage(BasePage):
         """Get alert message text."""
         try:
             return self.get_text(self.ALERT_MESSAGE)
-        except NoSuchElementException:
+        except TimeoutException:
             return None
+
+    def is_accept_button_present(self):
+        """Check if the accept button is present."""
+        try:
+            self.find_element(self.ACCEPT_BUTTON)
+        except TimeoutException:
+            return False
+        else:
+            return True
 
     def is_checkbox_present(self):
         """Check if agree checkbox is present."""
         try:
             self.find_element(self.AGREE_CHECKBOX)
-        except NoSuchElementException:
+        except TimeoutException:
             return False
         else:
             return True
