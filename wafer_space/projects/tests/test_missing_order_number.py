@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.html import escapejs
 
 from wafer_space.projects.models import MISSING_ORDER_NUMBER_WARNING
@@ -143,3 +144,45 @@ class TestProjectPage:
         add_checked_revision(project, passed=True)
         project = Project.objects.get(pk=project.pk)
         assert warning_banners(self._detail(client, project)) == 1
+
+
+def test_test_only_shuttle_submit_gives_no_warning(client: Client) -> None:
+    """A test-only shuttle never manufactures, so no order is needed (#221)."""
+    shuttle = Shuttle.objects.create(
+        name="G895",
+        description="Test shuttle",
+        status=Shuttle.Status.OPEN,
+        is_test_only=True,
+    )
+    project = make_submittable_project(shuttle=shuttle, crowd_supply_order_id="")
+    client.force_login(project.user)
+    response = client.post(reverse("projects:submit", args=[project.pk]), follow=True)
+    messages = [str(m) for m in response.context["messages"]]
+    project.refresh_from_db()
+    assert project.submitted_file is not None
+    assert MISSING_ORDER_NUMBER_WARNING not in messages
+    assert warning_banners(response) == 0
+
+
+def test_staff_override_card_shows_warning(client: Client) -> None:
+    """Staff who can only override still see the warning before submitting."""
+    project = make_failed_project()
+    client.force_login(UserFactory(is_staff=True))
+    assert warning_banners(client.get(project.get_absolute_url())) == 1
+
+
+def test_archived_submitted_project_hides_edit_link(client: Client) -> None:
+    """Archived projects are read-only, so the warning offers no Edit link."""
+    project = make_submittable_project(crowd_supply_order_id="")
+    project.submit()
+    Project.objects.filter(pk=project.pk).update(archived_at=timezone.now())
+    client.force_login(project.user)
+    response = client.get(project.get_absolute_url())
+    edit_url = reverse("projects:update", args=[project.pk])
+    links = [
+        attrs.get("href")
+        for tag, attrs in parse_html(response.content.decode()).elements
+        if tag == "a" and "alert-link" in (attrs.get("class") or "")
+    ]
+    assert warning_banners(response) == 1
+    assert edit_url not in links
