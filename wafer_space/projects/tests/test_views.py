@@ -21,6 +21,7 @@ from django.utils import timezone
 from wafer_space.core.enums import SlotSize
 from wafer_space.projects.list_state import ListStateAnnotations
 from wafer_space.projects.list_state import annotate_list_state
+from wafer_space.projects.models import MISSING_ORDER_NUMBER_WARNING
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import PrecheckImageRevision
@@ -1427,10 +1428,13 @@ class TestProjectSubmitView(TestCase):
         assert self.project.status == Project.Status.SUBMITTED
         assert self.project.submitted_at is not None
 
-        # Verify success message
-        messages = list(get_messages(response.wsgi_request))
-        assert len(messages) == 1
-        assert "submitted successfully" in str(messages[0]).lower()
+        # Verify success message, then the #348 warning: the project has no
+        # CrowdSupply order number
+        messages = [str(m) for m in get_messages(response.wsgi_request)]
+        assert messages == [
+            "Project 'Test Project' submitted successfully for manufacturing!",
+            MISSING_ORDER_NUMBER_WARNING,
+        ]
 
     def test_submission_fails_without_active_file(self):
         """Test that submission fails without active file."""
