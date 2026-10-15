@@ -471,6 +471,9 @@ class PrecheckImageRevisionAdmin(StaffReadOnlyAdminMixin, admin.ModelAdmin):
         "first_seen_at",
         "checks_count",
         "metadata_fetched_at",
+        "metadata_fetch_problem",
+        "metadata_fetch_attempts",
+        "metadata_fetch_last_error",
     ]
     list_filter = ["first_seen_at", "metadata_fetched_at"]
     search_fields = ["digest", "git_commit_sha", "precheck_version"]
