@@ -40,6 +40,7 @@ from .models import FileProcessingError
 from .models import Project
 from .models import ProjectFile
 from .models import ProjectFileChunk
+from .processors.top_cell_extractor import LayoutHierarchyError
 from .processors.top_cell_extractor import extract_top_cell
 from .temp_sweep import sweep_temp_dirs
 from .url_handlers import GitHubArtifactHandler
@@ -1207,6 +1208,33 @@ def _handle_download_failure(
     }
 
 
+def _handle_unretryable_failure(
+    project_id: str,
+    exc: DownloadTooLargeError | LayoutHierarchyError,
+    temp_path: Path | None,
+    attempt: DownloadAttempt | None,
+) -> dict[str, str | int]:
+    """Record a failure that downloading the file again cannot fix."""
+    logger = logging.getLogger(__name__)
+    if isinstance(exc, LayoutHierarchyError):
+        # The user's design is broken: a circular or missing cell reference
+        # (#78). It is not a platform fault, so a warning, not an ADMINS
+        # email; the message, which tells the user what to fix, is recorded.
+        logger.warning(
+            "DOWNLOAD TASK FAILED - Broken cell hierarchy for project %s: %s",
+            project_id,
+            exc,
+        )
+    else:
+        # The file will not get smaller, and each retry could re-download up
+        # to the full size limit before failing again (hosts without Range
+        # support restart from byte 0 on resume).
+        logger.exception(
+            "DOWNLOAD TASK FAILED - File too large for project %s", project_id
+        )
+    return _handle_download_failure(project_id, exc, temp_path, attempt)
+
+
 def _handle_download_task_error(
     task_self,
     project_id: str,
@@ -1889,14 +1917,8 @@ def download_project_file(self, project_id):  # noqa: PLR0915
             "message": f"Project with id {project_id} not found",
         }
 
-    except DownloadTooLargeError as exc:
-        # Not retryable: the file will not get smaller, and each retry
-        # could re-download up to the full size limit before failing again
-        # (hosts without Range support restart from byte 0 on resume).
-        logger.exception(
-            "DOWNLOAD TASK FAILED - File too large for project %s", project_id
-        )
-        return _handle_download_failure(project_id, exc, temp_path, attempt)
+    except (DownloadTooLargeError, LayoutHierarchyError) as exc:
+        return _handle_unretryable_failure(project_id, exc, temp_path, attempt)
 
     except (OSError, ValueError, requests.RequestException) as exc:
         logger.exception("DOWNLOAD TASK ERROR")

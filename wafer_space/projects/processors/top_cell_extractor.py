@@ -13,6 +13,103 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class LayoutHierarchyError(Exception):
+    """The layout's cell hierarchy is broken, and only the user can fix it.
+
+    Deliberately not a ValueError: extract_top_cell turns ValueError into
+    None, and this message must reach the user instead.
+    """
+
+
+class CircularCellReferenceError(LayoutHierarchyError):
+    """A cell references itself, directly or through other cells."""
+
+    def __init__(self, cycle: list[str]) -> None:
+        """Name the cells of the cycle, first cell repeated at the end."""
+        self.cycle = cycle
+        path = " → ".join(cycle)
+        msg = (
+            f"The design has a circular cell reference ({path}). "
+            "Fix the circular reference in your layout and upload it again."
+        )
+        super().__init__(msg)
+
+
+class MissingCellReferenceError(LayoutHierarchyError):
+    """A cell references a cell that the file does not contain."""
+
+    def __init__(self, parent: str, missing: str) -> None:
+        """Name the referencing cell and the missing one."""
+        self.parent = parent
+        self.missing = missing
+        msg = (
+            f"The design references a cell that is not in the file "
+            f"({parent} references {missing}). "
+            "Add the missing cell to your layout and upload it again."
+        )
+        super().__init__(msg)
+
+
+def _children_by_cell(cells: list[gdstk.Cell]) -> dict[str, list[str]]:
+    """Map each cell's name to the names of the cells it references.
+
+    Raises:
+        MissingCellReferenceError: If a reference names a cell that isn't
+            in `cells` (gdstk keeps such a reference as a plain str).
+    """
+    names = {cell.name for cell in cells}
+    children: dict[str, list[str]] = {}
+    for cell in cells:
+        child_names: list[str] = []
+        for ref in cell.references:
+            child = ref.cell if isinstance(ref.cell, str) else ref.cell.name
+            if child not in names:
+                raise MissingCellReferenceError(cell.name, child)
+            if child not in child_names:
+                child_names.append(child)
+        children[cell.name] = child_names
+    return children
+
+
+def hierarchy_depths(children: dict[str, list[str]]) -> dict[str, int]:
+    """Return every cell's hierarchical depth (0 for a leaf cell).
+
+    A depth-first walk with an explicit stack, so neither a deep hierarchy
+    nor a cycle can exhaust Python's recursion limit. Every cell is
+    walked, including cells no top cell reaches.
+
+    Raises:
+        CircularCellReferenceError: If any cell references itself, directly
+            or through other cells.
+    """
+    depths: dict[str, int] = {}
+    for root, root_children in children.items():
+        if root in depths:
+            continue
+        # The cells on the current path, with the position of each, and an
+        # iterator over the children each still has to visit.
+        path = [root]
+        position = {root: 0}
+        pending = [iter(root_children)]
+        while pending:
+            child = next(pending[-1], None)
+            if child is None:
+                done = path.pop()
+                pending.pop()
+                del position[done]
+                depths[done] = 1 + max(
+                    (depths[c] for c in children[done]),
+                    default=-1,
+                )
+            elif child in position:
+                raise CircularCellReferenceError([*path[position[child] :], child])
+            elif child not in depths:
+                position[child] = len(path)
+                path.append(child)
+                pending.append(iter(children[child]))
+    return depths
+
+
 class TopCellExtractor:
     """Extract top-level cell name from GDS/OASIS layout files.
 
@@ -75,93 +172,40 @@ class TopCellExtractor:
             msg = f"Failed to read OASIS file: {e}"
             raise ValueError(msg) from e
 
-    def _find_top_cells(self, library: gdstk.Library) -> list[gdstk.Cell]:
-        """Find all top-level cells (cells not instantiated by others).
+    def _select_top_cell(
+        self,
+        children: dict[str, list[str]],
+        depths: dict[str, int],
+    ) -> str:
+        """Select the top-level cell: the one no other cell references.
 
-        Args:
-            library: gdstk Library object
-
-        Returns:
-            List of top-level cells
-        """
-        # Filter to only Cell objects (not RawCell which has no references)
-        cells = [c for c in library.cells if isinstance(c, gdstk.Cell)]
-
-        # Get all cell names that are referenced by other cells
-        referenced_cells: set[str] = set()
-        for cell in cells:
-            for ref in cell.references:
-                referenced_cells.add(ref.cell.name)
-
-        # Top-level cells are those not referenced by any other cell
-        return [cell for cell in cells if cell.name not in referenced_cells]
-
-    def _calculate_depth(self, cell: gdstk.Cell, memo: dict[str, int]) -> int:
-        """Calculate hierarchical depth of a cell.
-
-        Args:
-            cell: gdstk Cell object
-            memo: Memoization dict to avoid recalculation
-
-        Returns:
-            Maximum depth of cell hierarchy (0 for leaf cells)
-        """
-        if cell.name in memo:
-            return memo[cell.name]
-
-        if not cell.references:
-            memo[cell.name] = 0
-            return 0
-
-        max_child_depth = 0
-        for ref in cell.references:
-            child_depth = self._calculate_depth(ref.cell, memo)
-            max_child_depth = max(max_child_depth, child_depth)
-
-        depth = max_child_depth + 1
-        memo[cell.name] = depth
-        return depth
-
-    def _select_top_cell(self, top_cells: list[gdstk.Cell]) -> gdstk.Cell:
-        """Select the best top-level cell when multiple exist.
-
-        Selection criteria:
+        Selection criteria when several exist:
         1. Cell with the deepest hierarchy (most nested instantiations)
         2. If tied, alphabetically first name
 
         Args:
-            top_cells: List of top-level cells
+            children: Names of the cells each cell references
+            depths: Hierarchical depth of every cell
 
         Returns:
-            The selected top-level cell
-
-        Raises:
-            ValueError: If no cells provided
+            Name of the selected top-level cell
         """
-        if not top_cells:
-            msg = "No cells found in layout file"
-            raise ValueError(msg)
+        referenced = {child for names in children.values() for child in names}
+        # Never empty: hierarchy_depths has ruled out cycles, and a finite
+        # acyclic hierarchy always has a cell that nothing references.
+        top_cells = sorted(name for name in children if name not in referenced)
 
         if len(top_cells) == 1:
             return top_cells[0]
 
-        # Calculate depth for each cell
-        memo: dict[str, int] = {}
-        cells_with_depth = [
-            (cell, self._calculate_depth(cell, memo)) for cell in top_cells
-        ]
-
         # Sort by depth (descending), then by name (ascending)
-        cells_with_depth.sort(key=lambda x: (-x[1], x[0].name))
-
-        selected = cells_with_depth[0][0]
+        selected = min(top_cells, key=lambda name: (-depths[name], name))
         logger.info(
             "Multiple top-level cells found: %s. Selected '%s' (depth=%d)",
-            [c.name for c in top_cells],
-            selected.name,
-            cells_with_depth[0][1],
+            top_cells,
+            selected,
+            depths[selected],
         )
-
         return selected
 
     def extract(self, file_path: Path) -> str:
@@ -175,31 +219,25 @@ class TopCellExtractor:
 
         Raises:
             ValueError: If file cannot be read or has no cells
+            LayoutHierarchyError: If the cell hierarchy has a cycle or a
+                reference to a missing cell
         """
         logger.info("Extracting top cell from: %s", file_path.name)
 
         library = self._load_library(file_path)
 
-        if not library.cells:
+        # Only Cell objects (not RawCell, which has no references)
+        cells = [c for c in library.cells if isinstance(c, gdstk.Cell)]
+        if not cells:
             msg = f"Layout file contains no cells: {file_path.name}"
             raise ValueError(msg)
 
-        top_cells = self._find_top_cells(library)
+        children = _children_by_cell(cells)
+        depths = hierarchy_depths(children)
+        selected = self._select_top_cell(children, depths)
+        logger.info("Top cell identified: %s", selected)
 
-        if not top_cells:
-            # If no clear top-level cell, use the first cell in the library
-            # This can happen with flat designs
-            logger.warning(
-                "No clear top-level cell found (all cells are referenced). "
-                "Using first cell: %s",
-                library.cells[0].name,
-            )
-            return library.cells[0].name
-
-        selected = self._select_top_cell(top_cells)
-        logger.info("Top cell identified: %s", selected.name)
-
-        return selected.name
+        return selected
 
 
 def extract_top_cell(file_path: Path) -> str | None:
@@ -210,6 +248,10 @@ def extract_top_cell(file_path: Path) -> str | None:
 
     Returns:
         Top cell name, or None if extraction fails
+
+    Raises:
+        LayoutHierarchyError: If the design's cell hierarchy is broken. The
+            message is for the user, so it is not turned into None.
     """
     extractor = TopCellExtractor()
 
