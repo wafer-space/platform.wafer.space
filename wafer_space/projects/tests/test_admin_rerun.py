@@ -6,6 +6,8 @@ ADMIN_RERUN with the requesting user. Owners cannot: they re-upload.
 
 from __future__ import annotations
 
+from datetime import UTC
+from datetime import datetime
 from datetime import timedelta
 from html.parser import HTMLParser
 from http import HTTPStatus
@@ -14,6 +16,8 @@ from typing import Any
 
 import pytest
 from django.core.exceptions import PermissionDenied
+from django.template import Context
+from django.test import RequestFactory
 from django.urls import reverse
 from django.utils import timezone
 
@@ -22,6 +26,8 @@ from wafer_space.projects.check_operations import create_admin_rerun_check
 from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectFile
+from wafer_space.projects.templatetags.rerun_tags import rerun_check_button
+from wafer_space.projects.templatetags.rerun_tags import revision_name
 from wafer_space.shuttles.tests.factories import ShuttleFactory
 from wafer_space.users.tests.factories import UserFactory
 
@@ -399,6 +405,31 @@ class TestButton:
         verified_file(project)
 
         assert rerun_forms(client, UserFactory(is_staff=True), project) == []
+
+
+class TestTag:
+    def test_another_projects_file_raises(self) -> None:
+        """A page passing the wrong project fails loudly, never a button."""
+        project = ProjectFactory()
+        other_revision = verified_file(ProjectFactory())
+        request = RequestFactory().get("/")
+        request.user = UserFactory(is_staff=True)
+
+        with pytest.raises(ValueError, match="is not a revision of project"):
+            rerun_check_button(Context({"request": request}), project, other_revision)
+
+    def test_older_revision_is_named_by_its_upload_time(self) -> None:
+        project = ProjectFactory()
+        older = verified_file(project)
+        ProjectFile.objects.filter(pk=older.pk).update(
+            is_active=False,
+            uploaded_at=datetime(2026, 10, 3, 9, 4, 5, tzinfo=UTC),
+        )
+        older.refresh_from_db()
+
+        assert revision_name(project, older) == (
+            "revision uploaded 2026-10-03 09:04:05 UTC"
+        )
 
 
 def rerun_forms_at(client: Client, url: str) -> list[dict[str, Any]]:

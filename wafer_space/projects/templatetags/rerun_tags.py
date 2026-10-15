@@ -8,6 +8,7 @@ from typing import Any
 from django import template
 from django.urls import reverse
 from django.utils import formats
+from django.utils import timezone
 
 from wafer_space.projects.models import ManufacturabilityCheck
 
@@ -37,7 +38,10 @@ def revision_name(project: Project, project_file: ProjectFile) -> str:
         return "submitted revision"
     if project_file.is_active:
         return "latest revision"
-    uploaded = formats.date_format(project_file.uploaded_at, "Y-m-d H:i")
+    uploaded = formats.date_format(
+        timezone.localtime(project_file.uploaded_at),
+        "Y-m-d H:i:s T",
+    )
     return f"revision uploaded {uploaded}"
 
 
