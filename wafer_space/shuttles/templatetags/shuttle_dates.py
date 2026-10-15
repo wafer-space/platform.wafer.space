@@ -2,8 +2,8 @@
 
 Deadlines are stored as 23:59:59 AoE (Anywhere on Earth, UTC-12) and
 must be shown in AoE: rendered in the site's UTC time zone they fall on
-the next calendar day. Milestones are stored as midnight UTC and are
-shown as that UTC day.
+the next calendar day. The GDS submission deadline is the only shuttle
+date the platform keeps (#346).
 """
 
 from __future__ import annotations
@@ -36,13 +36,6 @@ def aoe_deadline(value: datetime.datetime | None) -> str:
     """Format a deadline like wafer.space: '16 December 2026 @ 11:59 PM AoE'."""
     deadline = _require_aware(value)
     return dateformat.format(deadline.astimezone(AOE), r"j F Y \@ h:i A \A\o\E")
-
-
-@register.filter
-def milestone_date(value: datetime.datetime | None) -> str:
-    """Format a milestone stored as midnight UTC: '8 January 2026'."""
-    milestone = _require_aware(value)
-    return dateformat.format(milestone.astimezone(datetime.UTC), "j F Y")
 
 
 @register.filter

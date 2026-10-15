@@ -68,24 +68,6 @@
                   {% shuttle_deadline shuttle.submission_deadline %}
                 </dd>
               {% endif %}
-              {% if shuttle.production_start_date %}
-                <dt class="col-sm-6">Production Start</dt>
-                <dd class="col-sm-6">
-                  {{ shuttle.production_start_date|milestone_date }}
-                </dd>
-              {% endif %}
-              {% if shuttle.estimated_completion_date %}
-                <dt class="col-sm-6">Est. Completion</dt>
-                <dd class="col-sm-6">
-                  {{ shuttle.estimated_completion_date|milestone_date }}
-                </dd>
-              {% endif %}
-              {% if shuttle.actual_completion_date %}
-                <dt class="col-sm-6">Actual Completion</dt>
-                <dd class="col-sm-6">
-                  {{ shuttle.actual_completion_date|milestone_date }}
-                </dd>
-              {% endif %}
               <dt class="col-sm-6">Created</dt>
               <dd class="col-sm-6">
                 {{ shuttle.created_at|date:"j F Y" }}

@@ -724,6 +724,10 @@ class TestRemoveAssignmentView:
         assert slot.status == ShuttleSlot.Status.AVAILABLE
 
 
+# The detail page's labels for the schedule dates removed by #346.
+DROPPED_DATE_LABELS = ("Production Start", "Est. Completion", "Actual Completion")
+
+
 @pytest.mark.django_db
 class TestShuttleDatesDisplay:
     """Shuttle pages show dates as wafer.space publishes them."""
@@ -752,17 +756,16 @@ class TestShuttleDatesDisplay:
 
         assert self.PUBLISHED_DEADLINE in visible_text(response.content.decode())
 
-    def test_detail_shows_milestone_utc_day(self, client):
-        shuttle = ShuttleFactory(
-            name="G862",
-            production_start_date=datetime.datetime(2026, 1, 8, tzinfo=datetime.UTC),
-        )
+    def test_detail_shows_only_the_gds_deadline(self, client):
+        """The other schedule dates are gone (#346): only the deadline stays."""
+        shuttle = ShuttleFactory(name="G862", submission_deadline=self.DEADLINE_UTC)
 
         response = self._staff_client(client).get(
             reverse("shuttles:detail", kwargs={"name": shuttle.name})
         )
 
-        assert "8 January 2026" in response.content.decode()
+        text = visible_text(response.content.decode())
+        assert [label for label in DROPPED_DATE_LABELS if label in text] == []
 
 
 @pytest.mark.django_db

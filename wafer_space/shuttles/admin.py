@@ -51,9 +51,6 @@ class ShuttleAdmin(admin.ModelAdmin):
             {
                 "fields": (
                     "submission_deadline",
-                    "production_start_date",
-                    "estimated_completion_date",
-                    "actual_completion_date",
                     "created_at",
                 ),
             },

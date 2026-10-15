@@ -212,3 +212,17 @@ def test_reserve_refuses_archived_project() -> None:
         slot.reserve(project, UserFactory(is_staff=True))
     slot.refresh_from_db()
     assert slot.project is None
+
+
+def test_schedule_dates_other_than_the_deadline_are_gone() -> None:
+    """The schedule dates that drifted from wafer.space are gone (#346)."""
+    dropped = (
+        "production_start_date",
+        "estimated_completion_date",
+        "actual_completion_date",
+    )
+
+    assert (
+        [name for name in dropped if hasattr(Shuttle, name)],
+        hasattr(Shuttle, "submission_deadline"),
+    ) == ([], True)
