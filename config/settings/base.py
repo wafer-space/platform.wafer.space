@@ -2,6 +2,7 @@
 """Base settings to build other settings files upon."""
 
 from pathlib import Path
+from typing import Any
 
 import environ
 from django.core.exceptions import ImproperlyConfigured
@@ -358,6 +359,74 @@ LOGGING = {
     },
     "root": {"level": "INFO", "handlers": ["console"]},
 }
+
+
+def deployed_logging() -> dict[str, Any]:
+    """LOGGING for prod and stage, where errors email ADMINS (issue #293).
+
+    The wafer_space logger is at INFO, like root: a logger's level is
+    checked before its records propagate, so ERROR here dropped every
+    wafer_space.* INFO and WARNING record before it reached the console or
+    the Celery worker log (issue #434). The mail_admins handler's own
+    ERROR level keeps the email to errors.
+    """
+    return {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "filters": {
+            "require_debug_false": {"()": "django.utils.log.RequireDebugFalse"}
+        },
+        "formatters": {
+            "verbose": {
+                "format": (
+                    "%(levelname)s %(asctime)s %(module)s %(process)d "
+                    "%(thread)d %(message)s"
+                ),
+            },
+        },
+        "handlers": {
+            # Rate-limited: at most one email per error signature per hour,
+            # so a repeating failure (e.g. a periodic task erroring every few
+            # minutes) cannot flood ADMINS. See issue #293.
+            "mail_admins": {
+                "level": "ERROR",
+                "filters": ["require_debug_false"],
+                "class": "wafer_space.core.log.RateLimitedAdminEmailHandler",
+            },
+            "console": {
+                "level": "DEBUG",
+                "class": "logging.StreamHandler",
+                "formatter": "verbose",
+            },
+        },
+        "root": {"level": "INFO", "handlers": ["console"]},
+        "loggers": {
+            "django.request": {
+                "handlers": ["mail_admins"],
+                "level": "ERROR",
+                "propagate": True,
+            },
+            "django.security.DisallowedHost": {
+                "level": "ERROR",
+                "handlers": ["console", "mail_admins"],
+                "propagate": True,
+            },
+            # Application errors (logger.error/logger.exception anywhere
+            # under wafer_space.*, including Celery tasks and the
+            # task_failure bridge in config/celery.py) email ADMINS, and
+            # every record from INFO up propagates to root's console and
+            # the Celery worker log. Celery's root-logger hijack in workers
+            # does not touch explicitly-configured loggers, so this works in
+            # web and worker processes alike. See issue #293: metadata
+            # fetches failed every 5 minutes for a month with no email.
+            "wafer_space": {
+                "handlers": ["mail_admins"],
+                "level": "INFO",
+                "propagate": True,
+            },
+        },
+    }
+
 
 # django-allauth
 # ------------------------------------------------------------------------------
