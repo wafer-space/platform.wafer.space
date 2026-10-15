@@ -160,6 +160,14 @@ class TermsOfService(models.Model):
 
                 version = file_path.stem
                 is_active = post.metadata.get("is_active", False)
+                # Front matter is untyped YAML: "is_active: yes" or "1" must
+                # not silently become a truthy TOS activation.
+                if not isinstance(is_active, bool):
+                    msg = (
+                        f"{file_path}: front matter is_active must be true or "
+                        f"false, got {is_active!r}"
+                    )
+                    raise TypeError(msg)
 
                 # Create or update database entry
                 tos, created = cls.objects.get_or_create(
