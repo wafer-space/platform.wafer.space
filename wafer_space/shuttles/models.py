@@ -162,21 +162,6 @@ class Shuttle(models.Model):
         blank=True,
         help_text="Deadline for project submissions",
     )
-    production_start_date = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="Expected production start date",
-    )
-    estimated_completion_date = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="Estimated completion date",
-    )
-    actual_completion_date = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="Actual completion date",
-    )
 
     # Manufacturing details
     technology_node = models.CharField(
