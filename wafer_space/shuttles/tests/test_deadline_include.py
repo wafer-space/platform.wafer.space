@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import re
 
 from django.template import Context
 from django.template import Template
@@ -18,6 +19,16 @@ def render(deadline: datetime.datetime) -> str:
     return TEMPLATE.render(Context({"deadline": deadline}))
 
 
+def has_local_time(html: str, iso_utc: str) -> bool:
+    """The <time> element carries the UTC instant and the JS hook.
+
+    Whitespace between the attributes is the template's layout, not
+    behaviour, so any amount is accepted.
+    """
+    pattern = rf'<time\s+datetime="{re.escape(iso_utc)}"\s+data-local-time>'
+    return re.search(pattern, html) is not None
+
+
 def future(days: int) -> datetime.datetime:
     return timezone.now() + datetime.timedelta(days=days, hours=1)
 
@@ -31,7 +42,7 @@ def test_shows_label_and_aoe_date_with_zone_linked() -> None:
 
 def test_local_time_element_carries_utc_instant_and_fallback_link() -> None:
     html = render(G803_DEADLINE)
-    assert '<time datetime="2026-12-17T11:59:59Z" data-local-time>' in html
+    assert has_local_time(html, "2026-12-17T11:59:59Z")
     assert "fixedtime.html?iso=20261216T2359&amp;p1=3399" in html
 
 
