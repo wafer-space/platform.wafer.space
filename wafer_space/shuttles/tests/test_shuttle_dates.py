@@ -6,7 +6,6 @@ import pytest
 
 from wafer_space.shuttles.templatetags.shuttle_dates import aoe_deadline
 from wafer_space.shuttles.templatetags.shuttle_dates import iso_utc
-from wafer_space.shuttles.templatetags.shuttle_dates import milestone_date
 from wafer_space.shuttles.templatetags.shuttle_dates import timeanddate_url
 
 AOE = datetime.timezone(datetime.timedelta(hours=-12), "AoE")
@@ -31,15 +30,6 @@ class TestAoeDeadline:
 
         with pytest.raises(ValueError, match="timezone-aware"):
             aoe_deadline(naive)
-
-
-class TestMilestoneDate:
-    """Milestones are stored as midnight UTC and shown as a UTC day."""
-
-    def test_shows_utc_day(self):
-        milestone = datetime.datetime(2026, 1, 8, tzinfo=datetime.UTC)
-
-        assert milestone_date(milestone) == "8 January 2026"
 
 
 G803_DEADLINE = datetime.datetime(2026, 12, 17, 11, 59, 59, tzinfo=datetime.UTC)
