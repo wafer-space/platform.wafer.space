@@ -21,7 +21,7 @@ entry in the platform with the same config as Run #3."
 | `name` | `G804` | |
 | `description` | `GF180MCU Shuttle Run 4` | same pattern as G801 to G803 |
 | `status` | `planning` | not open: the project form offers only `open` shuttles, so owners cannot pick G804 yet. Staff can already duplicate projects onto it (the admin's duplicate action accepts `planning`). |
-| `submission_deadline`, `production_start_date`, `estimated_completion_date`, `actual_completion_date` | empty | no published dates yet |
+| `submission_deadline` | empty | no published date yet (the only shuttle date the platform keeps, #346) |
 | `crowd_supply_url` | empty | no CrowdSupply campaign page yet |
 | `technology_node`, `foundry`, `wafer_size`, `total_cost`, `cost_per_slot` | copied from G803 | "same config as Run #3": the script copies whatever the G803 row holds (the production read of 11 Oct 2026 did not include these columns). If Run #4's pricing differs, update the cost fields when it is published. |
 | grid | `shuttles/G804-layout.yaml` | identical to G803's: 6 x 9 = 54 slots (18 full, 18 half-height, 9 half-width, 9 quarter) |
@@ -102,11 +102,8 @@ for field in (
         getattr(run3, field) == getattr(s, field),
     )
 print(
-    "dates:",
+    "deadline:",
     s.submission_deadline,
-    s.production_start_date,
-    s.estimated_completion_date,
-    s.actual_completion_date,
 )
 print("crowd_supply_url:", repr(s.crowd_supply_url))
 print("slots:", sorted(Counter(s.slots.values_list("slot_size", flat=True)).items()))
@@ -121,7 +118,7 @@ foundry <G803 value> <same value> True
 wafer_size <G803 value> <same value> True
 total_cost <G803 value> <same value> True
 cost_per_slot <G803 value> <same value> True
-dates: None None None None
+deadline: None
 crowd_supply_url: ''
 slots: [('0p5x0p5', 9), ('0p5x1', 9), ('1x0p5', 18), ('1x1', 18)]
 ```
@@ -234,11 +231,8 @@ run3 = Shuttle.objects.get(name="G803")
 for field in ("technology_node", "foundry", "wafer_size"):
     print(field, getattr(run3, field) == getattr(s, field))
 print(
-    "dates:",
+    "deadline:",
     s.submission_deadline,
-    s.production_start_date,
-    s.estimated_completion_date,
-    s.actual_completion_date,
 )
 print("urls:", repr(s.crowd_supply_url), repr(s.website_url))
 print("slots:", s.slots.count())
@@ -260,7 +254,7 @@ Test shuttle: designs are checked, never manufactured
 technology_node True
 foundry True
 wafer_size True
-dates: None None None None
+deadline: None
 urls: '' ''
 slots: 0
 default pick is G800: False
