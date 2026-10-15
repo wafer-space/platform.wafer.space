@@ -99,10 +99,17 @@
             <option value="">All Sizes</option>
             {% for slot_size in stats.keys %}<option value="{{ slot_size.value }}">{{ slot_size.label }}</option>{% endfor %}
           </select>
-          <div class="form-check mb-0 text-nowrap">
-            <input class="form-check-input" type="checkbox" id="unassigned-only" />
-            <label class="form-check-label" for="unassigned-only">Unassigned only</label>
-          </div>
+          {# A closed shuttle shows only its assigned projects by default (#342) #}
+          <label class="visually-hidden" for="show-filter">Show</label>
+          <select class="form-select form-select-sm"
+                  style="width: auto"
+                  id="show-filter">
+            {% for value, label in show_filter_choices %}
+              <option value="{{ value }}"
+                      {% if value == show_filter_default %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+          <small class="text-muted text-nowrap" id="shown-count" aria-live="polite"></small>
         </div>
       </div>
       <div class="card-body">
@@ -169,7 +176,9 @@
           <tbody>
             {% for project in projects %}
               <tr data-size="{{ project.slot_size }}"
-                  data-assigned="{% if project.shuttle_slots.exists %}true{% else %}false{% endif %}">
+                  data-assigned="{% if project.shuttle_slots.all %}true{% else %}false{% endif %}"
+                  data-cs-order="{% if project.crowd_supply_order_id %}true{% else %}false{% endif %}"
+                  data-manufacturable="{% if project.latest_file_manufacturable %}true{% else %}false{% endif %}">
                 <td class="font-monospace">{{ project.full_id|default:project.project_id }}</td>
                 <td class="font-monospace"
                     data-sort-value="{{ project.crowd_supply_order_id }}">
