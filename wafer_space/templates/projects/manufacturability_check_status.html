@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% load static duration_filters precheck_tags %}
+{% load static duration_filters precheck_tags rerun_tags %}
 
 {% block title %}
   Manufacturability Check Status - Admin
@@ -136,6 +136,7 @@
                   <th style="width: 1%" title="CrowdSupply Order Number">CS#</th>
                   <th>Project</th>
                   <th style="width: 120px;">Status</th>
+                  <th style="width: 1%;">Re-run</th>
                 </tr>
               </thead>
               <tbody>
@@ -193,6 +194,12 @@
                       <span class="text-muted">({{ check.project.user.username }})</span>
                     </td>
                     <td>{% badge_check_status_and_version check %}</td>
+                    {# Failed or outdated, and still its file's latest check (#205) #}
+                    <td class="text-nowrap">
+                      {% if check.pk in rerun_offered_ids %}
+                        {% rerun_check_button check.project_file.project check.project_file check %}
+                      {% endif %}
+                    </td>
                   </tr>
                 {% endfor %}
               </tbody>

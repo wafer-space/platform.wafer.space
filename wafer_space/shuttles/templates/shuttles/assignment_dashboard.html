@@ -2,6 +2,7 @@
 
 {% load static %}
 {% load precheck_tags %}
+{% load rerun_tags %}
 
 {% block title %}
   {{ shuttle.name }} Assignment
@@ -234,6 +235,10 @@
                     </div>
                   {% else %}
                     {% badge_check_status_and_version project.latest_file_check %}
+                  {% endif %}
+                  {# Staff re-run of the submitted revision only (#205); none if unsubmitted. #}
+                  {% if project.submitted_file %}
+                    {% rerun_check_button project project.submitted_file project.submitted_file_check %}
                   {% endif %}
                 </td>
                 <td>

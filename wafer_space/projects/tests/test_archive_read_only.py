@@ -50,6 +50,9 @@ REFUSED_ON_ARCHIVED = {
     "compliance_certify",
 }
 REFUSED_ON_ARCHIVED_BY_CHECK = {"check_drc_update_requeue"}
+# Staff re-run of one revision (#205): refused on an archived project by
+# create_admin_rerun_check; tested in test_admin_rerun.py.
+REFUSED_ON_ARCHIVED_BY_FILE = {"rerun_check"}
 PROJECT_KWARGS = ("<uuid:pk>", "<int:check_id>")
 
 
@@ -65,7 +68,10 @@ def project_url_names() -> set[str]:
 
 def test_every_project_url_is_classified() -> None:
     assert project_url_names() == (
-        ALLOWED_ON_ARCHIVED | REFUSED_ON_ARCHIVED | REFUSED_ON_ARCHIVED_BY_CHECK
+        ALLOWED_ON_ARCHIVED
+        | REFUSED_ON_ARCHIVED
+        | REFUSED_ON_ARCHIVED_BY_CHECK
+        | REFUSED_ON_ARCHIVED_BY_FILE
     )
 
 
