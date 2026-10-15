@@ -1,4 +1,4 @@
-"""Middleware that surfaces the real client IP behind the nginx proxy."""
+"""Middleware for running behind the nginx proxy: real client IP, user header."""
 
 from __future__ import annotations
 
@@ -44,3 +44,30 @@ class RealClientIPMiddleware:
             if client_ip:
                 request.META["REMOTE_ADDR"] = client_ip
         return self.get_response(request)
+
+
+# nginx logs this header and strips it from what the client receives
+# (hetzner-ansible #165: $upstream_http_x_platform_user, proxy_hide_header).
+PLATFORM_USER_HEADER = "X-Platform-User"
+
+
+class PlatformUserHeaderMiddleware:
+    """Put the authenticated user's primary key in an X-Platform-User header.
+
+    It lets the nginx and gunicorn access logs record which account made a
+    request (issue #379) without the app storing anything. The header is
+    set from the user at response time, so a login response carries the
+    newly logged-in user and a logout response carries none. Anonymous
+    responses never carry it.
+    """
+
+    def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:
+        """Initialize middleware."""
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        """Add the header to an authenticated user's response."""
+        response = self.get_response(request)
+        if request.user.is_authenticated:
+            response[PLATFORM_USER_HEADER] = str(request.user.pk)
+        return response
