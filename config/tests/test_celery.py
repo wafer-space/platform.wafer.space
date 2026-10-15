@@ -127,3 +127,46 @@ def test_result_expiry_outlives_task_time_limit(
     ]
 
     assert app.conf.result_expires > max(limits)
+
+
+# Makefile worker targets (issue #384)
+# ------------------------------------------------------------------------------
+# `make celery` used to consume "celery", "manufacturability" and "referrals",
+# none of which any task routes to, so the worker it started never ran a task.
+
+MAKEFILE = Path(__file__).resolve().parents[2] / "Makefile"
+
+
+def _makefile_queue_lists() -> dict[str, set[str]]:
+    """Return the Makefile's CELERY_QUEUES* variables, expanded to queue sets."""
+    raw = dict(
+        re.findall(r"^(CELERY_QUEUES\w*) := (\S+)$", MAKEFILE.read_text(), re.MULTILINE)
+    )
+    expanded = {
+        name: re.sub(r"\$\((\w+)\)", lambda ref: raw[ref.group(1)], value)
+        for name, value in raw.items()
+    }
+    return {name: set(value.split(",")) for name, value in expanded.items()}
+
+
+def _makefile_target_queues(target: str) -> set[str]:
+    """Return the queues the worker started by ``make <target>`` consumes."""
+    recipe = re.search(
+        rf"^{re.escape(target)}:.*?\n((?:\t.*\n)+)", MAKEFILE.read_text(), re.MULTILINE
+    )
+    assert recipe, f"no recipe for make {target}"
+    queue_ref = re.search(r"worker -Q \$\((\w+)\)", recipe.group(1))
+    assert queue_ref, f"make {target} does not take -Q from a CELERY_QUEUES variable"
+    return _makefile_queue_lists()[queue_ref.group(1)]
+
+
+def test_make_celery_consumes_every_procfile_queue() -> None:
+    """`make celery` runs one worker that consumes all the queues tasks use."""
+    assert _makefile_target_queues("celery") == _procfile_queues()
+
+
+def test_make_celery_manufacturability_consumes_the_docker_queues() -> None:
+    """`make celery-manufacturability` consumes exactly the Docker check queues."""
+    docker_queues = {queue for queue in _procfile_queues() if queue.startswith("dock:")}
+
+    assert _makefile_target_queues("celery-manufacturability") == docker_queues
