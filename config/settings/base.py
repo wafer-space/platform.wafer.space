@@ -511,6 +511,15 @@ CELERY_WORKER_MAX_TASKS_PER_CHILD = 100
 # the memory was since freed.
 CELERY_WORKER_MAX_MEMORY_PER_CHILD = 1024 * 1024  # kB (~1GiB peak RSS)
 
+# Broker watchdog (issue #426, wafer_space/core/broker_watchdog.py)
+# A worker whose consumer stops taking messages stays alive, so systemd
+# shows it running. Every worker's main process polls the broker, and exits
+# (CRITICAL to ADMINS, then exit code 70 for systemd to restart it) once a
+# message has waited this long with nothing taken and no task running.
+# PLACEHOLDER until set from production's data before merge.
+WORKER_WEDGE_EXIT_SECONDS = 5 * 60
+WORKER_WEDGE_POLL_SECONDS = 30
+
 # Download task configuration
 # Celery retry settings for download tasks (built-in retry mechanism)
 DOWNLOAD_TASK_MAX_RETRIES = 2  # Total of 3 attempts (initial + 2 retries)
