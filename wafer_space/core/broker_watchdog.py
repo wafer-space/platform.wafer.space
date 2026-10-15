@@ -49,6 +49,7 @@ from celery.worker import state as worker_state
 from django.conf import settings
 from sqlalchemy import bindparam
 from sqlalchemy import create_engine
+from sqlalchemy import make_url
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.pool import NullPool
@@ -65,6 +66,18 @@ SQLA_SCHEME = "sqla+"
 # EX_SOFTWARE: the unit's Restart= policy restarts the worker on it.
 WEDGED_EXIT_CODE = 70
 PROC_SELF_FD = Path("/proc/self/fd")
+POLL_TIMEOUT_SECONDS = 10
+# libpq connection parameters, the same for psycopg2 and psycopg 3: give up
+# connecting after 10 s, cancel the query after 10 s, and notice a dead TCP
+# peer within about a minute.
+POSTGRESQL_POLL_LIMITS: dict[str, Any] = {
+    "connect_timeout": POLL_TIMEOUT_SECONDS,
+    "options": f"-c statement_timeout={POLL_TIMEOUT_SECONDS * 1000}",
+    "keepalives": 1,
+    "keepalives_idle": 30,
+    "keepalives_interval": 10,
+    "keepalives_count": 3,
+}
 
 OLDEST_WAITING_SQL = text(
     "SELECT min(m.id) FROM kombu_message m "
@@ -200,8 +213,11 @@ class BrokerWatchdog:
             self.state.saw_oldest_waiting(self.oldest_waiting_id(), now)
         except SQLAlchemyError:
             # The broker database is unreachable: that is not this worker
-            # being wedged, and the consumer reports it itself.
+            # being wedged, and the consumer reports it itself. Forget the
+            # waiting message, so the outage's length isn't counted as
+            # waiting time once the database is back and kombu reconnects.
             logger.exception("Broker watchdog could not read the broker")
+            self.state.saw_oldest_waiting(None, now)
             return False
         return self.state.is_wedged(
             now, busy=worker_is_busy(), limit=settings.WORKER_WEDGE_EXIT_SECONDS
@@ -219,11 +235,18 @@ def broker_engine(broker_url: str) -> Engine | None:
     """The watchdog's own engine for an SQLAlchemy broker URL, else None.
 
     NullPool: each poll opens and closes its connection, so no connection
-    is held while the pool forks children.
+    is held while the pool forks children. On PostgreSQL every poll is
+    bounded (POSTGRESQL_POLL_LIMITS): a wedge can be a connection that hangs
+    in libpq with no error, and the watchdog's own poll must not hang the
+    same way.
     """
     if not broker_url.startswith(SQLA_SCHEME):
         return None
-    return create_engine(broker_url.removeprefix(SQLA_SCHEME), poolclass=NullPool)
+    url = make_url(broker_url.removeprefix(SQLA_SCHEME))
+    connect_args = (
+        POSTGRESQL_POLL_LIMITS if url.get_backend_name() == "postgresql" else {}
+    )
+    return create_engine(url, poolclass=NullPool, connect_args=connect_args)
 
 
 # The running watchdog (one per worker main process), for note_received.

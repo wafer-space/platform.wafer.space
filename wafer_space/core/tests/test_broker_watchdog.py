@@ -3,9 +3,11 @@
 The wedge itself (a main process blocked in libpq's poll()) cannot be made
 on demand in a unit test, so these tests pin down each part: when the
 watchdog calls it a wedge and when it must not, what it reports before it
-exits, that it reads the real kombu tables, and that its thread keeps
-running while the main thread waits on PostgreSQL, as the wedged worker's
-main thread did.
+exits, that it reads the real kombu tables, and how it is started.
+
+That its thread keeps running while the main thread waits in libpq, as the
+wedged worker's main thread did, needs PostgreSQL, which the test settings
+don't use; it was checked separately, and the PR that added this shows it.
 """
 
 from __future__ import annotations
@@ -33,6 +35,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
 from wafer_space.core import broker_watchdog
+from wafer_space.core.broker_watchdog import POSTGRESQL_POLL_LIMITS
 from wafer_space.core.broker_watchdog import WATCHDOGS
 from wafer_space.core.broker_watchdog import WEDGED_EXIT_CODE
 from wafer_space.core.broker_watchdog import BrokerWatchdog
@@ -268,6 +271,21 @@ class TestItReadsTheBroker:
 
         assert watchdog_on(broker_url).oldest_waiting_id() is None
 
+    def test_a_broker_outage_is_not_counted_as_waiting(self, broker_url: str) -> None:
+        """After the database comes back, the same message's clock restarts."""
+        watchdog = watchdog_on(broker_url)
+        watchdog.state.last_received = 0.0
+        error = OperationalError("SELECT", {}, OSError("connection refused"))
+        with patch.object(watchdog, "oldest_waiting_id", return_value=42):
+            watchdog.poll_once(10.0)
+        with patch.object(watchdog, "oldest_waiting_id", side_effect=error):
+            watchdog.poll_once(10.0 + LIMIT)
+
+        with patch.object(watchdog, "oldest_waiting_id", return_value=42):
+            wedged = watchdog.poll_once(10.0 + LIMIT + 30)
+
+        assert not wedged
+
     def test_an_unreadable_broker_is_logged_not_called_a_wedge(
         self, admin_mail: list[EmailMessage], broker_url: str
     ) -> None:
@@ -311,6 +329,25 @@ class TestStartingIt:
 
         assert engine is not None
         assert type(engine.pool).__name__ == "NullPool"
+
+    def test_its_postgresql_polls_cannot_hang(self) -> None:
+        """A hung poll would silence the watchdog in the very failure it guards."""
+        with patch.object(broker_watchdog, "create_engine") as create:
+            broker_engine("sqla+postgresql://u@db/wafer_space")
+
+        assert create.call_args.kwargs["connect_args"] == POSTGRESQL_POLL_LIMITS
+
+    def test_its_postgresql_limits_are_ten_seconds(self) -> None:
+        assert (
+            POSTGRESQL_POLL_LIMITS["connect_timeout"],
+            POSTGRESQL_POLL_LIMITS["options"],
+        ) == (10, "-c statement_timeout=10000")
+
+    def test_sqlite_gets_no_libpq_parameters(self) -> None:
+        with patch.object(broker_watchdog, "create_engine") as create:
+            broker_engine("sqla+sqlite:///broker.sqlite")
+
+        assert create.call_args.kwargs["connect_args"] == {}
 
     def test_a_received_message_is_noted(self) -> None:
         """config/celery.py connects it to task_received."""

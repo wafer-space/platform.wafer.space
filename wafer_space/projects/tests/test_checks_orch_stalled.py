@@ -68,7 +68,7 @@ class TestWhenItAlerts:
         assert checks_orch_stalled()["stalled"]
         assert len(admin_mail) == 1
 
-    def test_the_email_is_critical_and_names_the_worker(
+    def test_the_email_is_critical_and_names_checks_orch(
         self, admin_mail: list[EmailMessage]
     ) -> None:
         a_result(CHECKS_RUNNING_TASK_NAME, LIMIT + timedelta(minutes=1))
