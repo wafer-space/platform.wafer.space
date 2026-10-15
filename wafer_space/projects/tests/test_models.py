@@ -3,6 +3,7 @@
 import hashlib
 from collections.abc import Mapping
 from datetime import timedelta
+from typing import TypedDict
 
 import pytest
 from django.core.cache import cache
@@ -3643,3 +3644,165 @@ class TestFactoryProjectIds:
     def test_ids_are_always_valid(self, n: int) -> None:
         """1000 used to give 'T1000' (5 characters), failing later tests."""
         validate_project_id(factory_project_id(n))
+
+
+Status = ManufacturabilityCheck.Status
+
+
+class _FinishResult(TypedDict):
+    is_manufacturable: bool
+    errors: list[str]
+    warnings: list[str]
+    tool_versions: dict[str, str]
+
+
+FINISH_RESULT: _FinishResult = {
+    "is_manufacturable": True,
+    "errors": [],
+    "warnings": [],
+    "tool_versions": {},
+}
+
+
+def _a_copy_read_in(status: Status) -> ManufacturabilityCheck:
+    """A check read in `status`, as a task reads it at its start."""
+    check = ManufacturabilityCheckFactory(status=status)
+    return ManufacturabilityCheck.objects.get(pk=check.pk)
+
+
+def _move_the_row_to(check: ManufacturabilityCheck, status: Status) -> None:
+    """Another task changes the row; `check` still holds the old status."""
+    ManufacturabilityCheck.objects.filter(pk=check.pk).update(status=status)
+
+
+def _row_status(check: ManufacturabilityCheck) -> str:
+    return ManufacturabilityCheck.objects.values_list("status", flat=True).get(
+        pk=check.pk
+    )
+
+
+@pytest.mark.django_db
+class TestTransitionsCheckTheRow:
+    """A mark_* call on a stale copy cannot overwrite a newer state (issue #426).
+
+    Check 809 on production: a second do_analyzing read the check while it
+    was ANALYZING, the first one finished it, and the second then marked it
+    ERROR from its stale copy, over the pass.
+    """
+
+    @pytest.mark.parametrize(
+        ("read_in", "row_moved_to", "mark", "kwargs"),
+        [
+            (Status.PENDING, Status.CANCELLING, "mark_dispatching", {"server_id": "s"}),
+            (
+                Status.DISPATCHING,
+                Status.CANCELLING,
+                "mark_starting",
+                {"docker_image": "i", "docker_image_digest": "sha256:0"},
+            ),
+            (
+                Status.STARTING,
+                Status.CANCELLING,
+                "mark_running",
+                {"docker_container_id": "c", "docker_command": "x"},
+            ),
+            (
+                Status.RUNNING,
+                Status.CANCELLING,
+                "mark_analyzing",
+                {"docker_exit_code": 0},
+            ),
+            (Status.ANALYZING, Status.ERROR, "mark_finished", FINISH_RESULT),
+            (Status.ANALYZING, Status.FINISHED, "mark_error", {"error_message": "e"}),
+            (Status.RUNNING, Status.FINISHED, "mark_cancelling", {"reason": "r"}),
+            (Status.CANCELLING, Status.CANCELLED, "mark_cancelled", {}),
+        ],
+    )
+    def test_a_stale_copy_is_refused(
+        self,
+        read_in: Status,
+        row_moved_to: Status,
+        mark: str,
+        kwargs: dict[str, object],
+    ) -> None:
+        """The row's newer status stays, and the call raises."""
+        check = _a_copy_read_in(read_in)
+        _move_the_row_to(check, row_moved_to)
+
+        with pytest.raises(InvalidStateTransitionError):
+            getattr(check, mark)(**kwargs)
+
+        assert _row_status(check) == row_moved_to
+
+    def test_a_finished_check_keeps_its_result(self) -> None:
+        """The 809 case: the pass and its fields survive the stale mark_error."""
+        stale = _a_copy_read_in(Status.ANALYZING)
+        ManufacturabilityCheck.objects.get(pk=stale.pk).mark_finished(**FINISH_RESULT)
+
+        with pytest.raises(InvalidStateTransitionError):
+            stale.mark_error(error_message="second do_analyzing failed")
+
+        row = ManufacturabilityCheck.objects.get(pk=stale.pk)
+        assert (row.status, row.is_manufacturable, row.error_message) == (
+            Status.FINISHED,
+            True,
+            "",
+        )
+
+    def test_a_refused_mark_error_adds_no_log_marker(self) -> None:
+        """Nothing after the refused UPDATE runs: the logs are left alone."""
+        stale = _a_copy_read_in(Status.ANALYZING)
+        ManufacturabilityCheck.objects.filter(pk=stale.pk).update(
+            status=Status.FINISHED, processing_logs="the pass's logs"
+        )
+
+        with pytest.raises(InvalidStateTransitionError):
+            stale.mark_error(error_message="e")
+
+        row = ManufacturabilityCheck.objects.get(pk=stale.pk)
+        assert row.processing_logs == "the pass's logs"
+
+    def test_a_refused_finish_leaves_the_project_status_alone(self) -> None:
+        """mark_finished updates the project only when the check's UPDATE applied."""
+        stale = _a_copy_read_in(Status.ANALYZING)
+        project_status = stale.project.status
+        _move_the_row_to(stale, Status.ERROR)
+
+        with pytest.raises(InvalidStateTransitionError):
+            stale.mark_finished(**FINISH_RESULT)
+
+        stale.project.refresh_from_db()
+        assert stale.project.status == project_status
+
+    def test_the_refused_copy_is_reloaded(self) -> None:
+        """After a refusal the object shows the row's status, not the attempted one."""
+        stale = _a_copy_read_in(Status.ANALYZING)
+        _move_the_row_to(stale, Status.FINISHED)
+
+        with pytest.raises(InvalidStateTransitionError):
+            stale.mark_error(error_message="e")
+
+        assert stale.status == Status.FINISHED
+
+    def test_the_error_names_the_rows_status(self) -> None:
+        """The message says what the row is in, not what the copy believed."""
+        stale = _a_copy_read_in(Status.ANALYZING)
+        _move_the_row_to(stale, Status.FINISHED)
+
+        with pytest.raises(InvalidStateTransitionError) as raised:
+            stale.mark_error(error_message="e")
+
+        assert raised.value.from_status == Status.FINISHED
+
+    def test_a_stale_copy_whose_row_still_allows_it_goes_ahead(self) -> None:
+        """The condition is the row's status, not the copy's.
+
+        The copy says RUNNING, the row has moved on to ANALYZING, and
+        ANALYZING -> ERROR is allowed, so the error is recorded.
+        """
+        stale = _a_copy_read_in(Status.RUNNING)
+        _move_the_row_to(stale, Status.ANALYZING)
+
+        stale.mark_error(error_message="lost the container")
+
+        assert _row_status(stale) == Status.ERROR

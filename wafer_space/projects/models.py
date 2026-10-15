@@ -2373,6 +2373,41 @@ class ManufacturabilityCheck(models.Model):
         allowed = self.ALLOWED_TRANSITIONS.get(current_status, set())
         return new_status in allowed
 
+    def _save_transition(self, *, update_fields: list[str]) -> None:
+        """Save a status change only if the row's status still allows it.
+
+        The mark_* methods check the transition against this object's status,
+        which can be stale: another task can have moved the row on since it
+        was read. In issue #426 a second do_analyzing marked a FINISHED check
+        ERROR from its ANALYZING copy. The UPDATE is conditional on the row's
+        status, so a stale copy cannot overwrite a newer state.
+
+        Args:
+            update_fields: The fields to write, "status" among them.
+
+        Raises:
+            InvalidStateTransitionError: The row's status does not allow the
+                transition. This object is reloaded from the row first.
+        """
+        to_status = self.Status(self.status)
+        from_statuses = [
+            status
+            for status, targets in self.ALLOWED_TRANSITIONS.items()
+            if to_status in targets
+        ]
+        values = {name: getattr(self, name) for name in update_fields}
+        updated = (
+            type(self)
+            .objects.filter(pk=self.pk, status__in=from_statuses)
+            .update(**values)
+        )
+        if not updated:
+            self.refresh_from_db()
+            raise InvalidStateTransitionError(
+                from_status=self.status,
+                to_status=to_status,
+            )
+
     def mark_dispatching(self, *, server_id: str) -> None:
         """Transition PENDING -> DISPATCHING with server assignment.
 
@@ -2391,7 +2426,7 @@ class ManufacturabilityCheck(models.Model):
         self.status = self.Status.DISPATCHING
         self.docker_server_id = server_id
         self.dispatching_started_at = timezone.now()
-        self.save(
+        self._save_transition(
             update_fields=["status", "docker_server_id", "dispatching_started_at"]
         )
 
@@ -2415,7 +2450,7 @@ class ManufacturabilityCheck(models.Model):
         self.docker_image = docker_image
         self.docker_image_digest = docker_image_digest
         self.starting_started_at = timezone.now()
-        self.save(
+        self._save_transition(
             update_fields=[
                 "status",
                 "docker_image",
@@ -2449,7 +2484,7 @@ class ManufacturabilityCheck(models.Model):
         self.docker_container_id = docker_container_id
         self.docker_command = docker_command
         self.container_started_at = timezone.now()
-        self.save(
+        self._save_transition(
             update_fields=[
                 "status",
                 "docker_container_id",
@@ -2476,7 +2511,7 @@ class ManufacturabilityCheck(models.Model):
         self.status = self.Status.ANALYZING
         self.docker_exit_code = docker_exit_code
         self.container_finished_at = timezone.now()
-        self.save(
+        self._save_transition(
             update_fields=[
                 "status",
                 "docker_exit_code",
@@ -2515,7 +2550,7 @@ class ManufacturabilityCheck(models.Model):
         self.warnings = warnings
         self.tool_versions = tool_versions
         self.analysis_completed_at = timezone.now()
-        self.save(
+        self._save_transition(
             update_fields=[
                 "status",
                 "is_manufacturable",
@@ -2570,7 +2605,7 @@ class ManufacturabilityCheck(models.Model):
         if processing_logs:
             self.processing_logs = processing_logs
 
-        self.save(
+        self._save_transition(
             update_fields=[
                 "status",
                 "error_message",
@@ -2600,7 +2635,7 @@ class ManufacturabilityCheck(models.Model):
             )
 
         self.status = self.Status.CANCELLING
-        self.save(update_fields=["status"])
+        self._save_transition(update_fields=["status"])
 
         # Append cancellation reason using helper
         self.append_to_processing_logs(f"CANCELLATION REQUESTED: {reason}")
@@ -2624,7 +2659,7 @@ class ManufacturabilityCheck(models.Model):
         self.status = self.Status.CANCELLED
         # Clear container tracking fields (cleanup already done)
         self.docker_container_id = ""
-        self.save(
+        self._save_transition(
             update_fields=[
                 "status",
                 "docker_container_id",
