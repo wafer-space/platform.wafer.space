@@ -51,15 +51,18 @@ class MissingCellReferenceError(LayoutHierarchyError):
 
 
 def _children_by_cell(cells: list[gdstk.Cell]) -> dict[str, list[str]]:
-    """Map each cell's name to the names of the cells it references.
+    """Map each cell's name to the names of the cells it references, once each.
 
-    A reference to a cell that isn't in the file is kept by gdstk as the
-    plain name (a str), so it is listed by name too; _top_cells rejects it.
+    A design places the same cell many times (G802: 13.1 million references,
+    98,621 distinct parent-child links). gdstk returns the same Cell object
+    for every reference to a cell, so the targets are deduplicated before
+    their names are read. A reference to a cell that isn't in the file is
+    kept by gdstk as the plain name (a str); _top_cells rejects it.
     """
     return {
         cell.name: [
-            target if isinstance(target := ref.cell, str) else target.name
-            for ref in cell.references
+            target if isinstance(target, str) else target.name
+            for target in dict.fromkeys([ref.cell for ref in cell.references])
         ]
         for cell in cells
     }
