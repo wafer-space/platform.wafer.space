@@ -34,6 +34,7 @@ This directory contains documentation for the wafer.space platform.
 | [Download Retry Architecture](download-retry-architecture.md) | Retry logic and error handling for downloads |
 | [Download State Verification](download-state-verification.md) | File hash verification during downloads |
 | [Admin Project Access](admin_project_access.md) | Staff access to user projects with audit logging |
+| [Request Analytics](request_analytics.md) | Who fetched what, from where, logged in or not |
 
 ---
 
