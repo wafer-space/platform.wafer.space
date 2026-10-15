@@ -319,6 +319,14 @@ def test_non_staff_is_refused_by_the_service(shuttle: Shuttle) -> None:
         )
 
 
+def test_non_staff_is_refused_even_with_nothing_to_queue(shuttle: Shuttle) -> None:
+    """The service refuses first, not only through each check it would queue."""
+    with pytest.raises(PermissionDenied, match="Only staff can re-run prechecks"):
+        queue_bulk_rerun(
+            shuttle, LATEST, requested_by=UserFactory(is_staff=False), confirmed=[]
+        )
+
+
 def url(shuttle: Shuttle) -> str:
     return reverse("shuttles:rerun_outdated", kwargs={"name": shuttle.name})
 
