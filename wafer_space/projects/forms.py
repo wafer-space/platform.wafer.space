@@ -138,6 +138,82 @@ class LicenseValidationMixin:
             instance.proprietary_terms_cached_at = None
 
 
+def project_id_field() -> forms.CharField:
+    """The Project ID input, shared by the project and clone forms."""
+    return forms.CharField(
+        label="Project ID",
+        max_length=PROJECT_ID_LENGTH,
+        min_length=PROJECT_ID_LENGTH,
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control",
+                "id": "id_project_id",
+                "placeholder": "ABCD",
+                "maxlength": str(PROJECT_ID_LENGTH),
+                "minlength": str(PROJECT_ID_LENGTH),
+                "pattern": f"[A-Z0-9]{{{PROJECT_ID_LENGTH}}}",
+                "style": "text-transform: uppercase;",
+                "data-bs-toggle": "popover",
+                "data-bs-trigger": "focus",
+                "data-bs-placement": "right",
+                "data-bs-content": (
+                    f"Enter a unique {PROJECT_ID_LENGTH}-character project ID using "
+                    "uppercase letters (A-Z) and numbers (0-9). "
+                    "Example: ABCD, TEST, 1234, A1B2"
+                ),
+                "title": "Project ID Requirements",
+            },
+        ),
+        help_text=f"{PROJECT_ID_LENGTH}-character alphanumeric identifier (A-Z, 0-9)",
+    )
+
+
+def clean_new_project_id(
+    value: str,
+    shuttle: Shuttle | None,
+    *,
+    exclude_pk: object = None,
+) -> str:
+    """Normalise a project ID and check it is free on ``shuttle``.
+
+    The one project-ID rule (PROJECT_ID_LENGTH characters, A-Z and 0-9,
+    unique per shuttle), for both creating or editing a project and
+    cloning one (#355). The database's unique (shuttle, project_id)
+    constraint backs the uniqueness check. ``exclude_pk`` is the project
+    being edited, which may keep its own ID.
+    """
+    project_id = (value or "").upper().strip()
+
+    # Validate format (backup to model validator)
+    if not project_id:
+        msg = "Project ID is required"
+        raise ValidationError(msg)
+
+    # ASCII check matters: .upper() leaves "àbcd" as "ÀBCD", which passes
+    # .isalnum() but has no place in the ASCII-only canonical project URL.
+    if not (project_id.isascii() and project_id.isalnum()):
+        msg = "Project ID must be alphanumeric (A-Z, 0-9)"
+        raise ValidationError(msg)
+
+    if len(project_id) != PROJECT_ID_LENGTH:
+        msg = f"Project ID must be exactly {PROJECT_ID_LENGTH} characters"
+        raise ValidationError(msg)
+
+    # Check uniqueness within shuttle
+    if shuttle:
+        queryset = Project.objects.filter(shuttle=shuttle, project_id=project_id)
+        if exclude_pk is not None:
+            queryset = queryset.exclude(pk=exclude_pk)
+        if queryset.exists():
+            msg = (
+                f"Project ID '{project_id}' is already used in "
+                f"shuttle {shuttle.name}"
+            )
+            raise ValidationError(msg)
+
+    return project_id
+
+
 class ShuttleChoiceField(forms.ModelChoiceField):
     """Shuttle choices; a test-only shuttle says so in its label (#221)."""
 
@@ -180,32 +256,7 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
         empty_label=None,  # Remove "--------" option since we always have a default
     )
 
-    project_id = forms.CharField(
-        label="Project ID",
-        max_length=PROJECT_ID_LENGTH,
-        min_length=PROJECT_ID_LENGTH,
-        widget=forms.TextInput(
-            attrs={
-                "class": "form-control",
-                "id": "id_project_id",
-                "placeholder": "ABCD",
-                "maxlength": str(PROJECT_ID_LENGTH),
-                "minlength": str(PROJECT_ID_LENGTH),
-                "pattern": f"[A-Z0-9]{{{PROJECT_ID_LENGTH}}}",
-                "style": "text-transform: uppercase;",
-                "data-bs-toggle": "popover",
-                "data-bs-trigger": "focus",
-                "data-bs-placement": "right",
-                "data-bs-content": (
-                    f"Enter a unique {PROJECT_ID_LENGTH}-character project ID using "
-                    "uppercase letters (A-Z) and numbers (0-9). "
-                    "Example: ABCD, TEST, 1234, A1B2"
-                ),
-                "title": "Project ID Requirements",
-            },
-        ),
-        help_text=f"{PROJECT_ID_LENGTH}-character alphanumeric identifier (A-Z, 0-9)",
-    )
+    project_id = project_id_field()
 
     class Meta:
         model = Project
@@ -471,44 +522,14 @@ class ProjectForm(LicenseValidationMixin, forms.ModelForm):
         value = self.cleaned_data.get("crowd_supply_order_id", "")
         return value.strip().lstrip("#").strip()
 
-    def clean_project_id(self):
-        """Validate and normalize project_id field."""
-        project_id = self.cleaned_data.get("project_id", "").upper().strip()
-
-        # Validate format (backup to model validator)
-        if not project_id:
-            msg = "Project ID is required"
-            raise ValidationError(msg)
-
-        # ASCII check matters: .upper() leaves "àbcd" as "ÀBCD", which passes
-        # .isalnum() but has no place in the ASCII-only canonical project URL.
-        if not (project_id.isascii() and project_id.isalnum()):
-            msg = "Project ID must be alphanumeric (A-Z, 0-9)"
-            raise ValidationError(msg)
-
-        if len(project_id) != PROJECT_ID_LENGTH:
-            msg = f"Project ID must be exactly {PROJECT_ID_LENGTH} characters"
-            raise ValidationError(msg)
-
-        # Check uniqueness within shuttle
-        shuttle = self.cleaned_data.get("shuttle")
-        if shuttle:
-            # Exclude current instance if editing
-            queryset = Project.objects.filter(
-                shuttle=shuttle,
-                project_id=project_id,
-            )
-            if self.instance and self.instance.pk:
-                queryset = queryset.exclude(pk=self.instance.pk)
-
-            if queryset.exists():
-                msg = (
-                    f"Project ID '{project_id}' is already used in "
-                    f"shuttle {shuttle.name}"
-                )
-                raise ValidationError(msg)
-
-        return project_id
+    def clean_project_id(self) -> str:
+        """Validate and normalize project_id field (clean_new_project_id)."""
+        exclude_pk = self.instance.pk if self.instance and self.instance.pk else None
+        return clean_new_project_id(
+            self.cleaned_data.get("project_id", ""),
+            self.cleaned_data.get("shuttle"),
+            exclude_pk=exclude_pk,
+        )
 
     def save(self, commit: bool = True) -> Project:  # noqa: FBT001, FBT002
         """Save form and update cached proprietary terms."""
