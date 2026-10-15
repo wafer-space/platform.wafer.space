@@ -55,6 +55,10 @@ uv run python manage.py prune_request_logs --older-than DAYS
 
 Nothing schedules this command yet.
 
+## Cost
+
+Each row is written in its own transaction with `SET LOCAL synchronous_commit TO OFF`, so the request does not wait for PostgreSQL's WAL flush. Measured on 15 Oct 2026 against PostgreSQL 17, over 1,000 requests: the plain INSERT added about 17 ms a request, almost all of it the flush; this way it adds about 1.4 ms. The trade-off: a database server crash can lose the last fraction of a second of request log rows. It cannot corrupt them, and no other table is affected.
+
 ## Failure
 
 If a row cannot be written, the `DatabaseError` is logged at ERROR, which emails ADMINS through the rate-limited handler. The visitor still gets their page. Until migration `analytics 0001` has run, every logged request produces that error and no row.

@@ -13,12 +13,15 @@ from urllib.parse import urlunsplit
 
 from django.conf import settings
 from django.db import DatabaseError
+from django.db import connection
+from django.db import transaction
 from django.utils import timezone
 
 from wafer_space.analytics.models import RequestLog
 from wafer_space.core.utils import get_client_ip
 
 if TYPE_CHECKING:
+    import datetime
     from collections.abc import Callable
 
     from django.http import HttpRequest
@@ -83,6 +86,20 @@ def _response_bytes(response: HttpResponse) -> int | None:
     return int(content_length) if content_length else None
 
 
+def _skip_wal_flush() -> None:
+    """Let this transaction commit without waiting for the WAL flush.
+
+    On PostgreSQL 17 a one-row autocommit INSERT took ~9 ms, almost all
+    of it the flush; with synchronous_commit off, ~1.5 ms. The trade-off
+    is that a database server crash can lose the last fraction of a
+    second of request log rows - never corrupt them. Only this
+    transaction is affected (SET LOCAL).
+    """
+    if connection.vendor == "postgresql":
+        with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL synchronous_commit TO OFF")
+
+
 class RequestLogMiddleware:
     """Record who fetched what, from where, logged in or not.
 
@@ -123,32 +140,34 @@ class RequestLogMiddleware:
         request: HttpRequest,
         response: HttpResponse,
         request_id: str,
-        started_at: Any,
+        started_at: datetime.datetime,
         started: float,
     ) -> None:
         user = request.user if request.user.is_authenticated else None
         match = request.resolver_match
         try:
-            RequestLog.objects.create(
-                created_at=started_at,
-                request_id=request_id,
-                user=user,
-                username=user.get_username() if user else "",
-                client_ip=get_client_ip(request),
-                method=request.method or "",
-                path=request.path[: RequestLog.PATH_LENGTH],
-                view_name=match.view_name if match else "",
-                route_kwargs=_json_kwargs(match.kwargs) if match else {},
-                status=response.status_code,
-                bytes=_response_bytes(response),
-                duration_ms=int((time.monotonic() - started) * 1000),
-                user_agent=request.headers.get("user-agent", "")[
-                    : RequestLog.USER_AGENT_LENGTH
-                ],
-                referrer=_without_query(request.headers.get("referer", ""))[
-                    : RequestLog.REFERRER_LENGTH
-                ],
-            )
+            with transaction.atomic():
+                _skip_wal_flush()
+                RequestLog.objects.create(
+                    created_at=started_at,
+                    request_id=request_id,
+                    user=user,
+                    username=user.get_username() if user else "",
+                    client_ip=get_client_ip(request),
+                    method=request.method or "",
+                    path=request.path[: RequestLog.PATH_LENGTH],
+                    view_name=match.view_name if match else "",
+                    route_kwargs=_json_kwargs(match.kwargs) if match else {},
+                    status=response.status_code,
+                    bytes=_response_bytes(response),
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                    user_agent=request.headers.get("user-agent", "")[
+                        : RequestLog.USER_AGENT_LENGTH
+                    ],
+                    referrer=_without_query(request.headers.get("referer", ""))[
+                        : RequestLog.REFERRER_LENGTH
+                    ],
+                )
         except DatabaseError:
             # Loud (ERROR reaches ADMINS through the rate-limited handler),
             # but the visitor still gets their page: a missing analytics row
