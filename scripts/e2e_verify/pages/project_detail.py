@@ -61,6 +61,21 @@ class ProjectDetailPage(BasePage):
     PRECHECK_START_TIMEOUT = 10 * 60 * 1000  # 10 minutes
     PRECHECK_COMPLETE_TIMEOUT = 4 * 60 * 60 * 1000  # 4 hours
 
+    # Cancelling a check sets CANCELLING at once (ManufacturabilityCheck
+    # .mark_cancelling, from the Cancel view). The "checks-cancelling" beat
+    # task (config/settings/base.py: every 15 s, on queue none:ro:checks-orch)
+    # then marks it CANCELLED; stopping the container is separate cleanup and
+    # is not waited for. On a healthy queue that is at most one beat interval
+    # (8 local cancels, 15 Oct 2026: 1.5 to 14.8 s) plus our 3 s reload poll.
+    # Nothing in the code bounds it beyond that: a lagging checks-orch queue
+    # delays it without limit (#382). So the timeout is not derived from the
+    # code; it is the 180 s window #331 asks for, which the preflight cancel
+    # already used. A cancel slower than two beat intervals is logged as queue
+    # lag rather than passed silently.
+    CHECKS_CANCELLING_INTERVAL_S = 15
+    CANCEL_POLL_MS = 3_000
+    CANCEL_TIMEOUT = 180 * 1000  # 3 minutes (#331)
+
     def __init__(self, page: Page, base_url: str, project_id: str) -> None:
         super().__init__(page, base_url)
         self.project_id = project_id
@@ -143,8 +158,11 @@ class ProjectDetailPage(BasePage):
         label: str,
         check: bool = False,
         poll_ms: int = 5_000,
-    ) -> None:
+    ) -> float:
         """Poll until a matching badge is visible, heartbeating each poll.
+
+        Returns the seconds waited. On timeout the error names the last
+        check status seen (for ``check=True``), so a stuck state is visible.
 
         ``check=False`` (default) matches a page-wide file (download/hash)
         badge, which live-updates via JS. ``check=True`` matches a
@@ -160,9 +178,13 @@ class ProjectDetailPage(BasePage):
             # race with this read; treat that as "not yet" and retry next poll.
             with contextlib.suppress(PlaywrightError):
                 if badge.is_visible():
-                    return
+                    return time.monotonic() - start
             if time.monotonic() >= deadline:
-                msg = f"Timed out waiting for {label} ({timeout_ms} ms)"
+                elapsed = int(time.monotonic() - start)
+                msg = f"Timed out waiting for {label} after {elapsed} s"
+                if check:
+                    msg += f": stuck at {self.current_check_status()!r}"
+                msg += f" (timeout {timeout_ms} ms)"
                 raise TimeoutError(msg)
             self._heartbeat(label, start)
             self.page.wait_for_timeout(poll_ms)
@@ -302,11 +324,22 @@ class ProjectDetailPage(BasePage):
         )
 
     def wait_for_precheck_cancelled(self, timeout_ms: int | None = None) -> None:
-        """Wait for precheck cancellation to be confirmed."""
-        timeout = timeout_ms or 30_000
-        self._wait_for_badge(
-            "Cancelled", timeout, label="cancellation", check=True, poll_ms=3_000
+        """Wait for precheck cancellation to be confirmed (see CANCEL_TIMEOUT)."""
+        timeout = timeout_ms or self.CANCEL_TIMEOUT
+        waited = self._wait_for_badge(
+            "Cancelled",
+            timeout,
+            label="cancellation",
+            check=True,
+            poll_ms=self.CANCEL_POLL_MS,
         )
+        if waited > 2 * self.CHECKS_CANCELLING_INTERVAL_S:
+            logger.warning(
+                "Cancellation took %d s, more than two %d s checks-cancelling "
+                "intervals: the none:ro:checks-orch queue is lagging (#382)",
+                waited,
+                self.CHECKS_CANCELLING_INTERVAL_S,
+            )
 
     def get_check_version_token(self) -> str | None:
         """The precheck version the current check reports, or None.
@@ -366,7 +399,7 @@ class ProjectDetailPage(BasePage):
         """Whether the page shows a cancellable (in-progress) check."""
         return self.page.get_by_role("button", name="Cancel").count() > 0
 
-    def cancel_check_if_running(self, timeout_ms: int = 180_000) -> bool:
+    def cancel_check_if_running(self, timeout_ms: int | None = None) -> bool:
         """Cancel this project's check if one is in progress.
 
         Waits until the check is reported ``Cancelled`` before returning.
