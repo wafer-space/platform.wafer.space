@@ -25,7 +25,7 @@ from wafer_space.projects.check_operations import AdminRerunRefusedError
 from wafer_space.projects.check_operations import create_admin_rerun_check
 
 if TYPE_CHECKING:
-    from collections.abc import Collection
+    from collections.abc import Mapping
     from uuid import UUID
 
     from wafer_space.projects.models import ManufacturabilityCheck
@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 
 NO_SUBMITTED_REVISION = "no revision has been submitted for manufacturing"
 NO_LONGER_OLD = "no longer passed on an outdated precheck version"
+REVISION_CHANGED = "its {revision} changed after the confirmation page was shown"
 
 
 class RerunRevision(models.TextChoices):
@@ -121,14 +122,16 @@ def queue_bulk_rerun(
     revision: RerunRevision,
     *,
     requested_by: User,
-    confirmed: Collection[UUID],
+    confirmed: Mapping[UUID, int],
 ) -> BulkRerunResult:
     """Queue one ADMIN_RERUN check per Old project the staff user confirmed.
 
-    ``confirmed`` holds the projects the confirmation page listed. A project
-    is checked only if it was confirmed and is still Old, so a project that
-    became Old after the page was shown is never queued unseen. Each project
-    not checked is in ``not_queued`` with the reason.
+    ``confirmed`` maps each project the confirmation page listed to the file
+    revision it said would be checked. A revision is checked only if it was
+    confirmed and its project is still Old, so nothing is queued unseen: not
+    a project that became Old after the page was shown, nor a revision
+    submitted or uploaded since. Each project not checked is in
+    ``not_queued`` with the reason.
 
     Raises:
         PermissionDenied: ``requested_by`` is not staff; nothing is queued.
@@ -138,6 +141,7 @@ def queue_bulk_rerun(
         raise PermissionDenied(msg)
 
     confirmed_pks = set(confirmed)
+    changed = REVISION_CHANGED.format(revision=revision.label)
     plan = plan_bulk_rerun(shuttle, revision)
     still_old = {p.project.pk for p in plan.to_queue + plan.skipped}
     queued: list[ManufacturabilityCheck] = []
@@ -149,6 +153,9 @@ def queue_bulk_rerun(
     ]
     for planned in plan.to_queue:
         if planned.project.pk not in confirmed_pks or planned.project_file is None:
+            continue
+        if confirmed[planned.project.pk] != planned.project_file.pk:
+            not_queued.append(PlannedRerun(planned.project, None, changed))
             continue
         try:
             check = create_admin_rerun_check(

@@ -38,7 +38,11 @@
           action="{% url 'shuttles:rerun_outdated' shuttle.name %}">
       {% csrf_token %}
       <input type="hidden" name="revision" value="{{ plan.revision.value }}" />
-      {% for planned in plan.to_queue %}<input type="hidden" name="project" value="{{ planned.project.pk }}" />{% endfor %}
+      {% for planned in plan.to_queue %}
+        <input type="hidden"
+               name="project"
+               value="{{ planned.project.pk }}:{{ planned.project_file.pk }}" />
+      {% endfor %}
       <button type="submit"
               class="btn btn-warning"
               {% if not plan.to_queue %}disabled{% endif %}>

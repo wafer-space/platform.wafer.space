@@ -249,10 +249,14 @@ def report_bulk_rerun(request: HttpRequest, result: BulkRerunResult) -> None:
         )
     else:
         messages.info(request, "No precheck re-runs were queued.")
+    # One message per reason: a shuttle can have dozens of unsubmitted projects
+    by_reason: dict[str, list[str]] = {}
     for planned in result.not_queued:
+        by_reason.setdefault(planned.skip_reason, []).append(planned.project.full_id)
+    for reason, full_ids in by_reason.items():
         messages.warning(
             request,
-            f"{planned.project.full_id} not re-checked: {planned.skip_reason}.",
+            f"{len(full_ids)} not re-checked, {reason}: {', '.join(full_ids)}.",
         )
 
 
@@ -280,25 +284,29 @@ class BulkRerunOutdatedView(StaffRequiredMixin, View):
         revision = rerun_revision_or_none(request.POST.get("revision"))
         if revision is None:
             return HttpResponseBadRequest("Choose the submitted or latest revision.")
-        confirmed = request.POST.getlist("project")
-        if not all(is_uuid(pk) for pk in confirmed):
-            return HttpResponseBadRequest("Unknown project.")
+        confirmed = parse_confirmed(request.POST.getlist("project"))
+        if confirmed is None:
+            return HttpResponseBadRequest("Unknown project or revision.")
         result = queue_bulk_rerun(
             shuttle,
             revision,
             requested_by=cast("User", request.user),
-            confirmed=[UUID(pk) for pk in confirmed],
+            confirmed=confirmed,
         )
         report_bulk_rerun(request, result)
         return redirect("shuttles:assignment", name=shuttle.name)
 
 
-def is_uuid(value: str) -> bool:
-    try:
-        UUID(value)
-    except ValueError:
-        return False
-    return True
+def parse_confirmed(values: list[str]) -> dict[UUID, int] | None:
+    """The confirmation form's "<project pk>:<file pk>" values, or None if bad."""
+    confirmed: dict[UUID, int] = {}
+    for value in values:
+        project_pk, _, file_pk = value.partition(":")
+        try:
+            confirmed[UUID(project_pk)] = int(file_pk)
+        except ValueError:
+            return None
+    return confirmed
 
 
 class GridPreviewView(StaffRequiredMixin, DetailView):

@@ -25,6 +25,8 @@ from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.projects.tests.factories import ProjectFileFactory
 from wafer_space.shuttles.services.bulk_rerun import NO_LONGER_OLD
 from wafer_space.shuttles.services.bulk_rerun import NO_SUBMITTED_REVISION
+from wafer_space.shuttles.services.bulk_rerun import REVISION_CHANGED
+from wafer_space.shuttles.services.bulk_rerun import BulkRerunPlan
 from wafer_space.shuttles.services.bulk_rerun import RerunRevision
 from wafer_space.shuttles.services.bulk_rerun import outdated_projects
 from wafer_space.shuttles.services.bulk_rerun import plan_bulk_rerun
@@ -37,6 +39,7 @@ from .test_views import OUTDATED_DIGEST
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from uuid import UUID
 
     from django.test import Client
 
@@ -149,6 +152,15 @@ def old_names(shuttle: Shuttle) -> list[str]:
     return sorted(p.name for p in outdated_projects(shuttle))
 
 
+def confirm_all(plan: BulkRerunPlan) -> dict[UUID, int]:
+    """Everything the plan lists, as the confirmation page posts it."""
+    return {
+        p.project.pk: p.project_file.pk
+        for p in plan.to_queue
+        if p.project_file is not None
+    }
+
+
 def queue(
     shuttle: Shuttle, revision_kind: RerunRevision, staff: User
 ) -> list[ManufacturabilityCheck]:
@@ -158,7 +170,7 @@ def queue(
         shuttle,
         revision_kind,
         requested_by=staff,
-        confirmed=[p.project.pk for p in plan.to_queue],
+        confirmed=confirm_all(plan),
     )
     return result.queued
 
@@ -252,7 +264,10 @@ class TestSkipped:
         cache.clear()
 
         result = queue_bulk_rerun(
-            shuttle, SUBMITTED, requested_by=staff, confirmed=[same.pk]
+            shuttle,
+            SUBMITTED,
+            requested_by=staff,
+            confirmed={same.pk: same.files.get().pk},
         )
 
         reasons = [p.skip_reason for p in result.not_queued if p.project == same]
@@ -266,10 +281,45 @@ class TestSkipped:
         same = named(shuttle, "same")
 
         result = queue_bulk_rerun(
-            shuttle, LATEST, requested_by=staff, confirmed=[same.pk]
+            shuttle,
+            LATEST,
+            requested_by=staff,
+            confirmed={same.pk: same.files.get().pk},
         )
 
         assert [c.project for c in result.queued] == [same]
+
+
+class TestRevisionChangedAfterConfirming:
+    def test_a_resubmission_is_not_queued_unseen(
+        self, shuttle: Shuttle, staff: User
+    ) -> None:
+        """The page said one revision; by the POST another was submitted."""
+        moved_on = named(shuttle, "moved_on")
+        confirmed = confirm_all(plan_bulk_rerun(shuttle, SUBMITTED))
+        submit(moved_on, latest := moved_on.files.get(is_active=True))
+
+        result = queue_bulk_rerun(
+            shuttle, SUBMITTED, requested_by=staff, confirmed=confirmed
+        )
+        changed = [
+            p.project
+            for p in result.not_queued
+            if p.skip_reason == (REVISION_CHANGED.format(revision=SUBMITTED.label))
+        ]
+
+        assert (changed, reruns(latest)) == ([moved_on], [])
+
+    def test_the_others_are_still_queued(self, shuttle: Shuttle, staff: User) -> None:
+        moved_on = named(shuttle, "moved_on")
+        confirmed = confirm_all(plan_bulk_rerun(shuttle, SUBMITTED))
+        submit(moved_on, moved_on.files.get(is_active=True))
+
+        result = queue_bulk_rerun(
+            shuttle, SUBMITTED, requested_by=staff, confirmed=confirmed
+        )
+
+        assert [c.project for c in result.queued] == [named(shuttle, "same")]
 
 
 class TestTwice:
@@ -278,7 +328,7 @@ class TestTwice:
         self, shuttle: Shuttle, staff: User, revision_kind: RerunRevision
     ) -> None:
         plan = plan_bulk_rerun(shuttle, revision_kind)
-        confirmed = [p.project.pk for p in plan.to_queue]
+        confirmed = confirm_all(plan)
         first = queue_bulk_rerun(
             shuttle, revision_kind, requested_by=staff, confirmed=confirmed
         )
@@ -298,7 +348,7 @@ class TestTwice:
             shuttle,
             LATEST,
             requested_by=staff,
-            confirmed=[p.project.pk for p in plan.to_queue],
+            confirmed=confirm_all(plan),
         )
 
         assert {p.skip_reason for p in second.not_queued} == {
@@ -315,7 +365,7 @@ def test_non_staff_is_refused_by_the_service(shuttle: Shuttle) -> None:
             shuttle,
             LATEST,
             requested_by=owner,
-            confirmed=[p.project.pk for p in plan.to_queue],
+            confirmed=confirm_all(plan),
         )
 
 
@@ -323,7 +373,7 @@ def test_non_staff_is_refused_even_with_nothing_to_queue(shuttle: Shuttle) -> No
     """The service refuses first, not only through each check it would queue."""
     with pytest.raises(PermissionDenied, match="Only staff can re-run prechecks"):
         queue_bulk_rerun(
-            shuttle, LATEST, requested_by=UserFactory(is_staff=False), confirmed=[]
+            shuttle, LATEST, requested_by=UserFactory(is_staff=False), confirmed={}
         )
 
 
@@ -384,7 +434,10 @@ class TestConfirmationPage:
 def confirmed(shuttle: Shuttle, kind: str) -> dict[str, str | list[str]]:
     """The POST the confirmation page's form sends for ``kind``."""
     plan = plan_bulk_rerun(shuttle, RerunRevision(kind))
-    return {"revision": kind, "project": [str(p.project.pk) for p in plan.to_queue]}
+    return {
+        "revision": kind,
+        "project": [f"{pk}:{file_pk}" for pk, file_pk in confirm_all(plan).items()],
+    }
 
 
 class TestPost:
@@ -416,7 +469,7 @@ class TestPost:
 
         assert texts == [
             f"Queued 2 precheck re-runs of the submitted revision: {queued}.",
-            f"{unsubmitted} not re-checked: {NO_SUBMITTED_REVISION}.",
+            f"1 not re-checked, {NO_SUBMITTED_REVISION}: {unsubmitted}.",
         ]
 
     def test_double_submit_queues_nothing_twice(
@@ -429,14 +482,20 @@ class TestPost:
 
         assert all_admin_reruns() == OLD_COUNT
 
-    def test_an_unknown_project_is_refused(
-        self, shuttle: Shuttle, client: Client, staff: User
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "not-a-uuid:1",
+            "00000000-0000-0000-0000-000000000000",
+            "00000000-0000-0000-0000-000000000000:x",
+        ],
+    )
+    def test_a_malformed_confirmation_is_refused(
+        self, shuttle: Shuttle, client: Client, staff: User, value: str
     ) -> None:
         client.force_login(staff)
 
-        response = client.post(
-            url(shuttle), {"revision": "latest", "project": ["not-a-uuid"]}
-        )
+        response = client.post(url(shuttle), {"revision": "latest", "project": [value]})
 
         assert (response.status_code, all_admin_reruns()) == (
             HTTPStatus.BAD_REQUEST,
