@@ -16,6 +16,8 @@ from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.models import Project
 from wafer_space.projects.models import ProjectComplianceCertification
 from wafer_space.projects.models import ProjectFile
+from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
+from wafer_space.projects.tests.factories import ProjectFileFactory
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.models import ShuttleSlot
 
@@ -555,7 +557,12 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
             slot_size=SlotSize.FULL,
             status=ShuttleSlot.Status.RESERVED,
         )
-        projects = (("ASGN", "111111"), ("CSNO", "222222"), ("BARE", ""))
+        projects = (
+            ("ASGN", "111111"),
+            ("CSNO", "222222"),
+            ("BARE", ""),
+            ("REDY", "333333"),
+        )
         for project_id, cs_order in projects:
             project = Project.objects.create(
                 user=staff_user,
@@ -568,11 +575,19 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
             if project_id == "ASGN":
                 slot.project = project
                 slot.save()
+            if project_id == "REDY":
+                # Latest revision passed its precheck: manufacturable
+                ManufacturabilityCheckFactory(
+                    project=project,
+                    project_file=ProjectFileFactory(project=project),
+                    status=ManufacturabilityCheck.Status.FINISHED,
+                    is_manufacturable=True,
+                )
         self.perform_login(driver, staff_user.username, TEST_PASSWORD)
         driver.get(f"{self.live_server_url}/shuttles/G898/assign/")
         wait.until(
             expected_conditions.text_to_be_present_in_element(
-                (By.ID, "shown-count"), "1 of 3 shown"
+                (By.ID, "shown-count"), "1 of 4 shown"
             )
         )
 
@@ -589,8 +604,13 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
         Select(driver.find_element(By.ID, "show-filter")).select_by_value(
             "unassigned-cs"
         )
-        assert visible_ids() == ["G898CSNO"]
+        assert visible_ids() == ["G898CSNO", "G898REDY"]
+
+        Select(driver.find_element(By.ID, "show-filter")).select_by_value(
+            "unassigned-ready"
+        )
+        assert visible_ids() == ["G898REDY"]
 
         Select(driver.find_element(By.ID, "show-filter")).select_by_value("all")
-        assert visible_ids() == ["G898ASGN", "G898BARE", "G898CSNO"]
-        assert driver.find_element(By.ID, "shown-count").text == "3 of 3 shown"
+        assert visible_ids() == ["G898ASGN", "G898BARE", "G898CSNO", "G898REDY"]
+        assert driver.find_element(By.ID, "shown-count").text == "4 of 4 shown"
