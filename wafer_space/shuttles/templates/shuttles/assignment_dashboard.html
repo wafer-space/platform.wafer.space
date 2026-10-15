@@ -236,7 +236,8 @@
                 </td>
                 <td>
                   {% if not shuttle.is_test_only %}
-                    <button class="btn btn-sm btn-primary"
+                    <button type="button"
+                            class="btn btn-sm btn-primary"
                             data-assign-project="{{ project.pk }}"
                             data-project-name="{{ project.full_id|default:project.project_id|escapejs }}"
                             data-project-size="{{ project.slot_size|escapejs }}">
@@ -273,7 +274,7 @@
             <div class="alert alert-success">
               <strong>Currently assigned:</strong> <span id="modal-current-project-id"></span>
             </div>
-            <button class="btn btn-danger btn-sm" id="remove-assignment-btn">Remove Assignment</button>
+            <button type="button" class="btn btn-danger btn-sm" id="remove-assignment-btn">Remove Assignment</button>
           </div>
           <div id="modal-assign-section">
             <label for="project-search" class="form-label">Assign Project:</label>
@@ -310,7 +311,7 @@
                  style="display: none">
               Size mismatch: Project size does not match slot size. Assignment will proceed but may cause manufacturing issues.
             </div>
-            <button class="btn btn-primary" id="assign-project-btn">Assign</button>
+            <button type="button" class="btn btn-primary" id="assign-project-btn">Assign</button>
           </div>
         </div>
       </div>
