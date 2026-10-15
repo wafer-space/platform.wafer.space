@@ -561,7 +561,9 @@ class TestCreateCheckDrcUpdate:
 
         assert new_check.project == old_check.project
         assert new_check.project_file == old_check.project_file
-        assert new_check.trigger_reason == ManufacturabilityCheck.TriggerReason.DRC_UPDATE
+        assert (
+            new_check.trigger_reason == ManufacturabilityCheck.TriggerReason.DRC_UPDATE
+        )
         assert new_check.parent_check == old_check
         assert new_check.status == ManufacturabilityCheck.Status.PENDING
 
@@ -623,7 +625,9 @@ class TestCreateCheckDrcUpdate:
         new_check = running_check.create_check_drc_update()
 
         assert new_check.parent_check == running_check
-        assert new_check.trigger_reason == ManufacturabilityCheck.TriggerReason.DRC_UPDATE
+        assert (
+            new_check.trigger_reason == ManufacturabilityCheck.TriggerReason.DRC_UPDATE
+        )
 ```
 
 **Step 2: Run tests to verify they fail**
@@ -978,9 +982,7 @@ def checks_drc_update_requeue() -> dict:
     outdated_checks.sort(key=lambda c: c.created_at)
 
     # Calculate DRC_UPDATE capacity limit (25% of total)
-    total_capacity = sum(
-        server["max_concurrent"] for server in settings.DOCKER_SERVERS
-    )
+    total_capacity = sum(server["max_concurrent"] for server in settings.DOCKER_SERVERS)
     drc_update_limit = int(total_capacity * 0.25)
 
     # Count active DRC_UPDATE checks
@@ -1255,11 +1257,13 @@ def check_drc_update_requeue(request, check_id):
 Add to `wafer_space/projects/urls.py` in the `urlpatterns` list:
 
 ```python
+(
     path(
         "check/<int:check_id>/requeue-drc-update/",
         views.check_drc_update_requeue,
         name="check_drc_update_requeue",
     ),
+)
 ```
 
 **Step 5: Run tests to verify they pass**

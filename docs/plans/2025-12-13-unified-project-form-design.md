@@ -43,16 +43,31 @@ class Project(models.Model):
     """
 
     # Field groups for form handling and validation
-    SYSTEM_FIELDS = frozenset({
-        "id", "user", "status", "created_at", "updated_at",
-        "submitted_at", "submitted_file",
-        "proprietary_terms_cached", "proprietary_terms_cached_at",
-    })
+    SYSTEM_FIELDS = frozenset(
+        {
+            "id",
+            "user",
+            "status",
+            "created_at",
+            "updated_at",
+            "submitted_at",
+            "submitted_file",
+            "proprietary_terms_cached",
+            "proprietary_terms_cached_at",
+        }
+    )
     CORE_FIELDS = frozenset({"shuttle", "project_id", "slot_size"})
-    USER_FIELDS = frozenset({
-        "name", "description", "is_public", "repository_url",
-        "license_type", "other_license_spdx_id", "proprietary_terms_url",
-    })
+    USER_FIELDS = frozenset(
+        {
+            "name",
+            "description",
+            "is_public",
+            "repository_url",
+            "license_type",
+            "other_license_spdx_id",
+            "proprietary_terms_url",
+        }
+    )
 
     @classmethod
     def from_db(cls, db, field_names, values):
@@ -78,12 +93,13 @@ class Project(models.Model):
         after project creation except by staff users.
         """
         # Staff can modify anything
-        if getattr(self, '_current_user', None) and self._current_user.is_staff:
+        if getattr(self, "_current_user", None) and self._current_user.is_staff:
             return
 
-        loaded = getattr(self, '_loaded_values', {})
+        loaded = getattr(self, "_loaded_values", {})
         changed = [
-            field for field in self.CORE_FIELDS
+            field
+            for field in self.CORE_FIELDS
             if field in loaded and getattr(self, field) != loaded[field]
         ]
 
@@ -236,12 +252,12 @@ class ProjectCreateView(LoginRequiredMixin, CreateView):
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
-        kwargs['user'] = self.request.user
+        kwargs["user"] = self.request.user
         return kwargs
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['is_new'] = True
+        context["is_new"] = True
         return context
 
     def form_valid(self, form):
@@ -257,12 +273,12 @@ class ProjectUpdateView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, UpdateView
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
-        kwargs['user'] = self.request.user
+        kwargs["user"] = self.request.user
         return kwargs
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['is_new'] = False
+        context["is_new"] = False
         return context
 ```
 

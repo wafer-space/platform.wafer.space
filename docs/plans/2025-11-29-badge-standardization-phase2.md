@@ -70,12 +70,15 @@ def render_badge_html(badge: BadgeInfo) -> str:
     from django.template.loader import render_to_string
     from wafer_space.core.templatetags.badges import BADGE_CSS_MAP
 
-    return render_to_string("core/_badge.html", {
-        "text": badge.text,
-        "css_class": BADGE_CSS_MAP[badge.badge_type],
-        "icon": badge.icon,
-        "is_processing": badge.badge_type == BadgeType.PROCESSING,
-    })
+    return render_to_string(
+        "core/_badge.html",
+        {
+            "text": badge.text,
+            "css_class": BADGE_CSS_MAP[badge.badge_type],
+            "icon": badge.icon,
+            "is_processing": badge.badge_type == BadgeType.PROCESSING,
+        },
+    )
 ```
 
 ### API Response Updates

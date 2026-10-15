@@ -60,7 +60,7 @@ class TestPrecheckImageRevision:
         """github_commit_url returns URL when git_commit_sha is set."""
         revision = PrecheckImageRevision(
             digest="sha256:abc123",
-            git_commit_sha="a261f14ae7f90a0f74c6db18f28eeafce9b6e803"
+            git_commit_sha="a261f14ae7f90a0f74c6db18f28eeafce9b6e803",
         )
         assert revision.github_commit_url == (
             "https://github.com/wafer-space/gf180mcu-precheck/commit/"
@@ -249,6 +249,7 @@ class TestPrecheckImageRevisionStatistics:
             digest="sha256:abc123def456789012345678901234567890123456789012345678901234"
         )
         from wafer_space.projects.models import ManufacturabilityCheck
+
         ManufacturabilityCheckFactory(
             docker_image_digest=revision.digest,
             result=ManufacturabilityCheck.Result.PASSED,
@@ -266,6 +267,7 @@ class TestPrecheckImageRevisionStatistics:
             digest="sha256:abc123def456789012345678901234567890123456789012345678901234"
         )
         from wafer_space.projects.models import ManufacturabilityCheck
+
         ManufacturabilityCheckFactory(
             docker_image_digest=revision.digest,
             result=ManufacturabilityCheck.Result.PASSED,
@@ -288,60 +290,67 @@ Expected: FAIL with "has no attribute 'checks_count'"
 Add to `PrecheckImageRevision` class in `models.py`:
 
 ```python
-    # --- Statistics helpers ---
+# --- Statistics helpers ---
 
-    def _get_checks_queryset(self) -> models.QuerySet["ManufacturabilityCheck"]:
-        """Get all ManufacturabilityChecks that used this revision."""
-        return ManufacturabilityCheck.objects.filter(docker_image_digest=self.digest)
 
-    @property
-    def checks_count(self) -> int:
-        """Total number of checks that used this revision."""
-        return self._get_checks_queryset().count()
+def _get_checks_queryset(self) -> models.QuerySet["ManufacturabilityCheck"]:
+    """Get all ManufacturabilityChecks that used this revision."""
+    return ManufacturabilityCheck.objects.filter(docker_image_digest=self.digest)
 
-    @property
-    def checks_passed_count(self) -> int:
-        """Number of checks that passed with this revision."""
-        return self._get_checks_queryset().filter(
-            result=ManufacturabilityCheck.Result.PASSED
-        ).count()
 
-    @property
-    def checks_failed_count(self) -> int:
-        """Number of checks that failed with this revision."""
-        return self._get_checks_queryset().filter(
-            result=ManufacturabilityCheck.Result.FAILED
-        ).count()
+@property
+def checks_count(self) -> int:
+    """Total number of checks that used this revision."""
+    return self._get_checks_queryset().count()
 
-    def get_run_duration_stats(self) -> dict[str, float | None]:
-        """Get average and max run duration for checks using this revision.
 
-        Returns:
-            {"average": float|None, "max": float|None} in seconds
-        """
-        completed = self._get_checks_queryset().filter(
-            status=ManufacturabilityCheck.Status.FINISHED,
-            container_started_at__isnull=False,
-            container_finished_at__isnull=False,
-        )
+@property
+def checks_passed_count(self) -> int:
+    """Number of checks that passed with this revision."""
+    return (
+        self._get_checks_queryset()
+        .filter(result=ManufacturabilityCheck.Result.PASSED)
+        .count()
+    )
 
-        stats = completed.aggregate(
-            avg_duration=models.Avg(
-                models.F("container_finished_at") - models.F("container_started_at")
-            ),
-            max_duration=models.Max(
-                models.F("container_finished_at") - models.F("container_started_at")
-            ),
-        )
 
-        return {
-            "average": stats["avg_duration"].total_seconds()
-            if stats["avg_duration"]
-            else None,
-            "max": stats["max_duration"].total_seconds()
-            if stats["max_duration"]
-            else None,
-        }
+@property
+def checks_failed_count(self) -> int:
+    """Number of checks that failed with this revision."""
+    return (
+        self._get_checks_queryset()
+        .filter(result=ManufacturabilityCheck.Result.FAILED)
+        .count()
+    )
+
+
+def get_run_duration_stats(self) -> dict[str, float | None]:
+    """Get average and max run duration for checks using this revision.
+
+    Returns:
+        {"average": float|None, "max": float|None} in seconds
+    """
+    completed = self._get_checks_queryset().filter(
+        status=ManufacturabilityCheck.Status.FINISHED,
+        container_started_at__isnull=False,
+        container_finished_at__isnull=False,
+    )
+
+    stats = completed.aggregate(
+        avg_duration=models.Avg(
+            models.F("container_finished_at") - models.F("container_started_at")
+        ),
+        max_duration=models.Max(
+            models.F("container_finished_at") - models.F("container_started_at")
+        ),
+    )
+
+    return {
+        "average": stats["avg_duration"].total_seconds()
+        if stats["avg_duration"]
+        else None,
+        "max": stats["max_duration"].total_seconds() if stats["max_duration"] else None,
+    }
 ```
 
 **Step 4: Run test to verify it passes**
@@ -492,54 +501,54 @@ Expected: FAIL with "has no attribute 'get_latest_precheck_digest'"
 Add to `ManufacturabilityCheck` class in `models.py`:
 
 ```python
-    @classmethod
-    def get_latest_precheck_digest(cls) -> str | None:
-        """Get the digest of the most recently used precheck image.
+@classmethod
+def get_latest_precheck_digest(cls) -> str | None:
+    """Get the digest of the most recently used precheck image.
 
-        Returns the docker_image_digest from the check with the most recent
-        container_started_at timestamp. Cached for 60 seconds.
-        """
-        from django.core.cache import cache
+    Returns the docker_image_digest from the check with the most recent
+    container_started_at timestamp. Cached for 60 seconds.
+    """
+    from django.core.cache import cache
 
-        cache_key = "precheck_latest_digest"
-        cached = cache.get(cache_key)
-        if cached is not None:
-            return cached or None
+    cache_key = "precheck_latest_digest"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached or None
 
-        digest = (
-            cls.objects.exclude(docker_image_digest="")
-            .order_by("-container_started_at")
-            .values_list("docker_image_digest", flat=True)
-            .first()
-        )
+    digest = (
+        cls.objects.exclude(docker_image_digest="")
+        .order_by("-container_started_at")
+        .values_list("docker_image_digest", flat=True)
+        .first()
+    )
 
-        cache.set(cache_key, digest or "", 60)  # 1 minute TTL
-        return digest
+    cache.set(cache_key, digest or "", 60)  # 1 minute TTL
+    return digest
 
-    @property
-    def is_using_latest_precheck(self) -> bool | None:
-        """Whether this check used the latest precheck image version.
 
-        Returns:
-            True - used latest version
-            False - used outdated version
-            None - cannot determine (no digest or no latest known)
-        """
-        if not self.docker_image_digest:
-            return None
-        latest = self.get_latest_precheck_digest()
-        if latest is None:
-            return None
-        return self.docker_image_digest == latest
+@property
+def is_using_latest_precheck(self) -> bool | None:
+    """Whether this check used the latest precheck image version.
 
-    @property
-    def precheck_revision(self) -> "PrecheckImageRevision | None":
-        """Get the PrecheckImageRevision for this check, if cataloged."""
-        if not self.docker_image_digest:
-            return None
-        return PrecheckImageRevision.objects.filter(
-            digest=self.docker_image_digest
-        ).first()
+    Returns:
+        True - used latest version
+        False - used outdated version
+        None - cannot determine (no digest or no latest known)
+    """
+    if not self.docker_image_digest:
+        return None
+    latest = self.get_latest_precheck_digest()
+    if latest is None:
+        return None
+    return self.docker_image_digest == latest
+
+
+@property
+def precheck_revision(self) -> "PrecheckImageRevision | None":
+    """Get the PrecheckImageRevision for this check, if cataloged."""
+    if not self.docker_image_digest:
+        return None
+    return PrecheckImageRevision.objects.filter(digest=self.docker_image_digest).first()
 ```
 
 **Step 4: Run test to verify it passes**
@@ -724,11 +733,12 @@ def revisions_needs_fetching() -> dict[str, int]:
     Returns:
         {"new_revisions_queued": int}
     """
-    from wafer_space.projects.models import ManufacturabilityCheck, PrecheckImageRevision
-
-    known_digests = set(
-        PrecheckImageRevision.objects.values_list("digest", flat=True)
+    from wafer_space.projects.models import (
+        ManufacturabilityCheck,
+        PrecheckImageRevision,
     )
+
+    known_digests = set(PrecheckImageRevision.objects.values_list("digest", flat=True))
 
     new_digests = (
         ManufacturabilityCheck.objects.exclude(docker_image_digest="")
@@ -815,7 +825,9 @@ def _fetch_ghcr_metadata(digest: str) -> dict[str, Any]:
     }
 
     # Get manifest
-    manifest_url = f"https://ghcr.io/v2/wafer-space/gf180mcu-precheck/manifests/{digest}"
+    manifest_url = (
+        f"https://ghcr.io/v2/wafer-space/gf180mcu-precheck/manifests/{digest}"
+    )
     manifest_resp = requests.get(manifest_url, headers=headers, timeout=30)
     manifest_resp.raise_for_status()
     manifest = manifest_resp.json()
@@ -1015,9 +1027,7 @@ class TestPrecheckBadgeTemplateTags:
         check = ManufacturabilityCheckFactory(
             docker_image_digest="sha256:abc123def456789012345678901234567890123456789012345678901234"
         )
-        template = Template(
-            "{% load precheck_tags %}{% badge_precheck_status check %}"
-        )
+        template = Template("{% load precheck_tags %}{% badge_precheck_status check %}")
         context = Context({"check": check})
         result = template.render(context)
 
@@ -1026,9 +1036,7 @@ class TestPrecheckBadgeTemplateTags:
 
     def test_badge_precheck_status_none_check(self):
         """badge_precheck_status handles None check."""
-        template = Template(
-            "{% load precheck_tags %}{% badge_precheck_status check %}"
-        )
+        template = Template("{% load precheck_tags %}{% badge_precheck_status check %}")
         context = Context({"check": None})
         result = template.render(context)
 
@@ -1123,7 +1131,10 @@ from django.utils.html import format_html
 from django.utils.safestring import SafeString
 
 if TYPE_CHECKING:
-    from wafer_space.projects.models import ManufacturabilityCheck, PrecheckImageRevision
+    from wafer_space.projects.models import (
+        ManufacturabilityCheck,
+        PrecheckImageRevision,
+    )
 
 register = template.Library()
 
@@ -1185,8 +1196,7 @@ def badge_precheck_version(check: "ManufacturabilityCheck | None") -> SafeString
         )
 
     return format_html(
-        '<span class="badge {} border">'
-        '{} <i class="bi bi-{} {}"></i></span>',
+        '<span class="badge {} border">{} <i class="bi bi-{} {}"></i></span>',
         bg_class,
         version_str,
         icon,

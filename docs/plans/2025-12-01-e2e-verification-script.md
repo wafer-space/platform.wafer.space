@@ -356,9 +356,7 @@ class FileSubmitPage(BasePage):
         self.page.click('button[type="submit"]')
 
         # Wait for redirect back to project detail
-        expect(self.page).to_have_url(
-            re.compile(rf"/projects/{self.project_id}/")
-        )
+        expect(self.page).to_have_url(re.compile(rf"/projects/{self.project_id}/"))
 ```
 
 **Step 2: Verify syntax**
@@ -731,13 +729,19 @@ def run_full_flow(base_url: str, vnc_port: int = 5901) -> bool:
             # ========================================
             # Step 13: Wait for precheck to complete
             # ========================================
-            log(13, total_steps, "Waiting for precheck to complete (this may take hours)...")
+            log(
+                13,
+                total_steps,
+                "Waiting for precheck to complete (this may take hours)...",
+            )
             detail_page.wait_for_precheck_complete(timeout_ms=PRECHECK_COMPLETE_TIMEOUT)
 
             if detail_page.is_manufacturable():
                 log(13, total_steps, "Precheck PASSED - Design is manufacturable")
             else:
-                log(13, total_steps, "Precheck completed - Design is NOT manufacturable")
+                log(
+                    13, total_steps, "Precheck completed - Design is NOT manufacturable"
+                )
 
             detail_page.screenshot("13_precheck_complete")
 

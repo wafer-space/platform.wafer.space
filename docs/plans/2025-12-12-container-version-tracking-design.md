@@ -73,9 +73,7 @@ class PrecheckImageRevision(models.Model):
 
     # Primary identifier - the immutable digest
     digest = models.CharField(
-        max_length=100,
-        unique=True,
-        help_text="SHA256 digest (e.g., sha256:abc123...)"
+        max_length=100, unique=True, help_text="SHA256 digest (e.g., sha256:abc123...)"
     )
 
     # When we first saw this digest used in a check
@@ -83,39 +81,33 @@ class PrecheckImageRevision(models.Model):
 
     # Metadata fetched from GHCR/GitHub
     image_created_at = models.DateTimeField(
-        null=True, blank=True,
-        help_text="When the image was pushed to GHCR"
+        null=True, blank=True, help_text="When the image was pushed to GHCR"
     )
     git_commit_sha = models.CharField(
-        max_length=40, blank=True,
-        help_text="Git commit from image labels"
+        max_length=40, blank=True, help_text="Git commit from image labels"
     )
 
     # Version information
     precheck_version = models.CharField(
-        max_length=50, blank=True,
-        help_text="Precheck tool version (e.g., 1.5.2)"
+        max_length=50, blank=True, help_text="Precheck tool version (e.g., 1.5.2)"
     )
     pdk_version = models.CharField(
-        max_length=50, blank=True,
-        help_text="PDK version (if available)"
+        max_length=50, blank=True, help_text="PDK version (if available)"
     )
     tool_versions = models.JSONField(
-        default=dict, blank=True,
-        help_text="Tool versions dict (Issue #88)"
+        default=dict, blank=True, help_text="Tool versions dict (Issue #88)"
     )
 
     # Tracking
     metadata_fetched_at = models.DateTimeField(
-        null=True, blank=True,
-        help_text="When GHCR metadata was last fetched"
+        null=True, blank=True, help_text="When GHCR metadata was last fetched"
     )
 
     class Meta:
-        ordering = ['-first_seen_at']
+        ordering = ["-first_seen_at"]
         indexes = [
-            models.Index(fields=['digest']),
-            models.Index(fields=['-first_seen_at']),
+            models.Index(fields=["digest"]),
+            models.Index(fields=["-first_seen_at"]),
         ]
 
     def __str__(self) -> str:
@@ -155,16 +147,20 @@ class PrecheckImageRevision(models.Model):
     @property
     def checks_passed_count(self) -> int:
         """Number of checks that passed with this revision."""
-        return self._get_checks_queryset().filter(
-            result=ManufacturabilityCheck.Result.PASSED
-        ).count()
+        return (
+            self._get_checks_queryset()
+            .filter(result=ManufacturabilityCheck.Result.PASSED)
+            .count()
+        )
 
     @property
     def checks_failed_count(self) -> int:
         """Number of checks that failed with this revision."""
-        return self._get_checks_queryset().filter(
-            result=ManufacturabilityCheck.Result.FAILED
-        ).count()
+        return (
+            self._get_checks_queryset()
+            .filter(result=ManufacturabilityCheck.Result.FAILED)
+            .count()
+        )
 
     def get_run_duration_stats(self) -> dict[str, float | None]:
         """Get average and max run duration for checks using this revision."""
@@ -177,13 +173,17 @@ class PrecheckImageRevision(models.Model):
         )
 
         stats = completed.aggregate(
-            avg_duration=Avg(F('container_finished_at') - F('container_started_at')),
-            max_duration=Max(F('container_finished_at') - F('container_started_at')),
+            avg_duration=Avg(F("container_finished_at") - F("container_started_at")),
+            max_duration=Max(F("container_finished_at") - F("container_started_at")),
         )
 
         return {
-            "average": stats['avg_duration'].total_seconds() if stats['avg_duration'] else None,
-            "max": stats['max_duration'].total_seconds() if stats['max_duration'] else None,
+            "average": stats["avg_duration"].total_seconds()
+            if stats["avg_duration"]
+            else None,
+            "max": stats["max_duration"].total_seconds()
+            if stats["max_duration"]
+            else None,
         }
 ```
 
@@ -206,10 +206,9 @@ class ManufacturabilityCheck(models.Model):
             return cached or None
 
         digest = (
-            cls.objects
-            .exclude(docker_image_digest='')
-            .order_by('-container_started_at')
-            .values_list('docker_image_digest', flat=True)
+            cls.objects.exclude(docker_image_digest="")
+            .order_by("-container_started_at")
+            .values_list("docker_image_digest", flat=True)
             .first()
         )
 
@@ -256,15 +255,12 @@ Periodic task on `none:ro:default` queue:
 @shared_task(queue="none:ro:default")
 def revisions_needs_fetching() -> dict[str, int]:
     """Find revisions needing metadata fetch, queue fetch tasks."""
-    known_digests = set(
-        PrecheckImageRevision.objects.values_list('digest', flat=True)
-    )
+    known_digests = set(PrecheckImageRevision.objects.values_list("digest", flat=True))
 
     new_digests = (
-        ManufacturabilityCheck.objects
-        .exclude(docker_image_digest='')
+        ManufacturabilityCheck.objects.exclude(docker_image_digest="")
         .exclude(docker_image_digest__in=known_digests)
-        .values_list('docker_image_digest', flat=True)
+        .values_list("docker_image_digest", flat=True)
         .distinct()
     )
 
@@ -334,10 +330,12 @@ def badge_precheck_status(check):
     """Render status badge with version indicator."""
     # Returns: [<icon> Passed <cloud-icon>]
 
+
 @register.simple_tag
 def badge_precheck_version(check):
     """Render version-only badge."""
     # Returns: [v1.5.2 <cloud-icon>]
+
 
 @register.simple_tag
 def badge_precheck_combined(check):
