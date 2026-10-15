@@ -148,13 +148,10 @@ def set_crowd_supply_urls(apps, schema_editor):
 def unset_crowd_supply_urls(apps, schema_editor):
     """Blank the seeded URLs on reverse migration."""
     shuttle_model = apps.get_model("shuttles", "Shuttle")
-    shuttle_model.objects.filter(name__in=CROWD_SUPPLY_URLS).update(
-        crowd_supply_url=""
-    )
+    shuttle_model.objects.filter(name__in=CROWD_SUPPLY_URLS).update(crowd_supply_url="")
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("shuttles", "0007_alter_shuttleslot_fields"),
         # projects/0041 seeds the G801 shuttle; run after it so the data
@@ -208,7 +205,7 @@ git commit -m "feat: add crowd_supply_url to Shuttle, seed G801-G803 campaign UR
 In the first (`None`) fieldset:
 
 ```python
-        (None, {"fields": ("name", "description", "status", "crowd_supply_url")}),
+((None, {"fields": ("name", "description", "status", "crowd_supply_url")}),)
 ```
 
 - [ ] **Step 2: Set the G801 URL in dev data**
@@ -309,7 +306,16 @@ Field (add `verbose_name`, reword help_text):
 In both `AddField` entries of `0058_historicalproject_crowd_supply_order_id_and_more.py`, replace the `field=` value with:
 
 ```python
-            field=models.CharField(blank=True, default='', help_text='CrowdSupply order number, e.g. 327373 (optional).', max_length=20, validators=[wafer_space.projects.models.validate_crowd_supply_order_id], verbose_name='CrowdSupply Order ID'),
+field = (
+    models.CharField(
+        blank=True,
+        default="",
+        help_text="CrowdSupply order number, e.g. 327373 (optional).",
+        max_length=20,
+        validators=[wafer_space.projects.models.validate_crowd_supply_order_id],
+        verbose_name="CrowdSupply Order ID",
+    ),
+)
 ```
 
 Run: `uv run python manage.py makemigrations --check --dry-run`
@@ -353,70 +359,73 @@ git commit -m "feat: CrowdSupply naming and shuttle-page link for order ID"
 Replace `test_crowd_supply_order_shown_when_set` and update `test_crowd_supply_order_absent_when_blank` in `TestProjectDetailView`; add the shuttle import at the top of the file if missing (`from wafer_space.shuttles.models import Shuttle`):
 
 ```python
-    def test_order_id_links_to_shuttle_crowdsupply_page(self):
-        """Order ID renders as a link to the shuttle's CrowdSupply page."""
-        shuttle = Shuttle.objects.create(
-            name="G851",
-            description="Linked run",
-            crowd_supply_url="https://www.crowdsupply.com/wafer-space/gf180mcu-run-1/",
-        )
-        project = Project.objects.create(
-            user=self.user,
-            name="Linked Project",
-            shuttle=shuttle,
-            crowd_supply_order_id="327373",
-        )
+def test_order_id_links_to_shuttle_crowdsupply_page(self):
+    """Order ID renders as a link to the shuttle's CrowdSupply page."""
+    shuttle = Shuttle.objects.create(
+        name="G851",
+        description="Linked run",
+        crowd_supply_url="https://www.crowdsupply.com/wafer-space/gf180mcu-run-1/",
+    )
+    project = Project.objects.create(
+        user=self.user,
+        name="Linked Project",
+        shuttle=shuttle,
+        crowd_supply_order_id="327373",
+    )
 
-        self.client.login(username="testuser", password=TEST_PASSWORD)
-        url = reverse("projects:detail", kwargs={"pk": project.pk})
-        response = self.client.get(url)
+    self.client.login(username="testuser", password=TEST_PASSWORD)
+    url = reverse("projects:detail", kwargs={"pk": project.pk})
+    response = self.client.get(url)
 
-        content = response.content.decode()
-        assert "CrowdSupply Order ID:" in content
-        assert "327373" in content
-        assert shuttle.crowd_supply_url in content
+    content = response.content.decode()
+    assert "CrowdSupply Order ID:" in content
+    assert "327373" in content
+    assert shuttle.crowd_supply_url in content
 
-    def test_order_id_plain_text_when_shuttle_has_no_url(self):
-        """Order ID renders without a link when the shuttle URL is blank."""
-        shuttle = Shuttle.objects.create(name="G852", description="Unlinked run")
-        project = Project.objects.create(
-            user=self.user,
-            name="Unlinked Project",
-            shuttle=shuttle,
-            crowd_supply_order_id="327373",
-        )
 
-        self.client.login(username="testuser", password=TEST_PASSWORD)
-        url = reverse("projects:detail", kwargs={"pk": project.pk})
-        response = self.client.get(url)
+def test_order_id_plain_text_when_shuttle_has_no_url(self):
+    """Order ID renders without a link when the shuttle URL is blank."""
+    shuttle = Shuttle.objects.create(name="G852", description="Unlinked run")
+    project = Project.objects.create(
+        user=self.user,
+        name="Unlinked Project",
+        shuttle=shuttle,
+        crowd_supply_order_id="327373",
+    )
 
-        content = response.content.decode()
-        assert "CrowdSupply Order ID:" in content
-        assert "327373" in content
-        assert "crowdsupply.com" not in content
+    self.client.login(username="testuser", password=TEST_PASSWORD)
+    url = reverse("projects:detail", kwargs={"pk": project.pk})
+    response = self.client.get(url)
 
-    def test_order_id_plain_text_when_project_has_no_shuttle(self):
-        """Order ID renders without a link when the project has no shuttle."""
-        self.project.crowd_supply_order_id = "327373"
-        self.project.save()
+    content = response.content.decode()
+    assert "CrowdSupply Order ID:" in content
+    assert "327373" in content
+    assert "crowdsupply.com" not in content
 
-        self.client.login(username="testuser", password=TEST_PASSWORD)
-        url = reverse("projects:detail", kwargs={"pk": self.project.pk})
-        response = self.client.get(url)
 
-        content = response.content.decode()
-        assert "CrowdSupply Order ID:" in content
-        assert "327373" in content
-        assert "crowdsupply.com" not in content
+def test_order_id_plain_text_when_project_has_no_shuttle(self):
+    """Order ID renders without a link when the project has no shuttle."""
+    self.project.crowd_supply_order_id = "327373"
+    self.project.save()
 
-    def test_crowd_supply_order_absent_when_blank(self):
-        """No CrowdSupply row renders when the order ID is unset."""
-        self.client.login(username="testuser", password=TEST_PASSWORD)
-        url = reverse("projects:detail", kwargs={"pk": self.project.pk})
-        response = self.client.get(url)
+    self.client.login(username="testuser", password=TEST_PASSWORD)
+    url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+    response = self.client.get(url)
 
-        assert response.status_code == HTTP_OK
-        assert "CrowdSupply Order ID:" not in response.content.decode()
+    content = response.content.decode()
+    assert "CrowdSupply Order ID:" in content
+    assert "327373" in content
+    assert "crowdsupply.com" not in content
+
+
+def test_crowd_supply_order_absent_when_blank(self):
+    """No CrowdSupply row renders when the order ID is unset."""
+    self.client.login(username="testuser", password=TEST_PASSWORD)
+    url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+    response = self.client.get(url)
+
+    assert response.status_code == HTTP_OK
+    assert "CrowdSupply Order ID:" not in response.content.decode()
 ```
 
 In `TestProjectUpdateView.test_order_id_field_rendered_on_edit_form` (~line 563), add a label assertion, and update its docstring to
