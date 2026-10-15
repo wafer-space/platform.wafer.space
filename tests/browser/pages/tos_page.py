@@ -66,6 +66,15 @@ class TOSAcceptPage(BasePage):
         except NoSuchElementException:
             return None
 
+    def is_accept_button_present(self):
+        """Check if the accept button is present."""
+        try:
+            self.find_element(self.ACCEPT_BUTTON)
+        except NoSuchElementException:
+            return False
+        else:
+            return True
+
     def is_checkbox_present(self):
         """Check if agree checkbox is present."""
         try:

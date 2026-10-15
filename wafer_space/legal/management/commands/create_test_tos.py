@@ -2,7 +2,6 @@
 
 from datetime import UTC
 from datetime import datetime
-from pathlib import Path
 
 import frontmatter
 from django.core.management.base import BaseCommand
@@ -18,9 +17,12 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         """Create test TOS if it doesn't exist."""
-        # Check if markdown file exists
-        base_dir = Path(__file__).parent.parent.parent / "tos_versions"
-        file_path = base_dir / "1.0.0.md"
+        # Use the model's own path, so the markdown lands wherever the model
+        # reads it: browser tests patch get_tos_versions_directory() to a
+        # temp directory, and a hard-coded tos_versions/ path found the real
+        # 1.0.0.md there and wrote nothing (issue #418).
+        file_path = TermsOfService(version="1.0.0").content_file_path
+        base_dir = file_path.parent
 
         if not file_path.exists():
             # Create test markdown content with front matter
