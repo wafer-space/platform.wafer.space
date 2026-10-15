@@ -580,6 +580,20 @@ class Project(models.Model):
         return self.submitted_file.latest_manufacturability_check
 
     @cached_property
+    def latest_file_finished_check(self) -> "ManufacturabilityCheck | None":
+        """The latest *finished* check on the latest file revision.
+
+        This is the check that decides whether the revision is manufacturable
+        (docs/manufacturable_vs_submitted.md). An unsaved placeholder when the
+        revision has no finished check; None when the project has no files.
+        Cached per instance.
+        """
+        latest = self.latest_file
+        if not latest:
+            return None
+        return latest.output_check
+
+    @cached_property
     def latest_file_manufacturable(self) -> bool | None:
         """Whether the latest file revision is manufacturable.
 
@@ -588,10 +602,10 @@ class Project(models.Model):
         re-check does not reset an existing verdict. Returns None while the
         revision has no finished check at all. Cached per instance.
         """
-        latest = self.latest_file
-        if not latest:
+        check = self.latest_file_finished_check
+        if check is None:
             return None
-        return latest.output_check.is_manufacturable
+        return check.is_manufacturable
 
     @property
     def output_file(self) -> "ProjectFile":
