@@ -257,6 +257,22 @@ except Exception:  # Too broad
 
 See `deployment/README.md` for full deployment guide.
 
+### Secret scanning (detect-secrets)
+
+The `detect-secrets` pre-commit hook fails on any secret that
+`.secrets.baseline` does not list. CI runs it through pre-commit and the
+`Secret scan` workflow, which also covers docs-only changes. It scans every
+file, `docs/`, migrations and a force-added `.env` included.
+
+- **The hook says "The baseline file was updated"**: a listed false positive
+  moved to another line. `git add .secrets.baseline` and commit again.
+- **The hook reports a new secret**: remove it. If it was ever pushed, treat
+  it as leaked and rotate it.
+- **A true false positive** (a test fixture, a hash): add it with
+  `uvx --from detect-secrets==1.5.0 detect-secrets scan --baseline .secrets.baseline`,
+  mark it `"is_secret": false` (`detect-secrets audit .secrets.baseline`),
+  and say why in the PR. Never exclude paths.
+
 ---
 
 ## .ENV FILES - SECRETS ONLY
