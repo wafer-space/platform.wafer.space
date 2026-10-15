@@ -11,6 +11,7 @@ from wafer_space.projects.models import ManufacturabilityCheck
 from wafer_space.projects.tests.factories import ManufacturabilityCheckFactory
 from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.projects.tests.factories import ProjectFileFactory
+from wafer_space.projects.tests.html_elements import parse_html
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.models import ShuttleSlot
 from wafer_space.shuttles.tests.factories import ShuttleFactory
@@ -800,3 +801,105 @@ def test_assign_project_view_refuses_archived_project(client) -> None:
     assert "archived" in response.json()["error"]
     slot.refresh_from_db()
     assert slot.project is None
+
+
+@pytest.mark.django_db
+class TestAssignmentShowFilter:
+    """The "Show" filter on the assignment page (#342)."""
+
+    def _get(self, client, shuttle):
+        client.force_login(UserFactory(is_staff=True))
+        return client.get(reverse("shuttles:assignment", args=[shuttle.name]))
+
+    @staticmethod
+    def _selected_option(response) -> str | None:
+        """Value of the selected option of the #show-filter select."""
+        in_select = False
+        for tag, attrs in parse_html(response.content.decode()).elements:
+            if tag == "select":
+                in_select = attrs.get("id") == "show-filter"
+            elif in_select and tag == "option" and "selected" in attrs:
+                return attrs["value"]
+        return None
+
+    @staticmethod
+    def _row_flags(response) -> list[tuple[str | None, ...]]:
+        """(assigned, cs-order, manufacturable) of each project-table row."""
+        return [
+            (
+                attrs["data-assigned"],
+                attrs["data-cs-order"],
+                attrs["data-manufacturable"],
+            )
+            for tag, attrs in parse_html(response.content.decode()).elements
+            if tag == "tr" and "data-assigned" in attrs
+        ]
+
+    def test_open_shuttle_defaults_to_all_projects(self, client):
+        """An open shuttle shows every project at first."""
+        shuttle = ShuttleFactory(name="G884", status=Shuttle.Status.OPEN)
+        response = self._get(client, shuttle)
+        assert response.context["show_filter_default"] == "all"
+        assert self._selected_option(response) == "all"
+
+    def test_locked_shuttle_defaults_to_assigned_only(self, client):
+        """A shuttle that is no longer open shows only assigned projects."""
+        shuttle = ShuttleFactory(name="G885", status=Shuttle.Status.LOCKED)
+        response = self._get(client, shuttle)
+        assert response.context["show_filter_default"] == "assigned"
+        assert self._selected_option(response) == "assigned"
+
+    def test_open_shuttle_past_deadline_defaults_to_assigned_only(self, client):
+        """Past its GDS deadline an OPEN-status shuttle is closed too (#320)."""
+        shuttle = ShuttleFactory(
+            name="G886",
+            status=Shuttle.Status.OPEN,
+            submission_deadline=timezone.now() - datetime.timedelta(days=1),
+        )
+        response = self._get(client, shuttle)
+        assert response.context["show_filter_default"] == "assigned"
+        assert self._selected_option(response) == "assigned"
+
+    def test_offers_every_filter_from_the_issue(self, client):
+        """All, assigned, unassigned and the unassigned subsets are offered."""
+        shuttle = ShuttleFactory(name="G887")
+        response = self._get(client, shuttle)
+        values = [value for value, _ in response.context["show_filter_choices"]]
+        assert values == [
+            "all",
+            "assigned",
+            "unassigned",
+            "unassigned-cs",
+            "unassigned-mfg",
+            "unassigned-ready",
+        ]
+
+    def test_rows_carry_assigned_cs_order_and_manufacturable(self, client):
+        """Each row exposes what the filter needs as data attributes."""
+        shuttle = ShuttleFactory(name="G888")
+        slot = ShuttleSlot.objects.create(
+            shuttle=shuttle,
+            row=0,
+            column=0,
+            slot_size=SlotSize.FULL,
+            status=ShuttleSlot.Status.RESERVED,
+        )
+        ready = ProjectFactory(
+            shuttle=shuttle,
+            slot_size=SlotSize.FULL,
+            crowd_supply_order_id="327373",
+        )
+        project_file = ProjectFileFactory(project=ready)
+        ManufacturabilityCheckFactory(
+            project=ready,
+            project_file=project_file,
+            status=ManufacturabilityCheck.Status.FINISHED,
+            is_manufacturable=True,
+        )
+        slot.project = ready
+        slot.save()
+        ProjectFactory(shuttle=shuttle, slot_size=SlotSize.FULL)
+
+        flags = self._row_flags(self._get(client, shuttle))
+
+        assert sorted(flags) == [("false", "false", "false"), ("true", "true", "true")]

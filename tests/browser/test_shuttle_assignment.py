@@ -6,6 +6,7 @@ from django.test import Client
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions
+from selenium.webdriver.support.ui import Select
 
 from tests.browser.base import AuthenticatedBrowserTest
 from wafer_space.core.enums import SlotSize
@@ -537,3 +538,59 @@ class TestShuttleAssignmentDashboard(AuthenticatedBrowserTest):
 
         severe = [e for e in driver.get_log("browser") if e["level"] == "SEVERE"]
         assert severe == []
+
+    def test_show_filter_defaults_to_assigned_on_closed_shuttle(
+        self, driver, wait, staff_user
+    ):
+        """A closed shuttle lists only assigned projects until staff choose (#342)."""
+        closed = Shuttle.objects.create(
+            name="G898",
+            description="Closed shuttle",
+            status=Shuttle.Status.LOCKED,
+        )
+        slot = ShuttleSlot.objects.create(
+            shuttle=closed,
+            row=0,
+            column=0,
+            slot_size=SlotSize.FULL,
+            status=ShuttleSlot.Status.RESERVED,
+        )
+        projects = (("ASGN", "111111"), ("CSNO", "222222"), ("BARE", ""))
+        for project_id, cs_order in projects:
+            project = Project.objects.create(
+                user=staff_user,
+                name=f"Project {project_id}",
+                shuttle=closed,
+                project_id=project_id,
+                slot_size=SlotSize.FULL,
+                crowd_supply_order_id=cs_order,
+            )
+            if project_id == "ASGN":
+                slot.project = project
+                slot.save()
+        self.perform_login(driver, staff_user.username, TEST_PASSWORD)
+        driver.get(f"{self.live_server_url}/shuttles/G898/assign/")
+        wait.until(
+            expected_conditions.text_to_be_present_in_element(
+                (By.ID, "shown-count"), "1 of 3 shown"
+            )
+        )
+
+        def visible_ids():
+            rows = driver.find_elements(By.CSS_SELECTOR, "#projects-table tbody tr")
+            return sorted(
+                row.find_element(By.CSS_SELECTOR, "td").text
+                for row in rows
+                if row.is_displayed()
+            )
+
+        assert visible_ids() == ["G898ASGN"]
+
+        Select(driver.find_element(By.ID, "show-filter")).select_by_value(
+            "unassigned-cs"
+        )
+        assert visible_ids() == ["G898CSNO"]
+
+        Select(driver.find_element(By.ID, "show-filter")).select_by_value("all")
+        assert visible_ids() == ["G898ASGN", "G898BARE", "G898CSNO"]
+        assert driver.find_element(By.ID, "shown-count").text == "3 of 3 shown"
