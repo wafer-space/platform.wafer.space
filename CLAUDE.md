@@ -157,6 +157,22 @@ app checkout plus `/mnt/user-files` (where `wafer_space/media` points) in
 
 ---
 
+## A NEW NOT NULL COLUMN NEEDS A DATABASE DEFAULT
+
+**A deploy runs `migrate`, then restarts the services one at a time. For
+minutes, workers still run the old code against the new schema, and the old
+code's INSERTs leave a new column out.** Django's `AddField` uses a field's
+`default` only to fill existing rows, then drops it, so PostgreSQL puts NULL
+in a `NOT NULL` column and the insert fails (issue #433).
+
+- ✅ **DO**: give every new `NOT NULL` column a `db_default`, e.g.
+  `models.TextField(blank=True, default="", db_default="")`.
+- ❌ **DON'T**: rely on `default=` alone for a new column.
+- `wafer_space/core/tests/test_migration_defaults.py` fails on any new
+  migration that breaks this.
+
+---
+
 ## MANUFACTURABLE vs SUBMITTED - TWO DISTINCT CONCEPTS
 
 **See `docs/manufacturable_vs_submitted.md` for the authoritative definitions.**
