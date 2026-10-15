@@ -136,60 +136,58 @@ from wafer_space.shuttles.models import Shuttle
 Then add this test method to the `TestChecksDrcUpdateRequeue` class (it already has `setup_method` creating `self.project`/`self.project_file`, but this test builds its own designs so it does not use them):
 
 ```python
-    @pytest.mark.parametrize(
-        ("shuttle_status", "expected_created"),
-        [
-            (None, 1),
-            (Shuttle.Status.PLANNING, 1),
-            (Shuttle.Status.OPEN, 1),
-            (Shuttle.Status.FULL, 1),
-            (Shuttle.Status.LOCKED, 1),
-            (Shuttle.Status.IN_PRODUCTION, 0),
-            (Shuttle.Status.COMPLETED, 0),
-            (Shuttle.Status.CANCELLED, 0),
-        ],
+@pytest.mark.parametrize(
+    ("shuttle_status", "expected_created"),
+    [
+        (None, 1),
+        (Shuttle.Status.PLANNING, 1),
+        (Shuttle.Status.OPEN, 1),
+        (Shuttle.Status.FULL, 1),
+        (Shuttle.Status.LOCKED, 1),
+        (Shuttle.Status.IN_PRODUCTION, 0),
+        (Shuttle.Status.COMPLETED, 0),
+        (Shuttle.Status.CANCELLED, 0),
+    ],
+)
+def test_scopes_by_shuttle_status(self, shuttle_status, expected_created):
+    """Automatic requeue skips production/completed/cancelled shuttles only.
+
+    Drives the task with exactly one outdated candidate so the
+    one-check-per-run throttle cannot hide which design was chosen
+    (issue #270).
+    """
+    shuttle = (
+        ShuttleFactory(status=shuttle_status) if shuttle_status is not None else None
     )
-    def test_scopes_by_shuttle_status(self, shuttle_status, expected_created):
-        """Automatic requeue skips production/completed/cancelled shuttles only.
+    project = ProjectFactory(shuttle=shuttle)
+    project_file = ProjectFileFactory(project=project, is_active=True)
+    ManufacturabilityCheckFactory(
+        project=project,
+        project_file=project_file,
+        status=ManufacturabilityCheck.Status.FINISHED,
+        docker_image_digest="sha256:old123456789012345678901234567890123456789012345678901234567",
+        container_started_at=timezone.now() - timedelta(hours=2),
+    )
+    # Establish a newer latest digest via an unrelated design so the
+    # design under test is outdated. This establisher uses the latest
+    # digest, so it is never itself a candidate.
+    establisher_file = ProjectFileFactory()
+    ManufacturabilityCheckFactory(
+        project_file=establisher_file,
+        status=ManufacturabilityCheck.Status.FINISHED,
+        docker_image_digest="sha256:new456789012345678901234567890123456789012345678901234567890",
+        container_started_at=timezone.now(),
+    )
+    cache.clear()
 
-        Drives the task with exactly one outdated candidate so the
-        one-check-per-run throttle cannot hide which design was chosen
-        (issue #270).
-        """
-        shuttle = (
-            ShuttleFactory(status=shuttle_status)
-            if shuttle_status is not None
-            else None
-        )
-        project = ProjectFactory(shuttle=shuttle)
-        project_file = ProjectFileFactory(project=project, is_active=True)
-        ManufacturabilityCheckFactory(
-            project=project,
-            project_file=project_file,
-            status=ManufacturabilityCheck.Status.FINISHED,
-            docker_image_digest="sha256:old123456789012345678901234567890123456789012345678901234567",
-            container_started_at=timezone.now() - timedelta(hours=2),
-        )
-        # Establish a newer latest digest via an unrelated design so the
-        # design under test is outdated. This establisher uses the latest
-        # digest, so it is never itself a candidate.
-        establisher_file = ProjectFileFactory()
-        ManufacturabilityCheckFactory(
-            project_file=establisher_file,
-            status=ManufacturabilityCheck.Status.FINISHED,
-            docker_image_digest="sha256:new456789012345678901234567890123456789012345678901234567890",
-            container_started_at=timezone.now(),
-        )
-        cache.clear()
+    result = checks_drc_update_requeue()
 
-        result = checks_drc_update_requeue()
-
-        assert result["created"] == expected_created
-        drc_update_exists = ManufacturabilityCheck.objects.filter(
-            project_file=project_file,
-            trigger_reason=ManufacturabilityCheck.TriggerReason.DRC_UPDATE,
-        ).exists()
-        assert drc_update_exists is bool(expected_created)
+    assert result["created"] == expected_created
+    drc_update_exists = ManufacturabilityCheck.objects.filter(
+        project_file=project_file,
+        trigger_reason=ManufacturabilityCheck.TriggerReason.DRC_UPDATE,
+    ).exists()
+    assert drc_update_exists is bool(expected_created)
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -272,46 +270,43 @@ from wafer_space.shuttles.tests.factories import ShuttleFactory
 Add to the `TestCreateCheckDrcUpdate` class:
 
 ```python
-    @pytest.mark.parametrize(
-        "shuttle_status",
-        [
-            Shuttle.Status.IN_PRODUCTION,
-            Shuttle.Status.COMPLETED,
-            Shuttle.Status.CANCELLED,
-        ],
+@pytest.mark.parametrize(
+    "shuttle_status",
+    [
+        Shuttle.Status.IN_PRODUCTION,
+        Shuttle.Status.COMPLETED,
+        Shuttle.Status.CANCELLED,
+    ],
+)
+def test_not_blocked_by_terminal_shuttle_status(self, shuttle_status):
+    """Manual re-check works in ANY shuttle state (issue #270).
+
+    The shuttle scope filter must live only in the automatic task; the
+    shared create_check_drc_update() method must never gate on shuttle
+    status, or the manual "Recheck with Latest" button would break for
+    these designs.
+    """
+    shuttle = ShuttleFactory(status=shuttle_status)
+    project = ProjectFactory(shuttle=shuttle)
+    project_file = ProjectFileFactory(project=project, is_active=True)
+    old_check = ManufacturabilityCheckFactory(
+        project=project,
+        project_file=project_file,
+        status=ManufacturabilityCheck.Status.FINISHED,
+        docker_image_digest="sha256:old123456789012345678901234567890123456789012345678901234567",
+        container_started_at=timezone.now() - timedelta(hours=2),
     )
-    def test_not_blocked_by_terminal_shuttle_status(self, shuttle_status):
-        """Manual re-check works in ANY shuttle state (issue #270).
+    # Newer digest elsewhere makes old_check outdated (eligible to requeue).
+    ManufacturabilityCheckFactory(
+        docker_image_digest="sha256:new456789012345678901234567890123456789012345678901234567890",
+        container_started_at=timezone.now(),
+    )
+    cache.clear()
 
-        The shuttle scope filter must live only in the automatic task; the
-        shared create_check_drc_update() method must never gate on shuttle
-        status, or the manual "Recheck with Latest" button would break for
-        these designs.
-        """
-        shuttle = ShuttleFactory(status=shuttle_status)
-        project = ProjectFactory(shuttle=shuttle)
-        project_file = ProjectFileFactory(project=project, is_active=True)
-        old_check = ManufacturabilityCheckFactory(
-            project=project,
-            project_file=project_file,
-            status=ManufacturabilityCheck.Status.FINISHED,
-            docker_image_digest="sha256:old123456789012345678901234567890123456789012345678901234567",
-            container_started_at=timezone.now() - timedelta(hours=2),
-        )
-        # Newer digest elsewhere makes old_check outdated (eligible to requeue).
-        ManufacturabilityCheckFactory(
-            docker_image_digest="sha256:new456789012345678901234567890123456789012345678901234567890",
-            container_started_at=timezone.now(),
-        )
-        cache.clear()
+    new_check = old_check.create_check_drc_update()
 
-        new_check = old_check.create_check_drc_update()
-
-        assert (
-            new_check.trigger_reason
-            == ManufacturabilityCheck.TriggerReason.DRC_UPDATE
-        )
-        assert new_check.parent_check == old_check
+    assert new_check.trigger_reason == ManufacturabilityCheck.TriggerReason.DRC_UPDATE
+    assert new_check.parent_check == old_check
 ```
 
 - [ ] **Step 3: Run the test to confirm it passes (guard is green)**

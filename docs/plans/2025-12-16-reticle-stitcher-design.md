@@ -215,10 +215,9 @@ grid_config = GridConfig(shuttle.grid_config_file)
 
 ```python
 slots = (
-    ShuttleSlot.objects
-    .filter(shuttle=shuttle)
-    .select_related('project', 'project__submitted_file')
-    .order_by('row', 'column')
+    ShuttleSlot.objects.filter(shuttle=shuttle)
+    .select_related("project", "project__submitted_file")
+    .order_by("row", "column")
 )
 ```
 
@@ -237,9 +236,10 @@ project_file = project.submitted_file
 if not project_file:
     # Fall back to latest ProjectFile with passing check
     project_file = (
-        ProjectFile.objects
-        .filter(project=project, manufacturability_checks__status='COMPLETED')
-        .order_by('-created_at')
+        ProjectFile.objects.filter(
+            project=project, manufacturability_checks__status="COMPLETED"
+        )
+        .order_by("-created_at")
         .first()
     )
 ```
@@ -248,9 +248,8 @@ if not project_file:
 
 ```python
 check = (
-    ManufacturabilityCheck.objects
-    .filter(project_file=project_file, status='finished')
-    .order_by('-created_at')
+    ManufacturabilityCheck.objects.filter(project_file=project_file, status="finished")
+    .order_by("-created_at")
     .first()
 )
 ```

@@ -18,6 +18,7 @@ from tempfile import NamedTemporaryFile
 from tempfile import mkdtemp
 from typing import IO
 from typing import TYPE_CHECKING
+from typing import Self
 from unittest.mock import MagicMock
 from unittest.mock import Mock
 from unittest.mock import patch
@@ -2680,7 +2681,7 @@ Precheck successfully completed."""
             def close(self) -> None:
                 self._inner.close()
 
-            def __enter__(self) -> "ReadSizeRecorder":
+            def __enter__(self) -> Self:
                 return self
 
             def __exit__(self, *exc_info: object) -> None:

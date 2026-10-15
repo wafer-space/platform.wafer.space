@@ -159,7 +159,7 @@ dev = [
     "pytest-sugar==1.1.1",
     "pytest-xdist==3.8.0",
     "responses>=0.25.8",
-    "ruff==0.13.1",
+    "ruff==0.16.10",
     "selenium==4.50.0",
     "sphinx==8.2.3",
     "sphinx-autobuild==2025.8.25",

@@ -101,84 +101,85 @@ git commit -m "test: add failing tests for status metadata"
 Add this inside the `ManufacturabilityCheck` class, after the `Status` enum definition:
 
 ```python
-    # Status presentation metadata for consistent rendering across templates
-    # Maps status values to their display properties
-    _STATUS_METADATA: ClassVar[dict[str, dict[str, str | bool]]] = {
-        Status.PENDING: {
-            "color": "warning",
-            "icon": "bi-clock",
-            "label": "Pending",
-            "show_spinner": False,
-        },
-        Status.DISPATCHING: {
-            "color": "info",
-            "icon": "bi-send",
-            "label": "Dispatching",
-            "show_spinner": True,
-        },
-        Status.STARTING: {
-            "color": "info",
-            "icon": "bi-box-arrow-up",
-            "label": "Starting",
-            "show_spinner": True,
-        },
-        Status.RUNNING: {
-            "color": "primary",
-            "icon": "",  # Spinner only
-            "label": "Running",
-            "show_spinner": True,
-        },
-        Status.ANALYZING: {
-            "color": "primary",
-            "icon": "",  # Spinner only
-            "label": "Analyzing",
-            "show_spinner": True,
-        },
-        Status.FINISHED: {
-            "color": "success",
-            "icon": "bi-check-circle",
-            "label": "Finished",
-            "show_spinner": False,
-        },
-        Status.ERROR: {
-            "color": "danger",
-            "icon": "bi-exclamation-triangle",
-            "label": "Error",
-            "show_spinner": False,
-        },
-        Status.CANCELLING: {
-            "color": "warning",
-            "icon": "bi-x-circle",
-            "label": "Cancelling",
-            "show_spinner": True,
-        },
-        Status.CANCELLED: {
+# Status presentation metadata for consistent rendering across templates
+# Maps status values to their display properties
+_STATUS_METADATA: ClassVar[dict[str, dict[str, str | bool]]] = {
+    Status.PENDING: {
+        "color": "warning",
+        "icon": "bi-clock",
+        "label": "Pending",
+        "show_spinner": False,
+    },
+    Status.DISPATCHING: {
+        "color": "info",
+        "icon": "bi-send",
+        "label": "Dispatching",
+        "show_spinner": True,
+    },
+    Status.STARTING: {
+        "color": "info",
+        "icon": "bi-box-arrow-up",
+        "label": "Starting",
+        "show_spinner": True,
+    },
+    Status.RUNNING: {
+        "color": "primary",
+        "icon": "",  # Spinner only
+        "label": "Running",
+        "show_spinner": True,
+    },
+    Status.ANALYZING: {
+        "color": "primary",
+        "icon": "",  # Spinner only
+        "label": "Analyzing",
+        "show_spinner": True,
+    },
+    Status.FINISHED: {
+        "color": "success",
+        "icon": "bi-check-circle",
+        "label": "Finished",
+        "show_spinner": False,
+    },
+    Status.ERROR: {
+        "color": "danger",
+        "icon": "bi-exclamation-triangle",
+        "label": "Error",
+        "show_spinner": False,
+    },
+    Status.CANCELLING: {
+        "color": "warning",
+        "icon": "bi-x-circle",
+        "label": "Cancelling",
+        "show_spinner": True,
+    },
+    Status.CANCELLED: {
+        "color": "secondary",
+        "icon": "bi-x-circle",
+        "label": "Cancelled",
+        "show_spinner": False,
+    },
+}
+
+
+@classmethod
+def get_status_metadata(cls, status: str) -> dict[str, str | bool]:
+    """Return presentation metadata for a status value.
+
+    Args:
+        status: A status value (e.g., 'pending', 'running')
+
+    Returns:
+        Dict with keys: color, icon, label, show_spinner
+    """
+    return cls._STATUS_METADATA.get(
+        status,
+        {
             "color": "secondary",
-            "icon": "bi-x-circle",
-            "label": "Cancelled",
+            "icon": "",
+            "label": status.title(),
             "show_spinner": False,
         },
-    }
-
-    @classmethod
-    def get_status_metadata(cls, status: str) -> dict[str, str | bool]:
-        """Return presentation metadata for a status value.
-
-        Args:
-            status: A status value (e.g., 'pending', 'running')
-
-        Returns:
-            Dict with keys: color, icon, label, show_spinner
-        """
-        return cls._STATUS_METADATA.get(
-            status,
-            {
-                "color": "secondary",
-                "icon": "",
-                "label": status.title(),
-                "show_spinner": False,
-            },
-        )
+    )
 ```
 
 Also update the test to use `ManufacturabilityCheck.get_status_metadata()` instead of `Status.get_metadata()`.
@@ -272,29 +273,32 @@ Expected: FAIL with `AttributeError: 'ManufacturabilityCheck' object has no attr
 Add to `ManufacturabilityCheck` class:
 
 ```python
-    @property
-    def status_color(self) -> str:
-        """Return Bootstrap color for current status (e.g., 'primary', 'warning')."""
-        meta = self.get_status_metadata(self.status)
-        return str(meta["color"])
+@property
+def status_color(self) -> str:
+    """Return Bootstrap color for current status (e.g., 'primary', 'warning')."""
+    meta = self.get_status_metadata(self.status)
+    return str(meta["color"])
 
-    @property
-    def status_icon(self) -> str:
-        """Return Bootstrap icon class for current status (e.g., 'bi-clock')."""
-        meta = self.get_status_metadata(self.status)
-        return str(meta["icon"])
 
-    @property
-    def status_label(self) -> str:
-        """Return human-readable label for current status."""
-        meta = self.get_status_metadata(self.status)
-        return str(meta["label"])
+@property
+def status_icon(self) -> str:
+    """Return Bootstrap icon class for current status (e.g., 'bi-clock')."""
+    meta = self.get_status_metadata(self.status)
+    return str(meta["icon"])
 
-    @property
-    def status_show_spinner(self) -> bool:
-        """Return True if current status should display a spinner."""
-        meta = self.get_status_metadata(self.status)
-        return bool(meta["show_spinner"])
+
+@property
+def status_label(self) -> str:
+    """Return human-readable label for current status."""
+    meta = self.get_status_metadata(self.status)
+    return str(meta["label"])
+
+
+@property
+def status_show_spinner(self) -> bool:
+    """Return True if current status should display a spinner."""
+    meta = self.get_status_metadata(self.status)
+    return bool(meta["show_spinner"])
 ```
 
 **Step 4: Run test to verify it passes**
@@ -399,47 +403,46 @@ Expected: FAIL with `AttributeError: 'ManufacturabilityCheck' object has no attr
 Add to `ManufacturabilityCheck` class:
 
 ```python
-    def status_badge_html(self) -> str:
-        """Return complete Bootstrap badge HTML for current status.
+def status_badge_html(self) -> str:
+    """Return complete Bootstrap badge HTML for current status.
 
-        Returns:
-            SafeString containing badge HTML, safe for template rendering.
+    Returns:
+        SafeString containing badge HTML, safe for template rendering.
 
-        Example output:
-            <span class="badge bg-warning"><i class="bi-clock"></i> Pending</span>
-        """
-        from django.utils.html import format_html
-        from django.utils.safestring import mark_safe
+    Example output:
+        <span class="badge bg-warning"><i class="bi-clock"></i> Pending</span>
+    """
+    from django.utils.html import format_html
+    from django.utils.safestring import mark_safe
 
-        color = self.status_color
-        icon = self.status_icon
-        label = self.status_label
-        show_spinner = self.status_show_spinner
+    color = self.status_color
+    icon = self.status_icon
+    label = self.status_label
+    show_spinner = self.status_show_spinner
 
-        # Build icon/spinner HTML
-        if show_spinner:
-            icon_html = (
-                '<span class="spinner-border spinner-border-sm" '
-                'role="status" aria-hidden="true"></span>'
-            )
-        elif icon:
-            icon_html = f'<i class="{icon}"></i>'
-        else:
-            icon_html = ""
+    # Build icon/spinner HTML
+    if show_spinner:
+        icon_html = (
+            '<span class="spinner-border spinner-border-sm" '
+            'role="status" aria-hidden="true"></span>'
+        )
+    elif icon:
+        icon_html = f'<i class="{icon}"></i>'
+    else:
+        icon_html = ""
 
-        # Add text-dark class for warning background (better contrast)
-        text_class = " text-dark" if color == "warning" else ""
+    # Add text-dark class for warning background (better contrast)
+    text_class = " text-dark" if color == "warning" else ""
 
-        # Combine into badge
-        if icon_html:
-            badge_html = (
-                f'<span class="badge bg-{color}{text_class}">'
-                f"{icon_html} {label}</span>"
-            )
-        else:
-            badge_html = f'<span class="badge bg-{color}{text_class}">{label}</span>'
+    # Combine into badge
+    if icon_html:
+        badge_html = (
+            f'<span class="badge bg-{color}{text_class}">{icon_html} {label}</span>'
+        )
+    else:
+        badge_html = f'<span class="badge bg-{color}{text_class}">{label}</span>'
 
-        return mark_safe(badge_html)
+    return mark_safe(badge_html)
 ```
 
 **Step 4: Run test to verify it passes**
@@ -741,15 +744,17 @@ def get(self, request):
         )
         if checks.exists():
             meta = ManufacturabilityCheck.get_status_metadata(status)
-            active_sections.append({
-                "status": status,
-                "label": meta["label"],
-                "color": meta["color"],
-                "icon": meta["icon"],
-                "show_spinner": meta["show_spinner"],
-                "checks": checks,
-                "count": checks.count(),
-            })
+            active_sections.append(
+                {
+                    "status": status,
+                    "label": meta["label"],
+                    "color": meta["color"],
+                    "icon": meta["icon"],
+                    "show_spinner": meta["show_spinner"],
+                    "checks": checks,
+                    "count": checks.count(),
+                }
+            )
 
     return render(
         request,

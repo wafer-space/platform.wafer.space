@@ -23,6 +23,7 @@ def version_display(self) -> str:
     """Version string for display."""
     return self.precheck_version or self.git_commit_sha[:7] or self.short_digest
 
+
 @classmethod
 def format_version_display(
     cls, check_or_digest: "ManufacturabilityCheck | str | None"
@@ -116,8 +117,7 @@ def checks_drc_update_requeue() -> dict:
 
     # Get latest check per project
     latest_checks = (
-        ManufacturabilityCheck.objects
-        .filter(project_file__project__isnull=False)
+        ManufacturabilityCheck.objects.filter(project_file__project__isnull=False)
         .order_by("project_file__project_id", "-created_at")
         .distinct("project_file__project_id")
         .select_related("project_file", "project_file__project")
@@ -228,7 +228,6 @@ Add to `config/settings/base.py`:
 ```python
 CELERY_BEAT_SCHEDULE = {
     # ... existing tasks ...
-
     "checks-drc-update-requeue": {
         "task": "wafer_space.projects.tasks_checks.checks_drc_update_requeue",
         "schedule": 60.0,  # Every 60 seconds

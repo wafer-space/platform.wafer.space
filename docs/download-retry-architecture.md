@@ -87,10 +87,10 @@ def download_status(self) -> str:
 
 ```python
 class Status(models.TextChoices):
-    PENDING = "pending"        # Attempt created, not started
-    DOWNLOADING = "downloading" # Attempt in progress
-    COMPLETED = "completed"     # Attempt successful
-    FAILED = "failed"          # Attempt failed (will retry or give up)
+    PENDING = "pending"  # Attempt created, not started
+    DOWNLOADING = "downloading"  # Attempt in progress
+    COMPLETED = "completed"  # Attempt successful
+    FAILED = "failed"  # Attempt failed (will retry or give up)
 ```
 
 **Relationship:**

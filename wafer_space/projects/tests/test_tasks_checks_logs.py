@@ -124,9 +124,13 @@ def test_partial_line_completed_later_is_not_lost() -> None:
 
     container.printed = ["2026-10-11T10:00:00.100000001Z Progress: 50%"]
     poll(container, check)
+    # One element: Docker sends the completed line as a single chunk, still
+    # under the partial line's stamp. The concatenation is deliberate.
     container.printed = [
-        "2026-10-11T10:00:00.100000001Z Progress: 50%"
-        "2026-10-11T10:00:05.000000000Z ... done",
+        (
+            "2026-10-11T10:00:00.100000001Z Progress: 50%"
+            "2026-10-11T10:00:05.000000000Z ... done"
+        ),
     ]
     poll(container, check)
 

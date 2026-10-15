@@ -88,12 +88,26 @@ from wafer_space.shuttles.models import Shuttle
 s = Shuttle.objects.get(name="G804")
 print(s.name, s.description, s.status, s.grid_config_file)
 run3 = Shuttle.objects.get(name="G803")
-for field in ("technology_node", "foundry", "wafer_size", "total_cost",
-              "cost_per_slot"):
-    print(field, repr(getattr(run3, field)), repr(getattr(s, field)),
-          getattr(run3, field) == getattr(s, field))
-print("dates:", s.submission_deadline, s.production_start_date,
-      s.estimated_completion_date, s.actual_completion_date)
+for field in (
+    "technology_node",
+    "foundry",
+    "wafer_size",
+    "total_cost",
+    "cost_per_slot",
+):
+    print(
+        field,
+        repr(getattr(run3, field)),
+        repr(getattr(s, field)),
+        getattr(run3, field) == getattr(s, field),
+    )
+print(
+    "dates:",
+    s.submission_deadline,
+    s.production_start_date,
+    s.estimated_completion_date,
+    s.actual_completion_date,
+)
 print("crowd_supply_url:", repr(s.crowd_supply_url))
 print("slots:", sorted(Counter(s.slots.values_list("slot_size", flat=True)).items()))
 ```
@@ -219,13 +233,23 @@ print(s.description)
 run3 = Shuttle.objects.get(name="G803")
 for field in ("technology_node", "foundry", "wafer_size"):
     print(field, getattr(run3, field) == getattr(s, field))
-print("dates:", s.submission_deadline, s.production_start_date,
-      s.estimated_completion_date, s.actual_completion_date)
+print(
+    "dates:",
+    s.submission_deadline,
+    s.production_start_date,
+    s.estimated_completion_date,
+    s.actual_completion_date,
+)
 print("urls:", repr(s.crowd_supply_url), repr(s.website_url))
 print("slots:", s.slots.count())
-print("default pick is G800:",
-      Shuttle.objects.open_to_users().filter(is_test_only=False)
-      .order_by("created_at").first() == s)
+print(
+    "default pick is G800:",
+    Shuttle.objects.open_to_users()
+    .filter(is_test_only=False)
+    .order_by("created_at")
+    .first()
+    == s,
+)
 ```
 
 Expected output:

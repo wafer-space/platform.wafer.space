@@ -53,6 +53,7 @@ class ShuttleQuerySet(models.QuerySet["Shuttle"]):
             Q(submission_deadline__isnull=True) | Q(submission_deadline__gt=now)
         )
 
+
 class Shuttle(models.Model):
     objects = ShuttleQuerySet.as_manager()
 

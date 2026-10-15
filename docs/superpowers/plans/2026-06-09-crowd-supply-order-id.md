@@ -198,37 +198,39 @@ git commit -m "feat: migration for Project.crowd_supply_order_id"
 Add to `TestProjectForm` in `test_forms.py` (uses the existing `setUp` shuttle). Helper to build base data:
 
 ```python
-    def _base_form_data(self, **overrides):
-        data = {
-            "name": "Test Project",
-            "shuttle": self.shuttle.pk,
-            "project_id": "TEST",
-            "slot_size": "1x1",
-        }
-        data.update(overrides)
-        return data
+def _base_form_data(self, **overrides):
+    data = {
+        "name": "Test Project",
+        "shuttle": self.shuttle.pk,
+        "project_id": "TEST",
+        "slot_size": "1x1",
+    }
+    data.update(overrides)
+    return data
 
-    def test_order_id_optional(self):
-        form = ProjectForm(data=self._base_form_data())
-        assert form.is_valid(), form.errors
-        assert form.cleaned_data["crowd_supply_order_id"] == ""
 
-    def test_order_id_accepts_digits(self):
-        form = ProjectForm(data=self._base_form_data(crowd_supply_order_id="327373"))
-        assert form.is_valid(), form.errors
-        assert form.cleaned_data["crowd_supply_order_id"] == "327373"
+def test_order_id_optional(self):
+    form = ProjectForm(data=self._base_form_data())
+    assert form.is_valid(), form.errors
+    assert form.cleaned_data["crowd_supply_order_id"] == ""
 
-    def test_order_id_strips_hash_and_whitespace(self):
-        form = ProjectForm(
-            data=self._base_form_data(crowd_supply_order_id="  #327373 ")
-        )
-        assert form.is_valid(), form.errors
-        assert form.cleaned_data["crowd_supply_order_id"] == "327373"
 
-    def test_order_id_rejects_non_numeric(self):
-        form = ProjectForm(data=self._base_form_data(crowd_supply_order_id="abc123"))
-        assert not form.is_valid()
-        assert "crowd_supply_order_id" in form.errors
+def test_order_id_accepts_digits(self):
+    form = ProjectForm(data=self._base_form_data(crowd_supply_order_id="327373"))
+    assert form.is_valid(), form.errors
+    assert form.cleaned_data["crowd_supply_order_id"] == "327373"
+
+
+def test_order_id_strips_hash_and_whitespace(self):
+    form = ProjectForm(data=self._base_form_data(crowd_supply_order_id="  #327373 "))
+    assert form.is_valid(), form.errors
+    assert form.cleaned_data["crowd_supply_order_id"] == "327373"
+
+
+def test_order_id_rejects_non_numeric(self):
+    form = ProjectForm(data=self._base_form_data(crowd_supply_order_id="abc123"))
+    assert not form.is_valid()
+    assert "crowd_supply_order_id" in form.errors
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**

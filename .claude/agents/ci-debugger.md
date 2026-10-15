@@ -94,6 +94,9 @@ make ci-test
 #### Linting Failures
 
 **Common ruff Errors:**
+
+<!-- fmt:off -->
+
 ```python
 # T201: print() statements
 # ❌ Bad
@@ -174,6 +177,8 @@ def complex_function():
     return _format_output(data)
 ```
 
+<!-- fmt:on -->
+
 **Fix Process:**
 ```bash
 # 1. Run local linting
@@ -211,25 +216,31 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 def process_data(data):
     return {"result": data}
 
+
 # ✅ Good
 def process_data(data: dict) -> dict[str, Any]:
     return {"result": data}
+
 
 # Missing argument type annotations
 # ❌ Bad
 def create_project(user, name):
     pass
 
+
 # ✅ Good
 from wafer_space.users.models import User
 
+
 def create_project(user: User, name: str) -> Project:
     pass
+
 
 # Incorrect return type
 # ❌ Bad (returns Optional but not annotated)
 def get_project(id: int) -> Project:
     return Project.objects.filter(id=id).first()  # Can return None
+
 
 # ✅ Good
 def get_project(id: int) -> Project | None:
@@ -493,10 +504,7 @@ gh run watch
 ```python
 # config/settings/base.py
 DATABASES = {
-    "default": env.db(
-        "DATABASE_URL",
-        default="postgres://localhost/wafer_space"
-    )
+    "default": env.db("DATABASE_URL", default="postgres://localhost/wafer_space")
 }
 
 # CI uses: postgres://postgres:postgres@localhost:5432/postgres

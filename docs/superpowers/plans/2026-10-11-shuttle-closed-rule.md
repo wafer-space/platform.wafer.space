@@ -119,24 +119,41 @@ CASES = [
 @pytest.mark.parametrize(("status", "deadline", "expected"), CASES)
 def test_instance_and_queryset_agree(status, deadline, expected):
     shuttle = Shuttle.objects.create(
-        name="G880", description="Rule", status=status,
+        name="G880",
+        description="Rule",
+        status=status,
         submission_deadline=deadline,
     )
     assert shuttle.is_open_to_users(now=NOW) is expected
-    assert Shuttle.objects.open_to_users(now=NOW).filter(pk=shuttle.pk).exists() is expected
+    assert (
+        Shuttle.objects.open_to_users(now=NOW).filter(pk=shuttle.pk).exists()
+        is expected
+    )
 
 
 def test_open_until_last_second_of_aoe_day():
-    shuttle = Shuttle(name="G881", status=Shuttle.Status.OPEN,
-                      submission_deadline=datetime.datetime(2026, 12, 16, 23, 59, 59, tzinfo=AOE))
-    assert shuttle.is_open_to_users(now=datetime.datetime(2026, 12, 16, 23, 59, 58, tzinfo=AOE))
-    assert not shuttle.is_open_to_users(now=datetime.datetime(2026, 12, 16, 23, 59, 59, tzinfo=AOE))
+    shuttle = Shuttle(
+        name="G881",
+        status=Shuttle.Status.OPEN,
+        submission_deadline=datetime.datetime(2026, 12, 16, 23, 59, 59, tzinfo=AOE),
+    )
+    assert shuttle.is_open_to_users(
+        now=datetime.datetime(2026, 12, 16, 23, 59, 58, tzinfo=AOE)
+    )
+    assert not shuttle.is_open_to_users(
+        now=datetime.datetime(2026, 12, 16, 23, 59, 59, tzinfo=AOE)
+    )
 
 
 def test_closed_reason_for_passed_deadline():
-    shuttle = Shuttle(name="G882", status=Shuttle.Status.OPEN,
-                      submission_deadline=datetime.datetime(2020, 1, 1, tzinfo=datetime.UTC))
-    assert shuttle.closed_reason == "Shuttle G882 is closed: its GDS deadline has passed"
+    shuttle = Shuttle(
+        name="G882",
+        status=Shuttle.Status.OPEN,
+        submission_deadline=datetime.datetime(2020, 1, 1, tzinfo=datetime.UTC),
+    )
+    assert (
+        shuttle.closed_reason == "Shuttle G882 is closed: its GDS deadline has passed"
+    )
 
 
 def test_closed_reason_for_status():
@@ -171,31 +188,33 @@ class ShuttleQuerySet(models.QuerySet["Shuttle"]):
 In `Shuttle`, set `objects = ShuttleQuerySet.as_manager()` and add:
 
 ```python
-    def is_open_to_users(self, now: datetime.datetime | None = None) -> bool:
-        """Open = status open and the GDS deadline, if set, not yet reached.
+def is_open_to_users(self, now: datetime.datetime | None = None) -> bool:
+    """Open = status open and the GDS deadline, if set, not yet reached.
 
-        The one definition of a closed shuttle (#320; Tim, issues-09:
-        "Computed: closed after deadline or status not open").
-        ShuttleQuerySet.open_to_users must agree with it.
-        """
-        moment = now or timezone.now()
-        return self.status == self.Status.OPEN and (
-            self.submission_deadline is None or moment < self.submission_deadline
-        )
+    The one definition of a closed shuttle (#320; Tim, issues-09:
+    "Computed: closed after deadline or status not open").
+    ShuttleQuerySet.open_to_users must agree with it.
+    """
+    moment = now or timezone.now()
+    return self.status == self.Status.OPEN and (
+        self.submission_deadline is None or moment < self.submission_deadline
+    )
 
-    @property
-    def is_closed(self) -> bool:
-        """True when users may no longer create, upload or submit."""
-        return not self.is_open_to_users()
 
-    @property
-    def closed_reason(self) -> str | None:
-        """Why the shuttle is closed, in plain words; None when open."""
-        if self.is_open_to_users():
-            return None
-        if self.status == self.Status.OPEN:
-            return f"Shuttle {self.name} is closed: its GDS deadline has passed"
-        return f"Shuttle {self.name} is closed ({self.get_status_display()})"
+@property
+def is_closed(self) -> bool:
+    """True when users may no longer create, upload or submit."""
+    return not self.is_open_to_users()
+
+
+@property
+def closed_reason(self) -> str | None:
+    """Why the shuttle is closed, in plain words; None when open."""
+    if self.is_open_to_users():
+        return None
+    if self.status == self.Status.OPEN:
+        return f"Shuttle {self.name} is closed: its GDS deadline has passed"
+    return f"Shuttle {self.name} is closed ({self.get_status_display()})"
 ```
 
 - [ ] **Step 4:** Rerun the tests. Expected: PASS. Run `make type-check`.
@@ -225,9 +244,15 @@ RUN_PAGES_MODULE = "wafer_space.shuttles.migrations.0012_set_run_page_urls"
 @pytest.mark.django_db
 def test_run_page_migration_sets_g801_g802_only():
     for name in ("G801", "G802", "G803"):
-        Shuttle.objects.update_or_create(name=name, defaults={"description": name, "website_url": ""})
+        Shuttle.objects.update_or_create(
+            name=name, defaults={"description": name, "website_url": ""}
+        )
     importlib.import_module(RUN_PAGES_MODULE).set_run_page_urls(django_apps, None)
-    assert dict(Shuttle.objects.filter(name__in=["G801", "G802", "G803"]).values_list("name", "website_url")) == {
+    assert dict(
+        Shuttle.objects.filter(name__in=["G801", "G802", "G803"]).values_list(
+            "name", "website_url"
+        )
+    ) == {
         "G801": "https://wafer.space/ws-run1/",
         "G802": "https://wafer.space/ws-run2/",
         "G803": "",
@@ -283,7 +308,6 @@ def set_run_page_urls(apps, _schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies: ClassVar[list[tuple[str, str]]] = [
         ("shuttles", "0011_shuttle_website_url"),
     ]
@@ -339,10 +363,18 @@ def _names(field: forms.Field) -> set[str]:
 @pytest.fixture
 def shuttles():
     return {
-        "open": Shuttle.objects.create(name="G885", description="o", status="open", submission_deadline=FUTURE),
-        "nodeadline": Shuttle.objects.create(name="G886", description="n", status="open"),
-        "lapsed": Shuttle.objects.create(name="G887", description="l", status="open", submission_deadline=PAST),
-        "production": Shuttle.objects.create(name="G888", description="p", status="production"),
+        "open": Shuttle.objects.create(
+            name="G885", description="o", status="open", submission_deadline=FUTURE
+        ),
+        "nodeadline": Shuttle.objects.create(
+            name="G886", description="n", status="open"
+        ),
+        "lapsed": Shuttle.objects.create(
+            name="G887", description="l", status="open", submission_deadline=PAST
+        ),
+        "production": Shuttle.objects.create(
+            name="G888", description="p", status="production"
+        ),
     }
 
 
@@ -447,9 +479,13 @@ pytestmark = pytest.mark.django_db
 # its owner. A new URL must be added to one set (as PR #353 does for
 # archived projects), so a new write view cannot skip the rule.
 ALLOWED_ON_CLOSED = {
-    "detail", "progress", "check_status", "cancel_check",
+    "detail",
+    "progress",
+    "check_status",
+    "cancel_check",
     "update",  # other fields stay editable; CoB is locked by the form
-    "delete", "compliance_certify",
+    "delete",
+    "compliance_certify",
     "check_drc_update_requeue",  # re-checks a revision; submission is frozen
 }
 REFUSED_ON_CLOSED = {"submit", "submit_url"}
@@ -458,9 +494,13 @@ REASON = "Shuttle G889 is closed (In Production)"
 
 
 def project_url_names():
-    return {p.name for p in project_urls.urlpatterns
-            if isinstance(p, URLPattern) and p.name
-            and any(k in str(p.pattern) for k in PROJECT_KWARGS)}
+    return {
+        p.name
+        for p in project_urls.urlpatterns
+        if isinstance(p, URLPattern)
+        and p.name
+        and any(k in str(p.pattern) for k in PROJECT_KWARGS)
+    }
 
 
 def test_every_project_url_is_classified():
@@ -479,7 +519,9 @@ def test_owner_refused(client, closed_project, name, method):
     client.force_login(closed_project.user)
     response = getattr(client, method)(
         reverse(f"projects:{name}", args=[closed_project.pk]),
-        {"url": "https://example.com/design.gds"}, follow=True)
+        {"url": "https://example.com/design.gds"},
+        follow=True,
+    )
     detail = reverse("projects:detail", args=[closed_project.pk])
     assert response.redirect_chain[-1][0] == detail
     assert REASON in response.content.decode()
@@ -502,7 +544,10 @@ def test_project_without_shuttle_not_refused(client):
 
 def test_stranger_still_gets_403(client, closed_project):
     client.force_login(UserFactory())
-    assert client.get(reverse("projects:submit_url", args=[closed_project.pk])).status_code == 403
+    assert (
+        client.get(reverse("projects:submit_url", args=[closed_project.pk])).status_code
+        == 403
+    )
 ```
 
   Before running: check that `submit` is POST-only (`ProjectSubmitView` has
@@ -554,7 +599,9 @@ class RefuseClosedShuttleMixin(View):
     The view's URL must carry the project's ``pk``.
     """
 
-    def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
+    def dispatch(
+        self, request: HttpRequest, *args: Any, **kwargs: Any
+    ) -> HttpResponseBase:
         """Redirect with the reason if the project's shuttle is closed."""
         project = get_object_or_404(Project, pk=kwargs["pk"])
         refusal = refuse_if_shuttle_closed(request, project)
@@ -592,14 +639,18 @@ class RefuseClosedShuttleMixin(View):
 ```python
 def test_detail_shows_reason_not_upload_button_to_owner(client, closed_project):
     client.force_login(closed_project.user)
-    content = client.get(reverse("projects:detail", args=[closed_project.pk])).content.decode()
+    content = client.get(
+        reverse("projects:detail", args=[closed_project.pk])
+    ).content.decode()
     assert REASON in content
     assert reverse("projects:submit_url", args=[closed_project.pk]) not in content
 
 
 def test_detail_keeps_upload_button_for_staff(client, closed_project):
     client.force_login(UserFactory(is_staff=True))
-    content = client.get(reverse("projects:detail", args=[closed_project.pk])).content.decode()
+    content = client.get(
+        reverse("projects:detail", args=[closed_project.pk])
+    ).content.decode()
     assert reverse("projects:submit_url", args=[closed_project.pk]) in content
 ```
 
@@ -644,12 +695,16 @@ FUTURE = datetime.datetime(2099, 12, 17, 11, 59, 59, tzinfo=datetime.UTC)
 
 @pytest.fixture
 def closed():
-    return Shuttle.objects.create(name="G890", description="Past run", status="completed", website_url=RUN1)
+    return Shuttle.objects.create(
+        name="G890", description="Past run", status="completed", website_url=RUN1
+    )
 
 
 @pytest.fixture
 def open_shuttle():
-    return Shuttle.objects.create(name="G891", description="Now", status="open", submission_deadline=FUTURE)
+    return Shuttle.objects.create(
+        name="G891", description="Now", status="open", submission_deadline=FUTURE
+    )
 
 
 @pytest.fixture

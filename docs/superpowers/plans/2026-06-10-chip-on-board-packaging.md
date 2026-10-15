@@ -383,25 +383,26 @@ creates its own (all needed imports — `User`, `Project`, `TEST_PASSWORD` —
 already exist at the top of the file):
 
 ```python
-    def test_chip_on_board_field_present_and_optional(self):
-        """chip_on_board is on the form, optional, and defaults to False."""
-        form = ProjectForm()
-        assert "chip_on_board" in form.fields
-        assert form.fields["chip_on_board"].required is False
+def test_chip_on_board_field_present_and_optional(self):
+    """chip_on_board is on the form, optional, and defaults to False."""
+    form = ProjectForm()
+    assert "chip_on_board" in form.fields
+    assert form.fields["chip_on_board"].required is False
 
-    def test_chip_on_board_editable_for_non_staff_on_existing_project(self):
-        """chip_on_board is a user field — never disabled on edit."""
-        user = User.objects.create_user(
-            username="formuser", email="form@example.com", password=TEST_PASSWORD
-        )
-        project = Project.objects.create(
-            user=user,
-            name="Form Project",
-            shuttle=self.shuttle,
-            project_id="FRMP",
-        )
-        form = ProjectForm(user=user, instance=project)
-        assert form.fields["chip_on_board"].disabled is False
+
+def test_chip_on_board_editable_for_non_staff_on_existing_project(self):
+    """chip_on_board is a user field — never disabled on edit."""
+    user = User.objects.create_user(
+        username="formuser", email="form@example.com", password=TEST_PASSWORD
+    )
+    project = Project.objects.create(
+        user=user,
+        name="Form Project",
+        shuttle=self.shuttle,
+        project_id="FRMP",
+    )
+    form = ProjectForm(user=user, instance=project)
+    assert form.fields["chip_on_board"].disabled is False
 ```
 
 (`ProjectForm()` without `user` is fine — the signature is
@@ -457,89 +458,89 @@ git commit -m "feat: add CoB checkbox to project form (#259)"
 Add to `TestProjectUpdateView`. Base form data matches `test_owner_can_update_project_details` (line 284):
 
 ```python
-    def _cob_form_data(self, *, chip_on_board: bool) -> dict:
-        """Valid update-form payload toggling only chip_on_board."""
-        data = {
-            "name": "Test Project",
-            "description": "Test project",
-            "repository_url": "",
-            "license_type": "proprietary",
-            "other_license_spdx_id": "",
-            "proprietary_terms_url": "",
-        }
-        if chip_on_board:
-            data["chip_on_board"] = "on"
-        return data
+def _cob_form_data(self, *, chip_on_board: bool) -> dict:
+    """Valid update-form payload toggling only chip_on_board."""
+    data = {
+        "name": "Test Project",
+        "description": "Test project",
+        "repository_url": "",
+        "license_type": "proprietary",
+        "other_license_spdx_id": "",
+        "proprietary_terms_url": "",
+    }
+    if chip_on_board:
+        data["chip_on_board"] = "on"
+    return data
 
-    def _make_submitted_check(self, status):
-        """Attach a submitted file with a check to self.project."""
-        project_file = ProjectFileFactory(project=self.project)
-        self.project.submitted_file = project_file
-        self.project.save()
-        return ManufacturabilityCheckFactory(
-            project=self.project,
-            project_file=project_file,
-            status=status,
-        )
 
-    def test_toggling_cob_creates_cob_change_check(self):
-        """Enabling CoB on a project with a check creates one COB_CHANGE check."""
-        check = self._make_submitted_check(ManufacturabilityCheck.Status.FINISHED)
-        self.client.login(username="testuser", password=TEST_PASSWORD)
-        url = reverse("projects:update", kwargs={"pk": self.project.pk})
+def _make_submitted_check(self, status):
+    """Attach a submitted file with a check to self.project."""
+    project_file = ProjectFileFactory(project=self.project)
+    self.project.submitted_file = project_file
+    self.project.save()
+    return ManufacturabilityCheckFactory(
+        project=self.project,
+        project_file=project_file,
+        status=status,
+    )
 
-        response = self.client.post(url, self._cob_form_data(chip_on_board=True))
 
-        assert response.status_code == HTTP_FOUND
-        self.project.refresh_from_db()
-        assert self.project.chip_on_board is True
-        checks = ManufacturabilityCheck.objects.filter(
-            project_file=check.project_file
-        ).order_by("created_at")
-        assert checks.count() == len([check, "new"])  # exactly one new check
-        new_check = checks.last()
-        assert (
-            new_check.trigger_reason
-            == ManufacturabilityCheck.TriggerReason.COB_CHANGE
-        )
-        assert new_check.parent_check == check
+def test_toggling_cob_creates_cob_change_check(self):
+    """Enabling CoB on a project with a check creates one COB_CHANGE check."""
+    check = self._make_submitted_check(ManufacturabilityCheck.Status.FINISHED)
+    self.client.login(username="testuser", password=TEST_PASSWORD)
+    url = reverse("projects:update", kwargs={"pk": self.project.pk})
 
-    def test_toggling_cob_cancels_in_progress_check(self):
-        """Enabling CoB while a check is RUNNING marks it CANCELLING."""
-        check = self._make_submitted_check(ManufacturabilityCheck.Status.RUNNING)
-        self.client.login(username="testuser", password=TEST_PASSWORD)
-        url = reverse("projects:update", kwargs={"pk": self.project.pk})
+    response = self.client.post(url, self._cob_form_data(chip_on_board=True))
 
-        self.client.post(url, self._cob_form_data(chip_on_board=True))
+    assert response.status_code == HTTP_FOUND
+    self.project.refresh_from_db()
+    assert self.project.chip_on_board is True
+    checks = ManufacturabilityCheck.objects.filter(
+        project_file=check.project_file
+    ).order_by("created_at")
+    assert checks.count() == len([check, "new"])  # exactly one new check
+    new_check = checks.last()
+    assert new_check.trigger_reason == ManufacturabilityCheck.TriggerReason.COB_CHANGE
+    assert new_check.parent_check == check
 
-        check.refresh_from_db()
-        assert check.status == ManufacturabilityCheck.Status.CANCELLING
 
-    def test_toggling_cob_on_draft_only_persists(self):
-        """No submitted file/check: the flag is saved, no check is created."""
-        self.client.login(username="testuser", password=TEST_PASSWORD)
-        url = reverse("projects:update", kwargs={"pk": self.project.pk})
+def test_toggling_cob_cancels_in_progress_check(self):
+    """Enabling CoB while a check is RUNNING marks it CANCELLING."""
+    check = self._make_submitted_check(ManufacturabilityCheck.Status.RUNNING)
+    self.client.login(username="testuser", password=TEST_PASSWORD)
+    url = reverse("projects:update", kwargs={"pk": self.project.pk})
 
-        self.client.post(url, self._cob_form_data(chip_on_board=True))
+    self.client.post(url, self._cob_form_data(chip_on_board=True))
 
-        self.project.refresh_from_db()
-        assert self.project.chip_on_board is True
-        assert ManufacturabilityCheck.objects.filter(project=self.project).count() == 0
+    check.refresh_from_db()
+    assert check.status == ManufacturabilityCheck.Status.CANCELLING
 
-    def test_unchanged_cob_creates_no_check(self):
-        """Submitting the form with CoB unchanged creates no new check."""
-        check = self._make_submitted_check(ManufacturabilityCheck.Status.FINISHED)
-        self.client.login(username="testuser", password=TEST_PASSWORD)
-        url = reverse("projects:update", kwargs={"pk": self.project.pk})
 
-        self.client.post(url, self._cob_form_data(chip_on_board=False))
+def test_toggling_cob_on_draft_only_persists(self):
+    """No submitted file/check: the flag is saved, no check is created."""
+    self.client.login(username="testuser", password=TEST_PASSWORD)
+    url = reverse("projects:update", kwargs={"pk": self.project.pk})
 
-        assert (
-            ManufacturabilityCheck.objects.filter(
-                project_file=check.project_file
-            ).count()
-            == 1
-        )
+    self.client.post(url, self._cob_form_data(chip_on_board=True))
+
+    self.project.refresh_from_db()
+    assert self.project.chip_on_board is True
+    assert ManufacturabilityCheck.objects.filter(project=self.project).count() == 0
+
+
+def test_unchanged_cob_creates_no_check(self):
+    """Submitting the form with CoB unchanged creates no new check."""
+    check = self._make_submitted_check(ManufacturabilityCheck.Status.FINISHED)
+    self.client.login(username="testuser", password=TEST_PASSWORD)
+    url = reverse("projects:update", kwargs={"pk": self.project.pk})
+
+    self.client.post(url, self._cob_form_data(chip_on_board=False))
+
+    assert (
+        ManufacturabilityCheck.objects.filter(project_file=check.project_file).count()
+        == 1
+    )
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -602,27 +603,28 @@ git commit -m "feat: re-run manufacturability check when CoB toggled (#259)"
 Add to the existing project detail view test class in `test_views.py` (find it via `grep -n "class TestProjectDetail" wafer_space/projects/tests/test_views.py`; reuse its setUp/login pattern):
 
 ```python
-    def test_detail_shows_cob_badge_when_requested(self):
-        """Detail page shows the CoB badge when chip_on_board is set."""
-        self.project.chip_on_board = True
-        self.project.save()
-        self.client.login(username="testuser", password=TEST_PASSWORD)
-        url = reverse("projects:detail", kwargs={"pk": self.project.pk})
+def test_detail_shows_cob_badge_when_requested(self):
+    """Detail page shows the CoB badge when chip_on_board is set."""
+    self.project.chip_on_board = True
+    self.project.save()
+    self.client.login(username="testuser", password=TEST_PASSWORD)
+    url = reverse("projects:detail", kwargs={"pk": self.project.pk})
 
-        response = self.client.get(url)
+    response = self.client.get(url)
 
-        assert response.status_code == HTTP_OK
-        assert "Chip-on-Board" in response.content.decode()
+    assert response.status_code == HTTP_OK
+    assert "Chip-on-Board" in response.content.decode()
 
-    def test_detail_shows_standard_packaging_when_not_requested(self):
-        """Detail page shows standard packaging when chip_on_board is unset."""
-        self.client.login(username="testuser", password=TEST_PASSWORD)
-        url = reverse("projects:detail", kwargs={"pk": self.project.pk})
 
-        response = self.client.get(url)
+def test_detail_shows_standard_packaging_when_not_requested(self):
+    """Detail page shows standard packaging when chip_on_board is unset."""
+    self.client.login(username="testuser", password=TEST_PASSWORD)
+    url = reverse("projects:detail", kwargs={"pk": self.project.pk})
 
-        assert response.status_code == HTTP_OK
-        assert "Chip-on-Board" not in response.content.decode()
+    response = self.client.get(url)
+
+    assert response.status_code == HTTP_OK
+    assert "Chip-on-Board" not in response.content.decode()
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**

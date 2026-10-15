@@ -186,8 +186,7 @@ For orchestration tasks (periodic polling).
 **Usage:**
 ```python
 @checks_task()
-def checks_pending() -> dict[str, int]:
-    ...
+def checks_pending() -> dict[str, int]: ...
 ```
 
 ### `@queued_check_task(expected_status=None, **celery_kwargs)`
@@ -205,8 +204,7 @@ For work tasks that operate on a single check.
 **Usage:**
 ```python
 @queued_check_task(expected_status="RUNNING", queue="dock:ro:checks-fast")
-def do_running(check: ManufacturabilityCheck) -> dict[str, Any]:
-    ...
+def do_running(check: ManufacturabilityCheck) -> dict[str, Any]: ...
 ```
 
 ---
@@ -239,11 +237,11 @@ Key Celery settings in `config/settings/base.py`:
 
 ```python
 CELERY_BROKER_URL = "sqla+postgresql://..."  # PostgreSQL broker
-CELERY_RESULT_BACKEND = "django-db"          # Django ORM results
-CELERY_TASK_TIME_LIMIT = 30 * 60             # 30 min hard limit
-CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60        # 25 min soft limit
-CELERY_RESULT_EXPIRES = 3600                 # 1 hour result retention
-CELERY_TASK_DEFAULT_QUEUE = "none:ro:default"  # tasks without queue=, e.g. backend_cleanup
+CELERY_RESULT_BACKEND = "django-db"  # Django ORM results
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 min hard limit
+CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 min soft limit
+CELERY_RESULT_EXPIRES = 3600  # 1 hour result retention
+CELERY_TASK_DEFAULT_QUEUE = "none:ro:default"  # no queue=, e.g. backend_cleanup
 ```
 
 ---
