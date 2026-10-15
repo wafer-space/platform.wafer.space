@@ -13,6 +13,7 @@ from django.core.files.base import ContentFile
 from django.db import connection
 from django.template.loader import render_to_string
 from django.test import Client
+from django.test import RequestFactory
 from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
@@ -3029,6 +3030,73 @@ class TestManufacturabilityCheckPartialVersionInfo:
 
         assert "precheck: unknown" not in html
         assert "klayout: 0.29.1" in html
+
+
+@pytest.mark.django_db
+class TestManufacturabilityCheckSectionColours:
+    """Errors, Warnings and System Error headings are coloured only when the
+    section has something in it; empty ones are grey (#211, urish: "my brain
+    automatically interpret the red text as 'something went wrong'")."""
+
+    TEMPLATE = "projects/_manufacturability_check.html"
+
+    def _heading_class(self, section: str, *, staff: bool = False, **fields) -> str:
+        """The class attribute of ``section``'s heading for a finished check."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.FINISHED, **fields
+        )
+        request = RequestFactory().get("/")
+        request.user = UserFactory(is_staff=staff)
+        html = render_to_string(self.TEMPLATE, {"check": check, "request": request})
+        marker = f'data-check-section="{section}"'
+        assert html.count(marker) == 1
+        opening_tag = html.split(marker)[0].rsplit("<h6", 1)[1]
+        return opening_tag.split('class="', 1)[1].split('"', 1)[0]
+
+    def test_no_errors_heading_is_grey(self):
+        """Zero errors: no red Errors heading."""
+        assert self._heading_class("errors", errors=[]) == "text-muted"
+
+    def test_one_error_heading_is_red(self):
+        """One error: the Errors heading is red."""
+        assert self._heading_class("errors", errors=["DRC: spacing"]) == "text-danger"
+
+    def test_no_warnings_heading_is_grey(self):
+        """Zero warnings: no yellow Warnings heading."""
+        assert self._heading_class("warnings", warnings=[]) == "text-muted"
+
+    def test_one_warning_heading_is_yellow(self):
+        """One warning: the Warnings heading is yellow."""
+        assert self._heading_class("warnings", warnings=["Density"]) == "text-warning"
+
+    def test_no_system_error_heading_is_grey(self):
+        """Staff, no system error message: no red System Error heading."""
+        heading = self._heading_class("system-error", staff=True, error_message="")
+        assert heading == "text-muted"
+
+    def test_system_error_heading_is_red(self):
+        """Staff, a system error message: the System Error heading is red."""
+        heading = self._heading_class(
+            "system-error", staff=True, error_message="Container exited 137"
+        )
+        assert heading == "text-danger"
+
+    def test_empty_sections_still_say_none(self):
+        """Greying keeps the sections; the owner still sees "None"."""
+        check = ManufacturabilityCheckFactory(
+            status=ManufacturabilityCheck.Status.FINISHED, errors=[], warnings=[]
+        )
+        request = RequestFactory().get("/")
+        request.user = UserFactory()
+        html = render_to_string(self.TEMPLATE, {"check": check, "request": request})
+        sections = {
+            section: html.split(f'data-check-section="{section}"')[1].split("</div>")[0]
+            for section in ("errors", "warnings")
+        }
+        assert {section: "None" in body for section, body in sections.items()} == {
+            "errors": True,
+            "warnings": True,
+        }
 
 
 @pytest.mark.django_db
