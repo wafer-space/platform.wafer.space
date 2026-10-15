@@ -11,6 +11,7 @@ from django.urls import reverse
 
 from wafer_space.projects.tests.factories import ProjectFactory
 from wafer_space.shuttles.models import Shuttle
+from wafer_space.shuttles.tests.test_deadline_include import has_local_time
 from wafer_space.users.tests.factories import UserFactory
 
 if TYPE_CHECKING:
@@ -138,7 +139,7 @@ def test_project_detail_counts_down_to_open_deadline(
     content = client.get(project.get_absolute_url()).content
     html = content.decode()
     assert 'data-countdown="2099-12-17T11:59:59Z"' in html
-    assert '<time datetime="2099-12-17T11:59:59Z" data-local-time>' in html
+    assert has_local_time(html, "2099-12-17T11:59:59Z")
 
 
 def test_project_detail_closed_shuttle_has_no_countdown(

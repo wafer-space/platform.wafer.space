@@ -445,10 +445,12 @@
                         action="{% url 'projects:submit_override' pk=project.pk %}"
                         onsubmit="return confirm('The latest revision\'s precheck result is Not Manufacturable. Submit it for manufacturing anyway? This is recorded with your name and reason.');">
                     {% csrf_token %}
-                    <label class="form-label" for="{{ override_form.reason.id_for_label }}">{{ override_form.reason.label }}</label>
+                    <label class="form-label"
+                           for="{{ override_form.reason.id_for_label }}">{{ override_form.reason.label }}</label>
                     {{ override_form.reason }}
                     <div class="form-text">At least 20 characters. Shown on this page to the owner and recorded in the audit log.</div>
-                    <button type="submit" class="btn btn-danger btn-sm mt-2">Submit for manufacturing by override</button>
+                    <button type="submit"
+                            class="btn btn-danger btn-sm mt-2">Submit for manufacturing by override</button>
                   </form>
                 </div>
               {% endif %}
@@ -678,7 +680,7 @@
     </script>
   {% endif %}
   {# Auto-update logs when manufacturability check is processing #}
-  {% if check and check.status in 'pending,dispatching,starting,running,analyzing,cancelling' %}
+  {% if check and check.status in "pending,dispatching,starting,running,analyzing,cancelling" %}
     <script>
       // Poll for updated logs every 5 seconds while check is processing
       (function() {

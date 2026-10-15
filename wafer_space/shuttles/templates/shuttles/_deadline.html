@@ -22,12 +22,16 @@
        title="Anywhere on Earth (UTC-12)">AoE</a>
     <span class="text-muted small">
       (your time:
-      <time datetime="{{ iso_utc }}" data-local-time><a href="{{ timeanddate_url }}" target="_blank" rel="noopener">see in your timezone</a></time>)
+      <time datetime="{{ iso_utc }}"
+            data-local-time><a href="{{ timeanddate_url }}"
+   target="_blank"
+   rel="noopener">see in your timezone</a></time>)
     </span>
     {% if passed %}
       <span class="badge bg-secondary" data-deadline-passed>Deadline passed</span>
     {% else %}
-      <span class="badge bg-warning text-dark" data-countdown="{{ iso_utc }}">{{ days_left }} day{{ days_left|pluralize }} left</span>
+      <span class="badge bg-warning text-dark"
+            data-countdown="{{ iso_utc }}">{{ days_left }} day{{ days_left|pluralize }} left</span>
     {% endif %}
   </span>
 {% endif %}

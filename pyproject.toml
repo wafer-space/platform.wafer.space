@@ -144,7 +144,7 @@ dev = [
     "django-debug-toolbar==6.0.0",
     "django-extensions==4.1",
     "django-stubs[compatible-mypy]==5.2.5",
-    "djlint==1.36.4",
+    "djlint==1.46.4",
     "factory-boy==3.3.2",
     "honcho>=2.0.0",
     "ipdb==0.13.13",

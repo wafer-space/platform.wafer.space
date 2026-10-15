@@ -23,11 +23,11 @@
             <p class="mb-0">
               A manufacturability check is currently
               <strong>
-                {% if running_check.status == 'running' %}
+                {% if running_check.status == "running" %}
                   running
-                {% elif running_check.status == 'analyzing' %}
+                {% elif running_check.status == "analyzing" %}
                   analyzing
-                {% elif running_check.status in 'dispatching,starting' %}
+                {% elif running_check.status in "dispatching,starting" %}
                   starting
                 {% else %}
                   pending

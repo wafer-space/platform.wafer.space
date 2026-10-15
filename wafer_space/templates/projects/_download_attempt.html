@@ -17,11 +17,11 @@
           {% if is_latest %}<span class="badge bg-primary ms-1">Latest</span>{% endif %}
         </strong>
         <span class="badge {% if attempt.status == 'completed' %}bg-success{% elif attempt.status == 'failed' %}bg-danger{% elif attempt.status == 'downloading' %}bg-primary{% else %}bg-secondary{% endif %}">
-          {% if attempt.status == 'completed' %}
+          {% if attempt.status == "completed" %}
             <i class="bi bi-check-circle"></i>
-          {% elif attempt.status == 'failed' %}
+          {% elif attempt.status == "failed" %}
             <i class="bi bi-exclamation-triangle"></i>
-          {% elif attempt.status == 'downloading' %}
+          {% elif attempt.status == "downloading" %}
             <span class="spinner-border spinner-border-sm"
                   role="status"
                   aria-hidden="true"></span>
@@ -66,7 +66,7 @@
         {% endif %}
       </div>
       {# Errors section #}
-      {% if show_errors|default:True and attempt.status == 'failed' %}
+      {% if show_errors|default:True and attempt.status == "failed" %}
         {% if attempt.errors.exists %}
           <div class="mt-3">
             <h6 class="text-danger mb-2">
