@@ -74,11 +74,17 @@ T = TypeVar("T")
 # =============================================================================
 
 
-# PLACEHOLDER, set from production's runtimes before merge (issue #426).
-# The dispatchers run every 15 s and take well under a second, but without
-# their own limits they inherit CELERY_TASK_TIME_LIMIT (30 minutes): on
-# 16 Oct a hung checks_dispatching held one of checks-orch's two children for
-# 30 minutes before it was killed.
+# The dispatchers run every 15 s. Without their own limits they inherit
+# CELERY_TASK_TIME_LIMIT (30 minutes): on 16 Oct 2026 a hung
+# checks_dispatching held one of checks-orch's two children for 1800 s
+# before it was killed (issue #426). Production's runtimes, from the
+# checks-orch worker log on 16 Oct (hetzner-ansible NOTE 28 B2):
+# - since deploy 1's kombu purge, the longest run of any checks_* task was
+#   8.8 s (checks_starting), and every task's p99 was at most 4.9 s;
+# - in the queue-bloat era before it (#382) the longest was 24.3 s
+#   (checks_cleanup_stale_pending_tasks).
+# The soft limit is about 2.5 times that worst case, and the hard limit
+# kills a hung run 30 s later.
 DISPATCHER_TIME_LIMITS: dict[str, int] = {"soft_time_limit": 60, "time_limit": 90}
 
 
