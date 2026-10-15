@@ -4,6 +4,7 @@ import urllib.parse
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from datetime import timedelta
 from typing import Any
 from typing import ClassVar
 
@@ -2825,6 +2826,22 @@ class ManufacturabilityCheck(models.Model):
             self.Status.FINISHED: self.analysis_completed_at,
         }
         return status_to_timestamp.get(self.status) or self.created_at
+
+    @property
+    def is_terminal(self) -> bool:
+        """True once the check has finished, errored or been cancelled."""
+        return self.status in self.Status.terminal()
+
+    @property
+    def end_to_end_duration(self) -> timedelta | None:
+        """Queue plus run time of a finished check, created to analysed (#296).
+
+        None until the check finishes, and for errored or cancelled checks,
+        which record no end time.
+        """
+        if self.status != self.Status.FINISHED or self.analysis_completed_at is None:
+            return None
+        return self.analysis_completed_at - self.created_at
 
     @property
     def run_duration_seconds(self) -> float | None:
