@@ -470,7 +470,8 @@ CELERY_TASK_EAGER_PROPAGATES = True
 # Results expire after 1 hour; backend_cleanup deletes them daily, so a row
 # lives between 1 and 25 hours. This must stay above CELERY_TASK_TIME_LIMIT:
 # cleanup deletes by date_done regardless of state, and
-# checks_cleanup_stale_pending_tasks reads a STARTED row as "still running".
+# checks_cleanup_stale_pending_tasks reads a STARTED row as "still running"
+# until it is older than the hard time limit (then its worker died, #183).
 # The deployed workers run the default prefork pool, which enforces the time
 # limit; the Procfile's solo/threads pools (development only) do not.
 CELERY_RESULT_EXPIRES = 3600
