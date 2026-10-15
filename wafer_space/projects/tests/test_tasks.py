@@ -1050,16 +1050,15 @@ class TestChecksDispatching:
             docker_server_id="local",
         )
 
-        with patch("wafer_space.projects.tasks.do_dispatching.delay") as mock_delay:
-            mock_delay.return_value.id = "task-123"
+        with patch("wafer_space.projects.tasks.do_dispatching.apply_async") as publish:
             result = checks_dispatching()
 
-        mock_delay.assert_called_once_with(check.id)
         assert result["queued"] == 1
 
         # Should create task tracking row
         task = ManufacturabilityCheckTask.objects.get(manufacturability_check=check)
-        assert task.task_id == "task-123"
+        # The message carries the id the lock was written under.
+        publish.assert_called_once_with((check.id,), task_id=task.task_id)
         assert task.task_name == "do_dispatching"
 
     @pytest.mark.django_db
@@ -1075,10 +1074,10 @@ class TestChecksDispatching:
             task_name="do_dispatching",
         )
 
-        with patch("wafer_space.projects.tasks.do_dispatching.delay") as mock_delay:
+        with patch("wafer_space.projects.tasks.do_dispatching.apply_async") as publish:
             result = checks_dispatching()
 
-        mock_delay.assert_not_called()
+        publish.assert_not_called()
         assert result["queued"] == 0
 
     @pytest.mark.django_db
@@ -1089,12 +1088,11 @@ class TestChecksDispatching:
             docker_server_id="local",
         )
 
-        with patch("wafer_space.projects.tasks.do_dispatching.delay") as mock_delay:
-            mock_delay.return_value.id = "task-abc"
+        with patch("wafer_space.projects.tasks.do_dispatching.apply_async") as publish:
             checks_dispatching()
 
         task = ManufacturabilityCheckTask.objects.get(manufacturability_check=check)
-        assert task.task_id == "task-abc"
+        assert task.task_id == publish.call_args.kwargs["task_id"]
         assert task.task_name == "do_dispatching"
         assert task.queued_at is not None
 
@@ -1110,16 +1108,15 @@ class TestChecksStarting:
             docker_server_id="local",
         )
 
-        with patch("wafer_space.projects.tasks.do_starting.delay") as mock_delay:
-            mock_delay.return_value.id = "task-123"
+        with patch("wafer_space.projects.tasks.do_starting.apply_async") as publish:
             result = checks_starting()
 
-        mock_delay.assert_called_once_with(check.id)
         assert result["queued"] == 1
 
         # Should create task tracking row
         task = ManufacturabilityCheckTask.objects.get(manufacturability_check=check)
-        assert task.task_id == "task-123"
+        # The message carries the id the lock was written under.
+        publish.assert_called_once_with((check.id,), task_id=task.task_id)
         assert task.task_name == "do_starting"
 
     @pytest.mark.django_db
@@ -1135,10 +1132,10 @@ class TestChecksStarting:
             task_name="do_starting",
         )
 
-        with patch("wafer_space.projects.tasks.do_starting.delay") as mock_delay:
+        with patch("wafer_space.projects.tasks.do_starting.apply_async") as publish:
             result = checks_starting()
 
-        mock_delay.assert_not_called()
+        publish.assert_not_called()
         assert result["queued"] == 0
 
 
@@ -1153,16 +1150,15 @@ class TestChecksRunning:
             docker_server_id="local",
         )
 
-        with patch("wafer_space.projects.tasks.do_running.delay") as mock_delay:
-            mock_delay.return_value.id = "task-456"
+        with patch("wafer_space.projects.tasks.do_running.apply_async") as publish:
             result = checks_running()
 
-        mock_delay.assert_called_once_with(check.id)
         assert result["queued"] == 1
 
         # Should create task tracking row
         task = ManufacturabilityCheckTask.objects.get(manufacturability_check=check)
-        assert task.task_id == "task-456"
+        # The message carries the id the lock was written under.
+        publish.assert_called_once_with((check.id,), task_id=task.task_id)
         assert task.task_name == "do_running"
 
     @pytest.mark.django_db
@@ -1178,10 +1174,10 @@ class TestChecksRunning:
             task_name="do_running",
         )
 
-        with patch("wafer_space.projects.tasks.do_running.delay") as mock_delay:
+        with patch("wafer_space.projects.tasks.do_running.apply_async") as publish:
             result = checks_running()
 
-        mock_delay.assert_not_called()
+        publish.assert_not_called()
         assert result["queued"] == 0
 
 
@@ -1195,16 +1191,15 @@ class TestChecksAnalyzing:
             status=ManufacturabilityCheck.Status.ANALYZING,
         )
 
-        with patch("wafer_space.projects.tasks.do_analyzing.delay") as mock_delay:
-            mock_delay.return_value.id = "task-789"
+        with patch("wafer_space.projects.tasks.do_analyzing.apply_async") as publish:
             result = checks_analyzing()
 
-        mock_delay.assert_called_once_with(check.id)
         assert result["queued"] == 1
 
         # Should create task tracking row
         task = ManufacturabilityCheckTask.objects.get(manufacturability_check=check)
-        assert task.task_id == "task-789"
+        # The message carries the id the lock was written under.
+        publish.assert_called_once_with((check.id,), task_id=task.task_id)
         assert task.task_name == "do_analyzing"
 
     @pytest.mark.django_db
@@ -1219,10 +1214,10 @@ class TestChecksAnalyzing:
             task_name="do_analyzing",
         )
 
-        with patch("wafer_space.projects.tasks.do_analyzing.delay") as mock_delay:
+        with patch("wafer_space.projects.tasks.do_analyzing.apply_async") as publish:
             result = checks_analyzing()
 
-        mock_delay.assert_not_called()
+        publish.assert_not_called()
         assert result["queued"] == 0
 
 
@@ -1273,7 +1268,7 @@ class TestDoDispatching:
             mock_image.attrs = {"RepoDigests": ["ghcr.io/test@sha256:abc123"]}
             mock_client.images.pull.return_value = mock_image
 
-            do_dispatching(check.id)
+            do_dispatching.apply((check.id,), task_id="test")
 
         assert not ManufacturabilityCheckTask.objects.filter(
             manufacturability_check=check
@@ -1775,7 +1770,7 @@ class TestDoStarting:
             mock_path.return_value = mock_path_instance
             mock_create_tar.return_value.__enter__.return_value = MagicMock()
 
-            do_starting(check.id)
+            do_starting.apply((check.id,), task_id="test")
 
         assert not ManufacturabilityCheckTask.objects.filter(
             manufacturability_check=check
