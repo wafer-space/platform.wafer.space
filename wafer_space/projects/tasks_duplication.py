@@ -15,6 +15,7 @@ from django.contrib.admin.models import ADDITION
 from django.contrib.admin.models import CHANGE
 from django.contrib.admin.models import LogEntry
 
+from wafer_space.projects.duplication import CloneRequest
 from wafer_space.projects.duplication import duplicate_project_to_shuttle
 from wafer_space.projects.exceptions import ProjectDuplicationError
 from wafer_space.projects.models import Project
@@ -29,13 +30,21 @@ def duplicate_project_task(
     project_pk: str,
     target_shuttle_pk: int,
     admin_user_pk: int,
+    clone_project_id: str | None = None,
+    clone_slot_size: str | None = None,
 ) -> dict[str, str]:
-    """Duplicate a project onto another shuttle (admin-triggered).
+    """Duplicate a project onto another shuttle.
 
-    The admin view validates and enqueues; this task re-validates and
-    performs the atomic copy. Outcomes are recorded as admin LogEntry
-    rows so the triggering admin can see what happened even though the
-    request cycle has already returned.
+    Triggered by staff from the admin, or by the owner or staff from
+    "Clone to open shuttle" on the project page (#355), which passes the
+    new project ID and slot size as ``clone_project_id`` and
+    ``clone_slot_size``; the target must then still be open to users.
+    ``admin_user_pk`` is the user who asked, staff or owner.
+
+    The view validates and enqueues; this task re-validates and performs
+    the atomic copy. Outcomes are recorded as admin LogEntry rows so
+    staff can see what happened even though the request cycle has
+    already returned.
 
     No retries by design: expected failures (validation, collisions) are
     caught and recorded, and a blind re-run of a partially-visible copy
@@ -57,12 +66,16 @@ def duplicate_project_task(
         return {"status": "failed", "error": str(exc)}
     source_shuttle_name = project.shuttle.name if project.shuttle else "(none)"
     source_queryset = Project.objects.filter(pk=project.pk)
+    clone = None
+    if clone_project_id is not None and clone_slot_size is not None:
+        clone = CloneRequest(project_id=clone_project_id, slot_size=clone_slot_size)
 
     try:
         duplicate = duplicate_project_to_shuttle(
             project=project,
             target_shuttle=target_shuttle,
             admin_user=admin_user,
+            clone=clone,
         )
     except ProjectDuplicationError as exc:
         logger.warning(
