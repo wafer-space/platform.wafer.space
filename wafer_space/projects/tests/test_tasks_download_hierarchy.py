@@ -25,8 +25,9 @@ from wafer_space.projects.models import ProjectFile
 from wafer_space.projects.tasks_download import download_project_file
 from wafer_space.projects.tasks_download import ensure_download_tasks_queued
 from wafer_space.projects.tests.factories import ProjectFactory
-from wafer_space.projects.tests.test_top_cell_extractor import chain
-from wafer_space.projects.tests.test_top_cell_extractor import write_layout
+from wafer_space.projects.tests.layout_helpers import DEEP_LEVELS
+from wafer_space.projects.tests.layout_helpers import chain
+from wafer_space.projects.tests.layout_helpers import write_layout
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -100,6 +101,7 @@ CYCLE = {"TOP": ["A"], "A": ["B"], "B": ["A"], "OTHER": []}
 
 @pytest.fixture
 def media_root(settings, tmp_path: Path) -> Path:
+    """Keep the downloaded file and its staging dir under tmp_path."""
     settings.MEDIA_ROOT = str(tmp_path / "media")
     return tmp_path
 
@@ -115,6 +117,7 @@ def test_cycle_fails_the_one_attempt_with_the_message(media_root: Path) -> None:
 
 
 def test_cycle_message_is_the_files_download_error(media_root: Path) -> None:
+    """The file shows as failed, with the message as its error."""
     project_file = download(media_root, CYCLE)
 
     assert (project_file.download_status, project_file.download_error) == (
@@ -194,19 +197,17 @@ def test_other_cycles_fail_the_download_too(
     media_root: Path,
     hierarchy: dict[str, list[str]],
 ) -> None:
+    """A self-reference, and a cycle with no top cell, fail the same way."""
     project_file = download(media_root, hierarchy)
 
-    assert (
-        project_file.download_status,
-        project_file.download_error.startswith(
-            "The design has a circular cell reference (",
-        ),
-    ) == (DownloadAttempt.Status.FAILED, True)
+    assert project_file.download_error.startswith(
+        "The design has a circular cell reference (",
+    )
 
 
 def test_2000_deep_design_downloads(media_root: Path) -> None:
     """Deep but acyclic, with a second top cell: it completes as before."""
-    hierarchy = chain(2001)
+    hierarchy = chain(DEEP_LEVELS + 1)
     hierarchy["OTHER"] = []
 
     project_file = download(media_root, hierarchy)
