@@ -19,10 +19,8 @@ from wafer_space.users.tests.factories import UserFactory
 
 # Test constants
 TEST_PASSWORD = "testpass123"  # noqa: S105
-MIN_VERSION_DISPLAY_COUNT = 2  # Minimum times version should appear on page
 # This test's own ToS (#269); a version no other test or seed uses.
 TOS_VERSION = "2.69.0"
-TOS_CONTENT = f"This is test TOS content for version {TOS_VERSION}."
 # One version per test (#418), so none collides with the session's "1.0.0"
 # seed or with another test's ToS in the same session.
 TOS_VERSION_PUBLIC = "4.18.1"
@@ -64,8 +62,8 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
         """Log in a user with a verified email who hasn't accepted any ToS."""
         user = UserFactory(password=TEST_PASSWORD)
         driver.get(f"{live_server_url}/accounts/login/")
-        self.fill_input(driver, (By.NAME, "login"), user.username)
-        self.fill_input(driver, (By.NAME, "password"), TEST_PASSWORD)
+        self.set_input_value(driver, (By.NAME, "login"), user.username)
+        self.set_input_value(driver, (By.NAME, "password"), TEST_PASSWORD)
         self.submit_form(driver)
         return user
 
@@ -126,8 +124,8 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
         # ACCOUNT_LOGIN_ON_EMAIL_CONFIRMATION = False): it lands on Sign In.
         WebDriverWait(driver, 10).until(EC.url_contains("/accounts/login/"))
         assert f"You have confirmed {test_email}" in driver.page_source
-        self.fill_input(driver, (By.NAME, "login"), test_username)
-        self.fill_input(driver, (By.NAME, "password"), TEST_PASSWORD)
+        self.set_input_value(driver, (By.NAME, "login"), test_username)
+        self.set_input_value(driver, (By.NAME, "password"), TEST_PASSWORD)
         self.submit_form(driver)
 
         self._wait_for_accept_page(driver, live_server_url, TOS_VERSION_SIGNUP)
@@ -177,7 +175,9 @@ class TestTOSAcceptanceFlow(BaseBrowserTest):
         tos_page = TOSDisplayPage(driver, live_server_url)
         tos_page.navigate_to_tos()
         WebDriverWait(driver, 10).until(
-            EC.text_to_be_present_in_element(TOSDisplayPage.TOS_CONTENT, TOS_CONTENT)
+            EC.text_to_be_present_in_element(
+                TOSDisplayPage.TOS_CONTENT, tos_content(TOS_VERSION)
+            )
         )
 
         version_line = driver.find_element(By.CSS_SELECTOR, "h1 + p.text-muted").text
