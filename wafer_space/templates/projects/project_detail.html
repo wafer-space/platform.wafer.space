@@ -371,6 +371,9 @@
               </h5>
             </div>
             <div class="card-body">
+              {% if project.missing_order_number_warning %}
+                {% include "projects/_missing_order_warning.html" %}
+              {% endif %}
               {% if project.is_submission_override %}
                 <div class="alert alert-warning"
                      role="status"
@@ -407,7 +410,7 @@
                   <form action="{% url 'projects:submit' pk=project.pk %}"
                         method="post"
                         style="display: inline"
-                        onsubmit="return confirm('Are you sure you want to submit this project for manufacturing?{% if project.submitted_file %} This will replace the previously submitted file.{% endif %}');">
+                        onsubmit="return confirm('Are you sure you want to submit this project for manufacturing?{% if project.submitted_file %} This will replace the previously submitted file.{% endif %}{% if project.missing_order_number_warning %} {{ project.missing_order_number_warning|escapejs }}{% endif %}');">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-success">
                       <i class="bi bi-send"></i> Submit for Manufacturing
@@ -429,6 +432,12 @@
               </div>
             </div>
             <div class="card-body">
+              {# Once submitted, the Submitted card above carries the warning #}
+              {% if project.missing_order_number_warning and not shuttle_closed_reason and not submitted_file %}
+                {% if project.can_submit.0 or can_override_submit.0 %}
+                  {% include "projects/_missing_order_warning.html" %}
+                {% endif %}
+              {% endif %}
               {% if can_override_submit.0 %}
                 <div class="border border-danger rounded p-2 mb-3" data-submit-override>
                   <button class="btn btn-outline-danger btn-sm"
