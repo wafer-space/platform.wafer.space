@@ -1,3 +1,4 @@
+{% load artifact_tags %}
 {% load check_log_tags %}
 {% load duration_filters %}
 {% load precheck_tags %}
@@ -126,11 +127,17 @@
           {% endif %}
         </td>
         <td class="text-muted small">
-          {% if check.log_file %}
-            {{ check.log_file.size|filesizeformat }}
-          {% else %}
-            -
-          {% endif %}
+          {% with size=check.log_file|stored_size %}
+            {% if not check.log_file %}
+              -
+            {% elif size is None %}
+              <span class="badge bg-warning text-dark"
+                    data-artifact-missing="log_file"
+                    title="The check saved this file, but it is no longer on disk.">File missing</span>
+            {% else %}
+              {{ size|filesizeformat }}
+            {% endif %}
+          {% endwith %}
         </td>
         <td>
           {% if check.log_file_sha256 %}
@@ -142,7 +149,7 @@
       </tr>
       <tr>
         <td style="width: 180px;">
-          {% if check.runs_archive %}
+          {% if check.runs_archive|stored_size is not None %}
             <a href="{{ check.runs_archive.url }}"
                class="btn btn-sm btn-outline-primary"
                download>
@@ -153,11 +160,17 @@
           {% endif %}
         </td>
         <td class="text-muted small">
-          {% if check.runs_archive %}
-            {{ check.runs_archive.size|filesizeformat }}
-          {% else %}
-            -
-          {% endif %}
+          {% with size=check.runs_archive|stored_size %}
+            {% if not check.runs_archive %}
+              -
+            {% elif size is None %}
+              <span class="badge bg-warning text-dark"
+                    data-artifact-missing="runs_archive"
+                    title="The check saved this file, but it is no longer on disk.">File missing</span>
+            {% else %}
+              {{ size|filesizeformat }}
+            {% endif %}
+          {% endwith %}
         </td>
         <td>
           {% if check.runs_archive_sha256 %}
@@ -169,7 +182,7 @@
       </tr>
       <tr>
         <td style="width: 180px;">
-          {% if check.output_gds %}
+          {% if check.output_gds|stored_size is not None %}
             <a href="{{ check.output_gds.url }}"
                class="btn btn-sm btn-outline-success"
                download>
@@ -180,11 +193,17 @@
           {% endif %}
         </td>
         <td class="text-muted small">
-          {% if check.output_gds %}
-            {{ check.output_gds.size|filesizeformat }}
-          {% else %}
-            -
-          {% endif %}
+          {% with size=check.output_gds|stored_size %}
+            {% if not check.output_gds %}
+              -
+            {% elif size is None %}
+              <span class="badge bg-warning text-dark"
+                    data-artifact-missing="output_gds"
+                    title="The check saved this file, but it is no longer on disk.">File missing</span>
+            {% else %}
+              {{ size|filesizeformat }}
+            {% endif %}
+          {% endwith %}
         </td>
         <td>
           {% if check.output_gds_sha256 %}
@@ -196,7 +215,7 @@
       </tr>
       <tr>
         <td style="width: 180px;">
-          {% if check.docker_layer_export %}
+          {% if check.docker_layer_export|stored_size is not None %}
             <a href="{{ check.docker_layer_export.url }}"
                class="btn btn-sm btn-outline-warning"
                download>
@@ -207,11 +226,17 @@
           {% endif %}
         </td>
         <td class="text-muted small">
-          {% if check.docker_layer_export %}
-            {{ check.docker_layer_export.size|filesizeformat }}
-          {% else %}
-            -
-          {% endif %}
+          {% with size=check.docker_layer_export|stored_size %}
+            {% if not check.docker_layer_export %}
+              -
+            {% elif size is None %}
+              <span class="badge bg-warning text-dark"
+                    data-artifact-missing="docker_layer_export"
+                    title="The check saved this file, but it is no longer on disk.">File missing</span>
+            {% else %}
+              {{ size|filesizeformat }}
+            {% endif %}
+          {% endwith %}
         </td>
         <td>
           {% if check.docker_layer_sha256 %}
