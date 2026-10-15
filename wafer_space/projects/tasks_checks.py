@@ -216,6 +216,16 @@ __all__ = [
 ]
 
 
+# Active states in which mark_running has recorded the check's container.
+_CONTAINER_RECORDED_STATES = frozenset(
+    {
+        ManufacturabilityCheck.Status.RUNNING,
+        ManufacturabilityCheck.Status.ANALYZING,
+        ManufacturabilityCheck.Status.CANCELLING,
+    }
+)
+
+
 def _cleanup_container_if_orphaned(
     container: "docker.models.containers.Container",
     server_id: str,
@@ -279,6 +289,28 @@ def _cleanup_container_if_orphaned(
         stop_and_remove_container(container, logger)
         return "removed"
 
+    # An active check owns one container: the one mark_running recorded.
+    # Any other container labelled with its id is a duplicate (issue #187).
+    # Before RUNNING the current attempt's id is not recorded yet, so keep
+    # every container then rather than race a container that is starting.
+    recorded_id = check.docker_container_id
+    if (
+        check.status in _CONTAINER_RECORDED_STATES
+        and recorded_id
+        and container.id != recorded_id
+    ):
+        logger.info(
+            "Server %s, container %s: duplicate for check %s in %s state "
+            "(its container is %s), removing",
+            server_id,
+            container.short_id,
+            check_id,
+            check.status,
+            recorded_id[:12],
+        )
+        stop_and_remove_container(container, logger)
+        return "removed"
+
     logger.debug(
         "Server %s, container %s: check %s in %s state, keeping",
         server_id,
@@ -296,11 +328,13 @@ def checks_cleanup_orphaned_docker() -> dict:
     Iterates over all configured Docker servers and removes containers where
     the associated ManufacturabilityCheck is:
     - Missing (deleted)
-    - FINISHED
-    - ERROR
-    - CANCELLED
+    - not active (FINISHED, ERROR, CANCELLED)
+    - active, but the container is not the one recorded for it: a duplicate
+      (issue #187; only once mark_running has recorded it, see
+      _CONTAINER_RECORDED_STATES)
 
-    CANCELLING containers are handled by checks_cancelling task, not here.
+    A cancelled check's container goes here too: checks_cancelling only
+    marks the check CANCELLED and leaves the container to this sweep.
 
     Only cleans up containers created by this platform instance (matching
     wafer.space.site label). This prevents prod from cleaning up staging
