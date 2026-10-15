@@ -134,7 +134,10 @@ def do_revision_fetch(self, digest: str) -> dict[str, Any]:
     if problems:
         # ERROR, not WARNING: this is the failure class that went unseen
         # for a month in 2026 (#293). The row is marked fetched, so this
-        # is logged once per digest, and ADMINS get it by email.
+        # is logged once per digest. ADMINS get it by email; the handler
+        # sends one email per message template per hour, so several
+        # digests in one hour share an email, and the staff summary page
+        # lists each of them.
         logger.error(
             "Saved partial precheck metadata for %s: %s",
             digest[:20],
