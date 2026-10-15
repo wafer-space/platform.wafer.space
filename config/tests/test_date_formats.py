@@ -7,9 +7,11 @@ language, so every language Django offers is checked, not only English.
 from __future__ import annotations
 
 import datetime as dt
+import re
 
 import pytest
 from django.conf import settings
+from django.utils import dateformat
 from django.utils import formats
 from django.utils import translation
 
@@ -39,16 +41,36 @@ def _position(rendered: str, tokens: list[str]) -> int | None:
     return min(found) if found else None
 
 
-def _order(rendered: str) -> str:
-    """Which part of ``rendered`` comes first: day, month or year."""
+def _parts(rendered: str) -> dict[str, int]:
+    """Where the day, month and year start in ``rendered``, if present."""
     parts = {
         "day": _position(rendered, [DAY]),
         "month": _position(rendered, _month_tokens()),
         "year": _position(rendered, [YEAR]),
     }
-    found = {name: at for name, at in parts.items() if at is not None}
-    assert len(found) == len(parts), f"{rendered!r} lacks a day, month or year"
+    return {name: at for name, at in parts.items() if at is not None}
+
+
+def _order(rendered: str) -> str:
+    """Which part of ``rendered`` comes first: day, month or year."""
+    found = _parts(rendered)
+    assert len(found) == len(("day", "month", "year")), (
+        f"{rendered!r} lacks a day, month or year"
+    )
     return min(found, key=found.__getitem__)
+
+
+def _template_date_literals() -> list[tuple[str, str]]:
+    """Every literal ``|date:"..."`` format in the repository's templates."""
+    literal = re.compile(r"""\|date:\s*(["'])(.+?)\1""")
+    found = []
+    for path in sorted(settings.APPS_DIR.rglob("templates/**/*")):
+        if path.suffix not in {".html", ".txt"}:
+            continue
+        for match in literal.finditer(path.read_text(encoding="utf-8")):
+            relative = path.relative_to(settings.BASE_DIR)
+            found.append((str(relative), match.group(2)))
+    return found
 
 
 @pytest.mark.parametrize("language", LANGUAGE_CODES)
@@ -82,3 +104,21 @@ def test_english_formats(language: str) -> None:
         "23 November",
         "14:05",
     ]
+
+
+def test_template_date_literals_are_not_month_first() -> None:
+    """A literal ``|date:"..."`` bypasses the settings above, so each one in
+    the templates is checked too: month before day only after the year."""
+    literals = _template_date_literals()
+    with translation.override("en"):
+        month_first = []
+        for path, date_format in literals:
+            found = _parts(dateformat.format(INSTANT, date_format))
+            day, month, year = (found.get(n) for n in ("day", "month", "year"))
+            if day is None or month is None:
+                continue
+            if month < day and (year is None or year > month):
+                month_first.append((path, date_format))
+
+    assert literals, "no |date literals found; is the template search broken?"
+    assert not month_first, f"month-first |date literals: {month_first}"
