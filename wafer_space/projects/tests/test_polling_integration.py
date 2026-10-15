@@ -120,7 +120,8 @@ class TestPollingLifecycleIntegration:
             docker_server_id="test",
         )
 
-        result = checks_starting()
+        with patch("wafer_space.projects.tasks.do_starting.apply_async"):
+            result = checks_starting()
 
         check.refresh_from_db()
         assert result["queued"] == 1
@@ -146,7 +147,8 @@ class TestPollingLifecycleIntegration:
             docker_container_id="test-container-123",
         )
 
-        result = checks_running()
+        with patch("wafer_space.projects.tasks.do_running.apply_async"):
+            result = checks_running()
 
         check.refresh_from_db()
         assert result["queued"] == 1
@@ -242,15 +244,18 @@ Precheck successfully completed."""
             docker_server_id="test",
         )
 
-        # First call should queue task
-        result1 = checks_dispatching()
+        # First call should queue task (the publish is stubbed: an eager run
+        # would finish the task and remove its lock)
+        with patch("wafer_space.projects.tasks.do_dispatching.apply_async"):
+            result1 = checks_dispatching()
         assert result1["queued"] == 1
         assert ManufacturabilityCheckTask.objects.filter(
             manufacturability_check=check
         ).exists()
 
         # Second call should not queue (task already exists)
-        result2 = checks_dispatching()
+        with patch("wafer_space.projects.tasks.do_dispatching.apply_async"):
+            result2 = checks_dispatching()
         assert result2["queued"] == 0
         assert (
             ManufacturabilityCheckTask.objects.filter(
@@ -589,7 +594,7 @@ Precheck successfully completed."""
             mock_image.attrs = {"RepoDigests": ["test@sha256:abc"]}
             mock_client.images.pull.return_value = mock_image
 
-            do_dispatching(check.id)
+            do_dispatching.apply((check.id,), task_id="test-task-id")
 
         # Tracking task should be deleted
         assert not ManufacturabilityCheckTask.objects.filter(

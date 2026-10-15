@@ -18,7 +18,10 @@ from urllib.parse import urlparse
 import docker
 import docker.errors
 import requests
+from celery import current_task
 from celery import shared_task
+from celery.exceptions import Retry
+from celery.utils import uuid
 from celery.utils.log import get_task_logger
 from django.conf import settings
 from django.core.files import File
@@ -71,6 +74,14 @@ T = TypeVar("T")
 # =============================================================================
 
 
+# PLACEHOLDER, set from production's runtimes before merge (issue #426).
+# The dispatchers run every 15 s and take well under a second, but without
+# their own limits they inherit CELERY_TASK_TIME_LIMIT (30 minutes): on
+# 16 Oct a hung checks_dispatching held one of checks-orch's two children for
+# 30 minutes before it was killed.
+DISPATCHER_TIME_LIMITS: dict[str, int] = {"soft_time_limit": 60, "time_limit": 90}
+
+
 def checks_task(**celery_kwargs: Any) -> "Callable[[Callable[..., T]], Any]":
     """Decorator for periodic checks_ tasks with automatic logging.
 
@@ -111,6 +122,59 @@ def checks_task(**celery_kwargs: Any) -> "Callable[[Callable[..., T]], Any]":
     return decorator
 
 
+def holds_check_lock(check_id: int, task_id: str) -> bool:
+    """Whether the check's work lock was written for this task id."""
+    return ManufacturabilityCheckTask.objects.filter(
+        manufacturability_check_id=check_id, task_id=task_id
+    ).exists()
+
+
+def current_task_id() -> str | None:
+    """The running Celery message's task id, or None for a direct call."""
+    if current_task is None:
+        return None
+    return current_task.request.id
+
+
+def may_run_check_work(task_name: str, check_id: int, task_id: str | None) -> bool:
+    """Whether this run of a work task may work on the check.
+
+    A message runs only if the check's lock carries its task id (issue
+    #426). A duplicate message is skipped: one whose publish raised but
+    landed, or one whose lock was removed while it waited in a worker. A
+    redelivered or retried message keeps its task id, so it still runs. A
+    direct call (no Celery message, task_id None) is not a duplicate.
+    """
+    if task_id is None or holds_check_lock(check_id, task_id):
+        return True
+    logging.getLogger(__name__).warning(
+        "Skipping %s for check %s - task %s does not hold the check's lock "
+        "(a duplicate message)",
+        task_name,
+        check_id,
+        task_id,
+    )
+    return False
+
+
+def record_check_error(check: ManufacturabilityCheck, error_message: str) -> None:
+    """Mark the check ERROR, unless its row has moved to a state that forbids it.
+
+    A work task that fails after another task finished or cancelled the check
+    must not overwrite that (issue #426, check 809): mark_error refuses, and
+    the refusal is logged instead of failing the task a second time.
+    """
+    try:
+        check.mark_error(error_message=error_message)
+    except InvalidStateTransitionError as refused:
+        logging.getLogger(__name__).warning(
+            "Not recording the error for check %s: %s (error was: %s)",
+            check.id,
+            refused,
+            error_message,
+        )
+
+
 def queued_check_task(
     *,
     expected_status: str | None = None,
@@ -140,8 +204,7 @@ def queued_check_task(
             return {"status": "completed"}
     """
     # Default to docker checks-fast queue if not specified
-    if "queue" not in celery_kwargs:
-        celery_kwargs["queue"] = "dock:ro:checks-fast"
+    celery_kwargs.setdefault("queue", "dock:ro:checks-fast")
 
     def decorator(func: "Callable[..., T]") -> Any:
         @wraps(func)
@@ -150,6 +213,11 @@ def queued_check_task(
 
             logger.info("Starting %s for check %s", func.__name__, check_id)
 
+            task_id = current_task_id()
+            if not may_run_check_work(func.__name__, check_id, task_id):
+                return {"status": "skipped", "reason": "not_lock_holder"}
+
+            retrying = False
             try:
                 # Fetch the check object
                 check = ManufacturabilityCheck.objects.get(id=check_id)
@@ -166,26 +234,34 @@ def queued_check_task(
 
                 # Call wrapped function with check object
                 result = func(check, *args, **kwargs)
+            except Retry:
+                # Celery's own retry: the next attempt carries the same task
+                # id and needs the lock, so keep it and record no error.
+                retrying = True
+                raise
             except TaskExecutionError as e:
                 # Handle task execution errors - mark check as error
                 logger.exception(
                     "%s failed for check %s: %s", func.__name__, check_id, e.message
                 )
-                check.mark_error(error_message=e.message)
+                record_check_error(check, e.message)
                 return {"status": "error", "reason": e.reason}
             except Exception as e:
                 # Handle all other errors - mark check as error
                 error_msg = f"{func.__name__} failed: {e}"
                 logger.exception(error_msg)
-                check.mark_error(error_message=error_msg)
+                record_check_error(check, error_msg)
                 return {"status": "error", "reason": str(e)}
             else:
                 logger.info("Completed %s for check %s", func.__name__, check_id)
                 return result
             finally:
-                ManufacturabilityCheckTask.objects.filter(
-                    manufacturability_check_id=check_id
-                ).delete()
+                # Only this task's own lock: another task's lock is not ours
+                # to remove.
+                if not retrying:
+                    ManufacturabilityCheckTask.objects.filter(
+                        manufacturability_check_id=check_id, task_id=task_id
+                    ).delete()
 
         # Apply shared_task decorator with provided kwargs
         # Return type is Any because Celery tasks have special methods
@@ -442,7 +518,7 @@ def _get_next_pending_check() -> ManufacturabilityCheck | None:
     )
 
 
-@checks_task()
+@checks_task(**DISPATCHER_TIME_LIMITS)
 def checks_pending() -> dict[str, int]:
     """Transition PENDING checks to DISPATCHING with server assignment.
 
@@ -519,7 +595,52 @@ def checks_pending() -> dict[str, int]:
     return {"dispatched": dispatched}
 
 
-@checks_task()
+def queue_check_work(check: ManufacturabilityCheck, work_task: Any) -> str | None:
+    """Lock the check for one work task, then publish that task.
+
+    The lock row is written first, under the task id the message will carry,
+    and only then is the message published. Two dispatcher runs that overlap
+    (a backlog drained by two children, issue #426) can no longer both
+    publish: the second one's insert fails on the one-to-one lock, and it
+    publishes nothing.
+
+    If the publish raises, this run's own lock is removed and the error
+    propagates, so the check is queued again on a later run. A message that
+    landed despite the error does not hold the lock, so it is skipped when it
+    runs (queued_check_task). If removing the lock fails too, the lock holds
+    the check until checks_cleanup_stale_pending_tasks removes it: it is
+    older than 30 s, not in the broker, and has no task result.
+
+    Args:
+        check: The check to queue work for.
+        work_task: The queued_check_task to publish (do_dispatching, ...).
+
+    Returns:
+        The task id, or None if the check is already locked.
+    """
+    task_id = uuid()
+    try:
+        with transaction.atomic():
+            ManufacturabilityCheckTask.objects.create(
+                manufacturability_check=check,
+                task_id=task_id,
+                task_name=work_task.name.rsplit(".", 1)[-1],
+            )
+    except IntegrityError:
+        return None
+    published = False
+    try:
+        work_task.apply_async((check.id,), task_id=task_id)
+        published = True
+    finally:
+        if not published:
+            ManufacturabilityCheckTask.objects.filter(
+                manufacturability_check=check, task_id=task_id
+            ).delete()
+    return task_id
+
+
+@checks_task(**DISPATCHER_TIME_LIMITS)
 def checks_dispatching() -> dict[str, int]:
     """Queue do_dispatching work tasks for DISPATCHING checks.
 
@@ -542,26 +663,18 @@ def checks_dispatching() -> dict[str, int]:
     )
 
     for check in dispatching_checks:
-        result = do_dispatching.delay(check.id)
-        try:
-            ManufacturabilityCheckTask.objects.create(
-                manufacturability_check=check,
-                task_id=result.id,
-                task_name="do_dispatching",
-            )
-        except IntegrityError:
-            # Task already created by concurrent beat cycle - skip
+        task_id = queue_check_work(check, do_dispatching)
+        if task_id is None:
+            # Another dispatcher run holds the check's lock - skip
             logger.debug("Task already exists for check %s, skipping", check.id)
             continue
-        logger.info(
-            "Queued do_dispatching for check %s (task: %s)", check.id, result.id
-        )
+        logger.info("Queued do_dispatching for check %s (task: %s)", check.id, task_id)
         queued += 1
 
     return {"queued": queued}
 
 
-@checks_task()
+@checks_task(**DISPATCHER_TIME_LIMITS)
 def checks_starting() -> dict[str, int]:
     """Queue do_starting work tasks for STARTING checks.
 
@@ -584,24 +697,18 @@ def checks_starting() -> dict[str, int]:
     )
 
     for check in starting_checks:
-        result = do_starting.delay(check.id)
-        try:
-            ManufacturabilityCheckTask.objects.create(
-                manufacturability_check=check,
-                task_id=result.id,
-                task_name="do_starting",
-            )
-        except IntegrityError:
-            # Task already created by concurrent beat cycle - skip
+        task_id = queue_check_work(check, do_starting)
+        if task_id is None:
+            # Another dispatcher run holds the check's lock - skip
             logger.debug("Task already exists for check %s, skipping", check.id)
             continue
-        logger.info("Queued do_starting for check %s (task: %s)", check.id, result.id)
+        logger.info("Queued do_starting for check %s (task: %s)", check.id, task_id)
         queued += 1
 
     return {"queued": queued}
 
 
-@checks_task()
+@checks_task(**DISPATCHER_TIME_LIMITS)
 def checks_running() -> dict[str, int]:
     """Queue do_running work tasks for RUNNING checks.
 
@@ -624,24 +731,18 @@ def checks_running() -> dict[str, int]:
     )
 
     for check in running_checks:
-        result = do_running.delay(check.id)
-        try:
-            ManufacturabilityCheckTask.objects.create(
-                manufacturability_check=check,
-                task_id=result.id,
-                task_name="do_running",
-            )
-        except IntegrityError:
-            # Task already created by concurrent beat cycle - skip
+        task_id = queue_check_work(check, do_running)
+        if task_id is None:
+            # Another dispatcher run holds the check's lock - skip
             logger.debug("Task already exists for check %s, skipping", check.id)
             continue
-        logger.info("Queued do_running for check %s (task: %s)", check.id, result.id)
+        logger.info("Queued do_running for check %s (task: %s)", check.id, task_id)
         queued += 1
 
     return {"queued": queued}
 
 
-@checks_task()
+@checks_task(**DISPATCHER_TIME_LIMITS)
 def checks_analyzing() -> dict[str, int]:
     """Queue do_analyzing work tasks for ANALYZING checks.
 
@@ -664,18 +765,12 @@ def checks_analyzing() -> dict[str, int]:
     )
 
     for check in analyzing_checks:
-        result = do_analyzing.delay(check.id)
-        try:
-            ManufacturabilityCheckTask.objects.create(
-                manufacturability_check=check,
-                task_id=result.id,
-                task_name="do_analyzing",
-            )
-        except IntegrityError:
-            # Task already created by concurrent beat cycle - skip
+        task_id = queue_check_work(check, do_analyzing)
+        if task_id is None:
+            # Another dispatcher run holds the check's lock - skip
             logger.debug("Task already exists for check %s, skipping", check.id)
             continue
-        logger.info("Queued do_analyzing for check %s (task: %s)", check.id, result.id)
+        logger.info("Queued do_analyzing for check %s (task: %s)", check.id, task_id)
         queued += 1
 
     return {"queued": queued}
