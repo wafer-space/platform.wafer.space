@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}
+  {{ shuttle.name }} Re-run Outdated Checks
+{% endblock title %}
+{% block content %}
+  <div class="container mt-4">
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb">
+        <li class="breadcrumb-item">
+          <a href="{% url 'shuttles:assignment' shuttle.name %}">{{ shuttle.name }} Assignment</a>
+        </li>
+        <li class="breadcrumb-item active" aria-current="page">Re-run outdated checks</li>
+      </ol>
+    </nav>
+    <h1>Re-run outdated checks on {{ shuttle.name }}</h1>
+    <p>
+      These projects' latest revision passed its precheck on an outdated precheck version
+      (the assignment page's "outdated" filter).
+    </p>
+    <p class="lead" data-rerun-summary>
+      {{ plan.to_queue|length }} check{{ plan.to_queue|length|pluralize }} of the <strong>{{ plan.revision.label }}</strong> will be queued.
+    </p>
+    {% if plan.to_queue %}
+      <ul data-rerun-queue>
+        {% for planned in plan.to_queue %}<li>{{ planned.project.full_id }} {{ planned.project.name }}</li>{% endfor %}
+      </ul>
+    {% endif %}
+    {% if plan.skipped %}
+      <p>{{ plan.skipped|length }} project{{ plan.skipped|length|pluralize }} will be skipped:</p>
+      <ul data-rerun-skip>
+        {% for planned in plan.skipped %}
+          <li>{{ planned.project.full_id }} {{ planned.project.name }}: {{ planned.skip_reason }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+    <form method="post"
+          action="{% url 'shuttles:rerun_outdated' shuttle.name %}">
+      {% csrf_token %}
+      <input type="hidden" name="revision" value="{{ plan.revision.value }}" />
+      {% for planned in plan.to_queue %}<input type="hidden" name="project" value="{{ planned.project.pk }}" />{% endfor %}
+      <button type="submit"
+              class="btn btn-warning"
+              {% if not plan.to_queue %}disabled{% endif %}>
+        Queue {{ plan.to_queue|length }} check{{ plan.to_queue|length|pluralize }} of the {{ plan.revision.label }}
+      </button>
+      <a class="btn btn-outline-secondary"
+         href="{% url 'shuttles:assignment' shuttle.name %}">Cancel</a>
+    </form>
+  </div>
+{% endblock content %}
