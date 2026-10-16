@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% load duration_filters %}
+
+{% block title %}
+  Check #{{ check.pk }} resource usage - {{ project.name }}
+{% endblock title %}
+{% block content %}
+  <div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h1 class="h3">
+        <i class="bi bi-graph-up"></i> Check #{{ check.pk }}: resource usage timeline
+      </h1>
+      <a href="{% url 'projects:detail' project.pk %}"
+         class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back to {{ project.name }}
+      </a>
+    </div>
+    {% if checkpoints %}
+      <div class="table-responsive">
+        <table class="table table-sm table-striped">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Time</th>
+              <th>CPU</th>
+              <th>Memory</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for cp in checkpoints %}
+              <tr>
+                <td>{{ cp.checkpoint_number }}</td>
+                <td>{{ cp.elapsed_seconds|duration }}</td>
+                <td>{{ cp.cpu_percent_formatted|default:"-" }}</td>
+                <td>
+                  {% if cp.memory_usage_bytes %}
+                    {{ cp.memory_usage_formatted }}
+                    {% if cp.memory_percent %}({{ cp.memory_percent|floatformat:1 }}%){% endif %}
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="text-muted">This check recorded no resource usage.</p>
+    {% endif %}
+  </div>
+{% endblock content %}
