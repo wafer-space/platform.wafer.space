@@ -21,6 +21,8 @@ from scripts.e2e_verify import main
 API = f"{artifact.API}/repos/{artifact.TEMPLATE_REPO}/actions"
 GDS_BYTES = b"GDS layout"
 RUN_URL = f"https://github.com/{artifact.TEMPLATE_REPO}/actions/runs/7"
+# The only runs query whose answer lists the run's artifacts
+SUCCESSFUL_MAIN_RUNS = {"branch": "main", "status": "success", "per_page": "1"}
 
 
 @dataclass
@@ -41,6 +43,7 @@ class FakeGitHub:
 
     artifacts: list[dict[str, Any]]
     latest_run_names: list[str] = field(default_factory=list)
+    has_successful_run: bool = True
     requests: list[tuple[str, dict[str, str]]] = field(default_factory=list)
 
     def get(
@@ -52,8 +55,10 @@ class FakeGitHub:
             return FakeResponse(
                 {"artifacts": [a for a in self.artifacts if a["name"] == name]}
             )
-        if url == f"{API}/runs":
-            return FakeResponse({"workflow_runs": [{"id": 7, "html_url": RUN_URL}]})
+        if url == f"{API}/workflows/ci.yml/runs":
+            runs = [{"id": 7, "html_url": RUN_URL}]
+            wanted = params == SUCCESSFUL_MAIN_RUNS and self.has_successful_run
+            return FakeResponse({"workflow_runs": runs if wanted else []})
         if url == f"{API}/runs/7/artifacts":
             return FakeResponse(
                 {"artifacts": [{"name": n} for n in self.latest_run_names]}
@@ -128,7 +133,7 @@ def test_missing_artifact_lists_what_the_latest_run_has(github: FakeGitHub) -> N
 
     assert str(raised.value) == (
         f"No non-expired '0p5x0p5_5v_gds' artifact in {artifact.TEMPLATE_REPO}. "
-        f"Its latest main run ({RUN_URL}) has: "
+        f"Its latest successful main CI run ({RUN_URL}) has: "
         "0p5x0p5_3v3_gds, 0p5x0p5_3v3_image, 1x1_5v_gds"
     )
 
@@ -140,3 +145,14 @@ def test_expired_artifact_is_not_submitted(github: FakeGitHub) -> None:
 
     with pytest.raises(RuntimeError, match="No non-expired '1x1_3v3_gds'"):
         artifact.get_latest_artifact("1x1", "3v3")
+
+
+def test_missing_artifact_without_a_successful_run_says_so(
+    github: FakeGitHub,
+) -> None:
+    github.has_successful_run = False
+
+    with pytest.raises(RuntimeError) as raised:
+        artifact.get_latest_artifact("1x1", "3v3")
+
+    assert str(raised.value).endswith("The template has no successful CI run on main.")

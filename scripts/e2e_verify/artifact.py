@@ -114,21 +114,21 @@ def get_latest_artifact(slot_size: str, voltage: str) -> tuple[str, str]:
 
 
 def _latest_run_artifacts() -> str:
-    """Say which artifacts the template's latest ``main`` run has.
+    """Say which artifacts the template's latest successful ``main`` CI run has.
 
     Shown when the wanted name is missing, so a rename upstream is obvious
-    from the error alone.
+    from the error alone. Only a successful run has uploaded every artifact.
     """
     runs = requests.get(
-        f"{API}/repos/{TEMPLATE_REPO}/actions/runs",
+        f"{API}/repos/{TEMPLATE_REPO}/actions/workflows/ci.yml/runs",
         headers=_headers(),
-        params={"branch": "main", "per_page": "1"},
+        params={"branch": "main", "status": "success", "per_page": "1"},
         timeout=_TIMEOUT,
     )
     runs.raise_for_status()
     workflow_runs = runs.json()["workflow_runs"]
     if not workflow_runs:
-        return "The template has no runs on main."
+        return "The template has no successful CI run on main."
     run = workflow_runs[0]
     artifacts = requests.get(
         f"{API}/repos/{TEMPLATE_REPO}/actions/runs/{run['id']}/artifacts",
@@ -139,7 +139,7 @@ def _latest_run_artifacts() -> str:
     artifacts.raise_for_status()
     names = sorted(a["name"] for a in artifacts.json()["artifacts"])
     return (
-        f"Its latest main run ({run['html_url']}) has: "
+        f"Its latest successful main CI run ({run['html_url']}) has: "
         f"{', '.join(names) or 'no artifacts'}"
     )
 

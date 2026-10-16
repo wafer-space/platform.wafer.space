@@ -433,7 +433,8 @@ def main() -> None:
     parser.add_argument(
         "--submit-url",
         help=(
-            "Download URL to submit instead of the --slot-size template artifact. "
+            "Download URL to submit instead of the --slot-size and --voltage "
+            "template artifact. "
             "Requires --sha256; the project is still created at --slot-size."
         ),
     )
