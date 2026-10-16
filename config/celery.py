@@ -30,6 +30,9 @@ app.config_from_object("django.conf:settings", namespace="CELERY")
 
 # Load task modules from all registered Django apps.
 app.autodiscover_tasks()
+# wafer_space.core is not an installed app; its tasks module holds the mail
+# worker's send_admin_email (issue #439)
+app.autodiscover_tasks(["wafer_space.core"])
 
 
 @task_failure.connect
