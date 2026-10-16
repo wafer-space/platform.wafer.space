@@ -12,6 +12,7 @@ from wafer_space.core.models import AdminEmailClaim
 SIGNATURE = "a" * 64
 OTHER_SIGNATURE = "b" * 64
 WINDOW = timedelta(hours=1)
+TWO_ROWS = 2
 
 pytestmark = pytest.mark.django_db
 
@@ -59,6 +60,29 @@ class TestClaim:
             )
 
         assert AdminEmailClaim.objects.count() == 1
+
+    def test_other_signatures_rows_past_their_window_are_deleted(self) -> None:
+        """An f-string message's one row per value doesn't pile up."""
+        now = timezone.now()
+        AdminEmailClaim.objects.create(
+            signature=OTHER_SIGNATURE, sent_at=now - timedelta(hours=2)
+        )
+
+        AdminEmailClaim.objects.claim(SIGNATURE, now=now, window=WINDOW)
+
+        assert list(AdminEmailClaim.objects.values_list("signature", flat=True)) == [
+            SIGNATURE
+        ]
+
+    def test_other_signatures_rows_within_their_window_are_kept(self) -> None:
+        now = timezone.now()
+        AdminEmailClaim.objects.create(
+            signature=OTHER_SIGNATURE, sent_at=now - timedelta(minutes=10)
+        )
+
+        AdminEmailClaim.objects.claim(SIGNATURE, now=now, window=WINDOW)
+
+        assert AdminEmailClaim.objects.count() == TWO_ROWS
 
 
 class TestRelease:

@@ -43,7 +43,7 @@ HAND_OFF_LOGGER = "admin_email_hand_off"
 TEST_CLAIM_TIMEOUT = 0.2
 HUNG_SECONDS = 3.0
 TWO_EMAILS = 2
-TEN_MINUTES = 10 * 60
+THREE_MINUTES = 3 * 60
 # Time the test itself may take between setting a claim and reading it back
 SLACK_SECONDS = 30
 
@@ -121,11 +121,22 @@ class TestOneEmailAcrossProcesses:
 
         assert len(asked) == 1
 
-    def test_a_refused_process_waits_out_the_rest_of_that_hour(
-        self, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.parametrize(
+        ("sent_minutes_ago", "wait_at_most"),
+        [(57, THREE_MINUTES), (10, core_log.REFUSED_RECHECK_SECONDS)],
+        ids=["rest-of-the-hour", "recheck-in-case-it-was-lost"],
+    )
+    def test_a_refused_process_asks_again_by_the_end_of_that_hour(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        sent_minutes_ago: int,
+        wait_at_most: float,
     ) -> None:
+        """Sooner, if the winner may yet lose its email and die."""
         RateLimitedAdminEmailHandler().emit(stall_record())
-        AdminEmailClaim.objects.update(sent_at=timezone.now() - timedelta(minutes=50))
+        AdminEmailClaim.objects.update(
+            sent_at=timezone.now() - timedelta(minutes=sent_minutes_ago)
+        )
         another_process()
         timeouts: list[float] = []
         set_key = cache.set
@@ -139,7 +150,7 @@ class TestOneEmailAcrossProcesses:
         RateLimitedAdminEmailHandler().emit(stall_record())
 
         assert len(timeouts) == 1
-        assert TEN_MINUTES - SLACK_SECONDS < timeouts[0] <= TEN_MINUTES
+        assert wait_at_most - SLACK_SECONDS < timeouts[0] <= wait_at_most
 
     def test_distinct_errors_each_send(self) -> None:
         RateLimitedAdminEmailHandler().emit(stall_record())
@@ -241,7 +252,7 @@ class TestWhenTheDatabaseFails:
 
 
 class TestALostEmail:
-    def test_gives_its_slot_back_to_every_process(
+    def test_gives_its_slot_back_to_a_process_that_asks_next(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         def broker_down(*_args: Any, **_kwargs: Any) -> None:

@@ -45,6 +45,12 @@ RATE_LIMIT_WINDOW = timedelta(seconds=RATE_LIMIT_SECONDS)
 # milliseconds; past this, the process decides on its own.
 CLAIM_TIMEOUT_SECONDS = 5
 
+# How long a process refused a slot waits before asking again, at most. The
+# winner may yet lose its email and die before giving the slot back (the
+# broker watchdog exits right after its CRITICAL); then the slot's row is
+# released or expires, and a refused process sends within this.
+REFUSED_RECHECK_SECONDS = 5 * 60
+
 # How long logging an ERROR may wait for its email to reach the broker
 # (issue #439). A publish takes milliseconds; a broker that is down or
 # wedged must not hold up the task that logged the error, nor the broker
@@ -238,10 +244,11 @@ class RateLimitedAdminEmailHandler(AdminEmailHandler):
     The window is shared by every process (issue #450): the first process
     to log a signature claims it in the database (AdminEmailClaim), on a
     connection of its own, and only that process sends. The per-process
-    LocMem cache still notes what this process has sent or heard about,
-    so a repeating error asks the database once per window, not once per
-    record. If the database can't answer, the process falls back to its
-    own window: the email is sent, never lost.
+    LocMem cache still notes what this process has sent or been refused,
+    so a repeating error asks the database at most once per window (once
+    per REFUSED_RECHECK_SECONDS when refused), not once per record. If the
+    database can't answer, the process falls back to its own window: the
+    email is sent, never lost.
 
     The finished subject, text body and HTML body are passed through
     scrub_url_credentials() before sending: the exception reporter filter
@@ -286,9 +293,10 @@ class RateLimitedAdminEmailHandler(AdminEmailHandler):
         if sent_at is None:
             self.claimed_at = now
             return True
-        # Another process sent it; ask again once that window ends
-        remaining = sent_at + RATE_LIMIT_WINDOW - now
-        cache.set(self.rate_key, 1, remaining.total_seconds())
+        # Another process sent it; ask again once that window ends, or
+        # sooner, in case that email is lost
+        remaining = (sent_at + RATE_LIMIT_WINDOW - now).total_seconds()
+        cache.set(self.rate_key, 1, min(remaining, REFUSED_RECHECK_SECONDS))
         return False
 
     def send_mail(

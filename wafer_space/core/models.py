@@ -35,7 +35,13 @@ class AdminEmailClaimManager(models.Manager["AdminEmailClaim"]):
         exactly one takes the slot. Run it in autocommit mode, on a
         connection of its own: inside a transaction, the row stays locked
         until that transaction ends.
+
+        Other signatures' rows whose window has ended are deleted first:
+        they are free slots either way, and a message that interpolates
+        its values itself (an f-string) would otherwise add a row per
+        value, forever.
         """
+        self.filter(sent_at__lte=now - window).exclude(signature=signature).delete()
         for _attempt in range(CLAIM_ATTEMPTS):
             try:
                 with transaction.atomic():
@@ -69,7 +75,8 @@ class AdminEmailClaim(models.Model):
     RateLimitedAdminEmailHandler sends at most one email per signature per
     hour. Each process used to keep that in its own LocMem cache, so every
     process that logged the same error sent its own email. A row here is
-    shared by all of them. There is one row per signature, updated in place.
+    shared by all of them. There is one row per signature, updated in
+    place, and only signatures emailed within the last window keep theirs.
     """
 
     # sha256 hex digest of "logger:level:unformatted message"
