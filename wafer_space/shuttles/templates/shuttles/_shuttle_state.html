@@ -1,9 +1,13 @@
 {% load shuttle_dates %}
 
 {# A shuttle's state for users, with its links (#320, #350). Pass shuttle. #}
-{# Open or closed comes only from Shuttle.is_open_to_users. #}
+{# Open or closed comes only from Shuttle.is_open_to_users; a closed #}
+{# shuttle that has not opened yet says so (#438). #}
 <span class="shuttle-state">
-  {% if shuttle.is_closed %}
+  {% if shuttle.is_not_open_yet %}
+    <span class="badge bg-light text-dark border"><i class="bi bi-hourglass-split"
+   aria-hidden="true"></i> Not open yet</span>
+  {% elif shuttle.is_closed %}
     <span class="badge bg-secondary"><i class="bi bi-lock-fill" aria-hidden="true"></i> Closed</span>
   {% else %}
     <span class="badge bg-success">Open</span>

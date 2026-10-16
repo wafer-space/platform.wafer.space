@@ -234,10 +234,22 @@ class Shuttle(models.Model):
         return not self.is_open_to_users()
 
     @property
+    def is_not_open_yet(self) -> bool:
+        """Closed to users because it has not opened: status planning (#438).
+
+        A planning shuttle is closed like any other that is not open to
+        users, but "Closed" reads as "this run is over", so the pages say it
+        has not opened yet.
+        """
+        return self.is_closed and self.status == self.Status.PLANNING
+
+    @property
     def closed_reason(self) -> str | None:
         """Why the shuttle is closed, in plain words; None when open."""
         if self.is_open_to_users():
             return None
+        if self.is_not_open_yet:
+            return f"Shuttle {self.name} has not opened yet"
         if self.status == self.Status.OPEN:
             return f"Shuttle {self.name} is closed: its GDS deadline has passed"
         return f"Shuttle {self.name} is closed ({self.get_status_display()})"
