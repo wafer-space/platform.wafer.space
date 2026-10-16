@@ -116,7 +116,9 @@ def owner_page(client: Client, url_name: str, state: str) -> str:
 @pytest.mark.parametrize(
     "url_name", ["shuttles:list", "shuttles:detail", "shuttles:assignment"]
 )
-def test_shuttle_pages_show_the_state(client: Client, url_name: str, state: str):
+def test_shuttle_pages_show_the_state(
+    client: Client, url_name: str, state: str
+) -> None:
     content = staff_page(client, url_name, state)
 
     assert badges_in(content) == SHUTTLE_STATE_BADGES[state]
@@ -124,14 +126,16 @@ def test_shuttle_pages_show_the_state(client: Client, url_name: str, state: str)
 
 @pytest.mark.parametrize("state", STATES)
 @pytest.mark.parametrize("url_name", ["projects:detail", "projects:update"])
-def test_project_pages_show_the_state(client: Client, url_name: str, state: str):
+def test_project_pages_show_the_state(
+    client: Client, url_name: str, state: str
+) -> None:
     content = owner_page(client, url_name, state)
 
     assert badges_in(content) == SHUTTLE_STATE_BADGES[state]
 
 
 @pytest.mark.parametrize("state", STATES)
-def test_projects_list_shows_the_state(client: Client, state: str):
+def test_projects_list_shows_the_state(client: Client, state: str) -> None:
     content = owner_page(client, "projects:list", state)
 
     assert badges_in(content) == PROJECT_LIST_BADGES[state]
@@ -169,7 +173,9 @@ def test_projects_list_badge_gives_the_reason(client: Client) -> None:
     assert f'title="Shuttle {NAME} has not opened yet"' in content
 
 
-def test_project_page_says_files_can_be_submitted_once_it_opens(client: Client):
+def test_project_page_says_files_can_be_submitted_once_it_opens(
+    client: Client,
+) -> None:
     content = " ".join(owner_page(client, "projects:detail", "planning").split())
 
     assert (
@@ -179,10 +185,27 @@ def test_project_page_says_files_can_be_submitted_once_it_opens(client: Client):
     assert "can no longer be submitted" not in content
 
 
-def test_project_page_on_a_closed_shuttle_keeps_its_wording(client: Client):
-    content = " ".join(owner_page(client, "projects:detail", "closed").split())
+@pytest.mark.parametrize(
+    ("state", "reason"),
+    [
+        ("closed", "is closed (Completed)"),
+        ("open past deadline", "is closed: its GDS deadline has passed"),
+    ],
+)
+def test_project_page_on_a_closed_shuttle_keeps_its_wording(
+    client: Client, state: str, reason: str
+) -> None:
+    content = " ".join(owner_page(client, "projects:detail", state).split())
 
     assert (
-        f"Shuttle {NAME} is closed (Completed). New design files can no longer "
-        "be submitted."
+        f"Shuttle {NAME} {reason}. New design files can no longer be submitted."
     ) in content
+
+
+@pytest.mark.parametrize("state", ["open", "test only"])
+def test_project_page_on_an_open_shuttle_has_no_alert(
+    client: Client, state: str
+) -> None:
+    content = owner_page(client, "projects:detail", state)
+
+    assert "New design files can" not in content
