@@ -237,6 +237,21 @@ class TestABrokerFailureDuringTheHandOff:
             if "ADMINS email" in r.getMessage()
         ] == [(logging.ERROR, True)]
 
+    def test_the_console_record_carries_the_broker_error(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The traceback is in the worker log, next to the lost email."""
+        break_the_way_out(monkeypatch)
+        # Anything left to threading.excepthook would not be in caplog
+        monkeypatch.setattr(threading, "excepthook", lambda _args: None)
+
+        with caplog.at_level(logging.ERROR):
+            RateLimitedAdminEmailHandler().emit(error_record("Dispatch failed: %s", 1))
+
+        [record] = [r for r in caplog.records if "ADMINS email" in r.getMessage()]
+        assert record.exc_info is not None
+        assert record.exc_info[0] is OperationalError
+
     def test_a_lost_email_does_not_silence_the_next(
         self, monkeypatch: pytest.MonkeyPatch, exits: Exits
     ) -> None:
