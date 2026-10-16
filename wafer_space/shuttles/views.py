@@ -6,10 +6,16 @@ import json
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import cast
+from uuid import UUID
 
+from django.contrib import messages
 from django.contrib.auth.mixins import UserPassesTestMixin
 from django.db import transaction
+from django.http import HttpResponseBadRequest
 from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
+from django.shortcuts import redirect
+from django.shortcuts import render
 from django.views import View
 from django.views.generic import DetailView
 from django.views.generic import ListView
@@ -18,9 +24,15 @@ from wafer_space.core.enums import SlotSize
 from wafer_space.projects.models import Project
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.shuttles.models import ShuttleSlot
+from wafer_space.shuttles.services.bulk_rerun import BulkRerunResult
+from wafer_space.shuttles.services.bulk_rerun import RerunRevision
+from wafer_space.shuttles.services.bulk_rerun import passed_on_outdated_precheck
+from wafer_space.shuttles.services.bulk_rerun import plan_bulk_rerun
+from wafer_space.shuttles.services.bulk_rerun import queue_bulk_rerun
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
+    from django.http import HttpResponse
 
     from wafer_space.users.models import User
 
@@ -117,9 +129,7 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
             # version and may need re-checking (#203). A version that cannot
             # be compared (no digest recorded) counts as neither.
             outdated_projects = [
-                p
-                for p in manufacturable_projects
-                if p.latest_file_finished_check.is_using_latest_precheck is False
+                p for p in manufacturable_projects if passed_on_outdated_precheck(p)
             ]
             outdated_total = len(outdated_projects)
             outdated_assigned = sum(
@@ -162,6 +172,11 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
         # A closed shuttle's useful view is what was assigned to it (#342)
         context["show_filter_choices"] = SHOW_FILTER_CHOICES
         context["show_filter_default"] = "assigned" if shuttle.is_closed else "all"
+        # The bulk re-run acts on the projects the "outdated" filter shows
+        context["outdated_count"] = sum(
+            1 for p in projects if passed_on_outdated_precheck(p)
+        )
+        context["rerun_revision_choices"] = RerunRevision.choices
 
         # Build slots_by_project data for JavaScript
         slots_by_project = {}
@@ -214,6 +229,84 @@ class ShuttleAssignmentView(StaffRequiredMixin, DetailView):
             context["columns"] = []
 
         return context
+
+
+def rerun_revision_or_none(value: str | None) -> RerunRevision | None:
+    """The revision kind a bulk re-run request names, or None if it is invalid."""
+    if value not in RerunRevision.values:
+        return None
+    return RerunRevision(value)
+
+
+def report_bulk_rerun(request: HttpRequest, result: BulkRerunResult) -> None:
+    """Tell the staff user what a bulk re-run queued and what it did not."""
+    if result.queued:
+        projects = ", ".join(c.project.full_id for c in result.queued)
+        messages.success(
+            request,
+            f"Queued {len(result.queued)} precheck re-runs of the "
+            f"{result.revision.label}: {projects}.",
+        )
+    else:
+        messages.info(request, "No precheck re-runs were queued.")
+    # One message per reason: a shuttle can have dozens of unsubmitted projects
+    by_reason: dict[str, list[str]] = {}
+    for planned in result.not_queued:
+        by_reason.setdefault(planned.skip_reason, []).append(planned.project.full_id)
+    for reason, full_ids in by_reason.items():
+        messages.warning(
+            request,
+            f"{len(full_ids)} not re-checked, {reason}: {', '.join(full_ids)}.",
+        )
+
+
+class BulkRerunOutdatedView(StaffRequiredMixin, View):
+    """Re-run the prechecks of the projects the "outdated" filter shows (#203).
+
+    GET states what would be queued, for the revision kind chosen on the
+    assignment page; POST queues it. Nothing is queued without the POST.
+    """
+
+    def get(self, request: HttpRequest, name: str) -> HttpResponse:
+        shuttle = get_object_or_404(Shuttle, name=name)
+        revision = rerun_revision_or_none(request.GET.get("revision"))
+        if revision is None:
+            return HttpResponseBadRequest("Choose the submitted or latest revision.")
+        plan = plan_bulk_rerun(shuttle, revision)
+        return render(
+            request,
+            "shuttles/rerun_outdated_confirm.html",
+            {"shuttle": shuttle, "plan": plan},
+        )
+
+    def post(self, request: HttpRequest, name: str) -> HttpResponse:
+        shuttle = get_object_or_404(Shuttle, name=name)
+        revision = rerun_revision_or_none(request.POST.get("revision"))
+        if revision is None:
+            return HttpResponseBadRequest("Choose the submitted or latest revision.")
+        confirmed = parse_confirmed(request.POST.getlist("project"))
+        if confirmed is None:
+            return HttpResponseBadRequest("Unknown project or revision.")
+        result = queue_bulk_rerun(
+            shuttle,
+            revision,
+            requested_by=cast("User", request.user),
+            confirmed=confirmed,
+        )
+        report_bulk_rerun(request, result)
+        return redirect("shuttles:assignment", name=shuttle.name)
+
+
+def parse_confirmed(values: list[str]) -> dict[UUID, int] | None:
+    """The confirmation form's "<project pk>:<file pk>" values, or None if bad."""
+    confirmed: dict[UUID, int] = {}
+    for value in values:
+        project_pk, _, file_pk = value.partition(":")
+        try:
+            confirmed[UUID(project_pk)] = int(file_pk)
+        except ValueError:
+            return None
+    return confirmed
 
 
 class GridPreviewView(StaffRequiredMixin, DetailView):

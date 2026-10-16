@@ -13,6 +13,11 @@ urlpatterns = [
         name="assignment",
     ),
     path(
+        "<str:name>/rerun-outdated/",
+        views.BulkRerunOutdatedView.as_view(),
+        name="rerun_outdated",
+    ),
+    path(
         "<str:name>/grid-preview/",
         views.GridPreviewView.as_view(),
         name="grid_preview",

@@ -119,6 +119,26 @@
             {% endfor %}
           </select>
           <small class="text-muted text-nowrap" id="shown-count" aria-live="polite"></small>
+          {% if outdated_count %}
+            {# Bulk re-run of the "outdated" filter's projects (#203); confirmed on the next page #}
+            <form method="get"
+                  action="{% url 'shuttles:rerun_outdated' shuttle.name %}"
+                  class="d-flex gap-1 align-items-center"
+                  data-rerun-outdated>
+              <label class="visually-hidden" for="rerun-revision">Revision to re-check</label>
+              <select class="form-select form-select-sm"
+                      style="width: auto"
+                      id="rerun-revision"
+                      name="revision"
+                      required>
+                <option value="">Re-check which revision?</option>
+                {% for value, label in rerun_revision_choices %}<option value="{{ value }}">{{ label|capfirst }}</option>{% endfor %}
+              </select>
+              <button type="submit" class="btn btn-sm btn-outline-warning text-nowrap">
+                Re-run {{ outdated_count }} outdated check{{ outdated_count|pluralize }}…
+              </button>
+            </form>
+          {% endif %}
         </div>
       </div>
       <div class="card-body">
