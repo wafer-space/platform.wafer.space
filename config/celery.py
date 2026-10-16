@@ -28,11 +28,9 @@ app = Celery("wafer_space")
 # the configuration object to child processes.
 app.config_from_object("django.conf:settings", namespace="CELERY")
 
-# Load task modules from all registered Django apps.
+# Load task modules from all registered Django apps, wafer_space.core's
+# send_admin_email for the mail worker among them (issues #439, #450)
 app.autodiscover_tasks()
-# wafer_space.core is not an installed app; its tasks module holds the mail
-# worker's send_admin_email (issue #439)
-app.autodiscover_tasks(["wafer_space.core"])
 
 
 @task_failure.connect

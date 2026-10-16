@@ -153,6 +153,7 @@ THIRD_PARTY_APPS = [
 ]
 
 LOCAL_APPS = [
+    "wafer_space.core",
     "wafer_space.users",
     "wafer_space.legal",
     "wafer_space.notifications",
@@ -339,6 +340,10 @@ DJANGO_ADMIN_FORCE_ALLAUTH = env.bool("DJANGO_ADMIN_FORCE_ALLAUTH", default=Fals
 DEFAULT_EXCEPTION_REPORTER_FILTER = (
     "wafer_space.core.debug.CredentialScrubbingReporterFilter"
 )
+# RateLimitedAdminEmailHandler's one email per error signature per hour is
+# shared by every process, through the core.AdminEmailClaim table (issue
+# #450). Off only in pytest.py.
+ADMIN_EMAIL_RATE_LIMIT_SHARED = True
 # https://docs.djangoproject.com/en/dev/ref/settings/#logging
 # See https://docs.djangoproject.com/en/dev/topics/logging for
 # more details on how to customize your logging configuration.
