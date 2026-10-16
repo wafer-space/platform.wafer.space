@@ -589,47 +589,31 @@
     {% endif %}
   </details>
 </div>
-{# Resource usage checkpoints - collapsible #}
-<div class="mt-3">
-  <details>
-    <summary class="text-primary small" style="cursor: pointer;">
+{# Resource usage: a summary, the rows behind a link (issue #429) #}
+<div class="mt-3" data-check-section="resource-usage">
+  {% with usage=check.resource_summary %}
+    <p class="small mb-0">
       <i class="bi bi-graph-up"></i>
-      Resource Usage Timeline ({{ check.checkpoints.count }} checkpoint{{ check.checkpoints.count|pluralize }})
-    </summary>
-    {% if check.checkpoints.exists %}
-      <div class="table-responsive mt-2">
-        <table class="table table-sm table-striped mb-0">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Time</th>
-              <th>CPU</th>
-              <th>Memory</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for cp in check.checkpoints.all %}
-              <tr>
-                <td>{{ cp.checkpoint_number }}</td>
-                <td>{{ cp.elapsed_seconds|duration }}</td>
-                <td>{{ cp.cpu_percent_formatted|default:"-" }}</td>
-                <td>
-                  {% if cp.memory_usage_bytes %}
-                    {{ cp.memory_usage_formatted }}
-                    {% if cp.memory_percent %}
-                      ({{ cp.memory_percent|floatformat:1 }}%)
-                    {% endif %}
-                  {% else %}
-                    -
-                  {% endif %}
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    {% else %}
-      <p class="text-muted small mt-2 mb-0">-</p>
-    {% endif %}
-  </details>
+      Resource usage:
+      {% if usage.count %}
+        {{ usage.count }} checkpoint{{ usage.count|pluralize }} over {{ usage.duration_seconds|duration }};
+        peak CPU
+        {% if usage.peak_cpu_percent is not None %}
+          {{ usage.peak_cpu_percent|floatformat:1 }}%,
+        {% else %}
+          -,
+        {% endif %}
+        peak memory
+        {% if usage.peak_memory_bytes %}
+          {{ usage.peak_memory_bytes|filesizeformat }}
+          {% if usage.peak_memory_percent is not None %}({{ usage.peak_memory_percent|floatformat:1 }}%){% endif %}
+        {% else %}
+          -
+        {% endif %}
+        <a href="{% url 'projects:check_resources' check.project_id check.pk %}">Full timeline</a>
+      {% else %}
+        <span class="text-muted">none recorded</span>
+      {% endif %}
+    </p>
+  {% endwith %}
 </div>

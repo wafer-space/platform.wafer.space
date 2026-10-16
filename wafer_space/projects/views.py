@@ -746,6 +746,33 @@ class CheckLogView(
         return response
 
 
+class CheckResourcesView(
+    LoginRequiredMixin, ProjectOwnerOrStaffMixin, SingleObjectMixin, View
+):
+    """One check's whole resource-usage timeline (issue #429).
+
+    The project page shows only each check's summary, because a table row
+    per checkpoint made it megabytes; this is the link to the rows, with
+    the same permission as the project detail page.
+    """
+
+    model = Project
+    http_method_names = ["get"]
+
+    def get(self, request: HttpRequest, pk: UUID, check_id: int) -> HttpResponse:
+        """Render the timeline table, without each row's raw Docker stats."""
+        project = self.get_object()
+        check = get_object_or_404(
+            ManufacturabilityCheck.objects.without_logs(), pk=check_id, project=project
+        )
+        checkpoints = check.checkpoints.defer("raw_stats_json")
+        return render(
+            request,
+            "projects/check_resources.html",
+            {"project": project, "check": check, "checkpoints": checkpoints},
+        )
+
+
 class CheckArtifactView(
     LoginRequiredMixin, ProjectOwnerOrStaffMixin, SingleObjectMixin, View
 ):

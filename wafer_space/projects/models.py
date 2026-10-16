@@ -15,7 +15,9 @@ from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.db import transaction
 from django.db.models import Case
+from django.db.models import Count
 from django.db.models import F
+from django.db.models import Max
 from django.db.models import Value
 from django.db.models import When
 from django.db.models.functions import Concat
@@ -3213,6 +3215,22 @@ Your GDS file should have:
         if revision is not None:
             return revision.tool_versions
         return {}
+
+    @cached_property
+    def resource_summary(self) -> dict[str, Any]:
+        """The checkpoints' count, duration and peaks, in one query (issue #429).
+
+        The project page shows this instead of every checkpoint: a check can
+        have thousands, and one table row each made G801 2975's page 5.9 MB.
+        The full timeline is behind projects:check_resources.
+        """
+        return self.checkpoints.aggregate(
+            count=Count("id"),
+            duration_seconds=Max("elapsed_seconds"),
+            peak_cpu_percent=Max("cpu_percent"),
+            peak_memory_bytes=Max("memory_usage_bytes"),
+            peak_memory_percent=Max("memory_percent"),
+        )
 
 
 class ManufacturabilityCheckTask(models.Model):
