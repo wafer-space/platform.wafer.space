@@ -40,6 +40,8 @@ if TYPE_CHECKING:
 # that broke a deploy got a database default in projects 0063.
 CHECKED_AFTER = {
     "coupons": "0001_initial",
+    # Added after the check, in a new app: its 0001 only creates a table
+    "core": "0001_initial",
     "legal": "0002_remove_content_field_use_markdown",
     "notifications": "0001_initial",
     "projects": "0062_submission_override",

@@ -84,7 +84,12 @@ DOCKER_SERVERS = [
 
 # LOGGING
 # ------------------------------------------------------------------------------
-# Uses base.py defaults
+# Uses base.py defaults, except:
+# The shared ADMINS email limit claims its slot on a connection of its own,
+# whose writes a test's transaction doesn't roll back: a claim left behind
+# would stop the next test's email. The tests that turn it on use
+# transactional_db (wafer_space/core/tests/test_log_shared_limit.py).
+ADMIN_EMAIL_RATE_LIMIT_SHARED = False
 
 # OAUTH PROVIDERS
 # ------------------------------------------------------------------------------
