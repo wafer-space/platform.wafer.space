@@ -266,6 +266,80 @@ class TestABrokerFailureDuringTheHandOff:
 
         assert len(exits.published) == 1
 
+    def test_a_slow_publish_that_succeeds_keeps_its_slot(
+        self, monkeypatch: pytest.MonkeyPatch, exits: Exits
+    ) -> None:
+        """Past the caller's wait it may still arrive, so no second email."""
+        release = threading.Event()
+        recording = Task.apply_async
+
+        def slow(task: Task, *args: Any, **kwargs: Any) -> None:
+            release.wait(BLOCKED_SECONDS)
+            recording(task, *args, **kwargs)
+
+        monkeypatch.setattr(Task, "apply_async", slow)
+        monkeypatch.setattr(core_log, "HAND_OFF_TIMEOUT_SECONDS", TEST_HAND_OFF_TIMEOUT)
+        handler = RateLimitedAdminEmailHandler()
+        handler.emit(error_record("Dispatch failed: %s", 1))
+        release.set()
+        for thread in list(core_log.pending_hand_offs):
+            thread.join(BLOCKED_SECONDS)
+
+        handler.emit(error_record("Dispatch failed: %s", 2))
+
+        assert len(exits.published) == 1
+
+    def test_a_slow_publish_that_fails_gives_its_slot_back(
+        self, monkeypatch: pytest.MonkeyPatch, exits: Exits
+    ) -> None:
+        """It fails after the caller stopped waiting; the next one is sent."""
+        release = threading.Event()
+        recording = Task.apply_async
+
+        def slow_then_broken(*_args: Any, **_kwargs: Any) -> None:
+            release.wait(BLOCKED_SECONDS)
+            msg = "broker unreachable"
+            raise OperationalError(msg)
+
+        monkeypatch.setattr(Task, "apply_async", slow_then_broken)
+        monkeypatch.setattr(core_log, "HAND_OFF_TIMEOUT_SECONDS", TEST_HAND_OFF_TIMEOUT)
+        handler = RateLimitedAdminEmailHandler()
+        handler.emit(error_record("Dispatch failed: %s", 1))
+        release.set()
+        for thread in list(core_log.pending_hand_offs):
+            thread.join(BLOCKED_SECONDS)
+
+        monkeypatch.setattr(Task, "apply_async", recording)
+        handler.emit(error_record("Dispatch failed: %s", 2))
+
+        assert len(exits.published) == 1
+
+    def test_an_email_dropped_at_the_cap_gives_its_slot_back(
+        self, monkeypatch: pytest.MonkeyPatch, exits: Exits
+    ) -> None:
+        release = threading.Event()
+        recording = Task.apply_async
+
+        def hang(*_args: Any, **_kwargs: Any) -> None:
+            release.wait(BLOCKED_SECONDS)
+
+        monkeypatch.setattr(Task, "apply_async", hang)
+        monkeypatch.setattr(core_log, "HAND_OFF_TIMEOUT_SECONDS", TEST_HAND_OFF_TIMEOUT)
+        handler = RateLimitedAdminEmailHandler()
+        for n in range(core_log.MAX_PENDING_HAND_OFFS):
+            handler.emit(error_record(f"Distinct failure {n}"))
+        handler.emit(error_record("Dropped at the cap"))
+        release.set()
+        for thread in list(core_log.pending_hand_offs):
+            thread.join(BLOCKED_SECONDS)
+
+        monkeypatch.setattr(Task, "apply_async", recording)
+        handler.emit(error_record("Dropped at the cap"))
+
+        assert [args[1].splitlines()[0] for _, _, args in exits.published] == [
+            "Dropped at the cap"
+        ]
+
     def test_an_unexpected_error_still_names_the_lost_email(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
     ) -> None:

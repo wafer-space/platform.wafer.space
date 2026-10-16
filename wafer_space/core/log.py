@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import threading
+from functools import partial
 from typing import TYPE_CHECKING
 from typing import Any
 
@@ -18,6 +19,8 @@ from wafer_space.core.tasks import MAIL_QUEUE
 from wafer_space.core.tasks import send_admin_email
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from django.utils.functional import Promise
 
 # At most one email per error signature per window. A signature is
@@ -51,22 +54,27 @@ HAND_OFF_ERRORS = (KombuError, SQLAlchemyError, OSError)
 
 
 def publish_admin_email(
-    subject: str, message: str, html_message: str | None, published: list[bool]
+    subject: str,
+    message: str,
+    html_message: str | None,
+    lost: Callable[[], object],
 ) -> None:
     """Publish the email to the mail worker's queue, or log why not.
 
-    Appends True to ``published`` once the broker has the message.
+    Calls ``lost`` once the email is known to be lost, even when that is
+    after the caller stopped waiting.
     """
-    logged = False
+    published = logged = False
     try:
         send_admin_email.apply_async(
             args=(subject, message, html_message),
             queue=MAIL_QUEUE,
             retry=False,
         )
-        published.append(True)
+        published = True
     except HAND_OFF_ERRORS:
         logged = True
+        lost()
         hand_off_logger.exception(
             "ADMINS email not handed to %s, so it is lost. Subject: %s\n%s",
             MAIL_QUEUE,
@@ -77,6 +85,7 @@ def publish_admin_email(
         # Any other exception ends the thread with only a bare traceback
         # from threading.excepthook; this says which email it lost
         if not published and not logged:
+            lost()
             hand_off_logger.error(
                 "ADMINS email not handed to %s, so it is lost (the error "
                 "follows). Subject: %s\n%s",
@@ -86,7 +95,13 @@ def publish_admin_email(
             )
 
 
-def hand_off_admin_email(subject: str, message: str, html_message: str | None) -> bool:
+def hand_off_admin_email(
+    subject: str,
+    message: str,
+    html_message: str | None,
+    *,
+    lost: Callable[[], object],
+) -> None:
     """Hand an ADMINS email to the mail worker without blocking (issue #439).
 
     The publish runs in its own thread, so a broker that is down or wedged
@@ -94,7 +109,9 @@ def hand_off_admin_email(subject: str, message: str, html_message: str | None) -
     takes its own broker connection from kombu's pool, never the one a
     wedged consumer is stuck on.
 
-    Returns whether the broker has the email by then.
+    ``lost`` is called once the email is known to be lost: dropped here, or
+    a failed publish, even one that fails after the caller stopped waiting.
+    A publish still pending is not lost: it may yet succeed.
     """
     pending_hand_offs[:] = [t for t in pending_hand_offs if t.is_alive()]
     if len(pending_hand_offs) >= MAX_PENDING_HAND_OFFS:
@@ -106,11 +123,11 @@ def hand_off_admin_email(subject: str, message: str, html_message: str | None) -
             subject,
             message,
         )
-        return False
-    published: list[bool] = []
+        lost()
+        return
     thread = threading.Thread(
         target=publish_admin_email,
-        args=(subject, message, html_message, published),
+        args=(subject, message, html_message, lost),
         name="admin-email-hand-off",
         daemon=True,
     )
@@ -126,7 +143,6 @@ def hand_off_admin_email(subject: str, message: str, html_message: str | None) -
             subject,
             message,
         )
-    return bool(published)
 
 
 class RateLimitedAdminEmailHandler(AdminEmailHandler):
@@ -154,21 +170,16 @@ class RateLimitedAdminEmailHandler(AdminEmailHandler):
     silently.
     """
 
-    # Whether the email emit() is sending reached the broker. logging holds
-    # the handler's lock around emit(), so one emit() runs at a time.
-    handed_off = False
+    # The rate-limit key of the record emit() is sending. logging holds the
+    # handler's lock around emit(), so one emit() runs at a time.
+    rate_key = ""
 
     def emit(self, record: logging.LogRecord) -> None:
         signature = f"{record.name}:{record.levelno}:{record.msg}"
         digest = hashlib.sha256(signature.encode()).hexdigest()
-        key = f"admin-email-rate:{digest}"
-        if not cache.add(key, 1, RATE_LIMIT_SECONDS):
-            return
-        self.handed_off = False
-        super().emit(record)
-        if not self.handed_off:
-            # A lost email must not silence the next one for an hour
-            cache.delete(key)
+        self.rate_key = f"admin-email-rate:{digest}"
+        if cache.add(self.rate_key, 1, RATE_LIMIT_SECONDS):
+            super().emit(record)
 
     def send_mail(
         self,
@@ -180,8 +191,10 @@ class RateLimitedAdminEmailHandler(AdminEmailHandler):
         # AdminEmailHandler passes fail_silently; the hand-off never raises
         del args
         html_message = kwargs.get("html_message")
-        self.handed_off = hand_off_admin_email(
+        hand_off_admin_email(
             scrub_url_credentials(str(subject)),
             scrub_url_credentials(str(message)),
             None if html_message is None else scrub_url_credentials(html_message),
+            # A lost email gives its slot back, so the next one is sent
+            lost=partial(cache.delete, self.rate_key),
         )
