@@ -85,6 +85,12 @@ def project_page(client: Client, project: Project) -> str:
     return response.content.decode()
 
 
+def resource_section(content: str) -> str:
+    """The resource-usage block of the check partial in ``content``."""
+    start = content.index('data-check-section="resource-usage"')
+    return content[start : content.index("</div>", start)]
+
+
 def resources_url(check: ManufacturabilityCheck) -> str:
     return reverse(
         "projects:check_resources",
@@ -127,7 +133,7 @@ class TestProjectPage:
         (check,) = finished_checks(project, 1)
         add_checkpoints(check, range(121))
 
-        content = project_page(client, project)
+        content = resource_section(project_page(client, project))
 
         # 121 checkpoints; the last at 600 s; CPU peaks at 22.0 %, memory
         # at 1 GiB + 120 MiB = 1.1 GB, 1.7 % of 64 GiB
@@ -145,13 +151,24 @@ class TestProjectPage:
         content = project_page(client, project)
 
         assert "Resource Usage Timeline" not in content
-        assert "<td>19</td>" not in content
+        assert "<td>" not in resource_section(content)
+
+    def test_missing_cpu_and_memory_show_a_dash(self, client: Client) -> None:
+        project = ProjectFactory()
+        (check,) = finished_checks(project, 1)
+        ManufacturabilityCheckpoint.objects.create(
+            manufacturability_check=check, checkpoint_number=0, elapsed_seconds=5.0
+        )
+
+        content = " ".join(resource_section(project_page(client, project)).split())
+
+        assert "peak CPU -, peak memory -" in content
 
     def test_check_without_checkpoints_says_none_recorded(self, client: Client) -> None:
         project = ProjectFactory()
         (check,) = finished_checks(project, 1)
 
-        content = project_page(client, project)
+        content = resource_section(project_page(client, project))
 
         assert "none recorded" in content
         assert resources_url(check) not in content
@@ -197,6 +214,14 @@ class TestCheckResourcesView:
 
         assert response.status_code == HTTP_OK
         assert "This check recorded no resource usage." in response.content.decode()
+
+    def test_archived_project_keeps_its_timeline(self, client: Client) -> None:
+        project = ProjectFactory()
+        (check,) = finished_checks(project, 1)
+        project.archive()
+        client.force_login(project.user)
+
+        assert client.get(resources_url(check)).status_code == HTTP_OK
 
     def test_staff_sees_another_users_check(self, client: Client) -> None:
         project = ProjectFactory()
