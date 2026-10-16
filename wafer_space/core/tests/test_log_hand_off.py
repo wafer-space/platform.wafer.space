@@ -36,6 +36,8 @@ from wafer_space.core.log import RateLimitedAdminEmailHandler
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+# Mailgun's key in these tests: the HTTP call it would sign is patched out
+PLACEHOLDER = "placeholder"
 # A credential that must never leave the process unscrubbed (#339)
 SENTINEL = "sentinel-not-a-real-credential"
 SECRET_URL = f"postgresql://wafer:{SENTINEL}@db.example/wafer"
@@ -74,7 +76,7 @@ def _clean_cache() -> Iterator[None]:
 def anymail_backend(settings: Any) -> None:
     """A deployed worker's mail backend; the API key is a placeholder."""
     settings.EMAIL_BACKEND = "anymail.backends.mailgun.EmailBackend"
-    settings.ANYMAIL = {"MAILGUN_API_KEY": "not-a-real-key"}
+    settings.ANYMAIL = {"MAILGUN_API_KEY": PLACEHOLDER}
 
 
 class Exits:
