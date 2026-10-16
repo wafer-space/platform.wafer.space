@@ -43,6 +43,17 @@
             </form>
           </div>
         {% endif %}
+        {# A clone that failed after "Cloning ..." was shown (#411) #}
+        {% for failure in clone_failures %}
+          <div class="alert alert-danger"
+               role="alert"
+               data-clone-failure="{{ failure.target_shuttle.name }}">
+            <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>
+            <strong>Cloning to shuttle {{ failure.target_shuttle.name }} failed</strong>
+            on {{ failure.failed_at|date:"Y-m-d H:i" }}: {{ failure.reason }}
+            <a class="alert-link" href="{% url 'projects:clone' pk=project.pk %}">Try again</a>.
+          </div>
+        {% endfor %}
         {# Page header with title, archive and admin buttons #}
         <div class="d-flex justify-content-between align-items-center mb-3">
           <h2>{{ project.name }}</h2>

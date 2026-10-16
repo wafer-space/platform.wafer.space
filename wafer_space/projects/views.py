@@ -214,6 +214,10 @@ class ProjectDetailView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, DetailView
         )
         # Why this user may not upload or submit (closed shuttle, #320)
         context["shuttle_closed_reason"] = shuttle_closed_reason_for(project, user)
+        # Clones that failed in the worker after "Cloning ..." was shown (#411)
+        context["clone_failures"] = project.clone_failures.select_related(
+            "target_shuttle",
+        )
 
         context.update(self._action_context(project, user))
 
@@ -1243,7 +1247,7 @@ class ProjectCloneView(LoginRequiredMixin, ProjectOwnerOrStaffMixin, View):
             f"Cloning to shuttle {target_shuttle.name} as "
             f"{target_shuttle.name}{project_id}. The new draft project "
             "appears in your projects list in a moment; this project is "
-            "unchanged.",
+            "unchanged. If the copy fails, this page says why.",
         )
         return redirect(project.get_absolute_url())
 

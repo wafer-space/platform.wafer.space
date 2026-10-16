@@ -14,15 +14,26 @@ from celery import shared_task
 from django.contrib.admin.models import ADDITION
 from django.contrib.admin.models import CHANGE
 from django.contrib.admin.models import LogEntry
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError
+from django.utils import timezone
 
 from wafer_space.projects.duplication import CloneRequest
 from wafer_space.projects.duplication import duplicate_project_to_shuttle
 from wafer_space.projects.exceptions import ProjectDuplicationError
+from wafer_space.projects.models import CloneFailure
 from wafer_space.projects.models import Project
 from wafer_space.shuttles.models import Shuttle
 from wafer_space.users.models import User
 
 logger = logging.getLogger(__name__)
+
+# What the owner reads when the copy itself failed. The exception's own
+# text can carry storage paths or database detail; staff get it in the
+# admin history.
+COPY_FAILED_REASON = (
+    "The copy could not be saved. Nothing was created. If it fails again, contact us."
+)
 
 
 @shared_task(queue="http:rw:downloads")
@@ -44,7 +55,9 @@ def duplicate_project_task(
     The view validates and enqueues; this task re-validates and performs
     the atomic copy. Outcomes are recorded as admin LogEntry rows so
     staff can see what happened even though the request cycle has
-    already returned.
+    already returned. A failed clone is also recorded as a CloneFailure,
+    which the source project's page shows to its owner (#411); any
+    successful copy to that shuttle removes it.
 
     No retries by design: expected failures (validation, collisions) are
     caught and recorded, and a blind re-run of a partially-visible copy
@@ -96,7 +109,22 @@ def duplicate_project_task(
             f"Duplication to shuttle {target_shuttle.name} FAILED: {exc}",
             single_object=True,
         )
+        if clone is not None:
+            CloneFailure.objects.update_or_create(
+                project=project,
+                target_shuttle=target_shuttle,
+                defaults={
+                    "reason": owner_facing_reason(exc),
+                    "failed_at": timezone.now(),
+                    "requested_by": admin_user,
+                },
+            )
         return {"status": "failed", "error": str(exc)}
+
+    CloneFailure.objects.filter(
+        project=project,
+        target_shuttle=target_shuttle,
+    ).delete()
 
     LogEntry.objects.log_actions(
         admin_user.pk,
@@ -113,3 +141,15 @@ def duplicate_project_task(
         single_object=True,
     )
     return {"status": "ok", "duplicate_pk": str(duplicate.pk)}
+
+
+def owner_facing_reason(exc: ProjectDuplicationError) -> str:
+    """Why a clone failed, in words fit for the project's owner.
+
+    Validation failures (the shuttle closed, the ID was taken) are
+    written for users. A failure while saving the copy wraps a storage
+    or database error, so the owner gets COPY_FAILED_REASON instead.
+    """
+    if isinstance(exc.__cause__, IntegrityError | ValidationError | OSError):
+        return COPY_FAILED_REASON
+    return str(exc)

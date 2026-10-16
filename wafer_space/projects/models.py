@@ -22,6 +22,7 @@ from django.db.models import Value
 from django.db.models import When
 from django.db.models.functions import Concat
 from django.db.models.functions import Length
+from django.db.models.functions import Now
 from django.db.models.functions import Right
 from django.db.models.lookups import GreaterThan
 from django.urls import reverse
@@ -1029,6 +1030,65 @@ class ProjectAccessLog(models.Model):
             f"{self.project.user.username}'s {self.project.name} "
             f"at {self.accessed_at}"
         )
+
+
+class CloneFailure(models.Model):
+    """A "Clone to open shuttle" that failed in the worker (#411).
+
+    The owner is told "Cloning ..." before the copy runs, so a copy that
+    then fails would otherwise be silent for them. duplicate_project_task
+    keeps one row per source project and target shuttle, the latest
+    failure, and the project page shows it to the owner and staff. A
+    later successful copy to the same shuttle deletes it. The staff admin
+    action records none: staff read the admin history.
+    """
+
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name="clone_failures",
+        help_text="Project that was to be cloned",
+    )
+    target_shuttle = models.ForeignKey(
+        "shuttles.Shuttle",
+        on_delete=models.CASCADE,
+        related_name="+",
+        help_text="Shuttle the clone was for",
+    )
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="User who asked for the clone, owner or staff",
+    )
+    # db_default on both: see the rolling-restart note on
+    # ProjectAccessLog.details (issue #433).
+    reason = models.TextField(
+        blank=True,
+        default="",
+        db_default="",
+        help_text="Why the clone failed, as shown to the owner",
+    )
+    failed_at = models.DateTimeField(
+        default=timezone.now,
+        db_default=Now(),
+        help_text="When the clone failed",
+    )
+
+    class Meta:
+        ordering = ["-failed_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["project", "target_shuttle"],
+                name="unique_clone_failure_per_target_shuttle",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        """String representation of a failed clone."""
+        return f"Clone of {self.project_id} to shuttle {self.target_shuttle_id} failed"
 
 
 def project_file_upload_path(instance, filename):
