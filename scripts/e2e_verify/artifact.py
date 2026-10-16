@@ -118,7 +118,20 @@ def _latest_run_artifacts() -> str:
 
     Shown when the wanted name is missing, so a rename upstream is obvious
     from the error alone. Only a successful run has uploaded every artifact.
+    A failed GitHub call (rate limit, 5xx, timeout) is said here instead of
+    raised, so it never replaces the missing-artifact error (issue #452).
     """
+    try:
+        return _list_latest_run_artifacts()
+    except requests.RequestException as exc:
+        return (
+            "Couldn't list the artifacts of its latest successful main CI run: "
+            f"{type(exc).__name__}: {exc}"
+        )
+
+
+def _list_latest_run_artifacts() -> str:
+    """_latest_run_artifacts(), raising when a GitHub call fails."""
     runs = requests.get(
         f"{API}/repos/{TEMPLATE_REPO}/actions/workflows/ci.yml/runs",
         headers=_headers(),
