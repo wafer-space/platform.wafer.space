@@ -5,11 +5,18 @@ from __future__ import annotations
 import hashlib
 import logging
 import threading
+from datetime import timedelta
 from functools import partial
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import cast
 
+from django.apps import apps
+from django.conf import settings
 from django.core.cache import cache
+from django.db import DatabaseError
+from django.db import connections
+from django.utils import timezone
 from django.utils.log import AdminEmailHandler
 from kombu.exceptions import KombuError
 from sqlalchemy.exc import SQLAlchemyError
@@ -20,14 +27,23 @@ from wafer_space.core.tasks import send_admin_email
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from datetime import datetime
 
     from django.utils.functional import Promise
+
+    from wafer_space.core.models import AdminEmailClaim
 
 # At most one email per error signature per window. A signature is
 # (logger name, level, unformatted message template), so a repeating error
 # that interpolates changing values (digests, task ids, ...) still counts
 # as a single signature.
 RATE_LIMIT_SECONDS = 60 * 60
+RATE_LIMIT_WINDOW = timedelta(seconds=RATE_LIMIT_SECONDS)
+
+# How long logging an ERROR may wait for the database to say whether
+# another process already sent its email (issue #450). A claim takes
+# milliseconds; past this, the process decides on its own.
+CLAIM_TIMEOUT_SECONDS = 5
 
 # How long logging an ERROR may wait for its email to reach the broker
 # (issue #439). A publish takes milliseconds; a broker that is down or
@@ -39,8 +55,8 @@ HAND_OFF_TIMEOUT_SECONDS = 5
 MAX_PENDING_HAND_OFFS = 4
 
 # Not under "wafer_space": its records reach only root's console handler
-# (the Celery worker log), never this handler, so a failed hand-off can't
-# loop back into another hand-off.
+# (the Celery worker log), never this handler, so a failed hand-off or
+# claim can't loop back into another email.
 hand_off_logger = logging.getLogger("admin_email_hand_off")
 
 # The hand-off threads of this process. A forked child inherits the list,
@@ -145,6 +161,71 @@ def hand_off_admin_email(
         )
 
 
+class ClaimUnavailableError(Exception):
+    """The database couldn't say whether another process sent the email."""
+
+
+def on_own_connection[T](work: Callable[[], T]) -> T:
+    """Run ``work`` in a thread of its own, so on a connection of its own.
+
+    The caller's connection is never touched, nor any transaction on it,
+    even one that has failed: the handler runs inside logging, often while
+    the caller's transaction is the thing failing. A claim made inside the
+    caller's transaction would also keep its row locked, and other
+    processes waiting, until that transaction ended.
+
+    Raises ClaimUnavailableError when ``work`` raised, or took longer than
+    CLAIM_TIMEOUT_SECONDS.
+    """
+    outcome: list[T] = []
+
+    def run() -> None:
+        try:
+            outcome.append(work())
+        except DatabaseError:
+            hand_off_logger.exception("ADMINS email claim failed in the database")
+        finally:
+            connections.close_all()
+
+    thread = threading.Thread(target=run, name="admin-email-claim", daemon=True)
+    thread.start()
+    thread.join(CLAIM_TIMEOUT_SECONDS)
+    if not outcome:
+        msg = "no answer from the database"
+        raise ClaimUnavailableError(msg)
+    return outcome[0]
+
+
+def admin_email_claims() -> type[AdminEmailClaim]:
+    """The claims model; models can't be imported while logging is set up."""
+    return cast("type[AdminEmailClaim]", apps.get_model("core", "AdminEmailClaim"))
+
+
+def claim_admin_email(signature: str, now: datetime) -> datetime | None:
+    """Take ``signature``'s slot for every process; see AdminEmailClaim.claim."""
+    return on_own_connection(
+        lambda: admin_email_claims().objects.claim(
+            signature, now=now, window=RATE_LIMIT_WINDOW
+        )
+    )
+
+
+def give_back_slot(rate_key: str, signature: str, claimed_at: datetime | None) -> None:
+    """A lost email gives its slot back, so the next one is sent."""
+    cache.delete(rate_key)
+    if claimed_at is None:
+        return
+    try:
+        on_own_connection(
+            lambda: admin_email_claims().objects.release(signature, sent_at=claimed_at)
+        )
+    except ClaimUnavailableError:
+        hand_off_logger.warning(
+            "A lost ADMINS email's slot stays taken in the database until its "
+            "window ends; other processes send none for it until then."
+        )
+
+
 class RateLimitedAdminEmailHandler(AdminEmailHandler):
     """AdminEmailHandler that drops repeats of the same error signature.
 
@@ -154,9 +235,13 @@ class RateLimitedAdminEmailHandler(AdminEmailHandler):
     subclass keys each record by its unformatted message template and
     only forwards the first occurrence per RATE_LIMIT_SECONDS.
 
-    Uses the default Django cache. With a LocMem backend the window is
-    per-process, so the effective ceiling is one email per signature per
-    window per worker process - still bounded.
+    The window is shared by every process (issue #450): the first process
+    to log a signature claims it in the database (AdminEmailClaim), on a
+    connection of its own, and only that process sends. The per-process
+    LocMem cache still notes what this process has sent or heard about,
+    so a repeating error asks the database once per window, not once per
+    record. If the database can't answer, the process falls back to its
+    own window: the email is sent, never lost.
 
     The finished subject, text body and HTML body are passed through
     scrub_url_credentials() before sending: the exception reporter filter
@@ -170,16 +255,41 @@ class RateLimitedAdminEmailHandler(AdminEmailHandler):
     silently.
     """
 
-    # The rate-limit key of the record emit() is sending. logging holds the
-    # handler's lock around emit(), so one emit() runs at a time.
+    # The record emit() is sending: its signature, rate-limit key and when
+    # it claimed the database slot (None when it couldn't). logging holds
+    # the handler's lock around emit(), so one emit() runs at a time.
+    digest = ""
     rate_key = ""
+    claimed_at: datetime | None = None
 
     def emit(self, record: logging.LogRecord) -> None:
         signature = f"{record.name}:{record.levelno}:{record.msg}"
-        digest = hashlib.sha256(signature.encode()).hexdigest()
-        self.rate_key = f"admin-email-rate:{digest}"
-        if cache.add(self.rate_key, 1, RATE_LIMIT_SECONDS):
+        self.digest = hashlib.sha256(signature.encode()).hexdigest()
+        self.rate_key = f"admin-email-rate:{self.digest}"
+        self.claimed_at = None
+        if cache.add(self.rate_key, 1, RATE_LIMIT_SECONDS) and self.first_anywhere():
             super().emit(record)
+
+    def first_anywhere(self) -> bool:
+        """Whether no other process sent this signature's email this window."""
+        if not settings.ADMIN_EMAIL_RATE_LIMIT_SHARED:
+            return True
+        now = timezone.now()
+        try:
+            sent_at = claim_admin_email(self.digest, now)
+        except ClaimUnavailableError:
+            hand_off_logger.warning(
+                "ADMINS email sent on this process's own rate limit: the "
+                "database didn't say whether another process sent it."
+            )
+            return True
+        if sent_at is None:
+            self.claimed_at = now
+            return True
+        # Another process sent it; ask again once that window ends
+        remaining = sent_at + RATE_LIMIT_WINDOW - now
+        cache.set(self.rate_key, 1, remaining.total_seconds())
+        return False
 
     def send_mail(
         self,
@@ -195,6 +305,5 @@ class RateLimitedAdminEmailHandler(AdminEmailHandler):
             scrub_url_credentials(str(subject)),
             scrub_url_credentials(str(message)),
             None if html_message is None else scrub_url_credentials(html_message),
-            # A lost email gives its slot back, so the next one is sent
-            lost=partial(cache.delete, self.rate_key),
+            lost=partial(give_back_slot, self.rate_key, self.digest, self.claimed_at),
         )
