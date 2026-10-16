@@ -15,6 +15,7 @@ from django.test import override_settings
 from django.views.debug import get_default_exception_reporter_filter
 
 from wafer_space.core.debug import CredentialScrubbingReporterFilter
+from wafer_space.core.debug import scrub_url_credentials
 from wafer_space.core.log import RateLimitedAdminEmailHandler
 
 if TYPE_CHECKING:
@@ -176,6 +177,26 @@ class TestAdminEmailScrubbing:
         assert len(alternatives) == 1
         html = str(alternatives[0][0])
         assert "broker_url" in html
+        assert SENTINEL not in html
+
+    @override_settings(CELERY_BROKER_URL=BROKER_URL)
+    def test_settings_dump_is_scrubbed_in_every_part(self) -> None:
+        """#339 as reported: the broker URL in settings, HTML email on.
+
+        The subject, the text body and the HTML body all carry the
+        settings dump or the error, and none of them has the password.
+        """
+        self._emit_error_about_broker_url(include_html=True)
+
+        assert len(mail.outbox) == 1
+        email = mail.outbox[0]
+        assert isinstance(email, EmailMultiAlternatives)
+        html = str(email.alternatives[0][0])
+        assert "CELERY_BROKER_URL" in email.body
+        assert "CELERY_BROKER_URL" in html
+        assert scrub_url_credentials(BROKER_URL) in html
+        assert SENTINEL not in email.subject
+        assert SENTINEL not in email.body
         assert SENTINEL not in html
 
 
