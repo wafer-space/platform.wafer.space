@@ -14,6 +14,8 @@ from dataclasses import field
 from typing import Any
 
 import pytest
+import requests
+from requests import RequestException
 
 from scripts.e2e_verify import artifact
 from scripts.e2e_verify import main
@@ -29,9 +31,12 @@ SUCCESSFUL_MAIN_RUNS = {"branch": "main", "status": "success", "per_page": "1"}
 class FakeResponse:
     payload: Any = None
     content: bytes = b""
+    error: requests.HTTPError | None = None
 
     def raise_for_status(self) -> None:
-        """Every fake response is a 200."""
+        """A 200, unless the test made this call fail."""
+        if self.error is not None:
+            raise self.error
 
     def json(self) -> Any:
         return self.payload
@@ -45,11 +50,19 @@ class FakeGitHub:
     latest_run_names: list[str] = field(default_factory=list)
     has_successful_run: bool = True
     requests: list[tuple[str, dict[str, str]]] = field(default_factory=list)
+    # Calls that fail, by URL: an HTTPError from raise_for_status(), or any
+    # other RequestException (a timeout) raised by get() itself
+    failing: dict[str, RequestException] = field(default_factory=dict)
 
     def get(
         self, url: str, *, params: dict[str, str] | None = None, **_: object
     ) -> FakeResponse:
         self.requests.append((url, params or {}))
+        failure = self.failing.get(url)
+        if isinstance(failure, requests.HTTPError):
+            return FakeResponse(error=failure)
+        if failure is not None:
+            raise failure
         if url == f"{API}/artifacts":
             name = (params or {})["name"]
             return FakeResponse(
@@ -156,3 +169,48 @@ def test_missing_artifact_without_a_successful_run_says_so(
         artifact.get_latest_artifact("1x1", "3v3")
 
     assert str(raised.value).endswith("The template has no successful CI run on main.")
+
+
+MISSING = f"No non-expired '1x1_3v3_gds' artifact in {artifact.TEMPLATE_REPO}. "
+NOT_LISTED = "Couldn't list the artifacts of its latest successful main CI run: "
+
+
+@pytest.mark.parametrize(
+    ("url", "failure", "why"),
+    [
+        (
+            f"{API}/workflows/ci.yml/runs",
+            requests.HTTPError("403 Client Error: rate limit exceeded"),
+            "HTTPError: 403 Client Error: rate limit exceeded",
+        ),
+        (
+            f"{API}/runs/7/artifacts",
+            requests.HTTPError("502 Server Error: Bad Gateway"),
+            "HTTPError: 502 Server Error: Bad Gateway",
+        ),
+        (
+            f"{API}/workflows/ci.yml/runs",
+            requests.Timeout("Read timed out. (read timeout=180)"),
+            "Timeout: Read timed out. (read timeout=180)",
+        ),
+    ],
+    ids=["runs-call-fails", "artifacts-call-fails", "runs-call-times-out"],
+)
+def test_a_failed_hint_still_reports_the_missing_artifact(
+    github: FakeGitHub, url: str, failure: requests.RequestException, why: str
+) -> None:
+    """The hint says why it has no list; the missing artifact is the error (#452)."""
+    github.failing[url] = failure
+
+    with pytest.raises(RuntimeError) as raised:
+        artifact.get_latest_artifact("1x1", "3v3")
+
+    assert str(raised.value) == MISSING + NOT_LISTED + why
+
+
+def test_a_failed_artifact_search_still_raises(github: FakeGitHub) -> None:
+    """Only the hint is softened: the search for the artifact itself still fails."""
+    github.failing[f"{API}/artifacts"] = requests.HTTPError("503 Server Error")
+
+    with pytest.raises(requests.HTTPError, match="503"):
+        artifact.get_latest_artifact("1x1", "3v3")
