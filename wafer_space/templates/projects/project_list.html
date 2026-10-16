@@ -60,6 +60,9 @@
                     {% if project.shuttle.is_test_only %}
                       <span class="d-block badge bg-info text-dark text-wrap"
                             title="Designs are checked but never manufactured"><i class="bi bi-clipboard2-check" aria-hidden="true"></i> Test only</span>
+                    {% elif project.shuttle.is_not_open_yet %}
+                      <span class="d-block badge bg-light text-dark border text-wrap"
+                            title="{{ project.shuttle.closed_reason }}"><i class="bi bi-hourglass-split" aria-hidden="true"></i> Not open yet</span>
                     {% elif project.shuttle.is_closed %}
                       <span class="d-block badge bg-secondary text-wrap"
                             title="{{ project.shuttle.closed_reason }}"><i class="bi bi-lock-fill" aria-hidden="true"></i> Closed</span>

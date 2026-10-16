@@ -308,8 +308,13 @@
               </button>
             {% elif shuttle_closed_reason %}
               <div class="alert alert-secondary" role="status">
-                <i class="bi bi-lock-fill" aria-hidden="true"></i>
-                {{ shuttle_closed_reason }}. New design files can no longer be submitted.
+                {% if project.shuttle.is_not_open_yet %}
+                  <i class="bi bi-hourglass-split" aria-hidden="true"></i>
+                  {{ shuttle_closed_reason }}. New design files can be submitted once it opens.
+                {% else %}
+                  <i class="bi bi-lock-fill" aria-hidden="true"></i>
+                  {{ shuttle_closed_reason }}. New design files can no longer be submitted.
+                {% endif %}
               </div>
               <button type="button"
                       class="btn btn-primary btn-lg"
