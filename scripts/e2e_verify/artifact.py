@@ -2,8 +2,9 @@
 
 The E2E flow uploads a design from ``wafer-space/gf180mcu-project-template``.
 GitHub Actions artifacts expire (~90 days), so instead of pinning a single
-artifact this module resolves the newest non-expired ``<slot_size>_gds``
-artifact at runtime and computes the sha256 of the extracted GDS.
+artifact this module resolves the newest non-expired
+``<slot_size>_<voltage>_gds`` artifact at runtime and computes the sha256 of
+the extracted GDS.
 
 The platform hashes the *extracted* layout (not the downloaded zip), so we
 extract the single ``.gds`` (decompressing a ``.gds.gz`` if present) and hash
@@ -34,6 +35,9 @@ from datetime import datetime
 import requests
 
 TEMPLATE_REPO = "wafer-space/gf180mcu-project-template"
+# The template's CI builds every slot in two voltage domains and names each
+# GDS artifact ``<slot>_<domain>_gds`` (issue #428)
+VOLTAGES = ("3v3", "5v")
 API = "https://api.github.com"
 _TIMEOUT = 180
 
@@ -63,15 +67,23 @@ def _headers() -> dict[str, str]:
     }
 
 
-def get_latest_artifact(slot_size: str) -> tuple[str, str]:
-    """Return ``(submit_url, sha256)`` for the newest GDS artifact of ``slot_size``.
+def gds_artifact_name(slot_size: str, voltage: str) -> str:
+    """The template's GDS artifact name for a slot and voltage, e.g. ``1x1_3v3_gds``."""
+    if voltage not in VOLTAGES:
+        msg = f"voltage must be one of {VOLTAGES}, not {voltage!r}"
+        raise ValueError(msg)
+    return f"{slot_size}_{voltage}_gds"
 
-    The template repo publishes one ``<slot_size>_gds`` artifact per slot size
-    (e.g. ``0p5x0p5_gds``, ``1x1_gds``). ``submit_url`` is the GitHub web URL the
-    platform downloads; ``sha256`` is the hash of the extracted GDS, matching
-    what the platform computes.
+
+def get_latest_artifact(slot_size: str, voltage: str) -> tuple[str, str]:
+    """Return ``(submit_url, sha256)`` for the newest GDS artifact of a slot.
+
+    The template repo publishes one ``<slot_size>_<voltage>_gds`` artifact per
+    slot size and voltage (e.g. ``0p5x0p5_3v3_gds``, ``1x1_5v_gds``).
+    ``submit_url`` is the GitHub web URL the platform downloads; ``sha256`` is
+    the hash of the extracted GDS, matching what the platform computes.
     """
-    artifact_name = f"{slot_size}_gds"
+    artifact_name = gds_artifact_name(slot_size, voltage)
     # Filter by name server-side: the repo accumulates thousands of artifacts of
     # many names, so a plain per_page=100 (most-recent-first, all names) can omit
     # every matching artifact once newer other-named ones fill page 1. The
@@ -85,7 +97,10 @@ def get_latest_artifact(slot_size: str) -> tuple[str, str]:
     resp.raise_for_status()
     artifacts = [a for a in resp.json()["artifacts"] if not a["expired"]]
     if not artifacts:
-        msg = f"No non-expired '{artifact_name}' artifact in {TEMPLATE_REPO}"
+        msg = (
+            f"No non-expired '{artifact_name}' artifact in {TEMPLATE_REPO}. "
+            f"{_latest_run_artifacts()}"
+        )
         raise RuntimeError(msg)
 
     latest = max(artifacts, key=lambda a: a["created_at"])
@@ -96,6 +111,37 @@ def get_latest_artifact(slot_size: str) -> tuple[str, str]:
         f"/actions/runs/{run_id}/artifacts/{artifact_id}"
     )
     return submit_url, _extracted_gds_sha256(artifact_id)
+
+
+def _latest_run_artifacts() -> str:
+    """Say which artifacts the template's latest ``main`` run has.
+
+    Shown when the wanted name is missing, so a rename upstream is obvious
+    from the error alone.
+    """
+    runs = requests.get(
+        f"{API}/repos/{TEMPLATE_REPO}/actions/runs",
+        headers=_headers(),
+        params={"branch": "main", "per_page": "1"},
+        timeout=_TIMEOUT,
+    )
+    runs.raise_for_status()
+    workflow_runs = runs.json()["workflow_runs"]
+    if not workflow_runs:
+        return "The template has no runs on main."
+    run = workflow_runs[0]
+    artifacts = requests.get(
+        f"{API}/repos/{TEMPLATE_REPO}/actions/runs/{run['id']}/artifacts",
+        headers=_headers(),
+        params={"per_page": "100"},
+        timeout=_TIMEOUT,
+    )
+    artifacts.raise_for_status()
+    names = sorted(a["name"] for a in artifacts.json()["artifacts"])
+    return (
+        f"Its latest main run ({run['html_url']}) has: "
+        f"{', '.join(names) or 'no artifacts'}"
+    )
 
 
 def _extracted_gds_sha256(artifact_id: int) -> str:

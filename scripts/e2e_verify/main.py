@@ -5,6 +5,7 @@ Usage:
     uv run python -m scripts.e2e_verify http://localhost:8081
     uv run python -m scripts.e2e_verify https://wafer.space
     uv run python -m scripts.e2e_verify https://wafer.space --slot-size 1x1
+    uv run python -m scripts.e2e_verify https://wafer.space --voltage 5v
     uv run python -m scripts.e2e_verify https://wafer.space \
         --submit-url https://example.com/design.gds --sha256 <hex>
 """
@@ -23,6 +24,7 @@ from typing import TYPE_CHECKING
 from playwright.sync_api import sync_playwright
 from pyvirtualdisplay import Display
 
+from .artifact import VOLTAGES
 from .artifact import PrecheckIdentity
 from .artifact import get_expected_precheck_runtime
 from .artifact import get_latest_artifact
@@ -54,13 +56,14 @@ class InputSource:
     """Where the design-to-upload comes from, plus the project slot to use.
 
     ``slot_size`` always chooses the project's slot (one of ``SLOT_SIZES``) and,
-    by default, the matching newest template-repo artifact. Setting
+    with ``voltage``, by default the matching newest template-repo artifact. Setting
     ``submit_url`` overrides *what* is uploaded -- that URL is submitted verbatim
     and ``sha256`` (required alongside it) is the expected hash of its final
     downloaded content -- while the project is still created at ``slot_size``.
     """
 
     slot_size: str
+    voltage: str
     submit_url: str | None = None
     sha256: str | None = None
 
@@ -72,12 +75,16 @@ class InputSource:
 USERNAME = os.environ.get("E2E_TEST_USERNAME", "e2e-test-user")
 PASSWORD = os.environ.get("E2E_TEST_PASSWORD", "")
 
-# Slot sizes the template repo publishes a ``<slot>_gds`` artifact for, mirroring
-# wafer_space.core.enums.SlotSize (hardcoded so this script stays dependency-free).
+# Slot sizes the template repo publishes a ``<slot>_<voltage>_gds`` artifact for,
+# mirroring wafer_space.core.enums.SlotSize (hardcoded so this script stays
+# dependency-free).
 # The chosen size drives project creation, artifact resolution, and the matching
 # precheck CI job's expected run-time lookup.
 SLOT_SIZES = ("1x1", "0p5x1", "1x0p5", "0p5x0p5")
 DEFAULT_SLOT_SIZE = "0p5x0p5"
+# 3v3, not the template Makefile's 5v default: 0p5x0p5_3v3_gds is the design
+# the deploy 2 and deploy 3 e2e runs on test-platform passed with (#428)
+DEFAULT_VOLTAGE = "3v3"
 TOTAL_STEPS = 13
 
 # The design to upload is resolved at runtime from the newest non-expired
@@ -174,10 +181,14 @@ def _resolve_inputs(source: InputSource) -> RunInputs:
         )
     else:
         logger.info(
-            "Resolving latest template-repo artifact + precheck metadata (slot %s)...",
+            "Resolving latest template-repo artifact + precheck metadata "
+            "(slot %s, %s)...",
             source.slot_size,
+            source.voltage,
         )
-        artifact_url, correct_hash = get_latest_artifact(source.slot_size)
+        artifact_url, correct_hash = get_latest_artifact(
+            source.slot_size, source.voltage
+        )
         inputs = RunInputs(
             artifact_url=artifact_url,
             correct_hash=correct_hash,
@@ -410,6 +421,16 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--voltage",
+        choices=VOLTAGES,
+        default=DEFAULT_VOLTAGE,
+        help=(
+            f"Voltage domain of the template artifact to upload (default: "
+            f"{DEFAULT_VOLTAGE}): selects <slot>_<voltage>_gds. Ignored with "
+            "--submit-url."
+        ),
+    )
+    parser.add_argument(
         "--submit-url",
         help=(
             "Download URL to submit instead of the --slot-size template artifact. "
@@ -445,6 +466,7 @@ def main() -> None:
 
     source = InputSource(
         slot_size=args.slot_size,
+        voltage=args.voltage,
         submit_url=args.submit_url,
         sha256=args.sha256,
     )
