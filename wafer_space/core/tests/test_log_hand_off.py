@@ -131,6 +131,9 @@ def blocked(monkeypatch: pytest.MonkeyPatch) -> Iterator[threading.Event]:
     )
     yield release
     release.set()
+    # The hung hand-offs end now; none may log into a later test
+    for thread in list(core_log.pending_hand_offs):
+        thread.join(BLOCKED_SECONDS)
 
 
 @pytest.mark.usefixtures("anymail_backend")
@@ -233,6 +236,53 @@ class TestABrokerFailureDuringTheHandOff:
             for r in caplog.records
             if "ADMINS email" in r.getMessage()
         ] == [(logging.ERROR, True)]
+
+    def test_a_lost_email_does_not_silence_the_next(
+        self, monkeypatch: pytest.MonkeyPatch, exits: Exits
+    ) -> None:
+        """The rate-limit slot is given back when the hand-off fails."""
+        handler = RateLimitedAdminEmailHandler()
+        recording = Task.apply_async
+        break_the_way_out(monkeypatch)
+        handler.emit(error_record("Dispatch failed: %s", 1))
+
+        monkeypatch.setattr(Task, "apply_async", recording)
+        handler.emit(error_record("Dispatch failed: %s", 2))
+
+        assert len(exits.published) == 1
+
+    def test_an_unexpected_error_still_names_the_lost_email(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        def odd(*_args: Any, **_kwargs: Any) -> None:
+            msg = "not a broker error"
+            raise LookupError(msg)
+
+        monkeypatch.setattr(Task, "apply_async", odd)
+        # The thread's own traceback goes to threading.excepthook
+        monkeypatch.setattr(threading, "excepthook", lambda _args: None)
+
+        with caplog.at_level(logging.ERROR):
+            RateLimitedAdminEmailHandler().emit(error_record("Dispatch failed: %s", 1))
+
+        assert any(
+            "ADMINS email not handed" in r.getMessage()
+            and "Dispatch failed: 1" in r.getMessage()
+            for r in caplog.records
+        )
+
+    def test_a_hung_broker_holds_at_most_the_cap_of_threads(
+        self, blocked: threading.Event, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Further emails are dropped, and each drop is logged."""
+        handler = RateLimitedAdminEmailHandler()
+
+        with caplog.at_level(logging.ERROR):
+            for n in range(core_log.MAX_PENDING_HAND_OFFS + 1):
+                handler.emit(error_record(f"Distinct failure {n}"))
+
+        messages = [r.getMessage() for r in caplog.records]
+        assert len([m for m in messages if "ADMINS email dropped" in m]) == 1
 
     def test_does_not_block_the_caller(self, blocked: threading.Event) -> None:
         start = time.monotonic()
