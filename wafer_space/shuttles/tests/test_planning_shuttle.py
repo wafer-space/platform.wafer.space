@@ -2,8 +2,10 @@
 
 Tim, 11 Oct 2026: "We don't have dates yet, but should still create the
 new entry in the platform with the same config as Run #3." G804 is created
-per environment in PLANNING status with no dates and G803's grid (see
-docs/shuttle_creation.md); these tests cover that state.
+per environment in PLANNING status with no dates and the grid G803 had at
+the time, which is G802's 6 x 9 grid (see docs/shuttle_creation.md); these
+tests cover that state. G803's own grid later changed to the published
+Run #3 allocation (shuttles/G803-layout.yaml, test_run3_layout.py).
 """
 
 from collections import Counter
@@ -44,15 +46,15 @@ def _create_g804() -> Shuttle:
 
 
 class TestG804Layout:
-    """G804's grid is Run #3's grid."""
+    """G804's grid is the Run 2 grid that Run #3 started with."""
 
-    def test_layout_matches_g803(self):
-        g803 = GridConfig.from_file(LAYOUT_DIR / "G803-layout.yaml")
+    def test_layout_matches_g802(self):
+        g802 = GridConfig.from_file(LAYOUT_DIR / "G802-layout.yaml")
         g804 = GridConfig.from_file(LAYOUT_DIR / "G804-layout.yaml")
 
         assert (g804.row_heights, g804.column_widths) == (
-            g803.row_heights,
-            g803.column_widths,
+            g802.row_heights,
+            g802.column_widths,
         )
 
     def test_layout_names_g804(self):
@@ -65,7 +67,7 @@ class TestG804Layout:
 class TestG804GridGeneration:
     """generate_shuttle_grid G804 works on a dateless PLANNING shuttle."""
 
-    def test_creates_run_3_slot_mix(self):
+    def test_creates_run_2_slot_mix(self):
         shuttle = _create_g804()
 
         call_command("generate_shuttle_grid", "G804")
