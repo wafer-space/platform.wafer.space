@@ -63,17 +63,27 @@ class TestG803Grid:
         assert sizes == ALLOCATION_CAPACITY
 
     def test_slot_sizes_match_the_allocation_map(self):
-        # One slot of each size and both map corners, as the published
-        # 90deg-r1-c1-upgrades-layout.csv lists them.
+        # Every cell of the published 90deg-r1-c1-upgrades-layout.csv, row by
+        # row: ½×1 is HALF_WIDTH, 1×1 FULL, ½×½ QUARTER, 1×½ HALF_HEIGHT.
+        hw, full, q, hh = (
+            SlotSize.HALF_WIDTH,
+            SlotSize.FULL,
+            SlotSize.QUARTER,
+            SlotSize.HALF_HEIGHT,
+        )
+        rows = {
+            1: [hw, hw, hw, hw, q, q, q],
+            2: [hw, hw, hw, hw, q, q, q],
+            3: [full, full, full, full, hh, hh, hh],
+            4: [full, full, full, full, hh, hh, hh],
+            5: [full, full, full, full, hh, hh, hh],
+            6: [full, full, full, full, hh, hh, hh],
+            7: [full, full, full, full, hh, hh, hh],
+        }
         allocation = {
-            "A1": SlotSize.HALF_WIDTH,
-            "D2": SlotSize.HALF_WIDTH,
-            "A3": SlotSize.FULL,
-            "D7": SlotSize.FULL,
-            "E1": SlotSize.QUARTER,
-            "G2": SlotSize.QUARTER,
-            "E3": SlotSize.HALF_HEIGHT,
-            "G7": SlotSize.HALF_HEIGHT,
+            f"{letter}{number}": size
+            for number, sizes in rows.items()
+            for letter, size in zip("ABCDEFG", sizes, strict=True)
         }
         shuttle = _create_g803()
         call_command("generate_shuttle_grid", "G803")
@@ -83,4 +93,4 @@ class TestG803Grid:
             for slot in ShuttleSlot.objects.filter(shuttle=shuttle)
         }
 
-        assert {pos: by_position[pos] for pos in allocation} == allocation
+        assert by_position == allocation

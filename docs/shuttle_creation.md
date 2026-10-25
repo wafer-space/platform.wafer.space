@@ -172,7 +172,8 @@ environment's `.env` loaded.
 
 `generate_shuttle_grid --update` deletes every G803 slot and creates the new
 ones, so **every existing slot assignment on G803 is lost** and must be
-redone from the allocation. List them first, piped into `manage.py shell`:
+redone from the allocation. List them first, piped into `manage.py shell`,
+and keep the output: it is the only record of them once step B has run.
 
 ```python
 from wafer_space.shuttles.models import ShuttleSlot
@@ -196,7 +197,8 @@ If step A listed assignments and they are to be redone, add `--force` to
 **both** commands: the assigned-slot check runs before the dry run, so the
 dry run refuses too without it. The dry run must report "Would create 49 slots for
 G803" and "Grid dimensions: 7 rows x 7 columns"; the real run must report
-"Deleted 54 existing slots" and "Created 49 slots for G803".
+"Deleted N existing slots" (54 on an environment still holding the Run 2
+grid) and "Created 49 slots for G803".
 
 ### C. Check
 

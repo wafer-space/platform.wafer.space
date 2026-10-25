@@ -27,8 +27,10 @@ shuttle: G803
 # The slots are turned 90° on the reticle (see above)
 rotated: true
 
-# 7 rows: Rows 1-2 are half-height, Rows 3-7 are full-height
+# 7 rows: Rows 1-2 are half as tall on the map (slot width 0.5), Rows 3-7
+# are full (slot width 1)
 row_heights: [0.5, 0.5, 1.0, 1.0, 1.0, 1.0, 1.0]
 
-# 7 columns: Columns A-D are full-width, Columns E-G are half-width
+# 7 columns: Columns A-D are full width on the map (slot height 1), Columns
+# E-G are half as wide (slot height 0.5)
 column_widths: [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5]
