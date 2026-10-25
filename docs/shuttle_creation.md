@@ -192,8 +192,9 @@ for slot in (
 .venv/bin/python manage.py generate_shuttle_grid G803 --update
 ```
 
-Add `--force` to the second command only if step A listed assignments and
-they are to be redone. The dry run must report "Would create 49 slots for
+If step A listed assignments and they are to be redone, add `--force` to
+**both** commands: the assigned-slot check runs before the dry run, so the
+dry run refuses too without it. The dry run must report "Would create 49 slots for
 G803" and "Grid dimensions: 7 rows x 7 columns"; the real run must report
 "Deleted 54 existing slots" and "Created 49 slots for G803".
 
