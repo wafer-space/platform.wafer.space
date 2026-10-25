@@ -5,32 +5,30 @@
 # (the "90° r1-c1 (with upgrades)" allocation). Replaced the Run 2 layout
 # (6 x 9 = 54 slots) in Oct 2026.
 #
-# Grid: 7 rows x 7 columns = 49 slots
-# - Rows 1-4: full-height (1.0)
-# - Rows 5-7: half-height (0.5)
-# - Columns A-B: half-width (0.5)
-# - Columns C-G: full-width (1.0)
+# Grid: 7 rows x 7 columns = 49 slots, laid out exactly as the allocation
+# map, so a map coordinate (D2, G7, ...) is the platform coordinate.
+#
+# The slots are turned 90° on the reticle (rotated: true): a 1x1 slot is
+# 5122 µm across and 3932 µm down on the map, so a row's height here is a
+# slot's width and a column's width is a slot's height.
+# - Rows 1-2 (top): half as tall on the map (1936 µm) -> slot width 0.5
+# - Rows 3-7: full height on the map (3932 µm) -> slot width 1
+# - Columns A-D: full width on the map (5122 µm) -> slot height 1
+# - Columns E-G (right): half as wide on the map (2531 µm) -> slot height 0.5
 #
 # Resulting slot sizes (format: width x height):
-# - Rows 1-4, Cols C-G: FULL (1x1) (20 slots)
-# - Rows 5-7, Cols C-G: HALF_HEIGHT (1x0.5) (15 slots)
-# - Rows 1-4, Cols A-B: HALF_WIDTH (0.5x1) (8 slots)
-# - Rows 5-7, Cols A-B: QUARTER (0.5x0.5) (6 slots)
-#
-# Orientation: the allocation map draws the slots turned 90° (a 1x1 is
-# 5122 µm across and 3932 µm down there), so its columns vary in height.
-# A grid here is column width x row height in design orientation (a 1x1 is
-# 3.88 mm wide x 5.07 mm tall), so this grid is the TRANSPOSE of the map:
-# platform row N is map column N (A=1 ... G=7) and platform column L is map
-# row L (1=A ... 7=G). To translate a map coordinate, swap letter and number:
-# map D2 is platform B4, map A1 is platform A1, map G7 is platform G7.
+# - Rows 3-7, Cols A-D: FULL (1x1) (20 slots)
+# - Rows 3-7, Cols E-G: HALF_HEIGHT (1x0.5) (15 slots)
+# - Rows 1-2, Cols A-D: HALF_WIDTH (0.5x1) (8 slots)
+# - Rows 1-2, Cols E-G: QUARTER (0.5x0.5) (6 slots)
 
 shuttle: G803
 
-# 7 rows (map columns A-G): A-D are 1x1 wide in the map (full-height here),
-# E-G are half as wide (half-height here)
-row_heights: [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5]
+# The slots are turned 90° on the reticle (see above)
+rotated: true
 
-# 7 columns (map rows 1-7): rows 1-2 are half as tall in the map (half-width
-# here), rows 3-7 are full
-column_widths: [0.5, 0.5, 1.0, 1.0, 1.0, 1.0, 1.0]
+# 7 rows: Rows 1-2 are half-height, Rows 3-7 are full-height
+row_heights: [0.5, 0.5, 1.0, 1.0, 1.0, 1.0, 1.0]
+
+# 7 columns: Columns A-D are full-width, Columns E-G are half-width
+column_widths: [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5]

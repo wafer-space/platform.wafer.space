@@ -583,9 +583,9 @@ class Command(BaseCommand):
 
         # Create slots from configuration
         slot_count = 0
-        for row_idx, row_height in enumerate(config.row_heights):
-            for col_idx, col_width in enumerate(config.column_widths):
-                slot_size = GridConfig.calculate_slot_size(row_height, col_width)
+        for row_idx in range(config.num_rows):
+            for col_idx in range(config.num_columns):
+                slot_size = config.slot_size_at(row_idx, col_idx)
                 ShuttleSlot.objects.create(
                     shuttle=shuttle,
                     row=row_idx,

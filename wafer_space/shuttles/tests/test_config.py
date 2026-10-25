@@ -77,3 +77,53 @@ row_heights: [1.0]
         """
         result = GridConfig.calculate_slot_size(row_h, col_w)
         assert result == expected
+
+
+class TestRotatedGrid:
+    """A grid whose slots are turned 90° on the reticle.
+
+    The YAML then holds the reticle map's own rows and columns, and a cell's
+    row height is the slot's width (and its column width the slot's height).
+    """
+
+    def test_rotated_defaults_to_false(self, tmp_path):
+        config_file = tmp_path / "flat-layout.yaml"
+        config_file.write_text("""
+shuttle: TEST04
+row_heights: [0.5]
+column_widths: [1.0]
+""")
+
+        config = GridConfig.from_file(config_file)
+
+        assert config.rotated is False
+        assert config.slot_size_at(0, 0) == SlotSize.HALF_HEIGHT
+
+    def test_rotated_swaps_width_and_height(self, tmp_path):
+        config_file = tmp_path / "turned-layout.yaml"
+        config_file.write_text("""
+shuttle: TEST05
+rotated: true
+row_heights: [0.5, 1.0]
+column_widths: [1.0, 0.5]
+""")
+
+        config = GridConfig.from_file(config_file)
+
+        assert config.rotated is True
+        assert [[config.slot_size_at(r, c) for c in range(2)] for r in range(2)] == [
+            [SlotSize.HALF_WIDTH, SlotSize.QUARTER],
+            [SlotSize.FULL, SlotSize.HALF_HEIGHT],
+        ]
+
+    def test_reject_non_boolean_rotated(self, tmp_path):
+        config_file = tmp_path / "bad-rotated-layout.yaml"
+        config_file.write_text("""
+shuttle: TEST06
+rotated: yes please
+row_heights: [1.0]
+column_widths: [1.0]
+""")
+
+        with pytest.raises(GridConfigError, match="rotated must be true or false"):
+            GridConfig.from_file(config_file)

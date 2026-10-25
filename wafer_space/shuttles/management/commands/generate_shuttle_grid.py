@@ -152,9 +152,9 @@ class Command(BaseCommand):
         """Generate grid slots from configuration."""
         slots_to_create = []
 
-        for row_idx, row_height in enumerate(config.row_heights):
-            for col_idx, col_width in enumerate(config.column_widths):
-                slot_size = GridConfig.calculate_slot_size(row_height, col_width)
+        for row_idx in range(config.num_rows):
+            for col_idx in range(config.num_columns):
+                slot_size = config.slot_size_at(row_idx, col_idx)
 
                 slot_data = {
                     "shuttle": shuttle,

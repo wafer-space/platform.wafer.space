@@ -157,11 +157,11 @@ when submissions should start. Pages show the deadline in AoE (the
 
 Run #3's allocation is published in `wafer-space/ws-run3-allocation`
 (`layouts/90deg-r1-c1-upgrades.md`): 49 slots (20 full, 15 half-height,
-8 half-width, 6 quarter). `shuttles/G803-layout.yaml` carries that grid as
-the transpose of the map, because the map draws the slots turned 90° and the
-platform grid is column width x row height in design orientation. A map
-coordinate becomes a platform coordinate by swapping letter and number
-(map `D2` is platform `B4`; `A1`, `C3` and `G7` stay as they are).
+8 half-width, 6 quarter). `shuttles/G803-layout.yaml` holds the map's own
+rows and columns, so a map coordinate (`D2`, `G7`) is the platform
+coordinate. The slots are turned 90° on the reticle, which the YAML says
+with `rotated: true`: a row's height on the map is a slot's width, so
+`GridConfig.slot_size_at` swaps the two when it derives a slot's size.
 
 The YAML deploys with the code, but the slots do not: regenerate the grid by
 hand on each environment, test-platform.wafer.space first. Same conditions
@@ -217,10 +217,9 @@ shuttles/G803-layout.yaml
 slots: [('0p5x0p5', 6), ('0p5x1', 8), ('1x0p5', 15), ('1x1', 20)]
 ```
 
-Then, as a staff user, `/shuttles/G803/assign/` shows a 7 x 7 grid with
-columns A and B narrow and rows 5 to 7 short. Reassign the projects from
-the allocation's `90deg-r1-c1-upgrades-allocation.csv`, translating each
-coordinate as above.
+Then, as a staff user, `/shuttles/G803/assign/` shows a 7 x 7 grid in which
+`D2` takes a 0.5x1 project and `G7` a 1x0.5 one. Reassign the projects from
+the allocation's `90deg-r1-c1-upgrades-allocation.csv`, slot for slot.
 
 ## G800: permanent test shuttle
 
