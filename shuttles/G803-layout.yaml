@@ -1,24 +1,36 @@
 # G803 Shuttle Grid Layout Configuration
 # GF180MCU Shuttle Run 3
 #
-# Same layout as G802 (GF180MCU Shuttle Run 2).
+# Source: wafer-space/ws-run3-allocation, layouts/90deg-r1-c1-upgrades.md
+# (the "90° r1-c1 (with upgrades)" allocation). Replaced the Run 2 layout
+# (6 x 9 = 54 slots) in Oct 2026.
 #
-# Grid: 6 rows x 9 columns = 54 slots
-# - Rows 1-3 (top): half-height (0.5)
-# - Rows 4-6: full-height (1.0)
-# - Columns A-F: full-width (1.0)
-# - Columns G-I (rightmost): half-width (0.5)
+# Grid: 7 rows x 7 columns = 49 slots, laid out exactly as the allocation
+# map, so a map coordinate (D2, G7, ...) is the platform coordinate.
+#
+# The slots are turned 90° on the reticle (rotated: true): a 1x1 slot is
+# 5122 µm across and 3932 µm down on the map, so a row's height here is a
+# slot's width and a column's width is a slot's height.
+# - Rows 1-2 (top): half as tall on the map (1936 µm) -> slot width 0.5
+# - Rows 3-7: full height on the map (3932 µm) -> slot width 1
+# - Columns A-D: full width on the map (5122 µm) -> slot height 1
+# - Columns E-G (right): half as wide on the map (2531 µm) -> slot height 0.5
 #
 # Resulting slot sizes (format: width x height):
-# - Rows 1-3, Cols A-F: HALF_HEIGHT (1x0.5) - full width, half height (18 slots)
-# - Rows 1-3, Cols G-I: QUARTER (0.5x0.5) (9 slots)
-# - Rows 4-6, Cols A-F: FULL (1x1) (18 slots)
-# - Rows 4-6, Cols G-I: HALF_WIDTH (0.5x1) - half width, full height (9 slots)
+# - Rows 3-7, Cols A-D: FULL (1x1) (20 slots)
+# - Rows 3-7, Cols E-G: HALF_HEIGHT (1x0.5) (15 slots)
+# - Rows 1-2, Cols A-D: HALF_WIDTH (0.5x1) (8 slots)
+# - Rows 1-2, Cols E-G: QUARTER (0.5x0.5) (6 slots)
 
 shuttle: G803
 
-# 6 rows: Rows 1-3 are half-height, Rows 4-6 are full-height
-row_heights: [0.5, 0.5, 0.5, 1.0, 1.0, 1.0]
+# The slots are turned 90° on the reticle (see above)
+rotated: true
 
-# 9 columns: Columns A-F are full-width, Columns G-I are half-width
-column_widths: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5]
+# 7 rows: Rows 1-2 are half as tall on the map (slot width 0.5), Rows 3-7
+# are full (slot width 1)
+row_heights: [0.5, 0.5, 1.0, 1.0, 1.0, 1.0, 1.0]
+
+# 7 columns: Columns A-D are full width on the map (slot height 1), Columns
+# E-G are half as wide (slot height 0.5)
+column_widths: [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5]

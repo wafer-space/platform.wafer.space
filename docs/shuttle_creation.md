@@ -24,7 +24,7 @@ entry in the platform with the same config as Run #3."
 | `submission_deadline` | empty | no published date yet (the only shuttle date the platform keeps, #346) |
 | `crowd_supply_url` | empty | no CrowdSupply campaign page yet |
 | `technology_node`, `foundry`, `wafer_size`, `total_cost`, `cost_per_slot` | copied from G803 | "same config as Run #3": the script copies whatever the G803 row holds (the production read of 11 Oct 2026 did not include these columns). If Run #4's pricing differs, update the cost fields when it is published. |
-| grid | `shuttles/G804-layout.yaml` | identical to G803's: 6 x 9 = 54 slots (18 full, 18 half-height, 9 half-width, 9 quarter) |
+| grid | `shuttles/G804-layout.yaml` | the grid G803 had at the time, G802's: 6 x 9 = 54 slots (18 full, 18 half-height, 9 half-width, 9 quarter). G803's own grid has since changed (see below). |
 
 ### Order
 
@@ -152,6 +152,77 @@ data migration that sets `submission_deadline` to 23:59:59 AoE (UTC-12) of the
 published GDS deadline, sets `crowd_supply_url`, and sets `status` to `open`
 when submissions should start. Pages show the deadline in AoE (the
 `aoe_deadline` filter in `wafer_space/shuttles/templatetags/shuttle_dates.py`).
+
+## G803: applying the published Run #3 grid
+
+Run #3's allocation is published in `wafer-space/ws-run3-allocation`
+(`layouts/90deg-r1-c1-upgrades.md`): 49 slots (20 full, 15 half-height,
+8 half-width, 6 quarter). `shuttles/G803-layout.yaml` holds the map's own
+rows and columns, so a map coordinate (`D2`, `G7`) is the platform
+coordinate. The slots are turned 90° on the reticle, which the YAML says
+with `rotated: true`: a row's height on the map is a slot's width, so
+`GridConfig.slot_size_at` swaps the two when it derives a slot's size.
+
+The YAML deploys with the code, but the slots do not: regenerate the grid by
+hand on each environment, test-platform.wafer.space first. Same conditions
+as above: from the application checkout, as the application user, with the
+environment's `.env` loaded.
+
+### A. Check what is assigned
+
+`generate_shuttle_grid --update` deletes every G803 slot and creates the new
+ones, so **every existing slot assignment on G803 is lost** and must be
+redone from the allocation. List them first, piped into `manage.py shell`,
+and keep the output: it is the only record of them once step B has run.
+
+```python
+from wafer_space.shuttles.models import ShuttleSlot
+
+for slot in (
+    ShuttleSlot.objects.filter(shuttle__name="G803", project__isnull=False)
+    .select_related("project")
+    .order_by("row", "column")
+):
+    print(slot.grid_position, slot.slot_size, slot.project.project_id)
+```
+
+### B. Regenerate the grid
+
+```bash
+.venv/bin/python manage.py generate_shuttle_grid G803 --update --dry-run
+.venv/bin/python manage.py generate_shuttle_grid G803 --update
+```
+
+If step A listed assignments and they are to be redone, add `--force` to
+**both** commands: the assigned-slot check runs before the dry run, so the
+dry run refuses too without it. The dry run must report "Would create 49 slots for
+G803" and "Grid dimensions: 7 rows x 7 columns"; the real run must report
+"Deleted N existing slots" (54 on an environment still holding the Run 2
+grid) and "Created 49 slots for G803".
+
+### C. Check
+
+Pipe this into `manage.py shell`:
+
+```python
+from collections import Counter
+from wafer_space.shuttles.models import Shuttle
+
+s = Shuttle.objects.get(name="G803")
+print(s.grid_config_file)
+print("slots:", sorted(Counter(s.slots.values_list("slot_size", flat=True)).items()))
+```
+
+Expected output:
+
+```text
+shuttles/G803-layout.yaml
+slots: [('0p5x0p5', 6), ('0p5x1', 8), ('1x0p5', 15), ('1x1', 20)]
+```
+
+Then, as a staff user, `/shuttles/G803/assign/` shows a 7 x 7 grid in which
+`D2` takes a 0.5x1 project and `G7` a 1x0.5 one. Reassign the projects from
+the allocation's `90deg-r1-c1-upgrades-allocation.csv`, slot for slot.
 
 ## G800: permanent test shuttle
 

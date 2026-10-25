@@ -24,7 +24,12 @@ class GridConfig:
     """Parsed grid configuration from YAML."""
 
     def __init__(
-        self, shuttle_name: str, row_heights: list[float], column_widths: list[float]
+        self,
+        shuttle_name: str,
+        row_heights: list[float],
+        column_widths: list[float],
+        *,
+        rotated: bool = False,
     ) -> None:
         """Initialize grid configuration.
 
@@ -32,10 +37,14 @@ class GridConfig:
             shuttle_name: Name of shuttle this config is for
             row_heights: List of row heights (each 0.5 or 1.0)
             column_widths: List of column widths (each 0.5 or 1.0)
+            rotated: The slots are turned 90° on the reticle, so the rows
+                and columns are the reticle map's and a cell's row height is
+                the slot's width (its column width the slot's height)
         """
         self.shuttle_name = shuttle_name
         self.row_heights = row_heights
         self.column_widths = column_widths
+        self.rotated = rotated
 
         # Validate dimensions
         for height in row_heights:
@@ -89,11 +98,31 @@ class GridConfig:
             msg = f"Missing required fields: {', '.join(missing)}"
             raise GridConfigError(msg)
 
+        rotated = data.get("rotated", False)
+        if not isinstance(rotated, bool):
+            msg = f"rotated must be true or false, not {rotated!r}"
+            raise GridConfigError(msg)
+
         return cls(
             shuttle_name=data["shuttle"],
             row_heights=data["row_heights"],
             column_widths=data["column_widths"],
+            rotated=rotated,
         )
+
+    def slot_size_at(self, row: int, column: int) -> SlotSize:
+        """Return the size of the slot in the given cell.
+
+        A slot's size is width x height in design orientation (a 1x1 is
+        3.88 mm wide and 5.07 mm tall). In a rotated grid the design's
+        width runs down the reticle, so the cell's row height is the
+        slot's width.
+        """
+        row_height = self.row_heights[row]
+        column_width = self.column_widths[column]
+        if self.rotated:
+            return self.calculate_slot_size(column_width, row_height)
+        return self.calculate_slot_size(row_height, column_width)
 
     @staticmethod
     def calculate_slot_size(row_height: float, column_width: float) -> SlotSize:
