@@ -139,18 +139,18 @@ force-single-line = true
 
 [dependency-groups]
 dev = [
-    "coverage==7.16.2",
+    "coverage==7.17.0",
     "django-coverage-plugin==3.2.2",
     "django-debug-toolbar==6.0.0",
     "django-extensions==4.1",
     "django-stubs[compatible-mypy]==5.2.5",
-    "djlint==1.46.4",
-    "factory-boy==3.3.2",
+    "djlint==1.47.0",
+    "factory-boy==3.3.3",
     "honcho>=2.0.0",
     "ipdb==0.13.13",
     "mypy==1.18.2",
     "playwright>=1.40",
-    "pre-commit==4.6.2",
+    "pre-commit==4.7.0",
     "psycopg[binary]==3.3.6",
     "pyvirtualdisplay>=3.0",
     "pytest==8.4.2",
@@ -159,8 +159,8 @@ dev = [
     "pytest-sugar==1.1.1",
     "pytest-xdist==3.8.0",
     "responses>=0.25.8",
-    "ruff==0.16.10",
-    "selenium==4.50.0",
+    "ruff==0.17.2",
+    "selenium==4.51.0",
     "sphinx==8.2.3",
     "sphinx-autobuild==2025.8.25",
     "types-markdown>=3.9.0.20250906",
@@ -184,7 +184,7 @@ dependencies = [
     "argon2-cffi==25.1.0",
     "crispy-bootstrap5==2025.6",
     "django==5.2.6",
-    "django-allauth[mfa,socialaccount]==65.11.2",
+    "django-allauth[mfa,socialaccount]==65.20.1",
     "django-anymail[mailgun]==13.1",
     "django-crispy-forms==2.7",
     "django-environ==0.14.0",
@@ -194,7 +194,7 @@ dependencies = [
     "kombu[sqlalchemy]>=5.3.0", # SQLAlchemy transport for Celery broker
     "django-celery-results>=2.5.0",
     "django-webpush>=0.3.0", # Web Push notifications
-    "markdown==3.11", # For rendering markdown TOS files
+    "markdown==3.11.2", # For rendering markdown TOS files
     "python-frontmatter==1.3.0", # For parsing markdown front matter
     "sqlalchemy>=2.0.0", # Required for SQLAlchemy broker
     "pillow==11.3.0",
