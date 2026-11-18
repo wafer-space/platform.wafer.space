@@ -6,6 +6,8 @@ Both services.py and tasks.py can import from this module.
 
 import magic
 
+from .exceptions import UnsupportedFileTypeError
+
 # GDSII files begin with a HEADER record: 2-byte length (0x0006), 1-byte record
 # type (0x00 = HEADER), 1-byte data type (0x02 = two-byte integer).
 GDS_SIGNATURE = b"\x00\x06\x00\x02"
@@ -47,7 +49,9 @@ def detect_file_type_from_data(data: bytes) -> tuple[str, str]:
             - file_extension: Appropriate file extension (e.g., ".gds")
 
     Raises:
-        ValueError: If the file is not a GDS/OASIS file or a supported archive.
+        UnsupportedFileTypeError: If the file is not a GDS/OASIS file or a
+            supported archive. It is a ``ValueError`` whose message is
+            written for the user.
     """
     # Detect GDS/OASIS/zip by their leading signatures, independent of libmagic.
     if data[:4] == GDS_SIGNATURE:
@@ -63,10 +67,6 @@ def detect_file_type_from_data(data: bytes) -> tuple[str, str]:
 
     extension = _COMPRESSED_MIME_TO_EXTENSION.get(mime_type)
     if extension is None:
-        msg = (
-            f"Unsupported file type: {mime_type}. Only GDS, OASIS, or "
-            f"gzip/bzip2/xz/zip-compressed GDS/OASIS files are accepted."
-        )
-        raise ValueError(msg)
+        raise UnsupportedFileTypeError(mime_type)
 
     return mime_type, extension

@@ -32,6 +32,7 @@ from .content_pipeline import get_download_dir_for_file
 from .content_pipeline import get_temp_dir_for_file
 from .content_processors import _processor_registry
 from .exceptions import DownloadTooLargeError
+from .exceptions import UnsupportedFileTypeError
 from .file_type_utils import detect_file_type_from_data
 from .format_validators import validate_output_format
 from .hashing import MultiHasher
@@ -695,12 +696,13 @@ def _validate_leading_bytes(data: bytes, temp_path: Path) -> None:
             start fresh instead of resuming garbage content
 
     Raises:
-        ValueError: If the content is not GDS/OASIS or a supported archive
+        UnsupportedFileTypeError: If the content is not GDS/OASIS or a
+            supported archive
     """
     logger = logging.getLogger(__name__)
     try:
         mime_type, _extension = detect_file_type_from_data(data)
-    except ValueError:
+    except UnsupportedFileTypeError:
         temp_path.unlink(missing_ok=True)
         raise
     logger.info("  ✓ Early content check passed: %s", mime_type)
@@ -831,7 +833,8 @@ def _download_chunks(state: _ChunkDownloadState) -> None:
             limit: pre-download validation cannot always determine the size
             (some hosts omit Content-Length or answer HEAD with 0), and
             response headers can lie.
-        ValueError: If the leading bytes are not an accepted file type.
+        UnsupportedFileTypeError: If the leading bytes are not an accepted
+            file type.
     """
     logger = logging.getLogger(__name__)
 
@@ -1210,13 +1213,27 @@ def _handle_download_failure(
 
 def _handle_unretryable_failure(
     project_id: str,
-    exc: DownloadTooLargeError | LayoutHierarchyError,
+    exc: DownloadTooLargeError | LayoutHierarchyError | UnsupportedFileTypeError,
     temp_path: Path | None,
     attempt: DownloadAttempt | None,
 ) -> dict[str, str | int]:
-    """Record a failure that downloading the file again cannot fix."""
+    """Record a failure that downloading the file again cannot fix.
+
+    Nothing is retried: the attempt is marked FAILED, the error is recorded
+    on the file, the user is notified once and the staging dir is removed.
+    """
     logger = logging.getLogger(__name__)
-    if isinstance(exc, LayoutHierarchyError):
+    if isinstance(exc, UnsupportedFileTypeError):
+        # The user's URL served something that is not a layout file, most
+        # often a web page (#463). The same content comes back on every
+        # retry and it is not a platform fault, so a warning, not an ADMINS
+        # email; the message, which tells the user what to fix, is recorded.
+        logger.warning(
+            "DOWNLOAD TASK FAILED - Unsupported file type for project %s: %s",
+            project_id,
+            exc,
+        )
+    elif isinstance(exc, LayoutHierarchyError):
         # The user's design is broken: a circular or missing cell reference
         # (#78). It is not a platform fault, so a warning, not an ADMINS
         # email; the message, which tells the user what to fix, is recorded.
@@ -1724,7 +1741,8 @@ def download_project_file(self, project_id):  # noqa: PLR0915
     - Resume capability with HTTP Range requests
     - Progress tracking via Celery task state
     - Hash verification (MD5, SHA1, SHA256)
-    - Exponential backoff retry on failures
+    - Exponential backoff retry on failures, except those a retry cannot
+      fix (oversized file, unsupported file type, broken cell hierarchy)
 
     Args:
         project_id: The UUID of the Project (not ProjectFile ID)
@@ -1813,47 +1831,21 @@ def download_project_file(self, project_id):  # noqa: PLR0915
         # Use first 1MB for MIME detection (or entire file if smaller)
         with temp_path.open("rb") as temp_file:
             detection_data = temp_file.read(1024 * 1024)
-        try:
-            mime_type, detected_extension = detect_file_type_from_data(detection_data)
-            logger.info("  ✓ Detected MIME type: %s", mime_type)
-            logger.info("  ✓ Detected extension: %s", detected_extension)
+        # An unaccepted type raises UnsupportedFileTypeError, which the
+        # handler below records once as an unretryable failure (#463). This
+        # is the only content check when the early one was skipped (resumed
+        # downloads and base64-encoded sources).
+        mime_type, detected_extension = detect_file_type_from_data(detection_data)
+        logger.info("  ✓ Detected MIME type: %s", mime_type)
+        logger.info("  ✓ Detected extension: %s", detected_extension)
 
-            # Log detected file type
-            # Note: original_filename stays unchanged - it's what was downloaded
-            logger.info(
-                "  ✓ Detected file type: %s (extension: %s)",
-                project_file.original_filename,
-                detected_extension,
-            )
-        except ValueError as e:
-            logger.exception("  ✗ File type detection failed")
-
-            # Create structured error log
-            FileProcessingError.objects.create(
-                download_attempt=attempt,
-                error_type=FileProcessingError.ErrorType.VALIDATION,
-                error_message=str(e),
-                error_detail={
-                    "stage": "file_type_detection",
-                    "traceback": traceback.format_exc(),
-                    "original_filename": project_file.original_filename,
-                },
-            )
-
-            # Mark attempt as failed
-            attempt.status = DownloadAttempt.Status.FAILED
-            attempt.completed_at = timezone.now()
-            if attempt.download_started_at:
-                attempt.download_duration_seconds = (
-                    attempt.completed_at - attempt.download_started_at
-                ).total_seconds()
-            attempt.save()
-
-            # Mark download as failed
-            # Note: download_status is now derived from attempt status
-            project_file.download_error = f"Validation error: {e}"
-            project_file.save(update_fields=["download_error"])
-            raise
+        # Log detected file type
+        # Note: original_filename stays unchanged - it's what was downloaded
+        logger.info(
+            "  ✓ Detected file type: %s (extension: %s)",
+            project_file.original_filename,
+            detected_extension,
+        )
 
         # Process and save content (extracts GDS/OASIS and calculates hashes)
         logger.info("Step 7: Processing and saving content...")
@@ -1917,7 +1909,13 @@ def download_project_file(self, project_id):  # noqa: PLR0915
             "message": f"Project with id {project_id} not found",
         }
 
-    except (DownloadTooLargeError, LayoutHierarchyError) as exc:
+    # Must stay above the generic branch: UnsupportedFileTypeError is a
+    # ValueError, which that branch would retry.
+    except (
+        DownloadTooLargeError,
+        LayoutHierarchyError,
+        UnsupportedFileTypeError,
+    ) as exc:
         return _handle_unretryable_failure(project_id, exc, temp_path, attempt)
 
     except (OSError, ValueError, requests.RequestException) as exc:
