@@ -11,6 +11,7 @@ import pytest
 from django.test import TestCase
 
 from wafer_space.projects.exceptions import MaxRetriesExceededError
+from wafer_space.projects.exceptions import UnsupportedFileTypeError
 from wafer_space.projects.file_type_utils import detect_file_type_from_data
 from wafer_space.projects.models import DownloadAttempt
 from wafer_space.projects.models import ManufacturabilityCheck
@@ -639,6 +640,35 @@ class TestDetectFileType(TestCase):
         html_data = b"<!DOCTYPE html><html><body>Not a GDS file</body></html>"
         with pytest.raises(ValueError, match="Unsupported file type"):
             detect_file_type_from_data(html_data)
+
+    def test_reject_html_explains_web_page_cause(self):
+        """An HTML reject tells the user their URL served a web page (#463)."""
+        html_data = b"<!DOCTYPE html><html><body>Sign in</body></html>"
+        with pytest.raises(UnsupportedFileTypeError) as exc_info:
+            detect_file_type_from_data(html_data)
+
+        assert exc_info.value.mime_type == "text/html"
+        message = str(exc_info.value)
+        assert message.startswith("Unsupported file type: text/html.")
+        assert "returned a web page, not a layout file" in message
+        assert "direct download link" in message
+
+    def test_reject_non_html_keeps_generic_message(self):
+        """A non-HTML reject keeps the list of accepted file types."""
+        pdf_data = b"%PDF-1.4" + b"\x00" * 100
+        with pytest.raises(UnsupportedFileTypeError) as exc_info:
+            detect_file_type_from_data(pdf_data)
+
+        assert exc_info.value.mime_type == "application/pdf"
+        assert str(exc_info.value) == (
+            "Unsupported file type: application/pdf. Only GDS, OASIS, or "
+            "gzip/bzip2/xz/zip-compressed GDS/OASIS files are accepted."
+        )
+
+    def test_xhtml_gets_the_web_page_message(self):
+        """XHTML is a web page too."""
+        exc = UnsupportedFileTypeError("application/xhtml+xml")
+        assert "returned a web page" in str(exc)
 
     def test_reject_pdf_file(self):
         """Test that PDF files are rejected."""

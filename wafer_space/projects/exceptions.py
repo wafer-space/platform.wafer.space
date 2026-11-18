@@ -105,6 +105,39 @@ class DownloadTooLargeError(Exception):
         super().__init__(msg)
 
 
+class UnsupportedFileTypeError(ValueError):
+    """Raised when content is not GDS/OASIS or a supported archive of one.
+
+    The message is user-facing: it is recorded as the download error and
+    sent in the download-failed notification. Subclasses ``ValueError``
+    so callers that catch ``ValueError`` keep working. Deliberately NOT
+    retryable when it comes from a download: the URL serves the same
+    content each time (#463).
+
+    Attributes:
+        mime_type: The MIME type detected from the content
+    """
+
+    HTML_MIME_TYPES = frozenset({"text/html", "application/xhtml+xml"})
+
+    def __init__(self, mime_type: str) -> None:
+        self.mime_type = mime_type
+        if mime_type in self.HTML_MIME_TYPES:
+            msg = (
+                f"Unsupported file type: {mime_type}. The URL returned a web "
+                f"page, not a layout file. This usually means the link is a "
+                f"share or preview page rather than a direct download, it "
+                f"needs you to sign in, or it has expired. Please provide a "
+                f"direct download link to the GDS or OASIS file."
+            )
+        else:
+            msg = (
+                f"Unsupported file type: {mime_type}. Only GDS, OASIS, or "
+                f"gzip/bzip2/xz/zip-compressed GDS/OASIS files are accepted."
+            )
+        super().__init__(msg)
+
+
 class ProjectDuplicationError(Exception):
     """Raised when duplicating a project onto another shuttle fails.
 
