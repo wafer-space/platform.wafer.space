@@ -12,6 +12,7 @@ from selenium.webdriver.support import expected_conditions
 from selenium.webdriver.support.ui import WebDriverWait
 
 from tests.browser.base import BaseBrowserTest
+from tests.browser.pages.project_list_page import ProjectListPage
 from wafer_space.legal.models import TermsOfService
 from wafer_space.legal.models import TermsOfServiceAcceptance
 from wafer_space.projects.models import Project
@@ -122,6 +123,36 @@ class TestShuttleDeadlineCountdown(BaseBrowserTest):
             if log.get("level") == "SEVERE" and "favicon" not in log.get("message", "")
         ]
         assert not severe, f"JS errors: {severe}"
+
+    @pytest.mark.parametrize(
+        "window_width",
+        [1600, 800, 600, 390],
+        ids=["wide", "tablet", "stacked", "phone"],
+    )
+    def test_compact_countdown_stays_inside_its_column(self, window_width):
+        """The longest countdowns do not run over the state column (#465)."""
+        now = timezone.now()
+        remaining = {
+            "G893": datetime.timedelta(days=128, hours=23, minutes=30),
+            "G894": datetime.timedelta(days=29, hours=5, minutes=30),
+            "G895": datetime.timedelta(hours=23, minutes=30),
+        }
+        projects = [
+            self.project_with_deadline(name, now + left)
+            for name, left in remaining.items()
+        ]
+        self.login_and_open(projects[0])
+        self.driver.set_window_size(window_width, 900)
+
+        page = ProjectListPage(self.driver, self.live_server_url).open()
+
+        # The script has run (the page finished loading): these are its words.
+        texts = page.compact_countdown_texts()
+        assert {"128 d 23 h left", "29 d 5 h left"} < set(texts), texts
+        assert any(re.fullmatch(r"23 h (29|30) m left", t) for t in texts), texts
+        assert page.badges_outside_their_column() == []
+        # One shuttle column for the whole list, not one per row.
+        assert len(page.shuttle_column_lefts_and_widths()) == 1
 
     def test_countdown_switches_to_deadline_passed(self):
         deadline = timezone.now() + datetime.timedelta(seconds=20)
