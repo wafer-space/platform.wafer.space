@@ -49,28 +49,29 @@
           </div>
         {% endif %}
         {% if projects %}
-          <div class="list-group">
+          <div class="list-group project-list">
             {% for project in projects %}
               {% with state=project|project_list_state %}
-                <div class="list-group-item list-group-item-action position-relative d-flex flex-column flex-sm-row{% if project.is_archived %} text-muted{% endif %}"
+                <div class="list-group-item list-group-item-action position-relative project-list-row{% if project.is_archived %} text-muted{% endif %}"
                      data-project-row="{{ project.pk }}">
-                  <div class="flex-shrink-0 pe-2" style="width: 4.5rem">
-                    <span class="fw-semibold">{{ project.shuttle.name }}</span>
+                  {# Sized by project.css to its widest badge, countdown included (#465). #}
+                  <div class="project-list-shuttle pe-3" data-shuttle-column>
+                    <span class="d-block fw-semibold">{{ project.shuttle.name }}</span>
                     {# Same rule as shuttles/_shuttle_state.html (#350, #221); no links in this narrow column. #}
                     {% if project.shuttle.is_test_only %}
-                      <span class="d-block badge bg-info text-dark text-wrap"
+                      <span class="badge bg-info text-dark"
                             title="Designs are checked but never manufactured"><i class="bi bi-clipboard2-check" aria-hidden="true"></i> Test only</span>
                     {% elif project.shuttle.is_not_open_yet %}
-                      <span class="d-block badge bg-light text-dark border text-wrap"
+                      <span class="badge bg-light text-dark border"
                             title="{{ project.shuttle.closed_reason }}"><i class="bi bi-hourglass-split" aria-hidden="true"></i> Not open yet</span>
                     {% elif project.shuttle.is_closed %}
-                      <span class="d-block badge bg-secondary text-wrap"
+                      <span class="badge bg-secondary"
                             title="{{ project.shuttle.closed_reason }}"><i class="bi bi-lock-fill" aria-hidden="true"></i> Closed</span>
                     {% elif project.shuttle.submission_deadline %}
                       {% shuttle_deadline project.shuttle.submission_deadline compact=True %}
                     {% endif %}
                   </div>
-                  <div class="flex-shrink-0 pe-3" style="width: 10rem">
+                  <div class="project-list-state pe-3">
                     <span class="badge text-wrap {{ state.css }}"
                           data-project-state="{{ state.key }}"
                           title="{{ state.title }}">
@@ -93,7 +94,7 @@
                       {% endif %}
                     {% endif %}
                   </div>
-                  <div class="flex-grow-1">
+                  <div class="project-list-main">
                     <div class="d-flex w-100 justify-content-between">
                       <h5 class="mb-1">
                         <a href="{{ project.get_absolute_url }}"

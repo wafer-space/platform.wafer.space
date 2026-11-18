@@ -11,3 +11,52 @@
   background-color: #f2dede;
   border-color: #eed3d7;
 }
+
+/*
+ * My Projects list (#465): shuttle, state and project columns.
+ *
+ * The shuttle column is as wide as its widest badge on the page, never a
+ * fixed width: the countdown script rewrites that badge ("128 d 23 h left",
+ * "23 h 59 m left", "Deadline passed"), and a badge does not wrap, so a
+ * fixed column lets it run over the state column. The rows share the list's
+ * column tracks (subgrid), so the columns still line up from row to row.
+ * Below the md breakpoint the three parts stack: beside two columns of
+ * badges, a narrower window leaves no room for the title and its date.
+ */
+.project-list [data-countdown-compact] {
+  /* Digits of one width: the badge keeps its width as it counts down. */
+  font-variant-numeric: tabular-nums;
+}
+
+@media (min-width: 768px) {
+  /* Browsers without subgrid: a fixed column wide enough for every badge. */
+  .project-list-row {
+    display: flex;
+  }
+
+  .project-list-shuttle {
+    flex: 0 0 9.5rem;
+  }
+
+  .project-list-state {
+    flex: 0 0 10rem;
+  }
+
+  .project-list-main {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  @supports (grid-template-columns: subgrid) {
+    .project-list {
+      display: grid;
+      grid-template-columns: max-content 10rem minmax(0, 1fr);
+    }
+
+    .project-list-row {
+      display: grid;
+      grid-template-columns: subgrid;
+      grid-column: 1 / -1;
+    }
+  }
+}

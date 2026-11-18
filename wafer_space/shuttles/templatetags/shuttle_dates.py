@@ -64,6 +64,22 @@ def timeanddate_url(value: datetime.datetime | None) -> str:
     )
 
 
+def compact_countdown(remaining: datetime.timedelta) -> str:
+    """The compact countdown, worded exactly as shuttle_deadlines.js words it.
+
+    The script rewrites the badge as soon as the page loads; the same text
+    from the server means the badge neither changes width nor outgrows its
+    column at that moment (#465). '29 d 5 h left', or '5 h 12 m left' on the
+    last day.
+    """
+    total_hours = remaining // datetime.timedelta(hours=1)
+    days, hours = divmod(total_hours, 24)
+    if days > 0:
+        return f"{days} d {hours} h left"
+    minutes = (remaining % datetime.timedelta(hours=1)) // datetime.timedelta(minutes=1)
+    return f"{hours} h {minutes} m left"
+
+
 @register.inclusion_tag("shuttles/_deadline.html")
 def shuttle_deadline(
     deadline: datetime.datetime | None,
@@ -87,4 +103,5 @@ def shuttle_deadline(
         "timeanddate_url": timeanddate_url(instant),
         "passed": remaining <= datetime.timedelta(0),
         "days_left": remaining.days,
+        "compact_countdown": compact_countdown(remaining),
     }

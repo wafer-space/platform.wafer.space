@@ -36,6 +36,8 @@
     return `${get('day')} ${get('month')} ${get('year')}, ${get('hour')}:${get('minute')} ${zoneName(date)} (${tz})`;
   }
 
+  // Keep in step with compact_countdown() in shuttle_dates.py, which renders
+  // the same text on the server so the badge does not change on load (#465).
   function compactText(msLeft) {
     const totalHours = Math.floor(msLeft / 3600000);
     const days = Math.floor(totalHours / 24);

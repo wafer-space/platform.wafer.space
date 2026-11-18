@@ -5,9 +5,12 @@ from __future__ import annotations
 import datetime
 import re
 
+import pytest
 from django.template import Context
 from django.template import Template
 from django.utils import timezone
+
+from wafer_space.shuttles.templatetags.shuttle_dates import compact_countdown
 
 TEMPLATE = Template(
     '{% load shuttle_dates %}{% shuttle_deadline deadline label="GDS due" %}',
@@ -71,8 +74,28 @@ def test_compact_form_counts_down_with_aoe_date_in_title() -> None:
     expected = deadline.astimezone(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     assert f'data-countdown="{expected}"' in html
     assert "data-countdown-compact" in html
-    assert "12 d left" in html
+    # future() adds an hour, and rendering takes a moment of it.
+    assert "12 d 0 h left" in html
     assert 'title="GDS submission deadline:' in html
+
+
+@pytest.mark.parametrize(
+    ("remaining", "expected"),
+    [
+        (datetime.timedelta(days=29, hours=5, minutes=59), "29 d 5 h left"),
+        (datetime.timedelta(days=128, hours=23), "128 d 23 h left"),
+        (datetime.timedelta(days=1), "1 d 0 h left"),
+        (datetime.timedelta(hours=23, minutes=59, seconds=59), "23 h 59 m left"),
+        (datetime.timedelta(minutes=5, seconds=30), "0 h 5 m left"),
+        (datetime.timedelta(seconds=1), "0 h 0 m left"),
+    ],
+)
+def test_compact_countdown_matches_the_script_format(
+    remaining: datetime.timedelta,
+    expected: str,
+) -> None:
+    """Same words as compactText() in shuttle_deadlines.js (#465)."""
+    assert compact_countdown(remaining) == expected
 
 
 def test_compact_form_past_deadline() -> None:
