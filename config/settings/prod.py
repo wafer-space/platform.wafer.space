@@ -16,6 +16,7 @@ SECRET_KEY = env("DJANGO_SECRET_KEY")
 # silently boot with an unusable allowlist and serve HTTP 400s (issue #267).
 ALLOWED_HOSTS = required_host_list("DJANGO_ALLOWED_HOSTS")
 SITE_URL = "https://platform.wafer.space"
+RUN_SHEET_TOKEN_SHA256 = env("RUN_SHEET_TOKEN_SHA256")
 
 # DATABASES
 # ------------------------------------------------------------------------------

@@ -28,6 +28,11 @@ urlpatterns = [
         name="assign_project",
     ),
     path(
+        "<str:name>/run-sheet.json",
+        views.RunSheetExportView.as_view(),
+        name="run_sheet_export",
+    ),
+    path(
         "<str:name>/remove-assignment/<int:slot_id>/",
         views.RemoveAssignmentView.as_view(),
         name="remove_assignment",

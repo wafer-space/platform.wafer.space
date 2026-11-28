@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import cast
 from uuid import UUID
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import UserPassesTestMixin
 from django.db import transaction
+from django.http import Http404
 from django.http import HttpResponseBadRequest
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
@@ -29,6 +33,7 @@ from wafer_space.shuttles.services.bulk_rerun import RerunRevision
 from wafer_space.shuttles.services.bulk_rerun import passed_on_outdated_precheck
 from wafer_space.shuttles.services.bulk_rerun import plan_bulk_rerun
 from wafer_space.shuttles.services.bulk_rerun import queue_bulk_rerun
+from wafer_space.shuttles.services.run_sheet_export import run_sheet_data
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
@@ -414,3 +419,32 @@ class RemoveAssignmentView(StaffRequiredMixin, View):
             return JsonResponse(
                 {"success": False, "error": "Slot not found"}, status=404
             )
+
+
+_BEARER = "Bearer "
+
+
+def run_sheet_token_ok(header: str) -> bool:
+    """Whether the Authorization ``header`` holds the run-sheet token: its
+    SHA-256 equals settings.RUN_SHEET_TOKEN_SHA256 (compared in constant
+    time). Always False while the setting is None."""
+    expected = settings.RUN_SHEET_TOKEN_SHA256
+    if not expected or not header.startswith(_BEARER):
+        return False
+    token = header.removeprefix(_BEARER).strip()
+    digest = hashlib.sha256(token.encode()).hexdigest()
+    return bool(token) and hmac.compare_digest(digest, expected.lower())
+
+
+class RunSheetExportView(View):
+    """GET the data manage-run-gsheet syncs into a run's spreadsheet, as
+    JSON (see services.run_sheet_export). Needs the run-sheet bearer token;
+    anything else, the page disabled or the shuttle unknown, is a 404."""
+
+    def get(self, request: HttpRequest, name: str) -> JsonResponse:
+        if not run_sheet_token_ok(request.headers.get("Authorization", "")):
+            raise Http404
+        shuttle = get_object_or_404(Shuttle, name=name)
+        response = JsonResponse(run_sheet_data(shuttle))
+        response["Cache-Control"] = "no-store"
+        return response
